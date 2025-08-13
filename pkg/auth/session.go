@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	
 )
 
 // Session errors
@@ -23,12 +22,12 @@ var (
 
 // Session constants - enhanced security
 const (
-	SessionDuration               = 7 * 24 * time.Hour  // 7 days (reduced from 30)
-	ShortAccessTokenDuration      = 15 * time.Minute     // 15 minutes
-	RefreshTokenRotationWindow    = 1 * time.Hour        // Reduced grace period (from 24h)
-	MaxSessionsPerUser           = 10                     // Limit concurrent sessions
-	SessionInactivityTimeout     = 24 * time.Hour        // Auto-logout after inactivity
-	DeviceTrustPromotionThreshold = 7 * 24 * time.Hour    // Days until device can be trusted
+	SessionDuration               = 7 * 24 * time.Hour // 7 days (reduced from 30)
+	ShortAccessTokenDuration      = 15 * time.Minute   // 15 minutes
+	RefreshTokenRotationWindow    = 1 * time.Hour      // Reduced grace period (from 24h)
+	MaxSessionsPerUser            = 10                 // Limit concurrent sessions
+	SessionInactivityTimeout      = 24 * time.Hour     // Auto-logout after inactivity
+	DeviceTrustPromotionThreshold = 7 * 24 * time.Hour // Days until device can be trusted
 )
 
 // Session is a type alias for storage.Session
@@ -287,7 +286,7 @@ func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username str
 }
 
 // removeOldestSession removes the oldest session for a user
-func (sm *SessionManager) removeOldestSession(ctx context.Context, username string, sessions []*Session) error {
+func (sm *SessionManager) removeOldestSession(ctx context.Context, _ string, sessions []*Session) error {
 	if len(sessions) == 0 {
 		return nil
 	}
@@ -304,7 +303,7 @@ func (sm *SessionManager) removeOldestSession(ctx context.Context, username stri
 }
 
 // getOrCreateDeviceID gets existing device ID or creates new one
-func (sm *SessionManager) getOrCreateDeviceID(ctx context.Context, username, userAgent, ipAddress string) (string, error) {
+func (sm *SessionManager) getOrCreateDeviceID(ctx context.Context, username, userAgent, _ string) (string, error) {
 	// Try to find existing device by fingerprint
 	devices, err := sm.repos.Account().GetUserDevices(ctx, username)
 	if err != nil {
@@ -348,26 +347,15 @@ func (sm *SessionManager) InvalidateAllUserTokens(username string) {
 }
 
 // calculateSecurityFlags determines security flags based on auth method and context
-func (sm *SessionManager) calculateSecurityFlags(userAgent, ipAddress, authMethod string) map[string]bool {
-	flags := make(map[string]bool)
-
-	// High security auth methods
-	flags["high_security"] = authMethod == "webauthn" || authMethod == "wallet"
-	flags["password_auth"] = authMethod == "password"
-	flags["mobile_device"] = contains(userAgent, "Mobile")
-	flags["trusted_network"] = sm.isTrustedNetwork(ipAddress)
-
-	return flags
-}
 
 // isTrustedNetwork checks if an IP address is from a trusted network
 func (sm *SessionManager) isTrustedNetwork(ipAddress string) bool {
 	// Simple implementation - can be enhanced with actual network ranges
 	trustedRanges := []string{
-		"192.168.",   // Private networks
-		"10.",        // Private networks
-		"172.16.",    // Private networks
-		"127.0.0.1",  // Localhost
+		"192.168.",  // Private networks
+		"10.",       // Private networks
+		"172.16.",   // Private networks
+		"127.0.0.1", // Localhost
 	}
 
 	for _, trusted := range trustedRanges {
@@ -415,14 +403,14 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 }
 
 // CleanupInactiveSessions removes sessions that have been inactive too long
-func (sm *SessionManager) CleanupInactiveSessions(ctx context.Context) error {
+func (sm *SessionManager) CleanupInactiveSessions(_ context.Context) error {
 	// This would typically be called by a background job
 	// Implementation depends on storage capabilities
 	return nil
 }
 
 // DetectAnomalousSession checks for suspicious session activity
-func (sm *SessionManager) DetectAnomalousSession(ctx context.Context, session *Session, currentIP string) (bool, string) {
+func (sm *SessionManager) DetectAnomalousSession(_ context.Context, session *Session, currentIP string) (bool, string) {
 	// Check for IP address changes
 	if session.IPAddress != currentIP && !sm.isTrustedNetwork(currentIP) {
 		return true, "IP address changed from untrusted network"

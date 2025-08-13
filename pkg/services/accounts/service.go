@@ -78,30 +78,30 @@ func NewService(
 
 // RegisterAccountCommand contains all data needed to register a new account
 type RegisterAccountCommand struct {
-	Username     string `json:"username" validate:"required,min=3,max=30"`
-	Email        string `json:"email" validate:"required,email"`
-	Password     string `json:"password"` // Optional for WebAuthn registration
-	Locale       string `json:"locale"`
-	Agreement    bool   `json:"agreement" validate:"required"`
-	Reason       string `json:"reason"` // Registration reason (for approval)
-	InviteCode   string `json:"invite_code"`
+	Username   string `json:"username" validate:"required,min=3,max=30"`
+	Email      string `json:"email" validate:"required,email"`
+	Password   string `json:"password"` // Optional for WebAuthn registration
+	Locale     string `json:"locale"`
+	Agreement  bool   `json:"agreement" validate:"required"`
+	Reason     string `json:"reason"` // Registration reason (for approval)
+	InviteCode string `json:"invite_code"`
 }
 
 // UpdateProfileCommand contains all data needed to update a user's profile
 type UpdateProfileCommand struct {
-	Username    string                   `json:"username" validate:"required"`
-	DisplayName string                   `json:"display_name" validate:"max=100"`
-	Bio         string                   `json:"bio" validate:"max=5000"`
-	Avatar      string                   `json:"avatar"` // URL to avatar image
-	Header      string                   `json:"header"` // URL to header image
-	Locked      bool                     `json:"locked"` // Account locked (requires approval for follows)
-	Bot         bool                     `json:"bot"`    // Bot account flag
-	Fields      []ProfileField           `json:"fields"` // Custom profile fields
-	Discoverable bool                    `json:"discoverable"` // Show in directory
-	NoIndex      bool                    `json:"no_index"`     // Don't index for search
-	Sensitive    bool                    `json:"sensitive"`    // Mark media as sensitive by default
-	Language     string                   `json:"language"`     // Default language
-	UpdaterID    string                   `json:"updater_id" validate:"required"` // Must be the account owner
+	Username     string         `json:"username" validate:"required"`
+	DisplayName  string         `json:"display_name" validate:"max=100"`
+	Bio          string         `json:"bio" validate:"max=5000"`
+	Avatar       string         `json:"avatar"`                         // URL to avatar image
+	Header       string         `json:"header"`                         // URL to header image
+	Locked       bool           `json:"locked"`                         // Account locked (requires approval for follows)
+	Bot          bool           `json:"bot"`                            // Bot account flag
+	Fields       []ProfileField `json:"fields"`                         // Custom profile fields
+	Discoverable bool           `json:"discoverable"`                   // Show in directory
+	NoIndex      bool           `json:"no_index"`                       // Don't index for search
+	Sensitive    bool           `json:"sensitive"`                      // Mark media as sensitive by default
+	Language     string         `json:"language"`                       // Default language
+	UpdaterID    string         `json:"updater_id" validate:"required"` // Must be the account owner
 }
 
 // GetPreferencesQuery contains parameters for retrieving user preferences
@@ -134,12 +134,12 @@ type GetAccountQuery struct {
 
 // SearchAccountsQuery contains parameters for searching accounts
 type SearchAccountsQuery struct {
-	Query      string                        `json:"query" validate:"required"`
-	ViewerID   string                        `json:"viewer_id"` // User performing the search
+	Query      string                       `json:"query" validate:"required"`
+	ViewerID   string                       `json:"viewer_id"` // User performing the search
 	Pagination interfaces.PaginationOptions `json:"pagination"`
-	Resolve    bool                          `json:"resolve"`    // Resolve remote accounts
-	Following  bool                          `json:"following"`  // Only search following
-	Followers  bool                          `json:"followers"`  // Only search followers
+	Resolve    bool                         `json:"resolve"`   // Resolve remote accounts
+	Following  bool                         `json:"following"` // Only search following
+	Followers  bool                         `json:"followers"` // Only search followers
 }
 
 // ProfileField represents a custom profile field
@@ -153,49 +153,49 @@ type ProfileField struct {
 
 // AccountResult contains an account and associated events that were emitted
 type AccountResult struct {
-	Account *storage.Account  `json:"account"`
+	Account *storage.Account   `json:"account"`
 	Events  []*streaming.Event `json:"events"`
 }
 
 // PreferencesResult contains user preferences and any events
 type PreferencesResult struct {
 	Preferences map[string]interface{} `json:"preferences"`
-	Events      []*streaming.Event      `json:"events"`
+	Events      []*streaming.Event     `json:"events"`
 }
 
 // RegisterAccountResult contains the result of account registration
 type RegisterAccountResult struct {
-	Account   *storage.Account   `json:"account"`
-	Actor     *activitypub.Actor `json:"actor"`
-	Events    []*streaming.Event `json:"events"`
+	Account *storage.Account   `json:"account"`
+	Actor   *activitypub.Actor `json:"actor"`
+	Events  []*streaming.Event `json:"events"`
 }
 
 // AccountSearchResult contains search results and pagination information
 type AccountSearchResult struct {
-	Accounts   []*storage.Account                               `json:"accounts"`
-	Pagination *interfaces.PaginatedResult[*storage.Account]   `json:"pagination"`
-	Events     []*streaming.Event                              `json:"events"`
+	Accounts   []*storage.Account                            `json:"accounts"`
+	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
+	Events     []*streaming.Event                            `json:"events"`
 }
 
 // Additional command structs for account operations
 
 // LookupAccountQuery contains parameters for looking up an account by username@domain
 type LookupAccountQuery struct {
-	Acct     string `json:"acct" validate:"required"`     // username@domain format
-	ViewerID string `json:"viewer_id"`                    // User performing the lookup
+	Acct     string `json:"acct" validate:"required"` // username@domain format
+	ViewerID string `json:"viewer_id"`                // User performing the lookup
 }
 
 // GetFollowersQuery contains parameters for retrieving account followers
 type GetFollowersQuery struct {
-	Username   string                        `json:"username" validate:"required"`
-	ViewerID   string                        `json:"viewer_id"` // User viewing the followers
+	Username   string                       `json:"username" validate:"required"`
+	ViewerID   string                       `json:"viewer_id"` // User viewing the followers
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
 // GetFollowingQuery contains parameters for retrieving accounts being followed
 type GetFollowingQuery struct {
-	Username   string                        `json:"username" validate:"required"`
-	ViewerID   string                        `json:"viewer_id"` // User viewing the following
+	Username   string                       `json:"username" validate:"required"`
+	ViewerID   string                       `json:"viewer_id"` // User viewing the following
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -234,9 +234,9 @@ type SetAccountNoteCommand struct {
 
 // RemoveFollowerCommand contains data needed to remove a follower
 type RemoveFollowerCommand struct {
-	Username    string `json:"username" validate:"required"`
-	FollowerID  string `json:"follower_id" validate:"required"`
-	RemoverID   string `json:"remover_id" validate:"required"`
+	Username   string `json:"username" validate:"required"`
+	FollowerID string `json:"follower_id" validate:"required"`
+	RemoverID  string `json:"remover_id" validate:"required"`
 }
 
 // GetActivityPubCollectionQuery contains parameters for ActivityPub collection requests
@@ -253,14 +253,14 @@ type GetActivityPubCollectionQuery struct {
 
 // FollowersResult contains followers list and pagination
 type FollowersResult struct {
-	Followers  []*storage.Account                             `json:"followers"`
+	Followers  []*storage.Account                            `json:"followers"`
 	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
 	Events     []*streaming.Event                            `json:"events"`
 }
 
 // FollowingResult contains following list and pagination
 type FollowingResult struct {
-	Following  []*storage.Account                             `json:"following"`
+	Following  []*storage.Account                            `json:"following"`
 	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
 	Events     []*streaming.Event                            `json:"events"`
 }
@@ -354,16 +354,16 @@ func (s *Service) GetPreferences(ctx context.Context, query *GetPreferencesQuery
 	// If no preferences found, return defaults
 	if preferences == nil {
 		preferences = map[string]interface{}{
-			"language":                    "en",
-			"default_posting_visibility":  "public",
-			"default_media_sensitive":     false,
-			"expand_spoilers":             false,
-			"expand_media":                "default",
-			"auto_play_gif":               false,
-			"reduce_motion":               false,
-			"use_blurhash":                true,
-			"use_pending_items":           false,
-			"show_trends":                 true,
+			"language":                   "en",
+			"default_posting_visibility": "public",
+			"default_media_sensitive":    false,
+			"expand_spoilers":            false,
+			"expand_media":               "default",
+			"auto_play_gif":              false,
+			"reduce_motion":              false,
+			"use_blurhash":               true,
+			"use_pending_items":          false,
+			"show_trends":                true,
 		}
 	}
 
@@ -860,7 +860,7 @@ func (s *Service) GetFollowing(ctx context.Context, query *GetFollowingQuery) (*
 
 	// Similar to GetFollowers - placeholder implementation
 	return &FollowingResult{
-		Following:  []*storage.Account{},
+		Following: []*storage.Account{},
 		Pagination: &interfaces.PaginatedResult[*storage.Account]{
 			Items:      []*storage.Account{},
 			NextCursor: "",
@@ -1006,9 +1006,9 @@ func (s *Service) PinAccount(ctx context.Context, cmd *PinAccountCommand) (*Rela
 	// Return relationship status (placeholder)
 	return &RelationshipResult{
 		Relationship: map[string]any{
-			"id":        cmd.TargetAccount,
-			"endorsed":  true,
-			"following": false, // Would need to check actual relationship
+			"id":          cmd.TargetAccount,
+			"endorsed":    true,
+			"following":   false, // Would need to check actual relationship
 			"followed_by": false,
 		},
 		Events: []*streaming.Event{},
@@ -1041,9 +1041,9 @@ func (s *Service) UnpinAccount(ctx context.Context, cmd *UnpinAccountCommand) (*
 	// Return relationship status (placeholder)
 	return &RelationshipResult{
 		Relationship: map[string]any{
-			"id":        cmd.TargetAccount,
-			"endorsed":  false,
-			"following": false, // Would need to check actual relationship
+			"id":          cmd.TargetAccount,
+			"endorsed":    false,
+			"following":   false, // Would need to check actual relationship
 			"followed_by": false,
 		},
 		Events: []*streaming.Event{},
@@ -1129,9 +1129,9 @@ func (s *Service) SetAccountNote(ctx context.Context, cmd *SetAccountNoteCommand
 	// Return relationship status with note
 	return &RelationshipResult{
 		Relationship: map[string]any{
-			"id":        cmd.TargetAccount,
-			"note":      cmd.Note,
-			"following": false, // Would need to check actual relationship
+			"id":          cmd.TargetAccount,
+			"note":        cmd.Note,
+			"following":   false, // Would need to check actual relationship
 			"followed_by": false,
 		},
 		Events: []*streaming.Event{},
@@ -1214,17 +1214,17 @@ func (s *Service) RemoveFollower(ctx context.Context, cmd *RemoveFollowerCommand
 
 	return &RelationshipResult{
 		Relationship: map[string]any{
-			"id":                  cmd.FollowerID,
-			"following":           following,
-			"followed_by":         followedBy,
-			"blocking":            false, // TODO: Check block status if needed
-			"blocked_by":          false,
-			"muting":              false,
+			"id":                   cmd.FollowerID,
+			"following":            following,
+			"followed_by":          followedBy,
+			"blocking":             false, // TODO: Check block status if needed
+			"blocked_by":           false,
+			"muting":               false,
 			"muting_notifications": false,
-			"requested":           false,
-			"domain_blocking":     false,
-			"showing_reblogs":     true,
-			"endorsed":            false,
+			"requested":            false,
+			"domain_blocking":      false,
+			"showing_reblogs":      true,
+			"endorsed":             false,
 		},
 		Events: events,
 	}, nil
@@ -1338,7 +1338,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	user := &storage.User{
 		Username:     cmd.Username,
 		Email:        cmd.Email,
-		PasswordHash: "", // Will be set if password provided
+		PasswordHash: "",   // Will be set if password provided
 		Approved:     true, // Auto-approve for now
 		Suspended:    false,
 		Role:         "user",
@@ -1719,16 +1719,16 @@ type GetInstanceStatsQuery struct{}
 
 // GetInstanceStatsResult contains instance statistics
 type GetInstanceStatsResult struct {
-	TotalUsers      int
-	ActiveMonth     int
-	ActiveHalfyear  int
-	LocalPosts      int
-	LocalComments   int
-	Events          []*streaming.Event
+	TotalUsers     int
+	ActiveMonth    int
+	ActiveHalfyear int
+	LocalPosts     int
+	LocalComments  int
+	Events         []*streaming.Event
 }
 
 // GetInstanceStats retrieves instance-level statistics
-func (s *Service) GetInstanceStats(ctx context.Context, query *GetInstanceStatsQuery) (*GetInstanceStatsResult, error) {
+func (s *Service) GetInstanceStats(ctx context.Context, _ *GetInstanceStatsQuery) (*GetInstanceStatsResult, error) {
 	// Get user statistics
 	totalUsers, err := s.storage.Analytics().GetTotalUserCount(ctx)
 	if err != nil {
@@ -1779,7 +1779,7 @@ type GetAccountMetadataQuery struct {
 
 // GetAccountMetadataResult represents account metadata
 type GetAccountMetadataResult struct {
-	Actor    *activitypub.Actor    `json:"actor"`
+	Actor    *activitypub.Actor     `json:"actor"`
 	Metadata *storage.ActorMetadata `json:"metadata"`
 }
 
@@ -1807,7 +1807,7 @@ func (s *Service) GetAccountMetadata(ctx context.Context, query *GetAccountMetad
 
 // IsAccountPinnedQuery represents a request to check if an account is pinned
 type IsAccountPinnedQuery struct {
-	UserID     string `json:"user_id" validate:"required"`
+	UserID        string `json:"user_id" validate:"required"`
 	PinnedActorID string `json:"pinned_actor_id" validate:"required"`
 }
 
@@ -1960,7 +1960,7 @@ func (s *Service) IsBlockedDomain(ctx context.Context, userID, targetDomain stri
 	if err != nil {
 		return false, fmt.Errorf("failed to check if domain is blocked by user: %w", err)
 	}
-	
+
 	return blocked, nil
 }
 
@@ -2021,10 +2021,10 @@ func (s *Service) GetAccountNote(ctx context.Context, currentUsername, targetAct
 	if err != nil {
 		return "", fmt.Errorf("failed to get account note: %w", err)
 	}
-	
+
 	if note == nil {
 		return "", nil // No note found
 	}
-	
+
 	return note.Note, nil
 }

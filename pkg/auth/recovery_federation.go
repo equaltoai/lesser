@@ -168,7 +168,7 @@ func (s *RecoveryFederationService) SendRecoveryRequest(ctx context.Context, req
 				PublicKeyPem: s.getSystemPublicKey(),
 			},
 		}
-		
+
 		// Store the system actor for future use (with empty private key as we'll store it separately)
 		if storeErr := s.repos.Actor().CreateActor(ctx, systemActor, ""); storeErr != nil {
 			s.logger.Warn("failed to store system actor", zap.Error(storeErr))
@@ -268,12 +268,12 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 		Data: map[string]interface{}{
 			"recovery_url": recoveryURL,
 			"expires_at":   now.Add(24 * time.Hour),
-			"activity":    notificationActivity,
+			"activity":     notificationActivity,
 		},
 	}
-	
+
 	if err := s.repos.Notification().CreateNotification(ctx, notification); err != nil {
-		s.logger.Error("failed to store recovery notification", 
+		s.logger.Error("failed to store recovery notification",
 			zap.Error(err),
 			zap.String("username", username))
 		// Continue anyway - notification is not critical
@@ -300,7 +300,7 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 				},
 			}
 		}
-		
+
 		// Deliver the notification activity via federation
 		if deliverErr := s.fedService.DeliverActivity(ctx, notificationActivity, actor.Inbox, systemActor); deliverErr != nil {
 			s.logger.Warn("failed to deliver recovery notification via federation",
@@ -326,14 +326,14 @@ func (s *RecoveryFederationService) getSystemPublicKey() string {
 	if key := os.Getenv("SYSTEM_ACTOR_PUBLIC_KEY"); key != "" {
 		return key
 	}
-	
+
 	// Check if we have a cached key in storage
 	ctx := context.Background()
 	systemActor, err := s.repos.Actor().GetActor(ctx, "system")
 	if err == nil && systemActor != nil && systemActor.PublicKey != nil {
 		return systemActor.PublicKey.PublicKeyPem
 	}
-	
+
 	// Generate a new key pair for the system actor
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
 	if err != nil {
@@ -341,43 +341,43 @@ func (s *RecoveryFederationService) getSystemPublicKey() string {
 		// Return empty - federation will fail but recovery service won't crash
 		return ""
 	}
-	
+
 	// Encode the public key to PEM
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
 		s.logger.Error("failed to marshal public key", zap.Error(err))
 		return ""
 	}
-	
+
 	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "PUBLIC KEY",
 		Bytes: publicKeyBytes,
 	})
-	
+
 	// Store the private key securely (in production, use AWS Secrets Manager or similar)
 	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
 		s.logger.Error("failed to marshal private key", zap.Error(err))
 		return string(publicKeyPEM)
 	}
-	
+
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "PRIVATE KEY",
 		Bytes: privateKeyBytes,
 	})
-	
+
 	// Store both keys for the system actor
 	if err := s.storeSystemActorKeys(string(publicKeyPEM), string(privateKeyPEM)); err != nil {
 		s.logger.Warn("failed to store system actor keys", zap.Error(err))
 	}
-	
+
 	return string(publicKeyPEM)
 }
 
 // storeSystemActorKeys stores the system actor's key pair
 func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, privateKeyPEM string) error {
 	ctx := context.Background()
-	
+
 	// Create or update the system actor with the key pair
 	systemActor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
@@ -393,13 +393,13 @@ func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, privateKe
 			PublicKeyPem: publicKeyPEM,
 		},
 	}
-	
+
 	// Store the actor with the private key
 	if err := s.repos.Actor().CreateActor(ctx, systemActor, privateKeyPEM); err != nil {
 		// Try updating if it already exists
 		s.logger.Debug("system actor may already exist, continuing", zap.Error(err))
 	}
-	
+
 	return nil
 }
 

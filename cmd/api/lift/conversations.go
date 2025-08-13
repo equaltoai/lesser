@@ -48,7 +48,6 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	return ctx.JSON(result.Conversations.Items)
 }
 
-
 // parseConversationLimit parses the limit query parameter
 func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
 	limit := 20
@@ -59,7 +58,6 @@ func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
 	}
 	return limit
 }
-
 
 // setConversationPaginationHeader sets the Link header for pagination
 func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
@@ -131,4 +129,3 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 
 	return ctx.JSON(result.Conversation)
 }
-

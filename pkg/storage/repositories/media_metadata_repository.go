@@ -144,7 +144,7 @@ func (r *MediaMetadataRepository) MarkProcessingComplete(ctx context.Context, me
 	if metadata.AvailableQualities == nil {
 		metadata.AvailableQualities = make([]string, 0)
 	}
-	
+
 	for quality := range result.Sizes {
 		// Add quality if not already present
 		found := false
@@ -206,7 +206,7 @@ func (r *MediaMetadataRepository) CleanupExpiredMetadata(ctx context.Context) er
 
 	// Find failed media older than 7 days
 	cutoffTime := time.Now().Add(-7 * 24 * time.Hour)
-	
+
 	var expiredMetadata []*models.MediaMetadata
 	err := r.db.WithContext(ctx).Model(&models.MediaMetadata{}).
 		Index("gsi1-index").
@@ -236,11 +236,11 @@ func (r *MediaMetadataRepository) CleanupExpiredMetadata(ctx context.Context) er
 
 // ProcessingResult represents the result of media processing
 type ProcessingResult struct {
-	Width    int                `json:"width"`
-	Height   int                `json:"height"`
-	Duration int                `json:"duration"` // Duration in milliseconds
-	FileSize int                `json:"file_size"`
-	Blurhash string             `json:"blurhash"`
+	Width    int                 `json:"width"`
+	Height   int                 `json:"height"`
+	Duration int                 `json:"duration"` // Duration in milliseconds
+	FileSize int                 `json:"file_size"`
+	Blurhash string              `json:"blurhash"`
 	Sizes    map[string]SizeInfo `json:"sizes"`
 }
 

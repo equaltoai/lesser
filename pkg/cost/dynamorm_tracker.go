@@ -230,7 +230,7 @@ func (ct *DynamORMCostTracker) TrackComprehendRequest(operation string, units in
 	// Comprehend pricing is typically per unit (100 characters for text, per request for other operations)
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
-	
+
 	// Log the Comprehend request for cost tracking
 	if ct.logger != nil {
 		ct.logger.Debug("comprehend_request_tracked",
@@ -238,7 +238,7 @@ func (ct *DynamORMCostTracker) TrackComprehendRequest(operation string, units in
 			zap.Int("units", units),
 		)
 	}
-	
+
 	// You could extend the Tracker to have specific Comprehend metrics
 	// For now, we'll track it as a generic operation
 	// Comprehend costs approximately $0.0001 per unit for sentiment analysis

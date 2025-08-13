@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -1705,8 +1706,6 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 // Admin Status Moderation Endpoints
 
 // HandleAdminGetStatusesLift handles GET /api/v1/admin/statuses
-//
-//nolint:gocognit,gocyclo // This function handles many filter parameters which is necessary for comprehensive admin functionality
 func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 	// Check admin access
 	_, err := h.requireAdminLift(ctx)
@@ -1715,7 +1714,38 @@ func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Parse query parameters
+	pagination := h.parseAdminStatusPagination(ctx)
+	filter := h.parseAdminStatusFilter(ctx)
+
+	// Get statuses using the filtering method
+	storageStatuses, nextCursor, err := h.repos.Status().ListStatusesForAdmin(ctx.Context, filter, pagination.Limit, pagination.Cursor)
+	if err != nil {
+		h.logger.Error("failed to get admin statuses", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "failed to get statuses"})
+	}
+
+	// Convert to []any for JSON response
+	statusesAny := h.convertStatusesToAny(storageStatuses)
+
+	// Add optional count header
+	h.addCountHeaderIfRequested(ctx, filter)
+
+	// Add pagination header
+	h.addPaginationHeader(ctx, nextCursor, pagination)
+
+	ctx.Status(http.StatusOK)
+	return ctx.JSON(statusesAny)
+}
+
+// AdminStatusPagination holds pagination parameters for admin status queries
+type AdminStatusPagination struct {
+	Limit  int
+	Cursor string
+}
+
+// parseAdminStatusPagination parses pagination parameters from request
+func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagination {
 	limit := 20
 	if l := ctx.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
@@ -1723,35 +1753,26 @@ func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 		}
 	}
 
-	cursor := ctx.Query("cursor")
+	return AdminStatusPagination{
+		Limit:  limit,
+		Cursor: ctx.Query("cursor"),
+	}
+}
+
+// parseAdminStatusFilter parses filter parameters from request
+func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.StatusFilter {
 	local := ctx.Query("local") == boolTrue
 	remote := ctx.Query("remote") == boolTrue
-	byDomain := ctx.Query("by_domain")
-	visibility := ctx.Query("visibility")
 	flagged := ctx.Query("flagged") == boolTrue
-	reported := ctx.Query("reported") == boolTrue 
+	reported := ctx.Query("reported") == boolTrue
 	withMedia := ctx.Query("media") == boolTrue
 	sensitive := ctx.Query("sensitive") == boolTrue
-	
-	// Parse date filters
-	var minDate, maxDate *time.Time
-	if minDateStr := ctx.Query("min_date"); minDateStr != "" {
-		if parsed, err := time.Parse(time.RFC3339, minDateStr); err == nil {
-			minDate = &parsed
-		}
-	}
-	if maxDateStr := ctx.Query("max_date"); maxDateStr != "" {
-		if parsed, err := time.Parse(time.RFC3339, maxDateStr); err == nil {
-			maxDate = &parsed
-		}
-	}
 
-	// Build filter for admin status listing
 	filter := &repositories.StatusFilter{
-		ByDomain:   byDomain,
-		Visibility: visibility,
-		MinDate:    minDate,
-		MaxDate:    maxDate,
+		ByDomain:   ctx.Query("by_domain"),
+		Visibility: ctx.Query("visibility"),
+		MinDate:    h.parseDate(ctx.Query("min_date")),
+		MaxDate:    h.parseDate(ctx.Query("max_date")),
 	}
 
 	// Set boolean filters only if explicitly requested
@@ -1774,77 +1795,72 @@ func (h *Handler) HandleAdminGetStatusesLift(ctx *lift.Context) error {
 		filter.Sensitive = &sensitive
 	}
 
-	// Get statuses using the new filtering method
-	storageStatuses, nextCursor, err := h.repos.Status().ListStatusesForAdmin(ctx.Context, filter, limit, cursor)
+	return filter
+}
 
-	// Convert to []any for JSON response
+// parseDate parses RFC3339 date string, returns nil if empty or invalid
+func (h *Handler) parseDate(dateStr string) *time.Time {
+	if dateStr == "" {
+		return nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, dateStr); err == nil {
+		return &parsed
+	}
+	return nil
+}
+
+// convertStatusesToAny converts status slice to []any for JSON response
+func (h *Handler) convertStatusesToAny(storageStatuses []*storageModels.Status) []any {
 	statusesAny := make([]any, len(storageStatuses))
 	for i, status := range storageStatuses {
 		statusesAny[i] = status
 	}
+	return statusesAny
+}
 
-	if err != nil {
-		h.logger.Error("failed to get admin statuses", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get statuses"})
-	}
-
-	// Optionally add total count header for administrative purposes
+// addCountHeaderIfRequested adds total count header if requested
+func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *repositories.StatusFilter) {
 	if ctx.Query("include_count") == boolTrue {
 		if totalCount, countErr := h.repos.Status().CountStatusesForAdmin(ctx.Context, filter); countErr == nil {
 			ctx.Response.Headers["X-Total-Count"] = strconv.FormatInt(totalCount, 10)
 		}
 	}
+}
 
-	// Add Link header for pagination if there's more data
-	if nextCursor != "" {
-		// Build query parameters
-		params := url.Values{
-			"limit":  []string{strconv.Itoa(limit)},
-			"cursor": []string{nextCursor},
-		}
-		
-		// Add filter parameters to maintain filter state across pagination
-		if local {
-			params.Add("local", "true")
-		}
-		if remote {
-			params.Add("remote", "true")
-		}
-		if byDomain != "" {
-			params.Add("by_domain", byDomain)
-		}
-		if visibility != "" {
-			params.Add("visibility", visibility)
-		}
-		if ctx.Query("flagged") != "" {
-			params.Add("flagged", ctx.Query("flagged"))
-		}
-		if ctx.Query("reported") != "" {
-			params.Add("reported", ctx.Query("reported"))
-		}
-		if ctx.Query("media") != "" {
-			params.Add("media", ctx.Query("media"))
-		}
-		if ctx.Query("sensitive") != "" {
-			params.Add("sensitive", ctx.Query("sensitive"))
-		}
-		if ctx.Query("min_date") != "" {
-			params.Add("min_date", ctx.Query("min_date"))
-		}
-		if ctx.Query("max_date") != "" {
-			params.Add("max_date", ctx.Query("max_date"))
-		}
-		
-		nextURL := url.URL{
-			Path:     "/api/v1/admin/statuses",
-			RawQuery: params.Encode(),
-		}
-		ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+// addPaginationHeader adds Link header for pagination if there's more data
+func (h *Handler) addPaginationHeader(ctx *lift.Context, nextCursor string, pagination AdminStatusPagination) {
+	if nextCursor == "" {
+		return
 	}
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(statusesAny)
+	params := h.buildPaginationParams(ctx, pagination.Limit, nextCursor)
+	nextURL := url.URL{
+		Path:     "/api/v1/admin/statuses",
+		RawQuery: params.Encode(),
+	}
+	ctx.Response.Headers["Link"] = fmt.Sprintf(`<%s>; rel="next"`, nextURL.String())
+}
+
+// buildPaginationParams builds URL parameters for pagination maintaining filter state
+func (h *Handler) buildPaginationParams(ctx *lift.Context, limit int, nextCursor string) url.Values {
+	params := url.Values{
+		"limit":  []string{strconv.Itoa(limit)},
+		"cursor": []string{nextCursor},
+	}
+
+	// Add filter parameters to maintain filter state across pagination
+	filterParams := []string{
+		"local", "remote", "by_domain", "visibility", "flagged", 
+		"reported", "media", "sensitive", "min_date", "max_date",
+	}
+
+	for _, param := range filterParams {
+		if value := ctx.Query(param); value != "" {
+			params.Add(param, value)
+		}
+	}
+
+	return params
 }
 
 // HandleAdminGetStatusLift handles GET /api/v1/admin/statuses/:id

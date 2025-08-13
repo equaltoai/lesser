@@ -225,7 +225,7 @@ func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *lift.Context, actor *ac
 		"following":            result.Relationship.FollowedBy, // We are followed by them now
 		"showing_reblogs":      result.Relationship.ShowingReblogs,
 		"notifying":            result.Relationship.Notifying,
-		"followed_by":          result.Relationship.Following,  // They are following us now
+		"followed_by":          result.Relationship.Following, // They are following us now
 		"blocking":             result.Relationship.BlockedBy,
 		"blocked_by":           result.Relationship.Blocking,
 		"muting":               result.Relationship.Muting,
@@ -390,7 +390,7 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 	// Get counts
 	statusesCountResult, _ := h.registry.Notes().CountNotesByAuthor(ctx, actor.ID)
 	statusesCount := statusesCountResult
-	
+
 	followersCountResult, _ := h.registry.Relationships().CountFollowers(ctx, actor.ID)
 	followersCount := followersCountResult
 
@@ -410,7 +410,7 @@ func (h *Handler) convertActorToAccountLift(ctx context.Context, actor *activity
 		"header":          header,
 		"header_static":   header,
 		"locked":          actor.ManuallyApprovesFollowers,
-		"bot":             actor.Type == "Service",
+		"bot":             actor.Type == actorTypeService,
 		"discoverable":    actor.Discoverable,
 		"created_at":      createdAt.Format(time.RFC3339),
 		"last_status_at":  lastStatusAt,

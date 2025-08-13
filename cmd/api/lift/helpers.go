@@ -167,9 +167,10 @@ func (h *Handler) isLocal(username string) bool {
 }
 
 // convertStorageStatusToAPI converts a storage Status model to an API Status model with all real data
+//nolint:gocognit // Complex conversion between storage and API models with many fields
 func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
 	ctx := context.Background()
-	
+
 	// Convert InReplyToID to pointer if not empty
 	var inReplyToID *string
 	var inReplyToAccountID *string
@@ -197,7 +198,7 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	statusObjectID := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), storageStatus.StatusID)
 	likeCount, _ := h.repos.Like().GetLikeCount(ctx, statusObjectID)
 	reblogCount, _ := h.repos.Social().CountObjectAnnounces(ctx, statusObjectID)
-	
+
 	// Get reply count
 	replyCount := 0
 	paginationOpts := interfaces.PaginationOptions{Limit: 1}
@@ -208,17 +209,17 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	// Check current user's interactions
 	var favourited, reblogged, bookmarked, muted, pinned bool
 	currentUserActorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), currentUsername)
-	
+
 	// Check if favorited
 	if _, err := h.repos.Like().GetLike(ctx, currentUserActorID, statusObjectID); err == nil {
 		favourited = true
 	}
-	
+
 	// Check if reblogged
 	if _, err := h.repos.Social().GetAnnounce(ctx, currentUserActorID, statusObjectID); err == nil {
 		reblogged = true
 	}
-	
+
 	// Check if bookmarked
 	if bookmarks, _, err := h.repos.Account().GetBookmarks(ctx, currentUsername, 100, ""); err == nil {
 		for _, bookmark := range bookmarks {
@@ -228,19 +229,19 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 			}
 		}
 	}
-	
+
 	// Check if muted (conversation mute)
 	if storageStatus.ConversationID != "" {
 		muted, _ = h.repos.Conversation().IsConversationMuted(ctx, currentUsername, storageStatus.ConversationID)
 	}
-	
+
 	// Check if pinned - check if status is in user's pinned statuses
 	// For now we'll skip this check since GetPinnedStatuses doesn't exist
 	// pinned = false // Already initialized as false above
 
 	// Extract hashtags from content
 	tags := []any{}
-	if storageStatus.Hashtags != nil && len(storageStatus.Hashtags) > 0 {
+	if len(storageStatus.Hashtags) > 0 {
 		for _, hashtag := range storageStatus.Hashtags {
 			tags = append(tags, map[string]string{
 				"name": hashtag,
@@ -251,7 +252,7 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 
 	// Extract mentions
 	mentions := []any{}
-	if storageStatus.Mentions != nil && len(storageStatus.Mentions) > 0 {
+	if len(storageStatus.Mentions) > 0 {
 		for _, mention := range storageStatus.Mentions {
 			mentions = append(mentions, map[string]string{
 				"id":       mention,
@@ -284,22 +285,22 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 	account := models.Account{
 		ID:             storageStatus.AuthorID,
 		Username:       storageStatus.AuthorUsername,
-		Acct:          storageStatus.AuthorUsername,
+		Acct:           storageStatus.AuthorUsername,
 		DisplayName:    authorAccount.User.DisplayName,
-		Locked:        authorAccount.Actor != nil && authorAccount.Actor.ManuallyApprovesFollowers,
-		Bot:           authorAccount.Actor != nil && authorAccount.Actor.Type == "Service",
-		CreatedAt:     authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
-		Note:          "", // Bio/summary would come from Actor
-		URL:           fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
-		Avatar:        "", // Avatar would come from Actor.Icon
-		AvatarStatic:  "", // Avatar would come from Actor.Icon
-		Header:        "", // Header would come from Actor.Image
-		HeaderStatic:  "", // Header would come from Actor.Image
+		Locked:         authorAccount.Actor != nil && authorAccount.Actor.ManuallyApprovesFollowers,
+		Bot:            authorAccount.Actor != nil && authorAccount.Actor.Type == "Service",
+		CreatedAt:      authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
+		Note:           "", // Bio/summary would come from Actor
+		URL:            fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
+		Avatar:         "", // Avatar would come from Actor.Icon
+		AvatarStatic:   "", // Avatar would come from Actor.Icon
+		Header:         "", // Header would come from Actor.Image
+		HeaderStatic:   "", // Header would come from Actor.Image
 		FollowersCount: 0,
 		FollowingCount: 0,
 		StatusesCount:  0,
 	}
-	
+
 	// Populate fields from Actor if available
 	if authorAccount.Actor != nil {
 		account.Note = authorAccount.Actor.Summary

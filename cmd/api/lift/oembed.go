@@ -1,7 +1,6 @@
 package lift
 
 import (
-	"encoding/json"
 	"fmt"
 	htmlpkg "html"
 	"net/url"
@@ -175,7 +174,7 @@ func (h *Handler) normalizeStatusID(statusID string) string {
 func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*activitypub.Note, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
-	
+
 	// Fetch the status using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
@@ -186,36 +185,10 @@ func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*acti
 	}
 
 	// Return the Note directly
-	return result.Note, nil}
+	return result.Note, nil
+}
 
 // convertToNote converts an object to an ActivityPub Note
-func (h *Handler) convertToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
-	note, ok := obj.(*activitypub.Note)
-	if ok {
-		return note, nil
-	}
-
-	// Try to extract Note from map
-	objMap, mapOk := obj.(map[string]any)
-	if !mapOk {
-		h.logger.Warn("object is not a status", zap.String("object_id", objectID))
-		return nil, ctx.Status(400).JSON(map[string]string{
-			"error": "object is not a status",
-		})
-	}
-
-	// Convert map to Note
-	noteData, _ := json.Marshal(objMap)
-	note = &activitypub.Note{}
-	if err := json.Unmarshal(noteData, note); err != nil {
-		h.logger.Error("failed to parse note", zap.Error(err))
-		return nil, ctx.Status(500).JSON(map[string]string{
-			"error": "failed to parse status",
-		})
-	}
-
-	return note, nil
-}
 
 // getOEmbedAuthorActor retrieves the author actor for the note
 func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note) *activitypub.Actor {
@@ -513,7 +486,7 @@ func (h *Handler) normalizeEmbedObjectID(statusID string) string {
 func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
-	
+
 	// Fetch the status using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
@@ -522,32 +495,10 @@ func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, err
 			"error": "status not found",
 		})
 	}
-	return result.Note, nil}
+	return result.Note, nil
+}
 
 // convertObjectToNote converts an object to an ActivityPub Note
-func (h *Handler) convertObjectToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
-	note, ok := obj.(*activitypub.Note)
-	if !ok {
-		// Try to extract Note from map
-		if objMap, mapOk := obj.(map[string]any); mapOk {
-			// Convert map to Note
-			noteData, _ := json.Marshal(objMap)
-			note = &activitypub.Note{}
-			if err := json.Unmarshal(noteData, note); err != nil {
-				h.logger.Error("failed to parse note for embed", zap.Error(err))
-				return nil, ctx.Status(500).JSON(map[string]string{
-					"error": "failed to parse status",
-				})
-			}
-		} else {
-			h.logger.Warn("object is not a status for embed", zap.String("object_id", objectID))
-			return nil, ctx.Status(400).JSON(map[string]string{
-				"error": "object is not a status",
-			})
-		}
-	}
-	return note, nil
-}
 
 // isStatusEmbeddable checks if a status is public or unlisted
 func (h *Handler) isStatusEmbeddable(note *activitypub.Note) bool {

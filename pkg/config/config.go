@@ -39,12 +39,12 @@ type Config struct {
 	MaxUploadSize     int64 // Maximum file upload size in bytes
 	PageSize          int   // Default pagination size
 	AllowRegistration bool  // Whether new users can register
-	
+
 	// Moderation Features
 	DisableAWSModeration bool // Master switch to disable all AWS moderation services
 	DisableComprehend    bool // Disable AWS Comprehend text analysis
 	DisableRekognition   bool // Disable AWS Rekognition image/video analysis
-	
+
 	// Deployment info
 	Stage   string // Deployment stage (dev, staging, prod)
 	Version string // Application version
@@ -84,12 +84,12 @@ func loadConfig() *Config {
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),
 		AllowRegistration: getEnvAsBoolOrDefault("ALLOW_REGISTRATION", false),
-		
+
 		// Moderation flags - default to false (AWS enabled by default)
 		DisableAWSModeration: getEnvAsBoolOrDefault("DISABLE_AWS_MODERATION", false),
 		DisableComprehend:    getEnvAsBoolOrDefault("DISABLE_COMPREHEND", false),
 		DisableRekognition:   getEnvAsBoolOrDefault("DISABLE_REKOGNITION", false),
-		
+
 		Stage:   getEnvOrDefault("STAGE", "dev"),
 		Version: getEnvOrDefault("VERSION", "v1.0.0"),
 	}

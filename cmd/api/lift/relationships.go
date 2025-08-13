@@ -130,7 +130,6 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 	return ctx.JSON(relationships)
 }
 
-
 // extractAccountIDsLift extracts account IDs from query parameters
 // Supports both id[]=1&id[]=2 and id=1,2 formats
 func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
@@ -172,4 +171,3 @@ func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
 
 	return unique
 }
-

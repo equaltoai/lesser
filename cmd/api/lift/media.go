@@ -70,7 +70,7 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 	return ctx.JSON(result.Media)
 }
 
-// HandleGetMediaLift handles GET /api/v1/media/:id (Lift version)  
+// HandleGetMediaLift handles GET /api/v1/media/:id (Lift version)
 func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 	// Authenticate user with read scope
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
@@ -120,7 +120,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
 	}
 
-	// Call Media service  
+	// Call Media service
 	result, err := h.registry.Media().UpdateMedia(ctx.Context, &media.UpdateMediaCommand{
 		MediaID:     mediaID,
 		UserID:      claims.Username,
@@ -183,7 +183,6 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 	return &mediaData, nil
 }
 
-
 // processMediaPart processes a single multipart form part for media upload
 func (h *Handler) processMediaPart(part *multipart.Part, mediaData *MediaUploadRequest) error {
 	buf := new(bytes.Buffer)
@@ -206,5 +205,3 @@ func (h *Handler) processMediaPart(part *multipart.Part, mediaData *MediaUploadR
 
 	return nil
 }
-
-

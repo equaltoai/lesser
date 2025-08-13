@@ -50,29 +50,29 @@ const (
 // Token expiration times - enhanced security with shorter durations
 const (
 	// Production: Very short access token duration forces regular refresh
-	AccessTokenDuration       = 15 * time.Minute
+	AccessTokenDuration = 15 * time.Minute
 	// Development: Longer duration for easier testing
-	AccessTokenDurationDev    = 1 * time.Hour
+	AccessTokenDurationDev = 1 * time.Hour
 	// Refresh tokens should be rotated regularly
-	RefreshTokenDuration      = 7 * 24 * time.Hour // 7 days (reduced from 30)
+	RefreshTokenDuration = 7 * 24 * time.Hour // 7 days (reduced from 30)
 	// Authorization codes must be very short-lived
-	AuthCodeDuration          = 5 * time.Minute // Reduced from 10
+	AuthCodeDuration = 5 * time.Minute // Reduced from 10
 	// Token family tracking for refresh token rotation
-	RefreshTokenFamilyExpiry  = 30 * 24 * time.Hour // 30 days for family tracking
+	RefreshTokenFamilyExpiry = 30 * 24 * time.Hour // 30 days for family tracking
 )
 
 // Claims represents the JWT claims for access tokens with enhanced security
 type Claims struct {
 	jwt.RegisteredClaims
-	Username     string   `json:"username"`
-	Scopes       []string `json:"scopes"`
-	ClientID     string   `json:"client_id"`
+	Username string   `json:"username"`
+	Scopes   []string `json:"scopes"`
+	ClientID string   `json:"client_id"`
 	// Enhanced security fields
-	SessionID    string   `json:"sid,omitempty"`         // Session ID for validation
-	DeviceID     string   `json:"did,omitempty"`         // Device fingerprint
-	TokenVersion int      `json:"tv,omitempty"`          // Token version for invalidation
-	IPAddress    string   `json:"ip,omitempty"`          // IP binding (optional)
-	UserAgent    string   `json:"ua,omitempty"`          // User agent binding (optional)
+	SessionID    string `json:"sid,omitempty"` // Session ID for validation
+	DeviceID     string `json:"did,omitempty"` // Device fingerprint
+	TokenVersion int    `json:"tv,omitempty"`  // Token version for invalidation
+	IPAddress    string `json:"ip,omitempty"`  // IP binding (optional)
+	UserAgent    string `json:"ua,omitempty"`  // User agent binding (optional)
 }
 
 // OAuthService handles OAuth 2.0 operations
@@ -221,13 +221,13 @@ func (s *OAuthService) generateAccessToken(username, clientID string, scopes []s
 // generateAccessTokenWithContext creates a JWT access token with enhanced security context
 func (s *OAuthService) generateAccessTokenWithContext(username, clientID string, scopes []string, sessionID, deviceID string, tokenVersion int, ipAddress, userAgent string) (string, error) {
 	now := time.Now()
-	
+
 	// Use shorter duration in production environments
 	duration := AccessTokenDuration
 	if os.Getenv("GO_ENV") == "development" || os.Getenv("GO_ENV") == "test" {
 		duration = AccessTokenDurationDev
 	}
-	
+
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
@@ -235,7 +235,7 @@ func (s *OAuthService) generateAccessTokenWithContext(username, clientID string,
 			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 			NotBefore: jwt.NewNumericDate(now),
 			// Add unique JTI for token tracking
-			ID:        generateSecureJTI(),
+			ID: generateSecureJTI(),
 		},
 		Username:     username,
 		ClientID:     clientID,
@@ -294,17 +294,17 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 	if expectedSessionID != "" && claims.SessionID != "" && claims.SessionID != expectedSessionID {
 		return fmt.Errorf("session ID mismatch")
 	}
-	
+
 	// Validate IP binding if enabled and provided
 	if expectedIP != "" && claims.IPAddress != "" && claims.IPAddress != expectedIP {
 		return fmt.Errorf("IP address mismatch")
 	}
-	
+
 	// Validate token version for invalidation support
 	if expectedTokenVersion > 0 && claims.TokenVersion > 0 && claims.TokenVersion != expectedTokenVersion {
 		return fmt.Errorf("token version mismatch")
 	}
-	
+
 	// Check if token is too old (additional security check)
 	if claims.IssuedAt != nil {
 		maxAge := 24 * time.Hour // Maximum token age regardless of expiry
@@ -312,7 +312,7 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 			return fmt.Errorf("token too old")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -434,7 +434,7 @@ type RefreshTokenFamily struct {
 	Revoked       bool      `json:"revoked"`
 }
 
-// Enhanced token generation with refresh token families
+// GenerateTokensWithContext generates enhanced OAuth tokens with context information including device tracking and refresh token families
 func (s *OAuthService) GenerateTokensWithContext(username, clientID, sessionID, deviceID, ipAddress, userAgent string, scopes []string, tokenVersion int) (accessToken, refreshToken string, err error) {
 	// Generate enhanced access token
 	accessToken, err = s.generateAccessTokenWithContext(username, clientID, scopes, sessionID, deviceID, tokenVersion, ipAddress, userAgent)

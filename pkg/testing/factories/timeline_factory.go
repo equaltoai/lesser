@@ -1,4 +1,4 @@
-// Package factories provides timeline factory for test data generation  
+// Package factories provides timeline factory for test data generation
 package factories
 
 import (
@@ -10,10 +10,10 @@ import (
 
 // TimelineFactory creates timeline data for testing
 type TimelineFactory struct {
-	domain         string
-	actorFactory   *ActorFactory
+	domain          string
+	actorFactory    *ActorFactory
 	activityFactory *ActivityFactory
-	sequence       int
+	sequence        int
 }
 
 // NewTimelineFactory creates a new timeline factory
@@ -44,11 +44,11 @@ const (
 
 // TimelineData represents a complete timeline setup for testing
 type TimelineData struct {
-	User        *activitypub.Actor
-	Following   []*activitypub.Actor
-	Followers   []*activitypub.Actor
-	Activities  []*activitypub.Activity
-	Scenario    TimelineScenario
+	User       *activitypub.Actor
+	Following  []*activitypub.Actor
+	Followers  []*activitypub.Actor
+	Activities []*activitypub.Activity
+	Scenario   TimelineScenario
 }
 
 // CreateTimelineScenario creates a complete timeline scenario
@@ -76,7 +76,7 @@ func (f *TimelineFactory) CreateTimelineScenario(username string, scenario Timel
 // createEmptyTimeline creates a timeline with no content
 func (f *TimelineFactory) createEmptyTimeline(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	return &TimelineData{
 		User:       user,
 		Following:  []*activitypub.Actor{},
@@ -89,31 +89,31 @@ func (f *TimelineFactory) createEmptyTimeline(username string) *TimelineData {
 // createSimpleTimeline creates a basic timeline with simple posts
 func (f *TimelineFactory) createSimpleTimeline(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	// Create 3 users that this user follows
 	following := f.actorFactory.CreateActorBatch(3, "following_")
-	
+
 	// Create some simple posts from followed users
 	activities := make([]*activitypub.Activity, 0)
-	
+
 	baseTime := time.Now().Add(-2 * time.Hour)
-	
+
 	for i, followedUser := range following {
 		for j := 0; j < 2; j++ { // 2 posts per followed user
 			content := fmt.Sprintf("This is post #%d from %s", j+1, followedUser.PreferredUsername)
 			publishTime := baseTime.Add(time.Duration(i*30+j*10) * time.Minute)
-			
+
 			note := f.activityFactory.CreateNote(content, followedUser.ID, NoteOptions{
 				Published: &publishTime,
 			})
-			
+
 			activity := f.activityFactory.CreateActivity(ActivityOptions{
 				Type:      "Create",
 				Actor:     followedUser.ID,
 				Object:    note,
 				Published: &publishTime,
 			})
-			
+
 			activities = append(activities, activity)
 		}
 	}
@@ -130,22 +130,22 @@ func (f *TimelineFactory) createSimpleTimeline(username string) *TimelineData {
 // createMixedTimeline creates a timeline with various activity types
 func (f *TimelineFactory) createMixedTimeline(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	// Create users to follow
 	following := f.actorFactory.CreateActorBatch(5, "mixed_following_")
-	
+
 	activities := make([]*activitypub.Activity, 0)
 	baseTime := time.Now().Add(-4 * time.Hour)
-	
+
 	for i, followedUser := range following {
 		// Create original post
 		content := fmt.Sprintf("Original post from %s about testing", followedUser.PreferredUsername)
 		publishTime := baseTime.Add(time.Duration(i*60) * time.Minute)
-		
+
 		note := f.activityFactory.CreateNote(content, followedUser.ID, NoteOptions{
 			Published: &publishTime,
 		})
-		
+
 		createActivity := f.activityFactory.CreateActivity(ActivityOptions{
 			Type:      "Create",
 			Actor:     followedUser.ID,
@@ -153,18 +153,18 @@ func (f *TimelineFactory) createMixedTimeline(username string) *TimelineData {
 			Published: &publishTime,
 		})
 		activities = append(activities, createActivity)
-		
+
 		// Add some likes from other users
 		if i > 0 {
 			likeTime := publishTime.Add(5 * time.Minute)
 			likeActivity := f.activityFactory.CreateLike(
-				following[i-1].ID, 
+				following[i-1].ID,
 				note.ID,
 				ActivityOptions{Published: &likeTime},
 			)
 			activities = append(activities, likeActivity)
 		}
-		
+
 		// Add some boosts/announces
 		if i > 1 {
 			announceTime := publishTime.Add(10 * time.Minute)
@@ -175,7 +175,7 @@ func (f *TimelineFactory) createMixedTimeline(username string) *TimelineData {
 			)
 			activities = append(activities, announceActivity)
 		}
-		
+
 		// Add reply
 		if i < 3 {
 			replyTime := publishTime.Add(15 * time.Minute)
@@ -184,7 +184,7 @@ func (f *TimelineFactory) createMixedTimeline(username string) *TimelineData {
 				InReplyTo: note.ID,
 				Published: &replyTime,
 			})
-			
+
 			replyActivity := f.activityFactory.CreateActivity(ActivityOptions{
 				Type:      "Create",
 				Actor:     following[(i+1)%len(following)].ID,
@@ -207,30 +207,30 @@ func (f *TimelineFactory) createMixedTimeline(username string) *TimelineData {
 // createHighVolumeTimeline creates a timeline with many posts for performance testing
 func (f *TimelineFactory) createHighVolumeTimeline(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	// Create many users to follow
 	following := f.actorFactory.CreateActorBatch(20, "volume_following_")
-	
+
 	activities := make([]*activitypub.Activity, 0, 1000) // Pre-allocate for 1000 activities
 	baseTime := time.Now().Add(-24 * time.Hour)
-	
+
 	// Create 50 activities per followed user
 	for _, followedUser := range following {
 		for j := 0; j < 50; j++ {
 			content := fmt.Sprintf("High volume post #%d from %s", j+1, followedUser.PreferredUsername)
 			publishTime := baseTime.Add(time.Duration(j*5) * time.Minute)
-			
+
 			note := f.activityFactory.CreateNote(content, followedUser.ID, NoteOptions{
 				Published: &publishTime,
 			})
-			
+
 			activity := f.activityFactory.CreateActivity(ActivityOptions{
 				Type:      "Create",
 				Actor:     followedUser.ID,
 				Object:    note,
 				Published: &publishTime,
 			})
-			
+
 			activities = append(activities, activity)
 		}
 	}
@@ -247,12 +247,12 @@ func (f *TimelineFactory) createHighVolumeTimeline(username string) *TimelineDat
 // createConversationTimeline creates a timeline with threaded conversations
 func (f *TimelineFactory) createConversationTimeline(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	// Create conversation participants
 	following := f.actorFactory.CreateActorBatch(4, "conv_participant_")
-	
+
 	activities := make([]*activitypub.Activity, 0)
-	
+
 	// Create multiple conversation threads
 	for i := 0; i < 3; i++ {
 		threadActivities := f.activityFactory.CreateThread(
@@ -267,7 +267,7 @@ func (f *TimelineFactory) createConversationTimeline(username string) *TimelineD
 		)
 		activities = append(activities, threadActivities...)
 	}
-	
+
 	// Create a longer conversation
 	conversationMessages := []string{
 		"What does everyone think about the new features?",
@@ -280,12 +280,12 @@ func (f *TimelineFactory) createConversationTimeline(username string) *TimelineD
 		"I can help with that if needed",
 		"That would be awesome, thanks!",
 	}
-	
+
 	conversationActivities := f.activityFactory.CreateConversation(
 		[]string{following[0].PreferredUsername, following[1].PreferredUsername, following[2].PreferredUsername},
 		conversationMessages,
 	)
-	
+
 	activities = append(activities, conversationActivities...)
 
 	return &TimelineData{
@@ -300,28 +300,28 @@ func (f *TimelineFactory) createConversationTimeline(username string) *TimelineD
 // CreateCustomTimeline allows creating a timeline with specific parameters
 func (f *TimelineFactory) CreateCustomTimeline(username string, followingCount int, postsPerUser int) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	following := f.actorFactory.CreateActorBatch(followingCount, "custom_following_")
-	
+
 	activities := make([]*activitypub.Activity, 0, followingCount*postsPerUser)
 	baseTime := time.Now().Add(-6 * time.Hour)
-	
+
 	for i, followedUser := range following {
 		for j := 0; j < postsPerUser; j++ {
 			content := fmt.Sprintf("Custom post #%d from %s", j+1, followedUser.PreferredUsername)
 			publishTime := baseTime.Add(time.Duration(i*postsPerUser+j) * time.Minute)
-			
+
 			note := f.activityFactory.CreateNote(content, followedUser.ID, NoteOptions{
 				Published: &publishTime,
 			})
-			
+
 			activity := f.activityFactory.CreateActivity(ActivityOptions{
 				Type:      "Create",
 				Actor:     followedUser.ID,
 				Object:    note,
 				Published: &publishTime,
 			})
-			
+
 			activities = append(activities, activity)
 		}
 	}
@@ -338,36 +338,36 @@ func (f *TimelineFactory) CreateCustomTimeline(username string, followingCount i
 // CreateTimelineWithMedia creates a timeline that includes media attachments
 func (f *TimelineFactory) CreateTimelineWithMedia(username string) *TimelineData {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
-	
+
 	following := f.actorFactory.CreateActorBatch(3, "media_following_")
-	
+
 	activities := make([]*activitypub.Activity, 0)
 	baseTime := time.Now().Add(-2 * time.Hour)
-	
+
 	for i, followedUser := range following {
 		// Create post with image attachment
 		content := fmt.Sprintf("Check out this image from %s", followedUser.PreferredUsername)
 		publishTime := baseTime.Add(time.Duration(i*30) * time.Minute)
-		
+
 		attachment := activitypub.Attachment{
 			Type:      "Document",
 			MediaType: "image/jpeg",
 			URL:       fmt.Sprintf("https://%s/media/image_%d.jpg", f.domain, i),
 			Name:      fmt.Sprintf("Test image %d", i),
 		}
-		
+
 		note := f.activityFactory.CreateNote(content, followedUser.ID, NoteOptions{
 			Published:   &publishTime,
 			Attachments: []activitypub.Attachment{attachment},
 		})
-		
+
 		activity := f.activityFactory.CreateActivity(ActivityOptions{
 			Type:      "Create",
 			Actor:     followedUser.ID,
 			Object:    note,
 			Published: &publishTime,
 		})
-		
+
 		activities = append(activities, activity)
 	}
 
@@ -384,16 +384,16 @@ func (f *TimelineFactory) CreateTimelineWithMedia(username string) *TimelineData
 func (f *TimelineFactory) CreateNotificationData(username string, count int) []map[string]interface{} {
 	user := f.actorFactory.CreateActor(ActorOptions{Username: username})
 	otherUsers := f.actorFactory.CreateActorBatch(5, "notif_user_")
-	
+
 	notifications := make([]map[string]interface{}, count)
 	notificationTypes := []string{"mention", "follow", "favourite", "reblog", "follow_request"}
-	
+
 	baseTime := time.Now().Add(-1 * time.Hour)
-	
+
 	for i := 0; i < count; i++ {
 		notifType := notificationTypes[i%len(notificationTypes)]
 		fromUser := otherUsers[i%len(otherUsers)]
-		
+
 		notifications[i] = map[string]interface{}{
 			"id":         fmt.Sprintf("notif_%d", i+1),
 			"type":       notifType,
@@ -401,7 +401,7 @@ func (f *TimelineFactory) CreateNotificationData(username string, count int) []m
 			"actor_id":   fromUser.ID,
 			"created_at": baseTime.Add(time.Duration(i*5) * time.Minute),
 		}
-		
+
 		// Add specific data based on notification type
 		switch notifType {
 		case "mention", "reblog":
@@ -413,7 +413,7 @@ func (f *TimelineFactory) CreateNotificationData(username string, count int) []m
 			notifications[i]["target_id"] = note.ID
 		}
 	}
-	
+
 	return notifications
 }
 

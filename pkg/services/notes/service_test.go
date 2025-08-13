@@ -524,13 +524,12 @@ type MockUserRepository struct {
 	mock.Mock
 }
 
-
 // Test helper functions
 
 func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository, streaming.Publisher, *MockFederationService) {
 	// Create a version that uses interfaces - we'll need to modify the service constructor
 	// For now, let's create repository-like mocks that satisfy the constructor
-	
+
 	// Create mocks that will work for testing
 	noteRepo := &MockNoteRepository{}
 	accountRepo := &MockAccountRepository{}
@@ -553,20 +552,20 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 	// The individual repository methods will need separate testing
 	service := NewService(
 		nil, // noteRepo - tests will need to be updated to not rely on repository mocking
-		accountRepo, 
-		likeRepo, 
-		socialRepo, 
-		conversationRepo, 
-		objectRepo, 
-		searchRepo, 
-		communityNoteRepo, 
-		userRepo, 
-		publisher, 
-		federation, 
-		logger, 
+		accountRepo,
+		likeRepo,
+		socialRepo,
+		conversationRepo,
+		objectRepo,
+		searchRepo,
+		communityNoteRepo,
+		userRepo,
+		publisher,
+		federation,
+		logger,
 		"example.com",
 	)
-	
+
 	return service, noteRepo, accountRepo, publisher, federation
 }
 
@@ -610,7 +609,7 @@ func createTestStatus() *models.Status {
 func TestCreateNote_Success(t *testing.T) {
 	service, noteRepo, accountRepo, _, federation := createTestService()
 	ctx := context.Background()
-	
+
 	// Setup mocks
 	account := createTestAccount()
 	accountRepo.On("GetAccount", ctx, "testuser").Return(account, nil)
@@ -709,7 +708,7 @@ func TestUpdateNote_Success(t *testing.T) {
 	// Setup existing status
 	status := createTestStatus()
 	status.AuthorID = "testuser"
-	
+
 	noteRepo.On("GetStatus", ctx, "test123").Return(status, nil)
 	noteRepo.On("UpdateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
 	federation.On("QueueActivity", ctx, mock.AnythingOfType("*activitypub.Activity")).Return(nil)
@@ -742,7 +741,7 @@ func TestUpdateNote_UnauthorizedUser(t *testing.T) {
 	// Setup existing status
 	status := createTestStatus()
 	status.AuthorID = "testuser"
-	
+
 	noteRepo.On("GetStatus", ctx, "test123").Return(status, nil)
 
 	// Create command with different user
@@ -770,7 +769,7 @@ func TestDeleteNote_Success(t *testing.T) {
 	// Setup existing status
 	status := createTestStatus()
 	status.AuthorID = "testuser"
-	
+
 	noteRepo.On("GetStatus", ctx, "test123").Return(status, nil)
 	noteRepo.On("UpdateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
 	federation.On("QueueActivity", ctx, mock.AnythingOfType("*activitypub.Activity")).Return(nil)
@@ -862,7 +861,7 @@ func TestListNotes_PublicTimeline(t *testing.T) {
 		HasMore:    true,
 		Total:      1,
 	}
-	
+
 	noteRepo.On("GetPublicTimeline", ctx, mock.AnythingOfType("interfaces.PaginationOptions")).Return(result, nil)
 
 	// Create query
@@ -926,7 +925,7 @@ func TestListNotes_UnsupportedTimelineType(t *testing.T) {
 func TestCreateNote_WithHashtags(t *testing.T) {
 	service, noteRepo, accountRepo, _, federation := createTestService()
 	ctx := context.Background()
-	
+
 	// Setup mocks
 	account := createTestAccount()
 	accountRepo.On("GetAccount", ctx, "testuser").Return(account, nil)
@@ -946,7 +945,7 @@ func TestCreateNote_WithHashtags(t *testing.T) {
 	// Assert
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
-	
+
 	// Verify events were emitted (hashtag processing)
 	// Note: In production tests, we would verify hashtag stream publishing
 }
@@ -954,7 +953,7 @@ func TestCreateNote_WithHashtags(t *testing.T) {
 func TestCreateNote_DirectMessage(t *testing.T) {
 	service, noteRepo, accountRepo, _, federation := createTestService()
 	ctx := context.Background()
-	
+
 	// Setup mocks
 	account := createTestAccount()
 	accountRepo.On("GetAccount", ctx, "testuser").Return(account, nil)
@@ -963,9 +962,9 @@ func TestCreateNote_DirectMessage(t *testing.T) {
 
 	// Create direct message command
 	cmd := &CreateNoteCommand{
-		AuthorID:      "testuser",
-		Content:       "Direct message",
-		Visibility:    models.VisibilityDirect,
+		AuthorID:       "testuser",
+		Content:        "Direct message",
+		Visibility:     models.VisibilityDirect,
 		ConversationID: "conv123",
 	}
 
@@ -976,7 +975,7 @@ func TestCreateNote_DirectMessage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, models.VisibilityDirect, result.Note.Visibility)
-	
+
 	// Verify direct message handling
 	// Note: In production tests, we would verify conversation stream publishing
 	// and confirm public stream is NOT used for direct messages
@@ -987,7 +986,7 @@ func TestCreateNote_DirectMessage(t *testing.T) {
 func BenchmarkCreateNote(b *testing.B) {
 	service, noteRepo, accountRepo, _, federation := createTestService()
 	ctx := context.Background()
-	
+
 	// Setup mocks
 	account := createTestAccount()
 	accountRepo.On("GetAccount", ctx, "testuser").Return(account, nil)
@@ -1002,7 +1001,7 @@ func BenchmarkCreateNote(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-			_, _ = service.CreateNote(ctx, cmd)
+		_, _ = service.CreateNote(ctx, cmd)
 	}
 }
 

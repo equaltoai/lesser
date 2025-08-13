@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
-	
+
 	"github.com/equaltoai/lesser/pkg/auth"
 )
 
@@ -51,11 +51,11 @@ func createTestContext(path string, queryParams map[string]string, headers map[s
 			Body:       []byte{},
 		},
 	}
-	
+
 	// Initialize internal storage
 	ctx.Set("__init", true)
 	ctx.Get("__init")
-	
+
 	return ctx
 }
 
@@ -65,18 +65,18 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 	logger := zap.NewNop()
 	auditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
 	oauthService := auth.NewOAuthService(testJWTSecret, nil, auditLogger)
-	
+
 	ctx := context.Background()
 	// Create a valid token for testing
 	validToken, _, _ := oauthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	validAuthHeader := "Bearer " + validToken
-	
+
 	// Create an invalid token with wrong signature
 	wrongAuditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
 	wrongOAuthService := auth.NewOAuthService("wrong_secret", nil, wrongAuditLogger)
 	invalidToken, _, _ := wrongOAuthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	invalidAuthHeader := "Bearer " + invalidToken
-	
+
 	// Create a token with insufficient scope (write only)
 	writeOnlyToken, _, _ := oauthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeWrite})
 	writeOnlyAuthHeader := "Bearer " + writeOnlyToken
@@ -116,11 +116,11 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 			requireAuth:    false,
 			expectedStatus: 200,
 			expectedCtx: map[string]interface{}{
-				"user_id":          "testuser",
-				"authenticated":    true,
-				"filter_private":   true,
+				"user_id":               "testuser",
+				"authenticated":         true,
+				"filter_private":        true,
 				"filter_followers_only": true,
-				"requesting_user":  "testuser",
+				"requesting_user":       "testuser",
 			},
 		},
 		{
@@ -149,7 +149,7 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 			requireAuth:    false,
 			expectedStatus: 200,
 			expectedCtx: map[string]interface{}{
-				"public_search":  true,
+				"public_search": true,
 				"limit_results": 20,
 			},
 		},
@@ -203,11 +203,11 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 			mockRepos := new(MockRepos)
 			logger := zap.NewNop()
 			config := SearchPrivacyConfig{
-				Repos:        mockRepos,
-				OAuthService: oauthService,
-				Domain:       "test.local",
-				Logger:       logger,
-				RequireAuth:  tt.requireAuth,
+				Repos:           mockRepos,
+				OAuthService:    oauthService,
+				Domain:          "test.local",
+				Logger:          logger,
+				RequireAuth:     tt.requireAuth,
 				EnableAnalytics: false,
 			}
 
@@ -217,7 +217,7 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 			// Track if handler was called and capture context
 			handlerCalled := false
 			var capturedCtx *lift.Context
-			
+
 			handler := func(ctx *lift.Context) error {
 				handlerCalled = true
 				capturedCtx = ctx
@@ -229,7 +229,7 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 			if tt.authHeader != "" {
 				headers["Authorization"] = tt.authHeader
 			}
-			
+
 			ctx := createTestContext(tt.path, tt.queryParams, headers)
 
 			// Execute middleware
@@ -247,7 +247,7 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 				// For authorized requests, handler should be called
 				assert.NoError(t, err)
 				assert.True(t, handlerCalled, "Handler should be called for authorized requests")
-				
+
 				// Check expected context values
 				if tt.expectedCtx != nil && capturedCtx != nil {
 					for key, expectedValue := range tt.expectedCtx {
@@ -320,7 +320,7 @@ func TestNewSearchAnalyticsMiddleware(t *testing.T) {
 
 			// Create request context
 			ctx := createTestContext(tt.path, tt.queryParams, nil)
-			
+
 			// Set user ID if provided
 			if tt.userID != "" {
 				ctx.Set("user_id", tt.userID)
@@ -416,7 +416,7 @@ func TestNewSearchRateLimitMiddleware(t *testing.T) {
 
 			// Create request context
 			ctx := createTestContext(tt.path, tt.queryParams, nil)
-			
+
 			// Set user ID if provided
 			if tt.userID != "" {
 				ctx.Set("user_id", tt.userID)
@@ -428,7 +428,7 @@ func TestNewSearchRateLimitMiddleware(t *testing.T) {
 
 			// Assert
 			assert.NoError(t, err)
-			
+
 			if tt.expectedStatus == 429 {
 				assert.False(t, handlerCalled, "Handler should not be called when rate limited")
 				assert.Equal(t, 429, ctx.Response.StatusCode)

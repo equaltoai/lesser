@@ -461,7 +461,7 @@ func (h *Handler) extractAnnouncementTags(content string) []models.AnnouncementT
 func (h *Handler) extractAnnouncementEmojis(ctx context.Context, content string) []models.CustomEmoji {
 	// Create emoji parser
 	emojiParser := emoji.NewParser(h.repos, h.logger)
-	
+
 	// Parse emojis from content
 	parsed, err := emojiParser.ParseAll(ctx, content)
 	if err != nil {
@@ -493,22 +493,22 @@ var statusURLRegex = regexp.MustCompile(`https?://[^/\s]+(?:/api/v1)?/statuses/(
 // extractAnnouncementStatuses extracts status/post references from announcement content
 func (h *Handler) extractAnnouncementStatuses(ctx context.Context, content string) []models.AnnouncementStatus {
 	statuses := []models.AnnouncementStatus{}
-	
+
 	// Find all status URLs in the content
 	matches := statusURLRegex.FindAllStringSubmatch(content, -1)
-	
+
 	for _, match := range matches {
 		if len(match) >= 2 {
 			statusID := match[1]
 			fullURL := match[0]
-			
+
 			// Verify the status exists
 			_, err := h.repos.Status().GetStatus(ctx, statusID)
 			if err != nil {
 				h.logger.Debug("referenced status not found", zap.String("status_id", statusID))
 				continue
 			}
-			
+
 			status := models.AnnouncementStatus{
 				ID:  statusID,
 				URL: fullURL,

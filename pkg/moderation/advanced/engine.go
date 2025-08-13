@@ -56,53 +56,53 @@ func NewEngine(
 	// Create analyzers based on configuration and available clients
 	var textAnalyzer TextAnalyzerInterface
 	var imageAnalyzer ImageAnalyzerInterface
-	
+
 	// Check global AWS moderation flags from lesser config
 	// This allows runtime configuration without requiring mode changes
 	awsModDisabled := false
 	comprehendDisabled := false
 	rekognitionDisabled := false
-	
+
 	// Check if global config is available (imported from pkg/config)
 	// This is a safe way to check feature flags without hard dependency
 	if globalCfg := getGlobalConfig(); globalCfg != nil {
 		awsModDisabled = globalCfg.GetDisableAWSModeration()
 		comprehendDisabled = globalCfg.GetDisableComprehend()
 		rekognitionDisabled = globalCfg.GetDisableRekognition()
-		
+
 		logger.Info("checked global moderation feature flags",
 			zap.Bool("aws_moderation_disabled", awsModDisabled),
 			zap.Bool("comprehend_disabled", comprehendDisabled),
 			zap.Bool("rekognition_disabled", rekognitionDisabled))
 	}
-	
+
 	// Use AWS analyzers only if:
 	// 1. Feature is enabled in moderation config
-	// 2. AWS client is available  
+	// 2. AWS client is available
 	// 3. AWS moderation is not globally disabled
 	// 4. Specific service is not disabled
-	useComprehend := config.EnableTextAnalysis && 
-		comprehendClient != nil && 
-		!awsModDisabled && 
+	useComprehend := config.EnableTextAnalysis &&
+		comprehendClient != nil &&
+		!awsModDisabled &&
 		!comprehendDisabled
-		
-	useRekognition := config.EnableImageAnalysis && 
-		rekognitionClient != nil && 
-		!awsModDisabled && 
+
+	useRekognition := config.EnableImageAnalysis &&
+		rekognitionClient != nil &&
+		!awsModDisabled &&
 		!rekognitionDisabled
-	
+
 	if useComprehend {
 		logger.Info("using AWS Comprehend for text analysis")
 		textAnalyzer = NewTextAnalyzer(comprehendClient, logger, config, costTracker)
 	} else {
-		logger.Info("using no-op text analyzer", 
+		logger.Info("using no-op text analyzer",
 			zap.Bool("config_enabled", config.EnableTextAnalysis),
 			zap.Bool("client_available", comprehendClient != nil),
 			zap.Bool("aws_disabled", awsModDisabled),
 			zap.Bool("comprehend_disabled", comprehendDisabled))
 		textAnalyzer = NewNoOpTextAnalyzer(logger, config)
 	}
-	
+
 	if useRekognition {
 		logger.Info("using AWS Rekognition for image analysis")
 		imageAnalyzer = NewImageAnalyzer(rekognitionClient, logger, config, costTracker)
@@ -310,7 +310,7 @@ func (e *Engine) AnalyzeVideo(videoURL string, metadata ContentMetadata) (*Video
 	// Initialize video analyzer if needed
 	// Check if we should use AWS-based video analysis
 	var videoAnalyzer VideoAnalyzerInterface
-	if globalCfg := getGlobalConfig(); globalCfg != nil && 
+	if globalCfg := getGlobalConfig(); globalCfg != nil &&
 		(globalCfg.GetDisableAWSModeration() || globalCfg.GetDisableRekognition()) {
 		// Use no-op video analyzer when AWS is disabled
 		e.logger.Info("using no-op video analyzer (AWS disabled by feature flags)")
@@ -716,7 +716,7 @@ func (e *Engine) storeDecision(ctx context.Context, decision *ModerationDecision
 		statusApplied = "applied"
 		statusPending = "pending"
 	)
-	
+
 	// Update enforcement status based on action
 	var enforcementStatus string
 	switch decision.Decision {
@@ -1119,9 +1119,7 @@ func (va *VideoAnalyzer) startContentModerationDetection(ctx context.Context, vi
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			if err := tracker.TrackRekognitionRequest("StartContentModeration", 1); err != nil {
-				// Log tracking error but continue
-			}
+			tracker.TrackRekognitionRequest("StartContentModeration", 1)
 		}
 	}
 
@@ -1148,9 +1146,7 @@ func (va *VideoAnalyzer) startTextDetection(ctx context.Context, video *rekognit
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			if err := tracker.TrackRekognitionRequest("StartTextDetection", 1); err != nil {
-				// Log tracking error but continue
-			}
+			tracker.TrackRekognitionRequest("StartTextDetection", 1)
 		}
 	}
 
@@ -1173,9 +1169,7 @@ func (va *VideoAnalyzer) startFaceDetection(ctx context.Context, video *rekognit
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			if err := tracker.TrackRekognitionRequest("StartFaceDetection", 1); err != nil {
-				// Log tracking error but continue
-			}
+			tracker.TrackRekognitionRequest("StartFaceDetection", 1)
 		}
 	}
 
@@ -1198,9 +1192,7 @@ func (va *VideoAnalyzer) startLabelDetection(ctx context.Context, video *rekogni
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			if err := tracker.TrackRekognitionRequest("StartLabelDetection", 1); err != nil {
-				// Log tracking error but continue
-			}
+			tracker.TrackRekognitionRequest("StartLabelDetection", 1)
 		}
 	}
 
@@ -1607,9 +1599,7 @@ func (p *jobPoller) getJobResult(ctx context.Context, jobID string, nextToken *s
 func (p *jobPoller) trackCost() {
 	if p.va.costTracker != nil {
 		if tracker, ok := p.va.costTracker.(RekognitionCostTracker); ok {
-			if err := tracker.TrackRekognitionRequest(p.handler.operationType, 1); err != nil {
-				// Log tracking error but continue
-			}
+			tracker.TrackRekognitionRequest(p.handler.operationType, 1)
 		}
 	}
 }

@@ -16,10 +16,10 @@ type ModerationMode string
 const (
 	// ModeAWS uses AWS services for advanced analysis
 	ModeAWS ModerationMode = "aws"
-	
+
 	// ModeBasic uses basic implementations without AWS
 	ModeBasic ModerationMode = "basic"
-	
+
 	// ModeHybrid uses AWS when available, falls back to basic
 	ModeHybrid ModerationMode = "hybrid"
 )
@@ -71,7 +71,7 @@ func NewEngineWithMode(opts EngineOptions) *Engine {
 		opts.Logger.Info("Comprehend disabled by feature flag, removing client")
 		opts.ComprehendClient = nil
 	}
-	
+
 	if rekognitionDisabled && opts.RekognitionClient != nil {
 		opts.Logger.Info("Rekognition disabled by feature flag, removing client")
 		opts.RekognitionClient = nil
@@ -83,21 +83,21 @@ func NewEngineWithMode(opts EngineOptions) *Engine {
 		// Force AWS clients to nil for basic mode
 		opts.ComprehendClient = nil
 		opts.RekognitionClient = nil
-		
+
 		// Disable AWS-dependent features
 		if opts.Config != nil {
-			opts.Config.EnableTextAnalysis = true    // Use basic text analysis
-			opts.Config.EnableImageAnalysis = true   // Use basic image analysis
-			opts.Config.EnableVideoAnalysis = false  // No basic video analysis yet
+			opts.Config.EnableTextAnalysis = true   // Use basic text analysis
+			opts.Config.EnableImageAnalysis = true  // Use basic image analysis
+			opts.Config.EnableVideoAnalysis = false // No basic video analysis yet
 		}
-		
+
 	case ModeAWS:
 		// Require AWS clients for AWS mode
 		if opts.ComprehendClient == nil || opts.RekognitionClient == nil {
 			opts.Logger.Warn("AWS mode requested but clients not provided, falling back to hybrid mode")
 			opts.Mode = ModeHybrid
 		}
-		
+
 	case ModeHybrid:
 		// Use whatever is available
 		if opts.ComprehendClient == nil {
@@ -133,41 +133,40 @@ func DefaultModerationConfig() *ModerationConfig {
 		EnablePatternMatching:   true,
 		EnableReputationScoring: true,
 		EnableThreatSharing:     true,
-		
+
 		// Features that can work with basic implementations
 		EnableTextAnalysis:  true,
 		EnableImageAnalysis: true,
 		EnableVideoAnalysis: false, // No basic video analysis yet
-		
+
 		// Decision thresholds
 		ToxicityThreshold:   0.7,
 		ExplicitThreshold:   0.7,
 		ViolenceThreshold:   0.7,
 		ConfidenceThreshold: 0.5,
-		
+
 		// Action thresholds
 		AutoRemoveThreshold: 0.8,
 		QuarantineThreshold: 0.6,
 		FlagThreshold:       0.4,
-		
+
 		// Reputation settings
 		ReputationDecayRate:   0.1,
 		BadActorThreshold:     0.3,
 		TrustedActorThreshold: 0.8,
-		
+
 		// Performance
 		MaxAnalysisTime: 30 * time.Second,
 		EnableCaching:   true,
 		CacheTTL:        10 * time.Minute,
-		
+
 		// AWS Configuration (safe defaults)
 		ComprehendRegion:  "us-east-1",
-		RekognitionRegion: "us-east-1", 
+		RekognitionRegion: "us-east-1",
 		S3Bucket:          "default-bucket",
-		
+
 		// Cost controls
 		MaxMonthlySpend:    1000.0, // $1000 default limit
 		EnableCostTracking: true,
 	}
 }
-

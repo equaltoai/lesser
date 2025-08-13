@@ -13,6 +13,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// ErrInsufficientScope is returned when the OAuth token has insufficient scope
+	ErrInsufficientScope = "insufficient scope"
+)
+
 // bookmarkAction performs the bookmark action for a status using the Notes service
 func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, error) {
 	// Use the Notes service to bookmark the status
@@ -50,7 +55,7 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, auth.ScopeWrite)
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -91,7 +96,7 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, auth.ScopeRead)
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})

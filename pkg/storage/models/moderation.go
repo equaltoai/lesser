@@ -263,7 +263,7 @@ type ModerationPattern struct {
 	PatternID   string    `json:"pattern_id"`
 	Name        string    `json:"name"`
 	Description string    `json:"description"`
-	Type        string    `json:"type"`     // "regex", "keyword", "phrase"
+	Type        string    `json:"type"` // "regex", "keyword", "phrase"
 	Pattern     string    `json:"pattern"`
 	Category    string    `json:"category"` // "toxicity", "spam", "violence", etc.
 	Severity    float64   `json:"severity"` // 0.0 to 1.0
@@ -651,19 +651,19 @@ type AuditLog struct {
 	Type string `json:"type"` // "AUDIT_LOG"
 
 	// Audit data
-	ID          string    `json:"id"`
-	AdminID     string    `json:"admin_id"`         // Who performed the action
-	AdminRole   string    `json:"admin_role"`       // admin or moderator
-	Action      string    `json:"action"`           // suspend, silence, resolve_report, etc.
-	TargetType  string    `json:"target_type"`      // account, status, report, domain
-	TargetID    string    `json:"target_id"`        // ID of the target
-	Reason      string    `json:"reason,omitempty"` // Reason for action
-	Details     any       `json:"details,omitempty"`// Additional details
-	IPAddress   string    `json:"ip_address,omitempty"`
-	UserAgent   string    `json:"user_agent,omitempty"`
-	RequestID   string    `json:"request_id,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	AdminID    string    `json:"admin_id"`          // Who performed the action
+	AdminRole  string    `json:"admin_role"`        // admin or moderator
+	Action     string    `json:"action"`            // suspend, silence, resolve_report, etc.
+	TargetType string    `json:"target_type"`       // account, status, report, domain
+	TargetID   string    `json:"target_id"`         // ID of the target
+	Reason     string    `json:"reason,omitempty"`  // Reason for action
+	Details    any       `json:"details,omitempty"` // Additional details
+	IPAddress  string    `json:"ip_address,omitempty"`
+	UserAgent  string    `json:"user_agent,omitempty"`
+	RequestID  string    `json:"request_id,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	CreatedAt  time.Time `json:"created_at"`
 
 	// DynamoDB TTL - audit logs expire after 2 years
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`

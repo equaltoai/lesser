@@ -16,6 +16,13 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// EnvProduction represents production environment name
+	EnvProduction = "production"
+	// EnvProd represents short production environment name
+	EnvProd = "prod"
+)
+
 // HandleGetInstanceV1Lift returns instance information in v1 (legacy) format
 func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	// Get static config
@@ -44,14 +51,14 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 		if env == "" {
 			env = os.Getenv("ENVIRONMENT")
 		}
-		if env == "production" || env == "prod" {
+		if env == EnvProduction || env == EnvProd {
 			// In production, VAPID keys are required for push notifications
 			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{
 				"error": "VAPID keys not configured - push notifications unavailable",
 			})
 		}
-		
+
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))
 		vapidPublicKey = ""
 	} else {

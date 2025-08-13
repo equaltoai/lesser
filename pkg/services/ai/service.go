@@ -1,3 +1,4 @@
+// Package ai provides AI integration services for content moderation and assistance
 package ai
 
 import (
@@ -27,13 +28,13 @@ func NewService(storage core.RepositoryStorage, publisher streaming.Publisher, l
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	
+
 	// For now, we need to type assert to get the factory
 	var aiRepo *repositories.AIRepository
 	if f, ok := storage.(*factory.RepositoryFactory); ok {
 		aiRepo = f.AI()
 	}
-	
+
 	return &Service{
 		storage:   storage,
 		publisher: publisher,
@@ -74,14 +75,14 @@ func (s *Service) SaveAnalysis(ctx context.Context, cmd *SaveAnalysisCommand) (*
 	var events []*streaming.Event
 	if s.publisher != nil {
 		event := s.createAnalysisEvent(cmd.Analysis, cmd.UserID)
-		
+
 		// Publish to stream for real-time subscriptions
 		if err := s.publisher.PublishToStream(ctx, "ai_analysis", event); err != nil {
 			s.logger.Warn("failed to publish AI analysis event to stream",
 				zap.String("analysis_id", cmd.Analysis.ID),
 				zap.Error(err))
 		}
-		
+
 		// Also publish to user if specified
 		if cmd.UserID != "" {
 			if err := s.publisher.PublishToUser(ctx, cmd.UserID, event); err != nil {
@@ -91,7 +92,7 @@ func (s *Service) SaveAnalysis(ctx context.Context, cmd *SaveAnalysisCommand) (*
 					zap.Error(err))
 			}
 		}
-		
+
 		events = append(events, event)
 	}
 
@@ -221,12 +222,12 @@ func (s *Service) isHighPriority(analysis *ai.AIAnalysis) bool {
 	if analysis.ModerationAction == ai.ActionRemove || analysis.ModerationAction == ai.ActionHide {
 		return true
 	}
-	
+
 	// High priority for high-risk content
 	if analysis.OverallRisk > 0.8 {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -358,16 +359,16 @@ type AnalysisEvent struct {
 
 // SubscribeToAnalysisEvents creates a channel for receiving AI analysis events
 // Note: The actual event delivery happens through the EventBus in the GraphQL layer
-func (s *Service) SubscribeToAnalysisEvents(ctx context.Context, userID string, objectID *string) (<-chan *AnalysisEvent, error) {
+func (s *Service) SubscribeToAnalysisEvents(_ context.Context, userID string, objectID *string) (<-chan *AnalysisEvent, error) {
 	eventChan := make(chan *AnalysisEvent, 100)
-	
+
 	// The GraphQL subscription manager will handle the actual EventBus subscription
 	// This method just provides the channel interface for compatibility
-	
+
 	s.logger.Info("Created AI analysis event channel",
 		zap.String("user_id", userID),
 		zap.Bool("filtered", objectID != nil && *objectID != ""))
-	
+
 	// Return the channel - GraphQL layer will populate it from EventBus
 	return eventChan, nil
 }
@@ -390,10 +391,10 @@ func (s *Service) ConvertToModel(analysis *ai.AIAnalysis) *models.AIAnalysis {
 		CreatedAt:        analysis.AnalyzedAt,
 		UpdatedAt:        time.Now(),
 	}
-	
+
 	// Update the DynamoDB keys
 	model.UpdateKeys()
-	
+
 	return model
 }
 

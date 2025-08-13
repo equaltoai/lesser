@@ -20,12 +20,12 @@ type PerformanceOptimization struct {
 
 // PerformanceMetric tracks the performance impact of observability operations
 type PerformanceMetric struct {
-	Operation    string
-	TotalTime    time.Duration
-	CallCount    int64
-	MaxTime      time.Duration
-	MinTime      time.Duration
-	LastUpdated  time.Time
+	Operation       string
+	TotalTime       time.Duration
+	CallCount       int64
+	MaxTime         time.Duration
+	MinTime         time.Duration
+	LastUpdated     time.Time
 	OverheadPercent float64
 }
 
@@ -109,7 +109,7 @@ func (po *PerformanceOptimization) LogPerformanceSummary() {
 	po.logger.Info("observability performance summary")
 	for operation, metric := range po.metrics {
 		avgTime := time.Duration(int64(metric.TotalTime) / metric.CallCount)
-		
+
 		po.logger.Info("operation performance",
 			zap.String("operation", operation),
 			zap.Int64("call_count", metric.CallCount),
@@ -231,7 +231,7 @@ Below are the key optimizations and best practices implemented:
 Based on implementation analysis:
 
 - **Average Request Overhead**: 0.3-0.7ms (0.1-0.2% for 300ms average response)
-- **Memory Overhead**: 1-2MB per Lambda instance  
+- **Memory Overhead**: 1-2MB per Lambda instance
 - **Cold Start Overhead**: 50-100ms (one-time per instance)
 - **CPU Overhead**: <0.5% additional CPU usage
 
@@ -239,7 +239,7 @@ Based on implementation analysis:
 
 Performance alerts trigger when:
 - Individual observability operations > 1ms
-- Total observability overhead > 1% of business logic time  
+- Total observability overhead > 1% of business logic time
 - Memory usage for metrics > 5MB
 - Cold start overhead > 200ms
 
@@ -247,7 +247,7 @@ Performance alerts trigger when:
 
 The observability system monitors its own performance:
 - Tracks operation latencies
-- Measures memory usage impact  
+- Measures memory usage impact
 - Alerts on excessive overhead
 - Provides performance summaries
 
@@ -271,26 +271,26 @@ var PerformanceTargets = struct {
 // ValidatePerformanceTargets checks if current performance meets targets
 func (po *PerformanceOptimization) ValidatePerformanceTargets() []string {
 	var violations []string
-	
+
 	po.mu.RLock()
 	defer po.mu.RUnlock()
-	
+
 	for operation, metric := range po.metrics {
 		avgTime := time.Duration(int64(metric.TotalTime) / metric.CallCount)
-		
+
 		if avgTime.Milliseconds() > PerformanceTargets.MaxOperationLatencyMS {
-			violations = append(violations, 
-				fmt.Sprintf("Operation %s average latency %dms exceeds target %dms", 
+			violations = append(violations,
+				fmt.Sprintf("Operation %s average latency %dms exceeds target %dms",
 					operation, avgTime.Milliseconds(), PerformanceTargets.MaxOperationLatencyMS))
 		}
-		
+
 		if metric.OverheadPercent > PerformanceTargets.MaxOverheadPercent {
 			violations = append(violations,
 				fmt.Sprintf("Operation %s overhead %.2f%% exceeds target %.2f%%",
 					operation, metric.OverheadPercent, PerformanceTargets.MaxOverheadPercent))
 		}
 	}
-	
+
 	return violations
 }
 
@@ -298,28 +298,28 @@ func (po *PerformanceOptimization) ValidatePerformanceTargets() []string {
 func (po *PerformanceOptimization) GetPerformanceReport() map[string]interface{} {
 	metrics := po.GetMetrics()
 	violations := po.ValidatePerformanceTargets()
-	
+
 	totalCalls := int64(0)
 	totalTime := time.Duration(0)
-	
+
 	for _, metric := range metrics {
 		totalCalls += metric.CallCount
 		totalTime += metric.TotalTime
 	}
-	
+
 	var avgOverhead float64
 	if totalCalls > 0 {
 		avgOverhead = float64(totalTime) / float64(totalCalls)
 	}
-	
+
 	return map[string]interface{}{
-		"total_operations":      len(metrics),
-		"total_calls":          totalCalls,
-		"total_time_ms":        totalTime.Milliseconds(),
-		"average_overhead_ms":  avgOverhead / 1000000, // Convert nanoseconds to milliseconds
-		"violations":           violations,
-		"meets_targets":        len(violations) == 0,
-		"detailed_metrics":     metrics,
+		"total_operations":    len(metrics),
+		"total_calls":         totalCalls,
+		"total_time_ms":       totalTime.Milliseconds(),
+		"average_overhead_ms": avgOverhead / 1000000, // Convert nanoseconds to milliseconds
+		"violations":          violations,
+		"meets_targets":       len(violations) == 0,
+		"detailed_metrics":    metrics,
 		"targets":             PerformanceTargets,
 	}
 }

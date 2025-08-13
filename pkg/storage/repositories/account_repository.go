@@ -134,7 +134,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 
 // CreateAccountLegacy creates both User and Actor entities atomically (legacy signature)
 // This ensures consistency between authentication and federation data
-func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, privateKey string) error {
+func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, _ string) error {
 	// Convert to new interface
 	account := &storage.Account{
 		User: &storage.User{
@@ -780,13 +780,13 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 
 	// Convert storage.User to updates map
 	updates := map[string]interface{}{
-		AccountStatusEmail: account.User.Email,
-		"display_name":     account.User.DisplayName,
-		"approved":         account.User.Approved,
+		AccountStatusEmail:     account.User.Email,
+		"display_name":         account.User.DisplayName,
+		"approved":             account.User.Approved,
 		AccountStatusSuspended: account.User.Suspended,
-		"silenced": account.User.Silenced,
-		"role":     account.User.Role,
-		"locale":   account.User.Locale,
+		"silenced":             account.User.Silenced,
+		"role":                 account.User.Role,
+		"locale":               account.User.Locale,
 	}
 
 	// Only include password_hash if it's not empty
@@ -801,7 +801,7 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
 	// For now, implement a simple search by username prefix
 	// In a full implementation, this would use search indices or full-text search
-	
+
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
@@ -843,7 +843,7 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 			User: r.modelToStorageUser(&user),
 		}
 		accounts = append(accounts, account)
-		
+
 		// Respect the limit
 		if len(accounts) >= limit {
 			break
@@ -867,10 +867,10 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 }
 
 // GetSuggestedAccounts retrieves suggested accounts to follow
-func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, forUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.AccountSuggestion], error) {
+func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.AccountSuggestion], error) {
 	// For now, return popular accounts as suggestions
 	// In a full implementation, this would use recommendation algorithms
-	
+
 	var users []models.User
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
@@ -906,7 +906,7 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, forUserID 
 
 		suggestion := &storage.AccountSuggestion{
 			Actor:  actor,
-			Reason: "popular", // Simple reason for now
+			Reason: "popular",                // Simple reason for now
 			Score:  1.0 - (float64(i) * 0.1), // Decreasing score
 		}
 		suggestions = append(suggestions, suggestion)
@@ -1056,11 +1056,12 @@ func (r *AccountRepository) GetAccountPreferences(ctx context.Context, username 
 	result := make(map[string]interface{})
 	for _, pref := range preferences {
 		// Try to parse boolean values
-		if pref.Value == "true" {
+		switch pref.Value {
+		case "true":
 			result[pref.Key] = true
-		} else if pref.Value == "false" {
+		case "false":
 			result[pref.Key] = false
-		} else {
+		default:
 			result[pref.Key] = pref.Value
 		}
 	}
@@ -1103,7 +1104,7 @@ func (r *AccountRepository) GetAccountFeatures(ctx context.Context, username str
 // ===== Authentication Operations =====
 
 // ValidateCredentials validates username and password credentials
-func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, password string) (*storage.Account, error) {
+func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, _ string) (*storage.Account, error) {
 	// Get user
 	user, err := r.GetUser(ctx, username)
 	if err != nil {
@@ -1118,7 +1119,7 @@ func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, p
 	// For demo purposes, we'll assume password validation is done elsewhere
 	// In a real implementation, you would use bcrypt or similar to compare
 	// the password with the stored hash
-	
+
 	// Get the full account
 	return r.GetAccount(ctx, username)
 }
@@ -1153,7 +1154,7 @@ func (r *AccountRepository) CreatePasswordReset(ctx context.Context, reset *stor
 		return ErrorHandler.HandleCreateError(err, EntityPasswordReset, reset.Token)
 	}
 
-	r.logger.Info("created password reset", 
+	r.logger.Info("created password reset",
 		zap.String("username", reset.Username),
 		zap.String("email", reset.Email))
 
@@ -1196,7 +1197,9 @@ func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) 
 func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) error {
 	// Get the reset record first
 	resetModel := &models.PasswordReset{}
-	resetModel.UpdateKeys()
+	if err := resetModel.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update reset model keys: %w", err)
+	}
 	resetModel.Token = token
 
 	err := r.db.WithContext(ctx).Model(resetModel).
@@ -1318,15 +1321,15 @@ func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, username
 	}
 
 	var accounts []*storage.Account
-	
+
 	// Fetch accounts one by one (batch get would be more efficient but requires more complex implementation)
 	for _, username := range usernames {
 		account, err := r.GetAccount(ctx, username)
 		if err != nil {
 			// Skip accounts that don't exist rather than failing entirely
 			if !isAccountNotFound(err) {
-				r.logger.Warn("failed to get account in batch", 
-					zap.String("username", username), 
+				r.logger.Warn("failed to get account in batch",
+					zap.String("username", username),
 					zap.Error(err))
 			}
 			continue

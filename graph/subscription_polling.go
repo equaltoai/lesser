@@ -755,24 +755,26 @@ func (sm *GraphQLSubscriptionManager) pollMetricsUpdates(subscription *GraphQLSu
 }
 
 // getRealMetricsUpdates queries actual metrics from the analytics service
-func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(ctx context.Context, categories, services []string, threshold *float64) []*model.MetricsUpdate {
+func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(_ context.Context, categories, services []string, _ *float64) []*model.MetricsUpdate {
 	updates := []*model.MetricsUpdate{}
 
 	// Default categories if none specified
 	if len(categories) == 0 {
-		categories = []string{"performance", "cost", "security"}
+		categories = []string{"performance", "cost", "security"} // TODO: used when analytics service is available
+	_ = categories // not yet used
 	}
 
-	// Default services if none specified  
+	// Default services if none specified
 	if len(services) == 0 {
-		services = []string{"api", "auth", "federation"}
+		services = []string{"api", "auth", "federation"} // TODO: used when analytics service is available
+	_ = services // not yet used
 	}
 
 	// Analytics service not yet available in current architecture
 	// TODO: Wire up analytics service when available
 	sm.logger.Debug("analytics service not yet available for metrics updates")
 	return updates
-	
+
 	/* TODO: Implement when analytics service is available
 	for _, category := range categories {
 		for _, service := range services {
@@ -785,7 +787,7 @@ func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(ctx context.Context,
 					sm.logger.Warn("failed to get performance metrics", zap.Error(err), zap.String("service", service))
 					continue
 				}
-				
+
 				if perfMetrics != nil && (threshold == nil || perfMetrics.Max >= *threshold) {
 					updates = append(updates, &model.MetricsUpdate{
 						MetricID:             perfMetrics.ID,
@@ -813,7 +815,7 @@ func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(ctx context.Context,
 					sm.logger.Warn("failed to get cost metrics", zap.Error(err), zap.String("service", service))
 					continue
 				}
-				
+
 				if costMetrics != nil && (threshold == nil || costMetrics.Sum >= *threshold) {
 					updates = append(updates, &model.MetricsUpdate{
 						MetricID:             costMetrics.ID,
@@ -838,7 +840,7 @@ func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(ctx context.Context,
 					sm.logger.Warn("failed to get security metrics", zap.Error(err), zap.String("service", service))
 					continue
 				}
-				
+
 				if securityMetrics != nil && (threshold == nil || float64(securityMetrics.Count) >= *threshold) {
 					updates = append(updates, &model.MetricsUpdate{
 						MetricID:             securityMetrics.ID,
@@ -864,16 +866,5 @@ func (sm *GraphQLSubscriptionManager) getRealMetricsUpdates(ctx context.Context,
 }
 
 // Helper functions for pointer values
-func pointerfloat64(v float64) *float64 {
-	return &v
-}
-
-func pointerstring(v string) *string {
-	return &v
-}
 
 // Removed unused function: pointerint64
-
-func pointerint(v int) *int {
-	return &v
-}

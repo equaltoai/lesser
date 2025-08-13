@@ -337,12 +337,12 @@ const (
 	RemoveType   = "Remove"
 
 	// Object types
-	NoteType              = "Note"
-	ArticleType           = "Article"
-	ImageType             = "Image"
-	VideoType             = "Video"
-	DocumentType          = "Document"
-	CollectionType        = "Collection"
+	NoteType                  = "Note"
+	ArticleType               = "Article"
+	ImageType                 = "Image"
+	VideoType                 = "Video"
+	DocumentType              = "Document"
+	CollectionType            = "Collection"
 	OrderedCollectionType     = "OrderedCollection"
 	OrderedCollectionPageType = "OrderedCollectionPage"
 	TombstoneType             = "Tombstone"

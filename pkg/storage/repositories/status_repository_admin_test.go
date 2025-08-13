@@ -173,7 +173,7 @@ func TestCountStatusesForAdmin(t *testing.T) {
 		expectedError bool
 	}{
 		{
-			name: "count_all_non_deleted",
+			name:   "count_all_non_deleted",
 			filter: &StatusFilter{},
 			mockSetup: func(mockDB *mocks.MockDB, mockQuery *mocks.MockQuery) {
 				mockDB.On("WithContext", mock.Anything).Return(mockDB)

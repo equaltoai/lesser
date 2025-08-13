@@ -64,7 +64,7 @@ func (r *PatternRepository) UpdatePattern(ctx context.Context, patternID string,
 		Where("PK", "=", existing.PK).
 		Where("SK", "=", existing.SK).
 		First(existing)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to get pattern for update: %w", err)
 	}
@@ -110,7 +110,7 @@ func (r *PatternRepository) DeletePattern(ctx context.Context, patternID string)
 		Where("PK", "=", pattern.PK).
 		Where("SK", "=", pattern.SK).
 		First(pattern)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to get pattern for deletion: %w", err)
 	}
@@ -137,7 +137,7 @@ func (r *PatternRepository) GetPattern(ctx context.Context, patternID string) (*
 		Where("PK", "=", pattern.PK).
 		Where("SK", "=", pattern.SK).
 		First(pattern)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pattern: %w", err)
 	}
@@ -178,7 +178,7 @@ func (r *PatternRepository) IncrementHitCount(ctx context.Context, patternID str
 		Where("PK", "=", pattern.PK).
 		Where("SK", "=", pattern.SK).
 		First(pattern)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to get pattern for hit count update: %w", err)
 	}

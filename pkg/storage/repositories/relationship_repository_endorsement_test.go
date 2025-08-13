@@ -59,20 +59,20 @@ func TestCreateEndorsement_ValidationLogic(t *testing.T) {
 	t.Run("endorsement limit validation", func(t *testing.T) {
 		// Test that endorsement creation fails when user has reached the limit
 		// This would be implemented with proper mocks in a real test scenario
-		
+
 		endorsement := &storage.AccountPin{
 			Username:       "testuser",
 			PinnedActorID:  "https://example.com/users/target",
 			PinnedUsername: "target",
 			CreatedAt:      time.Now(),
 		}
-		
+
 		// Validate endorsement object structure
 		assert.Equal(t, "testuser", endorsement.Username)
 		assert.Equal(t, "https://example.com/users/target", endorsement.PinnedActorID)
 		assert.Equal(t, "target", endorsement.PinnedUsername)
 		assert.False(t, endorsement.CreatedAt.IsZero())
-		
+
 		// Test that extract username works correctly
 		repo := &RelationshipRepository{logger: logger}
 		extractedUsername := repo.extractUsernameFromID(endorsement.PinnedActorID)

@@ -7,7 +7,7 @@ import (
 
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	
+
 	"github.com/equaltoai/lesser/pkg/auth"
 )
 
@@ -27,26 +27,24 @@ type SearchPrivacyConfig struct {
 		RecordSearchAnalytics(ctx context.Context, analytics *SearchAnalytics) error
 		CheckRateLimit(ctx context.Context, key string, limit int, window time.Duration) (bool, error)
 	}
-	
+
 	// OAuthService for JWT token validation
 	OAuthService *auth.OAuthService
-	
+
 	// Domain for building actor IDs
 	Domain string
-	
+
 	// Logger for debugging and monitoring
 	Logger *zap.Logger
-	
+
 	// RequireAuth determines if search endpoints require authentication
 	RequireAuth bool
-	
+
 	// EnableAnalytics determines if search analytics should be recorded
 	EnableAnalytics bool
 }
 
 // SearchPrivacyMiddleware provides privacy enforcement for search endpoints
-//
-//nolint:gocognit // Complex privacy logic requires checking multiple conditions for different search types
 func SearchPrivacyMiddleware(config SearchPrivacyConfig) func(next lift.HandlerFunc) lift.HandlerFunc {
 	return func(next lift.HandlerFunc) lift.HandlerFunc {
 		return func(ctx *lift.Context) error {
@@ -55,60 +53,94 @@ func SearchPrivacyMiddleware(config SearchPrivacyConfig) func(next lift.HandlerF
 				return next(ctx)
 			}
 
-			// Check if this is a status search (which always requires auth)
-			searchType := ctx.Query("type")
-			isStatusSearch := isStatusSearchEndpoint(ctx.Request.URL().Path, searchType)
-			
-			// Extract and validate authentication
-			userID, err := extractAndValidateAuth(ctx, config)
+			userID, err := handleSearchAuthentication(ctx, config)
 			if err != nil {
-				if config.RequireAuth || isStatusSearch {
-					return ctx.Status(401).JSON(map[string]string{"error": "authentication required for search"})
-				}
-				// Allow unauthenticated access for basic account search
-				userID = ""
-			}
-			
-			// Status searches always require authentication
-			if isStatusSearch && userID == "" {
-				return ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+				return err
 			}
 
-			// Set user context for downstream handlers
-			if userID != "" {
-				ctx.Set("user_id", userID)
-				ctx.Set("authenticated", true)
-			}
-
-			// Record analytics if enabled
-			if config.EnableAnalytics && userID != "" {
-				go recordSearchAnalytics(ctx, userID, config)
-			}
-
-			// Apply privacy filters based on endpoint type
-			if isStatusSearch {
-				// Set privacy context for status filtering
-				ctx.Set("filter_private", true)
-				ctx.Set("filter_followers_only", true)
-				ctx.Set("requesting_user", userID)
-			} else if isAccountSearchEndpoint(ctx.Request.URL().Path, ctx.Query("type")) {
-				// Account search can be public but may have limited results
-				if userID == "" {
-					ctx.Set("public_search", true)
-					ctx.Set("limit_results", 20) // Limit results for unauthenticated users
-				}
-			} else if isHashtagSearchEndpoint(ctx.Request.URL().Path, ctx.Query("type")) {
-				// Hashtag search is generally public
-				ctx.Set("public_search", true)
-				
-				// But may filter NSFW content for unauthenticated users
-				if userID == "" {
-					ctx.Set("filter_nsfw", true)
-				}
-			}
+			setUserContext(ctx, userID)
+			recordAnalyticsIfEnabled(ctx, userID, config)
+			applyPrivacyFilters(ctx, userID)
 
 			return next(ctx)
 		}
+	}
+}
+
+// handleSearchAuthentication handles authentication logic for search endpoints
+func handleSearchAuthentication(ctx *lift.Context, config SearchPrivacyConfig) (string, error) {
+	searchType := ctx.Query("type")
+	isStatusSearch := isStatusSearchEndpoint(ctx.Request.URL().Path, searchType)
+
+	// Extract and validate authentication
+	userID, err := extractAndValidateAuth(ctx, config)
+	if err != nil {
+		if config.RequireAuth || isStatusSearch {
+			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for search"})
+		}
+		// Allow unauthenticated access for basic account search
+		userID = ""
+	}
+
+	// Status searches always require authentication
+	if isStatusSearch && userID == "" {
+		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+	}
+
+	return userID, nil
+}
+
+// setUserContext sets user context variables for downstream handlers
+func setUserContext(ctx *lift.Context, userID string) {
+	if userID != "" {
+		ctx.Set("user_id", userID)
+		ctx.Set("authenticated", true)
+	}
+}
+
+// recordAnalyticsIfEnabled records search analytics if enabled and user is authenticated
+func recordAnalyticsIfEnabled(ctx *lift.Context, userID string, config SearchPrivacyConfig) {
+	if config.EnableAnalytics && userID != "" {
+		go recordSearchAnalytics(ctx, userID, config)
+	}
+}
+
+// applyPrivacyFilters applies appropriate privacy filters based on search endpoint type
+func applyPrivacyFilters(ctx *lift.Context, userID string) {
+	path := ctx.Request.URL().Path
+	searchType := ctx.Query("type")
+
+	if isStatusSearchEndpoint(path, searchType) {
+		applyStatusSearchFilters(ctx, userID)
+	} else if isAccountSearchEndpoint(path, searchType) {
+		applyAccountSearchFilters(ctx, userID)
+	} else if isHashtagSearchEndpoint(path, searchType) {
+		applyHashtagSearchFilters(ctx, userID)
+	}
+}
+
+// applyStatusSearchFilters applies privacy filters for status searches
+func applyStatusSearchFilters(ctx *lift.Context, userID string) {
+	ctx.Set("filter_private", true)
+	ctx.Set("filter_followers_only", true)
+	ctx.Set("requesting_user", userID)
+}
+
+// applyAccountSearchFilters applies privacy filters for account searches
+func applyAccountSearchFilters(ctx *lift.Context, userID string) {
+	if userID == "" {
+		ctx.Set("public_search", true)
+		ctx.Set("limit_results", 20) // Limit results for unauthenticated users
+	}
+}
+
+// applyHashtagSearchFilters applies privacy filters for hashtag searches
+func applyHashtagSearchFilters(ctx *lift.Context, userID string) {
+	ctx.Set("public_search", true)
+	
+	// Filter NSFW content for unauthenticated users
+	if userID == "" {
+		ctx.Set("filter_nsfw", true)
 	}
 }
 
@@ -145,7 +177,7 @@ func extractAndValidateAuth(ctx *lift.Context, config SearchPrivacyConfig) (stri
 
 	// Verify that the token has read scope (required for search)
 	if !claims.HasScope(auth.ScopeRead) {
-		config.Logger.Debug("insufficient scope for search", 
+		config.Logger.Debug("insufficient scope for search",
 			zap.String("username", claims.Username),
 			zap.Strings("scopes", claims.Scopes))
 		return "", auth.ErrInvalidScope
@@ -168,7 +200,7 @@ func isSearchEndpoint(path string) bool {
 		"/api/v1/statuses/search",
 		"/api/v1/tags/search",
 	}
-	
+
 	for _, searchPath := range searchPaths {
 		if strings.HasPrefix(path, searchPath) {
 			return true
@@ -179,19 +211,19 @@ func isSearchEndpoint(path string) bool {
 
 // isStatusSearchEndpoint checks if this is specifically a status search
 func isStatusSearchEndpoint(path, searchType string) bool {
-	return strings.Contains(path, "/statuses/search") || 
+	return strings.Contains(path, "/statuses/search") ||
 		(strings.Contains(path, "/search") && searchType == "statuses")
 }
 
 // isAccountSearchEndpoint checks if this is specifically an account search
 func isAccountSearchEndpoint(path, searchType string) bool {
-	return strings.Contains(path, "/accounts/search") || 
+	return strings.Contains(path, "/accounts/search") ||
 		(strings.Contains(path, "/search") && searchType == "accounts")
 }
 
 // isHashtagSearchEndpoint checks if this is specifically a hashtag search
 func isHashtagSearchEndpoint(path, searchType string) bool {
-	return strings.Contains(path, "/tags/search") || 
+	return strings.Contains(path, "/tags/search") ||
 		(strings.Contains(path, "/search") && searchType == "hashtags")
 }
 
@@ -250,7 +282,7 @@ func NewSearchAnalyticsMiddleware(repos interface {
 
 			// Get user ID if authenticated
 			userID, _ := ctx.Get("user_id").(string)
-			
+
 			// Record search query
 			query := ctx.Query("q")
 			if query != "" && userID != "" {
@@ -262,7 +294,7 @@ func NewSearchAnalyticsMiddleware(repos interface {
 						Timestamp: time.Now(),
 						Endpoint:  path,
 					}
-					
+
 					if err := repos.RecordSearchAnalytics(ctx.Request.Context(), analytics); err != nil {
 						logger.Debug("failed to record search analytics", zap.Error(err))
 					}

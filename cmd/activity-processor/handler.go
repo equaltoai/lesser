@@ -47,6 +47,9 @@ const (
 	VisibilityPublic = "public"
 	// VisibilityDirect represents a direct message visibility level
 	VisibilityDirect = "direct"
+	
+	// DefaultTestingDomain is the default domain used for testing
+	DefaultTestingDomain = "example.com"
 )
 
 // ActivityHandler processes DynamoDB stream events for activities
@@ -67,7 +70,7 @@ func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	logger := zap.L()
 	domain := os.Getenv("DOMAIN_NAME")
 	if domain == "" {
-		domain = "example.com" // Default for testing
+		domain = DefaultTestingDomain // Default for testing
 	}
 	return &ActivityHandler{
 		DB:               db,
@@ -690,7 +693,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
 	domain := os.Getenv("DOMAIN_NAME")
 	if domain == "" {
-		domain = "example.com" // Default for testing
+		domain = DefaultTestingDomain // Default for testing
 	}
 	return strings.Contains(actorID, domain)
 }
@@ -1634,7 +1637,7 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 // deliverActivity delivers an activity to remote servers
 //
 //nolint:unused // False positive - called from processOutboxActivity
-func (h *ActivityHandler) deliverActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activitypub.Activity, username string) error {
 	h.Logger.Info("Delivering activity to federation network",
 		zap.String("username", username),
 		zap.String("activity_id", activity.ID),
@@ -1709,7 +1712,7 @@ func (h *ActivityHandler) deliverActivity(ctx context.Context, activity *activit
 func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 	domain := os.Getenv("DOMAIN_NAME")
 	if domain == "" {
-		domain = "example.com" // Default for testing
+		domain = DefaultTestingDomain // Default for testing
 	}
 	
 	remoteRecipients := make([]string, 0)
@@ -1773,9 +1776,5 @@ func (h *ActivityHandler) extractUsernameFromActorURI(actorURI string) string {
 //
 //nolint:unused // Used by activity processors that create notifications
 func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
-	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
-		domain = "example.com" // Default for testing
-	}
 	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger)
 }

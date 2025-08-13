@@ -51,24 +51,60 @@ func (m *SimpleRelationshipRepo) AcceptFollowRequest(ctx context.Context, follow
 }
 
 // Stub out other methods we don't use in simple tests
-func (m *SimpleRelationshipRepo) RejectFollowRequest(ctx context.Context, followerID, followingID string) error { return nil }
-func (m *SimpleRelationshipRepo) Unfollow(ctx context.Context, followerID, followingID string) error { return nil }
-func (m *SimpleRelationshipRepo) GetFollowRelationship(ctx context.Context, followerID, followingID string) (*models.RelationshipRecord, error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetFollowers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetFollowing(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetFollowRequests(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetPendingFollowRequests(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetMutualFollows(ctx context.Context, userID, otherUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) BlockUser(ctx context.Context, blockerID, blockedID string) error { return nil }
-func (m *SimpleRelationshipRepo) UnblockUser(ctx context.Context, blockerID, blockedID string) error { return nil }
-func (m *SimpleRelationshipRepo) GetBlockedUsers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) MuteUser(ctx context.Context, muterID, mutedID string) error { return nil }
-func (m *SimpleRelationshipRepo) UnmuteUser(ctx context.Context, muterID, mutedID string) error { return nil }
-func (m *SimpleRelationshipRepo) GetMutedUsers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleRelationshipRepo) GetFollowerCount(ctx context.Context, userID string) (int64, error) { return 0, nil }
-func (m *SimpleRelationshipRepo) GetFollowingCount(ctx context.Context, userID string) (int64, error) { return 0, nil }
-func (m *SimpleRelationshipRepo) GetMutualFollowCount(ctx context.Context, userID, otherUserID string) (int64, error) { return 0, nil }
-func (m *SimpleRelationshipRepo) GetRelationships(ctx context.Context, requestingUserID string, targetUserIDs []string) (map[string]*models.RelationshipRecord, error) { return nil, nil }
+func (m *SimpleRelationshipRepo) RejectFollowRequest(ctx context.Context, followerID, followingID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) Unfollow(ctx context.Context, followerID, followingID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) GetFollowRelationship(ctx context.Context, followerID, followingID string) (*models.RelationshipRecord, error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetFollowers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetFollowing(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetFollowRequests(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetPendingFollowRequests(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetMutualFollows(ctx context.Context, userID, otherUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) UnblockUser(ctx context.Context, blockerID, blockedID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) GetBlockedUsers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) MuteUser(ctx context.Context, muterID, mutedID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) UnmuteUser(ctx context.Context, muterID, mutedID string) error {
+	return nil
+}
+func (m *SimpleRelationshipRepo) GetMutedUsers(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleRelationshipRepo) GetFollowerCount(ctx context.Context, userID string) (int64, error) {
+	return 0, nil
+}
+func (m *SimpleRelationshipRepo) GetFollowingCount(ctx context.Context, userID string) (int64, error) {
+	return 0, nil
+}
+func (m *SimpleRelationshipRepo) GetMutualFollowCount(ctx context.Context, userID, otherUserID string) (int64, error) {
+	return 0, nil
+}
+func (m *SimpleRelationshipRepo) GetRelationships(ctx context.Context, requestingUserID string, targetUserIDs []string) (map[string]*models.RelationshipRecord, error) {
+	return nil, nil
+}
 
 type SimpleAccountRepo struct {
 	mock.Mock
@@ -83,32 +119,74 @@ func (m *SimpleAccountRepo) GetAccount(ctx context.Context, username string) (*s
 }
 
 // Stub out other methods
-func (m *SimpleAccountRepo) CreateAccount(ctx context.Context, account *storage.Account) error { return nil }
-func (m *SimpleAccountRepo) GetAccountByURL(ctx context.Context, actorURL string) (*storage.Account, error) { return nil, nil }
-func (m *SimpleAccountRepo) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) { return nil, nil }
-func (m *SimpleAccountRepo) UpdateAccount(ctx context.Context, account *storage.Account) error { return nil }
+func (m *SimpleAccountRepo) CreateAccount(ctx context.Context, account *storage.Account) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetAccountByURL(ctx context.Context, actorURL string) (*storage.Account, error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) UpdateAccount(ctx context.Context, account *storage.Account) error {
+	return nil
+}
 func (m *SimpleAccountRepo) DeleteAccount(ctx context.Context, username string) error { return nil }
-func (m *SimpleAccountRepo) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
-func (m *SimpleAccountRepo) GetSuggestedAccounts(ctx context.Context, forUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.AccountSuggestion], error) { return nil, nil }
-func (m *SimpleAccountRepo) GetFeaturedAccounts(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) { return nil, nil }
+func (m *SimpleAccountRepo) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) GetSuggestedAccounts(ctx context.Context, forUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.AccountSuggestion], error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) GetFeaturedAccounts(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	return nil, nil
+}
 func (m *SimpleAccountRepo) ApproveAccount(ctx context.Context, username string) error { return nil }
-func (m *SimpleAccountRepo) SuspendAccount(ctx context.Context, username string, reason string) error { return nil }
+func (m *SimpleAccountRepo) SuspendAccount(ctx context.Context, username string, reason string) error {
+	return nil
+}
 func (m *SimpleAccountRepo) UnsuspendAccount(ctx context.Context, username string) error { return nil }
-func (m *SimpleAccountRepo) SilenceAccount(ctx context.Context, username string, reason string) error { return nil }
+func (m *SimpleAccountRepo) SilenceAccount(ctx context.Context, username string, reason string) error {
+	return nil
+}
 func (m *SimpleAccountRepo) UnsilenceAccount(ctx context.Context, username string) error { return nil }
-func (m *SimpleAccountRepo) UpdateAccountPreferences(ctx context.Context, username string, preferences map[string]interface{}) error { return nil }
-func (m *SimpleAccountRepo) GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error) { return nil, nil }
-func (m *SimpleAccountRepo) UpdateAccountFeatures(ctx context.Context, username string, features map[string]bool) error { return nil }
-func (m *SimpleAccountRepo) GetAccountFeatures(ctx context.Context, username string) (map[string]bool, error) { return nil, nil }
-func (m *SimpleAccountRepo) ValidateCredentials(ctx context.Context, username, password string) (*storage.Account, error) { return nil, nil }
-func (m *SimpleAccountRepo) UpdatePassword(ctx context.Context, username, newPasswordHash string) error { return nil }
-func (m *SimpleAccountRepo) CreatePasswordReset(ctx context.Context, reset *storage.PasswordReset) error { return nil }
-func (m *SimpleAccountRepo) GetPasswordReset(ctx context.Context, token string) (*storage.PasswordReset, error) { return nil, nil }
+func (m *SimpleAccountRepo) UpdateAccountPreferences(ctx context.Context, username string, preferences map[string]interface{}) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) UpdateAccountFeatures(ctx context.Context, username string, features map[string]bool) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetAccountFeatures(ctx context.Context, username string) (map[string]bool, error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) ValidateCredentials(ctx context.Context, username, password string) (*storage.Account, error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) UpdatePassword(ctx context.Context, username, newPasswordHash string) error {
+	return nil
+}
+func (m *SimpleAccountRepo) CreatePasswordReset(ctx context.Context, reset *storage.PasswordReset) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetPasswordReset(ctx context.Context, token string) (*storage.PasswordReset, error) {
+	return nil, nil
+}
 func (m *SimpleAccountRepo) UsePasswordReset(ctx context.Context, token string) error { return nil }
-func (m *SimpleAccountRepo) RecordLogin(ctx context.Context, attempt *storage.LoginAttempt) error { return nil }
-func (m *SimpleAccountRepo) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) { return nil, nil }
-func (m *SimpleAccountRepo) UpdateLastActivity(ctx context.Context, username string, activity time.Time) error { return nil }
-func (m *SimpleAccountRepo) GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error) { return nil, nil }
+func (m *SimpleAccountRepo) RecordLogin(ctx context.Context, attempt *storage.LoginAttempt) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
+	return nil, nil
+}
+func (m *SimpleAccountRepo) UpdateLastActivity(ctx context.Context, username string, activity time.Time) error {
+	return nil
+}
+func (m *SimpleAccountRepo) GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error) {
+	return nil, nil
+}
 func (m *SimpleAccountRepo) GetAccountsCount(ctx context.Context) (int64, error) { return 0, nil }
 
 func (r *SimpleAccountRepo) AddBookmark(ctx context.Context, username, objectID string) error {
@@ -145,7 +223,7 @@ func TestSimpleFollow(t *testing.T) {
 		User: &storage.User{Username: "alice"},
 		Actor: &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
-				ID: "https://example.com/users/alice",
+				ID:   "https://example.com/users/alice",
 				Type: "Person",
 			},
 		},
@@ -155,7 +233,7 @@ func TestSimpleFollow(t *testing.T) {
 		User: &storage.User{Username: "bob"},
 		Actor: &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
-				ID: "https://example.com/users/bob",
+				ID:   "https://example.com/users/bob",
 				Type: "Person",
 			},
 			ManuallyApprovesFollowers: false, // Public account

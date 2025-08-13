@@ -21,17 +21,17 @@ type StreamingEvent struct {
 	GSI2SK string `dynamorm:"index:stream-type-index,sk" json:"gsi2_sk"` // Format: "{createdAt}#{eventID}"
 
 	// Core event data
-	EventID   string                 `json:"event_id"`
-	EventType string                 `json:"event_type"` // e.g., "status.created", "notification.created"
-	TargetType string                `json:"target_type"` // "user", "stream", "conversation", "followers"
-	TargetID  string                 `json:"target_id"`  // The specific user/stream/conversation ID
-	Payload   map[string]interface{} `json:"payload"`    // The event data to send
-	
+	EventID    string                 `json:"event_id"`
+	EventType  string                 `json:"event_type"`  // e.g., "status.created", "notification.created"
+	TargetType string                 `json:"target_type"` // "user", "stream", "conversation", "followers"
+	TargetID   string                 `json:"target_id"`   // The specific user/stream/conversation ID
+	Payload    map[string]interface{} `json:"payload"`     // The event data to send
+
 	// Metadata
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 	ProcessedAt *time.Time `json:"processed_at,omitempty"` // When stream-router processed it
-	DeliveredTo []string `json:"delivered_to,omitempty"` // Connection IDs it was delivered to
-	
+	DeliveredTo []string   `json:"delivered_to,omitempty"` // Connection IDs it was delivered to
+
 	// TTL for automatic cleanup (Unix timestamp)
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }

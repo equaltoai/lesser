@@ -16,7 +16,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/notes"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -112,10 +111,10 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 
 	// Parse other query parameters
 	maxID := ctx.Query("max_id")
-	onlyMedia := ctx.Query("only_media") == "true"
-	excludeReplies := ctx.Query("exclude_replies") == "true"
-	excludeReblogs := ctx.Query("exclude_reblogs") == "true"
-	pinnedOnly := ctx.Query("pinned") == "true"
+	onlyMedia := ctx.Query("only_media") == boolTrue
+	excludeReplies := ctx.Query("exclude_replies") == boolTrue
+	excludeReblogs := ctx.Query("exclude_reblogs") == boolTrue
+	pinnedOnly := ctx.Query("pinned") == boolTrue
 
 	// Optional viewer authentication for private posts
 	var viewerID string
@@ -183,7 +182,7 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 			limit = l
 		}
 	}
-	
+
 	maxID := ctx.Query("max_id")
 
 	// Get the account
@@ -239,7 +238,7 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 			limit = l
 		}
 	}
-	
+
 	maxID := ctx.Query("max_id")
 
 	// Get the account
@@ -295,30 +294,29 @@ func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*
 			return account.Actor, nil
 		}
 		return nil, fmt.Errorf("invalid actor ID format")
-	} else {
-		// Local username or @username@domain format
-		if strings.Contains(accountID, "@") {
-			parts := strings.Split(accountID, "@")
-			if len(parts) >= 2 {
-				username := parts[0]
-				if username == "" && len(parts) >= 3 {
-					username = parts[1] // Handle @username@domain format
-				}
-				// For now, only handle local accounts
-				account, err := h.registry.Accounts().GetAccount(ctx, username)
-				if err != nil {
-					return nil, err
-				}
-				return account.Actor, nil
-			}
-		}
-		// Direct username lookup
-		account, err := h.registry.Accounts().GetAccount(ctx, accountID)
-		if err != nil {
-			return nil, err
-		}
-		return account.Actor, nil
 	}
+	// Local username or @username@domain format
+	if strings.Contains(accountID, "@") {
+		parts := strings.Split(accountID, "@")
+		if len(parts) >= 2 {
+			username := parts[0]
+			if username == "" && len(parts) >= 3 {
+				username = parts[1] // Handle @username@domain format
+			}
+			// For now, only handle local accounts
+			account, err := h.registry.Accounts().GetAccount(ctx, username)
+			if err != nil {
+				return nil, err
+			}
+			return account.Actor, nil
+		}
+	}
+	// Direct username lookup
+	account, err := h.registry.Accounts().GetAccount(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return account.Actor, nil
 }
 
 func (h *Handler) buildAccountResponseFull(ctx context.Context, actor *activitypub.Actor) map[string]interface{} {
@@ -371,23 +369,6 @@ func (h *Handler) buildAccountResponseFull(ctx context.Context, actor *activityp
 	// Set last status time if available
 	if actor.LastStatusAt != nil {
 		account["last_status_at"] = actor.LastStatusAt.Format("2006-01-02")
-	}
-
-	return account
-}
-
-func (h *Handler) buildVerifyCredentialsResponseFull(ctx context.Context, user *storage.User, actor *activitypub.Actor) map[string]interface{} {
-	// Build base account response
-	account := h.buildAccountResponseFull(ctx, actor)
-	
-	// Add credentials-specific fields
-	account["email"] = user.Email
-	account["role"] = user.Role
-	account["source"] = map[string]interface{}{
-		"privacy":   "public",
-		"sensitive": false,
-		"language":  user.Locale,
-		"fields":    []interface{}{},
 	}
 
 	return account
@@ -515,12 +496,12 @@ func (h *Handler) hasUserFavorited(viewerID, statusID string) bool {
 	if viewerID == "" {
 		return false
 	}
-	
+
 	favorited, err := h.registry.Notes().HasLiked(context.Background(), viewerID, statusID)
 	if err != nil {
-		h.logger.Debug("failed to check if user favorited", 
-			zap.String("viewer_id", viewerID), 
-			zap.String("status_id", statusID), 
+		h.logger.Debug("failed to check if user favorited",
+			zap.String("viewer_id", viewerID),
+			zap.String("status_id", statusID),
 			zap.Error(err))
 		return false
 	}
@@ -532,12 +513,12 @@ func (h *Handler) hasUserReblogged(viewerID, statusID string) bool {
 	if viewerID == "" {
 		return false
 	}
-	
+
 	reblogged, err := h.registry.Notes().HasReblogged(context.Background(), viewerID, statusID)
 	if err != nil {
-		h.logger.Debug("failed to check if user reblogged", 
-			zap.String("viewer_id", viewerID), 
-			zap.String("status_id", statusID), 
+		h.logger.Debug("failed to check if user reblogged",
+			zap.String("viewer_id", viewerID),
+			zap.String("status_id", statusID),
 			zap.Error(err))
 		return false
 	}
@@ -549,7 +530,7 @@ func (h *Handler) getReplyToAccountID(ctx context.Context, status *storageModels
 	if status.InReplyToID == "" {
 		return nil
 	}
-	
+
 	// Get the replied-to status
 	replyStatus, err := h.registry.Notes().GetNote(ctx, status.InReplyToID)
 	if err != nil {
@@ -558,7 +539,7 @@ func (h *Handler) getReplyToAccountID(ctx context.Context, status *storageModels
 			zap.Error(err))
 		return nil
 	}
-	
+
 	return &replyStatus.AuthorID
 }
 
@@ -577,13 +558,13 @@ func (h *Handler) hasUserMutedStatus(ctx context.Context, viewerID, statusID str
 	if viewerID == "" {
 		return false
 	}
-	
+
 	// Check if user has muted the status author
 	status, err := h.registry.Notes().GetNote(ctx, statusID)
 	if err != nil {
 		return false
 	}
-	
+
 	muted, err := h.registry.Relationships().IsMuted(ctx, viewerID, status.AuthorUsername)
 	if err != nil {
 		h.logger.Debug("failed to check mute status",
@@ -600,7 +581,7 @@ func (h *Handler) hasUserBookmarked(ctx context.Context, viewerID, statusID stri
 	if viewerID == "" {
 		return false
 	}
-	
+
 	bookmarked, err := h.registry.Notes().IsBookmarked(ctx, viewerID, statusID)
 	if err != nil {
 		h.logger.Debug("failed to check bookmark status",
@@ -618,13 +599,13 @@ func (h *Handler) hasUserPinned(ctx context.Context, viewerID, statusID string) 
 	if viewerID == "" {
 		return false
 	}
-	
+
 	// Get the status to check its author
 	status, err := h.registry.Notes().GetNote(ctx, statusID)
 	if err != nil {
 		return false
 	}
-	
+
 	// Check if viewer has pinned the status author's account
 	pinned, err := h.registry.Accounts().IsAccountPinned(ctx, viewerID, status.AuthorID)
 	if err != nil {

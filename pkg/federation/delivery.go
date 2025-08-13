@@ -67,7 +67,7 @@ func NewDeliveryService(store FederationStorage) *DeliveryService {
 func (d *DeliveryService) DeliverActivityWithPrivacy(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor, targetActorID string) error {
 	// Create addressing validator
 	addressingValidator := activitypub.NewAddressingValidator()
-	
+
 	// Check if this is a direct message and should be delivered to this recipient
 	if addressingValidator.IsDirectMessage(activity) {
 		// For direct messages, only deliver to explicit recipients
@@ -78,11 +78,11 @@ func (d *DeliveryService) DeliverActivityWithPrivacy(ctx context.Context, activi
 			return nil
 		}
 	}
-	
+
 	// Sanitize activity for delivery (remove BCC, and BTo for non-recipients)
 	isRecipient := d.isExplicitRecipient(activity, targetActorID)
 	sanitizedActivity := addressingValidator.SanitizeForDelivery(activity, !isRecipient)
-	
+
 	return d.DeliverActivity(ctx, sanitizedActivity, targetInbox, signingActor)
 }
 
@@ -90,7 +90,7 @@ func (d *DeliveryService) DeliverActivityWithPrivacy(ctx context.Context, activi
 func (d *DeliveryService) isExplicitRecipient(activity *activitypub.Activity, actorID string) bool {
 	// Check all addressing fields
 	allRecipients := append(append(append(activity.To, activity.CC...), activity.BTo...), activity.BCC...)
-	
+
 	for _, recipient := range allRecipients {
 		if recipient == actorID {
 			return true
@@ -100,7 +100,7 @@ func (d *DeliveryService) isExplicitRecipient(activity *activitypub.Activity, ac
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -178,7 +178,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	// Sign the request with enhanced algorithm selection
 	algorithm := DetermineSigningAlgorithm(privateKey, false) // Use modern algorithms by default
 	if err := SignHTTPRequestWithAlgorithm(req, privateKey, signingActor.PublicKey.ID, algorithm); err != nil {
-		log.Error("failed to sign request", 
+		log.Error("failed to sign request",
 			zap.Error(err),
 			zap.String("algorithm", algorithm))
 		federationActivity.Success = false
@@ -314,11 +314,11 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 
 	// Create addressing validator for privacy controls
 	addressingValidator := activitypub.NewAddressingValidator()
-	
+
 	// Get delivery targets with domain grouping for shared inbox optimization
 	deliveryTargets := addressingValidator.DetermineDeliveryRecipients(activity)
-	
-	log.Info("delivering to recipients with privacy controls", 
+
+	log.Info("delivering to recipients with privacy controls",
 		zap.Int("direct_recipients", len(deliveryTargets.DirectRecipients)),
 		zap.Int("domain_groups", len(deliveryTargets.DomainGroups)))
 
@@ -330,7 +330,7 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 			continue
 		}
 
-		log.Debug("processing domain group", 
+		log.Debug("processing domain group",
 			zap.String("domain", domain),
 			zap.Int("recipient_count", len(recipients)))
 
@@ -383,7 +383,7 @@ func (d *DeliveryService) deliverToSharedInbox(ctx context.Context, activity *ac
 // deliverToIndividualRecipients delivers to individual recipient inboxes
 func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor, recipients []string) error {
 	var errors []error
-	
+
 	for _, recipientID := range recipients {
 		// Fetch the recipient's actor document
 		recipientActor, err := d.fetchRemoteActor(ctx, recipientID)
@@ -397,7 +397,7 @@ func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, act
 
 		// Use individual inbox
 		inboxURL := recipientActor.Inbox
-		
+
 		// Deliver with privacy controls for this specific recipient
 		if err := d.DeliverActivityWithPrivacy(ctx, activity, inboxURL, actor, recipientID); err != nil {
 			log := common.WithContext(ctx)
@@ -517,11 +517,11 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 	// Check if SQS is available for async delivery
 	sqsClient := d.getSQSClient()
 	queueURL := d.getQueueURL()
-	
+
 	// Force sync delivery if explicitly configured or SQS not available
 	if deliveryMode == "sync" || sqsClient == nil || queueURL == "" {
 		d.logger.Debug("using synchronous delivery",
-			zap.String("reason", fmt.Sprintf("mode=%s, sqs_available=%t, queue_url_set=%t", 
+			zap.String("reason", fmt.Sprintf("mode=%s, sqs_available=%t, queue_url_set=%t",
 				deliveryMode, sqsClient != nil, queueURL != "")),
 			zap.String("activity_id", activity.ID),
 			zap.String("target_inbox", targetInbox))
@@ -530,10 +530,10 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 
 	// Create delivery message for async processing
 	deliveryID := fmt.Sprintf("delivery_%s_%d", generateDeliveryID(), time.Now().UnixNano())
-	
+
 	// Get retry configuration from environment
 	maxRetries := getEnvInt("FEDERATION_MAX_RETRIES", 5)
-	
+
 	message := map[string]any{
 		"delivery_id":      deliveryID,
 		"activity":         activity,
@@ -583,10 +583,10 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 			zap.String("delivery_id", deliveryID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		
+
 		// Record the SQS failure for monitoring
 		d.recordSQSFailure(ctx, deliveryID, err)
-		
+
 		// Fall back to synchronous delivery
 		return d.DeliverActivity(ctx, activity, targetInbox, signingActor)
 	}
@@ -662,7 +662,7 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	// Get all recipients from addressing fields
 	addressingValidator := activitypub.NewAddressingValidator()
 	targets := addressingValidator.DetermineDeliveryRecipients(activity)
-	
+
 	if len(targets.DirectRecipients) == 0 {
 		log.Info("no remote recipients for direct message")
 		return nil
@@ -670,13 +670,13 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 
 	// Group recipients by inbox (prefer shared inbox)
 	inboxMap := make(map[string][]string) // inbox URL -> recipient IDs
-	
+
 	for recipientID := range targets.DirectRecipients {
 		// Skip local recipients
 		if d.isLocalRecipient(recipientID, signingActor.ID) {
 			continue
 		}
-		
+
 		// Get recipient actor to find their inbox
 		recipient, err := d.store.GetActor(ctx, recipientID)
 		if err != nil {
@@ -685,13 +685,13 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Determine inbox URL (prefer shared inbox for efficiency)
 		inboxURL := recipient.Inbox
 		if recipient.Endpoints != nil && recipient.Endpoints.SharedInbox != "" {
 			inboxURL = recipient.Endpoints.SharedInbox
 		}
-		
+
 		inboxMap[inboxURL] = append(inboxMap[inboxURL], recipientID)
 	}
 
@@ -725,20 +725,20 @@ func (d *DeliveryService) isLocalRecipient(recipientID, signingActorID string) b
 	// Extract domain from both IDs to compare
 	recipientDomain := extractDomainFromURL(recipientID)
 	signingActorDomain := extractDomainFromURL(signingActorID)
-	
+
 	return recipientDomain == signingActorDomain
 }
 
 // calculateDeliveryPriority calculates delivery priority based on activity type and target health
 func (d *DeliveryService) calculateDeliveryPriority(ctx context.Context, activity *activitypub.Activity, targetInbox string) int {
 	priority := 5 // Default priority
-	
+
 	// Higher priority for interactive activities
 	switch activity.Type {
 	case "Create":
 		priority = 7 // Posts are important
 	case "Like", "Announce":
-		priority = 6 // Interactions are moderately important  
+		priority = 6 // Interactions are moderately important
 	case "Follow", "Accept":
 		priority = 8 // Social interactions are high priority
 	case "Undo":
@@ -764,7 +764,7 @@ func (d *DeliveryService) calculateDeliveryPriority(ctx context.Context, activit
 			}
 		}
 	}
-	
+
 	return priority
 }
 
@@ -774,7 +774,7 @@ func (d *DeliveryService) recordSQSFailure(_ context.Context, deliveryID string,
 		zap.String("delivery_id", deliveryID),
 		zap.String("error", err.Error()),
 		zap.String("fallback", "synchronous_delivery"))
-	
+
 	// Could also record metrics here for monitoring SQS health
 }
 
@@ -821,7 +821,7 @@ func (d *DeliveryService) recordDeliveryMetrics(_ context.Context, event, delive
 		zap.String("activity_type", activityType),
 		zap.String("target_domain", targetDomain),
 		zap.Time("timestamp", time.Now()))
-		
+
 	// Could integrate with CloudWatch EMF or other metrics systems
 	// This structured logging format can be parsed by log analysis tools
 }

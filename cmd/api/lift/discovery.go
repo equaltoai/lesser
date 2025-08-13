@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -152,7 +151,7 @@ func (h *Handler) convertDirectoryResultsToAPI(ctx context.Context, results []se
 }
 
 // buildDirectoryAccountFromResult builds a single directory account entry from service result
-func (h *Handler) buildDirectoryAccountFromResult(ctx context.Context, result search.AccountResult) map[string]any {
+func (h *Handler) buildDirectoryAccountFromResult(_ context.Context, result search.AccountResult) map[string]any {
 	actor := result.Actor
 	return map[string]any{
 		"id":              actor.ID,
@@ -193,32 +192,10 @@ func (h *Handler) getActorAvatarURL(actor *activitypub.Actor) string {
 }
 
 // sortDirectoryAccounts sorts accounts based on the order parameter
-func (h *Handler) sortDirectoryAccounts(accounts []map[string]any, order string) {
-	switch order {
-	case "active":
-		h.sortByActivity(accounts)
-	case "new":
-		h.sortByCreation(accounts)
-	}
-}
 
 // sortByActivity sorts accounts by last activity
-func (h *Handler) sortByActivity(accounts []map[string]any) {
-	sort.Slice(accounts, func(i, j int) bool {
-		lastStatusI, _ := accounts[i]["last_status_at"].(string)
-		lastStatusJ, _ := accounts[j]["last_status_at"].(string)
-		return lastStatusI > lastStatusJ
-	})
-}
 
 // sortByCreation sorts accounts by creation date
-func (h *Handler) sortByCreation(accounts []map[string]any) {
-	sort.Slice(accounts, func(i, j int) bool {
-		createdI, _ := accounts[i]["created_at"].(string)
-		createdJ, _ := accounts[j]["created_at"].(string)
-		return createdI > createdJ
-	})
-}
 
 // HandleGetSuggestionsV1Lift handles GET /api/v1/suggestions
 // Returns follow suggestions (v1 format)

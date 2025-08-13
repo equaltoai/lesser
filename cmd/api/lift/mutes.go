@@ -99,7 +99,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 			h.logger.Error("failed to mute via service", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Convert service result to API format
 		relationship := models.Relationship{
 			ID:                  result.Relationship.ID,
@@ -118,7 +118,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		}
 		return ctx.JSON(relationship)
 	}
-	
+
 	// If we reach here, service is not available - return error
 	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
@@ -179,13 +179,13 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 	if h.registry != nil && h.registry.Relationships() != nil {
 		result, err := h.registry.Relationships().Unmute(ctx.Context, &relationshipsvc.UnmuteCommand{
 			MuterID: username,
-			MutedID:  accountID,
+			MutedID: accountID,
 		})
 		if err != nil {
 			h.logger.Error("failed to unmute via service", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-		
+
 		// Convert service result to API format
 		relationship := models.Relationship{
 			ID:                  result.Relationship.ID,
@@ -204,7 +204,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 		}
 		return ctx.JSON(relationship)
 	}
-	
+
 	// If we reach here, service is not available - return error
 	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
@@ -287,7 +287,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 					accounts = append(accounts, account)
 				}
 			}
-			
+
 			// Set Link header for pagination if there's a next cursor
 			if result.NextCursor != "" {
 				ctx.Response.Header("Link", fmt.Sprintf("<%s/api/v1/mutes?max_id=%s>; rel=\"next\"", h.cfg.BaseURL(), result.NextCursor))
@@ -296,8 +296,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 			return ctx.JSON(accounts)
 		}
 	}
-	
+
 	// If we reach here, service failed - return error
 	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
-

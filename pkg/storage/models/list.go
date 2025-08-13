@@ -20,7 +20,7 @@ type List struct {
 	Username      string    `json:"username"` // Owner of the list
 	Title         string    `json:"title"`
 	RepliesPolicy string    `json:"replies_policy"` // list, followed, none
-	Exclusive     bool      `json:"exclusive"`       // Whether list is exclusive
+	Exclusive     bool      `json:"exclusive"`      // Whether list is exclusive
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
 }

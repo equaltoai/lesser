@@ -20,29 +20,29 @@ func (v *AddressingValidator) ValidateAddressing(activity *Activity) error {
 	if err := v.validateRecipientList(activity.To, "to"); err != nil {
 		return err
 	}
-	
+
 	// Validate CC field
 	if err := v.validateRecipientList(activity.CC, "cc"); err != nil {
 		return err
 	}
-	
+
 	// Validate BTo field
 	if err := v.validateRecipientList(activity.BTo, "bto"); err != nil {
 		return err
 	}
-	
+
 	// Validate BCC field
 	if err := v.validateRecipientList(activity.BCC, "bcc"); err != nil {
 		return err
 	}
-	
+
 	// Validate the object's addressing if it's a Note or other addressable object
 	if activity.Object != nil {
 		if note, ok := activity.Object.(*Note); ok {
 			return v.validateNoteAddressing(note)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -61,28 +61,28 @@ func (v *AddressingValidator) validateRecipient(recipient, fieldName string) err
 	if recipient == "" {
 		return fmt.Errorf("empty recipient in %s field", fieldName)
 	}
-	
+
 	// Check if it's the special Public address
 	if recipient == PublicAddress {
 		return nil
 	}
-	
+
 	// Check if it's a valid URL
 	parsed, err := url.Parse(recipient)
 	if err != nil {
 		return fmt.Errorf("invalid URL in %s field: %s", fieldName, recipient)
 	}
-	
+
 	// Must be HTTPS for federation
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
 		return fmt.Errorf("recipient URL must use HTTP(S) scheme: %s", recipient)
 	}
-	
+
 	// Basic validation that it looks like an actor or collection URL
 	if !v.isValidRecipientURL(recipient) {
 		return fmt.Errorf("invalid recipient URL format: %s", recipient)
 	}
-	
+
 	return nil
 }
 
@@ -109,18 +109,18 @@ func (v *AddressingValidator) isValidRecipientURL(recipient string) bool {
 	// - Actor URLs: /users/username, /actors/username
 	// - Collection URLs: /users/username/followers, /users/username/inbox
 	// - Shared inbox: /inbox
-	
+
 	validPatterns := []string{
 		"/users/", "/actors/", "/inbox", "/followers", "/following",
 		"/user/", "/actor/", "/person/", "/@", // Common variations
 	}
-	
+
 	for _, pattern := range validPatterns {
 		if strings.Contains(recipient, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -131,10 +131,10 @@ func (v *AddressingValidator) DetermineDeliveryRecipients(activity *Activity) *D
 		SharedInboxes:    make(map[string]bool),
 		DomainGroups:     make(map[string][]string),
 	}
-	
+
 	// Collect all recipients from To, CC, BTo, BCC
 	allRecipients := make(map[string]bool)
-	
+
 	for _, recipient := range activity.To {
 		if recipient != PublicAddress {
 			allRecipients[recipient] = true
@@ -142,7 +142,7 @@ func (v *AddressingValidator) DetermineDeliveryRecipients(activity *Activity) *D
 			v.groupRecipientsByDomain(recipient, targets)
 		}
 	}
-	
+
 	for _, recipient := range activity.CC {
 		if recipient != PublicAddress {
 			allRecipients[recipient] = true
@@ -150,7 +150,7 @@ func (v *AddressingValidator) DetermineDeliveryRecipients(activity *Activity) *D
 			v.groupRecipientsByDomain(recipient, targets)
 		}
 	}
-	
+
 	for _, recipient := range activity.BTo {
 		if recipient != PublicAddress {
 			allRecipients[recipient] = true
@@ -158,7 +158,7 @@ func (v *AddressingValidator) DetermineDeliveryRecipients(activity *Activity) *D
 			v.groupRecipientsByDomain(recipient, targets)
 		}
 	}
-	
+
 	for _, recipient := range activity.BCC {
 		if recipient != PublicAddress {
 			allRecipients[recipient] = true
@@ -166,7 +166,7 @@ func (v *AddressingValidator) DetermineDeliveryRecipients(activity *Activity) *D
 			v.groupRecipientsByDomain(recipient, targets)
 		}
 	}
-	
+
 	return targets
 }
 
@@ -176,7 +176,7 @@ func (v *AddressingValidator) groupRecipientsByDomain(recipient string, targets 
 	if err != nil {
 		return
 	}
-	
+
 	domain := parsed.Host
 	if targets.DomainGroups[domain] == nil {
 		targets.DomainGroups[domain] = make([]string, 0)
@@ -186,23 +186,23 @@ func (v *AddressingValidator) groupRecipientsByDomain(recipient string, targets 
 
 // DeliveryTargets represents the recipients for federation delivery
 type DeliveryTargets struct {
-	DirectRecipients map[string]bool        // Individual actor inboxes
-	SharedInboxes    map[string]bool        // Shared inboxes (domain-level)
-	DomainGroups     map[string][]string    // Recipients grouped by domain for shared inbox optimization
+	DirectRecipients map[string]bool     // Individual actor inboxes
+	SharedInboxes    map[string]bool     // Shared inboxes (domain-level)
+	DomainGroups     map[string][]string // Recipients grouped by domain for shared inbox optimization
 }
 
 // GetAllRecipients returns all unique recipients
 func (dt *DeliveryTargets) GetAllRecipients() []string {
 	recipients := make([]string, 0, len(dt.DirectRecipients)+len(dt.SharedInboxes))
-	
+
 	for recipient := range dt.DirectRecipients {
 		recipients = append(recipients, recipient)
 	}
-	
+
 	for inbox := range dt.SharedInboxes {
 		recipients = append(recipients, inbox)
 	}
-	
+
 	return recipients
 }
 
@@ -211,7 +211,7 @@ func (v *AddressingValidator) IsDirectMessage(activity *Activity) bool {
 	// Direct messages have no public addressing and only specific recipients
 	hasPublic := v.hasPublicAddressing(activity)
 	hasFollowersCollection := v.hasFollowersCollection(activity)
-	
+
 	return !hasPublic && !hasFollowersCollection
 }
 
@@ -219,7 +219,7 @@ func (v *AddressingValidator) IsDirectMessage(activity *Activity) bool {
 func (v *AddressingValidator) IsPrivateMessage(activity *Activity) bool {
 	hasPublic := v.hasPublicAddressing(activity)
 	hasFollowersCollection := v.hasFollowersCollection(activity)
-	
+
 	return !hasPublic && hasFollowersCollection
 }
 
@@ -263,13 +263,13 @@ func (v *AddressingValidator) hasPublicInCC(activity *Activity) bool {
 // hasFollowersCollection checks if followers collection is addressed
 func (v *AddressingValidator) hasFollowersCollection(activity *Activity) bool {
 	allAddresses := append(append(activity.To, activity.CC...), append(activity.BTo, activity.BCC...)...)
-	
+
 	for _, addr := range allAddresses {
 		if strings.Contains(addr, "/followers") {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -277,15 +277,15 @@ func (v *AddressingValidator) hasFollowersCollection(activity *Activity) bool {
 func (v *AddressingValidator) SanitizeForDelivery(activity *Activity, excludeBTo bool) *Activity {
 	// Create a copy of the activity
 	sanitized := *activity
-	
+
 	// Always remove BCC recipients (they should never be visible)
 	sanitized.BCC = nil
-	
+
 	// Optionally remove BTo recipients (for recipients who shouldn't see them)
 	if excludeBTo {
 		sanitized.BTo = nil
 	}
-	
+
 	// If the object is a Note, sanitize it too
 	if note, ok := sanitized.Object.(*Note); ok {
 		sanitizedNote := *note
@@ -295,7 +295,7 @@ func (v *AddressingValidator) SanitizeForDelivery(activity *Activity, excludeBTo
 		}
 		sanitized.Object = &sanitizedNote
 	}
-	
+
 	return &sanitized
 }
 
@@ -307,7 +307,7 @@ func (v *AddressingValidator) ValidatePrivacyCompliance(activity *Activity) erro
 			return fmt.Errorf("direct messages cannot have public addressing")
 		}
 	}
-	
+
 	// Ensure BCC recipients are properly hidden
 	if len(activity.BCC) > 0 {
 		// BCC should not appear in any visible fields
@@ -317,7 +317,7 @@ func (v *AddressingValidator) ValidatePrivacyCompliance(activity *Activity) erro
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -329,21 +329,21 @@ func (v *AddressingValidator) isInVisibleFields(activity *Activity, recipient st
 			return true
 		}
 	}
-	
+
 	// Check CC field
 	for _, cc := range activity.CC {
 		if cc == recipient {
 			return true
 		}
 	}
-	
+
 	// BTo is also visible to the recipient (though hidden from others)
 	for _, bto := range activity.BTo {
 		if bto == recipient {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -367,35 +367,35 @@ func (v *AddressingValidator) IsFollowersOnlyMessage(activity *Activity) bool {
 	if v.hasPublicAddressing(activity) {
 		return false
 	}
-	
+
 	allRecipients := append(append(append(activity.To, activity.CC...), activity.BTo...), activity.BCC...)
-	
+
 	for _, recipient := range allRecipients {
 		if !strings.Contains(recipient, "/followers") {
 			return false
 		}
 	}
-	
+
 	return len(allRecipients) > 0
 }
 
 // GetDeliveryRecipientsForPrivacy returns recipients based on privacy level
 func (v *AddressingValidator) GetDeliveryRecipientsForPrivacy(activity *Activity, requestingActor string) []string {
 	visibility := v.GetVisibilityLevel(activity)
-	
+
 	switch visibility {
 	case "public", "unlisted":
 		// Public/unlisted: all addressing fields except BCC
 		return v.getPublicRecipients(activity)
-		
+
 	case "private":
 		// Private: only followers and explicit recipients
 		return v.getPrivateRecipients(activity, requestingActor)
-		
+
 	case "direct":
 		// Direct: only explicit recipients
 		return v.getDirectRecipients(activity, requestingActor)
-		
+
 	default:
 		// Unknown: treat as direct message for safety
 		return v.getDirectRecipients(activity, requestingActor)
@@ -416,38 +416,38 @@ func (v *AddressingValidator) getPrivateRecipients(activity *Activity, requestin
 	recipients := make([]string, 0)
 	recipients = append(recipients, activity.To...)
 	recipients = append(recipients, activity.CC...)
-	
+
 	// Include BTo only if requesting actor is a recipient
 	if v.isActorInAddressingFields(activity, requestingActor) {
 		recipients = append(recipients, activity.BTo...)
 	}
-	
+
 	return recipients
 }
 
 // getDirectRecipients returns recipients for direct messages
 func (v *AddressingValidator) getDirectRecipients(activity *Activity, requestingActor string) []string {
 	recipients := make([]string, 0)
-	
+
 	// For direct messages, only include recipients that the requesting actor should see
 	if v.isActorInAddressingFields(activity, requestingActor) {
 		recipients = append(recipients, activity.To...)
 		recipients = append(recipients, activity.CC...)
 		recipients = append(recipients, activity.BTo...)
 	}
-	
+
 	return recipients
 }
 
 // isActorInAddressingFields checks if an actor is mentioned in any addressing field
 func (v *AddressingValidator) isActorInAddressingFields(activity *Activity, actorID string) bool {
 	allRecipients := append(append(append(activity.To, activity.CC...), activity.BTo...), activity.BCC...)
-	
+
 	for _, recipient := range allRecipients {
 		if recipient == actorID {
 			return true
 		}
 	}
-	
+
 	return false
 }

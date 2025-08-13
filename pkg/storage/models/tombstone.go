@@ -12,7 +12,7 @@ type Tombstone struct {
 	SK string `dynamorm:"sk" json:"SK"` // TOMBSTONE
 
 	// GSI keys for querying tombstones by actor and type
-	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // ACTOR#{actor_id}#TOMBSTONES  
+	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // ACTOR#{actor_id}#TOMBSTONES
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // DELETED#{timestamp}
 
 	// GSI for querying tombstones by type
@@ -27,7 +27,7 @@ type Tombstone struct {
 	DeletedBy  string    `json:"deletedBy"`         // Actor who deleted it
 	Summary    string    `json:"summary,omitempty"` // Optional deletion reason
 	CreatedAt  time.Time `json:"CreatedAt"`         // When the tombstone was created
-	
+
 	// TTL field for automatic cleanup after 30 days
 	TTL int64 `dynamorm:"ttl" json:"ttl"`
 }

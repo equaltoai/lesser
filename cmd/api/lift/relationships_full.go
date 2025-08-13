@@ -187,4 +187,3 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 
 	return ctx.JSON(result.Relationships)
 }
-

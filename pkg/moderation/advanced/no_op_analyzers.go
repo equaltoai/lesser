@@ -197,8 +197,8 @@ func (n *NoOpVideoAnalyzer) AnalyzeVideo(_ context.Context, videoURL string, met
 	analysis := &VideoAnalysis{
 		VideoURL:       videoURL,
 		AnalyzedAt:     time.Now(),
-		ProcessingTime: time.Millisecond, // Very fast since we're doing nothing
-		Duration:       0,                // Unknown duration
+		ProcessingTime: time.Millisecond,  // Very fast since we're doing nothing
+		Duration:       0,                 // Unknown duration
 		Frames:         []FrameAnalysis{}, // No frames analyzed
 
 		// No audio transcription

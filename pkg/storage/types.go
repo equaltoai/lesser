@@ -29,13 +29,13 @@ type User struct {
 	Email           string                 `json:"email,omitempty"`
 	PasswordHash    string                 `json:"password_hash,omitempty"`
 	DisplayName     string                 `json:"display_name,omitempty"`
-	Note            string                 `json:"note,omitempty"`            // Bio/description
-	Avatar          string                 `json:"avatar,omitempty"`          // Avatar image URL
-	Header          string                 `json:"header,omitempty"`          // Header image URL  
-	URL             string                 `json:"url,omitempty"`             // Profile URL
-	Locked          bool                   `json:"locked"`                    // Requires approval for follows
-	Discoverable    bool                   `json:"discoverable"`              // Appears in directory
-	Fields          []map[string]string    `json:"fields,omitempty"`          // Profile metadata fields
+	Note            string                 `json:"note,omitempty"`   // Bio/description
+	Avatar          string                 `json:"avatar,omitempty"` // Avatar image URL
+	Header          string                 `json:"header,omitempty"` // Header image URL
+	URL             string                 `json:"url,omitempty"`    // Profile URL
+	Locked          bool                   `json:"locked"`           // Requires approval for follows
+	Discoverable    bool                   `json:"discoverable"`     // Appears in directory
+	Fields          []map[string]string    `json:"fields,omitempty"` // Profile metadata fields
 	CreatedAt       time.Time              `json:"created_at"`
 	UpdatedAt       time.Time              `json:"updated_at"`
 	Approved        bool                   `json:"approved"`
@@ -2017,17 +2017,17 @@ type StatusSearchOptions struct {
 
 // AuditLog represents an audit log entry for admin actions
 type AuditLog struct {
-	ID          string    `json:"id"`
-	AdminID     string    `json:"admin_id"`         // Who performed the action
-	AdminRole   string    `json:"admin_role"`       // admin or moderator
-	Action      string    `json:"action"`           // suspend, silence, resolve_report, etc.
-	TargetType  string    `json:"target_type"`      // account, status, report, domain
-	TargetID    string    `json:"target_id"`        // ID of the target
-	Reason      string    `json:"reason,omitempty"` // Reason for action
-	Details     any       `json:"details,omitempty"`// Additional details
-	IPAddress   string    `json:"ip_address,omitempty"`
-	UserAgent   string    `json:"user_agent,omitempty"`
-	RequestID   string    `json:"request_id,omitempty"`
-	Timestamp   time.Time `json:"timestamp"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	AdminID    string    `json:"admin_id"`          // Who performed the action
+	AdminRole  string    `json:"admin_role"`        // admin or moderator
+	Action     string    `json:"action"`            // suspend, silence, resolve_report, etc.
+	TargetType string    `json:"target_type"`       // account, status, report, domain
+	TargetID   string    `json:"target_id"`         // ID of the target
+	Reason     string    `json:"reason,omitempty"`  // Reason for action
+	Details    any       `json:"details,omitempty"` // Additional details
+	IPAddress  string    `json:"ip_address,omitempty"`
+	UserAgent  string    `json:"user_agent,omitempty"`
+	RequestID  string    `json:"request_id,omitempty"`
+	Timestamp  time.Time `json:"timestamp"`
+	CreatedAt  time.Time `json:"created_at"`
 }

@@ -11,7 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	
+
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 )
@@ -103,7 +103,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if user.Suspended {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
 		// Log suspended account attempt
-		as.auditLogger.LogEvent(ctx, &AuditEvent{
+		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
 			EventType:     AuditLoginSuspended,
 			Username:      username,
 			IPAddress:     ipAddress,
@@ -111,13 +111,16 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 			DeviceName:    deviceName,
 			Success:       false,
 			FailureReason: "account suspended",
-		})
+		}); err != nil {
+			// Log audit error but continue
+			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
+		}
 		return nil, ErrUserSuspended
 	}
 	if !user.Approved {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
 		// Log unapproved account attempt
-		as.auditLogger.LogEvent(ctx, &AuditEvent{
+		if err := as.auditLogger.LogEvent(ctx, &AuditEvent{
 			EventType:     AuditLoginNotApproved,
 			Username:      username,
 			IPAddress:     ipAddress,
@@ -125,7 +128,10 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 			DeviceName:    deviceName,
 			Success:       false,
 			FailureReason: "account not approved",
-		})
+		}); err != nil {
+			// Log audit error but continue
+			as.auditLogger.logger.Warn("Failed to log audit event", zap.Error(err))
+		}
 		return nil, ErrUserNotApproved
 	}
 
@@ -135,7 +141,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
 		// Log failed login - wrong password
 		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "invalid password")
-		
+
 		// Check if this might be a brute force attempt
 		if count, _ := as.rateLimiter.GetFailedAttempts(ctx, username); count >= 5 {
 			as.auditLogger.LogSecurityEvent(ctx, AuditBruteForceDetected, username, ipAddress, map[string]interface{}{
@@ -149,7 +155,7 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if err := as.rateLimiter.RecordAttempt(ctx, username, ipAddress, true); err != nil {
 		common.Logger().Error("failed to record successful login", zap.Error(err))
 	}
-	
+
 	// Log successful login
 	as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, true, "")
 

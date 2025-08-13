@@ -283,51 +283,55 @@ type MockRepositoryStorage struct {
 	accountRepo *MockAccountRepository
 }
 
-func (m *MockRepositoryStorage) Account() *repositories.AccountRepository { return nil }
-func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository { return nil }
-func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository { return nil }
-func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository { return nil }
-func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository { return nil }
+func (m *MockRepositoryStorage) Account() *repositories.AccountRepository           { return nil }
+func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository               { return nil }
+func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository             { return nil }
+func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository         { return nil }
+func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository         { return nil }
 func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository { return nil }
-func (m *MockRepositoryStorage) Like() *repositories.LikeRepository { return nil }
-func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository { return nil }
-func (m *MockRepositoryStorage) List() *repositories.ListRepository { return nil }
-func (m *MockRepositoryStorage) Media() *repositories.MediaRepository { return nil }
-func (m *MockRepositoryStorage) Poll() *repositories.PollRepository { return nil }
-func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository { return nil }
-func (m *MockRepositoryStorage) Hashtag() *repositories.HashtagRepository { return nil }
+func (m *MockRepositoryStorage) Like() *repositories.LikeRepository                 { return nil }
+func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository     { return nil }
+func (m *MockRepositoryStorage) List() *repositories.ListRepository                 { return nil }
+func (m *MockRepositoryStorage) Media() *repositories.MediaRepository               { return nil }
+func (m *MockRepositoryStorage) Poll() *repositories.PollRepository                 { return nil }
+func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository {
+	return nil
+}
+func (m *MockRepositoryStorage) Hashtag() *repositories.HashtagRepository                 { return nil }
 func (m *MockRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository { return nil }
-func (m *MockRepositoryStorage) Announcement() *repositories.AnnouncementRepository { return nil }
-func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository { return nil }
-func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository { return nil }
-func (m *MockRepositoryStorage) Instance() *repositories.InstanceRepository { return nil }
-func (m *MockRepositoryStorage) Federation() *repositories.FederationRepository { return nil }
-func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository { return nil }
-func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository { return nil }
-func (m *MockRepositoryStorage) Social() *repositories.SocialRepository { return nil }
-func (m *MockRepositoryStorage) User() *repositories.UserRepository { return nil }
-func (m *MockRepositoryStorage) Status() *repositories.StatusRepository { return nil }
-func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository { return nil }
-func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository { return nil }
-func (m *MockRepositoryStorage) Search() *repositories.SearchRepository { return nil }
-func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository { return nil }
-func (m *MockRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository { return nil }
-func (m *MockRepositoryStorage) AI() *repositories.AIRepository { return nil }
-func (m *MockRepositoryStorage) Conversation() *repositories.ConversationRepository { return nil }
-func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository { return nil }
-func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository { return nil }
-func (m *MockRepositoryStorage) Export() *repositories.ExportRepository { return nil }
-func (m *MockRepositoryStorage) Import() *repositories.ImportRepository { return nil }
-func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository { return nil }
-func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordRepository { return nil }
-func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
-func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository { return nil }
+func (m *MockRepositoryStorage) Announcement() *repositories.AnnouncementRepository       { return nil }
+func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository         { return nil }
+func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository       { return nil }
+func (m *MockRepositoryStorage) Instance() *repositories.InstanceRepository               { return nil }
+func (m *MockRepositoryStorage) Federation() *repositories.FederationRepository           { return nil }
+func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository               { return nil }
+func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository              { return nil }
+func (m *MockRepositoryStorage) Social() *repositories.SocialRepository                   { return nil }
+func (m *MockRepositoryStorage) User() *repositories.UserRepository                       { return nil }
+func (m *MockRepositoryStorage) Status() *repositories.StatusRepository                   { return nil }
+func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository               { return nil }
+func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository                     { return nil }
+func (m *MockRepositoryStorage) Search() *repositories.SearchRepository                   { return nil }
+func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository                     { return nil }
+func (m *MockRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository     { return nil }
+func (m *MockRepositoryStorage) AI() *repositories.AIRepository                           { return nil }
+func (m *MockRepositoryStorage) Conversation() *repositories.ConversationRepository       { return nil }
+func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository                   { return nil }
+func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository         { return nil }
+func (m *MockRepositoryStorage) Export() *repositories.ExportRepository                   { return nil }
+func (m *MockRepositoryStorage) Import() *repositories.ImportRepository                   { return nil }
+func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository                         { return nil }
+func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordRepository       { return nil }
+func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
+	return nil
+}
+func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository         { return nil }
 func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository { return nil }
-func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository { return nil }
+func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository         { return nil }
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }
-func (m *MockRepositoryStorage) GetTableName() string { return "test-table" }
+func (m *MockRepositoryStorage) GetTableName() string   { return "test-table" }
 func (m *MockRepositoryStorage) GetLogger() *zap.Logger { return zap.NewNop() }
 
 type MockPublisher struct {
@@ -376,13 +380,13 @@ func (m *MockPublisher) Reset() {
 
 type AccountsServiceTestSuite struct {
 	suite.Suite
-	service       *Service
-	accountRepo   *MockAccountRepository
-	publisher     *MockPublisher
-	federation    *MockFederationService
-	crypto        *MockCryptoService
-	auth          *MockAuthService
-	ctx           context.Context
+	service     *Service
+	accountRepo *MockAccountRepository
+	publisher   *MockPublisher
+	federation  *MockFederationService
+	crypto      *MockCryptoService
+	auth        *MockAuthService
+	ctx         context.Context
 }
 
 func (suite *AccountsServiceTestSuite) SetupTest() {
@@ -446,7 +450,7 @@ func (suite *AccountsServiceTestSuite) createTestAccount(username string) *stora
 
 func (suite *AccountsServiceTestSuite) TestUpdateProfile_Success() {
 	account := suite.createTestAccount("testuser")
-	
+
 	cmd := &UpdateProfileCommand{
 		Username:    "testuser",
 		DisplayName: "Updated Name",
@@ -508,7 +512,7 @@ func (suite *AccountsServiceTestSuite) TestUpdateProfile_ValidationFailure() {
 
 func (suite *AccountsServiceTestSuite) TestUpdateProfile_UnauthorizedUser() {
 	account := suite.createTestAccount("testuser")
-	
+
 	cmd := &UpdateProfileCommand{
 		Username:    "testuser",
 		DisplayName: "Updated Name",

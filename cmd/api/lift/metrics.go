@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"time"
 
+	"net/http"
+
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"net/http"
 )
 
 // HandleGetInstanceMetricsLift returns current instance metrics

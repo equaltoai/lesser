@@ -26,12 +26,15 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -123,27 +126,27 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		}
 		query.TimelineType = "home"
 	case model.TimelineTypePublic:
-		query.TimelineType = "public"
+		query.TimelineType = StreamNamePublic
 	case model.TimelineTypeLocal:
 		query.TimelineType = "local"
 	case model.TimelineTypeHashtag:
 		if hashtag == nil || *hashtag == "" {
 			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
 		}
-		query.TimelineType = "hashtag"
+		query.TimelineType = TimelineTypeHashtag
 		query.Hashtag = *hashtag
 	case model.TimelineTypeList:
 		if listID == nil || *listID == "" {
 			return nil, fmt.Errorf("listId parameter required for list timeline")
 		}
-		query.TimelineType = "list"
+		query.TimelineType = TimelineTypeList
 		// List timeline is handled differently - need to get list members
 		// and fetch their posts
 	case model.TimelineTypeDirect:
 		if username == "" {
 			return nil, fmt.Errorf("authentication required for direct timeline")
 		}
-		query.TimelineType = "direct"
+		query.TimelineType = TimelineTypeDirect
 	default:
 		return nil, fmt.Errorf("unsupported timeline type: %v", timelineType)
 	}
@@ -619,7 +622,7 @@ func (r *queryResolver) Suggestions(ctx context.Context, limit *int) ([]*model.A
 		source := s.Source
 		suggestions[i] = &model.AccountSuggestion{
 			Account: s.Account.Actor,
-			Source:  model.SuggestionSource(s.Source),
+			Source:  r.convertSuggestionSource(s.Source),
 			Reason:  &source, // Use source as reason
 		}
 	}
@@ -652,7 +655,7 @@ func (r *queryResolver) RemoveSuggestion(ctx context.Context, accountID string) 
 // Search is the resolver for the search field.
 func (r *queryResolver) Search(ctx context.Context, query string, searchType *string, first *int, after *model.Cursor) (*model.SearchResult, error) {
 
-	searchQuery := &search.SearchQuery{
+	searchQuery := &search.Query{
 		Query: query,
 		Type:  "all",
 		Limit: 20,
@@ -1279,7 +1282,7 @@ func (r *mutationResolver) CreateList(ctx context.Context, input model.CreateLis
 	if input.RepliesPolicy != nil {
 		cmd.RepliesPolicy = string(*input.RepliesPolicy)
 	} else {
-		cmd.RepliesPolicy = "list"
+		cmd.RepliesPolicy = TimelineTypeList
 	}
 
 	// Note: Exclusive field doesn't exist in CreateListCommand
@@ -1399,7 +1402,7 @@ func (r *mutationResolver) AddAccountsToList(ctx context.Context, id string, acc
 		return nil, fmt.Errorf("failed to get updated list: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(len(accountIDs))
+	_ = r.CostTracker.TrackDynamoWrite(len(accountIDs))
 	return r.convertListToGraphQL(ctx, list), nil
 }
 
@@ -1443,7 +1446,7 @@ func (r *mutationResolver) RemoveAccountsFromList(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to get updated list: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(len(accountIDs))
+	_ = r.CostTracker.TrackDynamoWrite(len(accountIDs))
 	return r.convertListToGraphQL(ctx, list), nil
 }
 
@@ -1576,7 +1579,7 @@ func (r *mutationResolver) ClearNotifications(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("failed to clear notifications: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(int(result.ClearedCount))
+	_ = r.CostTracker.TrackDynamoWrite(int(result.ClearedCount))
 	return true, nil
 }
 
@@ -1745,9 +1748,7 @@ func (r *mutationResolver) CreateEmoji(ctx context.Context, input model.CreateEm
 	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
 		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
 	}
-	if err := r.CostTracker.TrackS3Put(1); err != nil {
-		r.Logger.Warn("Failed to track S3 put cost", zap.Error(err))
-	}
+	r.CostTracker.TrackS3Put(1)
 	return r.convertEmojiToGraphQL(result.Emoji), nil
 }
 
@@ -1912,55 +1913,65 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType model.TimelineType, listID *string) (<-chan *model.Object, error) {
 	username := r.optionalAuth(ctx)
 	
-	// Validate timeline type
-	if timelineType == model.TimelineTypeHome && username == "" {
-		return nil, fmt.Errorf("authentication required for home timeline")
-	}
-	if timelineType == model.TimelineTypeList && (listID == nil || *listID == "") {
-		return nil, fmt.Errorf("listId required for list timeline")
+	if err := r.validateTimelineRequest(timelineType, username, listID); err != nil {
+		return nil, err
 	}
 	
-	// Create channel for streaming
 	ch := make(chan *model.Object, 100)
-	
 	r.Logger.Info("Timeline updates subscription started",
 		zap.String("user", username),
 		zap.String("type", string(timelineType)))
 	
-	// Get internal EventBus from registry for advanced filtering
+	internalEventBus, err := r.getEventBusForTimeline()
+	if err != nil {
+		close(ch)
+		return ch, err
+	}
+	
+	filter := r.createTimelineFilter(timelineType, username, listID)
+	subscriber, err := r.subscribeToTimelineEvents(internalEventBus, timelineType, username, filter)
+	if err != nil {
+		close(ch)
+		return ch, err
+	}
+	
+	r.startTimelineEventForwarding(ctx, ch, subscriber)
+	return ch, nil
+}
+
+// validateTimelineRequest validates the timeline subscription request
+func (r *subscriptionResolver) validateTimelineRequest(timelineType model.TimelineType, username string, listID *string) error {
+	if timelineType == model.TimelineTypeHome && username == "" {
+		return fmt.Errorf("authentication required for home timeline")
+	}
+	if timelineType == model.TimelineTypeList && (listID == nil || *listID == "") {
+		return fmt.Errorf("listId required for list timeline")
+	}
+	return nil
+}
+
+// getEventBusForTimeline gets and validates the event bus for timeline subscriptions
+func (r *subscriptionResolver) getEventBusForTimeline() (*streaming.EventBus, error) {
 	registryEventBus := r.Registry.EventBus()
 	if registryEventBus == nil {
 		r.Logger.Error("EventBus not available for TimelineUpdates subscription")
-		close(ch)
-		return ch, fmt.Errorf("event bus not available")
+		return nil, fmt.Errorf("event bus not available")
 	}
 	
-	// Access the internal event bus for advanced filtering
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available or not running")
-		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return nil, fmt.Errorf("internal event bus not available")
 	}
 	
-	// Determine stream name based on timeline type
-	var streamNames []string
-	switch timelineType {
-	case model.TimelineTypeHome:
-		streamNames = []string{fmt.Sprintf("user:%s", username)}
-	case model.TimelineTypePublic:
-		streamNames = []string{"public"}
-	case model.TimelineTypeLocal:
-		streamNames = []string{"public:local"}
-	case model.TimelineTypeList:
-		if listID != nil {
-			streamNames = []string{fmt.Sprintf("list:%s", *listID)}
-		}
-	default:
-		streamNames = []string{"public"}
-	}
+	return internalEventBus, nil
+}
+
+// createTimelineFilter creates the event filter for timeline subscriptions
+func (r *subscriptionResolver) createTimelineFilter(timelineType model.TimelineType, username string, listID *string) *streaming.EventFilter {
+	streamNames := r.getStreamNamesForTimeline(timelineType, username, listID)
 	
-	filter := &streaming.EventFilter{
+	return &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeStatus,
 			streaming.EventTypeStatusUpdate,
@@ -1969,16 +1980,39 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 		Streams: streamNames,
 		UserID:  username,
 	}
-	
-	// Subscribe to internal event bus
-	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("timeline_%s_%s_%d", string(timelineType), username, time.Now().UnixNano()), filter, 100)
+}
+
+// getStreamNamesForTimeline determines stream names based on timeline type
+func (r *subscriptionResolver) getStreamNamesForTimeline(timelineType model.TimelineType, username string, listID *string) []string {
+	switch timelineType {
+	case model.TimelineTypeHome:
+		return []string{fmt.Sprintf("user:%s", username)}
+	case model.TimelineTypePublic:
+		return []string{"public"}
+	case model.TimelineTypeLocal:
+		return []string{"public:local"}
+	case model.TimelineTypeList:
+		if listID != nil {
+			return []string{fmt.Sprintf("list:%s", *listID)}
+		}
+		fallthrough
+	default:
+		return []string{"public"}
+	}
+}
+
+// subscribeToTimelineEvents subscribes to the event bus for timeline events
+func (r *subscriptionResolver) subscribeToTimelineEvents(eventBus *streaming.EventBus, timelineType model.TimelineType, username string, filter *streaming.EventFilter) (*streaming.Subscriber, error) {
+	subscriber, err := eventBus.Subscribe(fmt.Sprintf("timeline_%s_%s_%d", string(timelineType), username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for TimelineUpdates", zap.Error(err))
-		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
 	}
-	
-	// Start forwarding events
+	return subscriber, nil
+}
+
+// startTimelineEventForwarding starts the goroutine that forwards events from subscriber to channel
+func (r *subscriptionResolver) startTimelineEventForwarding(ctx context.Context, ch chan *model.Object, subscriber *streaming.Subscriber) {
 	go func() {
 		defer func() {
 			close(ch)
@@ -1994,17 +2028,9 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 					return
 				}
 				
-				// Convert internal event to Object
 				object := r.convertEventToObject(event)
 				if object != nil {
-					select {
-					case ch <- object:
-					case <-ctx.Done():
-						return
-					default:
-						// Drop event if channel is full
-						r.Logger.Warn("Dropping timeline event - channel full", zap.String("event_id", event.ID))
-					}
+					r.sendTimelineObject(ctx, ch, object, event.ID)
 				}
 				
 			case <-subscriber.Quit:
@@ -2014,8 +2040,17 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 			}
 		}
 	}()
-	
-	return ch, nil
+}
+
+// sendTimelineObject sends a timeline object to the channel with proper error handling
+func (r *subscriptionResolver) sendTimelineObject(ctx context.Context, ch chan *model.Object, object *model.Object, eventID string) {
+	select {
+	case ch <- object:
+	case <-ctx.Done():
+		return
+	default:
+		r.Logger.Warn("Dropping timeline event - channel full", zap.String("event_id", eventID))
+	}
 }
 
 // NotificationStream is the resolver for the notificationStream field.
@@ -2025,47 +2060,68 @@ func (r *subscriptionResolver) NotificationStream(ctx context.Context, types []s
 		return nil, err
 	}
 	
-	// Create channel for streaming
 	ch := make(chan *model.Notification, 100)
-	
 	r.Logger.Info("Notification stream subscription started",
 		zap.String("user", username),
 		zap.Int("typeCount", len(types)))
 	
-	// Get internal EventBus from registry for advanced filtering
+	internalEventBus, err := r.getEventBusForNotifications()
+	if err != nil {
+		close(ch)
+		return ch, err
+	}
+	
+	filter := r.createNotificationFilter(username)
+	subscriber, err := r.subscribeToNotificationEvents(internalEventBus, username, filter)
+	if err != nil {
+		close(ch)
+		return ch, err
+	}
+	
+	r.startNotificationEventForwarding(ctx, ch, subscriber, types)
+	return ch, nil
+}
+
+// getEventBusForNotifications gets and validates the event bus for notification subscriptions
+func (r *subscriptionResolver) getEventBusForNotifications() (*streaming.EventBus, error) {
 	registryEventBus := r.Registry.EventBus()
 	if registryEventBus == nil {
 		r.Logger.Error("EventBus not available for NotificationStream subscription")
-		close(ch)
-		return ch, fmt.Errorf("event bus not available")
+		return nil, fmt.Errorf("event bus not available")
 	}
 	
-	// Access the internal event bus for advanced filtering
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available or not running")
-		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return nil, fmt.Errorf("internal event bus not available")
 	}
 	
-	// Create filter for notification events
-	filter := &streaming.EventFilter{
+	return internalEventBus, nil
+}
+
+// createNotificationFilter creates the event filter for notification subscriptions
+func (r *subscriptionResolver) createNotificationFilter(username string) *streaming.EventFilter {
+	return &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeNotification,
 		},
 		Streams: []string{fmt.Sprintf("user:notification:%s", username)},
 		UserID:  username,
 	}
-	
-	// Subscribe to internal event bus
-	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano()), filter, 100)
+}
+
+// subscribeToNotificationEvents subscribes to the event bus for notification events
+func (r *subscriptionResolver) subscribeToNotificationEvents(eventBus *streaming.EventBus, username string, filter *streaming.EventFilter) (*streaming.Subscriber, error) {
+	subscriber, err := eventBus.Subscribe(fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for NotificationStream", zap.Error(err))
-		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
 	}
-	
-	// Start forwarding events
+	return subscriber, nil
+}
+
+// startNotificationEventForwarding starts the goroutine that forwards events from subscriber to channel
+func (r *subscriptionResolver) startNotificationEventForwarding(ctx context.Context, ch chan *model.Notification, subscriber *streaming.Subscriber, types []string) {
 	go func() {
 		defer func() {
 			close(ch)
@@ -2081,20 +2137,9 @@ func (r *subscriptionResolver) NotificationStream(ctx context.Context, types []s
 					return
 				}
 				
-				// Convert internal event to Notification
 				notification := r.convertEventToNotification(event)
-				if notification != nil {
-					// Apply type filter if specified
-					if len(types) == 0 || r.notificationMatchesTypes(notification, types) {
-						select {
-						case ch <- notification:
-						case <-ctx.Done():
-							return
-						default:
-							// Drop event if channel is full
-							r.Logger.Warn("Dropping notification event - channel full", zap.String("event_id", event.ID))
-						}
-					}
+				if notification != nil && r.shouldSendNotification(notification, types) {
+					r.sendNotification(ctx, ch, notification, event.ID)
 				}
 				
 			case <-subscriber.Quit:
@@ -2104,8 +2149,22 @@ func (r *subscriptionResolver) NotificationStream(ctx context.Context, types []s
 			}
 		}
 	}()
-	
-	return ch, nil
+}
+
+// shouldSendNotification checks if notification matches the type filter
+func (r *subscriptionResolver) shouldSendNotification(notification *model.Notification, types []string) bool {
+	return len(types) == 0 || r.notificationMatchesTypes(notification, types)
+}
+
+// sendNotification sends a notification to the channel with proper error handling
+func (r *subscriptionResolver) sendNotification(ctx context.Context, ch chan *model.Notification, notification *model.Notification, eventID string) {
+	select {
+	case ch <- notification:
+	case <-ctx.Done():
+		return
+	default:
+		r.Logger.Warn("Dropping notification event - channel full", zap.String("event_id", eventID))
+	}
 }
 
 // ConversationUpdates is the resolver for the conversationUpdates field.
@@ -2367,7 +2426,7 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 // ====================================================================
 
 // InstanceMetrics is the resolver for the instanceMetrics field.
-func (r *queryResolver) InstanceMetrics(ctx context.Context) (*model.InstanceMetrics, error) {
+func (r *queryResolver) InstanceMetrics(_ context.Context) (*model.InstanceMetrics, error) {
 	// Get actual metrics from storage
 	var activeUsers int
 	var storageUsed float64
@@ -2404,7 +2463,7 @@ func (r *queryResolver) InstanceMetrics(ctx context.Context) (*model.InstanceMet
 }
 
 // CostBreakdown is the resolver for the costBreakdown field.
-func (r *queryResolver) CostBreakdown(ctx context.Context, period *model.Period) (*model.CostBreakdown, error) {
+func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (*model.CostBreakdown, error) {
 	p := model.PeriodDay
 	if period != nil {
 		p = *period
@@ -2672,13 +2731,13 @@ func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput
 }
 
 // AddCommunityNote is the resolver for the addCommunityNote field.
-func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.CommunityNoteInput) (*model.CommunityNotePayload, error) {
+func (r *mutationResolver) AddCommunityNote(_ context.Context, _ model.CommunityNoteInput) (*model.CommunityNotePayload, error) {
 	// TODO: Implement community notes
 	return nil, fmt.Errorf("community notes not yet implemented")
 }
 
 // VoteCommunityNote is the resolver for the voteCommunityNote field.
-func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, helpful bool) (*model.CommunityNote, error) {
+func (r *mutationResolver) VoteCommunityNote(_ context.Context, _ string, _ bool) (*model.CommunityNote, error) {
 	// TODO: Implement community note voting
 	return nil, fmt.Errorf("community notes not yet implemented")
 }
@@ -2914,11 +2973,11 @@ func (r *Resolver) convertScheduledStatusToGraphQL(ctx context.Context, ss *stor
 
 	visibility := model.VisibilityPublic
 	switch strings.ToLower(ss.Visibility) {
-	case "unlisted":
+	case VisibilityUnlisted:
 		visibility = model.VisibilityUnlisted
-	case "followers", "private":
+	case EventTypeFollowers, VisibilityPrivate:
 		visibility = model.VisibilityFollowers
-	case "direct":
+	case TimelineTypeDirect:
 		visibility = model.VisibilityDirect
 	}
 
@@ -3081,7 +3140,7 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		switch note.Visibility {
 		case "unlisted":
 			visibility = model.VisibilityUnlisted
-		case "private", "followers":
+		case "private", EventTypeFollowers:
 			visibility = model.VisibilityFollowers
 		case "direct":
 			visibility = model.VisibilityDirect
@@ -3155,7 +3214,7 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 	switch status.Visibility {
 	case "unlisted":
 		visibility = model.VisibilityUnlisted
-	case "private", "followers":
+	case "private", EventTypeFollowers:
 		visibility = model.VisibilityFollowers
 	case "direct":
 		visibility = model.VisibilityDirect
@@ -3331,18 +3390,18 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 }
 
 // ModerationQueue is the resolver for the moderationQueue field.
-func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *model.Cursor) ([]*moderation.ModerationDecision, error) {
+func (r *queryResolver) ModerationQueue(_ context.Context, _ *int, _ *model.Cursor) ([]*moderation.ModerationDecision, error) {
 	// TODO: Implement moderation queue
 	return []*moderation.ModerationDecision{}, nil
 }
 
 // ExplainObject is the resolver for the explainObject field.
-func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.ObjectExplanation, error) {
+func (r *queryResolver) ExplainObject(_ context.Context, _ string) (*model.ObjectExplanation, error) {
 	return nil, fmt.Errorf("object explanation not yet implemented")
 }
 
 // FederationStatus is the resolver for the federationStatus field.
-func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*model.FederationStatus, error) {
+func (r *queryResolver) FederationStatus(_ context.Context, _ string) (*model.FederationStatus, error) {
 	return nil, fmt.Errorf("federation status not yet implemented")
 }
 
@@ -3438,10 +3497,10 @@ func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*mode
 
 	// Convert moderation actions map to struct
 	moderationActions := &model.ModerationActionCounts{
-		None:      stats.ModerationActions["none"],
+		None:      stats.ModerationActions[NoneValue],
 		Flag:      stats.ModerationActions["flag"],
-		Hide:      stats.ModerationActions["hide"],
-		Remove:    stats.ModerationActions["remove"],
+		Hide:      stats.ModerationActions[ModerationActionHide],
+		Remove:    stats.ModerationActions[ModerationActionRemove],
 		ShadowBan: stats.ModerationActions["shadowban"],
 		Review:    stats.ModerationActions["review"],
 	}
@@ -3468,7 +3527,7 @@ func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*mode
 }
 
 // AiCapabilities is the resolver for the aiCapabilities field.
-func (r *queryResolver) AiCapabilities(ctx context.Context) (*model.AICapabilities, error) {
+func (r *queryResolver) AiCapabilities(_ context.Context) (*model.AICapabilities, error) {
 	// Return the AI capabilities of this instance
 	return &model.AICapabilities{
 		TextAnalysis: &model.TextAnalysisCapabilities{
@@ -3491,7 +3550,7 @@ func (r *queryResolver) AiCapabilities(ctx context.Context) (*model.AICapabiliti
 			PatternAnalysis:    true,
 			StyleConsistency:   true,
 		},
-		ModerationActions: []string{"flag", "hide", "reject", "quarantine"},
+		ModerationActions: []string{"flag", ModerationActionHide, "reject", "quarantine"},
 		CostPerAnalysis: &model.CostBreakdown{
 			Period:           model.PeriodMonth,
 			TotalCost:        0.001,
@@ -3519,7 +3578,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 	}
 
 	// Default values
-	objType := "status"
+	objType := TimelineTypeStatus
 	if objectType != nil {
 		objType = *objectType
 	}
@@ -3558,7 +3617,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 }
 
 // OptimizeFederationCosts implements MutationResolver.
-func (r *mutationResolver) OptimizeFederationCosts(ctx context.Context, targetAmount float64) (*model.CostOptimizationResult, error) {
+func (r *mutationResolver) OptimizeFederationCosts(_ context.Context, targetAmount float64) (*model.CostOptimizationResult, error) {
 	// Run optimization logic
 	// This would analyze current federation costs and find optimizations
 	
@@ -3571,20 +3630,20 @@ func (r *mutationResolver) OptimizeFederationCosts(ctx context.Context, targetAm
 				Domain:     "federation",
 				Action:     "Enable remote profile caching",
 				SavingsUsd: targetAmount * 0.08,
-				Impact:     "low",
+				Impact:     SeverityLow,
 			},
 			{
 				Domain:     "federation",
 				Action:     "Reduce polling frequency",
 				SavingsUsd: targetAmount * 0.07,
-				Impact:     "medium",
+				Impact:     SeverityMedium,
 			},
 		},
 	}, nil
 }
 
 // SetFederationLimit implements MutationResolver.
-func (r *mutationResolver) SetFederationLimit(ctx context.Context, domain string, limit model.FederationLimitInput) (*model.FederationLimit, error) {
+func (r *mutationResolver) SetFederationLimit(_ context.Context, domain string, _ model.FederationLimitInput) (*model.FederationLimit, error) {
 	// Set federation limits for a domain
 	// Create federation limit from input
 	now := model.Time(time.Now())
@@ -3601,7 +3660,7 @@ func (r *mutationResolver) SetFederationLimit(ctx context.Context, domain string
 }
 
 // PauseFederation implements MutationResolver.
-func (r *mutationResolver) PauseFederation(ctx context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) PauseFederation(_ context.Context, domain string, reason string, until *model.Time) (*model.FederationManagementStatus, error) {
 	// Pause federation with a domain
 	return &model.FederationManagementStatus{
 		Domain:      domain,
@@ -3613,7 +3672,7 @@ func (r *mutationResolver) PauseFederation(ctx context.Context, domain string, r
 }
 
 // ResumeFederation implements MutationResolver.
-func (r *mutationResolver) ResumeFederation(ctx context.Context, domain string) (*model.FederationManagementStatus, error) {
+func (r *mutationResolver) ResumeFederation(_ context.Context, domain string) (*model.FederationManagementStatus, error) {
 	// Resume federation with a domain
 	return &model.FederationManagementStatus{
 		Domain:      domain,
@@ -3625,7 +3684,7 @@ func (r *mutationResolver) ResumeFederation(ctx context.Context, domain string) 
 }
 
 // FederationFlow implements QueryResolver.
-func (r *queryResolver) FederationFlow(ctx context.Context, period model.TimePeriod) (*model.FederationFlow, error) {
+func (r *queryResolver) FederationFlow(_ context.Context, _ model.TimePeriod) (*model.FederationFlow, error) {
 	// Get federation flow data for the period
 	// This would query federation activity statistics
 	
@@ -3639,7 +3698,7 @@ func (r *queryResolver) FederationFlow(ctx context.Context, period model.TimePer
 }
 
 // FederationHealth implements QueryResolver.
-func (r *queryResolver) FederationHealth(ctx context.Context, threshold *float64) ([]*model.FederationManagementStatus, error) {
+func (r *queryResolver) FederationHealth(_ context.Context, _ *float64) ([]*model.FederationManagementStatus, error) {
 	// Check health of federated instances
 	// This would monitor federation connectivity and performance
 	
@@ -3648,7 +3707,7 @@ func (r *queryResolver) FederationHealth(ctx context.Context, threshold *float64
 }
 
 // FederationLimits implements QueryResolver.
-func (r *queryResolver) FederationLimits(ctx context.Context, active *bool, first *int, after *string) ([]*model.FederationLimit, error) {
+func (r *queryResolver) FederationLimits(_ context.Context, _ *bool, first *int, after *string) ([]*model.FederationLimit, error) {
 	// Get federation limits for all domains
 	// This would retrieve configured limits with pagination
 	_ = first
@@ -3659,7 +3718,7 @@ func (r *queryResolver) FederationLimits(ctx context.Context, active *bool, firs
 }
 
 // Hashtag implements QueryResolver.
-func (r *queryResolver) Hashtag(ctx context.Context, name string) (*model.Hashtag, error) {
+func (r *queryResolver) Hashtag(_ context.Context, name string) (*model.Hashtag, error) {
 	// Get hashtag details
 	return &model.Hashtag{
 		Name: name,
@@ -3668,7 +3727,7 @@ func (r *queryResolver) Hashtag(ctx context.Context, name string) (*model.Hashta
 }
 
 // HashtagTimeline implements QueryResolver.
-func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, first *int, after *string) (*model.PostConnection, error) {
+func (r *queryResolver) HashtagTimeline(_ context.Context, _ string, _ *int, _ *string) (*model.PostConnection, error) {
 	// Get posts with the specified hashtag
 	return &model.PostConnection{
 		Edges:    []*model.PostEdge{},
@@ -3680,7 +3739,7 @@ func (r *queryResolver) HashtagTimeline(ctx context.Context, hashtag string, fir
 }
 
 // MultiHashtagTimeline implements QueryResolver.
-func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []string, mode model.HashtagMode, first *int, after *string) (*model.PostConnection, error) {
+func (r *queryResolver) MultiHashtagTimeline(_ context.Context, _ []string, _ model.HashtagMode, _ *int, _ *string) (*model.PostConnection, error) {
 	// Get posts with multiple hashtags
 	return &model.PostConnection{
 		Edges:    []*model.PostEdge{},
@@ -3692,13 +3751,13 @@ func (r *queryResolver) MultiHashtagTimeline(ctx context.Context, hashtags []str
 }
 
 // SuggestedHashtags implements QueryResolver.
-func (r *queryResolver) SuggestedHashtags(ctx context.Context, limit *int) ([]*model.HashtagSuggestion, error) {
+func (r *queryResolver) SuggestedHashtags(_ context.Context, _ *int) ([]*model.HashtagSuggestion, error) {
 	// Get suggested hashtags
 	return []*model.HashtagSuggestion{}, nil
 }
 
 // FollowedHashtags implements QueryResolver.
-func (r *queryResolver) FollowedHashtags(ctx context.Context, first *int, after *string) (*model.HashtagConnection, error) {
+func (r *queryResolver) FollowedHashtags(ctx context.Context, _ *int, _ *string) (*model.HashtagConnection, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -3814,13 +3873,13 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 }
 
 // SlowQueries implements QueryResolver.
-func (r *queryResolver) SlowQueries(ctx context.Context, threshold model.Duration) ([]*model.QueryPerformance, error) {
+func (r *queryResolver) SlowQueries(_ context.Context, _ model.Duration) ([]*model.QueryPerformance, error) {
 	// Get slow database queries
 	return []*model.QueryPerformance{}, nil
 }
 
 // FederationMap implements QueryResolver.
-func (r *queryResolver) FederationMap(ctx context.Context, depth *int) (*model.FederationGraph, error) {
+func (r *queryResolver) FederationMap(_ context.Context, _ *int) (*model.FederationGraph, error) {
 	// Generate a map of federation connections
 	// This would analyze federation relationships
 	
@@ -3833,7 +3892,7 @@ func (r *queryResolver) FederationMap(ctx context.Context, depth *int) (*model.F
 }
 
 // TrainModerationModel implements MutationResolver.
-func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*model.ModerationSample) (*model.TrainingResult, error) {
+func (r *mutationResolver) TrainModerationModel(_ context.Context, _ []*model.ModerationSample) (*model.TrainingResult, error) {
 	// Train a moderation model with provided samples
 	return &model.TrainingResult{
 		Success:      true,
@@ -3845,7 +3904,7 @@ func (r *mutationResolver) TrainModerationModel(ctx context.Context, samples []*
 }
 
 // SetInstanceBudget implements MutationResolver.
-func (r *mutationResolver) SetInstanceBudget(ctx context.Context, domain string, monthlyUSD float64, autoLimit *bool) (*model.InstanceBudget, error) {
+func (r *mutationResolver) SetInstanceBudget(_ context.Context, domain string, monthlyUSD float64, autoLimit *bool) (*model.InstanceBudget, error) {
 	// Set budget limit for an instance
 	autoLimitEnabled := false
 	if autoLimit != nil {
@@ -3884,40 +3943,63 @@ func (r *Resolver) convertToTextAnalysis(results map[string]interface{}) *modera
 }
 
 func (r *Resolver) convertToImageAnalysis(results map[string]interface{}) *moderation.ImageAnalysis {
-	if imageData, ok := results["image"].(map[string]interface{}); ok {
-		analysis := &moderation.ImageAnalysis{}
-		
-		// Convert moderation labels from the actual data
-		if labels, ok := imageData["moderation_labels"].([]interface{}); ok {
-			for _, label := range labels {
-				if labelMap, ok := label.(map[string]interface{}); ok {
-					modLabel := &moderation.ModerationLabel{}
-					if name, ok := labelMap["name"].(string); ok {
-						modLabel.Name = name
-					}
-					if confidence, ok := labelMap["confidence"].(float64); ok {
-						modLabel.Confidence = float32(confidence)
-					}
-					if parentName, ok := labelMap["parent_name"].(string); ok {
-						modLabel.ParentName = parentName
-					}
-					analysis.ModerationLabels = append(analysis.ModerationLabels, modLabel)
-				}
-			}
-		}
-		
-		// Get detected text from actual data
-		if detectedText, ok := imageData["detected_text"].([]interface{}); ok {
-			for _, text := range detectedText {
-				if textStr, ok := text.(string); ok {
-					analysis.DetectedText = append(analysis.DetectedText, textStr)
-				}
-			}
-		}
-		
-		return analysis
+	imageData, ok := results["image"].(map[string]interface{})
+	if !ok {
+		return nil
 	}
-	return nil
+	
+	analysis := &moderation.ImageAnalysis{}
+	r.extractModerationLabels(imageData, analysis)
+	r.extractDetectedText(imageData, analysis)
+	return analysis
+}
+
+// extractModerationLabels extracts moderation labels from image data
+func (r *Resolver) extractModerationLabels(imageData map[string]interface{}, analysis *moderation.ImageAnalysis) {
+	labels, ok := imageData["moderation_labels"].([]interface{})
+	if !ok {
+		return
+	}
+	
+	for _, label := range labels {
+		if modLabel := r.convertToModerationLabel(label); modLabel != nil {
+			analysis.ModerationLabels = append(analysis.ModerationLabels, modLabel)
+		}
+	}
+}
+
+// convertToModerationLabel converts a label interface to ModerationLabel
+func (r *Resolver) convertToModerationLabel(label interface{}) *moderation.ModerationLabel {
+	labelMap, ok := label.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	
+	modLabel := &moderation.ModerationLabel{}
+	if name, ok := labelMap["name"].(string); ok {
+		modLabel.Name = name
+	}
+	if confidence, ok := labelMap["confidence"].(float64); ok {
+		modLabel.Confidence = float32(confidence)
+	}
+	if parentName, ok := labelMap["parent_name"].(string); ok {
+		modLabel.ParentName = parentName
+	}
+	return modLabel
+}
+
+// extractDetectedText extracts detected text from image data
+func (r *Resolver) extractDetectedText(imageData map[string]interface{}, analysis *moderation.ImageAnalysis) {
+	detectedText, ok := imageData["detected_text"].([]interface{})
+	if !ok {
+		return
+	}
+	
+	for _, text := range detectedText {
+		if textStr, ok := text.(string); ok {
+			analysis.DetectedText = append(analysis.DetectedText, textStr)
+		}
+	}
 }
 
 func (r *Resolver) convertToAIDetection(results map[string]interface{}) *model.AIDetection {
@@ -3935,56 +4017,79 @@ func (r *Resolver) convertToAIDetection(results map[string]interface{}) *model.A
 }
 
 func (r *Resolver) convertToSpamAnalysis(results map[string]interface{}) *model.SpamAnalysis {
-	if spamData, ok := results["spam"].(map[string]interface{}); ok {
-		analysis := &model.SpamAnalysis{}
-		
-		// Get spam score from actual data
-		if score, ok := spamData["score"].(float64); ok {
-			analysis.SpamScore = score
-		}
-		
-		// Convert spam indicators from actual data
-		if indicators, ok := spamData["indicators"].([]interface{}); ok {
-			for _, indicator := range indicators {
-				if indMap, ok := indicator.(map[string]interface{}); ok {
-					spamInd := &model.SpamIndicator{}
-					if indType, ok := indMap["type"].(string); ok {
-						spamInd.Type = indType
-					}
-					if severity, ok := indMap["severity"].(float64); ok {
-						spamInd.Severity = severity
-					}
-					if description, ok := indMap["description"].(string); ok {
-						spamInd.Description = description
-					}
-					analysis.SpamIndicators = append(analysis.SpamIndicators, spamInd)
-				}
-			}
-		}
-		
-		// Get other spam metrics from actual data
-		if velocity, ok := spamData["posting_velocity"].(float64); ok {
-			analysis.PostingVelocity = velocity
-		}
-		if repetition, ok := spamData["repetition_score"].(float64); ok {
-			analysis.RepetitionScore = repetition
-		}
-		if linkDensity, ok := spamData["link_density"].(float64); ok {
-			analysis.LinkDensity = linkDensity
-		}
-		if followerRatio, ok := spamData["follower_ratio"].(float64); ok {
-			analysis.FollowerRatio = followerRatio
-		}
-		if interactionRate, ok := spamData["interaction_rate"].(float64); ok {
-			analysis.InteractionRate = interactionRate
-		}
-		if accountAge, ok := spamData["account_age_days"].(float64); ok {
-			analysis.AccountAgeDays = int(accountAge)
-		}
-		
-		return analysis
+	spamData, ok := results["spam"].(map[string]interface{})
+	if !ok {
+		return nil
 	}
-	return nil
+	
+	analysis := &model.SpamAnalysis{}
+	r.extractSpamScore(spamData, analysis)
+	r.extractSpamIndicators(spamData, analysis)
+	r.extractSpamMetrics(spamData, analysis)
+	return analysis
+}
+
+// extractSpamScore extracts the spam score from spam data
+func (r *Resolver) extractSpamScore(spamData map[string]interface{}, analysis *model.SpamAnalysis) {
+	if score, ok := spamData["score"].(float64); ok {
+		analysis.SpamScore = score
+	}
+}
+
+// extractSpamIndicators extracts spam indicators from spam data
+func (r *Resolver) extractSpamIndicators(spamData map[string]interface{}, analysis *model.SpamAnalysis) {
+	indicators, ok := spamData["indicators"].([]interface{})
+	if !ok {
+		return
+	}
+	
+	for _, indicator := range indicators {
+		if spamInd := r.convertToSpamIndicator(indicator); spamInd != nil {
+			analysis.SpamIndicators = append(analysis.SpamIndicators, spamInd)
+		}
+	}
+}
+
+// convertToSpamIndicator converts an indicator interface to SpamIndicator
+func (r *Resolver) convertToSpamIndicator(indicator interface{}) *model.SpamIndicator {
+	indMap, ok := indicator.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	
+	spamInd := &model.SpamIndicator{}
+	if indType, ok := indMap["type"].(string); ok {
+		spamInd.Type = indType
+	}
+	if severity, ok := indMap["severity"].(float64); ok {
+		spamInd.Severity = severity
+	}
+	if description, ok := indMap["description"].(string); ok {
+		spamInd.Description = description
+	}
+	return spamInd
+}
+
+// extractSpamMetrics extracts various spam metrics from spam data
+func (r *Resolver) extractSpamMetrics(spamData map[string]interface{}, analysis *model.SpamAnalysis) {
+	if velocity, ok := spamData["posting_velocity"].(float64); ok {
+		analysis.PostingVelocity = velocity
+	}
+	if repetition, ok := spamData["repetition_score"].(float64); ok {
+		analysis.RepetitionScore = repetition
+	}
+	if linkDensity, ok := spamData["link_density"].(float64); ok {
+		analysis.LinkDensity = linkDensity
+	}
+	if followerRatio, ok := spamData["follower_ratio"].(float64); ok {
+		analysis.FollowerRatio = followerRatio
+	}
+	if interactionRate, ok := spamData["interaction_rate"].(float64); ok {
+		analysis.InteractionRate = interactionRate
+	}
+	if accountAge, ok := spamData["account_age_days"].(float64); ok {
+		analysis.AccountAgeDays = int(accountAge)
+	}
 }
 
 // getBudgetAlertLevel determines the alert level based on budget usage
@@ -4041,11 +4146,11 @@ func (r *Resolver) convertQualityBandwidth(metrics map[string]interface{}) []*mo
 			switch strings.ToUpper(qualityStr) {
 			case "AUTO":
 				quality = model.StreamQualityAuto
-			case "LOW":
+			case AlertLevelLow:
 				quality = model.StreamQualityLow
-			case "MEDIUM":
+			case AlertLevelMedium:
 				quality = model.StreamQualityMedium
-			case "HIGH":
+			case AlertLevelHigh:
 				quality = model.StreamQualityHigh
 			case "ULTRA":
 				quality = model.StreamQualityUltra
@@ -4103,7 +4208,7 @@ func (r *Resolver) convertHourlyBandwidth(metrics []interface{}) []*model.Hourly
 }
 
 // ModerationDashboard returns the moderation dashboard data
-func (r *queryResolver) ModerationDashboard(ctx context.Context, filter *moderation.ModerationFilter) (*model.ModerationDashboard, error) {
+func (r *queryResolver) ModerationDashboard(_ context.Context, _ *moderation.ModerationFilter) (*model.ModerationDashboard, error) {
 	// For now, return a basic dashboard with empty data
 	// TODO: Implement real moderation dashboard queries
 	return &model.ModerationDashboard{
@@ -4117,7 +4222,7 @@ func (r *queryResolver) ModerationDashboard(ctx context.Context, filter *moderat
 }
 
 // ModerationEffectiveness returns moderation pattern effectiveness data
-func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID string, period model.Period) (*model.ModerationEffectiveness, error) {
+func (r *queryResolver) ModerationEffectiveness(_ context.Context, patternID string, _ model.Period) (*model.ModerationEffectiveness, error) {
 	// For now, return empty effectiveness data
 	// TODO: Implement real moderation effectiveness queries based on period
 	return &model.ModerationEffectiveness{
@@ -4133,7 +4238,7 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 }
 
 // ModerationPatterns returns moderation patterns
-func (r *queryResolver) ModerationPatterns(ctx context.Context, active *bool, severity *model.ModerationSeverity, first *int, after *string) ([]*moderation.ModerationPattern, error) {
+func (r *queryResolver) ModerationPatterns(_ context.Context, _ *bool, _ *model.ModerationSeverity, _ *int, _ *string) ([]*moderation.ModerationPattern, error) {
 	// For now, return empty patterns data
 	// TODO: Implement real moderation patterns queries
 	return []*moderation.ModerationPattern{}, nil
@@ -4142,7 +4247,7 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, active *bool, se
 // ModeratorActivity returns moderator activity statistics
 func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID string, period model.TimePeriod) (*model.ModeratorStats, error) {
 	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
@@ -4198,7 +4303,7 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 		
 		// Check severity for overturned estimation (high severity less likely to be overturned)
 		// Convert severity string to numeric value for comparison
-		if event.Severity == "low" || event.Severity == "medium" {
+		if event.Severity == SeverityLow || event.Severity == SeverityMedium {
 			// Low and medium severity decisions might be overturned more often
 			overturnedCount++
 		}
@@ -4249,7 +4354,7 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 // PerformanceMetrics returns performance metrics for a service
 func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.ServiceCategory) (*model.PerformanceReport, error) {
 	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
@@ -4403,7 +4508,7 @@ func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
 // SeveredRelationships returns severed federation relationships
 func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *string, first *int, after *string) (*model.SeveredRelationshipConnection, error) {
 	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
@@ -4448,7 +4553,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 			switch affected.Direction {
 			case "follower":
 				affectedFollowers++
-			case "following":
+			case RelationshipFollowing:
 				affectedFollowing++
 			case "mutual":
 				affectedFollowers++
@@ -4523,7 +4628,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 }
 
 // PopularStreams returns popular streaming endpoints
-func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *string) (*model.StreamConnection, error) {
+func (r *queryResolver) PopularStreams(_ context.Context, _ int, _ *string) (*model.StreamConnection, error) {
 	// TODO: Implement real popular streams queries
 	return &model.StreamConnection{
 		Edges:      []*model.StreamEdge{},
@@ -4538,7 +4643,7 @@ func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *st
 // PatternEffectiveness returns pattern effectiveness statistics
 func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID string) (*model.PatternStats, error) {
 	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
@@ -4626,7 +4731,7 @@ func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID stri
 }
 
 // SupportedBitrates returns supported bitrates for a media item
-func (r *queryResolver) SupportedBitrates(ctx context.Context, mediaID string) ([]*model.Bitrate, error) {
+func (r *queryResolver) SupportedBitrates(_ context.Context, _ string) ([]*model.Bitrate, error) {
 	// For now, return empty list as we don't have real streaming bitrate data yet
 	// TODO: Implement real bitrate options when media streaming is active
 	return []*model.Bitrate{}, nil
@@ -4634,115 +4739,112 @@ func (r *queryResolver) SupportedBitrates(ctx context.Context, mediaID string) (
 
 // ThreadContext returns the context of a thread
 func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*model.ThreadContext, error) {
-	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
 	
-	// Fetch the actual status/note to get thread information
 	statusRepo := storage.Status()
 	if statusRepo == nil {
 		return nil, fmt.Errorf("status repository not available")
 	}
 	
-	// Get the main status
 	status, err := statusRepo.GetStatus(ctx, noteID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
 	
-	// Get thread replies
+	replies, err := r.getThreadReplies(ctx, statusRepo, noteID)
+	if err != nil {
+		return nil, err
+	}
+	
+	engagement, err := r.calculateEngagementMetrics(ctx, storage, noteID)
+	if err != nil {
+		return nil, err
+	}
+	
+	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies)
+	rootNote := r.createRootNoteObject(status, replies, engagement)
+	syncStatus := r.determineSyncStatus(replies)
+	
+	return &model.ThreadContext{
+		RootNote:         rootNote,
+		ReplyCount:       len(replies),
+		ParticipantCount: len(threadMetrics.participants),
+		LastActivity:     model.Time(threadMetrics.lastActivity),
+		MissingPosts:     threadMetrics.missingPosts,
+		SyncStatus:       syncStatus,
+	}, nil
+}
+
+// threadMetrics holds calculated thread metrics
+type threadMetrics struct {
+	participants []string
+	lastActivity time.Time
+	missingPosts int
+	maxDepth     int
+}
+
+// engagementMetrics holds engagement data
+type engagementMetrics struct {
+	likeCount   int64
+	reblogCount int
+}
+
+// getThreadReplies fetches thread replies with error handling
+func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo *repositories.StatusRepository, noteID string) ([]*models.Status, error) {
 	paginationOpts := interfaces.PaginationOptions{
 		Limit:  100,
 		Cursor: "",
 	}
+	
 	repliesResult, err := statusRepo.GetReplies(ctx, noteID, paginationOpts)
 	if err != nil {
 		r.Logger.Warn("failed to get replies", zap.String("note_id", noteID), zap.Error(err))
-		repliesResult = &interfaces.PaginatedResult[*models.Status]{
-			Items:      []*models.Status{},
-			NextCursor: "",
-		}
+		return []*models.Status{}, nil
 	}
-	replies := repliesResult.Items
 	
-	// Get engagement metrics
+	return repliesResult.Items, nil
+}
+
+// calculateEngagementMetrics calculates like and reblog counts
+func (r *queryResolver) calculateEngagementMetrics(ctx context.Context, storage core.RepositoryStorage, noteID string) (*engagementMetrics, error) {
 	likeRepo := storage.Like()
-	likeCount := int64(0)
+	engagement := &engagementMetrics{}
+	
 	if likeRepo != nil {
-		// Use GetLikeCount for efficient counting
-		count, err := likeRepo.GetLikeCount(ctx, noteID)
-		if err == nil {
-			likeCount = count
+		if count, err := likeRepo.GetLikeCount(ctx, noteID); err == nil {
+			engagement.likeCount = count
+		}
+		if count, err := likeRepo.GetBoostCount(ctx, noteID); err == nil {
+			engagement.reblogCount = int(count)
 		}
 	}
 	
-	// Calculate thread metrics
+	return engagement, nil
+}
+
+// calculateThreadMetrics calculates various thread metrics
+func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo *repositories.StatusRepository, status *models.Status, replies []*models.Status) *threadMetrics {
 	participants := make(map[string]bool)
 	var lastActivity time.Time
 	missingPosts := 0
 	replyIDs := make(map[string]bool)
 	maxDepth := 0
 	
-	// Add original author
-	if status.AuthorUsername != "" {
-		participants[status.AuthorUsername] = true
-	}
-	if status.PublishedAt.After(lastActivity) {
-		lastActivity = status.PublishedAt
-	}
+	// Process original status
+	r.processOriginalStatus(status, participants, &lastActivity)
 	
-	// Track the original post's parent if it exists (to check if it's missing)
+	// Check for missing parent
 	if status.InReplyToID != "" {
-		// Try to fetch the parent to see if it still exists
-		parent, err := statusRepo.GetStatus(ctx, status.InReplyToID)
-		if err != nil || parent == nil || parent.Deleted {
-			missingPosts++ // Parent is missing or deleted
-		}
+		missingPosts += r.checkMissingParent(ctx, statusRepo, status.InReplyToID)
 	}
 	
-	// Process replies to calculate metrics and check for missing references
+	// Process replies
 	for _, reply := range replies {
-		replyIDs[reply.StatusID] = true
-		
-		if reply.AuthorUsername != "" {
-			participants[reply.AuthorUsername] = true
-		}
-		
-		// Track last activity
-		if reply.PublishedAt.After(lastActivity) {
-			lastActivity = reply.PublishedAt
-		}
-		
-		// Calculate depth if this is a nested reply
-		if reply.InReplyToID == noteID {
-			if 1 > maxDepth {
-				maxDepth = 1
-			}
-		}
-		
-		// Check if this reply references another reply that we don't have
-		if reply.InReplyToID != "" && reply.InReplyToID != noteID {
-			// This reply is responding to another reply in the thread
-			if !replyIDs[reply.InReplyToID] {
-				// The referenced reply is not in our results - it might be deleted or missing
-				referencedReply, err := statusRepo.GetStatus(ctx, reply.InReplyToID)
-				if err != nil || referencedReply == nil || referencedReply.Deleted {
-					missingPosts++ // Referenced post is missing or deleted
-				}
-			}
-		}
-		
-		// Note: Time intervals could be calculated here if needed for analytics
+		r.processReply(ctx, statusRepo, reply, participants, &lastActivity, &maxDepth, replyIDs, &missingPosts, status.StatusID)
 	}
-	
-	// Check for gaps in the conversation by looking at reply chains
-	// Note: We don't have access to mentioned_status_ids in the current model
-	// so we can only check for directly referenced replies
-	
-	// Note: Average interval and branching factor are calculated but not used
-	// in the current ThreadContext model. These could be exposed if needed.
 	
 	// Convert participants map to slice
 	participantList := make([]string, 0, len(participants))
@@ -4750,21 +4852,65 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		participantList = append(participantList, p)
 	}
 	
-	// Get reblog/boost count
-	reblogCount := 0
-	if likeRepo != nil {
-		count, err := likeRepo.GetBoostCount(ctx, noteID)
-		if err == nil {
-			reblogCount = int(count)
-		}
+	return &threadMetrics{
+		participants: participantList,
+		lastActivity: lastActivity,
+		missingPosts: missingPosts,
+		maxDepth:     maxDepth,
+	}
+}
+
+// processOriginalStatus processes the original status for metrics
+func (r *queryResolver) processOriginalStatus(status *models.Status, participants map[string]bool, lastActivity *time.Time) {
+	if status.AuthorUsername != "" {
+		participants[status.AuthorUsername] = true
+	}
+	if status.PublishedAt.After(*lastActivity) {
+		*lastActivity = status.PublishedAt
+	}
+}
+
+// checkMissingParent checks if the parent status exists
+func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo *repositories.StatusRepository, parentID string) int {
+	parent, err := statusRepo.GetStatus(ctx, parentID)
+	if err != nil || parent == nil || parent.Deleted {
+		return 1 // Parent is missing or deleted
+	}
+	return 0
+}
+
+// processReply processes a single reply for metrics calculation
+func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositories.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string) {
+	replyIDs[reply.StatusID] = true
+	
+	if reply.AuthorUsername != "" {
+		participants[reply.AuthorUsername] = true
 	}
 	
-	// Check if there are more replies beyond our limit
-	hasMore := len(replies) >= 100
+	if reply.PublishedAt.After(*lastActivity) {
+		*lastActivity = reply.PublishedAt
+	}
 	
-	// Create the root note object
-	rootNote := &model.Object{
-		ID:      noteID,
+	// Calculate depth for direct replies
+	if reply.InReplyToID == noteID && 1 > *maxDepth {
+		*maxDepth = 1
+	}
+	
+	// Check for missing referenced replies
+	if reply.InReplyToID != "" && reply.InReplyToID != noteID {
+		if !replyIDs[reply.InReplyToID] {
+			referencedReply, err := statusRepo.GetStatus(ctx, reply.InReplyToID)
+			if err != nil || referencedReply == nil || referencedReply.Deleted {
+				*missingPosts++
+			}
+		}
+	}
+}
+
+// createRootNoteObject creates the root note object for the thread context
+func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*models.Status, engagement *engagementMetrics) *model.Object {
+	return &model.Object{
+		ID:      status.StatusID,
 		Type:    model.ObjectTypeNote,
 		Content: status.Content,
 		Actor: &activitypub.Actor{
@@ -4780,36 +4926,29 @@ func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*mode
 		CreatedAt:     model.Time(status.PublishedAt),
 		UpdatedAt:     model.Time(status.UpdatedAt),
 		RepliesCount:  len(replies),
-		LikesCount:    int(likeCount),
-		SharesCount:   reblogCount,
-		Visibility:    model.VisibilityPublic, // Default visibility
+		LikesCount:    int(engagement.likeCount),
+		SharesCount:   engagement.reblogCount,
+		Visibility:    model.VisibilityPublic,
 		Sensitive:     false,
 		Attachments:   []*activitypub.Attachment{},
 		Tags:          []*activitypub.Tag{},
 		Mentions:      []*model.Mention{},
 		ContentMap:    []*model.ContentMap{},
 	}
-	
-	// Determine sync status
-	syncStatus := model.SyncStatusComplete
-	if hasMore {
-		syncStatus = model.SyncStatusPartial
+}
+
+// determineSyncStatus determines the sync status based on replies
+func (r *queryResolver) determineSyncStatus(replies []*models.Status) model.SyncStatus {
+	if len(replies) >= 100 {
+		return model.SyncStatusPartial
 	}
-	
-	return &model.ThreadContext{
-		RootNote:         rootNote,
-		ReplyCount:       len(replies),
-		ParticipantCount: len(participantList),
-		LastActivity:     model.Time(lastActivity),
-		MissingPosts:     missingPosts,
-		SyncStatus:       syncStatus,
-	}, nil
+	return model.SyncStatusComplete
 }
 
 // StreamingAnalytics returns streaming analytics for a media item
-func (r *queryResolver) StreamingAnalytics(ctx context.Context, mediaID string) (*model.StreamingAnalytics, error) {
+func (r *queryResolver) StreamingAnalytics(_ context.Context, _ string) (*model.StreamingAnalytics, error) {
 	// Get storage from resolver
-	storage := r.Resolver.Storage
+	storage := r.Storage
 	if storage == nil {
 		return nil, fmt.Errorf("storage not available")
 	}
@@ -4895,7 +5034,7 @@ func (r *attachmentResolver) extractMediaIDFromURL(url string) (string, error) {
 // ====================================================================
 
 // Avatar implements ActorResolver
-func (r *actorResolver) Avatar(ctx context.Context, obj *activitypub.Actor) (*string, error) {
+func (r *actorResolver) Avatar(_ context.Context, obj *activitypub.Actor) (*string, error) {
 	if obj.Icon == nil || obj.Icon.URL == "" {
 		return nil, nil
 	}
@@ -4903,7 +5042,7 @@ func (r *actorResolver) Avatar(ctx context.Context, obj *activitypub.Actor) (*st
 }
 
 // Header implements ActorResolver
-func (r *actorResolver) Header(ctx context.Context, obj *activitypub.Actor) (*string, error) {
+func (r *actorResolver) Header(_ context.Context, obj *activitypub.Actor) (*string, error) {
 	if obj.Image == nil || obj.Image.URL == "" {
 		return nil, nil
 	}
@@ -4911,28 +5050,28 @@ func (r *actorResolver) Header(ctx context.Context, obj *activitypub.Actor) (*st
 }
 
 // Followers implements ActorResolver
-func (r *actorResolver) Followers(ctx context.Context, obj *activitypub.Actor) (int, error) {
+func (r *actorResolver) Followers(_ context.Context, _ *activitypub.Actor) (int, error) {
 	// Return estimated count - actual counts would require pagination
 	// TODO: Add count methods to repositories
 	return 0, nil
 }
 
 // Following implements ActorResolver
-func (r *actorResolver) Following(ctx context.Context, obj *activitypub.Actor) (int, error) {
+func (r *actorResolver) Following(_ context.Context, _ *activitypub.Actor) (int, error) {
 	// Return estimated count - actual counts would require pagination  
 	// TODO: Add count methods to repositories
 	return 0, nil
 }
 
 // StatusesCount implements ActorResolver
-func (r *actorResolver) StatusesCount(ctx context.Context, obj *activitypub.Actor) (int, error) {
+func (r *actorResolver) StatusesCount(_ context.Context, _ *activitypub.Actor) (int, error) {
 	// Return estimated count - actual counts would require pagination
 	// TODO: Add count methods to repositories
 	return 0, nil
 }
 
 // Bot implements ActorResolver
-func (r *actorResolver) Bot(ctx context.Context, obj *activitypub.Actor) (bool, error) {
+func (r *actorResolver) Bot(_ context.Context, obj *activitypub.Actor) (bool, error) {
 	// Check if actor is marked as bot
 	if obj.Type == "Service" {
 		return true, nil
@@ -4942,12 +5081,12 @@ func (r *actorResolver) Bot(ctx context.Context, obj *activitypub.Actor) (bool, 
 }
 
 // Locked implements ActorResolver
-func (r *actorResolver) Locked(ctx context.Context, obj *activitypub.Actor) (bool, error) {
+func (r *actorResolver) Locked(_ context.Context, obj *activitypub.Actor) (bool, error) {
 	return obj.ManuallyApprovesFollowers, nil
 }
 
 // CreatedAt implements ActorResolver
-func (r *actorResolver) CreatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error) {
+func (r *actorResolver) CreatedAt(_ context.Context, obj *activitypub.Actor) (*model.Time, error) {
 	if obj.Published == nil {
 		return nil, nil
 	}
@@ -4956,7 +5095,7 @@ func (r *actorResolver) CreatedAt(ctx context.Context, obj *activitypub.Actor) (
 }
 
 // UpdatedAt implements ActorResolver
-func (r *actorResolver) UpdatedAt(ctx context.Context, obj *activitypub.Actor) (*model.Time, error) {
+func (r *actorResolver) UpdatedAt(_ context.Context, _ *activitypub.Actor) (*model.Time, error) {
 	// Return current time as updated time since we don't track it
 	// TODO: Store and return actual update time
 	t := model.Time(time.Now())
@@ -4964,7 +5103,7 @@ func (r *actorResolver) UpdatedAt(ctx context.Context, obj *activitypub.Actor) (
 }
 
 // Fields implements ActorResolver
-func (r *actorResolver) Fields(ctx context.Context, obj *activitypub.Actor) ([]*model.Field, error) {
+func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*model.Field, error) {
 	if len(obj.Attachment) == 0 {
 		return []*model.Field{}, nil
 	}
@@ -5037,19 +5176,19 @@ func (r *actorResolver) Reputation(ctx context.Context, obj *activitypub.Actor) 
 }
 
 // Vouches implements ActorResolver
-func (r *actorResolver) Vouches(ctx context.Context, obj *activitypub.Actor) ([]*model.Vouch, error) {
+func (r *actorResolver) Vouches(_ context.Context, _ *activitypub.Actor) ([]*model.Vouch, error) {
 	// Return empty vouches for now
 	// TODO: Implement vouches when trust service is available
 	return []*model.Vouch{}, nil
 }
 
 // Username implements ActorResolver
-func (r *actorResolver) Username(ctx context.Context, obj *activitypub.Actor) (string, error) {
+func (r *actorResolver) Username(_ context.Context, obj *activitypub.Actor) (string, error) {
 	return obj.PreferredUsername, nil
 }
 
 // Domain implements ActorResolver
-func (r *actorResolver) Domain(ctx context.Context, obj *activitypub.Actor) (*string, error) {
+func (r *actorResolver) Domain(_ context.Context, obj *activitypub.Actor) (*string, error) {
 	if obj.ID == "" {
 		return nil, nil
 	}
@@ -5062,7 +5201,7 @@ func (r *actorResolver) Domain(ctx context.Context, obj *activitypub.Actor) (*st
 }
 
 // DisplayName implements ActorResolver
-func (r *actorResolver) DisplayName(ctx context.Context, obj *activitypub.Actor) (*string, error) {
+func (r *actorResolver) DisplayName(_ context.Context, obj *activitypub.Actor) (*string, error) {
 	if obj.Name == "" {
 		return nil, nil
 	}
@@ -5074,15 +5213,20 @@ func (r *actorResolver) DisplayName(ctx context.Context, obj *activitypub.Actor)
 // ====================================================================
 
 // ID implements AttachmentResolver
-func (r *attachmentResolver) ID(ctx context.Context, obj *activitypub.Attachment) (string, error) {
+func (r *attachmentResolver) ID(_ context.Context, obj *activitypub.Attachment) (string, error) {
 	if obj.URL != "" {
+		// Extract media ID from URL using helper function
+		if mediaID, err := r.extractMediaIDFromURL(obj.URL); err == nil {
+			return mediaID, nil
+		}
+		// Fallback to full URL if extraction fails
 		return obj.URL, nil
 	}
 	return "", nil
 }
 
 // Preview implements AttachmentResolver
-func (r *attachmentResolver) Preview(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
+func (r *attachmentResolver) Preview(_ context.Context, obj *activitypub.Attachment) (*string, error) {
 	// Return URL as preview since Attachment doesn't have PreviewURL field
 	if obj.URL != "" {
 		return &obj.URL, nil
@@ -5091,7 +5235,7 @@ func (r *attachmentResolver) Preview(ctx context.Context, obj *activitypub.Attac
 }
 
 // Description implements AttachmentResolver
-func (r *attachmentResolver) Description(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
+func (r *attachmentResolver) Description(_ context.Context, obj *activitypub.Attachment) (*string, error) {
 	if obj.Name != "" {
 		return &obj.Name, nil
 	}
@@ -5099,14 +5243,14 @@ func (r *attachmentResolver) Description(ctx context.Context, obj *activitypub.A
 }
 
 // Blurhash implements AttachmentResolver
-func (r *attachmentResolver) Blurhash(ctx context.Context, obj *activitypub.Attachment) (*string, error) {
+func (r *attachmentResolver) Blurhash(_ context.Context, _ *activitypub.Attachment) (*string, error) {
 	// Attachment doesn't have Blurhash field, return nil for now
 	// TODO: Store blurhash separately and retrieve it
 	return nil, nil
 }
 
 // Duration implements AttachmentResolver
-func (r *attachmentResolver) Duration(ctx context.Context, obj *activitypub.Attachment) (*float64, error) {
+func (r *attachmentResolver) Duration(_ context.Context, _ *activitypub.Attachment) (*float64, error) {
 	// Duration not stored in Attachment, return nil
 	// TODO: Store duration metadata separately
 	return nil, nil
@@ -5117,7 +5261,7 @@ func (r *attachmentResolver) Duration(ctx context.Context, obj *activitypub.Atta
 // ====================================================================
 
 // IsNsfw implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) IsNsfw(ctx context.Context, obj *moderation.ImageAnalysis) (bool, error) {
+func (r *imageAnalysisResolver) IsNsfw(_ context.Context, obj *moderation.ImageAnalysis) (bool, error) {
 	// Check moderation labels for NSFW content
 	for _, label := range obj.ModerationLabels {
 		if label != nil && (label.Name == "Explicit Nudity" || label.Name == "Suggestive") && label.Confidence > 0.7 {
@@ -5128,7 +5272,7 @@ func (r *imageAnalysisResolver) IsNsfw(ctx context.Context, obj *moderation.Imag
 }
 
 // NsfwConfidence implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) NsfwConfidence(ctx context.Context, obj *moderation.ImageAnalysis) (float64, error) {
+func (r *imageAnalysisResolver) NsfwConfidence(_ context.Context, obj *moderation.ImageAnalysis) (float64, error) {
 	// Return highest confidence from NSFW-related labels
 	var maxConfidence float64
 	for _, label := range obj.ModerationLabels {
@@ -5142,7 +5286,7 @@ func (r *imageAnalysisResolver) NsfwConfidence(ctx context.Context, obj *moderat
 }
 
 // ViolenceScore implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) ViolenceScore(ctx context.Context, obj *moderation.ImageAnalysis) (float64, error) {
+func (r *imageAnalysisResolver) ViolenceScore(_ context.Context, obj *moderation.ImageAnalysis) (float64, error) {
 	// Check for violence-related labels
 	var maxScore float64
 	for _, label := range obj.ModerationLabels {
@@ -5156,7 +5300,7 @@ func (r *imageAnalysisResolver) ViolenceScore(ctx context.Context, obj *moderati
 }
 
 // WeaponsDetected implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) WeaponsDetected(ctx context.Context, obj *moderation.ImageAnalysis) (bool, error) {
+func (r *imageAnalysisResolver) WeaponsDetected(_ context.Context, obj *moderation.ImageAnalysis) (bool, error) {
 	// Check for weapon-related labels
 	for _, label := range obj.ModerationLabels {
 		if label != nil && label.Name == "Weapons" && label.Confidence > 0.5 {
@@ -5167,20 +5311,20 @@ func (r *imageAnalysisResolver) WeaponsDetected(ctx context.Context, obj *modera
 }
 
 // TextToxicity implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) TextToxicity(ctx context.Context, obj *moderation.ImageAnalysis) (float64, error) {
+func (r *imageAnalysisResolver) TextToxicity(_ context.Context, _ *moderation.ImageAnalysis) (float64, error) {
 	// Return default toxicity score
 	// TODO: Implement proper text toxicity analysis
 	return 0.0, nil
 }
 
 // CelebrityFaces implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) CelebrityFaces(ctx context.Context, obj *moderation.ImageAnalysis) ([]*model.Celebrity, error) {
+func (r *imageAnalysisResolver) CelebrityFaces(_ context.Context, _ *moderation.ImageAnalysis) ([]*model.Celebrity, error) {
 	// No celebrity faces in the base ImageAnalysis struct
 	return []*model.Celebrity{}, nil
 }
 
 // DeepfakeScore implements ImageAnalysisResolver
-func (r *imageAnalysisResolver) DeepfakeScore(ctx context.Context, obj *moderation.ImageAnalysis) (float64, error) {
+func (r *imageAnalysisResolver) DeepfakeScore(_ context.Context, obj *moderation.ImageAnalysis) (float64, error) {
 	// Check if deepfake-related labels exist
 	for _, label := range obj.ModerationLabels {
 		if label != nil && (strings.Contains(strings.ToLower(label.Name), "deepfake") || 
@@ -5252,19 +5396,19 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 }
 
 // Decision implements ModerationDecisionResolver
-func (r *moderationDecisionResolver) Decision(ctx context.Context, obj *moderation.ModerationDecision) (string, error) {
+func (r *moderationDecisionResolver) Decision(_ context.Context, obj *moderation.ModerationDecision) (string, error) {
 	// Return action as decision since ModerationDecision doesn't have Decision field
 	return string(obj.Action), nil
 }
 
 // Confidence implements ModerationDecisionResolver
-func (r *moderationDecisionResolver) Confidence(ctx context.Context, obj *moderation.ModerationDecision) (float64, error) {
+func (r *moderationDecisionResolver) Confidence(_ context.Context, _ *moderation.ModerationDecision) (float64, error) {
 	// Return default confidence since field doesn't exist
 	return 0.8, nil
 }
 
 // Evidence implements ModerationDecisionResolver
-func (r *moderationDecisionResolver) Evidence(ctx context.Context, obj *moderation.ModerationDecision) ([]string, error) {
+func (r *moderationDecisionResolver) Evidence(_ context.Context, obj *moderation.ModerationDecision) ([]string, error) {
 	// Return reason as evidence since Evidence field doesn't exist
 	if obj.Reason != "" {
 		return []string{obj.Reason}, nil
@@ -5273,14 +5417,14 @@ func (r *moderationDecisionResolver) Evidence(ctx context.Context, obj *moderati
 }
 
 // Reviewers implements ModerationDecisionResolver
-func (r *moderationDecisionResolver) Reviewers(ctx context.Context, obj *moderation.ModerationDecision) ([]*activitypub.Actor, error) {
+func (r *moderationDecisionResolver) Reviewers(_ context.Context, _ *moderation.ModerationDecision) ([]*activitypub.Actor, error) {
 	// Return empty list for now
 	// TODO: Implement proper reviewer retrieval
 	return []*activitypub.Actor{}, nil
 }
 
 // Timestamp implements ModerationDecisionResolver
-func (r *moderationDecisionResolver) Timestamp(ctx context.Context, obj *moderation.ModerationDecision) (*model.Time, error) {
+func (r *moderationDecisionResolver) Timestamp(_ context.Context, obj *moderation.ModerationDecision) (*model.Time, error) {
 	// Use Decided as timestamp
 	t := model.Time(obj.Decided)
 	return &t, nil
@@ -5291,7 +5435,7 @@ func (r *moderationDecisionResolver) Timestamp(ctx context.Context, obj *moderat
 // ====================================================================
 
 // Confidence implements ModerationLabelResolver
-func (r *moderationLabelResolver) Confidence(ctx context.Context, obj *moderation.ModerationLabel) (float64, error) {
+func (r *moderationLabelResolver) Confidence(_ context.Context, obj *moderation.ModerationLabel) (float64, error) {
 	return float64(obj.Confidence), nil
 }
 
@@ -5300,13 +5444,13 @@ func (r *moderationLabelResolver) Confidence(ctx context.Context, obj *moderatio
 // ====================================================================
 
 // Pattern implements ModerationPatternResolver
-func (r *moderationPatternResolver) Pattern(ctx context.Context, obj *moderation.ModerationPattern) (string, error) {
+func (r *moderationPatternResolver) Pattern(_ context.Context, obj *moderation.ModerationPattern) (string, error) {
 	// Use Content field as pattern
 	return obj.Content, nil
 }
 
 // Type implements ModerationPatternResolver
-func (r *moderationPatternResolver) Type(ctx context.Context, obj *moderation.ModerationPattern) (model.PatternType, error) {
+func (r *moderationPatternResolver) Type(_ context.Context, obj *moderation.ModerationPattern) (model.PatternType, error) {
 	// Convert string type to model.PatternType
 	switch obj.Type {
 	case "regex":
@@ -5321,16 +5465,16 @@ func (r *moderationPatternResolver) Type(ctx context.Context, obj *moderation.Mo
 }
 
 // Severity implements ModerationPatternResolver
-func (r *moderationPatternResolver) Severity(ctx context.Context, obj *moderation.ModerationPattern) (model.ModerationSeverity, error) {
+func (r *moderationPatternResolver) Severity(_ context.Context, obj *moderation.ModerationPattern) (model.ModerationSeverity, error) {
 	// Convert string severity to model.ModerationSeverity
 	switch obj.Severity {
-	case "low":
+	case SeverityLow:
 		return model.ModerationSeverityLow, nil
-	case "medium":
+	case SeverityMedium:
 		return model.ModerationSeverityMedium, nil
-	case "high":
+	case SeverityHigh:
 		return model.ModerationSeverityHigh, nil
-	case "critical":
+	case HealthStatusCritical:
 		return model.ModerationSeverityCritical, nil
 	default:
 		return model.ModerationSeverityLow, nil
@@ -5338,7 +5482,7 @@ func (r *moderationPatternResolver) Severity(ctx context.Context, obj *moderatio
 }
 
 // FalsePositiveRate implements ModerationPatternResolver
-func (r *moderationPatternResolver) FalsePositiveRate(ctx context.Context, obj *moderation.ModerationPattern) (float64, error) {
+func (r *moderationPatternResolver) FalsePositiveRate(_ context.Context, obj *moderation.ModerationPattern) (float64, error) {
 	// Calculate false positive rate from counts
 	if obj.MatchCount > 0 {
 		return float64(obj.FalsePositiveCount) / float64(obj.MatchCount), nil
@@ -5347,19 +5491,19 @@ func (r *moderationPatternResolver) FalsePositiveRate(ctx context.Context, obj *
 }
 
 // CreatedAt implements ModerationPatternResolver
-func (r *moderationPatternResolver) CreatedAt(ctx context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
+func (r *moderationPatternResolver) CreatedAt(_ context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
 	t := model.Time(obj.CreatedAt)
 	return &t, nil
 }
 
 // UpdatedAt implements ModerationPatternResolver
-func (r *moderationPatternResolver) UpdatedAt(ctx context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
+func (r *moderationPatternResolver) UpdatedAt(_ context.Context, obj *moderation.ModerationPattern) (*model.Time, error) {
 	t := model.Time(obj.UpdatedAt)
 	return &t, nil
 }
 
 // CreatedBy implements ModerationPatternResolver
-func (r *moderationPatternResolver) CreatedBy(ctx context.Context, obj *moderation.ModerationPattern) (*activitypub.Actor, error) {
+func (r *moderationPatternResolver) CreatedBy(_ context.Context, _ *moderation.ModerationPattern) (*activitypub.Actor, error) {
 	// Return nil for now - would need proper actor retrieval
 	return nil, nil
 }
@@ -5369,7 +5513,7 @@ func (r *moderationPatternResolver) CreatedBy(ctx context.Context, obj *moderati
 // ====================================================================
 
 // OriginalAuthor implements QuoteContextResolver
-func (r *quoteContextResolver) OriginalAuthor(ctx context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
+func (r *quoteContextResolver) OriginalAuthor(_ context.Context, obj *activitypub.QuoteContext) (*activitypub.Actor, error) {
 	// Create minimal actor from OriginalAuthor field
 	if obj.OriginalAuthor != "" {
 		return &activitypub.Actor{
@@ -5380,25 +5524,25 @@ func (r *quoteContextResolver) OriginalAuthor(ctx context.Context, obj *activity
 }
 
 // OriginalNote implements QuoteContextResolver
-func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypub.QuoteContext) (*model.Object, error) {
+func (r *quoteContextResolver) OriginalNote(_ context.Context, _ *activitypub.QuoteContext) (*model.Object, error) {
 	// Return nil for now - would need proper object retrieval
 	return nil, nil
 }
 
 // QuoteAllowed implements QuoteContextResolver
-func (r *quoteContextResolver) QuoteAllowed(ctx context.Context, obj *activitypub.QuoteContext) (bool, error) {
+func (r *quoteContextResolver) QuoteAllowed(_ context.Context, _ *activitypub.QuoteContext) (bool, error) {
 	// Default to true since no explicit field
 	return true, nil
 }
 
 // QuoteType implements QuoteContextResolver
-func (r *quoteContextResolver) QuoteType(ctx context.Context, obj *activitypub.QuoteContext) (model.QuoteType, error) {
-	// Default to "quote" type since no explicit field
-	return "quote", nil
+func (r *quoteContextResolver) QuoteType(_ context.Context, _ *activitypub.QuoteContext) (model.QuoteType, error) {
+	// Default to QuoteType type since no explicit field
+	return QuoteType, nil
 }
 
 // Withdrawn implements QuoteContextResolver
-func (r *quoteContextResolver) Withdrawn(ctx context.Context, obj *activitypub.QuoteContext) (bool, error) {
+func (r *quoteContextResolver) Withdrawn(_ context.Context, _ *activitypub.QuoteContext) (bool, error) {
 	// Default to false since no explicit field
 	return false, nil
 }
@@ -5408,7 +5552,7 @@ func (r *quoteContextResolver) Withdrawn(ctx context.Context, obj *activitypub.Q
 // ====================================================================
 
 // URL implements TagResolver
-func (r *tagResolver) URL(ctx context.Context, obj *activitypub.Tag) (string, error) {
+func (r *tagResolver) URL(_ context.Context, obj *activitypub.Tag) (string, error) {
 	if obj.Href != "" {
 		return obj.Href, nil
 	}
@@ -5425,7 +5569,7 @@ func (r *tagResolver) URL(ctx context.Context, obj *activitypub.Tag) (string, er
 // ====================================================================
 
 // Sentiment implements TextAnalysisResolver
-func (r *textAnalysisResolver) Sentiment(ctx context.Context, obj *moderation.TextAnalysis) (model.Sentiment, error) {
+func (r *textAnalysisResolver) Sentiment(_ context.Context, obj *moderation.TextAnalysis) (model.Sentiment, error) {
 	// Get sentiment from nested Sentiment field if available
 	if obj.Sentiment != nil {
 		switch obj.Sentiment.Sentiment {
@@ -5443,7 +5587,7 @@ func (r *textAnalysisResolver) Sentiment(ctx context.Context, obj *moderation.Te
 }
 
 // SentimentScores implements TextAnalysisResolver
-func (r *textAnalysisResolver) SentimentScores(ctx context.Context, obj *moderation.TextAnalysis) (*model.SentimentScores, error) {
+func (r *textAnalysisResolver) SentimentScores(_ context.Context, obj *moderation.TextAnalysis) (*model.SentimentScores, error) {
 	if obj.Sentiment != nil {
 		return &model.SentimentScores{
 			Positive: float64(obj.Sentiment.PositiveScore),
@@ -5461,13 +5605,13 @@ func (r *textAnalysisResolver) SentimentScores(ctx context.Context, obj *moderat
 }
 
 // ToxicityScore implements TextAnalysisResolver
-func (r *textAnalysisResolver) ToxicityScore(ctx context.Context, obj *moderation.TextAnalysis) (float64, error) {
+func (r *textAnalysisResolver) ToxicityScore(_ context.Context, obj *moderation.TextAnalysis) (float64, error) {
 	// Use moderation score as toxicity indicator
 	return obj.ModerationScore, nil
 }
 
 // ToxicityLabels implements TextAnalysisResolver
-func (r *textAnalysisResolver) ToxicityLabels(ctx context.Context, obj *moderation.TextAnalysis) ([]string, error) {
+func (r *textAnalysisResolver) ToxicityLabels(_ context.Context, obj *moderation.TextAnalysis) ([]string, error) {
 	// Return risk level as label
 	if obj.RiskLevel != "" {
 		return []string{obj.RiskLevel}, nil
@@ -5476,19 +5620,19 @@ func (r *textAnalysisResolver) ToxicityLabels(ctx context.Context, obj *moderati
 }
 
 // ContainsPii implements TextAnalysisResolver
-func (r *textAnalysisResolver) ContainsPii(ctx context.Context, obj *moderation.TextAnalysis) (bool, error) {
+func (r *textAnalysisResolver) ContainsPii(_ context.Context, obj *moderation.TextAnalysis) (bool, error) {
 	// Check if PIIEntities contains any items
 	return len(obj.PIIEntities) > 0, nil
 }
 
 // DominantLanguage implements TextAnalysisResolver
-func (r *textAnalysisResolver) DominantLanguage(ctx context.Context, obj *moderation.TextAnalysis) (string, error) {
+func (r *textAnalysisResolver) DominantLanguage(_ context.Context, obj *moderation.TextAnalysis) (string, error) {
 	// Use Language field
 	return obj.Language, nil
 }
 
 // Entities implements TextAnalysisResolver
-func (r *textAnalysisResolver) Entities(ctx context.Context, obj *moderation.TextAnalysis) ([]*model.Entity, error) {
+func (r *textAnalysisResolver) Entities(_ context.Context, obj *moderation.TextAnalysis) ([]*model.Entity, error) {
 	result := make([]*model.Entity, 0, len(obj.Entities))
 	for _, entity := range obj.Entities {
 		if entity != nil {
@@ -5503,7 +5647,7 @@ func (r *textAnalysisResolver) Entities(ctx context.Context, obj *moderation.Tex
 }
 
 // KeyPhrases implements TextAnalysisResolver
-func (r *textAnalysisResolver) KeyPhrases(ctx context.Context, obj *moderation.TextAnalysis) ([]string, error) {
+func (r *textAnalysisResolver) KeyPhrases(_ context.Context, obj *moderation.TextAnalysis) ([]string, error) {
 	// Extract key phrases from KeyPhrase objects
 	result := make([]string, 0, len(obj.KeyPhrases))
 	for _, phrase := range obj.KeyPhrases {
@@ -5519,19 +5663,19 @@ func (r *textAnalysisResolver) KeyPhrases(ctx context.Context, obj *moderation.T
 // ====================================================================
 
 // From implements TrustEdgeResolver
-func (r *trustEdgeResolver) From(ctx context.Context, obj *trust.TrustEdge) (*activitypub.Actor, error) {
+func (r *trustEdgeResolver) From(_ context.Context, _ *trust.TrustEdge) (*activitypub.Actor, error) {
 	// Return nil for now - would need proper actor retrieval
 	return nil, nil
 }
 
 // To implements TrustEdgeResolver
-func (r *trustEdgeResolver) To(ctx context.Context, obj *trust.TrustEdge) (*activitypub.Actor, error) {
+func (r *trustEdgeResolver) To(_ context.Context, _ *trust.TrustEdge) (*activitypub.Actor, error) {
 	// Return nil for now - would need proper actor retrieval
 	return nil, nil
 }
 
 // UpdatedAt implements TrustEdgeResolver
-func (r *trustEdgeResolver) UpdatedAt(ctx context.Context, obj *trust.TrustEdge) (*model.Time, error) {
+func (r *trustEdgeResolver) UpdatedAt(_ context.Context, _ *trust.TrustEdge) (*model.Time, error) {
 	// TrustEdge doesn't have UpdatedAt field, return nil
 	return nil, nil
 }
@@ -5541,7 +5685,7 @@ func (r *trustEdgeResolver) UpdatedAt(ctx context.Context, obj *trust.TrustEdge)
 // ====================================================================
 
 // Severity implements ModerationFilterResolver
-func (r *moderationFilterResolver) Severity(ctx context.Context, obj *moderation.ModerationFilter, data *model.ModerationSeverity) error {
+func (r *moderationFilterResolver) Severity(_ context.Context, obj *moderation.ModerationFilter, data *model.ModerationSeverity) error {
 	if data != nil {
 		// Store severity in Action field as a workaround
 		switch *data {
@@ -5563,7 +5707,7 @@ func (r *moderationFilterResolver) Severity(ctx context.Context, obj *moderation
 }
 
 // AssignedTo implements ModerationFilterResolver
-func (r *moderationFilterResolver) AssignedTo(ctx context.Context, obj *moderation.ModerationFilter, data *string) error {
+func (r *moderationFilterResolver) AssignedTo(_ context.Context, obj *moderation.ModerationFilter, data *string) error {
 	if data != nil {
 		// Store assigned user in ContentType field as a workaround
 		// In a real implementation, we'd extend the struct or use a wrapper
@@ -5573,18 +5717,18 @@ func (r *moderationFilterResolver) AssignedTo(ctx context.Context, obj *moderati
 }
 
 // Priority implements ModerationFilterResolver
-func (r *moderationFilterResolver) Priority(ctx context.Context, obj *moderation.ModerationFilter, data *model.Priority) error {
+func (r *moderationFilterResolver) Priority(_ context.Context, obj *moderation.ModerationFilter, data *model.Priority) error {
 	if data != nil {
 		// Store priority level in Limit field as a workaround
 		// In a real implementation, we'd extend the struct
 		switch *data {
-		case "LOW":
+		case AlertLevelLow:
 			obj.Limit = 1
-		case "MEDIUM":
+		case AlertLevelMedium:
 			obj.Limit = 5
-		case "HIGH":
+		case AlertLevelHigh:
 			obj.Limit = 10
-		case "CRITICAL":
+		case AlertLevelCritical:
 			obj.Limit = 100
 		}
 	}
@@ -5592,7 +5736,7 @@ func (r *moderationFilterResolver) Priority(ctx context.Context, obj *moderation
 }
 
 // Unhandled implements ModerationFilterResolver
-func (r *moderationFilterResolver) Unhandled(ctx context.Context, obj *moderation.ModerationFilter, data *bool) error {
+func (r *moderationFilterResolver) Unhandled(_ context.Context, obj *moderation.ModerationFilter, data *bool) error {
 	if data != nil && *data {
 		// Store unhandled flag in Action field as a workaround
 		obj.Action = "unhandled"
@@ -5668,7 +5812,7 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 }
 
 // AttemptReconnection implements MutationResolver
-func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (*model.ReconnectionPayload, error) {
+func (r *mutationResolver) AttemptReconnection(ctx context.Context, _ string) (*model.ReconnectionPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5710,7 +5854,7 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 }
 
 // WithdrawFromQuotes implements MutationResolver
-func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string) (*model.WithdrawQuotePayload, error) {
+func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, _ string) (*model.WithdrawQuotePayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5724,7 +5868,7 @@ func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string
 }
 
 // UpdateQuotePermissions implements MutationResolver
-func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID string, quoteable bool, permission model.QuotePermission) (*model.UpdateQuotePermissionsPayload, error) {
+func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, _ string, _ bool, _ model.QuotePermission) (*model.UpdateQuotePermissionsPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5738,7 +5882,7 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 }
 
 // FollowHashtag implements MutationResolver
-func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, notifyLevel *model.NotificationLevel) (*model.HashtagFollowPayload, error) {
+func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, _ *model.NotificationLevel) (*model.HashtagFollowPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5756,7 +5900,7 @@ func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, no
 }
 
 // UnfollowHashtag implements MutationResolver
-func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) (*model.UnfollowHashtagPayload, error) {
+func (r *mutationResolver) UnfollowHashtag(ctx context.Context, _ string) (*model.UnfollowHashtagPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5770,7 +5914,7 @@ func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) 
 }
 
 // UpdateHashtagNotifications implements MutationResolver
-func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hashtag string, settings model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
+func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, _ string, _ model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5784,7 +5928,7 @@ func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hasht
 }
 
 // MuteHashtag implements MutationResolver
-func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, until *model.Time) (*model.MuteHashtagPayload, error) {
+func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, _ *model.Time) (*model.MuteHashtagPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5802,7 +5946,7 @@ func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, unti
 }
 
 // SyncThread implements MutationResolver
-func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth *int) (*model.SyncThreadPayload, error) {
+func (r *mutationResolver) SyncThread(ctx context.Context, _ string, _ *int) (*model.SyncThreadPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5816,7 +5960,7 @@ func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth
 }
 
 // SyncMissingReplies implements MutationResolver
-func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string) (*model.SyncRepliesPayload, error) {
+func (r *mutationResolver) SyncMissingReplies(ctx context.Context, _ string) (*model.SyncRepliesPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5875,7 +6019,7 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 }
 
 // PreloadMedia implements MutationResolver
-func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIds []string) ([]*model.MediaStream, error) {
+func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) ([]*model.MediaStream, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -5891,7 +6035,7 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIds []string) 
 	var streams []*model.MediaStream
 	var errors []error
 	
-	for _, mediaID := range mediaIds {
+	for _, mediaID := range mediaIDs {
 		// Get streaming URL for each media
 		stream, err := mediaSvc.GetStreamingURL(ctx, mediaID)
 		if err != nil {
@@ -5913,7 +6057,7 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIds []string) 
 
 	r.Logger.Info("media preloaded",
 		zap.String("user", username),
-		zap.Int("requested", len(mediaIds)),
+		zap.Int("requested", len(mediaIDs)),
 		zap.Int("loaded", len(streams)),
 		zap.Int("failed", len(errors)))
 
@@ -5994,7 +6138,7 @@ func (r *mutationResolver) UpdateModerationPattern(ctx context.Context, id strin
 		Description: fmt.Sprintf("Updated pattern for %s", input.Pattern),
 		Type:        string(input.Type),
 		Content:     input.Pattern,
-		Severity:    "medium",
+		Severity:    SeverityMedium,
 		Action:      "flag",
 		Active:      true,
 		CreatedAt:   time.Now(),
@@ -6072,15 +6216,15 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 	// We don't need the account here since we already have the username
 
 	// Convert to moderation.ModerationPattern
-	severityStr := "medium"
+	severityStr := SeverityMedium
 	// input.Severity is not a pointer, it's a string type  
 	switch input.Severity {
 	case model.ModerationSeverityLow:
-		severityStr = "low"
+		severityStr = SeverityLow
 	case model.ModerationSeverityHigh:
-		severityStr = "high"
+		severityStr = SeverityHigh
 	case model.ModerationSeverityCritical:
-		severityStr = "critical"
+		severityStr = HealthStatusCritical
 	}
 	
 	return &moderation.ModerationPattern{
@@ -6200,13 +6344,27 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 	// This is a simplified version - real implementation would track actual bandwidth
 	estimatedGB := estimatedCost * 100 // Rough estimate: $1 = 100GB
 	
+	// Create mock bandwidth metrics data to demonstrate the helper functions
+	qualityMetrics := map[string]interface{}{
+		SeverityLow:    map[string]interface{}{"bytes": estimatedGB * 0.3 * 1024 * 1024 * 1024},
+		SeverityMedium: map[string]interface{}{"bytes": estimatedGB * 0.5 * 1024 * 1024 * 1024},
+		SeverityHigh:   map[string]interface{}{"bytes": estimatedGB * 0.2 * 1024 * 1024 * 1024},
+	}
+	
+	hourlyMetrics := []interface{}{
+		map[string]interface{}{"hour": startTime.Format(time.RFC3339), "bytes": estimatedGB * 0.25 * 1024 * 1024 * 1024},
+		map[string]interface{}{"hour": startTime.Add(6*time.Hour).Format(time.RFC3339), "bytes": estimatedGB * 0.25 * 1024 * 1024 * 1024},
+		map[string]interface{}{"hour": startTime.Add(12*time.Hour).Format(time.RFC3339), "bytes": estimatedGB * 0.25 * 1024 * 1024 * 1024},
+		map[string]interface{}{"hour": startTime.Add(18*time.Hour).Format(time.RFC3339), "bytes": estimatedGB * 0.25 * 1024 * 1024 * 1024},
+	}
+	
 	return &model.BandwidthReport{
 		Period:    period,
 		TotalGb:   estimatedGB,
 		PeakMbps:  estimatedGB * 10,  // Rough estimate
 		AvgMbps:   estimatedGB * 5,   // Rough estimate
-		ByQuality: []*model.QualityBandwidth{},
-		ByHour:    []*model.HourlyBandwidth{},
+		ByQuality: r.convertQualityBandwidth(qualityMetrics),
+		ByHour:    r.convertHourlyBandwidth(hourlyMetrics),
 		Cost:      estimatedCost,
 	}, nil
 }
@@ -6286,7 +6444,7 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 }
 
 // FederationCosts implements QueryResolver
-func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *string, orderBy *model.CostOrderBy) (*model.FederationCostConnection, error) {
+func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *string, _ *model.CostOrderBy) (*model.FederationCostConnection, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -6311,7 +6469,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 	var offset int
 	if after != nil && *after != "" {
 		// Simple cursor parsing - in production use proper cursor encoding
-		fmt.Sscanf(*after, "cursor_%d", &offset)
+		_, _ = fmt.Sscanf(*after, "cursor_%d", &offset)
 	}
 
 	// Get time range (last 30 days)
@@ -6401,6 +6559,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 	tracker := cost.FromContext(ctx)
 	if tracker == nil {
 		// No alternative context available
+		r.Logger.Debug("No cost tracker available from context")
 	}
 	
 	if tracker == nil {
@@ -6552,7 +6711,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 	}
 
 	// Subscribe to budget alert events via EventBus
-	streamName := "budget_alerts"
+	var streamName string
 	if domain != nil {
 		streamName = fmt.Sprintf("budget_alerts:%s", *domain)
 	} else {
@@ -6578,6 +6737,20 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 
 				// Convert event to BudgetAlert
 				if alert, ok := event.(*model.BudgetAlert); ok {
+					// Enhance alert with calculated level and message using helper functions
+					if alert.BudgetUsd > 0 && alert.SpentUsd >= 0 {
+						alert.AlertLevel = r.getBudgetAlertLevel(alert.SpentUsd, alert.BudgetUsd)
+						// Update percentage for consistency
+						alert.PercentUsed = (alert.SpentUsd / alert.BudgetUsd) * 100
+						
+						// Generate descriptive message using helper function
+						alertMessage := r.getBudgetAlertMessage(alert.SpentUsd, alert.BudgetUsd)
+						r.Logger.Info("Processing budget alert",
+							zap.String("domain", alert.Domain),
+							zap.String("alert_level", string(alert.AlertLevel)),
+							zap.String("message", alertMessage))
+					}
+					
 					select {
 					case alertsChan <- alert:
 					case <-ctx.Done():
@@ -6665,70 +6838,77 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 }
 
 // CostUpdates implements SubscriptionResolver
-func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) (<-chan *model.CostUpdate, error) {
+func (r *subscriptionResolver) CostUpdates(ctx context.Context, _ *int) (<-chan *model.CostUpdate, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create channel for cost updates
 	updatesChan := make(chan *model.CostUpdate, 100)
-
-	// Use EventBus to subscribe to real-time cost updates
 	eventBus := r.Registry.EventBus()
+	
 	if eventBus == nil {
-		// Fallback: Use cost tracker from context
-		go func() {
-			defer close(updatesChan)
-			ticker := time.NewTicker(5 * time.Second) // Update every 5 seconds
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					// Get cost tracker from context
-					tracker := cost.FromContext(ctx)
-					if tracker == nil {
-						continue
-					}
-
-					// Get current costs
-					summary := tracker.CalculateCost()
-					if summary == nil {
-						continue
-					}
-					
-					// Calculate cost in dollars from microcents
-					costDollars := float64(summary.TotalCostMicroCents) / 1_000_000.0
-					
-					update := &model.CostUpdate{
-						OperationCost:     int(summary.TotalCostMicroCents),
-						DailyTotal:        costDollars,
-						MonthlyProjection: costDollars * 30, // Estimate
-					}
-
-					select {
-					case updatesChan <- update:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}()
-		
+		r.startFallbackCostTracking(ctx, updatesChan)
 		return updatesChan, nil
 	}
+	
+	if err := r.startEventBusCostTracking(ctx, eventBus, username, updatesChan); err != nil {
+		return nil, err
+	}
+	
+	r.Logger.Info("Started cost updates subscription", zap.String("user", username))
+	return updatesChan, nil
+}
 
-	// Subscribe to cost update events via EventBus
+// startFallbackCostTracking starts cost tracking using context-based cost tracker
+func (r *subscriptionResolver) startFallbackCostTracking(ctx context.Context, updatesChan chan *model.CostUpdate) {
+	go func() {
+		defer close(updatesChan)
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				update := r.createCostUpdateFromTracker(ctx)
+				if update != nil {
+					r.sendCostUpdate(ctx, updatesChan, update)
+				}
+			}
+		}
+	}()
+}
+
+// createCostUpdateFromTracker creates a cost update from the context cost tracker
+func (r *subscriptionResolver) createCostUpdateFromTracker(ctx context.Context) *model.CostUpdate {
+	tracker := cost.FromContext(ctx)
+	if tracker == nil {
+		return nil
+	}
+
+	summary := tracker.CalculateCost()
+	if summary == nil {
+		return nil
+	}
+	
+	costDollars := float64(summary.TotalCostMicroCents) / 1_000_000.0
+	return &model.CostUpdate{
+		OperationCost:     int(summary.TotalCostMicroCents),
+		DailyTotal:        costDollars,
+		MonthlyProjection: costDollars * 30,
+	}
+}
+
+// startEventBusCostTracking starts cost tracking using the event bus
+func (r *subscriptionResolver) startEventBusCostTracking(ctx context.Context, eventBus services.EventBus, username string, updatesChan chan *model.CostUpdate) error {
 	streamName := fmt.Sprintf("cost_updates:%s", username)
 	eventChan, err := eventBus.Subscribe(ctx, streamName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to cost updates: %w", err)
+		return fmt.Errorf("failed to subscribe to cost updates: %w", err)
 	}
 
-	// Forward events to GraphQL channel
 	go func() {
 		defer close(updatesChan)
 		for {
@@ -6739,38 +6919,46 @@ func (r *subscriptionResolver) CostUpdates(ctx context.Context, threshold *int) 
 				if !ok {
 					return
 				}
-
-				// The event is already the payload data after conversion by the GraphQL EventBus adapter
-				if costPayload, ok := event.(*streaming.CostEventPayload); ok {
-					// Calculate daily total and monthly projection
-					// These would normally come from aggregated metrics
-					dailyTotal := costPayload.CostUSD * 100 // Estimate 100 operations per day
-					monthlyProjection := dailyTotal * 30    // Project for 30 days
-					
-					update := &model.CostUpdate{
-						OperationCost:     int(costPayload.CostUSD * 1000000), // Convert to microcents
-						DailyTotal:        dailyTotal,
-						MonthlyProjection: monthlyProjection,
-					}
-
-					select {
-					case updatesChan <- update:
-					case <-ctx.Done():
-						return
-					}
+				
+				update := r.convertEventToCostUpdate(event)
+				if update != nil {
+					r.sendCostUpdate(ctx, updatesChan, update)
 				}
 			}
 		}
 	}()
+	
+	return nil
+}
 
-	r.Logger.Info("Started cost updates subscription",
-		zap.String("user", username))
+// convertEventToCostUpdate converts an event to a cost update
+func (r *subscriptionResolver) convertEventToCostUpdate(event interface{}) *model.CostUpdate {
+	costPayload, ok := event.(*streaming.CostEventPayload)
+	if !ok {
+		return nil
+	}
+	
+	dailyTotal := costPayload.CostUSD * 100 // Estimate 100 operations per day
+	monthlyProjection := dailyTotal * 30    // Project for 30 days
+	
+	return &model.CostUpdate{
+		OperationCost:     int(costPayload.CostUSD * 1000000), // Convert to microcents
+		DailyTotal:        dailyTotal,
+		MonthlyProjection: monthlyProjection,
+	}
+}
 
-	return updatesChan, nil
+// sendCostUpdate sends a cost update to the channel with proper error handling
+func (r *subscriptionResolver) sendCostUpdate(ctx context.Context, updatesChan chan *model.CostUpdate, update *model.CostUpdate) {
+	select {
+	case updatesChan <- update:
+	case <-ctx.Done():
+		return
+	}
 }
 
 // Type implements ActivityResolver
-func (r *activityResolver) Type(ctx context.Context, obj *activitypub.Activity) (model.ActivityType, error) {
+func (r *activityResolver) Type(_ context.Context, obj *activitypub.Activity) (model.ActivityType, error) {
 	// Convert ActivityPub type to GraphQL ActivityType
 	switch obj.Type {
 	case activitypub.CreateType:
@@ -6809,7 +6997,7 @@ func (r *activityResolver) Type(ctx context.Context, obj *activitypub.Activity) 
 }
 
 // Published implements ActivityResolver
-func (r *activityResolver) Published(ctx context.Context, obj *activitypub.Activity) (*model.Time, error) {
+func (r *activityResolver) Published(_ context.Context, obj *activitypub.Activity) (*model.Time, error) {
 	if obj.Published != nil {
 		t := model.Time(*obj.Published)
 		return &t, nil
@@ -6818,7 +7006,7 @@ func (r *activityResolver) Published(ctx context.Context, obj *activitypub.Activ
 }
 
 // Target implements ActivityResolver
-func (r *activityResolver) Target(ctx context.Context, obj *activitypub.Activity) (*model.Object, error) {
+func (r *activityResolver) Target(_ context.Context, _ *activitypub.Activity) (*model.Object, error) {
 	// Target is typically used for activities like "Add" where something is added to a collection
 	// For now, return nil as most activities don't have targets
 	return nil, nil
@@ -7237,7 +7425,7 @@ func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []s
 }
 
 // MetricsUpdates implements SubscriptionResolver
-func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
+func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, _ []string, _ []string, _ *float64) (<-chan *model.MetricsUpdate, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -7667,7 +7855,7 @@ func (r *subscriptionResolver) convertEventToObject(event *streaming.InternalEve
 		return data
 	case *models.Object:
 		// Convert storage Object to GraphQL Object
-		return r.Resolver.convertActivityPubObjectToModel(data)
+		return r.convertActivityPubObjectToModel(data)
 	case map[string]interface{}:
 		// If the data is a map, try to construct an Object
 		obj := &model.Object{
@@ -7973,7 +8161,7 @@ func (r *subscriptionResolver) convertEventToRelationshipUpdate(event *streaming
 			if relMap, ok := relationshipData.(map[string]interface{}); ok {
 				rel := &model.Relationship{}
 				
-				if following, ok := relMap["following"].(bool); ok {
+				if following, ok := relMap[RelationshipFollowing].(bool); ok {
 					rel.Following = following
 				}
 				if followedBy, ok := relMap["followed_by"].(bool); ok {
@@ -8198,11 +8386,11 @@ func (r *Resolver) convertTextAnalysisToModeration(analysis *ai.TextAnalysis) *m
 	// Set moderation score and risk level based on toxicity
 	result.ModerationScore = analysis.ToxicityScore
 	if analysis.ToxicityScore > 0.8 {
-		result.RiskLevel = "high"
+		result.RiskLevel = SeverityHigh
 	} else if analysis.ToxicityScore > 0.5 {
-		result.RiskLevel = "medium"
+		result.RiskLevel = SeverityMedium
 	} else {
-		result.RiskLevel = "low"
+		result.RiskLevel = SeverityLow
 	}
 
 	// Add recommendations based on findings
@@ -8253,11 +8441,11 @@ func (r *Resolver) convertImageAnalysisToModeration(analysis *ai.ImageAnalysis) 
 	
 	// Determine risk level
 	if maxScore > 0.8 {
-		result.RiskLevel = "high"
+		result.RiskLevel = SeverityHigh
 	} else if maxScore > 0.5 {
-		result.RiskLevel = "medium"
+		result.RiskLevel = SeverityMedium
 	} else {
-		result.RiskLevel = "low"
+		result.RiskLevel = SeverityLow
 	}
 
 	// Add recommendations
@@ -8361,15 +8549,15 @@ func (r *subscriptionResolver) convertEventToModerationDecision(event *streaming
 		if action, ok := data["action"].(string); ok {
 			// Convert string to ActionType
 			switch strings.ToLower(action) {
-			case "none", "allow":
+			case NoneValue, "allow":
 				decision.Action = moderation.ActionTypeNone
 			case "warning", "warn":
 				decision.Action = moderation.ActionTypeWarning
-			case "silence", "hide":
+			case "silence", ModerationActionHide:
 				decision.Action = moderation.ActionTypeSilence
 			case "suspend", "ban":
 				decision.Action = moderation.ActionTypeSuspend
-			case "remove", "delete":
+			case ModerationActionRemove, "delete":
 				decision.Action = moderation.ActionTypeRemove
 			default:
 				decision.Action = moderation.ActionTypeNone
@@ -8388,14 +8576,14 @@ func (r *subscriptionResolver) convertEventToModerationDecision(event *streaming
 }
 
 // convertEventToQuoteActivity converts a streaming event to a QuoteActivityUpdate
-func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.InternalEvent, noteID string) *model.QuoteActivityUpdate {
+func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.InternalEvent, _ string) *model.QuoteActivityUpdate {
 	if event == nil {
 		return nil
 	}
 
 	// Create quote activity update
 	update := &model.QuoteActivityUpdate{
-		Type:      "quote",
+		Type:      QuoteType,
 		Timestamp: model.Time(event.Timestamp),
 	}
 
@@ -8403,7 +8591,7 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 	switch data := event.Data.(type) {
 	case map[string]interface{}:
 		// Try to extract quote object and quoter
-		if quoteObj, ok := data["quote"]; ok {
+		if quoteObj, ok := data[QuoteType]; ok {
 			// Convert quote object to model.Object
 			if quoteMap, ok := quoteObj.(map[string]interface{}); ok {
 				update.Quote = &model.Object{
@@ -8436,7 +8624,7 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 }
 
 // convertEventToHashtagActivity converts a streaming event to a HashtagActivityUpdate
-func (r *subscriptionResolver) convertEventToHashtagActivity(event *streaming.InternalEvent, hashtags []string) *model.HashtagActivityUpdate {
+func (r *subscriptionResolver) convertEventToHashtagActivity(event *streaming.InternalEvent, _ []string) *model.HashtagActivityUpdate {
 	if event == nil {
 		return nil
 	}
@@ -8499,13 +8687,13 @@ func (r *subscriptionResolver) convertEventToModerationAlert(event *streaming.In
 		if alertSeverity, ok := data["severity"].(string); ok {
 			// Convert string to ModerationSeverity
 			switch strings.ToUpper(alertSeverity) {
-			case "LOW":
+			case AlertLevelLow:
 				alert.Severity = model.ModerationSeverityLow
-			case "MEDIUM":
+			case AlertLevelMedium:
 				alert.Severity = model.ModerationSeverityMedium
-			case "HIGH":
+			case AlertLevelHigh:
 				alert.Severity = model.ModerationSeverityHigh
-			case "CRITICAL":
+			case AlertLevelCritical:
 				alert.Severity = model.ModerationSeverityCritical
 			}
 		}
@@ -8547,13 +8735,13 @@ func (r *subscriptionResolver) convertEventToModerationItem(event *streaming.Int
 		if itemPriority, ok := data["priority"].(string); ok {
 			// Convert string to Priority
 			switch strings.ToUpper(itemPriority) {
-			case "LOW":
+			case AlertLevelLow:
 				item.Priority = model.PriorityLow
-			case "MEDIUM":
+			case AlertLevelMedium:
 				item.Priority = model.PriorityMedium
-			case "HIGH":
+			case AlertLevelHigh:
 				item.Priority = model.PriorityHigh
-			case "URGENT", "CRITICAL":
+			case "URGENT", AlertLevelCritical:
 				item.Priority = model.PriorityCritical
 			}
 		}
@@ -8792,15 +8980,15 @@ func (r *actorResolver) getModerationScore(ctx context.Context, username string)
 		// Reduce penalty over time (events older than 30 days have less impact)
 		daysSince := time.Since(event.Created).Hours() / 24
 		if daysSince > 30 {
-			penalty *= (1.0 - min(daysSince/365, 0.8)) // Reduce by up to 80% over a year
+			penalty *= (1.0 - minFloat(daysSince/365, 0.8)) // Reduce by up to 80% over a year
 		}
 		
 		totalPenalty += penalty
 	}
 
 	// Convert penalty to score (higher penalty = lower score)
-	score := 1.0 - min(totalPenalty, 1.0)
-	return max(score, 0.0)
+	score := 1.0 - minFloat(totalPenalty, 1.0)
+	return maxFloat(score, 0.0)
 }
 
 // calculateEventPenalty calculates penalty for a moderation event
@@ -8809,13 +8997,13 @@ func (r *actorResolver) calculateEventPenalty(event *storage.ModerationEvent) fl
 	
 	// Adjust based on severity
 	switch event.Severity {
-	case "low", "1":
+	case SeverityLow, "1":
 		basePenalty = 0.05
-	case "medium", "2":
+	case SeverityMedium, "2":
 		basePenalty = 0.1
-	case "high", "3":
+	case SeverityHigh, "3":
 		basePenalty = 0.2
-	case "critical", "4":
+	case HealthStatusCritical, "4":
 		basePenalty = 0.4
 	}
 
@@ -8839,13 +9027,13 @@ func (r *actorResolver) getCommunityScore(ctx context.Context, username string) 
 
 	// Get vouch count (positive indicator)
 	vouchCount := r.getVouchCount(ctx, username)
-	score += min(float64(vouchCount)*0.1, 0.3) // Up to 0.3 bonus for vouches
+	score += minFloat(float64(vouchCount)*0.1, 0.3) // Up to 0.3 bonus for vouches
 
 	// Get trusting actors count (positive indicator)
 	trustingCount := r.getTrustingActorsCount(ctx, username)
-	score += min(float64(trustingCount)*0.05, 0.2) // Up to 0.2 bonus for trust
+	score += minFloat(float64(trustingCount)*0.05, 0.2) // Up to 0.2 bonus for trust
 
-	return min(score, 1.0)
+	return minFloat(score, 1.0)
 }
 
 // calculateTotalScore calculates weighted total score
@@ -8863,7 +9051,7 @@ func (r *actorResolver) calculateTotalScore(trust, activity, moderation, communi
 		(moderation * weights["moderation"]) +
 		(community * weights["community"])
 
-	return min(max(total, 0.0), 1.0)
+	return minFloat(maxFloat(total, 0.0), 1.0)
 }
 
 // getVouchCount gets the number of vouches for an actor
@@ -8895,17 +9083,18 @@ func (r *actorResolver) extractInstance(actorID string) string {
 	return "unknown"
 }
 
-// min returns the minimum of two float64 values
-func min(a, b float64) float64 {
-	if a < b {
+
+// maxFloat returns the maximum of two float64 values  
+func maxFloat(a, b float64) float64 {
+	if a > b {
 		return a
 	}
 	return b
 }
 
-// max returns the maximum of two float64 values  
-func max(a, b float64) float64 {
-	if a > b {
+// minFloat returns the minimum of two float64 values
+func minFloat(a, b float64) float64 {
+	if a < b {
 		return a
 	}
 	return b

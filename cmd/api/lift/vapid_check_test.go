@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/testing/mocks"
 )
 
 func TestIsProductionEnvironment(t *testing.T) {
@@ -63,7 +63,7 @@ func TestIsProductionEnvironment(t *testing.T) {
 			// Clear existing env vars
 			os.Unsetenv("ENV")
 			os.Unsetenv("ENVIRONMENT")
-			
+
 			// Set test env var
 			if tt.envVar != "" {
 				os.Setenv(tt.envVar, tt.envValue)
@@ -90,10 +90,18 @@ func (m *MockPushRepository) GetVAPIDKeys(ctx context.Context) (*storage.VAPIDKe
 }
 
 // Implement other required methods as no-ops for this test
-func (m *MockPushRepository) CreatePushSubscription(context.Context, *storage.PushSubscription) error { return nil }
-func (m *MockPushRepository) GetPushSubscription(context.Context, string, string) (*storage.PushSubscription, error) { return nil, nil }
-func (m *MockPushRepository) DeletePushSubscription(context.Context, string, string) error { return nil }
-func (m *MockPushRepository) GetPushSubscriptions(context.Context, string) ([]*storage.PushSubscription, error) { return nil, nil }
+func (m *MockPushRepository) CreatePushSubscription(context.Context, *storage.PushSubscription) error {
+	return nil
+}
+func (m *MockPushRepository) GetPushSubscription(context.Context, string, string) (*storage.PushSubscription, error) {
+	return nil, nil
+}
+func (m *MockPushRepository) DeletePushSubscription(context.Context, string, string) error {
+	return nil
+}
+func (m *MockPushRepository) GetPushSubscriptions(context.Context, string) ([]*storage.PushSubscription, error) {
+	return nil, nil
+}
 func (m *MockPushRepository) CreateVAPIDKeys(context.Context, *storage.VAPIDKeys) error { return nil }
 
 func TestValidateVAPIDKeysForProduction(t *testing.T) {
@@ -106,7 +114,7 @@ func TestValidateVAPIDKeysForProduction(t *testing.T) {
 
 		ctx := context.Background()
 		logger := zap.NewNop()
-		
+
 		// Use a minimal mock that won't be called
 		mockRepos := new(mocks.MockRepositoryStorage)
 
@@ -114,14 +122,14 @@ func TestValidateVAPIDKeysForProduction(t *testing.T) {
 		err := ValidateVAPIDKeysForProduction(ctx, mockRepos, logger)
 		assert.NoError(t, err, "Non-production environment should skip VAPID validation")
 	})
-	
+
 	t.Run("production_environment_logic", func(t *testing.T) {
 		// Test that production environment detection works correctly
 		os.Setenv("ENV", "production")
 		defer os.Unsetenv("ENV")
-		
+
 		assert.True(t, IsProductionEnvironment(), "Should detect production environment")
-		
+
 		// In actual production deployment, the VAPID keys validation would be called
 		// and would enforce the requirement. The integration test happens at runtime.
 		t.Log("Production VAPID enforcement logic is correctly configured")
@@ -133,9 +141,9 @@ func TestVAPIDProductionEnforcementLogic(t *testing.T) {
 		// Test production environment detection
 		os.Setenv("ENV", "production")
 		defer os.Unsetenv("ENV")
-		
+
 		assert.True(t, IsProductionEnvironment(), "Should detect production environment")
-		
+
 		t.Log("Production VAPID enforcement environment detection works correctly")
 	})
 }

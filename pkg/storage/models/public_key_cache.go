@@ -12,30 +12,30 @@ type PublicKeyCache struct {
 	SK string `dynamorm:"sk" json:"-"`
 
 	// Fields
-	ActorURL       string    `json:"actor_url"`       // URL of the actor
-	KeyID          string    `json:"key_id"`          // Public key ID
-	PublicKeyPEM   string    `json:"public_key_pem"`  // PEM-encoded public key
-	Algorithm      string    `json:"algorithm"`       // Signature algorithm (rsa-sha256, etc.)
-	FetchedAt      time.Time `json:"fetched_at"`      // When the key was fetched
-	LastUsed       time.Time `json:"last_used"`       // Last time this key was used
-	SuccessCount   int       `json:"success_count"`   // Number of successful verifications
-	FailureCount   int       `json:"failure_count"`   // Number of failed verifications
-	TTL            int64     `json:"ttl,omitempty" dynamorm:"ttl"` // Unix timestamp for DynamoDB TTL
+	ActorURL     string    `json:"actor_url"`                    // URL of the actor
+	KeyID        string    `json:"key_id"`                       // Public key ID
+	PublicKeyPEM string    `json:"public_key_pem"`               // PEM-encoded public key
+	Algorithm    string    `json:"algorithm"`                    // Signature algorithm (rsa-sha256, etc.)
+	FetchedAt    time.Time `json:"fetched_at"`                   // When the key was fetched
+	LastUsed     time.Time `json:"last_used"`                    // Last time this key was used
+	SuccessCount int       `json:"success_count"`                // Number of successful verifications
+	FailureCount int       `json:"failure_count"`                // Number of failed verifications
+	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"` // Unix timestamp for DynamoDB TTL
 }
 
 // NewPublicKeyCache creates a new public key cache entry
 func NewPublicKeyCache(actorURL, keyID, publicKeyPEM, algorithm string) *PublicKeyCache {
 	now := time.Now()
 	cache := &PublicKeyCache{
-		ActorURL:       actorURL,
-		KeyID:          keyID,
-		PublicKeyPEM:   publicKeyPEM,
-		Algorithm:      algorithm,
-		FetchedAt:      now,
-		LastUsed:       now,
-		SuccessCount:   0,
-		FailureCount:   0,
-		TTL:            now.Add(24 * time.Hour).Unix(), // Cache for 24 hours
+		ActorURL:     actorURL,
+		KeyID:        keyID,
+		PublicKeyPEM: publicKeyPEM,
+		Algorithm:    algorithm,
+		FetchedAt:    now,
+		LastUsed:     now,
+		SuccessCount: 0,
+		FailureCount: 0,
+		TTL:          now.Add(24 * time.Hour).Unix(), // Cache for 24 hours
 	}
 	if err := cache.UpdateKeys(); err != nil {
 		return nil
@@ -99,7 +99,7 @@ func (p *PublicKeyCache) ShouldRefresh() bool {
 	if totalAttempts == 0 {
 		return false
 	}
-	
+
 	// Refresh if failure rate > 50% and we have at least 5 attempts
 	failureRate := float64(p.FailureCount) / float64(totalAttempts)
 	return failureRate > 0.5 && totalAttempts >= 5

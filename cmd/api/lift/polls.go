@@ -17,6 +17,7 @@ import (
 )
 
 // HandleGetPollLift retrieves a poll by ID
+//nolint:gocognit // Complex poll handling with vote counting and user permissions
 func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	pollID := ctx.Param("id")
 	if pollID == "" {

@@ -685,7 +685,7 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 	// Extract usernames from actor IDs if needed
 	endorserUsername := r.extractUsernameFromID(endorsement.Username)
 	endorsedActorID := endorsement.PinnedActorID
-	
+
 	// Check if endorser follows the endorsed account
 	isFollowing, err := r.IsFollowing(ctx, endorserUsername, endorsedActorID)
 	if err != nil {
@@ -695,11 +695,11 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 			zap.Error(err))
 		return fmt.Errorf("failed to check follow relationship: %w", err)
 	}
-	
+
 	if !isFollowing {
 		return fmt.Errorf("cannot endorse an account you are not following")
 	}
-	
+
 	// Check current endorsement count (Mastodon typically allows 4 endorsements)
 	currentPins, err := r.socialRepo.GetAccountPins(ctx, endorserUsername)
 	if err != nil {
@@ -708,11 +708,11 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 			zap.Error(err))
 		return fmt.Errorf("failed to get current endorsements: %w", err)
 	}
-	
+
 	if len(currentPins) >= 4 {
 		return fmt.Errorf("maximum number of endorsements reached (4)")
 	}
-	
+
 	// Create the endorsement using social repository
 	err = r.socialRepo.CreateAccountPin(ctx, endorsement)
 	if err != nil {
@@ -722,11 +722,11 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 			zap.Error(err))
 		return fmt.Errorf("failed to create endorsement: %w", err)
 	}
-	
+
 	r.logger.Info("created endorsement",
 		zap.String("endorser", endorserUsername),
 		zap.String("endorsed", endorsedActorID))
-	
+
 	return nil
 }
 
@@ -734,7 +734,7 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 func (r *RelationshipRepository) DeleteEndorsement(ctx context.Context, endorserID, endorsedID string) error {
 	// Extract username from endorser ID if needed
 	endorserUsername := r.extractUsernameFromID(endorserID)
-	
+
 	// Delete the endorsement using social repository
 	err := r.socialRepo.DeleteAccountPin(ctx, endorserUsername, endorsedID)
 	if err != nil {
@@ -744,11 +744,11 @@ func (r *RelationshipRepository) DeleteEndorsement(ctx context.Context, endorser
 			zap.Error(err))
 		return fmt.Errorf("failed to delete endorsement: %w", err)
 	}
-	
+
 	r.logger.Info("deleted endorsement",
 		zap.String("endorser", endorserUsername),
 		zap.String("endorsed", endorsedID))
-	
+
 	return nil
 }
 
@@ -756,7 +756,7 @@ func (r *RelationshipRepository) DeleteEndorsement(ctx context.Context, endorser
 func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID string, limit int, cursor string) ([]*storage.AccountPin, string, error) {
 	// Extract username from user ID if needed
 	username := r.extractUsernameFromID(userID)
-	
+
 	// Use social repository to get endorsements with pagination
 	endorsements, nextCursor, err := r.socialRepo.GetAccountPinsPaginated(ctx, username, limit, cursor)
 	if err != nil {
@@ -765,7 +765,7 @@ func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID str
 			zap.Error(err))
 		return nil, "", fmt.Errorf("failed to get endorsements: %w", err)
 	}
-	
+
 	return endorsements, nextCursor, nil
 }
 
@@ -773,7 +773,7 @@ func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID str
 func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUsername, targetActorID string) (bool, error) {
 	// Extract target username from actor ID
 	targetUsername := r.extractUsernameFromID(targetActorID)
-	
+
 	// Check relationship
 	relationship, err := r.GetRelationship(ctx, followerUsername, targetUsername)
 	if err != nil {
@@ -783,7 +783,7 @@ func (r *RelationshipRepository) IsFollowing(ctx context.Context, followerUserna
 		}
 		return false, err
 	}
-	
+
 	// Check if relationship is accepted
 	return relationship.State == models.RelationshipAccepted, nil
 }

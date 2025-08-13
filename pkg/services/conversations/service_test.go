@@ -596,7 +596,7 @@ func createTestMessage(id, authorID, conversationID, content string) *models.Sta
 		ConversationID: conversationID,
 		PublishedAt:    time.Now(),
 	}
-	
+
 	// For testing, we'll assume these methods exist and work correctly
 	// In a real implementation, these would be part of the Status model
 	return status
@@ -611,7 +611,7 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	// Test data
 	senderAccount := createTestAccount("sender123", "alice")
 	recipientAccount := createTestAccount("recipient456", "bob")
-	
+
 	cmd := &SendDirectMessageCommand{
 		SenderID:   "sender123",
 		Recipients: []string{"recipient456"},
@@ -622,16 +622,16 @@ func TestService_SendDirectMessage_NewConversation(t *testing.T) {
 	// Mock expectations - called once for sender and once for recipient (accounts cached after that)
 	accountRepo.On("GetAccount", ctx, "sender123").Return(senderAccount, nil)
 	accountRepo.On("GetAccount", ctx, "recipient456").Return(recipientAccount, nil)
-	
+
 	// No existing conversation
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"recipient456", "sender123"}).Return(nil, fmt.Errorf("not found"))
-	
+
 	// Create new conversation
 	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"recipient456", "sender123"}).Return(nil)
-	
+
 	// Create message
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
-	
+
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
@@ -675,7 +675,7 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 			Email:    "bob@remote.com",
 		},
 	}
-	
+
 	cmd := &SendDirectMessageCommand{
 		SenderID:   "sender123",
 		Recipients: []string{"bob@remote.com"},
@@ -685,16 +685,16 @@ func TestService_SendDirectMessage_WithRemoteRecipient(t *testing.T) {
 	// Mock expectations
 	accountRepo.On("GetAccount", ctx, "sender123").Return(senderAccount, nil)
 	accountRepo.On("GetAccount", ctx, "bob@remote.com").Return(remoteRecipientAccount, nil)
-	
+
 	// No existing conversation
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"bob@remote.com", "sender123"}).Return(nil, fmt.Errorf("not found"))
-	
+
 	// Create new conversation
 	conversationRepo.On("CreateConversation", ctx, mock.AnythingOfType("*models.Conversation"), []string{"bob@remote.com", "sender123"}).Return(nil)
-	
+
 	// Create message
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
-	
+
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
@@ -723,7 +723,7 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	senderAccount := createTestAccount("sender123", "alice")
 	recipientAccount := createTestAccount("recipient456", "bob")
 	existingConversation := createTestConversation("conv123", []string{"recipient456", "sender123"})
-	
+
 	cmd := &SendDirectMessageCommand{
 		SenderID:   "sender123",
 		Recipients: []string{"recipient456"},
@@ -733,13 +733,13 @@ func TestService_SendDirectMessage_ExistingConversation(t *testing.T) {
 	// Mock expectations - called once for sender and once for recipient (accounts cached after that)
 	accountRepo.On("GetAccount", ctx, "sender123").Return(senderAccount, nil)
 	accountRepo.On("GetAccount", ctx, "recipient456").Return(recipientAccount, nil)
-	
+
 	// Existing conversation found
 	conversationRepo.On("GetConversationByParticipants", ctx, []string{"recipient456", "sender123"}).Return(existingConversation, nil)
-	
+
 	// Create message
 	noteRepo.On("CreateStatus", ctx, mock.AnythingOfType("*models.Status")).Return(nil)
-	
+
 	// Update conversation
 	conversationRepo.On("UpdateConversation", ctx, mock.AnythingOfType("*models.Conversation")).Return(nil)
 
@@ -802,7 +802,7 @@ func TestService_MarkConversationRead_Success(t *testing.T) {
 	ctx := context.Background()
 
 	conversation := createTestConversation("conv123", []string{"user123", "user456"})
-	
+
 	cmd := &MarkConversationReadCommand{
 		ConversationID: "conv123",
 		UserID:         "user123",
@@ -835,7 +835,7 @@ func TestService_MarkConversationRead_NotParticipant(t *testing.T) {
 	ctx := context.Background()
 
 	conversation := createTestConversation("conv123", []string{"user123", "user456"})
-	
+
 	cmd := &MarkConversationReadCommand{
 		ConversationID: "conv123",
 		UserID:         "user789", // Not a participant
@@ -863,7 +863,7 @@ func TestService_ListConversations_Success(t *testing.T) {
 		createTestConversation("conv1", []string{"user123", "user456"}),
 		createTestConversation("conv2", []string{"user123", "user789"}),
 	}
-	
+
 	paginatedResult := &interfaces.PaginatedResult[*models.Conversation]{
 		Items:   conversations,
 		HasMore: false,
@@ -901,7 +901,7 @@ func TestService_ListConversations_UnreadOnly(t *testing.T) {
 	conversations := []*models.Conversation{
 		createTestConversation("conv1", []string{"user123", "user456"}),
 	}
-	
+
 	paginatedResult := &interfaces.PaginatedResult[*models.Conversation]{
 		Items:   conversations,
 		HasMore: false,
@@ -935,16 +935,16 @@ func TestService_GetConversation_Success(t *testing.T) {
 	ctx := context.Background()
 
 	conversation := createTestConversation("conv123", []string{"user123", "user456"})
-	
+
 	// Create messages with proper recipients so they pass visibility checks
 	msg1 := createTestMessage("msg1", "user123", "conv123", "Hello")
 	msg1.ToRecipients = []string{"user456"} // Make user456 a recipient
-	
+
 	msg2 := createTestMessage("msg2", "user456", "conv123", "Hi there!")
 	msg2.ToRecipients = []string{"user123"} // Make user123 a recipient
-	
+
 	messages := []*models.Status{msg1, msg2}
-	
+
 	paginatedMessages := &interfaces.PaginatedResult[*models.Status]{
 		Items:   messages,
 		HasMore: false,

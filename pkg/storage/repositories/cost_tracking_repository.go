@@ -1744,17 +1744,17 @@ func (r *CostTrackingRepository) GetActivityCost(ctx context.Context, activityID
 
 	// Query for cost record with activity-specific partition key
 	var costRecord models.DynamoDBCostRecord
-	
+
 	// Try to find cost record by activity ID
 	// Using the primary key pattern for activity costs
 	pk := fmt.Sprintf("ACTIVITY_COST#%s", activityID)
 	sk := "COST_RECORD"
-	
+
 	err := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&costRecord)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			r.logger.Debug("Activity cost not found",

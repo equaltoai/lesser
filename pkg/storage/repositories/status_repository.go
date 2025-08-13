@@ -94,7 +94,6 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 	return nil
 }
 
-
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
 	var statuses []models.Status
@@ -151,7 +150,6 @@ func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID
 	return nil
 }
 
-
 // GetTotalStatusCount returns the total number of statuses in the system
 func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, error) {
 	r.logger.Debug("getting total status count")
@@ -172,136 +170,198 @@ func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, erro
 	return count, nil
 }
 
-
 // StatusFilter represents filtering criteria for admin status listing
 type StatusFilter struct {
-	Local      *bool     // Filter by local vs remote statuses
-	Remote     *bool     // Filter by remote statuses only
-	ByDomain   string    // Filter by specific domain
-	Visibility string    // Filter by visibility (public, unlisted, private, direct)
-	Flagged    *bool     // Filter by flagged status
-	Reported   *bool     // Filter by reported status
-	WithMedia  *bool     // Filter by presence of media attachments
-	Sensitive  *bool     // Filter by sensitive flag
+	Local      *bool      // Filter by local vs remote statuses
+	Remote     *bool      // Filter by remote statuses only
+	ByDomain   string     // Filter by specific domain
+	Visibility string     // Filter by visibility (public, unlisted, private, direct)
+	Flagged    *bool      // Filter by flagged status
+	Reported   *bool      // Filter by reported status
+	WithMedia  *bool      // Filter by presence of media attachments
+	Sensitive  *bool      // Filter by sensitive flag
 	MinDate    *time.Time // Filter by minimum creation date
 	MaxDate    *time.Time // Filter by maximum creation date
 }
 
 // ListStatusesForAdmin retrieves statuses with comprehensive admin filtering
-//
-//nolint:gocognit // Complex filtering logic is necessary to support all admin moderation use cases
 func (r *StatusRepository) ListStatusesForAdmin(ctx context.Context, filter *StatusFilter, limit int, cursor string) ([]*models.Status, string, error) {
-	r.logger.Debug("listing statuses for admin with filter", 
+	r.logger.Debug("listing statuses for admin with filter",
 		zap.Any("filter", filter),
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor))
 
 	var statuses []models.Status
 	query := r.db.WithContext(ctx).Model(&models.Status{})
-	
+
 	// Base filter to exclude deleted statuses unless specifically requested
 	query = query.Filter("Deleted", "=", false)
-	
-	// Apply domain filters
-	if filter.Local != nil && *filter.Local {
-		// Filter for local statuses by checking if AuthorID contains local domain
-		// This is a simple check - in production you might want a more robust method
-		domain := r.extractDomainFromEnv()
-		if domain != "" {
-			query = query.Filter("AuthorID", "CONTAINS", domain)
-		}
+
+	statuses, err := r.applyDomainFiltering(ctx, query, filter, limit)
+	if err != nil {
+		return nil, "", err
 	}
-	
+
+	// Convert to pointer slice and generate pagination cursor
+	result := r.convertToPointerSlice(statuses)
+	nextCursor := r.generateNextCursor(result, limit)
+
+	r.logger.Debug("retrieved filtered statuses for admin",
+		zap.Int("count", len(result)),
+		zap.String("nextCursor", nextCursor))
+
+	return result, nextCursor, nil
+}
+
+// applyDomainFiltering applies domain-based filtering logic to admin status queries
+func (r *StatusRepository) applyDomainFiltering(ctx context.Context, query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+	if filter.Local != nil && *filter.Local {
+		return r.applyLocalFiltering(query, filter, limit)
+	}
+
 	if filter.Remote != nil && *filter.Remote {
-		// Filter for remote statuses by checking if AuthorID does NOT contain local domain
-		domain := r.extractDomainFromEnv()
-		if domain != "" {
-			// Note: DynamoDB doesn't have a direct "NOT CONTAINS" operation
-			// We'll need to use a more complex approach or scan and filter
-			// For now, we'll scan all statuses and then filter
-			err := query.Scan(&statuses)
-			if err != nil {
-				return nil, "", fmt.Errorf("failed to scan statuses: %w", err)
-			}
-			
-			// Post-process to filter remote only
-			filteredStatuses := []models.Status{}
-			for _, status := range statuses {
-				if !strings.Contains(status.AuthorID, domain) {
-					filteredStatuses = append(filteredStatuses, status)
-				}
-			}
-			statuses = filteredStatuses
-		}
-	} else {
-		// If not filtering by remote, apply specific domain filter
-		if filter.ByDomain != "" {
-			query = query.Filter("AuthorID", "CONTAINS", filter.ByDomain)
-		}
-		
-		// Apply visibility filter
-		if filter.Visibility != "" {
-			query = query.Filter("Visibility", "=", filter.Visibility)
-		}
-		
-		// Apply flagged filter
-		if filter.Flagged != nil {
-			query = query.Filter("Flagged", "=", *filter.Flagged)
-		}
-		
-		// Apply sensitive filter
-		if filter.Sensitive != nil {
-			query = query.Filter("Sensitive", "=", *filter.Sensitive)
-		}
-		
-		// Apply media filter
-		if filter.WithMedia != nil {
-			if *filter.WithMedia {
-				query = query.Filter("MediaCount", ">", 0)
-			} else {
-				query = query.Filter("MediaCount", "=", 0)
-			}
-		}
-		
-		// Apply date filters
-		if filter.MinDate != nil {
-			query = query.Filter("PublishedAt", ">=", *filter.MinDate)
-		}
-		
-		if filter.MaxDate != nil {
-			query = query.Filter("PublishedAt", "<=", *filter.MaxDate)
-		}
-		
-		// Execute query with limit
+		return r.applyRemoteFiltering(ctx, query, filter, limit)
+	}
+
+	return r.applyStandardFiltering(query, filter, limit)
+}
+
+// applyLocalFiltering filters for local statuses only
+func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+	var statuses []models.Status
+	domain := r.extractDomainFromEnv()
+	if domain != "" {
+		query = query.Filter("AuthorID", "CONTAINS", domain)
+	}
+
+	query = r.applyContentFilters(query, filter)
+	query = r.applyDateFilters(query, filter)
+	query = query.Limit(limit)
+
+	err := query.Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan local statuses: %w", err)
+	}
+
+	return statuses, nil
+}
+
+// applyRemoteFiltering filters for remote statuses only (requires post-processing)
+func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Query, _ *StatusFilter, limit int) ([]models.Status, error) {
+	var statuses []models.Status
+	domain := r.extractDomainFromEnv()
+	if domain == "" {
 		query = query.Limit(limit)
 		err := query.Scan(&statuses)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to get filtered statuses: %w", err)
+			return nil, fmt.Errorf("failed to scan statuses: %w", err)
+		}
+		return statuses, nil
+	}
+
+	// Note: DynamoDB doesn't have a direct "NOT CONTAINS" operation
+	// We'll need to use scan and post-process filtering
+	err := query.Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan statuses: %w", err)
+	}
+
+	// Post-process to filter remote only
+	filteredStatuses := []models.Status{}
+	for _, status := range statuses {
+		if !strings.Contains(status.AuthorID, domain) {
+			filteredStatuses = append(filteredStatuses, status)
+			if len(filteredStatuses) >= limit {
+				break
+			}
 		}
 	}
-	
-	// Convert to pointer slice
+
+	return filteredStatuses, nil
+}
+
+// applyStandardFiltering applies standard non-domain specific filters
+func (r *StatusRepository) applyStandardFiltering(query core.Query, filter *StatusFilter, limit int) ([]models.Status, error) {
+	var statuses []models.Status
+
+	// Apply specific domain filter
+	if filter.ByDomain != "" {
+		query = query.Filter("AuthorID", "CONTAINS", filter.ByDomain)
+	}
+
+	query = r.applyContentFilters(query, filter)
+	query = r.applyDateFilters(query, filter)
+	query = query.Limit(limit)
+
+	// Execute query with limit
+	err := query.Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get filtered statuses: %w", err)
+	}
+
+	return statuses, nil
+}
+
+// applyContentFilters applies content-related filters (visibility, flagged, sensitive, media)
+func (r *StatusRepository) applyContentFilters(query core.Query, filter *StatusFilter) core.Query {
+	// Apply visibility filter
+	if filter.Visibility != "" {
+		query = query.Filter("Visibility", "=", filter.Visibility)
+	}
+
+	// Apply flagged filter
+	if filter.Flagged != nil {
+		query = query.Filter("Flagged", "=", *filter.Flagged)
+	}
+
+	// Apply sensitive filter
+	if filter.Sensitive != nil {
+		query = query.Filter("Sensitive", "=", *filter.Sensitive)
+	}
+
+	// Apply media filter
+	if filter.WithMedia != nil {
+		if *filter.WithMedia {
+			query = query.Filter("MediaCount", ">", 0)
+		} else {
+			query = query.Filter("MediaCount", "=", 0)
+		}
+	}
+
+	return query
+}
+
+// applyDateFilters applies date-related filters (MinDate, MaxDate)
+func (r *StatusRepository) applyDateFilters(query core.Query, filter *StatusFilter) core.Query {
+	// Apply date filters
+	if filter.MinDate != nil {
+		query = query.Filter("PublishedAt", ">=", *filter.MinDate)
+	}
+
+	if filter.MaxDate != nil {
+		query = query.Filter("PublishedAt", "<=", *filter.MaxDate)
+	}
+
+	return query
+}
+
+// convertToPointerSlice converts slice of Status to slice of Status pointers
+func (r *StatusRepository) convertToPointerSlice(statuses []models.Status) []*models.Status {
 	result := make([]*models.Status, len(statuses))
 	for i := range statuses {
 		result[i] = &statuses[i]
 	}
-	
-	// For now, return empty cursor - proper pagination would need custom implementation
-	// In production, you'd implement proper cursor-based pagination
+	return result
+}
+
+// generateNextCursor generates pagination cursor for the next page
+func (r *StatusRepository) generateNextCursor(result []*models.Status, limit int) string {
 	nextCursor := ""
-	if len(result) == limit {
-		// Generate a simple cursor based on the last item
-		if len(result) > 0 {
-			lastStatus := result[len(result)-1]
-			nextCursor = fmt.Sprintf("%d_%s", lastStatus.PublishedAt.Unix(), lastStatus.StatusID)
-		}
+	if len(result) == limit && len(result) > 0 {
+		lastStatus := result[len(result)-1]
+		nextCursor = fmt.Sprintf("%d_%s", lastStatus.PublishedAt.Unix(), lastStatus.StatusID)
 	}
-	
-	r.logger.Debug("retrieved filtered statuses for admin", 
-		zap.Int("count", len(result)),
-		zap.String("nextCursor", nextCursor))
-	
-	return result, nextCursor, nil
+	return nextCursor
 }
 
 // CountStatusesForAdmin counts statuses matching admin filter criteria
@@ -310,10 +370,10 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 
 	var count int64
 	query := r.db.WithContext(ctx).Model(&models.Status{})
-	
+
 	// Base filter to exclude deleted statuses unless specifically requested
 	query = query.Filter("Deleted", "=", false)
-	
+
 	// Apply domain filters
 	if filter.Local != nil && *filter.Local {
 		domain := r.extractDomainFromEnv()
@@ -321,7 +381,7 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 			query = query.Filter("AuthorID", "CONTAINS", domain)
 		}
 	}
-	
+
 	if filter.Remote != nil && *filter.Remote {
 		// For remote filtering, we need to scan first then count (not efficient but necessary)
 		var statuses []models.Status
@@ -331,7 +391,7 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 			if err != nil {
 				return 0, fmt.Errorf("failed to scan statuses for count: %w", err)
 			}
-			
+
 			// Count only remote statuses
 			remoteCount := 0
 			for _, status := range statuses {
@@ -346,19 +406,19 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 		if filter.ByDomain != "" {
 			query = query.Filter("AuthorID", "CONTAINS", filter.ByDomain)
 		}
-		
+
 		if filter.Visibility != "" {
 			query = query.Filter("Visibility", "=", filter.Visibility)
 		}
-		
+
 		if filter.Flagged != nil {
 			query = query.Filter("Flagged", "=", *filter.Flagged)
 		}
-		
+
 		if filter.Sensitive != nil {
 			query = query.Filter("Sensitive", "=", *filter.Sensitive)
 		}
-		
+
 		if filter.WithMedia != nil {
 			if *filter.WithMedia {
 				query = query.Filter("MediaCount", ">", 0)
@@ -366,25 +426,25 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 				query = query.Filter("MediaCount", "=", 0)
 			}
 		}
-		
+
 		if filter.MinDate != nil {
 			query = query.Filter("PublishedAt", ">=", *filter.MinDate)
 		}
-		
+
 		if filter.MaxDate != nil {
 			query = query.Filter("PublishedAt", "<=", *filter.MaxDate)
 		}
-		
+
 		// Use Count method for efficient counting
 		count, err := query.Count()
 		if err != nil {
 			return 0, fmt.Errorf("failed to count filtered statuses: %w", err)
 		}
-		
+
 		r.logger.Debug("counted filtered statuses for admin", zap.Int64("count", count))
 		return count, nil
 	}
-	
+
 	return count, nil
 }
 
@@ -418,7 +478,7 @@ func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*mod
 }
 
 // GetHomeTimeline retrieves home timeline for a user
-func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+func (r *StatusRepository) GetHomeTimeline(ctx context.Context, _ string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// This would typically require following relationships to build home timeline
 	// For now, we'll return public timeline as a placeholder
 	return r.GetPublicTimeline(ctx, opts)
@@ -636,7 +696,7 @@ func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID st
 }
 
 // ReblogStatus reblogs a status for a user
-func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, reblogStatusID string) error {
+func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _ string) error {
 	// Create a reblog record using the existing StatusEngagement model
 	now := time.Now()
 	reblog := &models.StatusEngagement{
@@ -861,7 +921,7 @@ func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []str
 	return result, nil
 }
 
-// Update method signatures to match interface
+// GetPublicTimeline retrieves the public timeline with pagination
 func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
@@ -888,6 +948,7 @@ func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interface
 	}, nil
 }
 
+// GetReplies retrieves replies to a status with pagination
 func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
@@ -914,6 +975,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	}, nil
 }
 
+// GetFlaggedStatuses retrieves flagged statuses with pagination
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// This would require a GSI for flagged statuses in a real implementation
 	// For now, we'll scan the table (not efficient for production)
@@ -940,8 +1002,8 @@ func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfac
 	}, nil
 }
 
-// Update FlagStatus to match interface signature 
-func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, reason string, reportedBy string) error {
+// FlagStatus marks a status as flagged for moderation
+func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, _ string, _ string) error {
 	var status models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
@@ -968,12 +1030,3 @@ func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, reason stri
 }
 
 // Helper function to extract status ID from URL
-func extractStatusIDFromURL(url string) string {
-	// Handle different status URL formats
-	// e.g., "https://example.com/users/username/statuses/123" -> "123"
-	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return ""
-}

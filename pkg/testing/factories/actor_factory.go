@@ -24,17 +24,17 @@ func NewActorFactory(domain string) *ActorFactory {
 
 // ActorOptions configures actor creation
 type ActorOptions struct {
-	Username    string
-	DisplayName string
-	Summary     string
-	PublicKey   string
-	PrivateKey  string
-	Locked      bool
-	Bot         bool
+	Username     string
+	DisplayName  string
+	Summary      string
+	PublicKey    string
+	PrivateKey   string
+	Locked       bool
+	Bot          bool
 	Discoverable bool
-	Avatar      *activitypub.Image
-	Header      *activitypub.Image
-	Fields      []activitypub.Attachment
+	Avatar       *activitypub.Image
+	Header       *activitypub.Image
+	Fields       []activitypub.Attachment
 }
 
 // CreateActor creates a basic actor with default values
@@ -129,7 +129,7 @@ func (f *ActorFactory) CreateUserData(opts ActorOptions) map[string]interface{} 
 // CreateActorWithFollowers creates an actor with a specified number of followers
 func (f *ActorFactory) CreateActorWithFollowers(username string, followerCount int) (*activitypub.Actor, []*activitypub.Actor) {
 	actor := f.CreateActor(ActorOptions{Username: username})
-	
+
 	followers := make([]*activitypub.Actor, followerCount)
 	for i := 0; i < followerCount; i++ {
 		follower := f.CreateActor(ActorOptions{
@@ -144,7 +144,7 @@ func (f *ActorFactory) CreateActorWithFollowers(username string, followerCount i
 // CreateActorWithFollowing creates an actor following a specified number of other actors
 func (f *ActorFactory) CreateActorWithFollowing(username string, followingCount int) (*activitypub.Actor, []*activitypub.Actor) {
 	actor := f.CreateActor(ActorOptions{Username: username})
-	
+
 	following := make([]*activitypub.Actor, followingCount)
 	for i := 0; i < followingCount; i++ {
 		followed := f.CreateActor(ActorOptions{
@@ -159,11 +159,11 @@ func (f *ActorFactory) CreateActorWithFollowing(username string, followingCount 
 // CreateBotActor creates a bot actor
 func (f *ActorFactory) CreateBotActor(username string) *activitypub.Actor {
 	return f.CreateActor(ActorOptions{
-		Username:    username,
-		DisplayName: fmt.Sprintf("Bot %s", username),
-		Summary:     "I am a test bot account",
-		Bot:         true,
-		Locked:      false,
+		Username:     username,
+		DisplayName:  fmt.Sprintf("Bot %s", username),
+		Summary:      "I am a test bot account",
+		Bot:          true,
+		Locked:       false,
 		Discoverable: true,
 	})
 }
@@ -171,11 +171,11 @@ func (f *ActorFactory) CreateBotActor(username string) *activitypub.Actor {
 // CreateLockedActor creates a locked (private) actor
 func (f *ActorFactory) CreateLockedActor(username string) *activitypub.Actor {
 	return f.CreateActor(ActorOptions{
-		Username:    username,
-		DisplayName: fmt.Sprintf("Private %s", username),
-		Summary:     "This is a private account",
-		Bot:         false,
-		Locked:      true,
+		Username:     username,
+		DisplayName:  fmt.Sprintf("Private %s", username),
+		Summary:      "This is a private account",
+		Bot:          false,
+		Locked:       true,
 		Discoverable: false,
 	})
 }
@@ -206,18 +206,18 @@ func (f *ActorFactory) CreateActorWithProfile(username string) *activitypub.Acto
 		},
 		{
 			Type:  "PropertyValue",
-			Name:  "Location",  
+			Name:  "Location",
 			Value: "Test City, TC",
 		},
 	}
 
 	return f.CreateActor(ActorOptions{
-		Username:    username,
-		DisplayName: fmt.Sprintf("Test User %s", username),
-		Summary:     fmt.Sprintf("This is the bio for test user %s. I like testing things!", username),
-		Avatar:      avatar,
-		Header:      header,
-		Fields:      fields,
+		Username:     username,
+		DisplayName:  fmt.Sprintf("Test User %s", username),
+		Summary:      fmt.Sprintf("This is the bio for test user %s. I like testing things!", username),
+		Avatar:       avatar,
+		Header:       header,
+		Fields:       fields,
 		Discoverable: true,
 	})
 }
@@ -226,9 +226,9 @@ func (f *ActorFactory) CreateActorWithProfile(username string) *activitypub.Acto
 func (f *ActorFactory) CreateRemoteActor(username, remoteDomain string) *activitypub.Actor {
 	remoteFactory := NewActorFactory(remoteDomain)
 	return remoteFactory.CreateActor(ActorOptions{
-		Username: username,
-		DisplayName: fmt.Sprintf("Remote User %s", username),
-		Summary:     fmt.Sprintf("I'm a user from %s", remoteDomain),
+		Username:     username,
+		DisplayName:  fmt.Sprintf("Remote User %s", username),
+		Summary:      fmt.Sprintf("I'm a user from %s", remoteDomain),
 		Discoverable: true,
 	})
 }
@@ -236,11 +236,11 @@ func (f *ActorFactory) CreateRemoteActor(username, remoteDomain string) *activit
 // CreateActorBatch creates multiple actors for testing
 func (f *ActorFactory) CreateActorBatch(count int, prefix string) []*activitypub.Actor {
 	actors := make([]*activitypub.Actor, count)
-	
+
 	for i := 0; i < count; i++ {
 		actors[i] = f.CreateActor(ActorOptions{
-			Username:    fmt.Sprintf("%s%d", prefix, i+1),
-			DisplayName: fmt.Sprintf("Test User %s%d", prefix, i+1),
+			Username:     fmt.Sprintf("%s%d", prefix, i+1),
+			DisplayName:  fmt.Sprintf("Test User %s%d", prefix, i+1),
 			Discoverable: true,
 		})
 	}
@@ -251,11 +251,11 @@ func (f *ActorFactory) CreateActorBatch(count int, prefix string) []*activitypub
 // CreateUserDataBatch creates multiple users for testing (returns maps to avoid type issues)
 func (f *ActorFactory) CreateUserDataBatch(count int, prefix string) []map[string]interface{} {
 	users := make([]map[string]interface{}, count)
-	
+
 	for i := 0; i < count; i++ {
 		users[i] = f.CreateUserData(ActorOptions{
-			Username:    fmt.Sprintf("%s%d", prefix, i+1),
-			DisplayName: fmt.Sprintf("Test User %s%d", prefix, i+1),
+			Username:     fmt.Sprintf("%s%d", prefix, i+1),
+			DisplayName:  fmt.Sprintf("Test User %s%d", prefix, i+1),
 			Discoverable: true,
 		})
 	}
@@ -266,7 +266,7 @@ func (f *ActorFactory) CreateUserDataBatch(count int, prefix string) []map[strin
 // CreateActorWithCustomFields creates an actor with custom profile fields
 func (f *ActorFactory) CreateActorWithCustomFields(username string, fields map[string]string) *activitypub.Actor {
 	propertyValues := make([]activitypub.Attachment, 0, len(fields))
-	
+
 	for name, value := range fields {
 		propertyValues = append(propertyValues, activitypub.Attachment{
 			Type:  "PropertyValue",
@@ -276,9 +276,9 @@ func (f *ActorFactory) CreateActorWithCustomFields(username string, fields map[s
 	}
 
 	return f.CreateActor(ActorOptions{
-		Username:    username,
-		DisplayName: fmt.Sprintf("Test User %s", username),
-		Fields:      propertyValues,
+		Username:     username,
+		DisplayName:  fmt.Sprintf("Test User %s", username),
+		Fields:       propertyValues,
 		Discoverable: true,
 	})
 }

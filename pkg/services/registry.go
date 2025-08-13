@@ -79,6 +79,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// DefaultLocalhost is the default domain name when no config is provided
+	DefaultLocalhost = "localhost"
+)
+
 // EventBus defines the interface for GraphQL event subscriptions
 type EventBus interface {
 	// Subscribe creates a subscription to events matching the stream name
@@ -96,32 +101,32 @@ type Registry struct {
 	config    *ServiceConfig
 
 	// Service instances (lazily initialized)
-	businessLogic    BusinessLogicService
-	validation       ValidationService
-	authentication   AuthenticationService
-	federation       FederationService
-	timeline         TimelineService
-	analytics        AnalyticsService
-	notification     NotificationService
+	businessLogic  BusinessLogicService
+	validation     ValidationService
+	authentication AuthenticationService
+	federation     FederationService
+	timeline       TimelineService
+	analytics      AnalyticsService
+	notification   NotificationService
 
 	// Domain services (new service-first architecture)
-	notesService          *notes.Service
-	accountsService       *accounts.Service
-	relationshipsService  *relationships.Service
-	conversationsService  *conversations.Service
-	mediaService          *media.Service
-	listsService          *lists.Service
-	notificationsService  *notifications.Service
-	aiService             *ai.Service
-	emojiService          *emoji.Service
-	scheduledService      *scheduled.Service
-	searchService         *search.Service
-	importExportService   *importexport.Service
-	bulkService           *bulk.Service
+	notesService         *notes.Service
+	accountsService      *accounts.Service
+	relationshipsService *relationships.Service
+	conversationsService *conversations.Service
+	mediaService         *media.Service
+	listsService         *lists.Service
+	notificationsService *notifications.Service
+	aiService            *ai.Service
+	emojiService         *emoji.Service
+	scheduledService     *scheduled.Service
+	searchService        *search.Service
+	importExportService  *importexport.Service
+	bulkService          *bulk.Service
 
 	// Event infrastructure
-	eventBus              EventBus
-	internalEventBus      *streaming.EventBus
+	eventBus         EventBus
+	internalEventBus *streaming.EventBus
 
 	// Service management
 	mu          sync.RWMutex
@@ -211,7 +216,7 @@ func (r *Registry) validate() error {
 
 	if r.config == nil {
 		r.config = &ServiceConfig{
-			BaseURL:   "https://localhost",
+			BaseURL:   "https://" + DefaultLocalhost,
 			JWTSecret: "default-secret-change-in-production",
 		}
 	}
@@ -226,10 +231,10 @@ func (r *Registry) BusinessLogic() BusinessLogicService {
 		r.mu.Unlock()
 		return r.businessLogic
 	}
-	
+
 	// Initialize dependencies without holding the lock
 	r.mu.Unlock()
-	
+
 	deps := &ServiceDependencies{
 		Repos:  r.storage,
 		Config: r.config,
@@ -246,7 +251,7 @@ func (r *Registry) BusinessLogic() BusinessLogicService {
 	// Now acquire lock to set the service
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	// Double-check pattern in case another goroutine initialized it
 	if r.businessLogic == nil {
 		r.businessLogic = NewBusinessLogicService(
@@ -418,7 +423,7 @@ func (r *Registry) Close() error {
 	// Get initialized services without holding lock (to avoid deadlock)
 	r.mu.Unlock()
 	initializedServices := r.GetInitializedServices()
-	
+
 	// Log closure
 	r.logger.Info("service registry closed", zap.Strings("initialized_services", initializedServices))
 
@@ -460,10 +465,10 @@ func (r *Registry) Notes() *notes.Service {
 		searchRepo := r.storage.Search()
 		communityNoteRepo := r.storage.CommunityNote()
 		userRepo := r.storage.User()
-		
+
 		// Check if repositories are available
 		if statusRepo != nil && accountRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -472,7 +477,7 @@ func (r *Registry) Notes() *notes.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			r.notesService = notes.NewService(
 				statusRepo,
 				accountRepo,
@@ -508,7 +513,7 @@ func (r *Registry) Accounts() *accounts.Service {
 		// Create adapter services for crypto and auth
 		cryptoAdapter := NewCryptoAdapter()
 		authAdapter := NewAuthAdapter(r.config.JWTSecret, r.storage)
-		
+
 		r.accountsService = accounts.NewService(
 			r.storage,
 			r.publisher,
@@ -530,7 +535,7 @@ func (r *Registry) Relationships() *relationships.Service {
 	defer r.mu.Unlock()
 
 	if r.relationshipsService == nil && r.storage != nil {
-		domainName := "localhost"
+		domainName := DefaultLocalhost
 		if r.config != nil && r.config.BaseURL != "" {
 			// Extract domain from base URL
 			if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -539,7 +544,7 @@ func (r *Registry) Relationships() *relationships.Service {
 				domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 			}
 		}
-		
+
 		r.relationshipsService = relationships.NewServiceWithStorage(
 			r.storage,
 			r.publisher,
@@ -588,7 +593,7 @@ func (r *Registry) Lists() *lists.Service {
 		// Initialize the Lists service with repository interfaces
 		listRepo := r.storage.List()
 		statusRepo := r.storage.Status()
-		
+
 		// Check if repositories are available
 		if listRepo != nil && statusRepo != nil {
 			r.listsService = lists.NewService(
@@ -617,10 +622,10 @@ func (r *Registry) Notifications() *notifications.Service {
 		// Initialize the Notifications service with repository interfaces
 		notificationRepo := r.storage.Notification()
 		accountRepo := r.storage.Account()
-		
+
 		// Check if repositories are available
 		if notificationRepo != nil && accountRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -629,7 +634,7 @@ func (r *Registry) Notifications() *notifications.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			r.notificationsService = notifications.NewService(
 				notificationRepo,
 				accountRepo,
@@ -673,10 +678,10 @@ func (r *Registry) Emoji() *emoji.Service {
 	if r.emojiService == nil && r.storage != nil {
 		// Initialize the Emoji service with repository interface
 		emojiRepo := r.storage.Emoji()
-		
+
 		// Check if repository is available
 		if emojiRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -685,7 +690,7 @@ func (r *Registry) Emoji() *emoji.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			r.emojiService = emoji.NewService(
 				emojiRepo,
 				r.publisher,
@@ -713,10 +718,10 @@ func (r *Registry) Scheduled() *scheduled.Service {
 		scheduledRepo := r.storage.ScheduledStatus()
 		statusRepo := r.storage.Status()
 		mediaRepo := r.storage.Media()
-		
+
 		// Check if repositories are available
 		if scheduledRepo != nil && statusRepo != nil && mediaRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -725,7 +730,7 @@ func (r *Registry) Scheduled() *scheduled.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			r.scheduledService = scheduled.NewService(
 				scheduledRepo,
 				statusRepo,
@@ -756,10 +761,10 @@ func (r *Registry) Search() *search.Service {
 		actorRepo := r.storage.Actor()
 		relationshipRepo := r.storage.Relationship()
 		statusRepo := r.storage.Status()
-		
+
 		// Check if repositories are available
 		if searchRepo != nil && actorRepo != nil && relationshipRepo != nil && statusRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -768,7 +773,7 @@ func (r *Registry) Search() *search.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			r.searchService = search.NewService(
 				searchRepo,
 				actorRepo,
@@ -802,10 +807,10 @@ func (r *Registry) ImportExport() *importexport.Service {
 		accountRepo := r.storage.Account()
 		mediaRepo := r.storage.Media()
 		socialRepo := r.storage.Social()
-		
+
 		// Check if repositories are available
 		if exportRepo != nil && importRepo != nil && statusRepo != nil && accountRepo != nil && mediaRepo != nil && socialRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -814,7 +819,7 @@ func (r *Registry) ImportExport() *importexport.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			// TODO: Need to implement QueueService and StorageClient interfaces
 			// For now, pass nil - these will need to be added to registry dependencies
 			r.importExportService = importexport.NewService(
@@ -853,10 +858,10 @@ func (r *Registry) Bulk() *bulk.Service {
 		socialRepo := r.storage.Social()
 		listRepo := r.storage.List()
 		relationshipRepo := r.storage.Relationship()
-		
+
 		// Check if repositories are available
 		if statusRepo != nil && accountRepo != nil && socialRepo != nil && listRepo != nil && relationshipRepo != nil {
-			domainName := "localhost"
+			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
 				if strings.HasPrefix(r.config.BaseURL, "https://") {
@@ -865,16 +870,16 @@ func (r *Registry) Bulk() *bulk.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			// Initialize federation service (may be nil during testing)
 			federationService := r.Federation()
-			
+
 			// Create adapter for federation service interface
 			var bulkFederation bulk.FederationService
 			if federationService != nil {
 				bulkFederation = &federationServiceAdapter{federationService}
 			}
-			
+
 			r.bulkService = bulk.NewService(
 				statusRepo,
 				accountRepo,
@@ -974,10 +979,10 @@ func (a *graphqlEventBusAdapter) Subscribe(ctx context.Context, streamName strin
 				if event == nil {
 					return // Channel closed
 				}
-				
+
 				// Convert internal event to GraphQL-compatible format
 				graphqlEvent := convertInternalEventToGraphQL(event)
-				
+
 				// Non-blocking send to GraphQL channel
 				select {
 				case graphqlChan <- graphqlEvent:

@@ -77,7 +77,7 @@ func TestNewAPIGatewayPublisher(t *testing.T) {
 
 	publisher := NewAPIGatewayPublisher(client, repo, "wss://api.example.com", logger)
 	assert.NotNil(t, publisher)
-	
+
 	// Test with nil logger
 	publisherNoLog := NewAPIGatewayPublisher(client, repo, "wss://api.example.com", nil)
 	assert.NotNil(t, publisherNoLog)
@@ -200,7 +200,7 @@ func TestAPIGatewayPublisher_PublishToUser_PartialFailure(t *testing.T) {
 	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(input *apigatewaymanagementapi.PostToConnectionInput) bool {
 		return *input.ConnectionId == "conn1"
 	})).Return(&apigatewaymanagementapi.PostToConnectionOutput{}, nil)
-	
+
 	client.On("PostToConnection", mock.Anything, mock.MatchedBy(func(input *apigatewaymanagementapi.PostToConnectionInput) bool {
 		return *input.ConnectionId == "conn2"
 	})).Return(nil, errors.New("connection failed"))

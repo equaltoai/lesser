@@ -18,10 +18,10 @@ import (
 
 // Service provides list operations
 type Service struct {
-	listRepo interfaces.ListRepository
+	listRepo   interfaces.ListRepository
 	statusRepo interfaces.StatusRepository
-	publisher streaming.Publisher
-	logger    *zap.Logger
+	publisher  streaming.Publisher
+	logger     *zap.Logger
 }
 
 // NewService creates a new Lists Service with the required dependencies
@@ -36,10 +36,10 @@ func NewService(
 	}
 
 	return &Service{
-		listRepo:  listRepo,
-		statusRepo:  statusRepo,
-		publisher: publisher,
-		logger:    logger,
+		listRepo:   listRepo,
+		statusRepo: statusRepo,
+		publisher:  publisher,
+		logger:     logger,
 	}
 }
 
@@ -69,16 +69,16 @@ type DeleteListCommand struct {
 
 // AddToListCommand contains data needed to add a member to a list
 type AddToListCommand struct {
-	ListID        string `json:"list_id" validate:"required"`
+	ListID         string `json:"list_id" validate:"required"`
 	MemberUsername string `json:"member_username" validate:"required"`
-	AdderID       string `json:"adder_id" validate:"required"` // Must be the list owner
+	AdderID        string `json:"adder_id" validate:"required"` // Must be the list owner
 }
 
 // RemoveFromListCommand contains data needed to remove a member from a list
 type RemoveFromListCommand struct {
-	ListID        string `json:"list_id" validate:"required"`
+	ListID         string `json:"list_id" validate:"required"`
 	MemberUsername string `json:"member_username" validate:"required"`
-	RemoverID     string `json:"remover_id" validate:"required"` // Must be the list owner
+	RemoverID      string `json:"remover_id" validate:"required"` // Must be the list owner
 }
 
 // GetListQuery contains parameters for retrieving a list
@@ -89,22 +89,22 @@ type GetListQuery struct {
 
 // ListUserListsQuery contains parameters for listing a user's lists
 type ListUserListsQuery struct {
-	Username   string                          `json:"username" validate:"required"`
-	ViewerID   string                          `json:"viewer_id"` // User requesting the lists
+	Username   string                       `json:"username" validate:"required"`
+	ViewerID   string                       `json:"viewer_id"` // User requesting the lists
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
 // GetListTimelineQuery contains parameters for retrieving a list timeline
 type GetListTimelineQuery struct {
-	ListID     string                          `json:"list_id" validate:"required"`
-	ViewerID   string                          `json:"viewer_id" validate:"required"` // Must be list owner or member
+	ListID     string                       `json:"list_id" validate:"required"`
+	ViewerID   string                       `json:"viewer_id" validate:"required"` // Must be list owner or member
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
 // GetListMembersQuery contains parameters for retrieving list members
 type GetListMembersQuery struct {
-	ListID     string                        `json:"list_id" validate:"required"`
-	ViewerID   string                        `json:"viewer_id" validate:"required"` // Must be list owner
+	ListID     string                       `json:"list_id" validate:"required"`
+	ViewerID   string                       `json:"viewer_id" validate:"required"` // Must be list owner
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -112,27 +112,27 @@ type GetListMembersQuery struct {
 
 // ListResult contains a list and associated events that were emitted
 type ListResult struct {
-	List   *models.List        `json:"list"`
+	List   *models.List       `json:"list"`
 	Events []*streaming.Event `json:"events"`
 }
 
 // Result contains multiple lists with pagination and events
 type Result struct {
-	Lists      []*models.List                                    `json:"lists"`
+	Lists      []*models.List                            `json:"lists"`
 	Pagination *interfaces.PaginatedResult[*models.List] `json:"pagination"`
-	Events     []*streaming.Event                               `json:"events"`
+	Events     []*streaming.Event                        `json:"events"`
 }
 
 // TimelineResult contains timeline posts with pagination and events
 type TimelineResult struct {
-	Statuses   []*models.Status                                 `json:"statuses"`
+	Statuses   []*models.Status                            `json:"statuses"`
 	Pagination *interfaces.PaginatedResult[*models.Status] `json:"pagination"`
-	Events     []*streaming.Event                              `json:"events"`
+	Events     []*streaming.Event                          `json:"events"`
 }
 
 // MembershipResult contains membership operation result and events
 type MembershipResult struct {
-	Success bool                `json:"success"`
+	Success bool               `json:"success"`
 	Events  []*streaming.Event `json:"events"`
 }
 

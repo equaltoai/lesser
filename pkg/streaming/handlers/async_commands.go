@@ -15,9 +15,9 @@ import (
 
 // BulkService defines the interface for bulk operations
 type BulkService interface {
-	BulkFollow(ctx context.Context, cmd *bulk.BulkFollowCommand) (*bulk.BulkOperationResult, error)
-	BulkDeleteStatuses(ctx context.Context, cmd *bulk.BulkDeleteStatusesCommand) (*bulk.BulkOperationResult, error)
-	GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.BulkOperationResult, error)
+	BulkFollow(ctx context.Context, cmd *bulk.FollowCommand) (*bulk.OperationResult, error)
+	BulkDeleteStatuses(ctx context.Context, cmd *bulk.DeleteStatusesCommand) (*bulk.OperationResult, error)
+	GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.OperationResult, error)
 }
 
 // ImportExportService defines the interface for import/export operations
@@ -136,7 +136,7 @@ func (ach *AsyncCommandHandler) handleBulkFollow(ctx context.Context, conn *stre
 	notify := ach.GetBool(cmd.Payload, "notify", false)
 	languages := ach.GetStringSlice(cmd.Payload, "languages")
 
-	bulkCmd := &bulk.BulkFollowCommand{
+	bulkCmd := &bulk.FollowCommand{
 		Username:   conn.Username,
 		AccountIDs: accountIDs,
 		Reblogs:    reblogs,
@@ -160,7 +160,7 @@ func (ach *AsyncCommandHandler) handleBulkFollow(ctx context.Context, conn *stre
 }
 
 // handleBulkUnfollow handles bulk unfollow operations
-func (ach *AsyncCommandHandler) handleBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkUnfollow(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -214,7 +214,7 @@ func (ach *AsyncCommandHandler) handleBulkDeleteStatuses(ctx context.Context, co
 		}
 	}
 
-	bulkCmd := &bulk.BulkDeleteStatusesCommand{
+	bulkCmd := &bulk.DeleteStatusesCommand{
 		Username:   conn.Username,
 		StatusIDs:  statusIDs,
 		DateRange:  dateRange,
@@ -406,38 +406,38 @@ func (ach *AsyncCommandHandler) handleListExports(ctx context.Context, conn *str
 
 // Placeholder handlers for commands not yet implemented
 
-func (ach *AsyncCommandHandler) handleBulkMute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkMute(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk mute not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkUnmute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkUnmute(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk unmute not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkBlock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkBlock(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk block not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkUnblock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkUnblock(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk unblock not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkListMembers(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkListMembers(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk list members not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleCancelExport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleCancelExport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Cancel export not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleCreateImport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleCreateImport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Create import not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleGetImport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleGetImport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Get import not yet implemented", "This feature is coming soon"), nil
 }
 
-func (ach *AsyncCommandHandler) handleListImports(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleListImports(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "List imports not yet implemented", "This feature is coming soon"), nil
 }

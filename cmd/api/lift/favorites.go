@@ -21,7 +21,7 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 	}
 
 	var username string
-	
+
 	if testUsername != "" {
 		// Test mode - use test username directly
 		username = testUsername

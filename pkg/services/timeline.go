@@ -78,7 +78,7 @@ func (t *timelineService) UpdateTimelines(ctx context.Context, activity *activit
 		// These might update engagement counters in timelines
 		return t.updateEngagementCounters(ctx, activity)
 	}
-	
+
 	return nil
 }
 
@@ -86,7 +86,7 @@ func (t *timelineService) UpdateTimelines(ctx context.Context, activity *activit
 func (t *timelineService) RemoveFromTimelines(ctx context.Context, objectID string) error {
 	// Get all timeline entries for this object
 	timelines := []string{"home", "public", "local"} // Standard timeline types
-	
+
 	for _, timelineType := range timelines {
 		if err := t.removeFromTimeline(ctx, timelineType, objectID); err != nil {
 			t.logger.Warn("failed to remove from timeline",
@@ -95,7 +95,7 @@ func (t *timelineService) RemoveFromTimelines(ctx context.Context, objectID stri
 				zap.Error(err))
 		}
 	}
-	
+
 	return nil
 }
 
@@ -107,16 +107,16 @@ func (t *timelineService) updateTimelineEntries(_ context.Context, activity *act
 	if note, ok := activity.Object.(*activitypub.Note); ok {
 		objectID = note.ID
 	}
-	
+
 	if objectID == "" {
 		return nil
 	}
-	
+
 	// Update timeline entries with new content
 	// This would involve updating cached timeline entries
 	t.logger.Debug("updating timeline entries for updated content",
 		zap.String("object_id", objectID))
-	
+
 	return nil
 }
 
@@ -126,25 +126,25 @@ func (t *timelineService) updateEngagementCounters(_ context.Context, activity *
 	if objID, ok := activity.Object.(string); ok {
 		objectID = objID
 	}
-	
+
 	if objectID == "" {
 		return nil
 	}
-	
+
 	t.logger.Debug("updating engagement counters in timelines",
 		zap.String("object_id", objectID),
 		zap.String("activity_type", activity.Type))
-	
+
 	return nil
 }
 
 func (t *timelineService) removeFromTimeline(_ context.Context, timelineType, objectID string) error {
 	// Remove specific object from specific timeline type
 	// This would involve querying and deleting timeline entries
-	
+
 	t.logger.Debug("removing from timeline",
 		zap.String("timeline_type", timelineType),
 		zap.String("object_id", objectID))
-		
+
 	return nil
 }

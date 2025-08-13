@@ -4,7 +4,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -359,115 +358,9 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 }
 
 // convertToMediaAttachment converts a Media model to Mastodon API compatible attachment
-func (r *ScheduledStatusRepository) convertToMediaAttachment(media *models.Media, _ int) map[string]any {
-	// Determine media type based on content type
-	mediaType := MediaTypeUnknown
-	if media.IsImage() {
-		mediaType = MediaTypeImage
-	} else if media.IsVideo() {
-		mediaType = MediaTypeVideo
-	} else if media.IsAudio() {
-		mediaType = MediaTypeAudio
-	}
-
-	// Handle GIF images as gifv type
-	if media.ContentType == "image/gif" {
-		mediaType = MediaTypeGifv
-	}
-
-	// Build attachment object compatible with Mastodon API
-	attachment := map[string]any{
-		"id":          media.MediaID,
-		"type":        mediaType,
-		"url":         media.CDNUrl,
-		"preview_url": media.CDNUrl, // Use same URL for preview by default
-		"remote_url":  nil,          // For local media, this is nil
-		"description": media.Description,
-		"meta": map[string]any{
-			"original": map[string]any{
-				"width":  media.Width,
-				"height": media.Height,
-				"size":   fmt.Sprintf("%dx%d", media.Width, media.Height),
-				"aspect": r.calculateAspect(media.Width, media.Height),
-			},
-		},
-		"blurhash": media.Blurhash,
-		"focus":    r.parseFocus(media.Focus),
-	}
-
-	// Add duration for video/audio
-	if mediaType == MediaTypeVideo || mediaType == MediaTypeAudio {
-		if meta, ok := attachment["meta"].(map[string]any); ok {
-			if original, ok := meta["original"].(map[string]any); ok {
-				original["duration"] = media.Duration
-			}
-		}
-	}
-
-	// Add variants/thumbnails if available
-	if len(media.Variants) > 0 {
-		attachment["variants"] = r.convertVariants(media.Variants)
-	}
-
-	// Add preview variant for videos/images
-	if mediaType == MediaTypeVideo || mediaType == MediaTypeImage {
-		if thumbnail, exists := media.GetVariant("thumbnail"); exists {
-			attachment["preview_url"] = thumbnail.CDNUrl
-			if meta, ok := attachment["meta"].(map[string]any); ok {
-				meta["small"] = map[string]any{
-					"width":  thumbnail.Width,
-					"height": thumbnail.Height,
-					"size":   fmt.Sprintf("%dx%d", thumbnail.Width, thumbnail.Height),
-					"aspect": r.calculateAspect(thumbnail.Width, thumbnail.Height),
-				}
-			}
-		}
-	}
-
-	return attachment
-}
 
 // convertVariants converts media variants to API format
-func (r *ScheduledStatusRepository) convertVariants(variants map[string]models.MediaVariant) map[string]any {
-	apiVariants := make(map[string]any)
-	for name, variant := range variants {
-		apiVariants[name] = map[string]any{
-			"url":          variant.CDNUrl,
-			"content_type": variant.ContentType,
-			"width":        variant.Width,
-			"height":       variant.Height,
-			"file_size":    variant.FileSize,
-		}
-	}
-	return apiVariants
-}
 
 // calculateAspect calculates aspect ratio for media
-func (r *ScheduledStatusRepository) calculateAspect(width, height int) float64 {
-	if height == 0 {
-		return 1.0
-	}
-	return float64(width) / float64(height)
-}
 
 // parseFocus parses focus point string into API format
-func (r *ScheduledStatusRepository) parseFocus(focus string) map[string]float64 {
-	if focus == "" {
-		return map[string]float64{"x": 0.0, "y": 0.0}
-	}
-
-	parts := strings.Split(focus, ",")
-	if len(parts) != 2 {
-		return map[string]float64{"x": 0.0, "y": 0.0}
-	}
-
-	var x, y float64
-	if _, err := fmt.Sscanf(parts[0], "%f", &x); err != nil {
-		x = 0.0
-	}
-	if _, err := fmt.Sscanf(parts[1], "%f", &y); err != nil {
-		y = 0.0
-	}
-
-	return map[string]float64{"x": x, "y": y}
-}

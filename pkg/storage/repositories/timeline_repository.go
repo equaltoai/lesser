@@ -464,8 +464,8 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timeli
 	startReverseTimestamp := 9999999999 - startTime.Unix()
 	endReverseTimestamp := 9999999999 - endTime.Unix()
 	// Note: with reverse timestamp, the range logic is inverted
-	startSK := fmt.Sprintf("%010d#", endReverseTimestamp)   // Earlier time becomes larger reverse timestamp
-	endSK := fmt.Sprintf("%010d#", startReverseTimestamp)   // Later time becomes smaller reverse timestamp
+	startSK := fmt.Sprintf("%010d#", endReverseTimestamp) // Earlier time becomes larger reverse timestamp
+	endSK := fmt.Sprintf("%010d#", startReverseTimestamp) // Later time becomes smaller reverse timestamp
 
 	var entries []*models.Timeline
 	err := r.db.Model(&models.Timeline{}).
@@ -551,7 +551,7 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 	// Query user's conversation participant records using the established pattern
 	// PK = USER_CONVERSATIONS#username, SK = timestamp#conversationID
 	pk := fmt.Sprintf("USER_CONVERSATIONS#%s", username)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first (timestamp-based sorting)

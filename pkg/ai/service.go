@@ -1172,7 +1172,7 @@ func (s *AIService) GetAnalysisRequest(_ context.Context, requestID string) (*An
 }
 
 // storeAnalysisRequest is deprecated - storage is handled by the service layer
-func (s *AIService) storeAnalysisRequest(ctx context.Context, request *AnalysisRequest) error {
+func (s *AIService) storeAnalysisRequest(_ context.Context, _ *AnalysisRequest) error {
 	// Storage is now handled by the service layer in pkg/services/ai
 	// This method is kept for backward compatibility but does nothing
 	return nil
@@ -1226,13 +1226,13 @@ func (s *AIService) GenerateEmbedding(ctx context.Context, text string) ([]float
 }
 
 // GetAnalysis is deprecated - use the service layer for retrieval
-func (s *AIService) GetAnalysis(ctx context.Context, objectID string) (*AIAnalysis, error) {
+func (s *AIService) GetAnalysis(_ context.Context, _ string) (*AIAnalysis, error) {
 	// This functionality is now in pkg/services/ai
 	return nil, fmt.Errorf("GetAnalysis is deprecated - use service layer")
 }
 
 // GetAnalysisStats is deprecated - use the service layer for statistics
-func (s *AIService) GetAnalysisStats(ctx context.Context, period string) (*AIStats, error) {
+func (s *AIService) GetAnalysisStats(_ context.Context, _ string) (*AIStats, error) {
 	// This functionality is now in pkg/services/ai
 	return nil, fmt.Errorf("GetAnalysisStats is deprecated - use service layer")
 }

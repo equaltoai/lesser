@@ -556,26 +556,26 @@ func (r *RateLimitRepository) calculatePenaltyDuration(violationCount int) time.
 // IsUserBlocked checks if a user is currently blocked due to rate limiting
 func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) (bool, time.Time, error) {
 	now := time.Now()
-	
+
 	// Check recent rate limit records for any blocks
 	var rateLimits []models.APIRateLimit
 	pk := fmt.Sprintf("RATELIMIT#%s", userID)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
 		Where("PK", "=", pk).
 		All(&rateLimits)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, time.Time{}, nil
 		}
 		return false, time.Time{}, err
 	}
-	
+
 	// Find the longest block time that's still active
 	var latestBlockUntil time.Time
 	isBlocked := false
-	
+
 	for _, limit := range rateLimits {
 		if limit.Blocked && now.Before(limit.BlockedUntil) {
 			isBlocked = true
@@ -584,33 +584,33 @@ func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) 
 			}
 		}
 	}
-	
+
 	return isBlocked, latestBlockUntil, nil
 }
 
 // IsDomainBlocked checks if a federation domain is currently blocked
 func (r *RateLimitRepository) IsDomainBlocked(ctx context.Context, domain string) (bool, time.Time, error) {
 	now := time.Now()
-	
+
 	// Check recent rate limit records for any blocks
 	var rateLimits []models.APIRateLimit
 	pkPrefix := fmt.Sprintf("RATELIMIT#DOMAIN#%s", domain)
-	
+
 	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
 		Where("PK", "begins_with", pkPrefix).
 		All(&rateLimits)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, time.Time{}, nil
 		}
 		return false, time.Time{}, err
 	}
-	
+
 	// Find the longest block time that's still active
 	var latestBlockUntil time.Time
 	isBlocked := false
-	
+
 	for _, limit := range rateLimits {
 		if limit.Blocked && now.Before(limit.BlockedUntil) {
 			isBlocked = true
@@ -619,6 +619,6 @@ func (r *RateLimitRepository) IsDomainBlocked(ctx context.Context, domain string
 			}
 		}
 	}
-	
+
 	return isBlocked, latestBlockUntil, nil
 }

@@ -622,12 +622,12 @@ func TestService_Block_Success(t *testing.T) {
 	accountRepo.On("GetAccount", ctx, "alice").Return(blocker, nil)
 	accountRepo.On("GetAccount", ctx, "bob").Return(blocked, nil)
 	relationshipRepo.On("IsBlocked", ctx, "alice", "bob").Return(false, nil)
-	
+
 	// Mock unfollow checks during block
 	relationshipRepo.On("IsFollowing", ctx, "alice", "bob").Return(true, nil)
 	relationshipRepo.On("Unfollow", ctx, "alice", "bob").Return(nil)
 	relationshipRepo.On("IsFollowing", ctx, "bob", "alice").Return(false, nil)
-	
+
 	relationshipRepo.On("BlockUser", ctx, "alice", "bob").Return(nil)
 
 	// Mock relationship queries for building result
@@ -646,7 +646,7 @@ func TestService_Block_Success(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.True(t, result.Relationship.Blocking)
 	assert.False(t, result.Relationship.Following) // Should automatically unfollow
-	assert.Len(t, result.Events, 1) // Event only to blocker's stream
+	assert.Len(t, result.Events, 1)                // Event only to blocker's stream
 
 	// Verify mock calls
 	relationshipRepo.AssertExpectations(t)

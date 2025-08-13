@@ -59,7 +59,7 @@ type Status struct {
 	Mentions       []string          `json:"mentions,omitempty"`        // Extracted mentions
 	URLs           []string          `json:"urls,omitempty"`            // Extracted URLs
 	MediaCount     int               `json:"media_count"`               // Number of media attachments
-	
+
 	// Addressing fields for direct messages and limited visibility
 	ToRecipients  []string `json:"to_recipients,omitempty"`  // Primary recipients (visible to all)
 	CcRecipients  []string `json:"cc_recipients,omitempty"`  // Carbon copy recipients (visible to all)
@@ -304,7 +304,7 @@ func extractStatusIDFromURL(url string) string {
 // determineVisibilityFromAudience determines visibility based on To/CC fields
 func determineVisibilityFromAudience(to, cc []string) string {
 	publicAddress := "https://www.w3.org/ns/activitystreams#Public"
-	
+
 	// Check if public address is in To field
 	for _, addr := range to {
 		if addr == publicAddress {
@@ -380,28 +380,28 @@ func (s *Status) IsRecipient(actorID string) bool {
 			return true
 		}
 	}
-	
+
 	// Check CC recipients
 	for _, recipient := range s.CcRecipients {
 		if recipient == actorID || strings.Contains(recipient, "/followers") {
 			return true
 		}
 	}
-	
+
 	// Check BTo recipients (blind to - hidden from others but still a recipient)
 	for _, recipient := range s.BtoRecipients {
 		if recipient == actorID {
 			return true
 		}
 	}
-	
+
 	// Check BCC recipients (blind carbon copy - hidden from all but still a recipient)
 	for _, recipient := range s.BccRecipients {
 		if recipient == actorID {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -424,20 +424,20 @@ func (s *Status) IsVisibleTo(actorID string) bool {
 // GetVisibleRecipients returns recipients that should be visible to the requesting actor
 func (s *Status) GetVisibleRecipients(requestingActorID string) []string {
 	var visible []string
-	
+
 	// Add To recipients (always visible)
 	visible = append(visible, s.ToRecipients...)
-	
+
 	// Add CC recipients (always visible)
 	visible = append(visible, s.CcRecipients...)
-	
+
 	// BTo recipients are only visible to the recipients themselves, not to others
 	if s.IsRecipient(requestingActorID) {
 		visible = append(visible, s.BtoRecipients...)
 	}
-	
+
 	// BCC recipients are never visible to anyone (not even other recipients)
-	
+
 	return visible
 }
 
@@ -496,7 +496,7 @@ func (s *Status) GetAllRecipients() []string {
 func (s *Status) HasSpecificRecipients() bool {
 	allRecipients := s.GetAllRecipients()
 	publicAddr := "https://www.w3.org/ns/activitystreams#Public"
-	
+
 	for _, recipient := range allRecipients {
 		// Skip public address and collections
 		if recipient != publicAddr && !strings.Contains(recipient, "/followers") {
@@ -542,14 +542,14 @@ func (s *Status) CanBeReblogged() bool {
 func (s *Status) SanitizeForActor(viewerID string) *Status {
 	// Create a copy to avoid modifying the original
 	sanitized := *s
-	
+
 	// Remove BCC recipients (never visible to anyone)
 	sanitized.BccRecipients = nil
-	
+
 	// Remove BTo recipients if viewer is not a recipient
 	if !s.IsRecipient(viewerID) {
 		sanitized.BtoRecipients = nil
 	}
-	
+
 	return &sanitized
 }

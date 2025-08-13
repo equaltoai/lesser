@@ -664,7 +664,7 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusGone).JSON(map[string]any{"error": "download URL has expired"})
 	}
 
-	// Redirect to the pre-signed S3 URL  
+	// Redirect to the pre-signed S3 URL
 	ctx.Set("Location", export.DownloadURL)
 	return ctx.Status(http.StatusFound).JSON(map[string]any{
 		"download_url": export.DownloadURL,
@@ -676,21 +676,21 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, req *ExportRequest) error {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
-	
+
 	// Estimate export cost (simplified estimation)
 	estimatedCost := h.estimateExportCost(req)
-	
+
 	// Check budget limits (import cost = 0 for exports)
 	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, 0, estimatedCost)
 	if err != nil {
 		h.logger.Warn("failed to check budget limits, allowing export", zap.Error(err))
 		return nil // Don't block on budget check errors
 	}
-	
+
 	if !withinLimits {
 		var limitType string
 		var remaining int64
-		
+
 		if budget.IsExportOverLimit(estimatedCost) {
 			limitType = "export"
 			remaining = budget.GetRemainingExportBudget()
@@ -698,23 +698,23 @@ func (h *Handler) checkExportBudgetLimits(ctx *lift.Context, username string, re
 			limitType = "combined"
 			remaining = budget.GetRemainingCombinedBudget()
 		}
-		
+
 		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
-			"error":              fmt.Sprintf("%s budget limit exceeded", limitType),
-			"estimated_cost":     float64(estimatedCost) / 1_000_000.0, // Convert to dollars
-			"remaining_budget":   float64(remaining) / 1_000_000.0,     // Convert to dollars
-			"budget_period":      budget.Period,
-			"budget_resets_at":   budget.NextResetAt.Format(time.RFC3339),
+			"error":            fmt.Sprintf("%s budget limit exceeded", limitType),
+			"estimated_cost":   float64(estimatedCost) / 1_000_000.0, // Convert to dollars
+			"remaining_budget": float64(remaining) / 1_000_000.0,     // Convert to dollars
+			"budget_period":    budget.Period,
+			"budget_resets_at": budget.NextResetAt.Format(time.RFC3339),
 		})
 	}
-	
+
 	return nil
 }
 
 // estimateExportCost provides a rough cost estimate for an export operation
 func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
 	baseCost := int64(50000) // $0.05 base cost in microcents
-	
+
 	// Adjust cost based on export type
 	switch req.Type {
 	case ExportTypeArchive:
@@ -722,18 +722,18 @@ func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
 	case ExportTypeFollowers, ExportTypeFollowing:
 		baseCost *= 3 // Relationship exports are moderately expensive
 	}
-	
+
 	// Adjust cost based on format
 	switch req.Format {
 	case "activitypub", "mastodon":
 		baseCost *= 2 // JSON formats are more expensive than CSV
 	}
-	
+
 	// Media inclusion significantly increases cost
 	if req.IncludeMedia {
 		baseCost *= 5
 	}
-	
+
 	return baseCost
 }
 
@@ -764,6 +764,6 @@ func (h *Handler) checkExportRateLimit(ctx *lift.Context, username string, expor
 			"retry_after":    3600,
 		})
 	}
-	
+
 	return nil
 }

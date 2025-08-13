@@ -164,7 +164,7 @@ func (h *Handler) getStatusForTranslation(ctx *lift.Context, statusID, objectID 
 			zap.Error(err))
 		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
-	
+
 	// Convert to generic object for translation
 	summary := ""
 	if note.Note != nil {

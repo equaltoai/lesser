@@ -12,6 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// EnabledValue represents the string "true" for environment variables
+	EnabledValue = "true"
+)
+
 // StreamingConnectionRepository handles WebSocket connections using DynamORM
 type StreamingConnectionRepository struct {
 	db                core.DB
@@ -274,7 +279,7 @@ func (r *StreamingConnectionRepository) GetIdleConnections(_ context.Context, id
 func shouldCreateSampleData() bool {
 	// Only create sample data in development or testing environments
 	// Check environment variable to enable sample data
-	return os.Getenv("WEBSOCKET_SAMPLE_DATA") == "true"
+	return os.Getenv("WEBSOCKET_SAMPLE_DATA") == EnabledValue
 }
 
 // GetStaleConnections gets WebSocket connections that are considered stale (very old with no recent activity)

@@ -81,7 +81,7 @@ type LatencyMetric struct {
 // NewEMFMetrics creates a new EMF metrics collector
 func NewEMFMetrics(logger *zap.Logger, namespace, service string) *EMFMetrics {
 	enabled := os.Getenv("EMF_METRICS_ENABLED") != "false" // Default to enabled unless explicitly disabled
-	
+
 	return &EMFMetrics{
 		logger:    logger,
 		namespace: namespace,
@@ -127,7 +127,7 @@ func (emf *EMFMetrics) RecordLatency(operation string, duration time.Duration) {
 	}
 
 	emf.PutMetric("Latency", durationMs, "Milliseconds", dimensions)
-	
+
 	// Also record percentile-friendly metrics
 	emf.PutMetric("LatencyP50", durationMs, "Milliseconds", dimensions)
 	emf.PutMetric("LatencyP90", durationMs, "Milliseconds", dimensions)
@@ -259,7 +259,7 @@ func (emf *EMFMetrics) RecordQueueDepth(queueName string, depth int64) {
 	}
 
 	emf.PutMetric("QueueDepth", float64(depth), "Count", dimensions)
-	
+
 	// Alert-friendly metrics
 	if depth > 10000 {
 		emf.PutMetric("QueueDepthCritical", 1.0, "Count", dimensions)
@@ -282,9 +282,9 @@ func (emf *EMFMetrics) StartLatencyTimer(ctx context.Context, operation string) 
 // Finish completes latency tracking and records the metric
 func (lm *LatencyMetric) Finish(emf *EMFMetrics, success bool) {
 	duration := time.Since(lm.Start)
-	
+
 	emf.RecordLatency(lm.Operation, duration)
-	
+
 	if success {
 		emf.RecordSuccess(lm.Operation)
 	}
@@ -293,7 +293,7 @@ func (lm *LatencyMetric) Finish(emf *EMFMetrics, success bool) {
 // FinishWithError completes latency tracking and records error
 func (lm *LatencyMetric) FinishWithError(emf *EMFMetrics, errorType string) {
 	duration := time.Since(lm.Start)
-	
+
 	emf.RecordLatency(lm.Operation, duration)
 	emf.RecordError(lm.Operation, errorType)
 }
@@ -314,9 +314,9 @@ func (emf *EMFMetrics) Flush() {
 	// Create EMF log entry
 	entry := EMFLogEntry{
 		AWS: EMFMetadata{
-			Timestamp:  time.Now().UnixMilli(),
-			LogGroup:   os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME"),
-			LogStream:  os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME"),
+			Timestamp: time.Now().UnixMilli(),
+			LogGroup:  os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME"),
+			LogStream: os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME"),
 			CloudWatchMetrics: []EMFCloudWatchMetrics{
 				{
 					Namespace:  emf.namespace,
@@ -325,10 +325,10 @@ func (emf *EMFMetrics) Flush() {
 				},
 			},
 		},
-		Timestamp: time.Now().UnixMilli(),
-		Service:   emf.service,
-		Namespace: emf.namespace,
-		Metrics:   emf.buildMetricsMap(),
+		Timestamp:  time.Now().UnixMilli(),
+		Service:    emf.service,
+		Namespace:  emf.namespace,
+		Metrics:    emf.buildMetricsMap(),
 		Properties: emf.metadata,
 	}
 
@@ -358,21 +358,21 @@ func (emf *EMFMetrics) createMetricKey(name string, dimensions map[string]string
 func (emf *EMFMetrics) buildDimensionSets() [][]string {
 	// Build dimension sets for EMF
 	dimensionSet := []string{"Service"}
-	
+
 	// Add other dimensions found in metadata
 	for k := range emf.metadata {
 		if k != "Service" && !emf.isMetricMetadata(k) {
 			dimensionSet = append(dimensionSet, k)
 		}
 	}
-	
+
 	return [][]string{dimensionSet}
 }
 
 func (emf *EMFMetrics) extractMetricDefinitions() []EMFMetricDefinition {
 	var definitions []EMFMetricDefinition
 	seen := make(map[string]bool)
-	
+
 	for key := range emf.metrics {
 		name := emf.extractMetricNameFromKey(key)
 		if !seen[name] {
@@ -383,7 +383,7 @@ func (emf *EMFMetrics) extractMetricDefinitions() []EMFMetricDefinition {
 			seen[name] = true
 		}
 	}
-	
+
 	return definitions
 }
 
@@ -399,12 +399,12 @@ func (emf *EMFMetrics) extractMetricNameFromKey(key string) string {
 
 func (emf *EMFMetrics) buildMetricsMap() map[string]interface{} {
 	metricsMap := make(map[string]interface{})
-	
+
 	for key, value := range emf.metrics {
 		name := emf.extractMetricNameFromKey(key)
 		metricsMap[name] = value
 	}
-	
+
 	return metricsMap
 }
 
@@ -420,7 +420,7 @@ func (emf *EMFMetrics) SetProperty(key string, value interface{}) {
 
 	emf.mu.Lock()
 	defer emf.mu.Unlock()
-	
+
 	emf.metadata[key] = value
 }
 
@@ -442,6 +442,6 @@ func (emf *EMFMetrics) IsEnabled() bool {
 func (emf *EMFMetrics) SetEnabled(enabled bool) {
 	emf.mu.Lock()
 	defer emf.mu.Unlock()
-	
+
 	emf.enabled = enabled
 }

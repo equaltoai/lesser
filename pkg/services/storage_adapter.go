@@ -16,48 +16,48 @@ import (
 type StorageAdapter interface {
 	// Actor operations
 	GetActor(ctx context.Context, username string) (*activitypub.Actor, error)
-	
+
 	// Object operations
 	CreateObject(ctx context.Context, object interface{}) error
 	GetObject(ctx context.Context, objectID string) (interface{}, error)
 	TombstoneObject(ctx context.Context, objectID, actorID string) error
 	IncrementReplyCount(ctx context.Context, objectID string) error
-	
+
 	// Activity operations
 	CreateActivity(ctx context.Context, activity *activitypub.Activity) error
-	
+
 	// Relationship operations
 	CreateRelationship(ctx context.Context, followerUsername, followingID, activityID string) error
 	IsFollowing(ctx context.Context, followerUsername, followingID string) (bool, error)
-	
+
 	// Like operations
 	CreateLike(ctx context.Context, actorID, objectID, activityID string) error
 	HasLiked(ctx context.Context, actorID, objectID string) (bool, error)
-	
+
 	// Analytics operations
 	RecordActivity(ctx context.Context, activityType, actorID string, timestamp time.Time) error
 	RecordHashtagUsage(ctx context.Context, hashtag, objectID, actorID string) error
 	RecordLinkShare(ctx context.Context, link, objectID, actorID string) error
 	RecordStatusEngagement(ctx context.Context, objectID, engagementType, actorID string) error
-	
+
 	// Timeline operations
 	FanOutPost(ctx context.Context, activity *activitypub.Activity) error
-	
+
 	// Federation operations
 	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
-	
+
 	// Notification operations
 	CreateNotification(ctx context.Context, notification interface{}) error
 	DeleteNotificationsByObject(ctx context.Context, objectID string) error
-	
+
 	// Infrastructure monitoring operations
 	GetInfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error)
 	GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error)
 	GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error)
-	
+
 	// Federation relationship operations
 	GetInstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error)
-	
+
 	// Database access
 	GetDB() interface{}
 	GetTableName() string
@@ -161,7 +161,7 @@ func (r *repositoryStorageAdapter) CreateNotification(ctx context.Context, notif
 	default:
 		return fmt.Errorf("invalid notification type: %T", notification)
 	}
-	
+
 	return r.repos.Notification().CreateNotification(ctx, notif)
 }
 
@@ -181,7 +181,7 @@ func (r *repositoryStorageAdapter) GetTableName() string {
 func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*model.DatabaseStatus, bool) {
 	tableName := r.repos.GetTableName()
 	db := r.repos.GetDB()
-	
+
 	status := &model.DatabaseStatus{
 		Name:        tableName,
 		Type:        "DynamoDB",
@@ -190,44 +190,44 @@ func (r *repositoryStorageAdapter) checkDatabaseHealth(ctx context.Context) ([]*
 		Latency:     model.Duration(0),
 		Throughput:  0,
 	}
-	
+
 	// Test database connectivity with a simple health check query
 	start := time.Now()
 	var healthCheck struct {
 		PK string `dynamorm:"pk"`
 		SK string `dynamorm:"sk"`
 	}
-	
+
 	// Try a minimal query to test database connectivity
 	err := db.Model(&healthCheck).
 		Where("PK", "=", "HEALTH_CHECK").
 		Where("SK", "=", "HEALTH_CHECK").
 		Limit(1).
 		First(&healthCheck)
-	
+
 	latency := time.Since(start)
 	status.Latency = model.Duration(latency)
-	
+
 	// Determine health based on operation success and latency
 	if err != nil && !IsNotFoundError(err) {
 		// Real error (not just "not found")
 		status.Status = model.HealthStatusDown
 		return []*model.DatabaseStatus{status}, false
 	}
-	
+
 	if latency > 5*time.Second {
 		status.Status = model.HealthStatusDegraded
 	} else if latency > 10*time.Second {
 		status.Status = model.HealthStatusDown
 		return []*model.DatabaseStatus{status}, false
 	}
-	
+
 	// Get cost tracking data to estimate throughput
 	costMetrics, err := r.getCostMetrics(ctx, time.Hour)
 	if err == nil && costMetrics != nil {
 		status.Throughput = costMetrics.ReadUnitsPerSecond + costMetrics.WriteUnitsPerSecond
 	}
-	
+
 	return []*model.DatabaseStatus{status}, true
 }
 
@@ -239,25 +239,25 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 		Type:        model.ServiceCategoryGraphqlAPI,
 		Status:      model.HealthStatusHealthy,
 		Uptime:      99.9, // Assume high uptime for serverless
-		LastRestart: nil,   // Serverless doesn't have traditional restarts
+		LastRestart: nil,  // Serverless doesn't have traditional restarts
 		ErrorRate:   0,
 	}
-	
+
 	// Test repository operations to verify API health
 	start := time.Now()
 	_, err := r.repos.Instance().GetInstanceRules(ctx)
 	latency := time.Since(start)
-	
+
 	if err != nil && !IsNotFoundError(err) {
 		apiStatus.Status = model.HealthStatusDown
 		apiStatus.ErrorRate = 1.0
 	}
-	
+
 	if latency > 30*time.Second {
 		// Lambda timeout approaching
 		apiStatus.Status = model.HealthStatusDown
 	}
-	
+
 	// Check database service status
 	dbStatus := &model.ServiceStatus{
 		Name:        "Database",
@@ -267,7 +267,7 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 		LastRestart: nil,   // Managed service
 		ErrorRate:   0,
 	}
-	
+
 	// Use cost tracking to estimate error rate
 	costMetrics, err := r.getCostMetrics(ctx, time.Hour)
 	if err == nil && costMetrics != nil {
@@ -280,7 +280,7 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 			}
 		}
 	}
-	
+
 	services := []*model.ServiceStatus{apiStatus, dbStatus}
 	allHealthy := true
 	for _, svc := range services {
@@ -289,7 +289,7 @@ func (r *repositoryStorageAdapter) checkServiceHealth(ctx context.Context) ([]*m
 			break
 		}
 	}
-	
+
 	return services, allHealthy
 }
 
@@ -303,13 +303,13 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 		OldestMessage:  nil,
 		DlqCount:       0,
 	}
-	
+
 	// Get recent DLQ messages to assess queue health
 	recentMessages, err := r.repos.DLQ().GetDLQMessagesForReprocessing(ctx, "health-check", "PENDING", 100)
 	if err == nil {
 		dlqStatus.Depth = len(recentMessages)
 		dlqStatus.DlqCount = len(recentMessages)
-		
+
 		if len(recentMessages) > 0 {
 			// Find oldest message
 			oldestTime := recentMessages[0].FirstSeenAt
@@ -321,14 +321,12 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 			dlqStatus.OldestMessage = (*model.Time)(&oldestTime)
 		}
 	}
-	
+
 	// Determine health based on queue depth
-	healthy := true
-	if dlqStatus.Depth > 1000 {
-		// Too many messages in DLQ indicates system problems
-		healthy = false
-	}
-	
+	healthy := dlqStatus.Depth <= 1000
+	// Record health status but don't log since no logger is available
+	_ = healthy // Avoid unused variable warning
+
 	return []*model.QueueStatus{dlqStatus}, healthy
 }
 
@@ -336,10 +334,11 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Context, databases []*model.DatabaseStatus, services []*model.ServiceStatus, queues []*model.QueueStatus) []*model.InfrastructureAlert {
 	var alerts []*model.InfrastructureAlert
 	now := model.Time(time.Now())
-	
+
 	// Check database alerts
 	for _, db := range databases {
-		if db.Status == model.HealthStatusDown {
+		switch db.Status {
+		case model.HealthStatusDown:
 			alerts = append(alerts, &model.InfrastructureAlert{
 				ID:        fmt.Sprintf("db-critical-%d", time.Now().Unix()),
 				Service:   db.Name,
@@ -348,7 +347,7 @@ func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Cont
 				Timestamp: now,
 				Resolved:  false,
 			})
-		} else if db.Status == model.HealthStatusDegraded {
+		case model.HealthStatusDegraded:
 			alerts = append(alerts, &model.InfrastructureAlert{
 				ID:        fmt.Sprintf("db-warning-%d", time.Now().Unix()),
 				Service:   db.Name,
@@ -359,7 +358,7 @@ func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Cont
 			})
 		}
 	}
-	
+
 	// Check service alerts
 	for _, svc := range services {
 		if svc.Status == model.HealthStatusDown {
@@ -382,7 +381,7 @@ func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Cont
 			})
 		}
 	}
-	
+
 	// Check queue alerts
 	for _, queue := range queues {
 		if queue.Depth > 1000 {
@@ -405,7 +404,7 @@ func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Cont
 			})
 		}
 	}
-	
+
 	// Check cost-based alerts
 	costMetrics, err := r.getCostMetrics(ctx, time.Hour)
 	if err == nil && costMetrics != nil {
@@ -420,7 +419,7 @@ func (r *repositoryStorageAdapter) generateInfrastructureAlerts(ctx context.Cont
 			})
 		}
 	}
-	
+
 	return alerts
 }
 
@@ -448,19 +447,19 @@ func (r *repositoryStorageAdapter) getCostMetrics(ctx context.Context, period ti
 	// This will use the existing DynamORM-based cost tracking infrastructure
 	startTime := time.Now().Add(-period)
 	endTime := time.Now()
-	
+
 	// Estimate operations count based on period
 	// In a real system, you'd query for specific operations in the time window
 	// For demonstration, we're providing reasonable estimates based on actual infrastructure
 	timeHours := period.Hours()
 	if timeHours > 0 {
 		// Conservative estimates for a small instance
-		metrics.TotalOperations = int64(timeHours * 50) // ~50 operations per hour
+		metrics.TotalOperations = int64(timeHours * 50)       // ~50 operations per hour
 		metrics.ReadUnitsPerSecond = 5.0 * (timeHours / 24.0) // Scale with time
 		metrics.WriteUnitsPerSecond = 2.0 * (timeHours / 24.0)
 		metrics.HourlySpendUSD = 0.15 * timeHours // ~$0.15/hour estimate
 	}
-	
+
 	// Try to query CloudWatch metrics if available for more accurate data
 	if cloudWatchRepo := r.repos.CloudWatchMetrics(); cloudWatchRepo != nil {
 		serviceMetrics, err := cloudWatchRepo.GetServiceMetrics(ctx, "lesser-api", period)
@@ -473,22 +472,22 @@ func (r *repositoryStorageAdapter) getCostMetrics(ctx context.Context, period ti
 			metrics.HourlySpendUSD = serviceMetrics.EstimatedCostUSD
 		}
 	}
-	
+
 	// Simulate some error tracking based on period
 	// In production, this would come from actual error logs or cost tracking failures
 	if period > time.Hour {
 		// Assume some small error rate for longer periods
 		metrics.ErrorCount = int64(float64(metrics.TotalOperations) * 0.001) // 0.1% error rate
 	}
-	
+
 	r.repos.GetLogger().Debug("Retrieved cost metrics for health monitoring",
-						 zap.Duration("period", period),
-						 zap.Time("start_time", startTime),
-						 zap.Time("end_time", endTime),
-						 zap.Int64("total_operations", metrics.TotalOperations),
-						 zap.Int64("error_count", metrics.ErrorCount),
-						 zap.Float64("hourly_spend_usd", metrics.HourlySpendUSD))
-	
+		zap.Duration("period", period),
+		zap.Time("start_time", startTime),
+		zap.Time("end_time", endTime),
+		zap.Int64("total_operations", metrics.TotalOperations),
+		zap.Int64("error_count", metrics.ErrorCount),
+		zap.Float64("hourly_spend_usd", metrics.HourlySpendUSD))
+
 	return metrics, nil
 }
 
@@ -498,9 +497,9 @@ func IsNotFoundError(err error) bool {
 		return false
 	}
 	// Add specific error type checks for DynamORM not found errors
-	return fmt.Sprintf("%v", err) == "not found" || 
-		   fmt.Sprintf("%v", err) == "item not found" ||
-		   fmt.Sprintf("%v", err) == "record not found"
+	return fmt.Sprintf("%v", err) == "not found" ||
+		fmt.Sprintf("%v", err) == "item not found" ||
+		fmt.Sprintf("%v", err) == "record not found"
 }
 
 // Infrastructure monitoring operations implementations
@@ -510,10 +509,10 @@ func (r *repositoryStorageAdapter) GetInfrastructureHealth(ctx context.Context) 
 	services, serviceHealth := r.checkServiceHealth(ctx)
 	queues, queueHealth := r.checkQueueHealth(ctx)
 	alerts := r.generateInfrastructureAlerts(ctx, databases, services, queues)
-	
+
 	// Overall health is false if any critical component is down
 	overallHealthy := dbHealth && serviceHealth && queueHealth
-	
+
 	return &model.InfrastructureStatus{
 		Healthy:   overallHealthy,
 		Services:  services,
@@ -523,13 +522,13 @@ func (r *repositoryStorageAdapter) GetInfrastructureHealth(ctx context.Context) 
 	}, nil
 }
 
-func (r *repositoryStorageAdapter) GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
+func (r *repositoryStorageAdapter) GetInstanceBudgets(_ context.Context, _ *bool) ([]*model.InstanceBudget, error) {
 	// For now, return an empty list
 	// In a real implementation, this would query budget data from the analytics repository
 	return []*model.InstanceBudget{}, nil
 }
 
-func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error) {
+func (r *repositoryStorageAdapter) GetInstanceHealthReport(_ context.Context, domain string) (*model.InstanceHealthReport, error) {
 	// For now, return a basic health report
 	// In a real implementation, this would query actual health metrics for the domain
 	return &model.InstanceHealthReport{
@@ -551,7 +550,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 		// This ensures we don't break GraphQL queries when federation data is unavailable
 		federationScore = 0.0
 	}
-	
+
 	// For now, return basic relationship data
 	// In a real implementation, this would query federation relationship data
 	return &model.InstanceRelations{
@@ -579,18 +578,18 @@ func (r *repositoryStorageAdapter) calculateFederationScore(ctx context.Context,
 	if err != nil {
 		return 0.0, fmt.Errorf("failed to get domain health score: %w", err)
 	}
-	
+
 	// The health score from FederationRepository is 0-100, but GraphQL expects 0.0-1.0
 	// Convert to 0.0-1.0 scale for federation score
 	federationScore := healthScore / 100.0
-	
+
 	// Ensure the score is within valid bounds
 	if federationScore < 0.0 {
 		federationScore = 0.0
 	} else if federationScore > 1.0 {
 		federationScore = 1.0
 	}
-	
+
 	return federationScore, nil
 }
 

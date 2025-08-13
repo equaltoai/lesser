@@ -16,7 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"go.uber.org/zap"
-	
+
 	"github.com/equaltoai/lesser/pkg/observability"
 )
 
@@ -400,8 +400,8 @@ func (am *AlertManager) CheckErrorRate(ctx context.Context, service string, erro
 		Metadata: map[string]interface{}{
 			"error_rate_percent": errorRate,
 			"threshold_percent":  threshold,
-			"priority":          priority,
-			"evaluation_window": getEvaluationWindow(priority),
+			"priority":           priority,
+			"evaluation_window":  getEvaluationWindow(priority),
 		},
 	}
 

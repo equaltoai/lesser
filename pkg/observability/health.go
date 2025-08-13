@@ -19,23 +19,23 @@ import (
 
 // HealthCheck represents a health check result
 type HealthCheck struct {
-	Name        string                 `json:"name"`
-	Status      string                 `json:"status"`
-	Message     string                 `json:"message,omitempty"`
-	LastCheck   time.Time              `json:"last_check"`
-	Duration    time.Duration          `json:"duration"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Name      string                 `json:"name"`
+	Status    string                 `json:"status"`
+	Message   string                 `json:"message,omitempty"`
+	LastCheck time.Time              `json:"last_check"`
+	Duration  time.Duration          `json:"duration"`
+	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // HealthResponse represents the overall health response
 type HealthResponse struct {
-	Status     string                 `json:"status"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Version    string                 `json:"version"`
-	Service    string                 `json:"service"`
-	Region     string                 `json:"region"`
-	Checks     []HealthCheck          `json:"checks,omitempty"`
-	Summary    map[string]interface{} `json:"summary,omitempty"`
+	Status    string                 `json:"status"`
+	Timestamp time.Time              `json:"timestamp"`
+	Version   string                 `json:"version"`
+	Service   string                 `json:"service"`
+	Region    string                 `json:"region"`
+	Checks    []HealthCheck          `json:"checks,omitempty"`
+	Summary   map[string]interface{} `json:"summary,omitempty"`
 }
 
 // HealthChecker manages health checks for various components
@@ -68,7 +68,7 @@ func NewHealthChecker(logger *zap.Logger, cfg aws.Config, service, version strin
 			DependencyChecks: true,
 		}
 	}
-	
+
 	return &HealthChecker{
 		logger:       logger,
 		dynamoClient: dynamodb.NewFromConfig(cfg),
@@ -93,7 +93,7 @@ func (hc *HealthChecker) LivenessHandler(w http.ResponseWriter, _ *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		hc.logger.Error("failed to encode liveness response", zap.Error(err))
 	}
@@ -150,7 +150,7 @@ func (hc *HealthChecker) ReadinessHandler(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		hc.logger.Error("failed to encode readiness response", zap.Error(err))
 	}
@@ -167,7 +167,7 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 
 	// Runtime information
 	checks = append(checks, hc.checkRuntime())
-	
+
 	// Check all dependencies with detailed information
 	if hc.config.DependencyChecks {
 		// DynamoDB detailed check
@@ -198,7 +198,7 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 	summary["healthy_checks"] = 0
 	summary["warning_checks"] = 0
 	summary["critical_checks"] = 0
-	
+
 	for _, check := range checks {
 		switch check.Status {
 		case HealthStatusHealthy:
@@ -228,7 +228,7 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		hc.logger.Error("failed to encode detailed response", zap.Error(err))
 	}
@@ -237,7 +237,7 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 // checkRuntime performs runtime health check
 func (hc *HealthChecker) checkRuntime() HealthCheck {
 	start := time.Now()
-	
+
 	metadata := map[string]interface{}{
 		"uptime_seconds": time.Since(time.Now()).Seconds(), // This would need to track actual start time
 		"service":        hc.service,
@@ -258,7 +258,7 @@ func (hc *HealthChecker) checkRuntime() HealthCheck {
 // checkDynamoDB performs basic DynamoDB connectivity check
 func (hc *HealthChecker) checkDynamoDB(ctx context.Context) HealthCheck {
 	start := time.Now()
-	
+
 	// Check cache first
 	if cached, ok := hc.getCachedCheck("dynamodb"); ok {
 		return cached
@@ -325,7 +325,7 @@ func (hc *HealthChecker) checkDynamoDBDetailed(ctx context.Context) HealthCheck 
 	check.Metadata["table_status"] = string(table.TableStatus)
 	check.Metadata["item_count"] = *table.ItemCount
 	check.Metadata["table_size_bytes"] = *table.TableSizeBytes
-	
+
 	if table.ProvisionedThroughput != nil {
 		check.Metadata["read_capacity"] = *table.ProvisionedThroughput.ReadCapacityUnits
 		check.Metadata["write_capacity"] = *table.ProvisionedThroughput.WriteCapacityUnits
@@ -352,7 +352,7 @@ func (hc *HealthChecker) checkDynamoDBDetailed(ctx context.Context) HealthCheck 
 // checkSQS performs basic SQS connectivity check
 func (hc *HealthChecker) checkSQS(ctx context.Context) HealthCheck {
 	start := time.Now()
-	
+
 	// Check cache first
 	if cached, ok := hc.getCachedCheck("sqs"); ok {
 		return cached
@@ -447,13 +447,13 @@ func (hc *HealthChecker) checkSQSDetailed(ctx context.Context) HealthCheck {
 func (hc *HealthChecker) getCachedCheck(name string) (HealthCheck, bool) {
 	hc.mu.RLock()
 	defer hc.mu.RUnlock()
-	
+
 	if check, exists := hc.lastChecks[name]; exists {
 		if time.Since(check.LastCheck) < hc.config.CacheTimeout {
 			return check, true
 		}
 	}
-	
+
 	return HealthCheck{}, false
 }
 
@@ -461,7 +461,7 @@ func (hc *HealthChecker) getCachedCheck(name string) (HealthCheck, bool) {
 func (hc *HealthChecker) setCachedCheck(name string, check HealthCheck) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
-	
+
 	hc.lastChecks[name] = check
 }
 

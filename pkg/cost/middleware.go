@@ -152,17 +152,13 @@ func getLambdaMemoryConfig() int64 {
 func trackLambdaExecution(tracker *Tracker, startTime time.Time, memoryMB int64) {
 	duration := time.Since(startTime)
 	durationMs := duration.Milliseconds()
-	if err := tracker.TrackLambdaInvocation(durationMs, memoryMB); err != nil {
-		// Log tracking error but continue
-	}
+	tracker.TrackLambdaInvocation(durationMs, memoryMB)
 }
 
 // trackResponseDataTransfer tracks data transfer for the response
 func trackResponseDataTransfer(tracker *Tracker, response *events.APIGatewayV2HTTPResponse) {
 	responseSize := calculateResponseSize(response)
-	if err := tracker.TrackDataTransfer(responseSize); err != nil {
-		// Log tracking error but continue
-	}
+	tracker.TrackDataTransfer(responseSize)
 }
 
 // calculateResponseSize calculates the total size of the response

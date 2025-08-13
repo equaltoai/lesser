@@ -150,9 +150,9 @@ func createTestContextWithPath(path string) *lift.Context {
 // createValidClaims creates valid test claims
 func createValidClaims() *auth.EnhancedClaims {
 	return &auth.EnhancedClaims{
-		Username: "testuser",
-		Scopes:   []string{"read", "write"},
-		ClientID: "test-client",
+		Username:  "testuser",
+		Scopes:    []string{"read", "write"},
+		ClientID:  "test-client",
 		SessionID: "test-session",
 		DeviceID:  "test-device",
 	}

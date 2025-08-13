@@ -19,7 +19,7 @@ import (
 type Resolver struct {
 	// Service registry - primary source for all business operations
 	Registry *services.Registry
-	
+
 	// Legacy fields (to be phased out)
 	Storage             core.RepositoryStorage
 	CostTracker         *cost.Tracker

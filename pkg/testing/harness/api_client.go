@@ -69,7 +69,7 @@ func (c *APIClient) POST(path string, body interface{}, params ...map[string]str
 	return c.makeRequest("POST", path, body, params...)
 }
 
-// PUT makes a PUT request with JSON body  
+// PUT makes a PUT request with JSON body
 func (c *APIClient) PUT(path string, body interface{}, params ...map[string]string) *APIResponse {
 	return c.makeRequest("PUT", path, body, params...)
 }
@@ -266,16 +266,16 @@ func NewTestAssertions(t *testing.T) *TestAssertions {
 
 // AssertStatusCode asserts the response has the expected status code
 func (a *TestAssertions) AssertStatusCode(resp *APIResponse, expected int) {
-	require.Equal(a.t, expected, resp.StatusCode, 
+	require.Equal(a.t, expected, resp.StatusCode,
 		"Expected status %d, got %d. Response: %s", expected, resp.StatusCode, resp.String())
 }
 
 // AssertJSONResponse asserts the response is valid JSON and unmarshals it
 func (a *TestAssertions) AssertJSONResponse(resp *APIResponse, v interface{}) {
 	contentType := resp.Headers.Get("Content-Type")
-	require.Contains(a.t, contentType, "application/json", 
+	require.Contains(a.t, contentType, "application/json",
 		"Expected JSON content type, got %s", contentType)
-	
+
 	err := resp.JSON(v)
 	require.NoError(a.t, err, "Failed to parse JSON response: %s", resp.String())
 }
@@ -283,11 +283,11 @@ func (a *TestAssertions) AssertJSONResponse(resp *APIResponse, v interface{}) {
 // AssertActivityPubResponse asserts the response is a valid ActivityPub response
 func (a *TestAssertions) AssertActivityPubResponse(resp *APIResponse, v interface{}) {
 	contentType := resp.Headers.Get("Content-Type")
-	require.True(a.t, 
+	require.True(a.t,
 		strings.Contains(contentType, "application/activity+json") ||
-		strings.Contains(contentType, "application/ld+json"),
+			strings.Contains(contentType, "application/ld+json"),
 		"Expected ActivityPub content type, got %s", contentType)
-	
+
 	err := resp.JSON(v)
 	require.NoError(a.t, err, "Failed to parse ActivityPub response: %s", resp.String())
 }
@@ -295,10 +295,10 @@ func (a *TestAssertions) AssertActivityPubResponse(resp *APIResponse, v interfac
 // AssertErrorResponse asserts the response contains an error with expected properties
 func (a *TestAssertions) AssertErrorResponse(resp *APIResponse, expectedStatus int, expectedError string) {
 	a.AssertStatusCode(resp, expectedStatus)
-	
+
 	var errorResp map[string]interface{}
 	a.AssertJSONResponse(resp, &errorResp)
-	
+
 	if expectedError != "" {
 		require.Contains(a.t, fmt.Sprintf("%v", errorResp), expectedError,
 			"Expected error message containing '%s', got response: %s", expectedError, resp.String())

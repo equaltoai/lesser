@@ -170,7 +170,6 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 	return ctx.JSON(accounts)
 }
 
-
 // HandleFavoriteLift handles POST /api/v1/statuses/:id/favourite
 func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
@@ -294,5 +293,3 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 
 	return ctx.JSON(mastodonStatus)
 }
-
-

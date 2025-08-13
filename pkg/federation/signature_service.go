@@ -13,8 +13,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
 
@@ -49,7 +49,7 @@ func (s *SignatureService) VerifySignature(ctx context.Context, req *http.Reques
 
 	// Verify the signature
 	verifyErr := s.verifyWithAlgorithm(req, publicKey, algorithm)
-	
+
 	// Update cache statistics based on verification result
 	success := verifyErr == nil
 	if err := s.publicKeyCacheRepo.UpdateStats(ctx, actorURL, success); err != nil {
@@ -105,7 +105,7 @@ func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL
 	retryDelays := []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second}
 
 	var lastErr error
-	
+
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		if attempt > 0 {
 			select {
@@ -285,4 +285,3 @@ func determineAlgorithm(publicKey crypto.PublicKey) string {
 }
 
 // determineAlgorithmForSigning determines the best signing algorithm based on key type and compatibility
-
