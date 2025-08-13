@@ -1,0 +1,468 @@
+# Monitoring Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on monitoring, observability, and operational procedures
+
+context:
+  description: "Monitoring and observability patterns for Lesser"
+  tools:
+    - cloudwatch: "Metrics, logs, dashboards, alarms"
+    - xray: "Distributed tracing"
+    - emf: "Embedded Metric Format for custom metrics"
+    - cost_explorer: "Cost monitoring and analysis"
+  principles:
+    - proactive_monitoring: "Detect issues before users report them"
+    - cost_visibility: "Track costs at operation level"
+    - performance_tracking: "Monitor latency and throughput"
+    - error_detection: "Rapid identification of failures"
+
+cloudwatch_monitoring:
+  
+  dashboard_setup:
+    pattern_name: "CloudWatch Dashboard Configuration"
+    
+    access_url: "https://console.aws.amazon.com/cloudwatch/home?region=REGION#dashboards:name=lesser-ENVIRONMENT"
+    
+    widgets:
+      api_health:
+        type: "line"
+        metrics:
+          - "AWS/Lambda Invocations for api function"
+          - "AWS/Lambda Errors for api function"
+          - "AWS/Lambda Duration for api function"
+        period: 300
+        stat: "Sum"
+        
+      federation_status:
+        type: "number"
+        metrics:
+          - "AWS/SQS NumberOfMessagesSent for federation-queue"
+          - "AWS/SQS NumberOfMessagesDeleted for federation-queue"
+          - "AWS/SQS ApproximateNumberOfMessagesVisible"
+        
+      cost_tracking:
+        type: "line"
+        namespace: "Lesser/Costs"
+        metrics:
+          - "OperationCost by Operation"
+          - "UserCost by UserID"
+          - "FederationCost by Instance"
+          
+      error_rate:
+        type: "line"
+        expression: "(errors / invocations) * 100"
+        label: "Error Rate %"
+        
+      latency_percentiles:
+        type: "line"
+        metrics:
+          - "AWS/Lambda Duration"
+        statistics: ["p50", "p90", "p99"]
+
+  alarm_configuration:
+    pattern_name: "CloudWatch Alarms"
+    
+    critical_alarms:
+      high_error_rate:
+        metric: "AWS/Lambda Errors"
+        threshold: 10
+        period: 300
+        evaluations: 2
+        action: "SNS notification"
+        
+      api_latency:
+        metric: "AWS/Lambda Duration"
+        statistic: "p99"
+        threshold: 2000
+        period: 300
+        comparison: "GreaterThanThreshold"
+        
+      dlq_messages:
+        metric: "AWS/SQS ApproximateNumberOfMessagesVisible"
+        queue: "federation-dlq"
+        threshold: 100
+        action: "Page on-call"
+        
+      cost_overrun:
+        namespace: "Lesser/Costs"
+        metric: "DailyCost"
+        threshold: 100
+        comparison: "GreaterThanThreshold"
+        
+    warning_alarms:
+      elevated_throttles:
+        metric: "AWS/Lambda Throttles"
+        threshold: 5
+        period: 300
+        
+      memory_usage:
+        metric: "AWS/Lambda MemoryUtilization"
+        threshold: 80
+        statistic: "Maximum"
+        
+      database_throttles:
+        metric: "AWS/DynamoDB UserErrors"
+        threshold: 10
+        period: 300
+
+custom_metrics:
+  
+  emf_metrics:
+    pattern_name: "Embedded Metric Format"
+    
+    implementation:
+      location: "pkg/observability/emf_metrics.go"
+      example: |
+        func EmitOperationMetric(ctx context.Context, operation string, duration time.Duration, success bool) {
+            metrics := map[string]interface{}{
+                "_aws": map[string]interface{}{
+                    "Timestamp": time.Now().Unix() * 1000,
+                    "CloudWatchMetrics": []map[string]interface{}{
+                        {
+                            "Namespace": "Lesser/Operations",
+                            "Dimensions": [][]string{
+                                {"Operation", "Environment"},
+                                {"Operation", "Environment", "UserID"},
+                            },
+                            "Metrics": []map[string]interface{}{
+                                {
+                                    "Name": "Duration",
+                                    "Unit": "Milliseconds",
+                                },
+                                {
+                                    "Name": "Success",
+                                    "Unit": "Count",
+                                },
+                            },
+                        },
+                    },
+                },
+                "Operation": operation,
+                "Environment": os.Getenv("ENVIRONMENT"),
+                "UserID": getUserID(ctx),
+                "Duration": duration.Milliseconds(),
+                "Success": boolToInt(success),
+            }
+            
+            fmt.Println(toJSON(metrics))
+        }
+        
+    metric_categories:
+      business_metrics:
+        - "NewUsers"
+        - "PostsCreated"
+        - "FederationDeliveries"
+        - "ActiveConnections"
+        
+      performance_metrics:
+        - "TimelineGenerationTime"
+        - "SearchLatency"
+        - "MediaProcessingDuration"
+        - "WebSocketMessageLatency"
+        
+      cost_metrics:
+        - "OperationCost"
+        - "UserCost"
+        - "InstanceCost"
+        - "AIOperationCost"
+
+logging_patterns:
+  
+  structured_logging:
+    pattern_name: "JSON Structured Logs"
+    
+    format: |
+      {
+        "timestamp": "2024-01-01T12:00:00Z",
+        "level": "INFO",
+        "message": "Operation completed",
+        "requestId": "uuid",
+        "userId": "user123",
+        "operation": "CreateStatus",
+        "duration": 45,
+        "cost": 0.0001,
+        "error": null
+      }
+      
+    log_levels:
+      DEBUG: "Development only"
+      INFO: "Normal operations"
+      WARN: "Potential issues"
+      ERROR: "Failures requiring attention"
+      
+    retention_periods:
+      development: 7
+      staging: 14
+      production: 30
+
+  log_queries:
+    pattern_name: "CloudWatch Insights Queries"
+    
+    useful_queries:
+      error_analysis: |
+        fields @timestamp, @message
+        | filter level = "ERROR"
+        | stats count() by error
+        | sort count desc
+        
+      slow_operations: |
+        fields @timestamp, operation, duration
+        | filter duration > 1000
+        | sort duration desc
+        | limit 20
+        
+      cost_by_user: |
+        fields userId, cost
+        | filter cost > 0
+        | stats sum(cost) as totalCost by userId
+        | sort totalCost desc
+        
+      federation_failures: |
+        fields @timestamp, instance, error
+        | filter operation = "FederationDelivery" and level = "ERROR"
+        | stats count() by instance
+        
+      api_usage: |
+        fields @timestamp, path, method
+        | filter @message like /API Gateway/
+        | stats count() by path, method
+        | sort count desc
+
+distributed_tracing:
+  
+  xray_configuration:
+    pattern_name: "AWS X-Ray Tracing"
+    
+    enable_tracing:
+      lambda_functions: |
+        TracingConfig:
+          Mode: Active
+          
+      sampling_rules:
+        default_rate: 0.1
+        error_rate: 1.0
+        
+    trace_analysis:
+      service_map: "Visual representation of service dependencies"
+      trace_timeline: "Request flow through services"
+      latency_distribution: "Performance bottleneck identification"
+      
+    implementation: |
+      import "github.com/aws/aws-xray-sdk-go/xray"
+      
+      func TracedOperation(ctx context.Context) error {
+          ctx, seg := xray.BeginSegment(ctx, "OperationName")
+          defer seg.Close(nil)
+          
+          // Add metadata
+          seg.AddMetadata("user_id", getUserID(ctx))
+          seg.AddAnnotation("operation_type", "create")
+          
+          // Trace subsegment
+          ctx, subSeg := xray.BeginSubsegment(ctx, "DatabaseCall")
+          result, err := database.Query(ctx)
+          subSeg.Close(err)
+          
+          return err
+      }
+
+health_checks:
+  
+  endpoint_monitoring:
+    pattern_name: "Health Check Endpoints"
+    
+    basic_health:
+      endpoint: "/health"
+      response: |
+        {
+          "status": "healthy",
+          "timestamp": "2024-01-01T12:00:00Z"
+        }
+        
+    detailed_health:
+      endpoint: "/health/detailed"
+      checks:
+        - "Database connectivity"
+        - "S3 access"
+        - "SQS queue status"
+        - "Lambda concurrency"
+      response: |
+        {
+          "status": "healthy",
+          "checks": {
+            "database": "ok",
+            "s3": "ok",
+            "sqs": "ok",
+            "lambda": "ok"
+          },
+          "metrics": {
+            "activeConnections": 42,
+            "queueDepth": 5,
+            "errorRate": 0.01
+          }
+        }
+
+  synthetic_monitoring:
+    pattern_name: "CloudWatch Synthetics"
+    
+    canary_scripts:
+      api_availability: |
+        const synthetics = require('Synthetics');
+        const log = require('SyntheticsLogger');
+        
+        const apiCanary = async () => {
+            const response = await synthetics.executeHttpStep(
+                'Check API',
+                'https://domain.com/api/v1/instance'
+            );
+            
+            if (response.statusCode !== 200) {
+                throw new Error('API unavailable');
+            }
+        };
+        
+      user_flow: |
+        // Test critical user journey
+        await login();
+        await createPost();
+        await checkTimeline();
+        await logout();
+
+performance_monitoring:
+  
+  lambda_insights:
+    pattern_name: "Lambda Performance Monitoring"
+    
+    metrics_tracked:
+      - "Cold start duration"
+      - "Memory utilization"
+      - "CPU utilization"
+      - "Network latency"
+      - "Concurrent executions"
+      
+    optimization_indicators:
+      high_cold_starts: "Consider provisioned concurrency"
+      memory_underutilized: "Reduce memory allocation"
+      memory_maxed: "Increase memory allocation"
+      frequent_timeouts: "Increase timeout or optimize code"
+
+  database_monitoring:
+    pattern_name: "DynamoDB Monitoring"
+    
+    metrics:
+      - "ConsumedReadCapacityUnits"
+      - "ConsumedWriteCapacityUnits"
+      - "ThrottledRequests"
+      - "SystemErrors"
+      - "ItemCount"
+      - "TableSizeBytes"
+      
+    hot_partition_detection: |
+      fields pk, count
+      | filter @message like /DynamoDB/
+      | stats count() as requests by pk
+      | sort requests desc
+      | limit 10
+
+cost_monitoring:
+  
+  cost_allocation:
+    pattern_name: "Cost Attribution"
+    
+    tagging_strategy:
+      required_tags:
+        - "Environment"
+        - "Service"
+        - "Team"
+        - "CostCenter"
+        
+    cost_explorer_queries:
+      daily_costs: "Group by Service"
+      user_costs: "Filter by UserID tag"
+      operation_costs: "Filter by Operation tag"
+      
+  budget_alerts:
+    pattern_name: "AWS Budgets"
+    
+    budget_configuration:
+      monthly_budget:
+        amount: 1000
+        alerts:
+          - threshold: 80
+            action: "Email notification"
+          - threshold: 90
+            action: "Slack alert"
+          - threshold: 100
+            action: "Disable non-critical features"
+            
+      forecast_alerts:
+        enable: true
+        threshold: 110
+        action: "Notify finance team"
+
+incident_response:
+  
+  runbook_patterns:
+    pattern_name: "Incident Response Procedures"
+    
+    high_error_rate:
+      detection: "CloudWatch Alarm"
+      investigation:
+        - "Check CloudWatch Logs for error patterns"
+        - "Review X-Ray traces for failures"
+        - "Identify affected Lambda functions"
+      mitigation:
+        - "Rollback if recent deployment"
+        - "Scale up if capacity issue"
+        - "Enable circuit breaker if external service"
+      resolution:
+        - "Deploy fix"
+        - "Verify metrics return to normal"
+        - "Post-mortem analysis"
+        
+    federation_outage:
+      detection: "DLQ message accumulation"
+      investigation:
+        - "Check federation-delivery logs"
+        - "Verify remote instance availability"
+        - "Review HTTP signature failures"
+      mitigation:
+        - "Pause delivery to affected instances"
+        - "Process DLQ messages"
+        - "Notify affected users"
+        
+    cost_spike:
+      detection: "Budget alert"
+      investigation:
+        - "Cost Explorer by service"
+        - "CloudWatch Logs for unusual activity"
+        - "Check for infinite loops or retries"
+      mitigation:
+        - "Throttle expensive operations"
+        - "Disable AI features if needed"
+        - "Block abusive users"
+
+monitoring_automation:
+  
+  auto_remediation:
+    pattern_name: "Automated Response"
+    
+    lambda_throttling:
+      trigger: "Throttle alarm"
+      action: "Increase reserved concurrency"
+      implementation: |
+        aws lambda put-function-concurrency \
+          --function-name lesser-api \
+          --reserved-concurrent-executions 200
+          
+    dlq_processing:
+      trigger: "DLQ depth > 100"
+      action: "Trigger DLQ processor"
+      implementation: |
+        aws lambda invoke \
+          --function-name lesser-dlq-processor \
+          --invocation-type Event
+          
+    cost_control:
+      trigger: "Daily cost > threshold"
+      action: "Enable cost saving mode"
+      implementation: "Set feature flags to disable expensive operations"

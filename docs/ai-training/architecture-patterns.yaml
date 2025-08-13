@@ -1,0 +1,515 @@
+# Architecture Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI on Lesser's serverless architecture and design patterns
+
+context:
+  description: "Lesser serverless architecture using AWS Lambda and DynamoDB"
+  core_principles:
+    - event_driven: "All operations trigger events for async processing"
+    - single_table_design: "One DynamoDB table with multiple access patterns"
+    - cost_optimized: "Every component designed for minimal cost"
+    - federation_first: "ActivityPub protocol native implementation"
+    - lift_framework: "Lambda patterns abstraction layer"
+
+system_components:
+  
+  lambda_functions:
+    total_count: 23
+    categorization:
+      api_handlers:
+        - name: "api"
+          purpose: "REST API handler (Mastodon-compatible)"
+          memory: 512
+          timeout: 30
+          triggers: ["API Gateway"]
+          
+        - name: "graphql"
+          purpose: "GraphQL API with subscriptions"
+          memory: 1024
+          timeout: 30
+          triggers: ["API Gateway"]
+          
+        - name: "auth"
+          purpose: "Authentication and authorization"
+          memory: 256
+          timeout: 10
+          triggers: ["API Gateway"]
+          
+        - name: "webfinger"
+          purpose: "User discovery for federation"
+          memory: 256
+          timeout: 10
+          triggers: ["API Gateway"]
+          
+      federation_handlers:
+        - name: "inbox"
+          purpose: "Receive ActivityPub activities"
+          memory: 512
+          timeout: 30
+          triggers: ["API Gateway"]
+          
+        - name: "outbox"
+          purpose: "Send ActivityPub activities"
+          memory: 512
+          timeout: 30
+          triggers: ["API Gateway", "DynamoDB Stream"]
+          
+        - name: "federation-delivery"
+          purpose: "Deliver activities to remote servers"
+          memory: 256
+          timeout: 30
+          triggers: ["SQS Queue"]
+          retry_policy: "exponential backoff"
+          
+        - name: "federation-tracker"
+          purpose: "Monitor federation health"
+          memory: 256
+          timeout: 60
+          triggers: ["EventBridge Schedule"]
+          
+        - name: "actor"
+          purpose: "Serve actor profiles"
+          memory: 256
+          timeout: 10
+          triggers: ["API Gateway"]
+          
+      processing_functions:
+        - name: "note-processor"
+          purpose: "Process posts and interactions"
+          memory: 512
+          timeout: 30
+          triggers: ["DynamoDB Stream"]
+          
+        - name: "media-processor"
+          purpose: "Handle image/video uploads"
+          memory: 1024
+          timeout: 60
+          triggers: ["S3 Event"]
+          
+        - name: "moderation-processor"
+          purpose: "Content moderation pipeline"
+          memory: 512
+          timeout: 30
+          triggers: ["DynamoDB Stream", "SQS Queue"]
+          
+        - name: "ai-processor"
+          purpose: "AI features (search, moderation)"
+          memory: 2048
+          timeout: 60
+          triggers: ["SQS Queue"]
+          
+        - name: "notification-processor"
+          purpose: "Push notification delivery"
+          memory: 256
+          timeout: 30
+          triggers: ["DynamoDB Stream"]
+          
+      stream_handlers:
+        - name: "activity-processor"
+          purpose: "Process DynamoDB stream events"
+          memory: 512
+          timeout: 60
+          triggers: ["DynamoDB Stream"]
+          
+        - name: "stream-router"
+          purpose: "Route WebSocket messages"
+          memory: 256
+          timeout: 30
+          triggers: ["DynamoDB Stream"]
+          
+        - name: "streaming"
+          purpose: "WebSocket connection handler"
+          memory: 512
+          timeout: 300
+          triggers: ["API Gateway WebSocket"]
+          
+      aggregation_functions:
+        - name: "search-indexer"
+          purpose: "Update search indices"
+          memory: 512
+          timeout: 60
+          triggers: ["DynamoDB Stream"]
+          
+        - name: "status-indexer"
+          purpose: "Maintain timeline indices"
+          memory: 512
+          timeout: 60
+          triggers: ["DynamoDB Stream"]
+          
+        - name: "trend-aggregator"
+          purpose: "Calculate trending topics"
+          memory: 512
+          timeout: 120
+          triggers: ["EventBridge Schedule"]
+          schedule: "rate(15 minutes)"
+          
+        - name: "cost-aggregator"
+          purpose: "Track and aggregate costs"
+          memory: 256
+          timeout: 60
+          triggers: ["EventBridge Schedule"]
+          schedule: "rate(1 hour)"
+          
+        - name: "metrics-aggregator"
+          purpose: "Collect custom metrics"
+          memory: 256
+          timeout: 60
+          triggers: ["EventBridge Schedule"]
+          schedule: "rate(5 minutes)"
+          
+        - name: "websocket-cost-aggregator"
+          purpose: "WebSocket usage tracking"
+          memory: 256
+          timeout: 60
+          triggers: ["EventBridge Schedule"]
+          schedule: "rate(1 hour)"
+          
+      utility_functions:
+        - name: "dlq-processor"
+          purpose: "Handle failed messages"
+          memory: 256
+          timeout: 60
+          triggers: ["SQS DLQ", "EventBridge Schedule"]
+
+  data_layer:
+    
+    dynamodb_table:
+      name: "lesser-main"
+      billing_mode: "PAY_PER_REQUEST"
+      partition_key: "PK"
+      sort_key: "SK"
+      
+      access_patterns:
+        - pattern: "Get user profile"
+          pk: "USER#userId"
+          sk: "PROFILE"
+          
+        - pattern: "Get user posts"
+          pk: "USER#userId"
+          sk: "POST#timestamp"
+          query: "SK begins_with POST#"
+          
+        - pattern: "Get timeline"
+          pk: "TIMELINE#userId#type"
+          sk: "POST#timestamp"
+          order: "descending"
+          
+        - pattern: "Get followers"
+          pk: "USER#userId"
+          sk: "FOLLOWER#followerId"
+          
+        - pattern: "Get notifications"
+          pk: "USER#userId"
+          sk: "NOTIFICATION#timestamp"
+          
+      global_secondary_indexes:
+        GSI1:
+          purpose: "Timeline queries"
+          pk: "GSI1PK"
+          sk: "GSI1SK"
+          projection: "ALL"
+          
+        GSI2:
+          purpose: "Federation lookups"
+          pk: "GSI2PK"
+          sk: "GSI2SK"
+          projection: "ALL"
+          
+        GSI3:
+          purpose: "Search indices"
+          pk: "GSI3PK"
+          sk: "GSI3SK"
+          projection: "INCLUDE"
+          
+        GSI4:
+          purpose: "Notification queries"
+          pk: "GSI4PK"
+          sk: "GSI4SK"
+          projection: "ALL"
+          
+        GSI5:
+          purpose: "Media references"
+          pk: "GSI5PK"
+          sk: "GSI5SK"
+          projection: "KEYS_ONLY"
+          
+        GSI6:
+          purpose: "Moderation queue"
+          pk: "GSI6PK"
+          sk: "GSI6SK"
+          projection: "ALL"
+          
+        GSI7:
+          purpose: "Cost tracking"
+          pk: "GSI7PK"
+          sk: "GSI7SK"
+          projection: "ALL"
+          
+        GSI8:
+          purpose: "Analytics queries"
+          pk: "GSI8PK"
+          sk: "GSI8SK"
+          projection: "ALL"
+
+  storage_layer:
+    
+    s3_buckets:
+      media_bucket:
+        purpose: "User uploaded media"
+        lifecycle_rules:
+          - transition_to_ia: 90
+          - expire: 365
+        versioning: false
+        
+      static_bucket:
+        purpose: "Instance branding"
+        public_access: true
+        cloudfront_enabled: true
+        
+      backup_bucket:
+        purpose: "Point-in-time backups"
+        lifecycle_rules:
+          - transition_to_glacier: 30
+          - expire: 730
+
+  messaging_layer:
+    
+    sqs_queues:
+      federation_queue:
+        purpose: "Outbound federation delivery"
+        visibility_timeout: 60
+        max_receive_count: 5
+        dlq: "federation-dlq"
+        
+      federation_dlq:
+        purpose: "Failed federation attempts"
+        retention_period: 14
+        
+      push_queue:
+        purpose: "Push notification delivery"
+        visibility_timeout: 30
+        max_receive_count: 3
+        dlq: "push-dlq"
+        
+      push_dlq:
+        purpose: "Failed push notifications"
+        retention_period: 7
+
+  api_layer:
+    
+    api_gateway:
+      type: "HTTP API"
+      stages: ["dev", "staging", "prod"]
+      
+      routes:
+        rest_api:
+          path: "/api/v1/*"
+          method: "ANY"
+          integration: "lambda:api"
+          
+        graphql_api:
+          path: "/graphql"
+          method: "POST"
+          integration: "lambda:graphql"
+          
+        websocket_api:
+          path: "/streaming"
+          protocol: "WEBSOCKET"
+          integration: "lambda:streaming"
+          
+        federation_endpoints:
+          - path: "/.well-known/webfinger"
+            integration: "lambda:webfinger"
+          - path: "/users/*/inbox"
+            integration: "lambda:inbox"
+          - path: "/users/*/outbox"
+            integration: "lambda:outbox"
+          - path: "/users/*"
+            integration: "lambda:actor"
+
+request_flow_patterns:
+  
+  status_creation:
+    pattern_name: "Create new status"
+    flow:
+      - step: "Client POST to /api/v1/statuses"
+        component: "API Gateway"
+        
+      - step: "Validate JWT and rate limit"
+        component: "API Gateway Authorizer"
+        
+      - step: "Process request"
+        component: "Lambda: api"
+        actions:
+          - "Validate input"
+          - "Generate status ID"
+          - "Write to DynamoDB"
+          
+      - step: "Stream processing"
+        component: "DynamoDB Stream"
+        triggers: ["activity-processor"]
+        
+      - step: "Async processing"
+        component: "Lambda: activity-processor"
+        actions:
+          - "Update timelines"
+          - "Queue federation"
+          - "Trigger notifications"
+          
+      - step: "Federation delivery"
+        component: "Lambda: federation-delivery"
+        via: "SQS Queue"
+        
+      - step: "Real-time updates"
+        component: "Lambda: stream-router"
+        delivers_to: "WebSocket connections"
+
+  incoming_federation:
+    pattern_name: "Receive federated activity"
+    flow:
+      - step: "Remote server POST to /inbox"
+        component: "API Gateway"
+        
+      - step: "Verify HTTP signature"
+        component: "Lambda: inbox"
+        
+      - step: "Validate activity"
+        component: "Lambda: inbox"
+        actions:
+          - "Fetch actor if unknown"
+          - "Verify activity format"
+          - "Check instance blocks"
+          
+      - step: "Store activity"
+        component: "DynamoDB"
+        
+      - step: "Process activity"
+        component: "Lambda: note-processor"
+        via: "DynamoDB Stream"
+        
+      - step: "Update local state"
+        actions:
+          - "Add to timelines"
+          - "Generate notifications"
+          - "Update search index"
+
+service_layer_patterns:
+  
+  domain_services:
+    location: "pkg/services/"
+    pattern: "Service struct with repository dependencies"
+    
+    example_service:
+      name: "AccountsService"
+      dependencies:
+        - "AccountRepository"
+        - "EventPublisher"
+        - "CostTracker"
+      methods:
+        - "CreateAccount"
+        - "UpdateProfile"
+        - "GetAccount"
+        - "DeleteAccount"
+      events_emitted:
+        - "account.created"
+        - "account.updated"
+        - "account.deleted"
+        
+  repository_pattern:
+    location: "pkg/storage/repositories/"
+    pattern: "Repository with DynamORM integration"
+    
+    example_repository:
+      name: "AccountRepository"
+      table: "lesser-main"
+      operations:
+        - "Save"
+        - "Get"
+        - "Query"
+        - "Delete"
+      cost_tracking: true
+      audit_logging: true
+
+  event_publishing:
+    pattern: "Unified event publisher"
+    location: "pkg/streaming/publisher.go"
+    
+    event_flow:
+      - "Service emits event"
+      - "Publisher routes to streams"
+      - "DynamoDB Stream triggers processors"
+      - "WebSocket clients receive updates"
+
+scaling_patterns:
+  
+  lambda_scaling:
+    concurrent_executions:
+      default: 1000
+      reserved_concurrency:
+        api: 100
+        graphql: 50
+        federation_delivery: 200
+        
+  dynamodb_scaling:
+    mode: "ON_DEMAND"
+    alternative: "AUTO_SCALING"
+    target_utilization: 70
+    
+  sqs_scaling:
+    batch_size: 10
+    max_batching_window: 5
+    concurrent_lambdas: 5
+
+cost_optimization_patterns:
+  
+  lambda_optimization:
+    - use_arm64: "20% better price/performance"
+    - right_size_memory: "Monitor and adjust"
+    - minimize_cold_starts: "Keep functions warm"
+    
+  dynamodb_optimization:
+    - single_table_design: "Reduce read/write costs"
+    - use_projections: "GSI projections reduce costs"
+    - batch_operations: "Batch writes when possible"
+    
+  s3_optimization:
+    - lifecycle_policies: "Move to cheaper storage"
+    - cloudfront_caching: "Reduce S3 requests"
+    - compress_objects: "Reduce storage size"
+
+multi_tenant_patterns:
+  
+  tenant_isolation:
+    strategy: "Partition key prefixing"
+    pattern: "TENANT#tenantId#ENTITY#entityId"
+    
+  tenant_resolution:
+    order:
+      - "HTTP header: X-Tenant-ID"
+      - "Subdomain extraction"
+      - "URL path parsing"
+      - "JWT claims"
+      
+  data_isolation:
+    enforcement: "Automatic via middleware"
+    validation: "Cross-tenant access blocked"
+
+monitoring_patterns:
+  
+  metrics:
+    namespace: "Lesser"
+    dimensions:
+      - "Environment"
+      - "Function"
+      - "Tenant"
+      - "Operation"
+      
+  tracing:
+    provider: "AWS X-Ray"
+    sampling_rate: 0.1
+    
+  logging:
+    format: "JSON structured"
+    retention:
+      dev: 7
+      prod: 30

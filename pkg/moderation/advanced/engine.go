@@ -1119,7 +1119,9 @@ func (va *VideoAnalyzer) startContentModerationDetection(ctx context.Context, vi
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("StartContentModeration", 1)
+			if err := tracker.TrackRekognitionRequest("StartContentModeration", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -1146,7 +1148,9 @@ func (va *VideoAnalyzer) startTextDetection(ctx context.Context, video *rekognit
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("StartTextDetection", 1)
+			if err := tracker.TrackRekognitionRequest("StartTextDetection", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -1169,7 +1173,9 @@ func (va *VideoAnalyzer) startFaceDetection(ctx context.Context, video *rekognit
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("StartFaceDetection", 1)
+			if err := tracker.TrackRekognitionRequest("StartFaceDetection", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -1192,7 +1198,9 @@ func (va *VideoAnalyzer) startLabelDetection(ctx context.Context, video *rekogni
 	// Track cost
 	if va.costTracker != nil {
 		if tracker, ok := va.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("StartLabelDetection", 1)
+			if err := tracker.TrackRekognitionRequest("StartLabelDetection", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -1599,7 +1607,9 @@ func (p *jobPoller) getJobResult(ctx context.Context, jobID string, nextToken *s
 func (p *jobPoller) trackCost() {
 	if p.va.costTracker != nil {
 		if tracker, ok := p.va.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest(p.handler.operationType, 1)
+			if err := tracker.TrackRekognitionRequest(p.handler.operationType, 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 }

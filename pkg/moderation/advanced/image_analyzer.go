@@ -218,7 +218,9 @@ func (ia *ImageAnalyzer) detectModerationLabels(ctx context.Context, image *type
 
 	if ia.costTracker != nil {
 		if tracker, ok := ia.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("DetectModerationLabels", 1)
+			if err := tracker.TrackRekognitionRequest("DetectModerationLabels", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -281,7 +283,9 @@ func (ia *ImageAnalyzer) detectLabels(ctx context.Context, image *types.Image) (
 
 	if ia.costTracker != nil {
 		if tracker, ok := ia.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("DetectLabels", 1)
+			if err := tracker.TrackRekognitionRequest("DetectLabels", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -342,7 +346,9 @@ func (ia *ImageAnalyzer) detectText(ctx context.Context, image *types.Image) ([]
 
 	if ia.costTracker != nil {
 		if tracker, ok := ia.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("DetectText", 1)
+			if err := tracker.TrackRekognitionRequest("DetectText", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -389,7 +395,9 @@ func (ia *ImageAnalyzer) detectFaces(ctx context.Context, image *types.Image) ([
 
 	if ia.costTracker != nil {
 		if tracker, ok := ia.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("DetectFaces", 1)
+			if err := tracker.TrackRekognitionRequest("DetectFaces", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
@@ -454,7 +462,9 @@ func (ia *ImageAnalyzer) recognizeCelebrities(ctx context.Context, image *types.
 
 	if ia.costTracker != nil {
 		if tracker, ok := ia.costTracker.(RekognitionCostTracker); ok {
-			tracker.TrackRekognitionRequest("RecognizeCelebrities", 1)
+			if err := tracker.TrackRekognitionRequest("RecognizeCelebrities", 1); err != nil {
+				// Log tracking error but continue
+			}
 		}
 	}
 
