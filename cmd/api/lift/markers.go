@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -40,7 +41,7 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
@@ -67,12 +68,16 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 		timelines = strings.Split(timelineParam, ",")
 	}
 
-	// Get markers from storage
-	markers, err := h.repos.Marker().GetMarkers(ctx.Context, username, timelines)
+	// Get markers using Accounts service
+	result, err := h.registry.Accounts().GetMarkers(ctx.Context, &accounts.GetMarkersQuery{
+		Username:  username,
+		Timelines: timelines,
+	})
 	if err != nil {
 		h.logger.Error("failed to get markers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
+	markers := result.Markers
 
 	// Convert to Mastodon format
 	response := models.MarkersResponse{}
@@ -159,7 +164,7 @@ func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope 
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
@@ -246,7 +251,10 @@ func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string
 	LastReadID string `json:"last_read_id"`
 }) {
 	// Get current markers to determine versions
-	currentMarkers, _ := h.repos.Marker().GetMarkers(ctx.Context, username, nil)
+	result, _ := h.registry.Accounts().GetMarkers(ctx.Context, &accounts.GetMarkersQuery{
+		Username: username,
+	})
+	currentMarkers := result.Markers
 
 	// Save each marker
 	for timeline, markerData := range req {
@@ -263,8 +271,13 @@ func (h *Handler) saveSingleMarker(ctx *lift.Context, username, timeline, lastRe
 	// Determine version
 	version := h.calculateMarkerVersion(timeline, currentMarkers)
 
-	// Save marker
-	if err := h.repos.Marker().SaveMarker(ctx.Context, username, timeline, lastReadID, version); err != nil {
+	// Save marker using Accounts service
+	if _, err := h.registry.Accounts().SaveMarker(ctx.Context, &accounts.SaveMarkerCommand{
+		Username:   username,
+		Timeline:   timeline,
+		LastReadID: lastReadID,
+		Version:    version,
+	}); err != nil {
 		h.logger.Error("failed to save marker",
 			zap.String("timeline", timeline),
 			zap.Error(err))
@@ -282,12 +295,15 @@ func (h *Handler) calculateMarkerVersion(timeline string, currentMarkers map[str
 
 // returnUpdatedMarkers gets and returns the updated markers
 func (h *Handler) returnUpdatedMarkers(ctx *lift.Context, username string) error {
-	// Get updated markers
-	updatedMarkers, err := h.repos.Marker().GetMarkers(ctx.Context, username, nil)
+	// Get updated markers using Accounts service
+	result, err := h.registry.Accounts().GetMarkers(ctx.Context, &accounts.GetMarkersQuery{
+		Username: username,
+	})
 	if err != nil {
 		h.logger.Error("failed to get updated markers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
+	updatedMarkers := result.Markers
 
 	// Convert to response format
 	response := h.buildMarkersResponse(updatedMarkers)

@@ -266,6 +266,39 @@ func (r *InstanceRepository) GetLocalPostCount(ctx context.Context) (int64, erro
 	return metric.Value, nil
 }
 
+// GetLocalCommentCount returns the number of local comments (posts with InReplyToID)
+func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, error) {
+	var metric models.InstanceMetrics
+	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
+		Where("PK", "=", "INSTANCE#METRICS").
+		Where("SK", "=", "LOCAL_COMMENTS").
+		First(&metric)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// If metric doesn't exist, we need to count directly from statuses
+			// This is more expensive but necessary for backwards compatibility
+			return r.countLocalComments(ctx)
+		}
+		r.logger.Error("Failed to get local comment count", zap.Error(err))
+		return 0, fmt.Errorf("failed to get local comment count: %w", err)
+	}
+
+	return metric.Value, nil
+}
+
+// countLocalComments counts local comments by querying statuses with InReplyToID
+func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, error) {
+	// Count statuses where InReplyToID is not empty
+	// This requires scanning statuses, which is expensive
+	// In production, this should be tracked via metrics updated on create/delete
+	
+	// For now, return 0 as the metric will be populated over time
+	// TODO: Implement batch counting or use a GSI for efficient counting
+	r.logger.Warn("LOCAL_COMMENTS metric not found, returning 0 (will be populated over time)")
+	return 0, nil
+}
+
 // GetWeeklyActivity retrieves weekly activity data for a specific week
 func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
 	var activity models.WeeklyActivity

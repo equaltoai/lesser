@@ -1,12 +1,16 @@
 package lift
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/emoji"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -27,7 +31,7 @@ func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			// Validate token
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				username = claims.Username
@@ -81,6 +85,12 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 		// Merge reactions
 		announcement.Reactions = h.mergeReactions(announcement.Reactions, apiReactions)
 
+		// Extract content elements from the announcement
+		mentions := h.extractAnnouncementMentions(ctx.Context, announcement.Content)
+		tags := h.extractAnnouncementTags(announcement.Content)
+		emojis := h.extractAnnouncementEmojis(ctx.Context, announcement.Content)
+		statuses := h.extractAnnouncementStatuses(ctx.Context, announcement.Content)
+
 		apiAnnouncement := models.Announcement{
 			ID:          announcement.ID,
 			Content:     announcement.Content,
@@ -90,10 +100,10 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 			AllDay:      announcement.AllDay,
 			Read:        false, // Not dismissed
 			Reactions:   convertReactionsToAPILift(announcement.Reactions),
-			Mentions:    []models.AnnouncementAccount{}, // Placeholder
-			Statuses:    []models.AnnouncementStatus{},  // Placeholder
-			Tags:        []models.AnnouncementTag{},     // Placeholder
-			Emojis:      []models.CustomEmoji{},         // Placeholder
+			Mentions:    mentions,
+			Statuses:    statuses,
+			Tags:        tags,
+			Emojis:      emojis,
 		}
 
 		// Add optional fields
@@ -205,7 +215,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -247,7 +257,7 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -291,7 +301,7 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -387,4 +397,125 @@ func convertReactionsToAPILift(reactions []storage.Reaction) []models.Announceme
 		}
 	}
 	return apiReactions
+}
+
+// extractAnnouncementMentions extracts @mentions from announcement content
+func (h *Handler) extractAnnouncementMentions(ctx context.Context, content string) []models.AnnouncementAccount {
+	mentions := []models.AnnouncementAccount{}
+	words := strings.Fields(content)
+
+	for _, word := range words {
+		if strings.HasPrefix(word, "@") {
+			// Remove @ and any trailing punctuation
+			username := strings.TrimPrefix(word, "@")
+			username = strings.TrimRight(username, ".,!?;:")
+
+			if username != "" {
+				// Get user details from storage
+				user, err := h.repos.User().GetUser(ctx, username)
+				if err != nil {
+					h.logger.Debug("mentioned user not found", zap.String("username", username))
+					continue
+				}
+
+				// Convert to announcement account format
+				mention := models.AnnouncementAccount{
+					ID:       user.ID,
+					Username: user.Username,
+					URL:      fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), user.Username),
+					Acct:     user.Username, // For local users, acct is just username
+				}
+				mentions = append(mentions, mention)
+			}
+		}
+	}
+
+	return mentions
+}
+
+// extractAnnouncementTags extracts #hashtags from announcement content
+func (h *Handler) extractAnnouncementTags(content string) []models.AnnouncementTag {
+	tags := []models.AnnouncementTag{}
+	words := strings.Fields(content)
+
+	for _, word := range words {
+		if strings.HasPrefix(word, "#") && len(word) > 1 {
+			hashtag := strings.TrimPrefix(word, "#")
+			hashtag = strings.TrimRight(hashtag, ".,!?;:")
+			hashtag = strings.ToLower(hashtag)
+
+			if hashtag != "" {
+				tag := models.AnnouncementTag{
+					Name: hashtag,
+					URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
+				}
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	return tags
+}
+
+// extractAnnouncementEmojis extracts custom emojis from announcement content
+func (h *Handler) extractAnnouncementEmojis(ctx context.Context, content string) []models.CustomEmoji {
+	// Create emoji parser
+	emojiParser := emoji.NewParser(h.repos, h.logger)
+	
+	// Parse emojis from content
+	parsed, err := emojiParser.ParseAll(ctx, content)
+	if err != nil {
+		h.logger.Warn("failed to parse emojis from announcement", zap.Error(err))
+		return []models.CustomEmoji{}
+	}
+
+	// Convert to API format
+	emojis := make([]models.CustomEmoji, 0, len(parsed.CustomEmojis))
+	for _, parsedEmoji := range parsed.CustomEmojis {
+		if parsedEmoji.Emoji != nil {
+			emoji := models.CustomEmoji{
+				Shortcode:       parsedEmoji.Emoji.Shortcode,
+				URL:             parsedEmoji.Emoji.URL,
+				StaticURL:       parsedEmoji.Emoji.StaticURL,
+				VisibleInPicker: parsedEmoji.Emoji.VisibleInPicker,
+				Category:        parsedEmoji.Emoji.Category,
+			}
+			emojis = append(emojis, emoji)
+		}
+	}
+
+	return emojis
+}
+
+// statusURLRegex matches various status/post URL formats
+var statusURLRegex = regexp.MustCompile(`https?://[^/\s]+(?:/api/v1)?/statuses/([a-zA-Z0-9_-]+)`)
+
+// extractAnnouncementStatuses extracts status/post references from announcement content
+func (h *Handler) extractAnnouncementStatuses(ctx context.Context, content string) []models.AnnouncementStatus {
+	statuses := []models.AnnouncementStatus{}
+	
+	// Find all status URLs in the content
+	matches := statusURLRegex.FindAllStringSubmatch(content, -1)
+	
+	for _, match := range matches {
+		if len(match) >= 2 {
+			statusID := match[1]
+			fullURL := match[0]
+			
+			// Verify the status exists
+			_, err := h.repos.Status().GetStatus(ctx, statusID)
+			if err != nil {
+				h.logger.Debug("referenced status not found", zap.String("status_id", statusID))
+				continue
+			}
+			
+			status := models.AnnouncementStatus{
+				ID:  statusID,
+				URL: fullURL,
+			}
+			statuses = append(statuses, status)
+		}
+	}
+
+	return statuses
 }

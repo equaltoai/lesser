@@ -5,6 +5,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -39,7 +40,7 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
@@ -53,8 +54,10 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 		username = claims.Username
 	}
 
-	// Get user preferences from storage
-	prefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
+	// Get user preferences using Accounts service
+	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
+		Username: username,
+	})
 	if err != nil {
 		h.logger.Error("failed to get user preferences", zap.Error(err))
 		// Return defaults if preferences don't exist
@@ -68,14 +71,15 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Convert to Mastodon format
+	// Convert service result to Mastodon format
+	prefs := result.Preferences
 	preferences := models.Preferences{
-		PostingDefaultVisibility: prefs.DefaultPostingVisibility,
-		PostingDefaultSensitive:  prefs.DefaultMediaSensitive,
-		PostingDefaultLanguage:   prefs.Language,
-		ReadingExpandMedia:       h.mapExpandMediaPreference(prefs.ExpandMedia),
-		ReadingExpandSpoilers:    prefs.ExpandSpoilers,
-		ReadingAutoplayGifs:      prefs.AutoplayGifs,
+		PostingDefaultVisibility: h.getStringPreference(prefs, "default_posting_visibility", "public"),
+		PostingDefaultSensitive:  h.getBoolPreference(prefs, "default_media_sensitive", false),
+		PostingDefaultLanguage:   h.getStringPreference(prefs, "language", "en"),
+		ReadingExpandMedia:       h.mapExpandMediaPreference(h.getStringPreference(prefs, "expand_media", "default")),
+		ReadingExpandSpoilers:    h.getBoolPreference(prefs, "expand_spoilers", false),
+		ReadingAutoplayGifs:      h.getBoolPreference(prefs, "auto_play_gif", true),
 	}
 
 	return ctx.JSON(preferences)
@@ -121,7 +125,11 @@ func (h *Handler) authenticatePreferencesRequest(ctx *lift.Context, requiredScop
 	}
 
 	// Normal authentication flow
-	return h.authenticateWithScope(ctx, requiredScope)
+	claims, err := h.authenticateWithScope(ctx, requiredScope)
+	if err != nil {
+		return "", err
+	}
+	return claims.Username, nil
 }
 
 // getPreferencesTestUsername extracts test username from headers
@@ -133,33 +141,6 @@ func (h *Handler) getPreferencesTestUsername(ctx *lift.Context) string {
 	return testUsername
 }
 
-// authenticateWithScope authenticates and checks for the required scope
-func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (string, error) {
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
-	}
-
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
-	}
-
-	// Check required scope
-	if !claims.HasScope(requiredScope) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	return claims.Username, nil
-}
 
 // parsePreferencesUpdateRequest parses the preferences update request
 func (h *Handler) parsePreferencesUpdateRequest(ctx *lift.Context) (map[string]interface{}, error) {
@@ -188,10 +169,27 @@ func (h *Handler) parsePreferencesRequestFallback(ctx *lift.Context, originalErr
 
 // getOrCreateUserPreferences gets existing preferences or creates defaults
 func (h *Handler) getOrCreateUserPreferences(ctx *lift.Context, username string) *storage.UserPreferences {
-	prefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
+	// Use Accounts service to get preferences
+	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
+		Username: username,
+	})
 	if err != nil {
 		h.logger.Warn("failed to get existing preferences, using defaults", zap.Error(err))
 		return h.createDefaultPreferences()
+	}
+	
+	// Convert from map to UserPreferences struct
+	prefs := &storage.UserPreferences{
+		Language:                  h.getStringPreference(result.Preferences, "language", "en"),
+		DefaultPostingVisibility:  h.getStringPreference(result.Preferences, "default_posting_visibility", "public"),
+		DefaultMediaSensitive:     h.getBoolPreference(result.Preferences, "default_media_sensitive", false),
+		ExpandSpoilers:            h.getBoolPreference(result.Preferences, "expand_spoilers", false),
+		ExpandMedia:               h.getStringPreference(result.Preferences, "expand_media", "default"),
+		AutoplayGifs:              h.getBoolPreference(result.Preferences, "auto_play_gif", false),
+		ShowFollowCounts:          h.getBoolPreference(result.Preferences, "show_follow_counts", true),
+		PreferredTimelineOrder:    h.getStringPreference(result.Preferences, "preferred_timeline_order", "newest"),
+		SearchSuggestionsEnabled:  h.getBoolPreference(result.Preferences, "search_suggestions_enabled", true),
+		PersonalizedSearchEnabled: h.getBoolPreference(result.Preferences, "personalized_search_enabled", true),
 	}
 	return prefs
 }
@@ -243,7 +241,22 @@ func (h *Handler) updateBoolPreference(field *bool, updateReq map[string]interfa
 
 // saveUserPreferences saves the updated preferences to storage
 func (h *Handler) saveUserPreferences(ctx *lift.Context, username string, prefs *storage.UserPreferences) error {
-	if err := h.repos.User().UpdateUserPreferences(ctx.Context, username, prefs); err != nil {
+	// Use Accounts service to update preferences
+	_, err := h.registry.Accounts().UpdatePreferences(ctx.Context, &accounts.UpdatePreferencesCommand{
+		Username:                  username,
+		Language:                  prefs.Language,
+		DefaultPostingVisibility:  prefs.DefaultPostingVisibility,
+		DefaultMediaSensitive:     prefs.DefaultMediaSensitive,
+		ExpandSpoilers:            prefs.ExpandSpoilers,
+		ExpandMedia:               prefs.ExpandMedia,
+		AutoplayGifs:              prefs.AutoplayGifs,
+		ShowFollowCounts:          prefs.ShowFollowCounts,
+		PreferredTimelineOrder:    prefs.PreferredTimelineOrder,
+		SearchSuggestionsEnabled:  prefs.SearchSuggestionsEnabled,
+		PersonalizedSearchEnabled: prefs.PersonalizedSearchEnabled,
+		UpdaterID:                 username,
+	})
+	if err != nil {
 		h.logger.Error("failed to update user preferences", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
 	}
@@ -273,4 +286,24 @@ func (h *Handler) mapExpandMediaPreference(expandMedia string) string {
 	default:
 		return "default"
 	}
+}
+
+// getStringPreference gets a string preference from the map with a default value
+func (h *Handler) getStringPreference(prefs map[string]interface{}, key string, defaultValue string) string {
+	if val, ok := prefs[key]; ok {
+		if strVal, ok := val.(string); ok {
+			return strVal
+		}
+	}
+	return defaultValue
+}
+
+// getBoolPreference gets a boolean preference from the map with a default value
+func (h *Handler) getBoolPreference(prefs map[string]interface{}, key string, defaultValue bool) bool {
+	if val, ok := prefs[key]; ok {
+		if boolVal, ok := val.(bool); ok {
+			return boolVal
+		}
+	}
+	return defaultValue
 }

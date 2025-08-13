@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -18,7 +19,7 @@ import (
 // Service provides list operations
 type Service struct {
 	listRepo interfaces.ListRepository
-	noteRepo interfaces.NoteRepository
+	statusRepo interfaces.StatusRepository
 	publisher streaming.Publisher
 	logger    *zap.Logger
 }
@@ -26,7 +27,7 @@ type Service struct {
 // NewService creates a new Lists Service with the required dependencies
 func NewService(
 	listRepo interfaces.ListRepository,
-	noteRepo interfaces.NoteRepository,
+	statusRepo interfaces.StatusRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *Service {
@@ -36,7 +37,7 @@ func NewService(
 
 	return &Service{
 		listRepo:  listRepo,
-		noteRepo:  noteRepo,
+		statusRepo:  statusRepo,
 		publisher: publisher,
 		logger:    logger,
 	}
@@ -100,6 +101,13 @@ type GetListTimelineQuery struct {
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
+// GetListMembersQuery contains parameters for retrieving list members
+type GetListMembersQuery struct {
+	ListID     string                        `json:"list_id" validate:"required"`
+	ViewerID   string                        `json:"viewer_id" validate:"required"` // Must be list owner
+	Pagination interfaces.PaginationOptions `json:"pagination"`
+}
+
 // Result structs for operations
 
 // ListResult contains a list and associated events that were emitted
@@ -126,6 +134,13 @@ type TimelineResult struct {
 type MembershipResult struct {
 	Success bool                `json:"success"`
 	Events  []*streaming.Event `json:"events"`
+}
+
+// MembersResult contains list members with pagination and events
+type MembersResult struct {
+	Members    []*storage.Account                            `json:"members"`
+	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
+	Events     []*streaming.Event                            `json:"events"`
 }
 
 // Core service methods
@@ -665,6 +680,36 @@ func (s *Service) emitMemberAddedEvents(ctx context.Context, list *models.List, 
 	}
 
 	return events
+}
+
+// GetListMembers retrieves all members of a list with pagination
+func (s *Service) GetListMembers(ctx context.Context, query *GetListMembersQuery) (*MembersResult, error) {
+	s.logger.Debug("getting list members",
+		zap.String("list_id", query.ListID),
+		zap.String("viewer_id", query.ViewerID))
+
+	// Get the list to verify ownership
+	list, err := s.listRepo.GetList(ctx, query.ListID)
+	if err != nil {
+		return nil, fmt.Errorf("list not found: %w", err)
+	}
+
+	// Verify permission (only owner can see members)
+	if list.Username != query.ViewerID {
+		return nil, fmt.Errorf("unauthorized: only list owner can view members")
+	}
+
+	// Get list members from repository
+	membersResult, err := s.listRepo.GetListMembers(ctx, query.ListID, query.Pagination)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get list members: %w", err)
+	}
+
+	return &MembersResult{
+		Members:    membersResult.Items,
+		Pagination: membersResult,
+		Events:     []*streaming.Event{}, // No events for reads
+	}, nil
 }
 
 func (s *Service) emitMemberRemovedEvents(ctx context.Context, list *models.List, memberUsername string) []*streaming.Event {

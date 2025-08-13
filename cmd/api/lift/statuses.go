@@ -14,11 +14,11 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/emoji"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -32,721 +32,110 @@ const (
 	VisibilityDirect   = "direct"
 )
 
-// HandleCreateStatusLift creates a new status (post)
+// HandleCreateStatusLift creates a new status using the Notes service
 func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
-	// Authenticate and validate request
-	claims, err := h.authenticateAndValidateWriteScope(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Parse and validate request
-	req, err := h.parseCreateStatusRequest(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Handle scheduled status
-	if h.isScheduledStatus(req) {
-		return h.HandleScheduleStatusLift(ctx, claims, req)
-	}
-
-	// Get actor and create note
-	actor, err := h.getAuthenticatedActor(ctx, claims)
-	if err != nil {
-		return err
-	}
-
-	now := time.Now()
-	note, hashtags := h.createNoteFromRequest(req, actor, now)
-
-	// Handle poll creation
-	pollResp, err := h.createPollIfRequested(ctx, req, note.ID, actor.ID)
-	if err != nil {
-		return err
-	}
-
-	// Process content and create objects
-	parsedEmojis, err := h.processContentAndCreateNote(ctx, note)
-	if err != nil {
-		return err
-	}
-
-	// Handle reply processing
-	h.handleReplyProcessing(ctx, req)
-
-	// Create and store activity
-	createActivity := h.createActivity(actor, note, now)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, createActivity); err != nil {
-		h.logger.Error("failed to create activity", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Post-creation processing
-	h.performPostCreationTasks(ctx, createActivity, req, hashtags, actor, claims, now)
-
-	// Build and return response
-	resp := h.buildStatusResponse(note, req, actor, parsedEmojis, pollResp, now)
-	ctx.Status(http.StatusCreated)
-	return ctx.JSON(resp)
-}
-
-// authenticateAndValidateWriteScope extracts and validates the bearer token and checks write scope
-func (h *Handler) authenticateAndValidateWriteScope(ctx *lift.Context) (*auth.Claims, error) {
-	token := h.getBearerTokenLift(ctx)
-	if token == "" {
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
-	}
-
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
-	}
-
-	if !claims.HasScope(auth.ScopeWrite) {
-		return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	return claims, nil
-}
-
-// parseCreateStatusRequest parses and validates the create status request
-func (h *Handler) parseCreateStatusRequest(ctx *lift.Context) (models.CreateStatusRequest, error) {
+	// Parse request
 	var req models.CreateStatusRequest
-
-	contentType := ctx.Header("Content-Type")
-	if contentType == "" {
-		contentType = ctx.Header("content-type")
+	if err := ctx.ParseRequest(&req); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
 	}
 
-	if strings.Contains(contentType, "application/x-www-form-urlencoded") {
-		if err := h.parseFormRequest(ctx, &req); err != nil {
-			return req, err
-		}
-	} else {
-		if err := ctx.ParseRequest(&req); err != nil {
-			h.logger.Error("failed to parse create status request", zap.Error(err))
-			return req, ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
-		}
-	}
-
-	return h.validateStatusRequest(ctx, req)
-}
-
-// parseFormRequest parses form-encoded request data
-func (h *Handler) parseFormRequest(ctx *lift.Context, req *models.CreateStatusRequest) error {
-	body := string(ctx.Request.Body)
-	params, err := common.ParseFormURLEncoded(body)
+	// Authenticate with write scope
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		h.logger.Error("failed to parse form data", zap.Error(err))
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid form data"})
+		return err
 	}
 
-	req.Status = params["status"]
-	req.InReplyToID = params["in_reply_to_id"]
-	req.Visibility = params["visibility"]
-	req.Sensitive = params["sensitive"] == boolTrue
-	req.SpoilerText = params["spoiler_text"]
-	req.Language = params["language"]
-
-	if mediaIDs := params["media_ids[]"]; mediaIDs != "" {
-		req.MediaIDs = strings.Split(mediaIDs, ",")
-	}
-
-	if scheduledAt := params["scheduled_at"]; scheduledAt != "" {
-		req.ScheduledAt = &scheduledAt
-	}
-
-	return nil
-}
-
-// validateStatusRequest validates the parsed status request
-func (h *Handler) validateStatusRequest(ctx *lift.Context, req models.CreateStatusRequest) (models.CreateStatusRequest, error) {
-	if req.Status == "" {
-		return req, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{"error": "status content is required"})
-	}
-
-	if len(req.Status) > 500 {
-		return req, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{"error": "status content must not exceed 500 characters"})
-	}
-
-	return req, nil
-}
-
-// isScheduledStatus checks if this is a scheduled status
-func (h *Handler) isScheduledStatus(req models.CreateStatusRequest) bool {
-	return req.ScheduledAt != nil && *req.ScheduledAt != ""
-}
-
-// getAuthenticatedActor gets the actor for the authenticated user
-func (h *Handler) getAuthenticatedActor(ctx *lift.Context, claims *auth.Claims) (*activitypub.Actor, error) {
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
-	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-	return actor, nil
-}
-
-// createNoteFromRequest creates a Note object from the request
-func (h *Handler) createNoteFromRequest(req models.CreateStatusRequest, actor *activitypub.Actor, now time.Time) (*activitypub.Note, []string) {
+	// Default visibility
 	if req.Visibility == "" {
-		req.Visibility = storageModels.VisibilityPublic
+		req.Visibility = "public"
 	}
 
-	noteID := fmt.Sprintf("%s/objects/%d-%s", h.cfg.BaseURL(), now.Unix(), generateRandomStringLift())
-	note := &activitypub.Note{
-		BaseObject: activitypub.BaseObject{
-			Context:   activitypub.Context,
-			ID:        noteID,
-			Type:      activitypub.NoteType,
-			Summary:   req.SpoilerText,
-			Sensitive: req.Sensitive,
-		},
-		Content:      req.Status,
-		AttributedTo: actor.ID,
-		Visibility:   req.Visibility,
-	}
-
-	note.Published = &now
-
-	// Process hashtags
-	hashtags := mastodon.ExtractHashtagsWithCase(req.Status)
-	if len(hashtags) > 0 {
-		note.Tag = h.createHashtagTags(hashtags)
-	}
-
-	// Process media attachments
-	if len(req.MediaIDs) > 0 {
-		attachments := make([]activitypub.Attachment, 0, len(req.MediaIDs))
-		for _, mediaID := range req.MediaIDs {
-			if attachment, err := h.processMediaAttachment(context.Background(), mediaID); err == nil {
-				attachments = append(attachments, attachment)
-			}
-		}
-		note.Attachment = attachments
-	}
-
-	// Set addressing
-	h.setNoteAddressing(note, req.Visibility, actor)
-
-	// Handle reply
-	if req.InReplyToID != "" {
-		note.InReplyTo = req.InReplyToID
-	}
-
-	return note, hashtags
-}
-
-// createHashtagTags creates ActivityPub tags from hashtags
-func (h *Handler) createHashtagTags(hashtags []string) []activitypub.Tag {
-	tags := make([]activitypub.Tag, 0, len(hashtags))
-	for _, tag := range hashtags {
-		normalizedTag := mastodon.NormalizeHashtag(tag)
-		tagURL := fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), normalizedTag)
-
-		tags = append(tags, activitypub.Tag{
-			Type: "Hashtag",
-			Name: "#" + tag,
-			Href: tagURL,
-		})
-	}
-	return tags
-}
-
-// processMediaAttachment processes a single media attachment
-func (h *Handler) processMediaAttachment(ctx context.Context, mediaID string) (activitypub.Attachment, error) {
-	mediaObj, err := h.repos.Object().GetObject(ctx, fmt.Sprintf("MEDIA#%s", mediaID))
+	// Call Notes service
+	result, err := h.registry.Notes().CreateNote(ctx.Context, &notes.CreateNoteCommand{
+		AuthorID:    claims.Username,
+		Content:     req.Status,
+		Visibility:  req.Visibility,
+		Sensitive:   req.Sensitive,
+		Language:    req.Language,
+		InReplyToID: req.InReplyToID,
+		MediaIDs:    req.MediaIDs,
+	})
 	if err != nil {
-		h.logger.Warn("failed to get media metadata", zap.String("media_id", mediaID), zap.Error(err))
-		return activitypub.Attachment{}, err
+		h.logger.Error("failed to create note", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
 	}
 
-	if mediaMap, ok := mediaObj.(map[string]any); ok {
-		attachment := activitypub.Attachment{
-			Type:      "Document",
-			MediaType: getStringFromMap(mediaMap, "MimeType", "image/jpeg"),
-			URL:       getStringFromMap(mediaMap, "URL", ""),
-			Name:      getStringFromMap(mediaMap, "Description", ""),
-		}
-		return attachment, nil
-	}
-
-	return activitypub.Attachment{}, fmt.Errorf("invalid media object")
-}
-
-// setNoteAddressing sets the addressing fields based on visibility
-func (h *Handler) setNoteAddressing(note *activitypub.Note, visibility string, actor *activitypub.Actor) {
-	switch visibility {
-	case VisibilityPublic:
-		note.To = []string{activitypub.PublicAddress}
-		note.CC = []string{actor.Followers}
-	case VisibilityUnlisted:
-		note.To = []string{actor.Followers}
-		note.CC = []string{activitypub.PublicAddress}
-	case VisibilityPrivate:
-		note.To = []string{actor.Followers}
-	case VisibilityDirect:
-		mentions := h.extractMentions(note.Content)
-		note.To = mentions
-	}
-}
-
-// createPollIfRequested creates a poll if requested in the status
-func (h *Handler) createPollIfRequested(ctx *lift.Context, req models.CreateStatusRequest, noteID, actorID string) (*models.Poll, error) {
-	if req.Poll == nil || len(req.Poll.Options) == 0 {
-		return nil, nil
-	}
-
-	if len(req.Poll.Options) < 2 || len(req.Poll.Options) > 4 {
-		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{"error": "poll must have between 2 and 4 options"})
-	}
-
-	expiresAt := time.Now().Add(time.Duration(req.Poll.ExpiresIn) * time.Second)
-	poll := &storage.Poll{
-		StatusID:   noteID,
-		CreatedBy:  actorID,
-		Options:    req.Poll.Options,
-		Multiple:   req.Poll.Multiple,
-		HideTotals: req.Poll.HideTotals,
-		ExpiresAt:  &expiresAt,
-	}
-
-	if err := h.repos.Poll().CreatePoll(ctx.Context, poll); err != nil {
-		h.logger.Error("failed to create poll", zap.Error(err))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return h.buildPollResponse(poll), nil
-}
-
-// buildPollResponse builds the poll response for the API
-func (h *Handler) buildPollResponse(poll *storage.Poll) *models.Poll {
-	optionsData := make([]models.PollOption, len(poll.Options))
-	for i, option := range poll.Options {
-		optionsData[i] = models.PollOption{
-			Title:      option,
-			VotesCount: 0,
-		}
-	}
-
-	return &models.Poll{
-		ID:          poll.ID,
-		ExpiresAt:   poll.ExpiresAt.Format(time.RFC3339),
-		Expired:     false,
-		Multiple:    poll.Multiple,
-		VotesCount:  0,
-		VotersCount: 0,
-		Voted:       false,
-		OwnVotes:    nil,
-		OptionsData: optionsData,
-		Emojis:      []any{},
-	}
-}
-
-// processContentAndCreateNote processes content and creates the note object
-func (h *Handler) processContentAndCreateNote(ctx *lift.Context, note *activitypub.Note) ([]mastodon.ParsedEmoji, error) {
-	// Parse and process custom emojis
-	emojiParser := mastodon.NewEmojiParser(h.repos)
-	processedContent, parsedEmojis, err := emojiParser.ProcessContent(ctx.Context, note.Content)
+	// Get the author actor for proper conversion
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
-		h.logger.Warn("failed to parse emojis in content", zap.Error(err))
-		parsedEmojis = nil
-	} else {
-		note.Content = processedContent
+		h.logger.Error("failed to get author account", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
 	}
 
-	// Create the Note object
-	if err := h.repos.Object().CreateObject(ctx.Context, note); err != nil {
-		h.logger.Error("failed to create note object", zap.Error(err))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
+	// Convert to Mastodon API format using correct converter
+	mastodonStatus := h.converter.ObjectToStatus(result.Note, account.Actor)
 
-	return parsedEmojis, nil
+	h.logger.Info("created status", 
+		zap.String("id", result.Note.StatusID),
+		zap.String("content", req.Status))
+
+	return ctx.Status(http.StatusCreated).JSON(mastodonStatus)
 }
 
-// handleReplyProcessing handles reply-related processing
-func (h *Handler) handleReplyProcessing(ctx *lift.Context, req models.CreateStatusRequest) {
-	if req.InReplyToID == "" {
-		return
-	}
-
-	// Record reply engagement
-	if actor, err := h.repos.Account().GetActor(ctx.Context, ""); err == nil {
-		if err := h.repos.Analytics().RecordStatusEngagement(ctx.Context, req.InReplyToID, "reply", actor.ID); err != nil {
-			h.logger.Warn("failed to record reply engagement",
-				zap.String("parent_status_id", req.InReplyToID),
-				zap.Error(err))
-		}
-	}
-
-	// Increment reply count
-	if err := h.repos.Object().IncrementReplyCount(ctx.Context, req.InReplyToID); err != nil {
-		h.logger.Warn("failed to increment reply count",
-			zap.String("parent_id", req.InReplyToID),
-			zap.Error(err))
-	}
-}
-
-// createActivity creates the Create activity for the note
-func (h *Handler) createActivity(actor *activitypub.Actor, note *activitypub.Note, now time.Time) *activitypub.Activity {
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			Context:   activitypub.Context,
-			Type:      activitypub.CreateType,
-			ID:        fmt.Sprintf("%s/activities/create-%d-%s", actor.ID, now.Unix(), generateRandomStringLift()),
-			To:        note.To,
-			Published: &now,
-		},
-		Actor:  actor.ID,
-		Object: note,
-	}
-}
-
-// performPostCreationTasks performs all tasks after creating the activity
-func (h *Handler) performPostCreationTasks(ctx *lift.Context, activity *activitypub.Activity, req models.CreateStatusRequest, hashtags []string, actor *activitypub.Actor, claims *auth.Claims, now time.Time) {
-	// Fan out the post
-	if err := h.repos.User().FanOutPost(ctx.Context, activity); err != nil {
-		h.logger.Error("failed to fan out post to timelines", zap.Error(err))
-	}
-
-	// Record status creation activity
-	if err := h.repos.Activity().RecordActivity(ctx.Context, "status", actor.ID, now); err != nil {
-		h.logger.Warn("failed to record status activity", zap.Error(err))
-	}
-
-	// Record hashtags for trending
-	h.recordHashtagUsage(ctx, hashtags, activity.Object.(*activitypub.Note).ID, actor.ID)
-
-	// Record links for trending
-	h.recordLinkUsage(ctx, req.Status, activity.Object.(*activitypub.Note).ID, actor.ID)
-
-	// Update actor's last status time
-	if err := h.repos.Actor().UpdateActorLastStatusTime(ctx.Context, claims.Username); err != nil {
-		h.logger.Warn("failed to update actor last status time", zap.Error(err))
-	}
-
-	// Federation: Deliver Create activity to relevant recipients
-	go func() {
-		if err := h.deliverCreateActivity(context.Background(), activity, actor, req.Visibility); err != nil {
-			h.logger.Error("failed to deliver create activity for federation",
-				zap.String("activity_id", activity.ID),
-				zap.Error(err))
-		}
-	}()
-}
-
-// recordHashtagUsage records hashtag usage for trending
-func (h *Handler) recordHashtagUsage(ctx *lift.Context, hashtags []string, noteID, actorID string) {
-	for _, hashtag := range hashtags {
-		cleanHashtag := strings.TrimPrefix(hashtag, "#")
-		if err := h.repos.Analytics().RecordHashtagUsage(ctx.Context, cleanHashtag, noteID, actorID); err != nil {
-			h.logger.Warn("failed to record hashtag usage",
-				zap.String("hashtag", cleanHashtag),
-				zap.Error(err))
-		}
-	}
-}
-
-// recordLinkUsage records link usage for trending
-func (h *Handler) recordLinkUsage(ctx *lift.Context, content, noteID, actorID string) {
-	links := extractLinksFromContent(content)
-	for _, link := range links {
-		if err := h.repos.Analytics().RecordLinkShare(ctx.Context, link, noteID, actorID); err != nil {
-			h.logger.Warn("failed to record link share",
-				zap.String("link", link),
-				zap.Error(err))
-		}
-	}
-}
-
-// buildStatusResponse builds the complete status response
-func (h *Handler) buildStatusResponse(note *activitypub.Note, req models.CreateStatusRequest, actor *activitypub.Actor, parsedEmojis []mastodon.ParsedEmoji, pollResp *models.Poll, now time.Time) models.Status {
-	mastodonTags := h.convertTagsToMastodonFormat(note.Tag)
-	mastodonEmojis := h.convertEmojisToMastodonFormat(parsedEmojis)
-
-	resp := models.Status{
-		ID:               note.ID,
-		CreatedAt:        note.Published.Format("2006-01-02T15:04:05.000Z"),
-		Sensitive:        note.Sensitive,
-		SpoilerText:      note.Summary,
-		Visibility:       req.Visibility,
-		Language:         req.Language,
-		URI:              note.ID,
-		URL:              note.ID,
-		Content:          note.Content,
-		RepliesCount:     0,
-		ReblogsCount:     0,
-		FavouritesCount:  0,
-		Favourited:       false,
-		Reblogged:        false,
-		Muted:            false,
-		Bookmarked:       false,
-		Pinned:           false,
-		MediaAttachments: []any{},
-		Mentions:         []any{},
-		Tags:             mastodonTags,
-		Emojis:           mastodonEmojis,
-		Poll:             pollResp,
-		Account:          h.buildAccountFromActor(actor, now),
-	}
-
-	if req.InReplyToID != "" {
-		resp.InReplyToID = &req.InReplyToID
-		if accountID := h.getReplyToAccountID(context.Background(), req.InReplyToID); accountID != "" {
-			resp.InReplyToAccountID = &accountID
-		}
-	}
-
-	return resp
-}
-
-// convertTagsToMastodonFormat converts ActivityPub tags to Mastodon format
-func (h *Handler) convertTagsToMastodonFormat(tags []activitypub.Tag) []any {
-	mastodonTags := make([]any, 0, len(tags))
-	for _, tag := range tags {
-		if tag.Type == "Hashtag" {
-			tagName := strings.TrimPrefix(tag.Name, "#")
-			mastodonTags = append(mastodonTags, map[string]any{
-				"name": tagName,
-				"url":  tag.Href,
-			})
-		}
-	}
-	return mastodonTags
-}
-
-// convertEmojisToMastodonFormat converts parsed emojis to Mastodon format
-func (h *Handler) convertEmojisToMastodonFormat(parsedEmojis []mastodon.ParsedEmoji) []any {
-	mastodonEmojis := make([]any, 0, len(parsedEmojis))
-	for _, parsed := range parsedEmojis {
-		if parsed.Emoji != nil {
-			mastodonEmojis = append(mastodonEmojis, map[string]any{
-				"shortcode":         parsed.Emoji.Shortcode,
-				"url":               parsed.Emoji.URL,
-				"static_url":        parsed.Emoji.StaticURL,
-				"visible_in_picker": parsed.Emoji.VisibleInPicker,
-				"category":          parsed.Emoji.Category,
-			})
-		}
-	}
-	return mastodonEmojis
-}
-
-// buildAccountFromActor builds an account object from an actor
-func (h *Handler) buildAccountFromActor(actor *activitypub.Actor, now time.Time) models.Account {
-	account := models.Account{
-		ID:             actor.ID,
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		URL:            actor.URL,
-		CreatedAt:      now.Format("2006-01-02T15:04:05.000Z"),
-		Note:           actor.Summary,
-		Avatar:         "",
-		AvatarStatic:   "",
-		Header:         "",
-		HeaderStatic:   "",
-		FollowersCount: 0,
-		FollowingCount: 0,
-		StatusesCount:  0,
-		Emojis:         []any{},
-		Fields:         []any{},
-	}
-
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		account.Avatar = actor.Icon.URL
-		account.AvatarStatic = actor.Icon.URL
-	}
-
-	if actor.Image != nil && actor.Image.URL != "" {
-		account.Header = actor.Image.URL
-		account.HeaderStatic = actor.Image.URL
-	}
-
-	return account
-}
-
-// authenticateDeleteRequest handles token validation and authorization for delete requests
-func (h *Handler) authenticateDeleteRequest(ctx *lift.Context) (*auth.Claims, *activitypub.Actor, error) {
-	token := h.getBearerTokenLift(ctx)
-	if token == "" {
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
-	}
-
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Check write scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	// Get the user's actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
-	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
-		return nil, nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return claims, actor, nil
-}
-
-// validateAndGetObject handles object retrieval and tombstone checking
-func (h *Handler) validateAndGetObject(ctx *lift.Context, objectID string) (interface{}, error) {
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
-	if err != nil {
-		// Check if this is a tombstoned object (should return 410 Gone)
-		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
-			// Get tombstone details for better error message
-			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context, objectID); tErr == nil {
-				return nil, ctx.Status(http.StatusGone).JSON(map[string]interface{}{
-					"error": "status already deleted",
-					"error_description": "This status has already been deleted",
-					"deleted_at": tombstone.Deleted.Format(time.RFC3339),
-					"former_type": tombstone.FormerType,
-				})
-			}
-			// Fallback if we can't get tombstone details
-			return nil, ctx.Status(http.StatusGone).JSON(map[string]string{
-				"error": "status already deleted",
-				"error_description": "This status has already been deleted",
-			})
-		}
-		// Regular 404 for genuinely missing objects
-		return nil, ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
-	}
-	return object, nil
-}
-
-// extractAttributedToWithError extracts the AttributedTo field with error handling
-func (h *Handler) extractAttributedToWithError(ctx *lift.Context, object interface{}) (string, error) {
-	attributedTo := h.extractAttributedTo(object)
-	if attributedTo == "" {
-		// Try reflection for unknown types
-		v := reflect.ValueOf(object)
-		if v.Kind() == reflect.Ptr {
-			v = v.Elem()
-		}
-
-		if v.Kind() == reflect.Struct {
-			// Try to get AttributedTo field
-			if attrField := v.FieldByName("AttributedTo"); attrField.IsValid() && attrField.Kind() == reflect.String {
-				attributedTo = attrField.String()
-			}
-		}
-
-		if attributedTo == "" {
-			h.logger.Error("unexpected object type or missing AttributedTo",
-				zap.String("type", fmt.Sprintf("%T", object)),
-				zap.Any("object", object))
-			return "", ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "unexpected object type"})
-		}
-	}
-	return attributedTo, nil
-}
-
-// executeDeleteOperation performs the actual deletion and federation
-func (h *Handler) executeDeleteOperation(ctx *lift.Context, objectID string, actor *activitypub.Actor, object interface{}) error {
-	// Create a Delete activity
-	deleteActivity := &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			Context: activitypub.Context,
-			Type:    activitypub.DeleteType,
-			ID:      fmt.Sprintf("%s/activities/delete-%d-%s", actor.ID, time.Now().Unix(), generateRandomStringLift()),
-			To:      []string{activitypub.PublicAddress},
-		},
-		Actor:  actor.ID,
-		Object: objectID,
-	}
-	now := time.Now()
-	deleteActivity.Published = &now
-
-	// Store the activity in the outbox (this will trigger delivery)
-	if err := h.repos.Activity().CreateActivity(ctx.Context, deleteActivity); err != nil {
-		h.logger.Error("failed to create delete activity", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Perform cascade deletion operations before tombstoning
-	if err := h.performLocalCascadeDeletion(ctx.Context, objectID, actor.ID); err != nil {
-		h.logger.Warn("failed to perform complete cascade deletion",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Continue - partial failure is acceptable
-	}
-
-	// Tombstone the object from storage
-	if err := h.repos.Object().TombstoneObject(ctx.Context, objectID, actor.ID); err != nil {
-		h.logger.Error("failed to tombstone object", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Federation: Deliver Delete activity to relevant recipients
-	go func() {
-		if err := h.deliverDeleteActivity(context.Background(), deleteActivity, actor, object); err != nil {
-			h.logger.Error("failed to deliver delete activity for federation",
-				zap.String("activity_id", deleteActivity.ID),
-				zap.Error(err))
-		}
-	}()
-
-	return nil
-}
-
-// HandleDeleteStatusLift deletes a status
+// HandleDeleteStatusLift deletes a status using the Notes service
 func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if statusID == "" {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
 	}
 
-	// Authenticate and authorize the request
-	_, actor, err := h.authenticateDeleteRequest(ctx)
+	// Authenticate with write scope
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
 		return err
 	}
 
-	// Normalize the status ID to a full URL if it's not already
-	objectID := statusID
-	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		// Assume it's a local object ID
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
-	}
-
-	// Get the object and handle tombstone cases
-	object, err := h.validateAndGetObject(ctx, objectID)
+	// Get the status first to return it (Mastodon API returns deleted status)
+	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status for deletion", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete status"})
 	}
 
-	// Extract and verify ownership
-	attributedTo, err := h.extractAttributedToWithError(ctx, object)
+	// Delete using Notes service
+	err = h.registry.Notes().DeleteNote(ctx.Context, &notes.DeleteNoteCommand{
+		StatusID:  statusID,
+		DeleterID: claims.Username,
+	})
 	if err != nil {
-		return err
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		}
+		if strings.Contains(err.Error(), "not authorized") {
+			return ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "not authorized to delete this status"})
+		}
+		h.logger.Error("failed to delete status", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete status"})
 	}
 
-	if attributedTo != actor.ID {
-		return ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "you can only delete your own statuses"})
+	// Get the author actor for proper conversion
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+	if err != nil {
+		h.logger.Error("failed to get author account for deleted status", zap.Error(err))
+		// Return a basic response if we can't get the author
+		return ctx.JSON(map[string]interface{}{"id": statusID, "deleted": true})
 	}
 
-	// Execute the deletion operation
-	if err := h.executeDeleteOperation(ctx, objectID, actor, object); err != nil {
-		return err
-	}
+	// Return the deleted status in Mastodon format
+	mastodonStatus := h.converter.ObjectToStatus(status, account.Actor)
 
-	h.logger.Info("successfully deleted status with federation",
-		zap.String("status_id", statusID),
-		zap.String("object_id", objectID),
-		zap.String("actor", actor.ID))
+	h.logger.Info("deleted status", zap.String("id", statusID))
 
-	// Return empty JSON object for successful deletion
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{})
+	return ctx.JSON(mastodonStatus)
 }
 
 // HandleUpdateStatusLift updates an existing status
@@ -807,7 +196,7 @@ func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *ac
 		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
@@ -819,11 +208,12 @@ func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *ac
 	}
 
 	// Get the user's actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return nil, nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
+	actor := account.Actor
 
 	return claims, actor, nil
 }
@@ -839,7 +229,7 @@ func (h *Handler) normalizeStatusIDForUpdate(statusID string) string {
 
 // getAndVerifyStatusOwnership retrieves the object and initial ownership check
 func (h *Handler) getAndVerifyStatusOwnership(ctx *lift.Context, objectID, _ string) (any, error) {
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	object, err := h.registry.Notes().GetNote(ctx.Context, objectID)
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
 		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
@@ -1034,82 +424,161 @@ func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub
 	return ctx.JSON(resp)
 }
 
-// HandleGetStatusLift retrieves a single status by ID
+// HandleGetStatusLift retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
-	// Validate and normalize status ID
-	objectID, err := h.validateAndNormalizeStatusID(ctx)
+	statusID := ctx.Param("id")
+	if statusID == "" {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	}
+
+	// Optional authentication (public statuses can be viewed without auth)
+	var viewerUsername string
+	token := h.getBearerTokenLift(ctx)
+	if token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+			viewerUsername = claims.Username
+		}
+	}
+
+	// Get status using Notes service
+	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		}
+		h.logger.Error("failed to get status", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
+	}
+
+	// Get the author actor for proper conversion
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+	if err != nil {
+		h.logger.Error("failed to get author account", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
+	}
+
+	// Convert to Mastodon API format using correct converter
+	mastodonStatus := h.converter.ObjectToStatusWithContext(ctx.Context, status, account.Actor, 0, 0, false, false, false)
+
+	// TODO: Add user-specific metadata like favorited, reblogged, bookmarked if viewerUsername is available
+	_ = viewerUsername
+
+	return ctx.JSON(mastodonStatus)
+}
+
+// HandleGetHomeTimelineLift returns the home timeline using the Notes service
+func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
+	// Authenticate with read scope
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
 		return err
 	}
 
-	// Get the object
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
-	if err != nil {
-		// Check if this is a tombstoned object (should return 410 Gone)
-		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
-			// Get tombstone details for better error message
-			if tombstone, tErr := h.repos.Object().GetTombstone(ctx.Context, objectID); tErr == nil {
-				return ctx.Status(http.StatusGone).JSON(map[string]interface{}{
-					"error": "status deleted",
-					"error_description": "This status has been deleted",
-					"deleted_at": tombstone.Deleted.Format(time.RFC3339),
-					"former_type": tombstone.FormerType,
-				})
-			}
-			// Fallback if we can't get tombstone details
-			return ctx.Status(http.StatusGone).JSON(map[string]string{
-				"error": "status deleted",
-				"error_description": "This status has been deleted",
-			})
+	// Parse pagination parameters
+	limit := 20
+	if limitStr := ctx.QueryParam("limit"); limitStr != "" {
+		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 {
+			limit = 20
 		}
-		// Regular 404 for genuinely missing objects
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		if limit > 80 {
+			limit = 80
+		}
 	}
 
-	// Get the actor and convert to status
-	actor := h.getStatusActor(ctx.Context, object, objectID)
-	status := h.converter.ObjectToStatus(object, actor)
-	
-	// Enhanced privacy/visibility checking - return 404 (not 403) for unauthorized access
-	requestingActorID, err := h.getRequestingActorID(ctx)
+	cursor := ctx.QueryParam("max_id")
+
+	// Get home timeline using Notes service
+	result, err := h.registry.Notes().ListNotes(ctx.Context, &notes.ListNotesQuery{
+		ViewerID:     claims.Username,
+		TimelineType: "home",
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: cursor,
+		},
+	})
 	if err != nil {
-		// If we can't authenticate, only show public/unlisted statuses
-		if status.Visibility != VisibilityPublic && status.Visibility != VisibilityUnlisted {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
-		}
-	} else {
-		// Enhanced visibility checking using Status model methods
-		if !h.canActorSeeStatusEnhanced(&status, requestingActorID) {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
-		}
-		
-		// Sanitize status for this specific actor (removes BCC/BTo if not a recipient)
-		status = *h.sanitizeStatusForActor(&status, requestingActorID)
+		h.logger.Error("failed to get home timeline", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "failed to retrieve timeline",
+		})
 	}
 
-	// Parse and add emojis
-	h.enrichStatusWithEmojis(ctx.Context, &status)
+	// Convert to Mastodon API format
+	timeline := make([]interface{}, len(result.Notes))
+	for i, status := range result.Notes {
+		// Get author actor for conversion
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+		if err != nil {
+			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
+			continue
+		}
+		timeline[i] = h.converter.ObjectToStatus(status, account.Actor)
+	}
 
-	// Add interaction counts
-	h.enrichStatusWithInteractionCounts(ctx.Context, &status, objectID)
-
-	// Add poll data if exists
-	poll := h.enrichStatusWithPoll(ctx.Context, &status, objectID)
-
-	// Add user interaction state
-	h.enrichStatusWithUserInteractions(ctx, &status, objectID, poll)
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(status)
+	return ctx.JSON(timeline)
 }
 
-// normalizeObjectID normalizes a status ID to a full URL if needed
-func (h *Handler) normalizeObjectID(statusID string) string {
-	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		// Assume it's a local object ID
-		return fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+// HandleGetPublicTimelineLift returns the public timeline using the Notes service
+func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
+	// Optional authentication (public timeline can be viewed without auth)
+	var viewerUsername string
+	token := h.getBearerTokenLift(ctx)
+	if token != "" {
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+			viewerUsername = claims.Username
+		}
 	}
-	return statusID
+
+	// Parse pagination parameters
+	limit := 20
+	if limitStr := ctx.QueryParam("limit"); limitStr != "" {
+		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 {
+			limit = 20
+		}
+		if limit > 80 {
+			limit = 80
+		}
+	}
+
+	cursor := ctx.QueryParam("max_id")
+	local := ctx.QueryParam("local") == "true"
+
+	timelineType := "public"
+	if local {
+		timelineType = "local"
+	}
+
+	// Get public timeline using Notes service
+	result, err := h.registry.Notes().ListNotes(ctx.Context, &notes.ListNotesQuery{
+		ViewerID:     viewerUsername,
+		TimelineType: timelineType,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: cursor,
+		},
+	})
+	if err != nil {
+		h.logger.Error("failed to get public timeline", zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
+			"error": "failed to retrieve timeline",
+		})
+	}
+
+	// Convert to Mastodon API format
+	timeline := make([]interface{}, len(result.Notes))
+	for i, status := range result.Notes {
+		// Get author actor for conversion
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+		if err != nil {
+			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
+			continue
+		}
+		timeline[i] = h.converter.ObjectToStatus(status, account.Actor)
+	}
+
+	return ctx.JSON(timeline)
 }
 
 // HandleGetStatusContextLift retrieves the context (ancestors and descendants) of a status
@@ -1142,10 +611,13 @@ func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) 
 	}
 
 	// Normalize and validate the status ID
-	objectID := h.normalizeObjectID(statusID)
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
 
 	// Get the object to check it exists
-	_, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	_, err := h.registry.Notes().GetNote(ctx.Context, objectID)
 	if err != nil {
 		// Check if this is a tombstoned object (should return 410 Gone)
 		if isTombstoned, tombErr := h.repos.Object().IsTombstoned(ctx.Context, objectID); tombErr == nil && isTombstoned {
@@ -1196,7 +668,7 @@ func (h *Handler) getStatusAncestors(ctx context.Context, objectID string) []mod
 
 // getParentStatusID gets the parent status ID from an object
 func (h *Handler) getParentStatusID(ctx context.Context, objectID string) string {
-	obj, err := h.repos.Object().GetObject(ctx, objectID)
+	obj, err := h.registry.Notes().GetNote(ctx, objectID)
 	if err != nil {
 		return ""
 	}
@@ -1207,7 +679,7 @@ func (h *Handler) getParentStatusID(ctx context.Context, objectID string) string
 	}
 
 	// Verify parent exists
-	_, err = h.repos.Object().GetObject(ctx, inReplyTo)
+	_, err = h.registry.Notes().GetNote(ctx, inReplyTo)
 	if err != nil {
 		return ""
 	}
@@ -1260,7 +732,7 @@ func (h *Handler) extractInReplyToViaReflection(obj interface{}) string {
 
 // loadStatusWithActor loads a status object and its associated actor
 func (h *Handler) loadStatusWithActor(ctx context.Context, objectID string) *models.Status {
-	obj, err := h.repos.Object().GetObject(ctx, objectID)
+	obj, err := h.registry.Notes().GetNote(ctx, objectID)
 	if err != nil {
 		return nil
 	}
@@ -1282,8 +754,11 @@ func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activ
 		return nil
 	}
 
-	actor, _ := h.repos.Account().GetActor(ctx, username)
-	return actor
+	account, err := h.registry.Accounts().GetAccount(ctx, username)
+	if err != nil {
+		return nil
+	}
+	return account.Actor
 }
 
 // extractAttributedToViaReflection uses reflection to extract AttributedTo field
@@ -1369,10 +844,21 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	params := h.parseAccountStatusesParams(ctx)
 
 	// Get objects by this actor
-	objects, cursor, err := h.repos.Object().GetObjectsByActor(ctx.Context, actor.ID, params.maxID, params.limit)
+	userTimeline, err := h.registry.Notes().GetUserTimeline(ctx.Context, actor.ID, interfaces.PaginationOptions{
+		Limit:  params.limit,
+		Cursor: params.maxID,
+	})
 	if err != nil {
 		h.logger.Error("failed to get objects by actor", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+	}
+	statusItems := userTimeline.Items
+	cursor := userTimeline.NextCursor
+
+	// Convert status models to interface{} for compatibility
+	objects := make([]any, len(statusItems))
+	for i, s := range statusItems {
+		objects[i] = s
 	}
 
 	// Convert and filter objects to statuses
@@ -1552,40 +1038,6 @@ func (h *Handler) extractMentions(content string) []string {
 	return mentions
 }
 
-// getReplyToAccountID extracts account ID from a replied-to status
-func (h *Handler) getReplyToAccountID(ctx context.Context, statusID string) string {
-	// Get the object being replied to
-	objectID := statusID
-	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
-		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
-	}
-
-	obj, err := h.repos.Object().GetObject(ctx, objectID)
-	if err != nil {
-		return ""
-	}
-
-	// Extract attributedTo from the object
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		if o.AttributedTo != "" {
-			// Extract username from actor URI
-			parts := strings.Split(o.AttributedTo, "/")
-			if len(parts) > 0 {
-				return parts[len(parts)-1]
-			}
-		}
-	case map[string]any:
-		if attributedTo, ok := o["attributedTo"].(string); ok {
-			parts := strings.Split(attributedTo, "/")
-			if len(parts) > 0 {
-				return parts[len(parts)-1]
-			}
-		}
-	}
-
-	return ""
-}
 
 // validateAndNormalizeStatusID validates and normalizes the status ID parameter
 func (h *Handler) validateAndNormalizeStatusID(ctx *lift.Context) (string, error) {
@@ -1595,28 +1047,23 @@ func (h *Handler) validateAndNormalizeStatusID(ctx *lift.Context) (string, error
 	}
 
 	// Normalize the status ID to a full URL if needed
-	objectID := h.normalizeObjectID(statusID)
+	objectID := statusID
+	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
+		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
+	}
 	return objectID, nil
 }
 
 // extractAuthorUsernameForStatus extracts the username from a status object
 func (h *Handler) extractAuthorUsernameForStatus(ctx context.Context, objectID string) string {
 	// Get the object
-	obj, err := h.repos.Object().GetObject(ctx, objectID)
+	statusObj, err := h.registry.Notes().GetNote(ctx, objectID)
 	if err != nil {
 		return ""
 	}
 
-	// Extract attributedTo from the object
-	var attributedTo string
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		attributedTo = o.AttributedTo
-	case map[string]any:
-		if attr, ok := o["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
-	}
+	// For Status models, use the AuthorID field directly
+	attributedTo := statusObj.AuthorID
 
 	if attributedTo == "" {
 		return ""
@@ -1635,13 +1082,14 @@ func (h *Handler) getStatusActor(ctx context.Context, _ any, objectID string) *a
 	}
 
 	// Get the actor
-	actor, err := h.repos.Actor().GetActor(ctx, username)
+	account, err := h.registry.Accounts().GetAccount(ctx, username)
 	if err != nil {
 		h.logger.Debug("failed to get status actor",
 			zap.String("username", username),
 			zap.Error(err))
 		return nil
 	}
+	actor := account.Actor
 
 	return actor
 }
@@ -1667,13 +1115,13 @@ func (h *Handler) enrichStatusWithEmojis(ctx context.Context, status *models.Sta
 // enrichStatusWithInteractionCounts adds like and reblog counts to a status
 func (h *Handler) enrichStatusWithInteractionCounts(ctx context.Context, status *models.Status, objectID string) {
 	// Get like count
-	likeCount, err := h.repos.Like().GetLikeCount(ctx, objectID)
+	likeCount, err := h.registry.Notes().GetLikeCount(ctx, objectID)
 	if err == nil {
 		status.FavouritesCount = int(likeCount)
 	}
 
 	// Get reblog/boost count
-	boostCount, err := h.repos.Like().GetBoostCount(ctx, objectID)
+	boostCount, err := h.registry.Notes().GetBoostCount(ctx, objectID)
 	if err == nil {
 		status.ReblogsCount = int(boostCount)
 	}
@@ -1714,7 +1162,7 @@ func (h *Handler) extractUsernameFromToken(ctx *lift.Context) string {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			// Validate token
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				return claims.Username
@@ -1737,13 +1185,13 @@ func (h *Handler) enrichStatusWithUserInteractions(ctx *lift.Context, status *mo
 	actorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), username)
 
 	// Check if user has liked this status
-	liked, err := h.repos.Like().HasLiked(ctx.Context, actorID, objectID)
+	liked, err := h.registry.Notes().HasLiked(ctx.Context, actorID, objectID)
 	if err == nil {
 		status.Favourited = liked
 	}
 
 	// Check if user has reblogged this status
-	reblogged, err := h.repos.Like().HasReblogged(ctx.Context, actorID, objectID)
+	reblogged, err := h.registry.Notes().HasReblogged(ctx.Context, actorID, objectID)
 	if err == nil {
 		status.Reblogged = reblogged
 	} else {
@@ -1756,7 +1204,7 @@ func (h *Handler) enrichStatusWithUserInteractions(ctx *lift.Context, status *mo
 	}
 
 	// Check if user has bookmarked this status
-	bookmarked, err := h.repos.User().IsBookmarked(ctx.Context, username, objectID)
+	bookmarked, err := h.registry.Notes().IsBookmarked(ctx.Context, username, objectID)
 	if err == nil {
 		status.Bookmarked = bookmarked
 	} else {
@@ -2319,17 +1767,18 @@ func (h *Handler) getRequestingActorID(ctx *lift.Context) (string, error) {
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", err
 	}
 
 	// Get the actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		return "", err
 	}
+	actor := account.Actor
 
 	return actor.ID, nil
 }
@@ -2368,14 +1817,14 @@ func (h *Handler) isFollower(followerID, followeeID string) bool {
 		return false
 	}
 	
-	// Check if the relationship exists
-	exists, err := h.repos.Relationship().IsFollowing(context.Background(), followerUsername, followeeUsername)
+	// Check if the relationship exists using GetRelationship
+	relationship, err := h.registry.Relationships().GetRelationship(context.Background(), followerUsername, followeeUsername)
 	if err != nil {
 		h.logger.Warn("error checking follow relationship", zap.Error(err))
 		return false
 	}
 	
-	return exists
+	return relationship.Following
 }
 
 // isMentioned checks if an actor is mentioned in a status
@@ -2545,31 +1994,6 @@ func (h *Handler) convertFromStorageStatus(storageStatus *storageModels.Status) 
 	}
 }
 
-// getTimelineStatuses retrieves statuses for a timeline with proper visibility filtering
-//
-//nolint:unused // TODO: Will be used when timeline repositories are implemented
-func (h *Handler) getTimelineStatuses(_ *lift.Context, timelineType string, _ string, _ int) ([]models.Status, error) {
-	// TODO: This would integrate with your timeline repository to get statuses
-	// and filter them based on visibility
-	
-	h.logger.Info("getting timeline statuses",
-		zap.String("timeline_type", timelineType))
-	
-	// For now, return empty slice - this would be implemented when timeline repositories are ready
-	return []models.Status{}, nil
-}
-
-// getConversationsForActor retrieves direct message conversations for an actor
-//
-//nolint:unused // TODO: Will be used when conversation repositories are implemented
-func (h *Handler) getConversationsForActor(_ *lift.Context, _ string, _ int) ([]models.Status, error) {
-	// TODO: Get direct messages where the actor is a recipient
-	
-	h.logger.Info("getting conversations for actor")
-	
-	// For now, return empty slice - this would be implemented when conversation repositories are ready
-	return []models.Status{}, nil
-}
 
 
 // CreateStatusRequest represents the enhanced request for creating a status with addressing fields

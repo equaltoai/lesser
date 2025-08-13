@@ -321,10 +321,8 @@ func TestAuthenticationHelpers(t *testing.T) {
 
 	// Test with authentication
 	claims := &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: "testuser",
-			Scopes:   []string{"read", "write"},
-		},
+		Username:  "testuser",
+		Scopes:    []string{"read", "write"},
 		SessionID: "session123",
 		DeviceID:  "device456",
 	}

@@ -41,9 +41,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -130,7 +132,7 @@ func init() {
 			BedrockModelID:      "anthropic.claude-v2",
 			S3Bucket:            cfg.S3BucketName,
 		}
-		aiService = ai.NewAIService(awsCfg, aiConfig, tableName)
+		aiService = ai.NewAIService(awsCfg, aiConfig)
 		logger.Info("AI service initialized")
 	} else {
 		logger.Info("AI service disabled")
@@ -142,9 +144,30 @@ func init() {
 		logger.Info("initialized EMF metrics service for GraphQL")
 	}
 
-	// Initialize GraphQL resolver with all dependencies
+	// Initialize event publisher for real-time updates
+	// For GraphQL, we'll use a mock publisher as real events go through WebSocket
+	publisher := streaming.NewMockPublisher()
+	
+	// Create service registry with all dependencies
+	serviceConfig := &services.ServiceConfig{
+		BaseURL:   cfg.BaseURL(),
+		JWTSecret: cfg.JWTSecret,
+	}
+	
+	registry, err := services.NewRegistry(
+		services.WithStorage(repos),
+		services.WithPublisher(publisher),
+		services.WithLogger(logger),
+		services.WithConfig(serviceConfig),
+	)
+	if err != nil {
+		logger.Fatal("Failed to create service registry", zap.Error(err))
+	}
+
+	// Initialize GraphQL resolver with service registry
 	resolver := &graph.Resolver{
-		Storage:      repos,
+		Registry:     registry,
+		Storage:      repos,      // Keep for legacy resolvers
 		CostTracker:  costTracker,
 		MastodonConv: mastodon.NewConverter(cfg.BaseURL()),
 		Logger:       logger,

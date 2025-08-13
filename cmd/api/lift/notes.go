@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/reputation"
+	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -47,7 +48,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -128,8 +129,10 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		NotHelpfulVotes:  0,
 	}
 
-	// Store note
-	if err := h.repos.CommunityNote().CreateCommunityNote(ctx.Context, note); err != nil {
+	// Store note using Notes service
+	if _, err := h.registry.Notes().CreateCommunityNote(ctx.Context, &servicenotes.CreateCommunityNoteCommand{
+		Note: note,
+	}); err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -189,7 +192,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
-				oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 				claims, err := oauthSvc.ValidateAccessToken(token)
 				if err == nil {
 					userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
@@ -198,12 +201,15 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Get visible notes for the object
-	visibleNotes, err := h.repos.CommunityNote().GetVisibleCommunityNotes(ctx.Context, objectID)
+	// Get visible notes for the object using Notes service
+	result, err := h.registry.Notes().GetVisibleCommunityNotes(ctx.Context, &servicenotes.GetVisibleCommunityNotesQuery{
+		ObjectID: objectID,
+	})
 	if err != nil {
 		h.logger.Error("Failed to get visible notes", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
+	visibleNotes := result.Notes
 
 	// Get trust scores for ranking if user is authenticated
 	var rankedNotes []*storage.CommunityNote
@@ -344,7 +350,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -379,11 +385,14 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient reputation to vote"})
 	}
 
-	// Check if note exists
-	note, err := h.repos.CommunityNote().GetCommunityNote(ctx.Context, noteID)
+	// Check if note exists using Notes service
+	noteResult, err := h.registry.Notes().GetCommunityNote(ctx.Context, &servicenotes.GetCommunityNoteQuery{
+		NoteID: noteID,
+	})
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "note not found"})
 	}
+	note := noteResult.Note
 
 	// Can't vote on your own notes
 	if note.AuthorID == userID {
@@ -401,8 +410,10 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		CreatedAt: time.Now(),
 	}
 
-	// Store vote
-	if err := h.repos.CommunityNote().CreateCommunityNoteVote(ctx.Context, vote); err != nil {
+	// Store vote using Notes service
+	if _, err := h.registry.Notes().CreateCommunityNoteVote(ctx.Context, &servicenotes.CreateCommunityNoteVoteCommand{
+		Vote: vote,
+	}); err != nil {
 		h.logger.Error("Failed to store vote", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
@@ -442,12 +453,17 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Get notes from storage
-	userNotes, _, err := h.repos.CommunityNote().GetCommunityNotesByAuthor(ctx.Context, authorID, limit, "")
+	// Get notes from storage using Notes service
+	result, err := h.registry.Notes().GetCommunityNotesByAuthor(ctx.Context, &servicenotes.GetCommunityNotesByAuthorQuery{
+		AuthorID: authorID,
+		Limit:    limit,
+		Cursor:   "",
+	})
 	if err != nil {
 		h.logger.Error("Failed to get user notes", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
+	userNotes := result.Notes
 
 	// Convert notes to Mastodon status format
 	statuses := make([]any, len(userNotes))

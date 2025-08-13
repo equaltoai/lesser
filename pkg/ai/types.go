@@ -239,6 +239,24 @@ type AnalysisRequest struct {
 	ResultID      *string    `json:"result_id,omitempty" dynamodbav:"ResultID,omitempty"`
 }
 
+// AIStats represents aggregated AI analysis statistics
+//
+//nolint:revive // AI prefix clarifies this is AI-related statistics
+type AIStats struct {
+	Period            string         `json:"period"`
+	TotalAnalyses     int            `json:"total_analyses"`
+	ToxicContent      int            `json:"toxic_content"`
+	SpamDetected      int            `json:"spam_detected"`
+	AIGenerated       int            `json:"ai_generated"`
+	NSFWContent       int            `json:"nsfw_content"`
+	PIIDetected       int            `json:"pii_detected"`
+	ToxicityRate      float64        `json:"toxicity_rate"`
+	SpamRate          float64        `json:"spam_rate"`
+	AIContentRate     float64        `json:"ai_content_rate"`
+	NSFWRate          float64        `json:"nsfw_rate"`
+	ModerationActions map[string]int `json:"moderation_actions"`
+}
+
 // Analysis request statuses
 const (
 	StatusPending    = "pending"

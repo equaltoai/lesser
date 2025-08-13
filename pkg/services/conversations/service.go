@@ -37,7 +37,7 @@ const (
 // Service provides conversation operations for direct messages
 type Service struct {
 	conversationRepo interfaces.ConversationRepository
-	noteRepo         interfaces.NoteRepository
+	noteRepo         interfaces.StatusRepository
 	accountRepo      interfaces.AccountRepository
 	publisher        streaming.Publisher
 	federation       FederationService
@@ -53,7 +53,7 @@ type FederationService interface {
 // NewService creates a new Conversations Service with the required dependencies
 func NewService(
 	conversationRepo interfaces.ConversationRepository,
-	noteRepo interfaces.NoteRepository,
+	noteRepo interfaces.StatusRepository,
 	accountRepo interfaces.AccountRepository,
 	publisher streaming.Publisher,
 	federation FederationService,
@@ -90,6 +90,12 @@ type SendDirectMessageCommand struct {
 
 // MarkConversationReadCommand contains data needed to mark a conversation as read
 type MarkConversationReadCommand struct {
+	ConversationID string `json:"conversation_id" validate:"required"`
+	UserID         string `json:"user_id" validate:"required"`
+}
+
+// DeleteConversationCommand contains data needed to delete a conversation
+type DeleteConversationCommand struct {
 	ConversationID string `json:"conversation_id" validate:"required"`
 	UserID         string `json:"user_id" validate:"required"`
 }
@@ -541,4 +547,86 @@ func isNotFoundError(err error) bool {
 	// This would typically check for storage-specific "not found" errors
 	// The exact implementation depends on how the storage layer reports not found errors
 	return err != nil && (strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound"))
+}
+
+// DeleteConversation removes a conversation or removes a user from it
+func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversationCommand) (*ConversationResult, error) {
+	s.logger.Info("deleting conversation",
+		zap.String("conversation_id", cmd.ConversationID),
+		zap.String("user_id", cmd.UserID))
+
+	// Get conversation to verify it exists and user is a participant
+	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil, fmt.Errorf("conversation not found")
+		}
+		return nil, fmt.Errorf("failed to get conversation: %w", err)
+	}
+
+	// Check if user is a participant
+	if !s.isParticipant(cmd.UserID, conversation.Participants) {
+		// Get user's account to check actor ID
+		account, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get account: %w", err)
+		}
+		
+		// Check with actor ID as well
+		if account.Actor == nil || !s.isParticipant(account.Actor.ID, conversation.Participants) {
+			return nil, fmt.Errorf("user is not a participant in this conversation")
+		}
+	}
+
+	// Delete the conversation (or remove user from it)
+	// The exact behavior depends on the storage implementation
+	// Some systems remove the user from participants, others delete the entire conversation
+	if err := s.conversationRepo.DeleteConversation(ctx, cmd.ConversationID); err != nil {
+		return nil, fmt.Errorf("failed to delete conversation: %w", err)
+	}
+
+	// Emit conversation deleted event
+	events := s.emitConversationDeletedEvents(ctx, conversation, cmd.UserID)
+
+	return &ConversationResult{
+		Conversation: nil, // Conversation is deleted
+		Events:       events,
+	}, nil
+}
+
+// emitConversationDeletedEvents creates events for conversation deletion
+func (s *Service) emitConversationDeletedEvents(ctx context.Context, conversation *models.Conversation, userID string) []*streaming.Event {
+	var events []*streaming.Event
+
+	// Create conversation deleted event
+	event := &streaming.Event{
+		Type:      "conversation.deleted",
+		Timestamp: time.Now(),
+		Payload: map[string]interface{}{
+			"conversation_id": conversation.ID,
+			"user_id":         userID,
+		},
+	}
+
+	// Emit to user's stream
+	userEvent := *event
+	userEvent.Stream = fmt.Sprintf("user:%s", userID)
+	if err := s.publisher.PublishToUser(ctx, userID, &userEvent); err != nil {
+		s.logger.Warn("failed to publish conversation deleted event",
+			zap.String("user_id", userID),
+			zap.Error(err))
+	}
+	events = append(events, &userEvent)
+
+	// Emit to conversation stream (for other participants to know)
+	conversationEvent := *event
+	conversationEvent.Stream = fmt.Sprintf("conversation:%s", conversation.ID)
+	if err := s.publisher.PublishToConversation(ctx, conversation.ID, &conversationEvent); err != nil {
+		s.logger.Warn("failed to publish conversation deleted event to conversation stream",
+			zap.String("conversation_id", conversation.ID),
+			zap.Error(err))
+	}
+	events = append(events, &conversationEvent)
+
+	return events
 }

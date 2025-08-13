@@ -29,6 +29,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -46,6 +47,7 @@ var (
 	tracingManager    *observability.TracingManager
 	startTime         time.Time
 )
+
 
 func init() {
 	startTime = time.Now()
@@ -138,9 +140,13 @@ func init() {
 		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
 	}
 
+	// Create stream queue service for queueing events to DynamoDB
+	streamQueue := streaming.NewDynamoStreamQueue(db, tableName, logger)
+
 	// Create Lift handler for all endpoints
 	// The handler uses repos which implements RepositoryStorage
-	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware)
+	// StreamQueue writes events to DynamoDB for the stream-router to process
+	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware, streamQueue)
 }
 
 func main() {

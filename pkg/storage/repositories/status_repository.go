@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -31,18 +31,13 @@ func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger) *Stat
 }
 
 // CreateStatus creates a new status
-func (r *StatusRepository) CreateStatus(ctx context.Context, note *activitypub.Note) (*models.Status, error) {
-	status := &models.Status{
-		StatusID: extractStatusIDFromURL(note.ID),
-		Note:     note,
-	}
-
+func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
 	err := r.db.WithContext(ctx).Model(status).Create()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create status: %w", err)
+		return fmt.Errorf("failed to create status: %w", err)
 	}
 
-	return status, nil
+	return nil
 }
 
 // GetStatus retrieves a status by ID
@@ -99,119 +94,6 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 	return nil
 }
 
-// GetStatusesByAuthor retrieves statuses by author with pagination
-func (r *StatusRepository) GetStatusesByAuthor(ctx context.Context, authorID string, limit int, _ string) ([]*models.Status, string, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("author-timeline-index").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
-		OrderBy("GSI1SK", "DESC").
-		Limit(limit).
-		All(&statuses)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get statuses by author: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	// For now, return empty cursor - pagination would need custom implementation
-	return result, "", nil
-}
-
-// GetPublicTimeline retrieves public statuses with pagination
-func (r *StatusRepository) GetPublicTimeline(ctx context.Context, limit int, _ string) ([]*models.Status, string, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("public-timeline-index").
-		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
-		OrderBy("GSI2SK", "DESC").
-		Limit(limit).
-		All(&statuses)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get public timeline: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	// For now, return empty cursor - pagination would need custom implementation
-	return result, "", nil
-}
-
-// GetConversationStatuses retrieves all statuses in a conversation
-func (r *StatusRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int) ([]*models.Status, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("conversation-index").
-		Where("GSI3PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
-		OrderBy("GSI3SK", "ASC"). // Chronological order for conversations
-		Limit(limit).
-		All(&statuses)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation statuses: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	return result, nil
-}
-
-// GetReplies retrieves replies to a specific status
-func (r *StatusRepository) GetReplies(ctx context.Context, statusID string, limit int, _ string) ([]*models.Status, string, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("replies-index").
-		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
-		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
-		Limit(limit).
-		All(&statuses)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get replies: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	// For now, return empty cursor - pagination would need custom implementation
-	return result, "", nil
-}
-
-// GetHashtagTimeline retrieves statuses for a specific hashtag
-func (r *StatusRepository) GetHashtagTimeline(ctx context.Context, hashtag string, limit int, _ string) ([]*models.Status, string, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("hashtag-index").
-		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", hashtag)).
-		OrderBy("GSI5SK", "DESC").
-		Limit(limit).
-		All(&statuses)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get hashtag timeline: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	// For now, return empty cursor - pagination would need custom implementation
-	return result, "", nil
-}
 
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
@@ -269,29 +151,6 @@ func (r *StatusRepository) UpdateEngagementMetrics(ctx context.Context, statusID
 	return nil
 }
 
-// FlagStatus flags a status for moderation
-func (r *StatusRepository) FlagStatus(ctx context.Context, statusID string) error {
-	var status models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
-		First(&status)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("status not found: %s", statusID)
-		}
-		return fmt.Errorf("failed to find status for flagging: %w", err)
-	}
-
-	status.Flagged = true
-
-	err = r.db.WithContext(ctx).Model(&status).Update()
-	if err != nil {
-		return fmt.Errorf("failed to flag status: %w", err)
-	}
-
-	return nil
-}
 
 // GetTotalStatusCount returns the total number of statuses in the system
 func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, error) {
@@ -313,27 +172,6 @@ func (r *StatusRepository) GetTotalStatusCount(ctx context.Context) (int64, erro
 	return count, nil
 }
 
-// GetFlaggedStatuses retrieves flagged statuses for moderation
-func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, limit int, _ string) ([]*models.Status, string, error) {
-	// This would require a GSI for flagged statuses in a real implementation
-	// For now, we'll scan the table (not efficient for production)
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Filter("Flagged", "=", true).
-		Limit(limit).
-		Scan(&statuses)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get flagged statuses: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	return result, "", nil
-}
 
 // StatusFilter represents filtering criteria for admin status listing
 type StatusFilter struct {
@@ -558,6 +396,575 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 		domain = os.Getenv("INSTANCE_DOMAIN")
 	}
 	return domain
+}
+
+// GetStatusByURL retrieves a status by its URL
+func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*models.Status, error) {
+	// For now, we'll use a scan to find status by URL - in production you might want a GSI
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan statuses: %w", err)
+	}
+
+	// Find status with matching URL in Note
+	for _, status := range statuses {
+		if status.Note != nil && status.Note.ID == url {
+			return &status, nil
+		}
+	}
+
+	return nil, fmt.Errorf("status not found with URL: %s", url)
+}
+
+// GetHomeTimeline retrieves home timeline for a user
+func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// This would typically require following relationships to build home timeline
+	// For now, we'll return public timeline as a placeholder
+	return r.GetPublicTimeline(ctx, opts)
+}
+
+// GetUserTimeline retrieves user's own statuses
+func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("author-timeline-index").
+		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", userID)).
+		OrderBy("GSI1SK", "DESC").
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user timeline: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// GetConversationThread retrieves all statuses in a conversation thread
+func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("conversation-index").
+		Where("GSI3PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
+		OrderBy("GSI3SK", "ASC").
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get conversation thread: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// SearchStatuses searches statuses by query string
+func (r *StatusRepository) SearchStatuses(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// This is a basic implementation using scan with filter
+	// In production, you'd want to use a search service like OpenSearch
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Filter("Content", "CONTAINS", query).
+		Filter("Deleted", "=", false).
+		Limit(opts.Limit).
+		Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search statuses: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// GetStatusesByHashtag retrieves statuses containing a specific hashtag
+func (r *StatusRepository) GetStatusesByHashtag(ctx context.Context, hashtag string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("hashtag-index").
+		Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
+		OrderBy("GSI5SK", "DESC").
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get statuses by hashtag: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// GetTrendingStatuses retrieves trending statuses
+func (r *StatusRepository) GetTrendingStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Simple implementation: get recent public statuses sorted by engagement
+	// In production, you'd want a more sophisticated trending algorithm
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("public-timeline-index").
+		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
+		Filter("LikeCount", ">", 0). // Only statuses with likes
+		OrderBy("GSI2SK", "DESC").
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get trending statuses: %w", err)
+	}
+
+	// Convert to pointer slice and sort by engagement score
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// LikeStatus likes a status for a user
+func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID string) error {
+	// Create a like record using the existing StatusEngagement model
+	now := time.Now()
+	like := &models.StatusEngagement{
+		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
+		SK:             fmt.Sprintf("like#%d#%s", now.Unix(), userID),
+		StatusID:       statusID,
+		EngagementType: "like",
+		UserID:         userID,
+		EngagedAt:      now,
+		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
+	}
+
+	err := r.db.WithContext(ctx).Model(like).Create()
+	if err != nil {
+		return fmt.Errorf("failed to create like: %w", err)
+	}
+
+	// Update status like count
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status for like update: %w", err)
+	}
+
+	status.LikeCount++
+	err = r.UpdateStatus(ctx, status)
+	if err != nil {
+		return fmt.Errorf("failed to update status like count: %w", err)
+	}
+
+	return nil
+}
+
+// UnlikeStatus unlikes a status for a user
+func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID string) error {
+	// Find and delete the like record - need to scan since we don't know the exact timestamp
+	var engagements []models.StatusEngagement
+	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+		Filter("EngagementType", "=", "like").
+		Filter("UserID", "=", userID).
+		All(&engagements)
+	if err != nil {
+		return fmt.Errorf("failed to find like record: %w", err)
+	}
+
+	// Delete the first matching record (there should only be one)
+	if len(engagements) > 0 {
+		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to delete like: %w", err)
+		}
+	}
+
+	// Update status like count
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status for unlike update: %w", err)
+	}
+
+	if status.LikeCount > 0 {
+		status.LikeCount--
+	}
+	err = r.UpdateStatus(ctx, status)
+	if err != nil {
+		return fmt.Errorf("failed to update status like count: %w", err)
+	}
+
+	return nil
+}
+
+// ReblogStatus reblogs a status for a user
+func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, reblogStatusID string) error {
+	// Create a reblog record using the existing StatusEngagement model
+	now := time.Now()
+	reblog := &models.StatusEngagement{
+		PK:             fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID),
+		SK:             fmt.Sprintf("boost#%d#%s", now.Unix(), userID),
+		StatusID:       statusID,
+		EngagementType: "boost",
+		UserID:         userID,
+		EngagedAt:      now,
+		TTL:            now.AddDate(0, 0, 7).Unix(), // 7 day TTL
+	}
+
+	err := r.db.WithContext(ctx).Model(reblog).Create()
+	if err != nil {
+		return fmt.Errorf("failed to create reblog: %w", err)
+	}
+
+	// Update status reblog count
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status for reblog update: %w", err)
+	}
+
+	status.ReblogCount++
+	err = r.UpdateStatus(ctx, status)
+	if err != nil {
+		return fmt.Errorf("failed to update status reblog count: %w", err)
+	}
+
+	return nil
+}
+
+// UnreblogStatus unreblogs a status for a user
+func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID string) error {
+	// Find and delete the reblog record - need to scan since we don't know the exact timestamp
+	var engagements []models.StatusEngagement
+	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+		Filter("EngagementType", "=", "boost").
+		Filter("UserID", "=", userID).
+		All(&engagements)
+	if err != nil {
+		return fmt.Errorf("failed to find reblog record: %w", err)
+	}
+
+	// Delete the first matching record (there should only be one)
+	if len(engagements) > 0 {
+		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to delete reblog: %w", err)
+		}
+	}
+
+	// Update status reblog count
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return fmt.Errorf("failed to get status for unreblog update: %w", err)
+	}
+
+	if status.ReblogCount > 0 {
+		status.ReblogCount--
+	}
+	err = r.UpdateStatus(ctx, status)
+	if err != nil {
+		return fmt.Errorf("failed to update status reblog count: %w", err)
+	}
+
+	return nil
+}
+
+// BookmarkStatus bookmarks a status for a user
+func (r *StatusRepository) BookmarkStatus(ctx context.Context, userID, statusID string) error {
+	// Create a bookmark record using the existing Bookmark model
+	now := time.Now()
+	bookmark := &models.Bookmark{
+		Username:  userID,
+		ObjectID:  statusID,
+		CreatedAt: now,
+		TTL:       0, // No TTL for bookmarks
+	}
+	bookmark.UpdateKeys()
+
+	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	if err != nil {
+		return fmt.Errorf("failed to create bookmark: %w", err)
+	}
+
+	return nil
+}
+
+// UnbookmarkStatus unbookmarks a status for a user
+func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusID string) error {
+	// Find and delete the bookmark record
+	var bookmarks []models.Bookmark
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
+		Filter("ObjectID", "=", statusID).
+		All(&bookmarks)
+	if err != nil {
+		return fmt.Errorf("failed to find bookmark: %w", err)
+	}
+
+	// Delete the first matching record (there should only be one)
+	if len(bookmarks) > 0 {
+		err = r.db.WithContext(ctx).Model(&bookmarks[0]).Delete()
+		if err != nil {
+			return fmt.Errorf("failed to delete bookmark: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// UnflagStatus unflags a previously flagged status
+func (r *StatusRepository) UnflagStatus(ctx context.Context, statusID string) error {
+	var status models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
+		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
+		First(&status)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("status not found: %s", statusID)
+		}
+		return fmt.Errorf("failed to find status for unflagging: %w", err)
+	}
+
+	status.Flagged = false
+
+	err = r.db.WithContext(ctx).Model(&status).Update()
+	if err != nil {
+		return fmt.Errorf("failed to unflag status: %w", err)
+	}
+
+	return nil
+}
+
+// GetStatusCounts gets engagement counts for a status
+func (r *StatusRepository) GetStatusCounts(ctx context.Context, statusID string) (likes, reblogs, replies int, err error) {
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	return status.LikeCount, status.ReblogCount, status.ReplyCount, nil
+}
+
+// GetStatusContext gets ancestors and descendants of a status
+func (r *StatusRepository) GetStatusContext(ctx context.Context, statusID string) (ancestors, descendants []*models.Status, err error) {
+	// Get the status first to find its in_reply_to
+	status, err := r.GetStatus(ctx, statusID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	// Get ancestors by following the reply chain
+	ancestors = []*models.Status{}
+	currentStatus := status
+	for currentStatus.InReplyToID != "" {
+		parent, err := r.GetStatus(ctx, currentStatus.InReplyToID)
+		if err != nil {
+			break // Stop if parent not found
+		}
+		ancestors = append([]*models.Status{parent}, ancestors...) // Prepend to maintain order
+		currentStatus = parent
+	}
+
+	// Get descendants (replies)
+	replies, err := r.GetReplies(ctx, statusID, interfaces.PaginationOptions{Limit: 100})
+	if err != nil {
+		return ancestors, nil, fmt.Errorf("failed to get replies: %w", err)
+	}
+
+	return ancestors, replies.Items, nil
+}
+
+// GetStatusEngagement gets user's engagement state with a status
+func (r *StatusRepository) GetStatusEngagement(ctx context.Context, statusID, userID string) (liked, reblogged, bookmarked bool, err error) {
+	// Check for like
+	var likeEngagements []models.StatusEngagement
+	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+		Filter("EngagementType", "=", "like").
+		Filter("UserID", "=", userID).
+		All(&likeEngagements)
+	liked = (err == nil && len(likeEngagements) > 0)
+
+	// Check for reblog/boost
+	var boostEngagements []models.StatusEngagement
+	err = r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
+		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
+		Filter("EngagementType", "=", "boost").
+		Filter("UserID", "=", userID).
+		All(&boostEngagements)
+	reblogged = (err == nil && len(boostEngagements) > 0)
+
+	// Check for bookmark
+	var bookmarks []models.Bookmark
+	err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "=", fmt.Sprintf("BOOKMARK#%s", userID)).
+		Filter("ObjectID", "=", statusID).
+		All(&bookmarks)
+	bookmarked = (err == nil && len(bookmarks) > 0)
+
+	return liked, reblogged, bookmarked, nil
+}
+
+// GetStatusesByIDs gets multiple statuses by their IDs
+func (r *StatusRepository) GetStatusesByIDs(ctx context.Context, statusIDs []string) ([]*models.Status, error) {
+	result := make([]*models.Status, 0, len(statusIDs))
+
+	for _, statusID := range statusIDs {
+		status, err := r.GetStatus(ctx, statusID)
+		if err != nil {
+			// Skip statuses that can't be found rather than failing entirely
+			r.logger.Warn("failed to get status by ID", zap.String("statusID", statusID), zap.Error(err))
+			continue
+		}
+		result = append(result, status)
+	}
+
+	return result, nil
+}
+
+// Update method signatures to match interface
+func (r *StatusRepository) GetPublicTimeline(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("public-timeline-index").
+		Where("GSI2PK", "=", "PUBLIC_TIMELINE").
+		OrderBy("GSI2SK", "DESC").
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public timeline: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("replies-index").
+		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", parentStatusID)).
+		OrderBy("GSI4SK", "ASC"). // Chronological order for replies
+		Limit(opts.Limit).
+		All(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get replies: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// This would require a GSI for flagged statuses in a real implementation
+	// For now, we'll scan the table (not efficient for production)
+	var statuses []models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Filter("Flagged", "=", true).
+		Limit(opts.Limit).
+		Scan(&statuses)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get flagged statuses: %w", err)
+	}
+
+	// Convert to pointer slice
+	result := make([]*models.Status, len(statuses))
+	for i := range statuses {
+		result[i] = &statuses[i]
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: "", // Simple implementation without cursor
+		HasMore:    len(result) == opts.Limit,
+		Total:      -1,
+	}, nil
+}
+
+// Update FlagStatus to match interface signature 
+func (r *StatusRepository) FlagStatus(ctx context.Context, statusID, reason string, reportedBy string) error {
+	var status models.Status
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Where("PK", "=", fmt.Sprintf("status#%s", statusID)).
+		Where("SK", "=", fmt.Sprintf("status#%s", statusID)).
+		First(&status)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("status not found: %s", statusID)
+		}
+		return fmt.Errorf("failed to find status for flagging: %w", err)
+	}
+
+	status.Flagged = true
+
+	err = r.db.WithContext(ctx).Model(&status).Update()
+	if err != nil {
+		return fmt.Errorf("failed to flag status: %w", err)
+	}
+
+	// In a full implementation, you'd also create a moderation report record
+	// with the reason and reportedBy information
+
+	return nil
 }
 
 // Helper function to extract status ID from URL

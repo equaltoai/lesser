@@ -22,6 +22,26 @@ func generateID() string {
 	return hex.EncodeToString(b)
 }
 
+// stringPtr returns a pointer to a string
+func stringPtr(s string) *string {
+	return &s
+}
+
+// floatPtr returns a pointer to a float64
+func floatPtr(f float64) *float64 {
+	return &f
+}
+
+// intPtr returns a pointer to an int
+func intPtr(i int) *int {
+	return &i
+}
+
+// boolPtr returns a pointer to a bool
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // deriveVisibility determines the visibility level based on To and CC fields
 func deriveVisibility(to, cc []string) model.Visibility {
 	// Check for public visibility

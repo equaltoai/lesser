@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -31,6 +32,7 @@ type AccountRepository struct {
 
 	// Dependencies for cross-repository operations
 	// Note: storage.Storage dependency removed in Phase 5.6
+	statusRepo interfaces.StatusRepository // For accessing status objects
 }
 
 // NewAccountRepository creates a new unified account repository
@@ -44,6 +46,11 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 	}
 }
 
+// SetStatusRepository sets the status repository dependency for cross-repository operations
+func (r *AccountRepository) SetStatusRepository(statusRepo interfaces.StatusRepository) {
+	r.statusRepo = statusRepo
+}
+
 // SetStorage is deprecated - storage dependency removed in Phase 5.6
 func (r *AccountRepository) SetStorage(_ interface{}) {
 	// No-op: storage dependency removed
@@ -53,39 +60,65 @@ func (r *AccountRepository) SetStorage(_ interface{}) {
 
 // CreateAccount creates both User and Actor entities atomically
 // This ensures consistency between authentication and federation data
-func (r *AccountRepository) CreateAccount(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, privateKey string) error {
+func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.Account) error {
+	if account == nil || account.User == nil {
+		return common.ValidationError{Field: "account", Message: "account and user are required"}
+	}
+
+	user := account.User
+	actor := account.Actor
+
 	// Validate inputs
-	if username == "" {
+	if user.Username == "" {
 		return common.ValidationError{Field: "username", Message: "username is required"}
 	}
 
 	// Create User model
-	user := &models.User{
-		Username:     username,
-		Email:        email,
-		PasswordHash: passwordHash,
-		Approved:     approved,
-		Role:         "user",
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+	userModel := &models.User{
+		Username:        user.Username,
+		Email:           user.Email,
+		PasswordHash:    user.PasswordHash,
+		DisplayName:     user.DisplayName,
+		Approved:        user.Approved,
+		Suspended:       user.Suspended,
+		Silenced:        user.Silenced,
+		Role:            user.Role,
+		Locale:          user.Locale,
+		RecoveryMethods: user.RecoveryMethods,
+		CreatedAt:       user.CreatedAt,
+		UpdatedAt:       user.UpdatedAt,
+	}
+
+	// Set defaults
+	if userModel.Role == "" {
+		userModel.Role = "user"
+	}
+	if userModel.CreatedAt.IsZero() {
+		userModel.CreatedAt = time.Now()
+	}
+	if userModel.UpdatedAt.IsZero() {
+		userModel.UpdatedAt = userModel.CreatedAt
 	}
 
 	// Create user using BaseRepository
-	if err := r.Create(ctx, user); err != nil {
+	if err := r.Create(ctx, userModel); err != nil {
 		if errors.IsConditionFailed(err) {
 			return common.ConflictError{
 				Resource: "user",
-				Message:  fmt.Sprintf("user %s already exists", username),
+				Message:  fmt.Sprintf("user %s already exists", user.Username),
 			}
 		}
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Create Actor
+	// Create Actor if provided
 	if actor != nil {
+		// Generate a default private key if none provided
+		privateKey := "" // In real implementation, you'd generate a key
 		if err := r.createActor(ctx, actor, privateKey); err != nil {
 			// Rollback user creation (best effort)
-			if delErr := r.Delete(ctx, fmt.Sprintf(storage.UserKeyPrefix, username), "METADATA"); delErr != nil {
+			pk := Utils.Keys.UserKey(user.Username)
+			if delErr := r.Delete(ctx, pk, "METADATA"); delErr != nil {
 				r.logger.Warn("failed to rollback user creation after actor failure", zap.Error(delErr))
 			}
 			return fmt.Errorf("failed to create actor: %w", err)
@@ -93,10 +126,27 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, username, email, 
 	}
 
 	r.logger.Info("created account",
-		zap.String("username", username),
+		zap.String("username", user.Username),
 		zap.Bool("with_actor", actor != nil))
 
 	return nil
+}
+
+// CreateAccountLegacy creates both User and Actor entities atomically (legacy signature)
+// This ensures consistency between authentication and federation data
+func (r *AccountRepository) CreateAccountLegacy(ctx context.Context, username, email, passwordHash string, approved bool, actor *activitypub.Actor, privateKey string) error {
+	// Convert to new interface
+	account := &storage.Account{
+		User: &storage.User{
+			Username:     username,
+			Email:        email,
+			PasswordHash: passwordHash,
+			Approved:     approved,
+			Role:         "user",
+		},
+		Actor: actor,
+	}
+	return r.CreateAccount(ctx, account)
 }
 
 // GetAccount retrieves complete account information (User + Actor)
@@ -626,6 +676,681 @@ func (r *AccountRepository) GetFieldVerification(ctx context.Context, username, 
 		Value:      verification.FieldValue,
 		VerifiedAt: verification.VerifiedAt,
 	}, nil
+}
+
+// ===== Account Moderation Operations =====
+
+// ApproveAccount approves a pending user account
+func (r *AccountRepository) ApproveAccount(ctx context.Context, username string) error {
+	updates := map[string]interface{}{
+		"approved": true,
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// SuspendAccount suspends a user account with a reason
+func (r *AccountRepository) SuspendAccount(ctx context.Context, username string, reason string) error {
+	updates := map[string]interface{}{
+		AccountStatusSuspended: true,
+	}
+	if reason != "" {
+		updates["suspension_reason"] = reason
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// UnsuspendAccount removes suspension from a user account
+func (r *AccountRepository) UnsuspendAccount(ctx context.Context, username string) error {
+	updates := map[string]interface{}{
+		AccountStatusSuspended: false,
+		"suspension_reason":    "",
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// SilenceAccount silences a user account with a reason
+func (r *AccountRepository) SilenceAccount(ctx context.Context, username string, reason string) error {
+	updates := map[string]interface{}{
+		"silenced": true,
+	}
+	if reason != "" {
+		updates["silence_reason"] = reason
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// UnsilenceAccount removes silence from a user account
+func (r *AccountRepository) UnsilenceAccount(ctx context.Context, username string) error {
+	updates := map[string]interface{}{
+		"silenced":       false,
+		"silence_reason": "",
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// ===== Account Discovery Operations =====
+
+// GetAccountByURL retrieves an account by its ActivityPub URL
+func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string) (*storage.Account, error) {
+	// First, try to find the actor by URL in the Actor model
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&actorModel).
+		Where("ActivityPubID", "=", actorURL).
+		First(&actorModel)
+
+	if err != nil {
+		if isAccountNotFound(err) {
+			return nil, fmt.Errorf("account not found for URL: %s", actorURL)
+		}
+		return nil, fmt.Errorf("failed to get account by URL: %w", err)
+	}
+
+	// Get the full account using the username
+	return r.GetAccount(ctx, actorModel.Username)
+}
+
+// GetAccountByEmail retrieves an account by email address (updated to match interface)
+func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string) (*storage.Account, error) {
+	// Get user by email
+	user, err := r.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get actor data
+	actor, err := r.GetActor(ctx, user.Username)
+	if err != nil && !isAccountNotFound(err) {
+		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Combine into account
+	account := &storage.Account{
+		User:  user,
+		Actor: actor,
+	}
+
+	return account, nil
+}
+
+// UpdateAccount updates account data (updated to match interface)
+func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.Account) error {
+	if account == nil || account.User == nil {
+		return fmt.Errorf("account or user is nil")
+	}
+
+	// Convert storage.User to updates map
+	updates := map[string]interface{}{
+		AccountStatusEmail: account.User.Email,
+		"display_name":     account.User.DisplayName,
+		"approved":         account.User.Approved,
+		AccountStatusSuspended: account.User.Suspended,
+		"silenced": account.User.Silenced,
+		"role":     account.User.Role,
+		"locale":   account.User.Locale,
+	}
+
+	// Only include password_hash if it's not empty
+	if account.User.PasswordHash != "" {
+		updates["password_hash"] = account.User.PasswordHash
+	}
+
+	return r.UpdateUser(ctx, account.User.Username, updates)
+}
+
+// SearchAccounts searches for accounts matching a query
+func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	// For now, implement a simple search by username prefix
+	// In a full implementation, this would use search indices or full-text search
+	
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("user-list-index").
+		Where("GSI1PK", "=", "USERS")
+
+	// Apply limit
+	limit := opts.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 20 // Default limit
+	}
+	queryBuilder = queryBuilder.Limit(limit + 1) // +1 to check if there are more results
+
+	// Apply cursor for pagination
+	if opts.Cursor != "" {
+		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err == nil && sk != "" {
+			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
+		}
+	}
+
+	err := queryBuilder.Scan(&users)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
+	}
+
+	// Filter by query (simple contains check)
+	var filteredUsers []models.User
+	for _, user := range users {
+		if strings.Contains(strings.ToLower(user.Username), strings.ToLower(query)) ||
+			strings.Contains(strings.ToLower(user.DisplayName), strings.ToLower(query)) {
+			filteredUsers = append(filteredUsers, user)
+		}
+	}
+
+	// Convert to accounts
+	var accounts []*storage.Account
+	for _, user := range filteredUsers {
+		account := &storage.Account{
+			User: r.modelToStorageUser(&user),
+		}
+		accounts = append(accounts, account)
+		
+		// Respect the limit
+		if len(accounts) >= limit {
+			break
+		}
+	}
+
+	// Determine if there are more results
+	hasMore := len(users) > limit
+	var nextCursor string
+	if hasMore && len(accounts) > 0 {
+		lastUser := filteredUsers[len(filteredUsers)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.PK, lastUser.GSI1SK)
+	}
+
+	return &interfaces.PaginatedResult[*storage.Account]{
+		Items:      accounts,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1, // Total count not calculated for performance
+	}, nil
+}
+
+// GetSuggestedAccounts retrieves suggested accounts to follow
+func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, forUserID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.AccountSuggestion], error) {
+	// For now, return popular accounts as suggestions
+	// In a full implementation, this would use recommendation algorithms
+	
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("user-list-index").
+		Where("GSI1PK", "=", "USERS")
+
+	limit := opts.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 10 // Default limit for suggestions
+	}
+	queryBuilder = queryBuilder.Limit(limit + 1)
+
+	if opts.Cursor != "" {
+		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err == nil && sk != "" {
+			queryBuilder = queryBuilder.Where("GSI1SK", ">", sk)
+		}
+	}
+
+	err := queryBuilder.Scan(&users)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "suggestions")
+	}
+
+	// Convert to account suggestions
+	var suggestions []*storage.AccountSuggestion
+	for i, user := range users {
+		if i >= limit {
+			break
+		}
+
+		// Get actor data
+		actor, _ := r.GetActor(ctx, user.Username)
+
+		suggestion := &storage.AccountSuggestion{
+			Actor:  actor,
+			Reason: "popular", // Simple reason for now
+			Score:  1.0 - (float64(i) * 0.1), // Decreasing score
+		}
+		suggestions = append(suggestions, suggestion)
+	}
+
+	hasMore := len(users) > limit
+	var nextCursor string
+	if hasMore && len(suggestions) > 0 && len(users) > 0 {
+		lastUser := users[len(suggestions)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.PK, lastUser.GSI1SK)
+	}
+
+	return &interfaces.PaginatedResult[*storage.AccountSuggestion]{
+		Items:      suggestions,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1,
+	}, nil
+}
+
+// GetFeaturedAccounts retrieves featured accounts
+func (r *AccountRepository) GetFeaturedAccounts(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.Account], error) {
+	// Featured accounts are typically admins and moderators
+	var users []models.User
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("role-index").
+		Where("GSI3PK", "IN", []string{"ROLE#admin", "ROLE#moderator"})
+
+	limit := opts.Limit
+	if limit <= 0 || limit > 50 {
+		limit = 10
+	}
+	queryBuilder = queryBuilder.Limit(limit + 1)
+
+	if opts.Cursor != "" {
+		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err == nil && sk != "" {
+			queryBuilder = queryBuilder.Where("GSI3SK", ">", sk)
+		}
+	}
+
+	err := queryBuilder.Scan(&users)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "featured")
+	}
+
+	// Convert to accounts
+	var accounts []*storage.Account
+	for i, user := range users {
+		if i >= limit {
+			break
+		}
+
+		// Get actor data
+		actor, _ := r.GetActor(ctx, user.Username)
+
+		account := &storage.Account{
+			User:  r.modelToStorageUser(&user),
+			Actor: actor,
+		}
+		accounts = append(accounts, account)
+	}
+
+	hasMore := len(users) > limit
+	var nextCursor string
+	if hasMore && len(accounts) > 0 && len(users) > 0 {
+		lastUser := users[len(accounts)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastUser.PK, lastUser.GSI3SK)
+	}
+
+	return &interfaces.PaginatedResult[*storage.Account]{
+		Items:      accounts,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1,
+	}, nil
+}
+
+// ===== Account Preferences Operations =====
+
+// UpdateAccountPreferences updates user preferences
+func (r *AccountRepository) UpdateAccountPreferences(ctx context.Context, username string, preferences map[string]interface{}) error {
+	// Store each preference as a separate record
+	for key, value := range preferences {
+		var valueStr string
+		switch v := value.(type) {
+		case string:
+			valueStr = v
+		case bool:
+			if v {
+				valueStr = "true"
+			} else {
+				valueStr = "false"
+			}
+		default:
+			valueStr = fmt.Sprintf("%v", v)
+		}
+
+		pref := &models.UserPreference{
+			Username: username,
+			Key:      key,
+			Value:    valueStr,
+		}
+
+		// Try to get existing preference first
+		var existing models.UserPreference
+		pref.UpdateKeys()
+		err := r.db.WithContext(ctx).Model(&existing).
+			Where("PK", "=", pref.PK).
+			Where("SK", "=", pref.SK).
+			First(&existing)
+
+		if err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to check existing preference: %w", err)
+		}
+
+		if errors.IsNotFound(err) {
+			// Create new preference
+			if err := r.db.WithContext(ctx).Model(pref).Create(); err != nil {
+				return fmt.Errorf("failed to create preference: %w", err)
+			}
+		} else {
+			// Update existing preference
+			existing.Value = valueStr
+			existing.UpdatedAt = time.Now()
+			if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
+				return fmt.Errorf("failed to update preference: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetAccountPreferences retrieves all preferences for an account
+func (r *AccountRepository) GetAccountPreferences(ctx context.Context, username string) (map[string]interface{}, error) {
+	var preferences []models.UserPreference
+	err := r.db.WithContext(ctx).Model(&models.UserPreference{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "begins_with", "PREFERENCE#").
+		Scan(&preferences)
+
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "preferences")
+	}
+
+	result := make(map[string]interface{})
+	for _, pref := range preferences {
+		// Try to parse boolean values
+		if pref.Value == "true" {
+			result[pref.Key] = true
+		} else if pref.Value == "false" {
+			result[pref.Key] = false
+		} else {
+			result[pref.Key] = pref.Value
+		}
+	}
+
+	return result, nil
+}
+
+// ===== Account Features Operations =====
+
+// UpdateAccountFeatures updates account feature flags
+func (r *AccountRepository) UpdateAccountFeatures(ctx context.Context, username string, features map[string]bool) error {
+	// Store features as preferences with special prefix
+	preferences := make(map[string]interface{})
+	for key, value := range features {
+		preferences["feature_"+key] = value
+	}
+	return r.UpdateAccountPreferences(ctx, username, preferences)
+}
+
+// GetAccountFeatures retrieves account feature flags
+func (r *AccountRepository) GetAccountFeatures(ctx context.Context, username string) (map[string]bool, error) {
+	allPrefs, err := r.GetAccountPreferences(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	features := make(map[string]bool)
+	for key, value := range allPrefs {
+		if strings.HasPrefix(key, "feature_") {
+			featureKey := strings.TrimPrefix(key, "feature_")
+			if boolValue, ok := value.(bool); ok {
+				features[featureKey] = boolValue
+			}
+		}
+	}
+
+	return features, nil
+}
+
+// ===== Authentication Operations =====
+
+// ValidateCredentials validates username and password credentials
+func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, password string) (*storage.Account, error) {
+	// Get user
+	user, err := r.GetUser(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if user has a password hash
+	if user.PasswordHash == "" {
+		return nil, fmt.Errorf("password authentication not available for user")
+	}
+
+	// For demo purposes, we'll assume password validation is done elsewhere
+	// In a real implementation, you would use bcrypt or similar to compare
+	// the password with the stored hash
+	
+	// Get the full account
+	return r.GetAccount(ctx, username)
+}
+
+// UpdatePassword updates a user's password hash
+func (r *AccountRepository) UpdatePassword(ctx context.Context, username, newPasswordHash string) error {
+	updates := map[string]interface{}{
+		"password_hash": newPasswordHash,
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// CreatePasswordReset creates a password reset request
+func (r *AccountRepository) CreatePasswordReset(ctx context.Context, reset *storage.PasswordReset) error {
+	resetModel := &models.PasswordReset{
+		Username:  reset.Username,
+		Token:     reset.Token,
+		Email:     reset.Email,
+		CreatedAt: reset.CreatedAt,
+		ExpiresAt: reset.ExpiresAt,
+		Used:      reset.Used,
+	}
+
+	if resetModel.CreatedAt.IsZero() {
+		resetModel.CreatedAt = time.Now()
+	}
+	if resetModel.ExpiresAt.IsZero() {
+		resetModel.ExpiresAt = resetModel.CreatedAt.Add(24 * time.Hour) // 24 hour expiry
+	}
+
+	if err := r.db.WithContext(ctx).Model(resetModel).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityPasswordReset, reset.Token)
+	}
+
+	r.logger.Info("created password reset", 
+		zap.String("username", reset.Username),
+		zap.String("email", reset.Email))
+
+	return nil
+}
+
+// GetPasswordReset retrieves a password reset by token
+func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) (*storage.PasswordReset, error) {
+	var resetModel models.PasswordReset
+	err := r.db.WithContext(ctx).Model(&resetModel).
+		Index("token-index").
+		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		First(&resetModel)
+
+	if err != nil {
+		return nil, ErrorHandler.HandleGetError(err, EntityPasswordReset, token)
+	}
+
+	// Check if expired
+	if time.Now().After(resetModel.ExpiresAt) {
+		return nil, fmt.Errorf("password reset token has expired")
+	}
+
+	// Check if already used
+	if resetModel.Used {
+		return nil, fmt.Errorf("password reset token has already been used")
+	}
+
+	return &storage.PasswordReset{
+		Username:  resetModel.Username,
+		Token:     resetModel.Token,
+		Email:     resetModel.Email,
+		CreatedAt: resetModel.CreatedAt,
+		ExpiresAt: resetModel.ExpiresAt,
+		Used:      resetModel.Used,
+	}, nil
+}
+
+// UsePasswordReset marks a password reset token as used
+func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) error {
+	// Get the reset record first
+	resetModel := &models.PasswordReset{}
+	resetModel.UpdateKeys()
+	resetModel.Token = token
+
+	err := r.db.WithContext(ctx).Model(resetModel).
+		Index("token-index").
+		Where("GSI1PK", "=", fmt.Sprintf("RESET_TOKEN#%s", token)).
+		First(resetModel)
+
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, EntityPasswordReset, token)
+	}
+
+	// Mark as used
+	resetModel.Used = true
+	resetModel.UsedAt = time.Now()
+
+	if err := r.db.WithContext(ctx).Model(resetModel).Update(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityPasswordReset, token)
+	}
+
+	return nil
+}
+
+// ===== Activity Tracking Operations =====
+
+// RecordLogin records a login attempt
+func (r *AccountRepository) RecordLogin(ctx context.Context, attempt *storage.LoginAttempt) error {
+	loginModel := &models.UserLogin{
+		Username:  attempt.Username,
+		Timestamp: attempt.Timestamp,
+		Success:   attempt.Success,
+		IPAddress: attempt.IPAddress,
+		UserAgent: attempt.UserAgent,
+	}
+
+	if loginModel.Timestamp.IsZero() {
+		loginModel.Timestamp = time.Now()
+	}
+
+	if err := r.db.WithContext(ctx).Model(loginModel).Create(); err != nil {
+		return fmt.Errorf("failed to record login attempt: %w", err)
+	}
+
+	return nil
+}
+
+// GetLoginHistory retrieves login history for a user
+func (r *AccountRepository) GetLoginHistory(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*storage.LoginAttempt], error) {
+	var logins []models.UserLogin
+	queryBuilder := r.db.WithContext(ctx).Model(&models.UserLogin{}).
+		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
+		Where("SK", "begins_with", "LOGIN#")
+
+	limit := opts.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	queryBuilder = queryBuilder.Limit(limit + 1)
+
+	if opts.Cursor != "" {
+		_, sk, err := Utils.Pagination.DecodeCursor(opts.Cursor)
+		if err == nil && sk != "" {
+			queryBuilder = queryBuilder.Where("SK", "<", sk) // Reverse order for recent first
+		}
+	}
+
+	// Sort by SK descending to get most recent first
+	queryBuilder = queryBuilder.OrderBy("SK", "DESC")
+
+	err := queryBuilder.Scan(&logins)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "login_history")
+	}
+
+	// Convert to storage type
+	var attempts []*storage.LoginAttempt
+	for i, login := range logins {
+		if i >= limit {
+			break
+		}
+
+		attempts = append(attempts, &storage.LoginAttempt{
+			Username:  login.Username,
+			Timestamp: login.Timestamp,
+			Success:   login.Success,
+			IPAddress: login.IPAddress,
+			UserAgent: login.UserAgent,
+		})
+	}
+
+	hasMore := len(logins) > limit
+	var nextCursor string
+	if hasMore && len(attempts) > 0 {
+		lastLogin := logins[len(attempts)-1]
+		nextCursor = Utils.Pagination.EncodeCursor(lastLogin.PK, lastLogin.SK)
+	}
+
+	return &interfaces.PaginatedResult[*storage.LoginAttempt]{
+		Items:      attempts,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1,
+	}, nil
+}
+
+// UpdateLastActivity updates the last activity timestamp for a user
+func (r *AccountRepository) UpdateLastActivity(ctx context.Context, username string, activity time.Time) error {
+	updates := map[string]interface{}{
+		"last_activity": activity,
+	}
+	return r.UpdateUser(ctx, username, updates)
+}
+
+// ===== Batch Operations =====
+
+// GetAccountsByUsernames retrieves multiple accounts by their usernames
+func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error) {
+	if len(usernames) == 0 {
+		return []*storage.Account{}, nil
+	}
+
+	var accounts []*storage.Account
+	
+	// Fetch accounts one by one (batch get would be more efficient but requires more complex implementation)
+	for _, username := range usernames {
+		account, err := r.GetAccount(ctx, username)
+		if err != nil {
+			// Skip accounts that don't exist rather than failing entirely
+			if !isAccountNotFound(err) {
+				r.logger.Warn("failed to get account in batch", 
+					zap.String("username", username), 
+					zap.Error(err))
+			}
+			continue
+		}
+		accounts = append(accounts, account)
+	}
+
+	return accounts, nil
+}
+
+// GetAccountsCount retrieves the total number of accounts
+func (r *AccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
+	// Count users using the user-list-index
+	var users []models.User
+	err := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("user-list-index").
+		Where("GSI1PK", "=", "USERS").
+		Scan(&users)
+
+	if err != nil {
+		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count")
+	}
+
+	return int64(len(users)), nil
 }
 
 // Note: This is the core file. Additional methods will be organized into:

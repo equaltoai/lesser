@@ -27,9 +27,9 @@ type PaginatedResult[T any] struct {
 	Total      int64  // Total count (if available, -1 if not calculated)
 }
 
-// NoteRepository defines the interface for status/note operations
+// StatusRepository defines the interface for status/note operations
 // This handles both local status creation and federated ActivityPub Note objects
-type NoteRepository interface {
+type StatusRepository interface {
 	// Core CRUD operations
 	CreateStatus(ctx context.Context, status *models.Status) error
 	GetStatus(ctx context.Context, statusID string) (*models.Status, error)
@@ -111,6 +111,12 @@ type AccountRepository interface {
 	RecordLogin(ctx context.Context, attempt *storage.LoginAttempt) error
 	GetLoginHistory(ctx context.Context, username string, opts PaginationOptions) (*PaginatedResult[*storage.LoginAttempt], error)
 	UpdateLastActivity(ctx context.Context, username string, activity time.Time) error
+	
+	// Bookmark operations
+	AddBookmark(ctx context.Context, username, objectID string) error
+	RemoveBookmark(ctx context.Context, username, objectID string) error
+	GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error)
+	GetBookmarkedStatuses(ctx context.Context, username string, opts PaginationOptions) (*PaginatedResult[*models.Status], error)
 	
 	// Batch operations
 	GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error)
@@ -226,6 +232,10 @@ type ConversationRepository interface {
 	MarkConversationUnread(ctx context.Context, conversationID, userID string) error
 	GetUnreadConversations(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
 	
+	// Conversation muting
+	CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error
+	DeleteConversationMute(ctx context.Context, username, conversationID string) error
+	
 	// Conversation search
 	SearchConversations(ctx context.Context, userID, query string, opts PaginationOptions) (*PaginatedResult[*models.Conversation], error)
 }
@@ -319,4 +329,21 @@ type NotificationRepository interface {
 	CreateNotifications(ctx context.Context, notifications []*models.Notification) error
 	DeleteNotificationsByType(ctx context.Context, userID, notificationType string) error
 	DeleteExpiredNotifications(ctx context.Context, expiredBefore time.Time) (int64, error)
+}
+
+// LikeRepository defines the interface for like operations
+type LikeRepository interface {
+	CreateLike(ctx context.Context, actor, object string) (*models.Like, error)
+	DeleteLike(ctx context.Context, actor, object string) error
+	GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*models.Like, string, error)
+	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Like, string, error)
+}
+
+// SocialRepository defines the interface for social interaction operations
+type SocialRepository interface {
+	CreateAnnounce(ctx context.Context, announce *storage.Announce) error
+	DeleteAnnounce(ctx context.Context, actor, object string) error
+	GetStatusAnnounces(ctx context.Context, statusID string, limit int, cursor string) ([]*storage.Announce, string, error)
+	CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error
+	DeleteStatusPin(ctx context.Context, userID, statusID string) error
 }

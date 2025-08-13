@@ -36,6 +36,7 @@ type RepositoryFactory struct {
 	relationshipRepo      *repositories.RelationshipRepository
 	listRepo              *repositories.ListRepository
 	mediaRepo             *repositories.MediaRepository
+	mediaMetadataRepo     *repositories.MediaMetadataRepository
 	pollRepo              *repositories.PollRepository
 	pushSubscriptionRepo  *repositories.PushSubscriptionRepository
 	instanceRepo          *repositories.InstanceRepository
@@ -63,6 +64,7 @@ type RepositoryFactory struct {
 	metricRecordRepo      *repositories.MetricRecordRepository
 	cloudWatchMetricsRepo *repositories.CloudWatchMetricsRepository
 	publicKeyCacheRepo    *repositories.PublicKeyCacheRepository
+	auditRepo             *repositories.AuditRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -126,10 +128,12 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.aiRepo = repositories.NewAIRepository(f.db, f.tableName, f.logger)
 	f.exportRepo = repositories.NewExportRepository(f.db, f.tableName, f.logger)
 	f.importRepo = repositories.NewImportRepository(f.db, f.tableName, f.logger)
+	f.auditRepo = repositories.NewAuditRepository(f.db, f.logger)
 	f.dlqRepo = repositories.NewDLQRepository(f.db, f.tableName, f.logger)
 	f.metricRecordRepo = repositories.NewMetricRecordRepository(f.db, f.tableName, f.logger)
 	f.cloudWatchMetricsRepo = repositories.NewCloudWatchMetricsRepository(f.awsConfig, "Lesser/Production", "prod", f.logger)
 	f.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(f.db, f.tableName, f.logger)
+	f.mediaMetadataRepo = repositories.NewMediaMetadataRepository(f.db, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -149,6 +153,11 @@ func (f *RepositoryFactory) setupDependencies() {
 			relationshipRepo: f.relationshipRepo,
 		}
 		f.searchRepo.SetDependencies(deps)
+	}
+
+	// Set up account repository dependency on status repository for GetBookmarkedStatuses
+	if f.accountRepo != nil && f.statusRepo != nil {
+		f.accountRepo.SetStatusRepository(f.statusRepo)
 	}
 
 	// Additional repository dependencies can be configured here as needed.
@@ -247,6 +256,11 @@ func (f *RepositoryFactory) Media() *repositories.MediaRepository {
 	return f.mediaRepo
 }
 
+// MediaMetadata returns the MediaMetadata repository instance
+func (f *RepositoryFactory) MediaMetadata() *repositories.MediaMetadataRepository {
+	return f.mediaMetadataRepo
+}
+
 // Poll returns the Poll repository instance
 func (f *RepositoryFactory) Poll() *repositories.PollRepository {
 	return f.pollRepo
@@ -290,6 +304,11 @@ func (f *RepositoryFactory) Federation() *repositories.FederationRepository {
 // Recovery returns the Recovery repository instance
 func (f *RepositoryFactory) Recovery() *repositories.RecoveryRepository {
 	return f.recoveryRepo
+}
+
+// Audit returns the Audit repository instance
+func (f *RepositoryFactory) Audit() *repositories.AuditRepository {
+	return f.auditRepo
 }
 
 // Analytics returns the Analytics repository instance

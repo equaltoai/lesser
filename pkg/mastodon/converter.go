@@ -6,6 +6,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // Converter handles all ActivityPub to Mastodon API conversions
@@ -20,7 +21,7 @@ type Converter interface {
 	ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status
 
 	// Conversation conversions
-	ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation
+	ConversationToAPI(conv *storagemodels.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation
 
 	// Filter conversions
 	ConvertFilterToMastodon(filter *storage.Filter, keywords []*storage.FilterKeyword, statuses []*storage.FilterStatus) *Filter

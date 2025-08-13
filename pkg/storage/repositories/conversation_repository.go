@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -28,8 +29,8 @@ func NewConversationRepository(db core.DB, logger *zap.Logger) *ConversationRepo
 	}
 }
 
-// CreateConversation creates a new conversation
-func (r *ConversationRepository) CreateConversation(ctx context.Context, conversation *storage.Conversation) error {
+// CreateConversation creates a new conversation with participants
+func (r *ConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
 	log := r.logger.With(zap.String("conversation_id", conversation.ID))
 
 	// Generate ID if not provided (matching legacy behavior)
@@ -37,27 +38,26 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		conversation.ID = r.generateRandomString(12)
 	}
 
-	// Set timestamps
-	now := time.Now()
-	conversation.CreatedAt = now
-	conversation.UpdatedAt = now
-
-	// Create the main conversation record
-	conv := &models.Conversation{
-		ID:           conversation.ID,
-		Participants: conversation.Participants,
-		LastStatusID: conversation.LastStatusID,
-		CreatedAt:    conversation.CreatedAt,
-		UpdatedAt:    conversation.UpdatedAt,
+	// Set timestamps if not provided
+	if conversation.CreatedAt.IsZero() {
+		conversation.CreatedAt = time.Now()
+	}
+	if conversation.UpdatedAt.IsZero() {
+		conversation.UpdatedAt = time.Now()
 	}
 
-	if err := conv.BeforeCreate(); err != nil {
+	// Set participants if provided
+	if len(participants) > 0 {
+		conversation.Participants = participants
+	}
+
+	if err := conversation.BeforeCreate(); err != nil {
 		log.Error("failed to prepare conversation", zap.Error(err))
 		return fmt.Errorf("failed to prepare conversation: %w", err)
 	}
 
 	// Create main conversation record
-	if err := r.db.Model(conv).WithContext(ctx).Create(); err != nil {
+	if err := r.db.Model(conversation).WithContext(ctx).Create(); err != nil {
 		log.Error("failed to create conversation", zap.Error(err))
 		return fmt.Errorf("failed to create conversation: %w", err)
 	}
@@ -65,7 +65,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	// Create participant records for each participant
 	for _, participantID := range conversation.Participants {
 		participantRecord := &models.ConversationParticipantRecord{
-			Conversation: conv,
+			Conversation: conversation,
 		}
 
 		if err := participantRecord.BeforeCreate(participantID); err != nil {
@@ -106,7 +106,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 }
 
 // GetConversation retrieves a conversation by ID
-func (r *ConversationRepository) GetConversation(ctx context.Context, id string) (*storage.Conversation, error) {
+func (r *ConversationRepository) GetConversation(ctx context.Context, id string) (*models.Conversation, error) {
 	log := r.logger.With(zap.String("conversation_id", id))
 
 	var conv models.Conversation
@@ -123,20 +123,14 @@ func (r *ConversationRepository) GetConversation(ctx context.Context, id string)
 		return nil, fmt.Errorf("failed to get conversation: %w", err)
 	}
 
-	return &storage.Conversation{
-		ID:           conv.ID,
-		Participants: conv.Participants,
-		LastStatusID: conv.LastStatusID,
-		CreatedAt:    conv.CreatedAt,
-		UpdatedAt:    conv.UpdatedAt,
-	}, nil
+	return &conv, nil
 }
 
 // UpdateConversation updates a conversation
-func (r *ConversationRepository) UpdateConversation(ctx context.Context, conversation *storage.Conversation) error {
+func (r *ConversationRepository) UpdateConversation(ctx context.Context, conversation *models.Conversation) error {
 	// For updating, we recreate all records (matching legacy behavior)
 	// This ensures participant records are updated with new timestamps
-	return r.CreateConversation(ctx, conversation)
+	return r.CreateConversation(ctx, conversation, conversation.Participants)
 }
 
 // DeleteConversation deletes a conversation by ID
@@ -196,59 +190,59 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 }
 
 // GetUserConversations retrieves conversations for a user with pagination
-func (r *ConversationRepository) GetUserConversations(ctx context.Context, username string, limit int, cursor string) ([]*storage.Conversation, string, error) {
+func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(
-		zap.String("username", username),
-		zap.Int("limit", limit),
-		zap.String("cursor", cursor),
+		zap.String("user_id", userID),
+		zap.Int("limit", opts.Limit),
+		zap.String("cursor", opts.Cursor),
 	)
 
 	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
-		Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", username))
+		Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", userID))
 
 	// Add cursor condition if provided
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+	if opts.Cursor != "" {
+		query = query.Where("SK", "<", opts.Cursor)
 	}
 
 	// Query with limit + 1 to determine if there are more results
-	query = query.Limit(limit + 1)
+	query = query.Limit(opts.Limit + 1)
 
 	var records []models.ConversationParticipantRecord
 	err := query.Scan(&records)
 	if err != nil {
 		log.Error("failed to query user conversations", zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query user conversations: %w", err)
+		return nil, fmt.Errorf("failed to query user conversations: %w", err)
 	}
 
-	conversations := make([]*storage.Conversation, 0, len(records))
+	conversations := make([]*models.Conversation, 0, len(records))
 	for _, record := range records {
 		if record.Conversation != nil {
-			conversations = append(conversations, &storage.Conversation{
-				ID:           record.ID,
-				Participants: record.Participants,
-				LastStatusID: record.LastStatusID,
-				CreatedAt:    record.CreatedAt,
-				UpdatedAt:    record.UpdatedAt,
-			})
+			conversations = append(conversations, record.Conversation)
 		}
 	}
 
-	// Determine next cursor
+	// Determine next cursor and pagination
 	var nextCursor string
-	if len(conversations) > limit {
-		conversations = conversations[:limit]
+	hasMore := len(conversations) > opts.Limit
+	if hasMore {
+		conversations = conversations[:opts.Limit]
 		if len(conversations) > 0 {
 			lastConv := conversations[len(conversations)-1]
 			nextCursor = fmt.Sprintf("%s#%s", lastConv.UpdatedAt.Format(time.RFC3339), lastConv.ID)
 		}
 	}
 
-	return conversations, nextCursor, nil
+	return &interfaces.PaginatedResult[*models.Conversation]{
+		Items:      conversations,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      -1, // Not calculated
+	}, nil
 }
 
 // GetConversationByParticipants finds a conversation with exact participants
-func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*storage.Conversation, error) {
+func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
 	// Sort participants to create a consistent lookup key (matching legacy)
@@ -319,13 +313,14 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 	log := r.logger.With(zap.String("username", username))
 
 	// Get all conversations for the user
-	conversations, _, err := r.GetUserConversations(ctx, username, 1000, "") // Large limit to get all
+	opts := interfaces.PaginationOptions{Limit: 1000} // Large limit to get all
+	result, err := r.GetUserConversations(ctx, username, opts)
 	if err != nil {
 		return 0, err
 	}
 
 	unreadCount := 0
-	for _, conv := range conversations {
+	for _, conv := range result.Items {
 		// Check if conversation has unread status
 		var status models.ConversationStatus
 		err := r.db.WithContext(ctx).Model(&models.ConversationStatus{}).
@@ -452,12 +447,12 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 
 // LeaveConversation removes a participant from a conversation
 func (r *ConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
-	// This delegates to RemoveParticipantFromConversation
-	return r.RemoveParticipantFromConversation(ctx, conversationID, username)
+	// This delegates to RemoveParticipant
+	return r.RemoveParticipant(ctx, conversationID, username)
 }
 
-// AddParticipantToConversation adds a participant to a conversation
-func (r *ConversationRepository) AddParticipantToConversation(ctx context.Context, conversationID, participantID string) error {
+// AddParticipant adds a participant to a conversation
+func (r *ConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
 		zap.String("participant_id", participantID),
@@ -482,7 +477,7 @@ func (r *ConversationRepository) AddParticipantToConversation(ctx context.Contex
 	conv.UpdatedAt = time.Now()
 
 	// Update the conversation
-	return r.CreateConversation(ctx, conv)
+	return r.CreateConversation(ctx, conv, conv.Participants)
 }
 
 // GetConversationParticipants retrieves the list of participants in a conversation
@@ -510,8 +505,8 @@ func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Contex
 	return r.UpdateConversation(ctx, conv)
 }
 
-// RemoveParticipantFromConversation removes a participant from a conversation
-func (r *ConversationRepository) RemoveParticipantFromConversation(ctx context.Context, conversationID, participantID string) error {
+// RemoveParticipant removes a participant from a conversation
+func (r *ConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
 		zap.String("participant_id", participantID),
@@ -540,7 +535,7 @@ func (r *ConversationRepository) RemoveParticipantFromConversation(ctx context.C
 	conv.UpdatedAt = time.Now()
 
 	// Update the conversation
-	return r.CreateConversation(ctx, conv)
+	return r.CreateConversation(ctx, conv, conv.Participants)
 }
 
 // CreateConversationMute creates a new conversation mute
@@ -627,6 +622,107 @@ func (r *ConversationRepository) GetMutedConversations(ctx context.Context, user
 	}
 
 	return conversationIDs, nil
+}
+
+// MarkConversationUnread marks a conversation as unread for a user
+func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, conversationID, userID string) error {
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.String("user_id", userID),
+	)
+
+	status := &models.ConversationStatus{
+		ConversationID: conversationID,
+		UserID:         userID,
+		Unread:         true,
+		LastReadAt:     time.Time{}, // Zero time for unread
+	}
+
+	if err := status.BeforeCreate(); err != nil {
+		log.Error("failed to prepare status", zap.Error(err))
+		return fmt.Errorf("failed to prepare status: %w", err)
+	}
+
+	err := r.db.Model(status).WithContext(ctx).Create()
+	if err != nil {
+		log.Error("failed to mark conversation as unread", zap.Error(err))
+		return fmt.Errorf("failed to mark conversation as unread: %w", err)
+	}
+
+	return nil
+}
+
+// GetUnreadConversations retrieves unread conversations for a user
+func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	log := r.logger.With(zap.String("user_id", userID))
+
+	// Get all user conversations
+	allResult, err := r.GetUserConversations(ctx, userID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter for unread conversations
+	unreadConversations := make([]*models.Conversation, 0)
+	for _, conv := range allResult.Items {
+		// Check if conversation has unread status
+		var status models.ConversationStatus
+		err := r.db.WithContext(ctx).Model(&models.ConversationStatus{}).
+			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
+			Where("SK", "=", fmt.Sprintf("USER#%s", userID)).
+			First(&status)
+
+		if errors.IsNotFound(err) || status.Unread {
+			unreadConversations = append(unreadConversations, conv)
+		}
+	}
+
+	log.Debug("retrieved unread conversations", zap.Int("count", len(unreadConversations)))
+
+	return &interfaces.PaginatedResult[*models.Conversation]{
+		Items:      unreadConversations,
+		NextCursor: allResult.NextCursor,
+		HasMore:    allResult.HasMore,
+		Total:      int64(len(unreadConversations)),
+	}, nil
+}
+
+// SearchConversations searches conversations for a user by query
+func (r *ConversationRepository) SearchConversations(ctx context.Context, userID, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
+	log := r.logger.With(
+		zap.String("user_id", userID),
+		zap.String("query", query),
+	)
+
+	// For now, get all user conversations and filter client-side
+	// In a real implementation, this would use full-text search
+	allResult, err := r.GetUserConversations(ctx, userID, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Simple string matching on participant IDs
+	// In production, this should use proper search indexing
+	matchingConversations := make([]*models.Conversation, 0)
+	queryLower := strings.ToLower(query)
+
+	for _, conv := range allResult.Items {
+		for _, participant := range conv.Participants {
+			if strings.Contains(strings.ToLower(participant), queryLower) {
+				matchingConversations = append(matchingConversations, conv)
+				break
+			}
+		}
+	}
+
+	log.Debug("search completed", zap.Int("matches", len(matchingConversations)))
+
+	return &interfaces.PaginatedResult[*models.Conversation]{
+		Items:      matchingConversations,
+		NextCursor: allResult.NextCursor,
+		HasMore:    len(matchingConversations) >= opts.Limit,
+		Total:      int64(len(matchingConversations)),
+	}, nil
 }
 
 // generateRandomString generates a random string of specified length

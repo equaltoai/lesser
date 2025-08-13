@@ -12,4 +12,5 @@ type StorageProvider interface {
 	Activity() *repositories.ActivityRepository
 	Notification() *repositories.NotificationRepository
 	Recovery() *repositories.RecoveryRepository
+	Audit() *repositories.AuditRepository
 }

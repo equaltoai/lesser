@@ -154,6 +154,8 @@ type Status struct {
 	Emojis             []any          `json:"emojis"`
 	Card               *any           `json:"card"`
 	Poll               *Poll          `json:"poll"`
+	Filtered           []interface{}  `json:"filtered"`
+	EditedAt           *string        `json:"edited_at"`
 
 	// Quote boost extensions
 	IsQuoteBoost   bool    `json:"is_quote_boost,omitempty"`
@@ -201,6 +203,18 @@ type UpdateCredentialsRequest struct {
 	Locked       bool   `json:"locked"`
 	Discoverable bool   `json:"discoverable"`
 	Bot          bool   `json:"bot"`
+}
+
+// FollowRequest represents a follow request with options
+type FollowRequest struct {
+	Reblogs *bool `json:"reblogs,omitempty"`
+	Notify  *bool `json:"notify,omitempty"`
+}
+
+// MuteRequest represents a mute request with options
+type MuteRequest struct {
+	Notifications *bool   `json:"notifications,omitempty"`
+	Duration      *string `json:"duration,omitempty"`
 }
 
 // UpdateStatusRequest represents a request to update a status

@@ -216,7 +216,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	// Parse the token to get app credentials
 	// The token should be in the format "client_id:client_secret" base64 encoded
 	// or a valid OAuth access token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 
 	// First try to validate as an access token
 	claims, err := oauthSvc.ValidateAccessToken(token)

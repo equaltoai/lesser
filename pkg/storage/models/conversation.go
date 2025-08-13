@@ -20,11 +20,9 @@ type Conversation struct {
 	ID           string    `json:"id"`
 	Participants []string  `json:"participants"` // Actor IDs/usernames
 	LastStatusID string    `json:"last_status_id,omitempty"`
+	Unread       bool      `json:"unread"`       // Whether conversation has unread messages
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-
-	// Note: Legacy doesn't have LastStatusAt or Unread fields in the actual struct
-	// These appear to be managed differently in the implementation
 }
 
 // TableName returns the DynamoDB table name

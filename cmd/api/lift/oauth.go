@@ -12,6 +12,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -43,7 +44,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 	}
 
 	// Initialize OAuth service
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 
 	// Validate client and redirect URI
 	if err := oauthSvc.ValidateRedirectURI(ctx.Context, clientID, redirectURI); err != nil {
@@ -121,7 +122,10 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 			ExpiresAt:           time.Now().Add(10 * time.Minute),
 		}
 
-		if err := h.repos.Account().StoreOAuthState(ctx.Context, authState.State, authState); err != nil {
+		if _, err := h.registry.Accounts().StoreOAuthState(ctx.Context, &accounts.StoreOAuthStateCommand{
+			State:      authState.State,
+			OAuthState: authState,
+		}); err != nil {
 			h.logger.Error("failed to save OAuth state", zap.Error(err))
 			return h.oauthErrorLift(ctx, "server_error", "Failed to save authorization state", redirectURI, state)
 		}
@@ -146,7 +150,9 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 		Scopes:        scopes,
 	}
 
-	if err := h.repos.Account().CreateAuthorizationCode(ctx.Context, authCode); err != nil {
+	if _, err := h.registry.Accounts().CreateAuthorizationCode(ctx.Context, &accounts.CreateAuthorizationCodeCommand{
+		AuthCode: authCode,
+	}); err != nil {
 		h.logger.Error("failed to store authorization code", zap.Error(err))
 		return h.oauthErrorLift(ctx, "server_error", "Failed to store authorization code", redirectURI, state)
 	}
@@ -231,11 +237,14 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 // showConsentScreenLift shows the consent screen using Lift patterns
 func (h *Handler) showConsentScreenLift(ctx *lift.Context, authState *storage.OAuthState) error {
 	// Get app details
-	app, err := h.repos.Account().GetOAuthApp(ctx.Context, authState.ClientID)
+	result, err := h.registry.Accounts().GetOAuthApp(ctx.Context, &accounts.GetOAuthAppQuery{
+		ClientID: authState.ClientID,
+	})
 	if err != nil {
 		h.logger.Error("failed to get OAuth app", zap.Error(err))
 		return errors.New("client not found")
 	}
+	app := result.App
 
 	// In a real implementation, this would render an HTML template
 	// For now, we'll return a simple HTML response
@@ -308,10 +317,14 @@ func (h *Handler) getScopeDescription(scope string) string {
 
 // hasUserConsentedToApp checks if user has consented to the app with required scopes
 func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
-	consent, err := h.repos.Account().GetUserAppConsent(ctx, username, clientID)
-	if err != nil || consent == nil {
+	result, err := h.registry.Accounts().GetUserAppConsent(ctx, &accounts.GetUserAppConsentQuery{
+		Username: username,
+		ClientID: clientID,
+	})
+	if err != nil || result == nil || result.Consent == nil {
 		return false
 	}
+	consent := result.Consent
 
 	// Check if all requested scopes are granted
 	grantedMap := make(map[string]bool)

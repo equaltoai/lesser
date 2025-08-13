@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -196,4 +197,17 @@ func (f *federationService) extractMentions(activity *activitypub.Activity) []st
 	}
 
 	return mentions
+}
+
+// GetInstanceRelationships returns federation relationships for a domain
+func (f *federationService) GetInstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error) {
+	// Query storage for federation relationships
+	relationships, err := f.storage.GetInstanceRelationships(ctx, domain)
+	if err != nil {
+		f.logger.Error("failed to get instance relationships",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil, err
+	}
+	return relationships, nil
 }

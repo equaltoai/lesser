@@ -1,6 +1,11 @@
 package lift
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strings"
@@ -11,7 +16,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -20,9 +27,6 @@ import (
 const (
 	// Search type constants
 	searchTypeStatuses = "statuses"
-
-	// Boolean string constants for parameter parsing
-	boolTrue = "true"
 
 	// Common status constants
 	statusCompleted  = "completed"
@@ -83,7 +87,7 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 		return
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 		h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
 	}
@@ -383,10 +387,27 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	}
 
 	// Build notification filter from query parameters
-	filter := h.buildNotificationFilter(ctx)
+	notificationFilter := h.buildNotificationFilter(ctx)
 
-	// Get notifications from repository
-	notifications, cursor, err := h.repos.Notification().GetNotificationsFiltered(ctx.Context, claims.Username, filter)
+	// Convert to includeRead flag for the service method
+	includeRead := len(notificationFilter.ExcludeTypes) == 0
+
+	// Use the Notifications service to get notifications
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+	}
+
+	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
+		UserID:       claims.Username,
+		Types:        notificationFilter.Types,
+		ExcludeTypes: notificationFilter.ExcludeTypes,
+		IncludeRead:  includeRead,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  notificationFilter.Limit,
+			Cursor: notificationFilter.MaxID,
+		},
+	})
 	if err != nil {
 		h.logger.Error("failed to get notifications",
 			zap.String("username", claims.Username),
@@ -394,12 +415,33 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
 	}
 
+	notificationsList := listResult.Notifications
+	cursor := ""
+	if listResult.Pagination != nil && listResult.Pagination.NextCursor != "" {
+		cursor = listResult.Pagination.NextCursor
+	}
+
+	// Convert notifications to storage format for API converter
+	storageNotifications := make([]*storage.Notification, 0, len(notificationsList))
+	for _, notification := range notificationsList {
+		storageNotif := &storage.Notification{
+			ID:        notification.ID,
+			Type:      notification.Type,
+			AccountID: notification.ActorID,
+			TargetID:  notification.TargetID,
+			Read:      notification.IsRead,
+			CreatedAt: notification.CreatedAt,
+			Username:  notification.UserID,
+		}
+		storageNotifications = append(storageNotifications, storageNotif)
+	}
+
 	// Convert notifications to API format
-	apiNotifications := h.convertNotificationsToAPI(ctx, notifications)
+	apiNotifications := h.convertNotificationsToAPI(ctx, storageNotifications)
 
 	// Set pagination header if needed
 	if cursor != "" {
-		h.setNotificationPaginationHeader(ctx, cursor, filter.Limit)
+		h.setNotificationPaginationHeader(ctx, cursor, notificationFilter.Limit)
 	}
 
 	return ctx.JSON(apiNotifications)
@@ -419,7 +461,7 @@ func (h *Handler) authenticateNotificationRequest(ctx *lift.Context) (*auth.Clai
 		return nil, ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -632,9 +674,16 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 			})
 		}
 		
-		h.logger.Warn("failed to get VAPID keys, using placeholder", zap.Error(err))
-		// Use a placeholder that clients will recognize as invalid
-		vapidPublicKey = "BCkMmVdKDnKYwzVCDC99Iuc9GvId-x7-kKtuHnLgfF98ENiZp_aj-UNthbCdI70DqN1zUVis-x0Wrot2sBagkMc="
+		// In non-production, auto-generate VAPID keys if they don't exist
+		h.logger.Info("VAPID keys not found in non-production environment, generating new keys")
+		vapidKeys, err = h.generateAndStoreVAPIDKeys(ctx.Context)
+		if err != nil {
+			h.logger.Error("failed to generate VAPID keys", zap.Error(err))
+			// Return empty vapid key to disable push notifications
+			vapidPublicKey = ""
+		} else {
+			vapidPublicKey = vapidKeys.PublicKey
+		}
 	} else {
 		vapidPublicKey = vapidKeys.PublicKey
 	}
@@ -759,7 +808,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -804,17 +853,18 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	if notification.TargetID != "" && notification.TargetType == "status" && (notification.Type == models.NotificationTypeMention ||
 		notification.Type == models.NotificationTypeFavourite ||
 		notification.Type == models.NotificationTypeReblog) {
-		obj, err := h.repos.Object().GetObject(ctx.Context, notification.TargetID)
-		if err == nil {
+		statusModel, err := h.registry.Notes().GetNote(ctx.Context, notification.TargetID)
+		if err == nil && statusModel != nil && statusModel.Note != nil {
+			// Convert note to status format
 			var statusActor *activitypub.Actor
-			if note, ok := obj.(*activitypub.Note); ok && note.AttributedTo != "" {
-				parts := strings.Split(note.AttributedTo, "/")
-				if len(parts) > 0 {
-					username := parts[len(parts)-1]
-					statusActor, _ = h.repos.Actor().GetActor(ctx.Context, username)
+			if statusModel.AuthorUsername != "" {
+				account, _ := h.registry.Accounts().GetAccount(ctx.Context, statusModel.AuthorUsername)
+				if account != nil {
+					statusActor = account.Actor
 				}
 			}
-			status := h.converter.ObjectToStatus(obj, statusActor)
+			// Use the embedded Note from the status model
+			status := h.converter.ObjectToStatus(statusModel.Note, statusActor)
 			apiNotif.Status = &status
 		}
 	}
@@ -838,7 +888,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -850,14 +900,24 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
-	// Clear all notifications
-	// Clear all notifications by using a very short duration (1 second in the future)
-	if err := h.repos.Notification().ClearOldNotifications(ctx.Context, claims.Username, -1*time.Second); err != nil {
+	// Use the Notifications service to clear all notifications
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+	}
+
+	clearResult, err := notificationService.ClearNotifications(ctx.Context, &notifications.ClearCommand{
+		UserID:   claims.Username,
+		ClearAll: true,
+	})
+	if err != nil {
 		h.logger.Error("failed to clear notifications",
 			zap.String("username", claims.Username),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to clear notifications"})
 	}
+
+	h.logger.Info("cleared notifications", zap.String("username", claims.Username), zap.Int64("deleted", clearResult.ClearedCount))
 
 	ctx.Status(204)
 	return nil
@@ -884,7 +944,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 		}
 
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
@@ -896,22 +956,25 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
-	// Get notification to verify ownership
-	notification, err := h.repos.Notification().GetNotification(ctx.Context, notificationID)
+	// Use the Notifications service to mark as read (dismiss)
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+	}
+
+	// Mark notification as read (which is effectively dismissing it in Mastodon API)
+	_, err = notificationService.MarkAsRead(ctx.Context, &notifications.MarkAsReadCommand{
+		NotificationID: notificationID,
+		UserID:         claims.Username,
+	})
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
-	}
-
-	// Verify ownership
-	if notification.UserID != claims.Username {
-		return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
-	}
-
-	// Delete notification
-	if err := h.repos.Notification().DeleteNotification(ctx.Context, notificationID); err != nil {
 		h.logger.Error("failed to dismiss notification",
 			zap.String("notification_id", notificationID),
 			zap.Error(err))
+		// Check if the error is due to not found
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
+		}
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to dismiss notification"})
 	}
 
@@ -1160,7 +1223,7 @@ func (h *Handler) getAdminAccount(ctx *lift.Context) any {
 		"locked":          actor.ManuallyApprovesFollowers,
 		"bot":             actor.Type == actorTypeService,
 		"discoverable":    actor.Discoverable,
-		"created_at":      h.formatActorCreatedTime(actor.CreatedAt),
+		"created_at":      h.formatActorCreatedTimeLift(actor.CreatedAt),
 		"note":            actor.Summary,
 		"url":             actor.URL,
 		"avatar":          h.getAvatarURL(actor),
@@ -1198,4 +1261,62 @@ func getMapKeys(m map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// generateAndStoreVAPIDKeys generates new VAPID keys and stores them in the database
+func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
+	h.logger.Info("generating new VAPID keys for push notifications")
+	
+	// Generate ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate VAPID private key: %w", err)
+	}
+	
+	// Convert to ECDH and get public key bytes
+	ecdhKey, err := privateKey.ECDH()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to ECDH key: %w", err)
+	}
+	publicKeyBytes := ecdhKey.PublicKey().Bytes()
+	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
+	
+	// Encode private key (32 bytes)
+	privateKeyBytes := privateKey.D.Bytes()
+	// Pad to 32 bytes if necessary
+	if len(privateKeyBytes) < 32 {
+		padding := make([]byte, 32-len(privateKeyBytes))
+		privateKeyBytes = append(padding, privateKeyBytes...)
+	}
+	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
+	
+	// Determine the subject (domain)
+	domain := h.cfg.Domain
+	if domain == "" {
+		domain = os.Getenv("DOMAIN_NAME")
+	}
+	if domain == "" {
+		domain = "localhost" // fallback for development
+	}
+	
+	// Create VAPID keys object
+	vapidKeys := &storage.VAPIDKeys{
+		PublicKey:  publicKeyBase64,
+		PrivateKey: privateKeyBase64,
+		Subject:    fmt.Sprintf("mailto:admin@%s", domain),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	
+	// Store the keys
+	err = h.repos.PushSubscription().SetVAPIDKeys(ctx, vapidKeys)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store VAPID keys: %w", err)
+	}
+	
+	h.logger.Info("successfully generated and stored new VAPID keys",
+		zap.String("public_key", publicKeyBase64),
+		zap.String("subject", vapidKeys.Subject))
+	
+	return vapidKeys, nil
 }

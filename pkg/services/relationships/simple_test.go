@@ -111,6 +111,24 @@ func (m *SimpleAccountRepo) UpdateLastActivity(ctx context.Context, username str
 func (m *SimpleAccountRepo) GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error) { return nil, nil }
 func (m *SimpleAccountRepo) GetAccountsCount(ctx context.Context) (int64, error) { return 0, nil }
 
+func (r *SimpleAccountRepo) AddBookmark(ctx context.Context, username, objectID string) error {
+	return nil
+}
+
+func (r *SimpleAccountRepo) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	return nil
+}
+
+func (r *SimpleAccountRepo) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
+	return []*storage.Bookmark{}, "", nil
+}
+
+func (r *SimpleAccountRepo) GetBookmarkedStatuses(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items: []*models.Status{},
+	}, nil
+}
+
 func TestSimpleFollow(t *testing.T) {
 	// Create repos and service
 	relationshipRepo := &SimpleRelationshipRepo{}

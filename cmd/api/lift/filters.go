@@ -44,7 +44,7 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -126,7 +126,7 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -259,7 +259,7 @@ func (h *Handler) extractFilterToken(ctx *lift.Context) (string, error) {
 
 // validateFilterToken validates the token and checks scope
 func (h *Handler) validateFilterToken(ctx *lift.Context, token, requiredScope string) (string, error) {
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -658,7 +658,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -730,7 +730,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -813,7 +813,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -895,7 +895,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})

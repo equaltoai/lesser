@@ -110,7 +110,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Check if following
@@ -167,7 +167,7 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -247,7 +247,7 @@ func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -322,7 +322,7 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -415,7 +415,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -482,7 +482,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -587,7 +587,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -641,7 +641,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})

@@ -63,12 +63,20 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
 	}
 
-	// Look up the user
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	// Look up the user using Accounts service
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
-		h.logger.Warn("actor not found for webfinger",
+		h.logger.Warn("account not found for webfinger",
 			zap.String("username", username),
 			zap.Error(err))
+		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+	}
+
+	// Get the actor from the account
+	actor := account.Actor
+	if actor == nil {
+		h.logger.Warn("actor data missing for account",
+			zap.String("username", username))
 		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
 	}
 

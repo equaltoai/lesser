@@ -164,7 +164,7 @@ func (h *Handler) extractImportAuthHeader(ctx *lift.Context) string {
 
 // validateImportToken validates the token and checks scope
 func (h *Handler) validateImportToken(ctx *lift.Context, token string) (string, error) {
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
@@ -383,7 +383,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
@@ -473,7 +473,7 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
@@ -558,7 +558,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and require write scope
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})

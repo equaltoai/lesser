@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/equaltoai/lesser/pkg/ai"
-	"github.com/equaltoai/lesser/pkg/auth"
+	originalai "github.com/equaltoai/lesser/pkg/ai"
+	ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -26,7 +25,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	_, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
@@ -54,8 +53,10 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Get analysis from repository
-	analysis, err := h.repos.AI().GetAnalysis(ctx.Context, objectID)
+	// Get analysis using AI service
+	result, err := h.registry.AI().GetAnalysis(ctx.Context, &ai.GetAnalysisQuery{
+		ObjectID: objectID,
+	})
 	if err != nil {
 		ctx.Status(http.StatusNotFound)
 		return ctx.JSON(map[string]string{
@@ -65,7 +66,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 
 	// Return analysis
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(analysis)
+	return ctx.JSON(result.Analysis)
 }
 
 // HandleRequestAIAnalysisLift triggers AI analysis for an object
@@ -81,7 +82,7 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
@@ -128,22 +129,29 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Check if analysis exists and is recent
-	if !req.Force {
-		existing, _ := h.repos.AI().GetAnalysis(ctx.Context, req.ObjectID)
-		if existing != nil && time.Since(existing.AnalyzedAt) < 24*time.Hour {
-			ctx.Status(http.StatusOK)
-			return ctx.JSON(existing)
-		}
-	}
-
-	// Queue for analysis by updating the object
-	err = h.repos.AI().QueueForAnalysis(ctx.Context, req.ObjectID)
+	// Queue for analysis using AI service
+	queueResult, err := h.registry.AI().QueueForAnalysis(ctx.Context, &ai.QueueAnalysisCommand{
+		ObjectID:   req.ObjectID,
+		ObjectType: req.ObjectType,
+		Force:      req.Force,
+	})
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
 			"error": "failed to queue analysis",
 		})
+	}
+
+	// If not queued (already exists), return existing
+	if !queueResult.Queued {
+		// Get the existing analysis
+		result, _ := h.registry.AI().GetAnalysis(ctx.Context, &ai.GetAnalysisQuery{
+			ObjectID: req.ObjectID,
+		})
+		if result != nil && result.Analysis != nil {
+			ctx.Status(http.StatusOK)
+			return ctx.JSON(result.Analysis)
+		}
 	}
 
 	response := map[string]any{
@@ -183,8 +191,10 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 		period = "day"
 	}
 
-	// Get stats from repository
-	stats, err := h.repos.AI().GetStats(ctx.Context, period)
+	// Get stats using AI service
+	result, err := h.registry.AI().GetStats(ctx.Context, &ai.GetStatsQuery{
+		Period: period,
+	})
 	if err != nil {
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -193,7 +203,7 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 	}
 
 	ctx.Status(http.StatusOK)
-	return ctx.JSON(stats)
+	return ctx.JSON(result.Stats)
 }
 
 // HandleGetAISummaryLift returns a summary of AI features and capabilities
@@ -228,7 +238,7 @@ func (h *Handler) HandleGetAISummaryLift(ctx *lift.Context) error {
 			"shadow_ban",
 			"review",
 		},
-		"cost_per_analysis": ai.CostPerOperation,
+		"cost_per_analysis": originalai.CostPerOperation,
 	}
 
 	ctx.Status(http.StatusOK)

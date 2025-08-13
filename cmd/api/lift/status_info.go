@@ -2,7 +2,6 @@ package lift
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -38,57 +38,26 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 		objectID = fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), statusID)
 	}
 
-	// Get the object
-	object, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	// Extract status ID from object ID
+	statusID = strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
+	
+	// Get the note using Notes service
+	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
+	object := result.Note
 
 	// Debug logging to see what type we're getting
 	h.logger.Info("GetStatusSource: object type info",
 		zap.String("status_id", statusID),
 		zap.String("object_id", objectID),
-		zap.String("type", fmt.Sprintf("%T", object)),
+		zap.String("type", "activitypub.Note"),
 	)
 
-	// Extract content based on type
-	var content string
-	var spoilerText string
-
-	switch obj := object.(type) {
-	case *activitypub.Note:
-		content = obj.Content
-		spoilerText = obj.Summary
-	case map[string]any:
-		if c, ok := obj["content"].(string); ok {
-			content = c
-		}
-		if s, ok := obj["summary"].(string); ok {
-			spoilerText = s
-		}
-	default:
-		// Try to handle any object with Content field using reflection
-		v := reflect.ValueOf(object)
-		if v.Kind() == reflect.Ptr {
-			v = v.Elem()
-		}
-
-		if v.Kind() == reflect.Struct {
-			// Try to get Content field
-			if contentField := v.FieldByName("Content"); contentField.IsValid() && contentField.Kind() == reflect.String {
-				content = contentField.String()
-			}
-			// Try to get Summary field
-			if summaryField := v.FieldByName("Summary"); summaryField.IsValid() && summaryField.Kind() == reflect.String {
-				spoilerText = summaryField.String()
-			}
-		} else {
-			h.logger.Error("unexpected object type",
-				zap.String("type", fmt.Sprintf("%T", object)),
-				zap.Any("object", object))
-			return ctx.Status(500).JSON(map[string]string{"error": "unexpected object type"})
-		}
-	}
+	// Extract content from the Note
+	content := object.Content
+	spoilerText := object.Summary
 
 	// For source endpoint, we return the raw content without stripping HTML
 	// The source should show the original markdown/plain text
@@ -157,7 +126,7 @@ func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string)
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 			_, _ = oauthSvc.ValidateAccessToken(token)
 		}
 	}
@@ -183,11 +152,15 @@ func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 
 // fetchObjectForHistory fetches the current object
 func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any, error) {
-	currentObject, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	// Extract status ID from object ID
+	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
+	
+	// Get the note using Notes service
+	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
-	return currentObject, nil
+	return result.Note, nil
 }
 
 // getHistoryAuthorActor gets the author actor for the status
@@ -201,8 +174,10 @@ func (h *Handler) getHistoryAuthorActor(ctx *lift.Context, currentObject any) *a
 	parts := strings.Split(attributedTo, "/")
 	if len(parts) > 0 {
 		username := parts[len(parts)-1]
-		actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
-		return actor
+		result, _ := h.registry.Accounts().GetAccount(ctx.Context, username)
+		if result != nil {
+			return result.Actor
+		}
 	}
 	return nil
 }
@@ -222,14 +197,21 @@ func (h *Handler) extractAttributedTo(obj any) string {
 
 // fetchEditHistory fetches the edit history for an object
 func (h *Handler) fetchEditHistory(ctx *lift.Context, objectID string) []*storage.UpdateHistory {
-	histories, err := h.repos.Object().GetUpdateHistory(ctx.Context, objectID, 100) // Get up to 100 edits
+	// Extract status ID from object ID
+	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
+	
+	// Get update history using Notes service
+	result, err := h.registry.Notes().GetUpdateHistory(ctx.Context, &notes.GetUpdateHistoryQuery{
+		StatusID: statusID,
+		Limit:    100,
+	})
 	if err != nil {
 		h.logger.Error("failed to get update history",
-			zap.String("object_id", objectID),
+			zap.String("status_id", statusID),
 			zap.Error(err))
 		return []*storage.UpdateHistory{}
 	}
-	return histories
+	return result.History
 }
 
 // buildHistoryResponse builds the history response

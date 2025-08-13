@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // converterImpl implements the Converter interface
@@ -189,7 +190,7 @@ func (c *converterImpl) ObjectToStatusWithContext(_ context.Context, obj any, ac
 }
 
 // ConversationToAPI converts a storage Conversation to API format
-func (c *converterImpl) ConversationToAPI(conv *storage.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation {
+func (c *converterImpl) ConversationToAPI(conv *storagemodels.Conversation, participants []*activitypub.Actor, lastStatus any, unread bool) models.Conversation {
 	accounts := make([]models.Account, 0, len(participants))
 	for _, actor := range participants {
 		accounts = append(accounts, c.ActorToAccount(actor))

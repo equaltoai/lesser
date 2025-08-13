@@ -132,11 +132,9 @@ func TestInfrastructureIntegration(t *testing.T) {
 			assert.Empty(t, username)
 
 			// Test with claims
-			claims := &auth.EnhancedClaims{
-				Claims: auth.Claims{
-					Username: "testuser",
-					Scopes:   []string{"read", "write"},
-				},
+			claims := &auth.Claims{
+				Username:  "testuser",
+				Scopes:    []string{"read", "write"},
 				SessionID: "session-123",
 				DeviceID:  "device-123",
 			}

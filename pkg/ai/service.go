@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	comprehendtypes "github.com/aws/aws-sdk-go-v2/service/comprehend/types"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitiontypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -41,7 +40,6 @@ type AIService struct {
 	sqsClient   SQSClient
 	logger      *zap.Logger
 	config      *AIConfig
-	storage     *Storage
 }
 
 // AIConfig contains configuration for AI service features and thresholds
@@ -71,7 +69,7 @@ type AIConfig struct {
 }
 
 // NewAIService creates a new AI service instance
-func NewAIService(cfg aws.Config, aiConfig *AIConfig, tableName string) *AIService {
+func NewAIService(cfg aws.Config, aiConfig *AIConfig) *AIService {
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
@@ -80,12 +78,11 @@ func NewAIService(cfg aws.Config, aiConfig *AIConfig, tableName string) *AIServi
 		sqsClient:   sqs.NewFromConfig(cfg),
 		logger:      zap.L().Named("ai"),
 		config:      aiConfig,
-		storage:     NewStorage(dynamodb.NewFromConfig(cfg), tableName),
 	}
 }
 
 // NewAIServiceWithSQS creates a new AI service instance with custom SQS client
-func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient, tableName string) *AIService {
+func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient) *AIService {
 	return &AIService{
 		comprehend:  comprehend.NewFromConfig(cfg),
 		rekognition: rekognition.NewFromConfig(cfg),
@@ -94,7 +91,6 @@ func NewAIServiceWithSQS(cfg aws.Config, aiConfig *AIConfig, sqsClient SQSClient
 		sqsClient:   sqsClient,
 		logger:      zap.L().Named("ai"),
 		config:      aiConfig,
-		storage:     NewStorage(dynamodb.NewFromConfig(cfg), tableName),
 	}
 }
 
@@ -181,27 +177,13 @@ func (s *AIService) AnalyzeContent(ctx context.Context, content *Content) (*AIAn
 	analysis.ModerationAction = s.determineModerationAction(analysis)
 	analysis.Confidence = s.calculateConfidence(analysis)
 
-	// Save analysis results to storage
-	if err := s.storage.SaveAnalysis(ctx, analysis); err != nil {
-		s.logger.Error("Failed to save analysis results",
-			zap.String("analysisID", analysis.ID),
-			zap.String("objectID", analysis.ObjectID),
-			zap.Error(err))
-		// Don't fail the analysis if storage fails, just log
-	} else {
-		s.logger.Info("Analysis results saved successfully",
-			zap.String("analysisID", analysis.ID),
-			zap.String("objectID", analysis.ObjectID),
-			zap.Float64("overallRisk", analysis.OverallRisk),
-			zap.String("moderationAction", analysis.ModerationAction))
-	}
-
-	// Mark the object as analyzed
-	if err := s.storage.MarkAnalyzed(ctx, content.ID); err != nil {
-		s.logger.Warn("Failed to mark object as analyzed",
-			zap.String("objectID", content.ID),
-			zap.Error(err))
-	}
+	// Note: Storage is now handled by the caller (AI processor Lambda)
+	// This service only performs the analysis
+	s.logger.Info("Analysis completed",
+		zap.String("analysisID", analysis.ID),
+		zap.String("objectID", analysis.ObjectID),
+		zap.Float64("overallRisk", analysis.OverallRisk),
+		zap.String("moderationAction", analysis.ModerationAction))
 
 	return analysis, nil
 }
@@ -1189,35 +1171,10 @@ func (s *AIService) GetAnalysisRequest(_ context.Context, requestID string) (*An
 	}, nil
 }
 
-// storeAnalysisRequest stores an analysis request in DynamoDB
+// storeAnalysisRequest is deprecated - storage is handled by the service layer
 func (s *AIService) storeAnalysisRequest(ctx context.Context, request *AnalysisRequest) error {
-	// Create a pending analysis entry to track the request
-	analysis := &AIAnalysis{
-		ID:               request.ID,
-		ObjectID:         request.ObjectID,
-		ObjectType:       request.ObjectType,
-		AnalyzedAt:       request.RequestedAt,
-		Version:          "1.0",
-		OverallRisk:      0.0, // Will be calculated when analysis completes
-		ModerationAction: "pending",
-		Confidence:       0.0,                                   // Will be calculated when analysis completes
-		TTL:              time.Now().Add(24 * time.Hour).Unix(), // Clean up after 24 hours
-	}
-
-	// Store the analysis using the storage layer
-	if err := s.storage.SaveAnalysis(ctx, analysis); err != nil {
-		s.logger.Error("Failed to store analysis request",
-			zap.String("requestID", request.ID),
-			zap.String("objectID", request.ObjectID),
-			zap.Error(err))
-		return fmt.Errorf("failed to save analysis request: %w", err)
-	}
-
-	s.logger.Info("Analysis request stored successfully",
-		zap.String("requestID", request.ID),
-		zap.String("objectID", request.ObjectID),
-		zap.String("objectType", request.ObjectType))
-
+	// Storage is now handled by the service layer in pkg/services/ai
+	// This method is kept for backward compatibility but does nothing
 	return nil
 }
 
@@ -1268,38 +1225,14 @@ func (s *AIService) GenerateEmbedding(ctx context.Context, text string) ([]float
 	return nil, fmt.Errorf("invalid embedding response format")
 }
 
-// GetAnalysis retrieves existing AI analysis for content
+// GetAnalysis is deprecated - use the service layer for retrieval
 func (s *AIService) GetAnalysis(ctx context.Context, objectID string) (*AIAnalysis, error) {
-	analysis, err := s.storage.GetAnalysis(ctx, objectID)
-	if err != nil {
-		s.logger.Debug("No existing analysis found",
-			zap.String("objectID", objectID),
-			zap.Error(err))
-		return nil, err
-	}
-
-	s.logger.Info("Retrieved existing analysis",
-		zap.String("analysisID", analysis.ID),
-		zap.String("objectID", objectID),
-		zap.Float64("overallRisk", analysis.OverallRisk))
-
-	return analysis, nil
+	// This functionality is now in pkg/services/ai
+	return nil, fmt.Errorf("GetAnalysis is deprecated - use service layer")
 }
 
-// GetAnalysisStats retrieves AI analysis statistics
+// GetAnalysisStats is deprecated - use the service layer for statistics
 func (s *AIService) GetAnalysisStats(ctx context.Context, period string) (*AIStats, error) {
-	stats, err := s.storage.GetStats(ctx, period)
-	if err != nil {
-		s.logger.Error("Failed to retrieve analysis statistics",
-			zap.String("period", period),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get analysis stats: %w", err)
-	}
-
-	s.logger.Info("Retrieved analysis statistics",
-		zap.String("period", period),
-		zap.Int("totalAnalyses", stats.TotalAnalyses),
-		zap.Float64("toxicityRate", stats.ToxicityRate))
-
-	return stats, nil
+	// This functionality is now in pkg/services/ai
+	return nil, fmt.Errorf("GetAnalysisStats is deprecated - use service layer")
 }

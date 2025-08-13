@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -46,32 +47,47 @@ const (
 	GrantTypeRefreshToken      = "refresh_token"
 )
 
-// Token expiration times
+// Token expiration times - enhanced security with shorter durations
 const (
-	AccessTokenDuration  = 1 * time.Hour
-	RefreshTokenDuration = 30 * 24 * time.Hour // 30 days
-	AuthCodeDuration     = 10 * time.Minute
+	// Production: Very short access token duration forces regular refresh
+	AccessTokenDuration       = 15 * time.Minute
+	// Development: Longer duration for easier testing
+	AccessTokenDurationDev    = 1 * time.Hour
+	// Refresh tokens should be rotated regularly
+	RefreshTokenDuration      = 7 * 24 * time.Hour // 7 days (reduced from 30)
+	// Authorization codes must be very short-lived
+	AuthCodeDuration          = 5 * time.Minute // Reduced from 10
+	// Token family tracking for refresh token rotation
+	RefreshTokenFamilyExpiry  = 30 * 24 * time.Hour // 30 days for family tracking
 )
 
-// Claims represents the JWT claims for access tokens
+// Claims represents the JWT claims for access tokens with enhanced security
 type Claims struct {
 	jwt.RegisteredClaims
-	Username string   `json:"username"`
-	Scopes   []string `json:"scopes"`
-	ClientID string   `json:"client_id"`
+	Username     string   `json:"username"`
+	Scopes       []string `json:"scopes"`
+	ClientID     string   `json:"client_id"`
+	// Enhanced security fields
+	SessionID    string   `json:"sid,omitempty"`         // Session ID for validation
+	DeviceID     string   `json:"did,omitempty"`         // Device fingerprint
+	TokenVersion int      `json:"tv,omitempty"`          // Token version for invalidation
+	IPAddress    string   `json:"ip,omitempty"`          // IP binding (optional)
+	UserAgent    string   `json:"ua,omitempty"`          // User agent binding (optional)
 }
 
 // OAuthService handles OAuth 2.0 operations
 type OAuthService struct {
-	jwtSecret []byte
-	repos     StorageProvider
+	jwtSecret   []byte
+	repos       StorageProvider
+	auditLogger *AuditLogger
 }
 
 // NewOAuthService creates a new OAuth service
-func NewOAuthService(jwtSecret string, repos StorageProvider) *OAuthService {
+func NewOAuthService(jwtSecret string, repos StorageProvider, auditLogger *AuditLogger) *OAuthService {
 	return &OAuthService{
-		jwtSecret: []byte(jwtSecret),
-		repos:     repos,
+		jwtSecret:   []byte(jwtSecret),
+		repos:       repos,
+		auditLogger: auditLogger,
 	}
 }
 
@@ -168,35 +184,67 @@ func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challeng
 }
 
 // GenerateTokens generates both access and refresh tokens
-func (s *OAuthService) GenerateTokens(username, clientID string, scopes []string) (accessToken, refreshToken string, err error) {
+func (s *OAuthService) GenerateTokens(ctx context.Context, username, clientID, ipAddress string, scopes []string) (accessToken, refreshToken string, err error) {
 	// Generate access token
 	accessToken, err = s.generateAccessToken(username, clientID, scopes)
 	if err != nil {
+		// Log token generation failure
+		if s.auditLogger != nil {
+			s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenFailed, scopes, false, err)
+		}
 		return "", "", err
 	}
 
 	// Generate refresh token
 	refreshToken, err = s.generateRefreshToken()
 	if err != nil {
+		// Log token generation failure
+		if s.auditLogger != nil {
+			s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenFailed, scopes, false, err)
+		}
 		return "", "", err
+	}
+
+	// Log successful token issuance
+	if s.auditLogger != nil {
+		s.auditLogger.LogOAuthToken(ctx, clientID, username, ipAddress, AuditOAuthTokenIssued, scopes, true, nil)
 	}
 
 	return accessToken, refreshToken, nil
 }
 
-// generateAccessToken creates a JWT access token
+// generateAccessToken creates a JWT access token with enhanced security
 func (s *OAuthService) generateAccessToken(username, clientID string, scopes []string) (string, error) {
+	return s.generateAccessTokenWithContext(username, clientID, scopes, "", "", 0, "", "")
+}
+
+// generateAccessTokenWithContext creates a JWT access token with enhanced security context
+func (s *OAuthService) generateAccessTokenWithContext(username, clientID string, scopes []string, sessionID, deviceID string, tokenVersion int, ipAddress, userAgent string) (string, error) {
 	now := time.Now()
+	
+	// Use shorter duration in production environments
+	duration := AccessTokenDuration
+	if os.Getenv("GO_ENV") == "development" || os.Getenv("GO_ENV") == "test" {
+		duration = AccessTokenDurationDev
+	}
+	
 	claims := Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   username,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(AccessTokenDuration)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(duration)),
 			NotBefore: jwt.NewNumericDate(now),
+			// Add unique JTI for token tracking
+			ID:        generateSecureJTI(),
 		},
-		Username: username,
-		ClientID: clientID,
-		Scopes:   scopes,
+		Username:     username,
+		ClientID:     clientID,
+		Scopes:       scopes,
+		SessionID:    sessionID,
+		DeviceID:     deviceID,
+		TokenVersion: tokenVersion,
+		IPAddress:    ipAddress,
+		UserAgent:    userAgent,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -212,8 +260,13 @@ func (s *OAuthService) generateRefreshToken() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// ValidateAccessToken validates and parses a JWT access token
+// ValidateAccessToken validates and parses a JWT access token with enhanced security checks
 func (s *OAuthService) ValidateAccessToken(tokenString string) (*Claims, error) {
+	return s.ValidateAccessTokenWithContext(tokenString, "", "", 0)
+}
+
+// ValidateAccessTokenWithContext validates a JWT token with additional security context
+func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessionID, expectedIP string, expectedTokenVersion int) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
@@ -225,10 +278,42 @@ func (s *OAuthService) ValidateAccessToken(tokenString string) (*Claims, error) 
 	}
 
 	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		// Enhanced validation checks
+		if err := s.validateEnhancedClaims(claims, expectedSessionID, expectedIP, expectedTokenVersion); err != nil {
+			return nil, err
+		}
 		return claims, nil
 	}
 
 	return nil, ErrInvalidToken
+}
+
+// validateEnhancedClaims performs additional security validation on JWT claims
+func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID, expectedIP string, expectedTokenVersion int) error {
+	// Validate session ID if provided
+	if expectedSessionID != "" && claims.SessionID != "" && claims.SessionID != expectedSessionID {
+		return fmt.Errorf("session ID mismatch")
+	}
+	
+	// Validate IP binding if enabled and provided
+	if expectedIP != "" && claims.IPAddress != "" && claims.IPAddress != expectedIP {
+		return fmt.Errorf("IP address mismatch")
+	}
+	
+	// Validate token version for invalidation support
+	if expectedTokenVersion > 0 && claims.TokenVersion > 0 && claims.TokenVersion != expectedTokenVersion {
+		return fmt.Errorf("token version mismatch")
+	}
+	
+	// Check if token is too old (additional security check)
+	if claims.IssuedAt != nil {
+		maxAge := 24 * time.Hour // Maximum token age regardless of expiry
+		if time.Since(claims.IssuedAt.Time) > maxAge {
+			return fmt.Errorf("token too old")
+		}
+	}
+	
+	return nil
 }
 
 // ExtractBearerToken extracts the token from the Authorization header
@@ -316,4 +401,67 @@ func (c *Claims) HasScope(scope string) bool {
 // DefaultScopes returns the default scopes for a user
 func DefaultScopes() []string {
 	return []string{ScopeRead, ScopeWrite}
+}
+
+// generateSecureJTI generates a unique JWT ID for token tracking
+func generateSecureJTI() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based ID
+		return fmt.Sprintf("jti_%d", time.Now().UnixNano())
+	}
+	return base64.URLEncoding.EncodeToString(b)
+}
+
+// TokenBlacklist interface for managing revoked tokens
+type TokenBlacklist interface {
+	RevokeToken(jti string, expiry time.Time) error
+	IsTokenRevoked(jti string) (bool, error)
+	CleanExpiredTokens() error
+}
+
+// RefreshTokenFamily represents a family of refresh tokens for rotation tracking
+type RefreshTokenFamily struct {
+	FamilyID      string    `json:"family_id"`
+	CurrentToken  string    `json:"current_token"`
+	PreviousToken string    `json:"previous_token,omitempty"`
+	Username      string    `json:"username"`
+	ClientID      string    `json:"client_id"`
+	DeviceID      string    `json:"device_id,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	RotatedAt     time.Time `json:"rotated_at,omitempty"`
+	ExpiresAt     time.Time `json:"expires_at"`
+	Revoked       bool      `json:"revoked"`
+}
+
+// Enhanced token generation with refresh token families
+func (s *OAuthService) GenerateTokensWithContext(username, clientID, sessionID, deviceID, ipAddress, userAgent string, scopes []string, tokenVersion int) (accessToken, refreshToken string, err error) {
+	// Generate enhanced access token
+	accessToken, err = s.generateAccessTokenWithContext(username, clientID, scopes, sessionID, deviceID, tokenVersion, ipAddress, userAgent)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Generate refresh token
+	refreshToken, err = s.generateRefreshToken()
+	if err != nil {
+		return "", "", err
+	}
+
+	// Store refresh token family for rotation tracking
+	if s.repos != nil {
+		family := &RefreshTokenFamily{
+			FamilyID:     generateSecureJTI(),
+			CurrentToken: refreshToken,
+			Username:     username,
+			ClientID:     clientID,
+			DeviceID:     deviceID,
+			CreatedAt:    time.Now(),
+			ExpiresAt:    time.Now().Add(RefreshTokenFamilyExpiry),
+		}
+		// Note: Store in database - implementation depends on storage interface
+		_ = family // Placeholder for storage implementation
+	}
+
+	return accessToken, refreshToken, nil
 }

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // CSRF-related errors
@@ -240,4 +242,10 @@ func GenerateCSRFTokenHandler(manager *CSRFManager) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"csrf_token": "` + token + `"}`))
 	}
+}
+
+// NewCSRFManagerWithDynamORM creates a CSRF manager with DynamORM store
+func NewCSRFManagerWithDynamORM(db core.DB, tableName string, logger *zap.Logger) *CSRFManager {
+	store := NewDynamORMCSRFStore(db, tableName, logger)
+	return &CSRFManager{store: store}
 }

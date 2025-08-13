@@ -82,6 +82,13 @@ const (
 
 	// EventTypeMetricsUpdate represents real-time metrics update events for GraphQL subscriptions
 	EventTypeMetricsUpdate EventType = "metrics.update"
+	
+	// EventTypeFederationHealthUpdate represents federation health update events
+	EventTypeFederationHealthUpdate EventType = "federation.health.update"
+	// EventTypeFederationFailure represents federation failure events
+	EventTypeFederationFailure EventType = "federation.failure"
+	// EventTypeFederationRecovery represents federation recovery events
+	EventTypeFederationRecovery EventType = "federation.recovery"
 )
 
 // EventAction represents the action that triggered the event

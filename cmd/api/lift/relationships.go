@@ -1,11 +1,9 @@
 package lift
 
 import (
-	"context"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -21,15 +19,15 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	}
 
 	if testUsername != "" {
-		// Get the user's actor directly (test mode)
-		actor, err := h.repos.Actor().GetActor(ctx, testUsername)
+		// Verify account exists (test mode)
+		_, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
 		if err != nil {
-			h.logger.Error("failed to get actor", zap.Error(err))
+			h.logger.Error("failed to get account", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 
 		// Skip to the main logic with test username
-		return h.handleRelationshipsLogic(ctx, actor, testUsername)
+		return h.handleRelationshipsLogic(ctx, testUsername)
 	}
 
 	// Extract token from Authorization header
@@ -52,7 +50,7 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -63,18 +61,18 @@ func (h *Handler) HandleGetRelationshipsLift(ctx *lift.Context) error {
 		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
 	}
 
-	// Get the user's actor
-	actor, err := h.repos.Actor().GetActor(ctx, claims.Username)
+	// Verify account exists
+	_, err = h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
+		h.logger.Error("failed to get account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	return h.handleRelationshipsLogic(ctx, actor, claims.Username)
+	return h.handleRelationshipsLogic(ctx, claims.Username)
 }
 
 // handleRelationshipsLogic contains the main relationships logic, separated for testing
-func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, actor *activitypub.Actor, username string) error {
+func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) error {
 	// Extract account IDs from query parameters
 	accountIDs := h.extractAccountIDsLift(ctx)
 	if len(accountIDs) == 0 {
@@ -90,8 +88,8 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, actor *activitypub
 			continue
 		}
 
-		// Get the target actor
-		targetActor, err := h.repos.Actor().GetActor(ctx, accountID)
+		// Check if account exists (basic validation)
+		_, err := h.registry.Accounts().GetAccount(ctx.Context, accountID)
 		if err != nil {
 			// Skip accounts that don't exist
 			h.logger.Warn("account not found for relationship",
@@ -100,83 +98,38 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, actor *activitypub
 			continue
 		}
 
-		// Build the relationship
-		relationship := h.buildRelationshipLift(ctx, actor, targetActor, username, accountID)
+		// Use the Relationships service to get relationship data
+		relationshipData, err := h.registry.Relationships().GetRelationship(ctx.Context, username, accountID)
+		if err != nil {
+			h.logger.Error("failed to get relationship from service",
+				zap.String("requester", username),
+				zap.String("target", accountID),
+				zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{"error": "failed to get relationships"})
+		}
+
+		// Convert service relationship data to API model
+		relationship := models.Relationship{
+			ID:                  relationshipData.ID,
+			Following:           relationshipData.Following,
+			ShowingReblogs:      relationshipData.ShowingReblogs,
+			Notifying:           relationshipData.Notifying,
+			FollowedBy:          relationshipData.FollowedBy,
+			Blocking:            relationshipData.Blocking,
+			BlockedBy:           relationshipData.BlockedBy,
+			Muting:              relationshipData.Muting,
+			MutingNotifications: relationshipData.MutingNotifications,
+			Requested:           relationshipData.Requested,
+			DomainBlocking:      relationshipData.DomainBlocking,
+			Endorsed:            relationshipData.Endorsed,
+			Note:                relationshipData.Note,
+		}
 		relationships = append(relationships, relationship)
 	}
 
 	return ctx.JSON(relationships)
 }
 
-// buildRelationshipLift constructs a Relationship object between two actors
-func (h *Handler) buildRelationshipLift(ctx context.Context, actor, targetActor *activitypub.Actor, currentUsername, targetUsername string) models.Relationship {
-	relationship := models.Relationship{
-		ID:                  targetActor.PreferredUsername,
-		Following:           false,
-		ShowingReblogs:      true,
-		Notifying:           false,
-		FollowedBy:          false,
-		Blocking:            false,
-		BlockedBy:           false,
-		Muting:              false,
-		MutingNotifications: false,
-		Requested:           false,
-		DomainBlocking:      false,
-		Endorsed:            false,
-		Note:                "",
-	}
-
-	// Check if following
-	followingRel, err := h.repos.Relationship().GetRelationship(ctx, currentUsername, targetUsername)
-	if err == nil && followingRel != nil {
-		relationship.Following = true
-		// Check if this is a pending follow request
-		isRequested, err := h.repos.Relationship().HasFollowRequest(ctx, currentUsername, targetUsername)
-		relationship.Requested = (err == nil && isRequested)
-		// If following, it's not requested anymore
-		if relationship.Following {
-			relationship.Requested = false
-		}
-	}
-
-	// Check if followed by
-	followedByRel, err := h.repos.Relationship().GetRelationship(ctx, targetUsername, currentUsername)
-	if err == nil && followedByRel != nil {
-		relationship.FollowedBy = true
-	}
-
-	// Check if blocking
-	isBlocking, err := h.repos.Relationship().IsBlocked(ctx, actor.ID, targetActor.ID)
-	if err == nil && isBlocking {
-		// Block exists
-		relationship.Blocking = true
-		// If blocking, can't be following
-		relationship.Following = false
-		relationship.ShowingReblogs = false
-		relationship.Notifying = false
-	}
-
-	// Check if blocked by
-	isBlockedBy, err := h.repos.Relationship().IsBlocked(ctx, targetActor.ID, actor.ID)
-	if err == nil && isBlockedBy {
-		// Blocked by the target
-		relationship.BlockedBy = true
-	}
-
-	// Check if muting
-	mute, err := h.repos.Social().GetMute(ctx, actor.PreferredUsername, targetActor.PreferredUsername)
-	if err == nil && mute != nil {
-		relationship.Muting = true
-		relationship.MutingNotifications = mute.HideNotifications
-	}
-
-	// Implement domain blocking, endorsements, and notes
-	relationship.DomainBlocking = h.isDomainBlockedLift(ctx, actor.ID, targetActor.ID)
-	relationship.Endorsed = h.isEndorsedLift(ctx, currentUsername, targetUsername)
-	relationship.Note = h.getRelationshipNoteLift(ctx, currentUsername, targetUsername)
-
-	return relationship
-}
 
 // extractAccountIDsLift extracts account IDs from query parameters
 // Supports both id[]=1&id[]=2 and id=1,2 formats
@@ -220,17 +173,3 @@ func (h *Handler) extractAccountIDsLift(ctx *lift.Context) []string {
 	return unique
 }
 
-// isEndorsedLift checks if the target user is endorsed by the current user
-func (h *Handler) isEndorsedLift(ctx context.Context, currentUsername, targetUsername string) bool {
-	endorsed, err := h.repos.Relationship().IsEndorsed(ctx, currentUsername, targetUsername)
-	return err == nil && endorsed
-}
-
-// getRelationshipNoteLift gets the private note about the target user
-func (h *Handler) getRelationshipNoteLift(ctx context.Context, currentUsername, targetUsername string) string {
-	note, err := h.repos.User().GetAccountNote(ctx, currentUsername, targetUsername)
-	if err != nil {
-		return ""
-	}
-	return note.Note
-}

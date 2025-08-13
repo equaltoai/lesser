@@ -3,11 +3,13 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -529,6 +531,79 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 	}
 
 	return result, nextCursor, nil
+}
+
+// GetBookmarkedStatuses retrieves paginated bookmarked statuses for a user
+func (r *AccountRepository) GetBookmarkedStatuses(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Check if statusRepo dependency is available
+	if r.statusRepo == nil {
+		r.logger.Error("statusRepo dependency not set for GetBookmarkedStatuses")
+		return nil, fmt.Errorf("statusRepo dependency not available")
+	}
+
+	// Get bookmark records first using the existing method
+	bookmarks, nextCursor, err := r.GetBookmarks(ctx, username, opts.Limit, opts.Cursor)
+	if err != nil {
+		r.logger.Error("failed to get bookmarks for bookmarked statuses",
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get bookmarks: %w", err)
+	}
+
+	// If no bookmarks found, return empty result
+	if len(bookmarks) == 0 {
+		return &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
+
+	// Extract status IDs from bookmark ObjectIDs
+	// ObjectID format: "object#{statusID}" -> extract statusID
+	statusIDs := make([]string, 0, len(bookmarks))
+	for _, bookmark := range bookmarks {
+		if strings.HasPrefix(bookmark.ObjectID, "object#") {
+			statusID := strings.TrimPrefix(bookmark.ObjectID, "object#")
+			statusIDs = append(statusIDs, statusID)
+		} else {
+			// Handle case where ObjectID might already be a status ID
+			statusIDs = append(statusIDs, bookmark.ObjectID)
+		}
+	}
+
+	// Fetch status objects using StatusRepository
+	statuses, err := r.statusRepo.GetStatusesByIDs(ctx, statusIDs)
+	if err != nil {
+		r.logger.Error("failed to get statuses by IDs",
+			zap.String("username", username),
+			zap.Strings("status_ids", statusIDs),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get statuses: %w", err)
+	}
+
+	// Create a map for efficient lookup and maintain bookmark order
+	statusMap := make(map[string]*models.Status)
+	for _, status := range statuses {
+		statusMap[status.StatusID] = status
+	}
+
+	// Build result maintaining the bookmark order
+	result := make([]*models.Status, 0, len(statusIDs))
+	for _, statusID := range statusIDs {
+		if status, exists := statusMap[statusID]; exists {
+			result = append(result, status)
+		}
+		// If status doesn't exist (deleted, etc.), we skip it
+	}
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      result,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
+		Total:      -1, // Total not calculated for performance
+	}, nil
 }
 
 // PinAccount pins an account for a user

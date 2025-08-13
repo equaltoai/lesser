@@ -101,7 +101,12 @@ func NewAuthHandler() (*AuthHandler, error) {
 		jwtSecret = "development-secret-change-me"
 		logger.Warn("JWT_SECRET not set, using development default")
 	}
-	oauthSvc := auth.NewOAuthService(jwtSecret, repos)
+	
+	// Initialize audit logger
+	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
+	
+	// Initialize OAuth service with audit logger
+	oauthSvc := auth.NewOAuthService(jwtSecret, repos, auditLogger)
 
 	// Initialize WebAuthn service
 	domain := cfg.Domain
@@ -334,8 +339,17 @@ func (ah *AuthHandler) handleToken(ctx *lift.Context) error {
 		scopes = auth.DefaultScopes()
 	}
 
+	// Get client IP address
+	ipAddress := ctx.Header("X-Forwarded-For")
+	if ipAddress == "" {
+		ipAddress = ctx.Header("X-Real-IP")
+	}
+	if ipAddress == "" {
+		ipAddress = "unknown"
+	}
+
 	// Generate access and refresh tokens using the OAuth service
-	accessToken, refreshToken, err := ah.oauthSvc.GenerateTokens(authCode.UserID, authCode.ClientID, scopes)
+	accessToken, refreshToken, err := ah.oauthSvc.GenerateTokens(ctx.Context, authCode.UserID, authCode.ClientID, ipAddress, scopes)
 	if err != nil {
 		ah.logger.Error("failed to generate tokens", zap.Error(err))
 		return lift.NewLiftError("SERVER_ERROR", "failed to generate tokens", 500)
@@ -979,10 +993,19 @@ func (ah *AuthHandler) handleWalletVerify(ctx *lift.Context) error {
 	if username != "" {
 		response.Username = username
 
+		// Get client IP address
+		ipAddress := ctx.Header("X-Forwarded-For")
+		if ipAddress == "" {
+			ipAddress = ctx.Header("X-Real-IP")
+		}
+		if ipAddress == "" {
+			ipAddress = "unknown"
+		}
+
 		// Generate access token using OAuth service
 		scopes := auth.DefaultScopes()
 		clientID := "wallet_client" // Use a default client for wallet auth
-		accessToken, _, err := ah.oauthSvc.GenerateTokens(username, clientID, scopes)
+		accessToken, _, err := ah.oauthSvc.GenerateTokens(ctx.Context, username, clientID, ipAddress, scopes)
 		if err != nil {
 			ah.logger.Error("failed to generate access token for wallet auth", zap.Error(err))
 		} else {

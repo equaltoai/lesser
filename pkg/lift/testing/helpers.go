@@ -67,11 +67,9 @@ func CreateTestClaims(username, userType string) *auth.EnhancedClaims {
 	}
 
 	return &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: username,
-			Scopes:   scopes,
-			ClientID: "test-client",
-		},
+		Username:  username,
+		Scopes:    scopes,
+		ClientID:  "test-client",
 		SessionID: fmt.Sprintf("test-session-%s", username),
 		DeviceID:  fmt.Sprintf("test-device-%s", username),
 	}
@@ -80,11 +78,9 @@ func CreateTestClaims(username, userType string) *auth.EnhancedClaims {
 // CreateCustomClaims creates claims with custom scopes
 func CreateCustomClaims(username string, scopes []string) *auth.EnhancedClaims {
 	return &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: username,
-			Scopes:   scopes,
-			ClientID: "test-client",
-		},
+		Username:  username,
+		Scopes:    scopes,
+		ClientID:  "test-client",
 		SessionID: fmt.Sprintf("test-session-%s", username),
 		DeviceID:  fmt.Sprintf("test-device-%s", username),
 	}

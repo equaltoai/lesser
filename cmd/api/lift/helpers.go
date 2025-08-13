@@ -9,6 +9,10 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -75,7 +79,7 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScope string) (use
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", fmt.Errorf("unauthorized")
@@ -153,4 +157,215 @@ func (h *Handler) getQueryParam(ctx *lift.Context, key string) string {
 		value = ctx.Request.Request.QueryParams[key]
 	}
 	return value
+}
+
+// isLocal checks if a username belongs to the local instance
+func (h *Handler) isLocal(username string) bool {
+	// A username is local if it doesn't contain '@' or only contains our domain
+	// For simplicity, we'll assume usernames without @ are local
+	return !strings.Contains(username, "@")
+}
+
+// convertStorageStatusToAPI converts a storage Status model to an API Status model with all real data
+func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
+	ctx := context.Background()
+	
+	// Convert InReplyToID to pointer if not empty
+	var inReplyToID *string
+	var inReplyToAccountID *string
+	if storageStatus.InReplyToID != "" {
+		inReplyToID = &storageStatus.InReplyToID
+		// Get the parent status to find the account ID
+		if parentStatus, err := h.repos.Status().GetStatus(ctx, storageStatus.InReplyToID); err == nil {
+			inReplyToAccountID = &parentStatus.AuthorID
+		}
+	}
+
+	// Get author account details
+	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)
+	if err != nil {
+		// Fallback to basic info if account not found
+		authorAccount = &storage.Account{
+			User: &storage.User{
+				Username:    storageStatus.AuthorUsername,
+				DisplayName: storageStatus.AuthorUsername,
+			},
+		}
+	}
+
+	// Get interaction counts
+	statusObjectID := fmt.Sprintf("%s/objects/%s", h.cfg.BaseURL(), storageStatus.StatusID)
+	likeCount, _ := h.repos.Like().GetLikeCount(ctx, statusObjectID)
+	reblogCount, _ := h.repos.Social().CountObjectAnnounces(ctx, statusObjectID)
+	
+	// Get reply count
+	replyCount := 0
+	paginationOpts := interfaces.PaginationOptions{Limit: 1}
+	if replies, err := h.repos.Status().GetReplies(ctx, storageStatus.StatusID, paginationOpts); err == nil && replies != nil {
+		replyCount = len(replies.Items)
+	}
+
+	// Check current user's interactions
+	var favourited, reblogged, bookmarked, muted, pinned bool
+	currentUserActorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), currentUsername)
+	
+	// Check if favorited
+	if _, err := h.repos.Like().GetLike(ctx, currentUserActorID, statusObjectID); err == nil {
+		favourited = true
+	}
+	
+	// Check if reblogged
+	if _, err := h.repos.Social().GetAnnounce(ctx, currentUserActorID, statusObjectID); err == nil {
+		reblogged = true
+	}
+	
+	// Check if bookmarked
+	if bookmarks, _, err := h.repos.Account().GetBookmarks(ctx, currentUsername, 100, ""); err == nil {
+		for _, bookmark := range bookmarks {
+			if bookmark.ObjectID == statusObjectID {
+				bookmarked = true
+				break
+			}
+		}
+	}
+	
+	// Check if muted (conversation mute)
+	if storageStatus.ConversationID != "" {
+		muted, _ = h.repos.Conversation().IsConversationMuted(ctx, currentUsername, storageStatus.ConversationID)
+	}
+	
+	// Check if pinned - check if status is in user's pinned statuses
+	// For now we'll skip this check since GetPinnedStatuses doesn't exist
+	// pinned = false // Already initialized as false above
+
+	// Extract hashtags from content
+	tags := []any{}
+	if storageStatus.Hashtags != nil && len(storageStatus.Hashtags) > 0 {
+		for _, hashtag := range storageStatus.Hashtags {
+			tags = append(tags, map[string]string{
+				"name": hashtag,
+				"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
+			})
+		}
+	}
+
+	// Extract mentions
+	mentions := []any{}
+	if storageStatus.Mentions != nil && len(storageStatus.Mentions) > 0 {
+		for _, mention := range storageStatus.Mentions {
+			mentions = append(mentions, map[string]string{
+				"id":       mention,
+				"username": mention,
+				"url":      fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), mention),
+				"acct":     mention,
+			})
+		}
+	}
+
+	// Handle media attachments from the ActivityPub Note
+	mediaAttachments := []any{}
+	if storageStatus.Note != nil && storageStatus.Note.Attachment != nil {
+		for _, attachment := range storageStatus.Note.Attachment {
+			// Convert ActivityPub attachment to API format
+			mediaAttachment := map[string]any{
+				"id":          attachment.URL, // Use URL as ID if no specific ID
+				"type":        attachment.MediaType,
+				"url":         attachment.URL,
+				"preview_url": attachment.URL, // Use same URL for preview if not specified
+			}
+			if attachment.Name != "" {
+				mediaAttachment["description"] = attachment.Name
+			}
+			mediaAttachments = append(mediaAttachments, mediaAttachment)
+		}
+	}
+
+	// Build the account object with real data
+	account := models.Account{
+		ID:             storageStatus.AuthorID,
+		Username:       storageStatus.AuthorUsername,
+		Acct:          storageStatus.AuthorUsername,
+		DisplayName:    authorAccount.User.DisplayName,
+		Locked:        authorAccount.Actor != nil && authorAccount.Actor.ManuallyApprovesFollowers,
+		Bot:           authorAccount.Actor != nil && authorAccount.Actor.Type == "Service",
+		CreatedAt:     authorAccount.User.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
+		Note:          "", // Bio/summary would come from Actor
+		URL:           fmt.Sprintf("https://%s/@%s", h.cfg.BaseURL(), storageStatus.AuthorUsername),
+		Avatar:        "", // Avatar would come from Actor.Icon
+		AvatarStatic:  "", // Avatar would come from Actor.Icon
+		Header:        "", // Header would come from Actor.Image
+		HeaderStatic:  "", // Header would come from Actor.Image
+		FollowersCount: 0,
+		FollowingCount: 0,
+		StatusesCount:  0,
+	}
+	
+	// Populate fields from Actor if available
+	if authorAccount.Actor != nil {
+		account.Note = authorAccount.Actor.Summary
+		if authorAccount.Actor.Icon != nil {
+			account.Avatar = authorAccount.Actor.Icon.URL
+			account.AvatarStatic = authorAccount.Actor.Icon.URL
+		}
+		if authorAccount.Actor.Image != nil {
+			account.Header = authorAccount.Actor.Image.URL
+			account.HeaderStatic = authorAccount.Actor.Image.URL
+		}
+	}
+
+	// Get follower/following counts - these would come from a separate query in real implementation
+	// For now, we'll use default values
+	account.FollowersCount = 0
+	account.FollowingCount = 0
+	account.StatusesCount = 0
+
+	// Handle reblog if this is a reblog
+	var reblogStatus *models.Status
+	if storageStatus.ReblogOfID != "" {
+		if rebloggedStatus, err := h.repos.Status().GetStatus(ctx, storageStatus.ReblogOfID); err == nil {
+			// Recursively convert the reblogged status
+			reblogStatus, _ = h.convertStorageStatusToAPI(rebloggedStatus, currentUsername)
+		}
+	}
+
+	// Build the final API status
+	apiStatus := &models.Status{
+		ID:                 storageStatus.StatusID,
+		Content:            storageStatus.Content,
+		Sensitive:          storageStatus.Sensitive,
+		SpoilerText:        "", // Note: SpoilerText is not in the storage model, would come from Note
+		Language:           storageStatus.Language,
+		Visibility:         storageStatus.Visibility,
+		CreatedAt:          storageStatus.PublishedAt.Format("2006-01-02T15:04:05.000Z"),
+		InReplyToID:        inReplyToID,
+		InReplyToAccountID: inReplyToAccountID,
+		Account:            account,
+		MediaAttachments:   mediaAttachments,
+		Mentions:           mentions,
+		Tags:               tags,
+		Emojis:             []any{}, // Custom emojis would go here
+		ReblogsCount:       int(reblogCount),
+		FavouritesCount:    int(likeCount),
+		RepliesCount:       replyCount,
+		Reblogged:          reblogged,
+		Favourited:         favourited,
+		Bookmarked:         bookmarked,
+		Muted:              muted,
+		Pinned:             pinned,
+		Reblog:             reblogStatus,
+		URI:                fmt.Sprintf("https://%s/users/%s/statuses/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
+		URL:                fmt.Sprintf("https://%s/@%s/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
+	}
+
+	// Poll support would go here when implemented
+	// For now, polls are not supported in the storage model
+
+	return apiStatus, nil
+}
+
+// createOAuthService creates an OAuth service with proper audit logger setup
+func createOAuthService(jwtSecret string, repos core.RepositoryStorage, logger *zap.Logger) *auth.OAuthService {
+	// Create audit logger with default configuration
+	auditLogger := auth.NewAuditLogger(repos, logger, auth.DefaultAuditConfig())
+	return auth.NewOAuthService(jwtSecret, repos, auditLogger)
 }

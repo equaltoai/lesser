@@ -64,6 +64,7 @@ func (m *mockStorage) Import() *repositories.ImportRepository                  {
 func (m *mockStorage) DLQ() *repositories.DLQRepository                        { return nil }
 func (m *mockStorage) MetricRecord() *repositories.MetricRecordRepository      { return nil }
 func (m *mockStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
+func (m *mockStorage) Audit() *repositories.AuditRepository                    { return nil }
 func (m *mockStorage) GetDB() dynamormCore.DB                               { return nil }
 func (m *mockStorage) GetTableName() string                                    { return "test-table" }
 func (m *mockStorage) GetLogger() *zap.Logger                                  { return zap.NewNop() }

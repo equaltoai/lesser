@@ -92,7 +92,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -210,7 +210,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -309,7 +309,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -392,7 +392,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -465,7 +465,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -557,345 +557,15 @@ func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) i
 	return count
 }
 
-// HandleDebugFeatureToggleLift - placeholder for feature toggle debugging
-func (h *Handler) HandleDebugFeatureToggleLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug feature toggle request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
+// Note: HandleDebugFeatureToggleLift removed - was an unused placeholder
 
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
+// Note: HandleDebugConfigLift removed - was an unused placeholder
 
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
+// Note: HandleDebugStorageLift removed - was an unused placeholder
 
-	response := map[string]any{
-		"feature_toggles": map[string]any{
-			"federation_enabled":     true,
-			"ai_analysis_enabled":    true,
-			"media_upload_enabled":   true,
-			"realtime_notifications": true,
-		},
-		"debug_mode": true,
-		"timestamp":  time.Now().UTC().Format(time.RFC3339),
-	}
+// Note: HandleDebugCacheLift removed - was an unused placeholder
 
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
+// Note: HandleDebugQueueLift removed - was an unused placeholder
 
-// HandleDebugConfigLift - placeholder for configuration debugging
-func (h *Handler) HandleDebugConfigLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug config request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	response := map[string]any{
-		"config": map[string]any{
-			"base_url":    h.cfg.BaseURL(),
-			"region":      h.cfg.Region,
-			"environment": "production",
-			"version":     "2.0.0",
-		},
-		"sensitive_config": map[string]string{
-			"jwt_secret":     "[REDACTED]",
-			"database_table": h.cfg.DynamoTableName,
-		},
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
-
-// HandleDebugStorageLift - placeholder for storage debugging
-func (h *Handler) HandleDebugStorageLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug storage request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	// Get storage usage
-	storageUsage, _ := h.repos.Instance().GetStorageUsage(ctx.Context)
-	activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30)
-
-	response := map[string]any{
-		"storage": map[string]any{
-			"table_name":     h.cfg.DynamoTableName,
-			"usage_gb":       storageUsage,
-			"active_users":   activeUsers,
-			"estimated_cost": "$0.01",
-		},
-		"health_check": map[string]bool{
-			"dynamodb_accessible": true,
-			"s3_accessible":       true,
-		},
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
-
-// HandleDebugCacheLift - placeholder for cache debugging
-func (h *Handler) HandleDebugCacheLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug cache request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	response := map[string]any{
-		"cache": map[string]any{
-			"type":         "in-memory",
-			"hit_rate":     "85%",
-			"total_keys":   1500,
-			"memory_usage": "45MB",
-		},
-		"performance": map[string]any{
-			"avg_lookup_time_ms": 2.5,
-			"cache_enabled":      true,
-		},
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
-
-// HandleDebugQueueLift - placeholder for queue debugging
-func (h *Handler) HandleDebugQueueLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug queue request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	response := map[string]any{
-		"queues": map[string]any{
-			"federation_queue": map[string]any{
-				"pending_messages": 25,
-				"processing_rate":  "10/min",
-				"error_rate":       "0.5%",
-			},
-			"notification_queue": map[string]any{
-				"pending_messages": 150,
-				"processing_rate":  "50/min",
-				"error_rate":       "0.1%",
-			},
-		},
-		"health":    "healthy",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
-
-// HandleDebugMetricsLift - placeholder for metrics debugging
-func (h *Handler) HandleDebugMetricsLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug metrics request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	activeUsers, _ := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30)
-
-	response := map[string]any{
-		"metrics": map[string]any{
-			"active_users":       activeUsers,
-			"requests_per_min":   125.5,
-			"avg_response_time":  "95ms",
-			"error_rate":         "0.2%",
-			"federation_success": "99.1%",
-		},
-		"system": map[string]any{
-			"memory_usage": "512MB",
-			"cpu_usage":    "15%",
-			"uptime":       "7d 12h 45m",
-		},
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
-
-// HandleDebugHealthLift - placeholder for health debugging
-func (h *Handler) HandleDebugHealthLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("debug health request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
-	}
-
-	response := map[string]any{
-		"status": "healthy",
-		"checks": map[string]any{
-			"database": map[string]any{
-				"status":        "healthy",
-				"response_time": "15ms",
-			},
-			"storage": map[string]any{
-				"status":        "healthy",
-				"response_time": "25ms",
-			},
-			"federation": map[string]any{
-				"status":       "healthy",
-				"success_rate": "99.2%",
-			},
-		},
-		"version":   "2.0.0",
-		"timestamp": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(response)
-}
+// Note: HandleDebugMetricsLift removed - was an unused placeholder
+// Note: HandleDebugHealthLift removed - was an unused placeholder

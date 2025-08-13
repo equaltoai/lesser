@@ -844,7 +844,7 @@ func TestNewService(t *testing.T) {
 	service := NewService(listRepo, noteRepo, publisher, logger)
 	assert.NotNil(t, service)
 	assert.Equal(t, listRepo, service.listRepo)
-	assert.Equal(t, noteRepo, service.noteRepo)
+	assert.Equal(t, noteRepo, service.statusRepo)
 	assert.Equal(t, publisher, service.publisher)
 	assert.Equal(t, logger, service.logger)
 

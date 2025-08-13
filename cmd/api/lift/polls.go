@@ -3,7 +3,6 @@ package lift
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -11,8 +10,8 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
-	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -40,20 +39,20 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	var userID string
 	if testUsername != "" {
 		// Test mode - use test username
-		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
-		if err == nil {
-			userID = actor.ID
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
+		if err == nil && account.Actor != nil {
+			userID = account.Actor.ID
 		}
 	} else if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Get the user's actor to get their ID
-				actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
-				if err == nil {
-					userID = actor.ID
+				account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+				if err == nil && account.Actor != nil {
+					userID = account.Actor.ID
 				}
 			}
 		}
@@ -201,14 +200,14 @@ func (h *Handler) getPollTestUsername(ctx *lift.Context) string {
 
 // authenticateTestPollVoter handles test mode authentication
 func (h *Handler) authenticateTestPollVoter(ctx *lift.Context, testUsername string) (*auth.Claims, *storage.ActorRecord, error) {
-	actorData, err := h.repos.Actor().GetActorByUsername(ctx.Context, testUsername)
-	if err != nil {
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
+	if err != nil || account.Actor == nil {
 		h.logger.Error("failed to get test actor", zap.Error(err))
 		ctx.Status(http.StatusUnauthorized)
 		return nil, nil, ctx.JSON(map[string]any{"error": "unauthorized"})
 	}
 
-	actor := h.convertToActorRecord(actorData)
+	actor := h.convertToActorRecord(account.Actor)
 	claims := &auth.Claims{
 		Username: testUsername,
 		Scopes:   auth.DefaultScopes(),
@@ -230,7 +229,7 @@ func (h *Handler) authenticateRealPollVoter(ctx *lift.Context) (*auth.Claims, *s
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
@@ -238,14 +237,14 @@ func (h *Handler) authenticateRealPollVoter(ctx *lift.Context) (*auth.Claims, *s
 	}
 
 	// Get actor
-	actorData, err := h.repos.Actor().GetActorByUsername(ctx.Context, claims.Username)
-	if err != nil {
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	if err != nil || account.Actor == nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return nil, nil, ctx.JSON(map[string]any{"error": "internal server error"})
 	}
 
-	actor := h.convertToActorRecord(actorData)
+	actor := h.convertToActorRecord(account.Actor)
 	return claims, actor, nil
 }
 
@@ -397,19 +396,22 @@ func (h *Handler) createPollVoteNotification(ctx *lift.Context, pollID, voterID 
 		return // Don't notify self
 	}
 
-	notification := &storagemodels.Notification{
-		ID:       fmt.Sprintf("%d-%s", time.Now().Unix(), generateRandomStringLift()),
-		Type:     "poll",
-		UserID:   extractUsernameFromActorIDLift(poll.CreatedBy),
-		ActorID:  voterID,
-		TargetID: poll.StatusID,
-	}
+	// Use the Notifications service to create the notification
+	notificationService := h.registry.Notifications()
+	if notificationService != nil {
+		cmd := &notifications.CreateNotificationCommand{
+			Type:     "poll",
+			UserID:   extractUsernameFromActorIDLift(poll.CreatedBy),
+			ActorID:  voterID,
+			TargetID: poll.StatusID,
+		}
 
-	if err := h.repos.Notification().CreateNotification(ctx.Context, notification); err != nil {
-		h.logger.Warn("failed to create poll notification",
-			zap.String("poll_id", pollID),
-			zap.Error(err))
-		// Don't fail the vote operation
+		if _, err := notificationService.CreateNotification(ctx.Context, cmd); err != nil {
+			h.logger.Warn("failed to create poll notification",
+				zap.String("poll_id", pollID),
+				zap.Error(err))
+			// Don't fail the vote operation
+		}
 	}
 }
 
