@@ -36,7 +36,7 @@ type Service struct {
 	domain           string
 
 	// Track ongoing operations
-	operations sync.Map // map[string]*BulkOperation
+	operations sync.Map // map[string]*Operation
 }
 
 // FederationService defines the interface for federation operations
@@ -75,8 +75,8 @@ func NewService(
 
 // Commands and Queries (following CQRS pattern)
 
-// BulkFollowCommand contains data for bulk follow operations
-type BulkFollowCommand struct {
+// FollowCommand contains data for bulk follow operations
+type FollowCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
 	Reblogs    bool     `json:"reblogs"`
@@ -84,48 +84,48 @@ type BulkFollowCommand struct {
 	Languages  []string `json:"languages"`
 }
 
-// BulkUnfollowCommand contains data for bulk unfollow operations
-type BulkUnfollowCommand struct {
+// UnfollowCommand contains data for bulk unfollow operations
+type UnfollowCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
 }
 
-// BulkMuteCommand contains data for bulk mute operations
-type BulkMuteCommand struct {
-	Username     string        `json:"username" validate:"required"`
-	AccountIDs   []string      `json:"account_ids" validate:"required,min=1,max=100"`
-	Notifications bool         `json:"notifications"`
-	Duration     *time.Duration `json:"duration"`
+// MuteCommand contains data for bulk mute operations
+type MuteCommand struct {
+	Username      string         `json:"username" validate:"required"`
+	AccountIDs    []string       `json:"account_ids" validate:"required,min=1,max=100"`
+	Notifications bool           `json:"notifications"`
+	Duration      *time.Duration `json:"duration"`
 }
 
-// BulkUnmuteCommand contains data for bulk unmute operations
-type BulkUnmuteCommand struct {
+// UnmuteCommand contains data for bulk unmute operations
+type UnmuteCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
 }
 
-// BulkBlockCommand contains data for bulk block operations
-type BulkBlockCommand struct {
+// BlockCommand contains data for bulk block operations
+type BlockCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
 }
 
-// BulkUnblockCommand contains data for bulk unblock operations
-type BulkUnblockCommand struct {
+// UnblockCommand contains data for bulk unblock operations
+type UnblockCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
 }
 
-// BulkDeleteStatusesCommand contains data for bulk status deletion
-type BulkDeleteStatusesCommand struct {
-	Username  string     `json:"username" validate:"required"`
-	StatusIDs []string   `json:"status_ids" validate:"required,min=1,max=100"`
-	DateRange *DateRange `json:"date_range"`
-	KeepPinned bool      `json:"keep_pinned"`
+// DeleteStatusesCommand contains data for bulk status deletion
+type DeleteStatusesCommand struct {
+	Username   string     `json:"username" validate:"required"`
+	StatusIDs  []string   `json:"status_ids" validate:"required,min=1,max=100"`
+	DateRange  *DateRange `json:"date_range"`
+	KeepPinned bool       `json:"keep_pinned"`
 }
 
-// BulkListMembersCommand contains data for bulk list member operations
-type BulkListMembersCommand struct {
+// ListMembersCommand contains data for bulk list member operations
+type ListMembersCommand struct {
 	Username   string   `json:"username" validate:"required"`
 	ListID     string   `json:"list_id" validate:"required"`
 	AccountIDs []string `json:"account_ids" validate:"required,min=1,max=100"`
@@ -146,8 +146,8 @@ type DateRange struct {
 
 // Result types
 
-// BulkOperation tracks the progress of a bulk operation
-type BulkOperation struct {
+// Operation tracks the progress of a bulk operation
+type Operation struct {
 	ID          string            `json:"id"`
 	Type        string            `json:"type"`
 	Username    string            `json:"username"`
@@ -162,16 +162,16 @@ type BulkOperation struct {
 	Events      []streaming.Event `json:"-"`
 }
 
-// BulkOperationResult contains the result of a bulk operation
-type BulkOperationResult struct {
-	Operation *BulkOperation    `json:"operation"`
+// OperationResult contains the result of a bulk operation
+type OperationResult struct {
+	Operation *Operation    `json:"operation"`
 	Events    []streaming.Event `json:"-"`
 }
 
 // BulkFollow performs bulk follow operations
-func (s *Service) BulkFollow(ctx context.Context, cmd *BulkFollowCommand) (*BulkOperationResult, error) {
+func (s *Service) BulkFollow(ctx context.Context, cmd *FollowCommand) (*OperationResult, error) {
 	// Create operation tracking
-	operation := &BulkOperation{
+	operation := &Operation{
 		ID:        uuid.New().String(),
 		Type:      "bulk_follow",
 		Username:  cmd.Username,
@@ -196,25 +196,25 @@ func (s *Service) BulkFollow(ctx context.Context, cmd *BulkFollowCommand) (*Bulk
 		operation.Events = append(operation.Events, event)
 	}
 
-	return &BulkOperationResult{
+	return &OperationResult{
 		Operation: operation,
 		Events:    operation.Events,
 	}, nil
 }
 
 // processBulkFollow processes bulk follow operations asynchronously
-func (s *Service) processBulkFollow(ctx context.Context, operation *BulkOperation, cmd *BulkFollowCommand) {
+func (s *Service) processBulkFollow(ctx context.Context, operation *Operation, cmd *FollowCommand) {
 	defer func() {
 		now := time.Now()
 		operation.CompletedAt = &now
 		operation.Status = "completed"
-		
+
 		// Emit completion event
 		if s.publisher != nil {
 			event := s.createOperationEvent("bulk_operation.completed", operation)
 			_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		}
-		
+
 		// Clean up after 1 hour
 		time.AfterFunc(time.Hour, func() {
 			s.operations.Delete(operation.ID)
@@ -226,9 +226,9 @@ func (s *Service) processBulkFollow(ctx context.Context, operation *BulkOperatio
 		// Create follow relationship using relationship repository
 		activityID := fmt.Sprintf("https://%s/users/%s/follows/%s", s.domain, cmd.Username, accountID)
 		err := s.relationshipRepo.CreateRelationship(ctx, cmd.Username, accountID, activityID)
-		
+
 		operation.Processed++
-		
+
 		if err != nil {
 			operation.Failed++
 			operation.Errors = append(operation.Errors, fmt.Sprintf("Failed to follow %s: %v", accountID, err))
@@ -238,14 +238,14 @@ func (s *Service) processBulkFollow(ctx context.Context, operation *BulkOperatio
 				zap.Error(err))
 		} else {
 			operation.Succeeded++
-			
+
 			// Queue federation activity
 			if s.federation != nil {
 				activity := s.createFollowActivity(cmd.Username, accountID)
 				_ = s.federation.QueueActivity(ctx, activity)
 			}
 		}
-		
+
 		// Emit progress event every 10 items or at completion
 		if operation.Processed%10 == 0 || operation.Processed == operation.Total {
 			if s.publisher != nil {
@@ -253,7 +253,7 @@ func (s *Service) processBulkFollow(ctx context.Context, operation *BulkOperatio
 				_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 			}
 		}
-		
+
 		// Small delay to avoid overwhelming the system
 		if operation.Processed < operation.Total {
 			time.Sleep(100 * time.Millisecond)
@@ -262,9 +262,9 @@ func (s *Service) processBulkFollow(ctx context.Context, operation *BulkOperatio
 }
 
 // BulkDeleteStatuses performs bulk status deletion
-func (s *Service) BulkDeleteStatuses(ctx context.Context, cmd *BulkDeleteStatusesCommand) (*BulkOperationResult, error) {
+func (s *Service) BulkDeleteStatuses(ctx context.Context, cmd *DeleteStatusesCommand) (*OperationResult, error) {
 	// Create operation tracking
-	operation := &BulkOperation{
+	operation := &Operation{
 		ID:        uuid.New().String(),
 		Type:      "bulk_delete_statuses",
 		Username:  cmd.Username,
@@ -289,25 +289,25 @@ func (s *Service) BulkDeleteStatuses(ctx context.Context, cmd *BulkDeleteStatuse
 		operation.Events = append(operation.Events, event)
 	}
 
-	return &BulkOperationResult{
+	return &OperationResult{
 		Operation: operation,
 		Events:    operation.Events,
 	}, nil
 }
 
 // processBulkDeleteStatuses processes bulk status deletion asynchronously
-func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *BulkOperation, cmd *BulkDeleteStatusesCommand) {
+func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Operation, cmd *DeleteStatusesCommand) {
 	defer func() {
 		now := time.Now()
 		operation.CompletedAt = &now
 		operation.Status = "completed"
-		
+
 		// Emit completion event
 		if s.publisher != nil {
 			event := s.createOperationEvent("bulk_operation.completed", operation)
 			_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		}
-		
+
 		// Clean up after 1 hour
 		time.AfterFunc(time.Hour, func() {
 			s.operations.Delete(operation.ID)
@@ -339,13 +339,13 @@ func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Bulk
 		// Delete the status
 		err = s.statusRepo.DeleteStatus(ctx, statusID)
 		operation.Processed++
-		
+
 		if err != nil {
 			operation.Failed++
 			operation.Errors = append(operation.Errors, fmt.Sprintf("Failed to delete %s: %v", statusID, err))
 		} else {
 			operation.Succeeded++
-			
+
 			// Emit deletion event for timeline updates
 			if s.publisher != nil {
 				event := streaming.Event{
@@ -356,14 +356,14 @@ func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Bulk
 				}
 				_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 			}
-			
+
 			// Queue federation deletion
 			if s.federation != nil {
 				activity := s.createDeleteActivity(cmd.Username, statusID)
 				_ = s.federation.QueueActivity(ctx, activity)
 			}
 		}
-		
+
 		// Emit progress event every 10 items
 		if operation.Processed%10 == 0 || operation.Processed == operation.Total {
 			if s.publisher != nil {
@@ -371,7 +371,7 @@ func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Bulk
 				_ = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 			}
 		}
-		
+
 		// Small delay to avoid overwhelming the system
 		if operation.Processed < operation.Total {
 			time.Sleep(100 * time.Millisecond)
@@ -380,13 +380,13 @@ func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Bulk
 }
 
 // GetOperation retrieves the status of a bulk operation
-func (s *Service) GetOperation(ctx context.Context, query *GetOperationQuery) (*BulkOperationResult, error) {
+func (s *Service) GetOperation(_ context.Context, query *GetOperationQuery) (*OperationResult, error) {
 	value, ok := s.operations.Load(query.OperationID)
 	if !ok {
 		return nil, fmt.Errorf("operation not found")
 	}
 
-	operation, ok := value.(*BulkOperation)
+	operation, ok := value.(*Operation)
 	if !ok {
 		return nil, fmt.Errorf("invalid operation data")
 	}
@@ -396,25 +396,25 @@ func (s *Service) GetOperation(ctx context.Context, query *GetOperationQuery) (*
 		return nil, fmt.Errorf("unauthorized")
 	}
 
-	return &BulkOperationResult{
+	return &OperationResult{
 		Operation: operation,
 	}, nil
 }
 
 // Helper methods
 
-func (s *Service) createOperationEvent(eventType string, operation *BulkOperation) streaming.Event {
+func (s *Service) createOperationEvent(eventType string, operation *Operation) streaming.Event {
 	return streaming.Event{
-		Type:      eventType,
-		Stream:    "user",
-		Payload:   map[string]interface{}{
+		Type:   eventType,
+		Stream: "user",
+		Payload: map[string]interface{}{
 			"operation": operation,
 		},
 		Timestamp: time.Now(),
 	}
 }
 
-func (s *Service) createProgressEvent(operation *BulkOperation) streaming.Event {
+func (s *Service) createProgressEvent(operation *Operation) streaming.Event {
 	percent := float64(operation.Processed) / float64(operation.Total) * 100
 	return streaming.Event{
 		Type:   "bulk_operation.progress",
@@ -435,7 +435,7 @@ func (s *Service) createProgressEvent(operation *BulkOperation) streaming.Event 
 func (s *Service) createFollowActivity(username, targetID string) *activitypub.Activity {
 	actorURL := fmt.Sprintf("https://%s/users/%s", s.domain, username)
 	targetURL := fmt.Sprintf("https://%s/users/%s", s.domain, targetID)
-	
+
 	return &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			ID:   fmt.Sprintf("%s/follows/%s", actorURL, targetID),
@@ -449,7 +449,7 @@ func (s *Service) createFollowActivity(username, targetID string) *activitypub.A
 func (s *Service) createDeleteActivity(username, statusID string) *activitypub.Activity {
 	actorURL := fmt.Sprintf("https://%s/users/%s", s.domain, username)
 	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domain, username, statusID)
-	
+
 	return &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
 			ID:   fmt.Sprintf("%s/delete/%s", actorURL, statusID),

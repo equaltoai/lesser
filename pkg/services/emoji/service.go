@@ -52,9 +52,9 @@ type GetEmojiQuery struct {
 // ListEmojisQuery contains parameters for listing emojis
 type ListEmojisQuery struct {
 	OnlyLocal       bool   `json:"only_local"`       // Only show local emojis
-	OnlyVisible     bool   `json:"only_visible"`      // Only show visible emojis
-	Category        string `json:"category"`          // Filter by category
-	IncludeDisabled bool   `json:"include_disabled"`  // Include disabled emojis
+	OnlyVisible     bool   `json:"only_visible"`     // Only show visible emojis
+	Category        string `json:"category"`         // Filter by category
+	IncludeDisabled bool   `json:"include_disabled"` // Include disabled emojis
 }
 
 // CreateEmojiCommand contains data needed to create a new emoji
@@ -80,21 +80,21 @@ type DeleteEmojiCommand struct {
 
 // CopyEmojiCommand contains data needed to copy a remote emoji
 type CopyEmojiCommand struct {
-	Shortcode   string `json:"shortcode" validate:"required"`
-	Domain      string `json:"domain" validate:"required"`
+	Shortcode    string `json:"shortcode" validate:"required"`
+	Domain       string `json:"domain" validate:"required"`
 	NewShortcode string `json:"new_shortcode"` // Optional, use original if not provided
 }
 
 // Result types
 
-// EmojiResult contains a single emoji
-type EmojiResult struct {
+// Result contains a single emoji
+type Result struct {
 	Emoji  *storage.CustomEmoji `json:"emoji"`
 	Events []*streaming.Event   `json:"events"`
 }
 
-// EmojiListResult contains multiple emojis
-type EmojiListResult struct {
+// ListResult contains multiple emojis
+type ListResult struct {
 	Emojis []*storage.CustomEmoji `json:"emojis"`
 	Total  int                    `json:"total"`
 	Events []*streaming.Event     `json:"events"`
@@ -117,7 +117,7 @@ func (s *Service) GetEmoji(ctx context.Context, query *GetEmojiQuery) (*storage.
 }
 
 // ListEmojis retrieves all custom emojis with optional filters
-func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*EmojiListResult, error) {
+func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*ListResult, error) {
 	s.logger.Info("listing emojis",
 		zap.Bool("only_local", query.OnlyLocal),
 		zap.Bool("only_visible", query.OnlyVisible),
@@ -132,7 +132,7 @@ func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*Emoj
 	// Apply filters
 	filtered := s.filterEmojis(emojis, query)
 
-	return &EmojiListResult{
+	return &ListResult{
 		Emojis: filtered,
 		Total:  len(filtered),
 		Events: nil,
@@ -140,7 +140,7 @@ func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*Emoj
 }
 
 // CreateEmoji creates a new custom emoji
-func (s *Service) CreateEmoji(ctx context.Context, cmd *CreateEmojiCommand) (*EmojiResult, error) {
+func (s *Service) CreateEmoji(ctx context.Context, cmd *CreateEmojiCommand) (*Result, error) {
 	s.logger.Info("creating emoji",
 		zap.String("shortcode", cmd.Shortcode),
 		zap.String("image_url", cmd.ImageURL))
@@ -175,14 +175,14 @@ func (s *Service) CreateEmoji(ctx context.Context, cmd *CreateEmojiCommand) (*Em
 	// Emit events for real-time updates
 	events := s.emitEmojiCreatedEvents(ctx, emoji)
 
-	return &EmojiResult{
+	return &Result{
 		Emoji:  emoji,
 		Events: events,
 	}, nil
 }
 
 // UpdateEmoji updates an existing custom emoji
-func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*EmojiResult, error) {
+func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Result, error) {
 	s.logger.Info("updating emoji",
 		zap.String("shortcode", cmd.Shortcode))
 
@@ -216,7 +216,7 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Em
 	}
 
 	if !updated {
-		return &EmojiResult{Emoji: emoji, Events: nil}, nil
+		return &Result{Emoji: emoji, Events: nil}, nil
 	}
 
 	emoji.UpdatedAt = time.Now()
@@ -229,7 +229,7 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Em
 	// Emit events for real-time updates
 	events := s.emitEmojiUpdatedEvents(ctx, emoji)
 
-	return &EmojiResult{
+	return &Result{
 		Emoji:  emoji,
 		Events: events,
 	}, nil
@@ -266,7 +266,7 @@ func (s *Service) DeleteEmoji(ctx context.Context, cmd *DeleteEmojiCommand) erro
 }
 
 // CopyRemoteEmoji copies a remote emoji to the local instance
-func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*EmojiResult, error) {
+func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*Result, error) {
 	s.logger.Info("copying remote emoji",
 		zap.String("shortcode", cmd.Shortcode),
 		zap.String("domain", cmd.Domain))
@@ -316,7 +316,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	// Emit events
 	events := s.emitEmojiCreatedEvents(ctx, localEmoji)
 
-	return &EmojiResult{
+	return &Result{
 		Emoji:  localEmoji,
 		Events: events,
 	}, nil
@@ -327,7 +327,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 // filterEmojis applies query filters to emoji list
 func (s *Service) filterEmojis(emojis []*storage.CustomEmoji, query *ListEmojisQuery) []*storage.CustomEmoji {
 	filtered := make([]*storage.CustomEmoji, 0, len(emojis))
-	
+
 	for _, emoji := range emojis {
 		// Filter by domain (local vs remote)
 		if query.OnlyLocal && emoji.Domain != "" {
@@ -363,8 +363,8 @@ func (s *Service) validateShortcode(shortcode string) error {
 
 	// Check for valid characters (alphanumeric and underscore)
 	for _, r := range shortcode {
-		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
-			(r >= '0' && r <= '9') || r == '_') {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '_' {
 			return fmt.Errorf("shortcode can only contain letters, numbers, and underscores")
 		}
 	}
@@ -383,7 +383,7 @@ func (s *Service) validateShortcode(shortcode string) error {
 
 // Event emission methods
 
-func (s *Service) emitEmojiCreatedEvents(ctx context.Context, emoji *storage.CustomEmoji) []*streaming.Event {
+func (s *Service) emitEmojiCreatedEvents(_ context.Context, emoji *storage.CustomEmoji) []*streaming.Event {
 	if s.publisher == nil {
 		return nil
 	}
@@ -409,7 +409,7 @@ func (s *Service) emitEmojiCreatedEvents(ctx context.Context, emoji *storage.Cus
 	return []*streaming.Event{event}
 }
 
-func (s *Service) emitEmojiUpdatedEvents(ctx context.Context, emoji *storage.CustomEmoji) []*streaming.Event {
+func (s *Service) emitEmojiUpdatedEvents(_ context.Context, emoji *storage.CustomEmoji) []*streaming.Event {
 	if s.publisher == nil {
 		return nil
 	}
@@ -434,7 +434,7 @@ func (s *Service) emitEmojiUpdatedEvents(ctx context.Context, emoji *storage.Cus
 	return []*streaming.Event{event}
 }
 
-func (s *Service) emitEmojiDeletedEvents(ctx context.Context, emoji *storage.CustomEmoji) {
+func (s *Service) emitEmojiDeletedEvents(_ context.Context, emoji *storage.CustomEmoji) {
 	if s.publisher == nil {
 		return
 	}

@@ -323,7 +323,6 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 		EventID:    req.EventID,
 		ReviewerID: actor.ID,
 		Action:     moderation.ActionType(req.Action),
-		Category:   moderation.Category(req.Category),
 		Severity:   moderation.Severity(req.Severity),
 		Confidence: req.Confidence,
 		Notes:      req.Notes,

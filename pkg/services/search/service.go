@@ -54,22 +54,22 @@ func NewService(
 
 // Query and Command types for CQRS pattern
 
-// SearchQuery contains parameters for searching content
-type SearchQuery struct {
-	Query          string `json:"query" validate:"required,min=1,max=500"`
-	AccountID      string `json:"account_id,omitempty"`
-	Type           string `json:"type,omitempty"` // accounts, hashtags, statuses
-	Resolve        bool   `json:"resolve"`         // Whether to resolve remote accounts
-	Following      bool   `json:"following"`       // Only from accounts the user follows
-	ExcludeUnreviewed bool `json:"exclude_unreviewed"`
-	Limit          int    `json:"limit"`
-	Offset         int    `json:"offset"`
+// Query contains parameters for searching content
+type Query struct {
+	Query             string `json:"query" validate:"required,min=1,max=500"`
+	AccountID         string `json:"account_id,omitempty"`
+	Type              string `json:"type,omitempty"` // accounts, hashtags, statuses
+	Resolve           bool   `json:"resolve"`        // Whether to resolve remote accounts
+	Following         bool   `json:"following"`      // Only from accounts the user follows
+	ExcludeUnreviewed bool   `json:"exclude_unreviewed"`
+	Limit             int    `json:"limit"`
+	Offset            int    `json:"offset"`
 }
 
 // DirectoryQuery contains parameters for browsing the profile directory
 type DirectoryQuery struct {
-	Local  bool   `json:"local"`  // Only local accounts
-	Order  string `json:"order"`  // active, new
+	Local  bool   `json:"local"` // Only local accounts
+	Order  string `json:"order"` // active, new
 	Limit  int    `json:"limit"`
 	Offset int    `json:"offset"`
 }
@@ -89,22 +89,22 @@ type RemoveSuggestionCommand struct {
 
 // Result types
 
-// SearchResult contains search results
-type SearchResult struct {
-	Accounts []AccountResult  `json:"accounts"`
-	Statuses []StatusResult   `json:"statuses"`
-	Hashtags []HashtagResult  `json:"hashtags"`
+// Result contains search results
+type Result struct {
+	Accounts []AccountResult    `json:"accounts"`
+	Statuses []StatusResult     `json:"statuses"`
+	Hashtags []HashtagResult    `json:"hashtags"`
 	Events   []*streaming.Event `json:"events"`
 }
 
 // AccountResult represents an account in search results
 type AccountResult struct {
-	Actor            *activitypub.Actor `json:"actor"`
-	FollowersCount   int                `json:"followers_count"`
-	FollowingCount   int                `json:"following_count"`
-	StatusesCount    int                `json:"statuses_count"`
-	IsLocal          bool               `json:"is_local"`
-	LastStatusAt     string             `json:"last_status_at,omitempty"`
+	Actor          *activitypub.Actor `json:"actor"`
+	FollowersCount int                `json:"followers_count"`
+	FollowingCount int                `json:"following_count"`
+	StatusesCount  int                `json:"statuses_count"`
+	IsLocal        bool               `json:"is_local"`
+	LastStatusAt   string             `json:"last_status_at,omitempty"`
 }
 
 // StatusResult represents a status in search results
@@ -117,10 +117,10 @@ type StatusResult struct {
 
 // HashtagResult represents a hashtag in search results
 type HashtagResult struct {
-	Name       string `json:"name"`
-	URL        string `json:"url"`
-	History    []HashtagHistory `json:"history"`
-	Following  bool   `json:"following"`
+	Name      string           `json:"name"`
+	URL       string           `json:"url"`
+	History   []HashtagHistory `json:"history"`
+	Following bool             `json:"following"`
 }
 
 // HashtagHistory represents hashtag usage statistics
@@ -149,13 +149,13 @@ type SuggestionItem struct {
 }
 
 // Search performs a search across accounts, statuses, and hashtags
-func (s *Service) Search(ctx context.Context, query *SearchQuery) (*SearchResult, error) {
+func (s *Service) Search(ctx context.Context, query *Query) (*Result, error) {
 	s.logger.Info("performing search",
 		zap.String("query", query.Query),
 		zap.String("type", query.Type),
 		zap.Bool("resolve", query.Resolve))
 
-	result := &SearchResult{
+	result := &Result{
 		Accounts: []AccountResult{},
 		Statuses: []StatusResult{},
 		Hashtags: []HashtagResult{},
@@ -271,16 +271,16 @@ func (s *Service) GetSuggestions(ctx context.Context, query *SuggestionsQuery) (
 	for _, actor := range actors {
 		isLocal := s.isLocal(actor.ID)
 		account := s.buildAccountResult(ctx, actor, isLocal)
-		
+
 		item := SuggestionItem{
 			Account: account,
 		}
-		
+
 		// Add source for v2 API
 		if query.Version == 2 {
 			item.Source = s.determineSuggestionSource(ctx, query.Username, actor)
 		}
-		
+
 		suggestions = append(suggestions, item)
 	}
 
@@ -310,7 +310,7 @@ func (s *Service) RemoveSuggestion(ctx context.Context, cmd *RemoveSuggestionCom
 // Helper methods
 
 // searchAccounts searches for accounts matching the query
-func (s *Service) searchAccounts(ctx context.Context, query *SearchQuery) ([]AccountResult, error) {
+func (s *Service) searchAccounts(ctx context.Context, query *Query) ([]AccountResult, error) {
 	actors, err := s.searchRepo.SearchAccounts(ctx, query.Query, query.Limit, query.Following, query.Offset)
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func (s *Service) searchAccounts(ctx context.Context, query *SearchQuery) ([]Acc
 }
 
 // searchStatuses searches for statuses matching the query
-func (s *Service) searchStatuses(ctx context.Context, query *SearchQuery) ([]StatusResult, error) {
+func (s *Service) searchStatuses(ctx context.Context, query *Query) ([]StatusResult, error) {
 	s.logger.Info("searching statuses",
 		zap.String("query", query.Query),
 		zap.Int("limit", query.Limit))
@@ -343,9 +343,9 @@ func (s *Service) searchStatuses(ctx context.Context, query *SearchQuery) ([]Sta
 	for _, searchResult := range searchResults {
 		// Get real engagement metrics from storage
 		var reblogsCount, likesCount, repliesCount int
-		
+
 		// Extract status ID from search result (assuming it has an ID field)
-		if statusID := getStatusIDFromSearchResult(searchResult); statusID != "" {
+		if statusID := getStatusIDFromResult(searchResult); statusID != "" {
 			// Get all status counts in a single call for efficiency
 			likes, reblogs, replies, err := s.statusRepo.GetStatusCounts(ctx, statusID)
 			if err == nil {
@@ -358,7 +358,7 @@ func (s *Service) searchStatuses(ctx context.Context, query *SearchQuery) ([]Sta
 		result := StatusResult{
 			Status:       searchResult,
 			ReblogsCount: reblogsCount,
-			LikesCount:   likesCount,  
+			LikesCount:   likesCount,
 			RepliesCount: repliesCount,
 		}
 
@@ -373,14 +373,14 @@ func (s *Service) searchStatuses(ctx context.Context, query *SearchQuery) ([]Sta
 }
 
 // searchHashtags searches for hashtags matching the query
-func (s *Service) searchHashtags(ctx context.Context, query *SearchQuery) ([]HashtagResult, error) {
+func (s *Service) searchHashtags(ctx context.Context, query *Query) ([]HashtagResult, error) {
 	s.logger.Info("searching hashtags",
 		zap.String("query", query.Query),
 		zap.Int("limit", query.Limit))
 
 	// Clean the query - remove # prefix if present
 	hashtagQuery := strings.TrimPrefix(query.Query, "#")
-	
+
 	// Search for hashtags that match the query
 	hashtags, err := s.searchRepo.SearchHashtags(ctx, hashtagQuery, query.Limit)
 	if err != nil {
@@ -456,13 +456,13 @@ func (s *Service) isLocal(actorID string) bool {
 }
 
 // sortAccounts sorts accounts based on the specified order
-func (s *Service) sortAccounts(accounts []AccountResult, order string) []AccountResult {
+func (s *Service) sortAccounts(accounts []AccountResult, _ string) []AccountResult {
 	// For now, return as-is - implement sorting when needed
 	return accounts
 }
 
 // determineSuggestionSource determines why an account was suggested
-func (s *Service) determineSuggestionSource(ctx context.Context, username string, actor *activitypub.Actor) string {
+func (s *Service) determineSuggestionSource(_ context.Context, _ string, _ *activitypub.Actor) string {
 	// Check various sources
 	// For now, return "global" - enhance with more logic as needed
 	return "global"
@@ -470,8 +470,8 @@ func (s *Service) determineSuggestionSource(ctx context.Context, username string
 
 // Helper methods
 
-// getStatusIDFromSearchResult extracts the status ID from a search result
-func getStatusIDFromSearchResult(result interface{}) string {
+// getStatusIDFromResult extracts the status ID from a search result
+func getStatusIDFromResult(result interface{}) string {
 	// Handle different types of search results
 	switch r := result.(type) {
 	case map[string]interface{}:
@@ -489,7 +489,7 @@ func getStatusIDFromSearchResult(result interface{}) string {
 
 // Event emission methods
 
-func (s *Service) emitSearchEvent(ctx context.Context, query *SearchQuery) {
+func (s *Service) emitSearchEvent(ctx context.Context, query *Query) {
 	if s.publisher == nil {
 		return
 	}
