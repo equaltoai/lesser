@@ -1,0 +1,303 @@
+# Deployment Patterns for Lesser
+# Version: 1.0.0
+# Purpose: Train AI systems on Lesser deployment procedures
+
+context:
+  description: "Lesser deployment patterns using AWS CDK and Lift framework"
+  prerequisites:
+    - aws_cli_configured: true
+    - cdk_version: ">=2.0.0"
+    - go_version: ">=1.24"
+    - architecture: "arm64 preferred for cost optimization"
+  
+  key_concepts:
+    - infrastructure_as_code: "AWS CDK with TypeScript/Go"
+    - serverless_first: "Lambda, DynamoDB, S3, CloudFront"
+    - lift_framework: "Abstraction layer for Lambda patterns"
+    - single_table_design: "DynamoDB with 8 GSIs"
+
+deployment_patterns:
+  
+  initial_setup:
+    pattern_name: "First Time Deployment"
+    when_to_use: "Setting up Lesser for the first time"
+    steps:
+      - action: "Clone repository"
+        command: "git clone https://github.com/equaltoai/lesser.git && cd lesser"
+        validation: "ls -la cmd/ pkg/ infra/"
+        
+      - action: "Build Lambda functions"
+        command: "make build-lambdas"
+        validation: "ls -la bin/ | grep -E '(api|graphql|inbox|outbox)'"
+        expected_output: "23 binary files in bin/ directory"
+        
+      - action: "Bootstrap CDK"
+        command: "cd infra/cdk && cdk bootstrap aws://ACCOUNT-ID/REGION"
+        validation: "aws cloudformation describe-stacks --stack-name CDKToolkit"
+        note: "Only needed once per account/region"
+        
+      - action: "Deploy development environment"
+        command: "cdk deploy --all"
+        validation: "aws cloudformation describe-stacks --stack-name LesserStack-development"
+        duration: "5-10 minutes"
+
+  environment_specific_deployment:
+    pattern_name: "Environment-Based Deployment"
+    environments:
+      development:
+        context_flags:
+          environment: "development"
+          memory_size: 512
+          log_level: "DEBUG"
+        command: "cdk deploy --all --context environment=development"
+        cost_estimate: "$5/month"
+        
+      staging:
+        context_flags:
+          environment: "staging"
+          memory_size: 1024
+          log_level: "INFO"
+          domain: "staging.domain.com"
+        command: |
+          cdk deploy --all \
+            --context environment=staging \
+            --context domain=staging.domain.com
+        cost_estimate: "$20-50/month"
+        
+      production:
+        context_flags:
+          environment: "production"
+          memory_size: 3008
+          log_level: "INFO"
+          domain: "domain.com"
+          certificate_arn: "required"
+          jwt_secret: "required"
+        command: |
+          cdk deploy --all \
+            --context environment=production \
+            --context domain=domain.com \
+            --context certificateArn=arn:aws:acm:region:account:certificate/id \
+            --context jwtSecret=secure-random-secret \
+            --require-approval broadening
+        cost_estimate: "$50-500/month based on usage"
+        pre_requisites:
+          - "ACM certificate validated in us-east-1"
+          - "Domain DNS configured"
+          - "JWT secret generated"
+
+  lambda_build_patterns:
+    pattern_name: "Building Lambda Functions"
+    
+    build_all:
+      command: "make build-lambdas"
+      description: "Build all 23 Lambda functions"
+      parallel: true
+      architecture: "GOOS=linux GOARCH=arm64"
+      
+    build_specific:
+      command: "cd cmd/api && GOOS=linux GOARCH=arm64 go build -o ../../bin/api"
+      description: "Build single Lambda function"
+      
+    build_with_tags:
+      command: "go build -tags lambda.norpc -o bin/function"
+      description: "Build with Lambda-specific tags"
+      
+    optimization_flags:
+      - "-ldflags='-s -w'": "Strip debug symbols"
+      - "-trimpath": "Remove file paths"
+      - "CGO_ENABLED=0": "Disable CGO for pure Go binary"
+
+  stack_management:
+    pattern_name: "CDK Stack Operations"
+    
+    list_stacks:
+      command: "cdk list"
+      expected_output: |
+        LesserStack-development
+        LesserMonitoringStack-development
+        LesserSecurityStack-development
+        
+    diff_changes:
+      command: "cdk diff --context environment=production"
+      description: "Preview changes before deployment"
+      when_to_use: "Before any production deployment"
+      
+    deploy_specific_stack:
+      command: "cdk deploy LesserStack-production"
+      description: "Deploy only specific stack"
+      
+    destroy_stack:
+      command: "cdk destroy --all --context environment=development"
+      warning: "Deletes all resources including data"
+      confirmation_required: true
+
+  certificate_management:
+    pattern_name: "SSL Certificate Setup"
+    
+    request_certificate:
+      aws_cli: |
+        aws acm request-certificate \
+          --domain-name domain.com \
+          --subject-alternative-names "*.domain.com" \
+          --validation-method DNS \
+          --region us-east-1
+      validation: "DNS records must be added to domain"
+      wait_time: "5-30 minutes for validation"
+      
+    get_certificate_arn:
+      command: |
+        aws acm list-certificates --region us-east-1 \
+          --query "CertificateSummaryList[?DomainName=='domain.com'].CertificateArn" \
+          --output text
+      use_in_deployment: "--context certificateArn=ARN_VALUE"
+
+  domain_configuration:
+    pattern_name: "Custom Domain Setup"
+    
+    cloudfront_distribution:
+      automatic: true
+      description: "CDK creates CloudFront distribution automatically"
+      
+    route53_setup:
+      manual_steps:
+        - "Get CloudFront distribution domain"
+        - "Create CNAME record pointing to CloudFront"
+        - "Wait for DNS propagation (5-15 minutes)"
+        
+    api_gateway_domain:
+      automatic: true
+      path_mapping: "/api/* -> API Gateway"
+
+rollback_procedures:
+  
+  lambda_rollback:
+    pattern_name: "Lambda Function Rollback"
+    steps:
+      - "Identify previous version in CloudFormation"
+      - "Update Lambda alias to point to previous version"
+      - "Or redeploy with previous code"
+    command: "cdk deploy --rollback"
+    
+  database_rollback:
+    pattern_name: "DynamoDB Rollback"
+    note: "Point-in-time recovery must be enabled"
+    steps:
+      - "Identify recovery timestamp"
+      - "Restore table to new name"
+      - "Swap table references"
+      
+  full_rollback:
+    pattern_name: "Complete Environment Rollback"
+    command: "aws cloudformation cancel-update-stack --stack-name LesserStack-production"
+    alternative: "Deploy previous git tag"
+
+validation_checks:
+  
+  post_deployment:
+    health_check:
+      endpoint: "https://domain.com/health"
+      expected_status: 200
+      expected_response: '{"status":"healthy"}'
+      
+    federation_check:
+      endpoint: "https://domain.com/.well-known/webfinger?resource=acct:admin@domain.com"
+      expected_status: 200
+      content_type: "application/jrd+json"
+      
+    api_check:
+      endpoint: "https://domain.com/api/v1/instance"
+      expected_status: 200
+      validates: "Mastodon API compatibility"
+      
+    graphql_check:
+      endpoint: "https://domain.com/graphql"
+      method: "POST"
+      body: '{"query":"{ instance { title version } }"}'
+      expected_fields: ["title", "version"]
+
+common_issues:
+  
+  build_failures:
+    symptom: "Lambda build fails"
+    causes:
+      - "Wrong Go version"
+      - "Missing dependencies"
+      - "Incorrect architecture"
+    solutions:
+      - "Ensure Go 1.24+"
+      - "Run 'go mod download'"
+      - "Set GOOS=linux GOARCH=arm64"
+      
+  deployment_failures:
+    symptom: "CDK deployment fails"
+    causes:
+      - "AWS credentials not configured"
+      - "CDK not bootstrapped"
+      - "IAM permissions insufficient"
+    solutions:
+      - "Run 'aws configure'"
+      - "Run 'cdk bootstrap'"
+      - "Check IAM policy has CDK permissions"
+      
+  certificate_issues:
+    symptom: "Certificate validation fails"
+    causes:
+      - "DNS records not added"
+      - "Wrong region (must be us-east-1)"
+      - "Domain not owned"
+    solutions:
+      - "Add CNAME records from ACM"
+      - "Request certificate in us-east-1"
+      - "Verify domain ownership"
+
+best_practices:
+  
+  deployment_strategy:
+    - use_environments: "Always deploy to dev/staging before production"
+    - automate_builds: "Use CI/CD for consistent builds"
+    - tag_releases: "Tag git commits for production deployments"
+    - monitor_costs: "Set up budget alerts before deployment"
+    
+  security:
+    - rotate_secrets: "Rotate JWT secret quarterly"
+    - enable_waf: "Enable AWS WAF for production"
+    - use_parameter_store: "Store secrets in AWS Parameter Store"
+    - enable_deletion_protection: "Protect production resources"
+    
+  performance:
+    - use_arm64: "20% better price/performance than x86"
+    - enable_provisioned_concurrency: "For consistent latency"
+    - optimize_memory: "Right-size Lambda memory allocations"
+    - enable_caching: "Use CloudFront for static content"
+
+automation_examples:
+  
+  github_actions:
+    description: "CI/CD pipeline for automated deployment"
+    workflow: |
+      name: Deploy Lesser
+      on:
+        push:
+          branches: [main]
+      jobs:
+        deploy:
+          runs-on: ubuntu-latest
+          steps:
+            - uses: actions/checkout@v3
+            - uses: actions/setup-go@v4
+              with:
+                go-version: '1.24'
+            - name: Build Lambdas
+              run: make build-lambdas
+            - name: Deploy CDK
+              run: |
+                cd infra/cdk
+                npm install
+                npx cdk deploy --all --require-approval never
+              env:
+                AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                
+  terraform_migration:
+    note: "For teams preferring Terraform"
+    approach: "Use 'cdk synth' to generate CloudFormation, then import"

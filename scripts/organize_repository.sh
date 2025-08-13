@@ -262,7 +262,7 @@ Welcome to the Lesser documentation! Lesser is a serverless ActivityPub implemen
 
 - **Deploy Now**: [Quick Start Guide](deployment/QUICK_START.md)
 - **API Docs**: [API Reference](api/API_REFERENCE.md)
-- **Get Help**: [GitHub Issues](https://github.com/yourusername/lesser/issues)
+- **Get Help**: [GitHub Issues](https://github.com/equaltoai/lesser/issues)
 
 ## 📊 Project Status
 

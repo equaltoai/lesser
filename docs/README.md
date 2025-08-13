@@ -1,101 +1,47 @@
 # Lesser Documentation
 
-Welcome to the Lesser documentation! Lesser is a **100% complete** serverless ActivityPub implementation that runs at 1/100th the cost of traditional solutions.
+## Quick Links
 
-## 🎉 Project Status: MVP Complete
+- [Deployment Guide](deployment.md) - Get Lesser running
+- [Configuration Reference](configuration.md) - All configuration options
+- [API Reference](api-reference.md) - REST, GraphQL, and WebSocket APIs
+- [Architecture Overview](architecture.md) - System design and components
+- [Federation Guide](federation.md) - ActivityPub implementation details
+- [Cost Optimization](cost-optimization.md) - Managing and reducing costs
+- [Troubleshooting](troubleshooting.md) - Common issues and solutions
 
-Lesser has achieved complete MVP status with full ActivityPub federation and Mastodon API compatibility. See our **[MVP Complete Summary](implementation/summaries/MVP_COMPLETE_SUMMARY.md)** for a comprehensive feature list.
+## What is Lesser?
 
-## 📖 Documentation Structure
+Lesser is a serverless ActivityPub implementation that provides Mastodon-compatible federated social media at a fraction of the traditional cost. Built on AWS Lambda and DynamoDB, it scales automatically and charges only for actual usage.
 
-For easy navigation, see our **[Complete Documentation Index](DOCUMENTATION_INDEX.md)**.
+## Key Concepts
 
-### Getting Started
-- **[MVP Complete Summary](implementation/summaries/MVP_COMPLETE_SUMMARY.md)** - Complete feature overview
-- [Quick Start Guide](deployment/QUICK_START.md) - Deploy Lesser in 15 minutes
-- [Instance Configuration Example](deployment/INSTANCE_CONFIG_EXAMPLE.md) - Configuration examples
-- [Migration Guide](deployment/MIGRATION_GUIDE.md) - Migrate from other platforms
+### Serverless Architecture
+Lesser runs entirely on AWS managed services, eliminating server management and reducing costs by up to 90% compared to traditional hosting.
 
-### Architecture
-- [Architecture Overview](architecture/OVERVIEW.md) - High-level system design
-- [System Design](architecture/SYSTEM_DESIGN.md) - Detailed architecture
-- [Storage Architecture](architecture/STORAGE_ARCHITECTURE.md) - DynamoDB design
-- [AI Integration](architecture/AI_INTEGRATION.md) - AI-powered features
-- [Moderation Design](architecture/MODERATION_DESIGN.md) - Reactive moderation mesh
-- [Search Design](architecture/SEARCH_DESIGN.md) - Multi-strategy search system
-- [Timeline Design](architecture/TIMELINE_DESIGN.md) - Timeline algorithms
-- [Reputation System](architecture/REPUTATION_SYSTEM.md) - Trust and reputation
+### ActivityPub Federation
+Full compatibility with the ActivityPub protocol allows Lesser instances to communicate with Mastodon, Pleroma, and other federated platforms.
 
-### API Reference
-- [API Reference](api/API_REFERENCE.md) - Complete API documentation
-- [API Quick Reference](api/QUICK_REFERENCE.md) - Common API endpoints
-- [Mastodon API Status](api/MASTODON_API_STATUS.md) - Full compatibility achieved
-- [GraphQL API](api/GRAPHQL_API.md) - GraphQL schema and queries
-- [Streaming API](api/STREAMING_API.md) - WebSocket events
-- [Server Implementation Plan](api/SERVER_IMPLEMENTATION_PLAN.md) - Implementation roadmap
+### Cost-Aware Design
+Every component is optimized for cost, with built-in tracking, budgets, and automatic optimization strategies.
 
-### Development
-- **[Developer Guidelines](development/DEVELOPER_GUIDELINES.md)** - Coding standards and setup
-- **[Testing Guide](development/TESTING.md)** - How to test Lesser
-- **[Test Guide](development/TEST_GUIDE.md)** - Quick testing reference
-- **[AI Orchestration Methodology](AI_ORCHESTRATION_METHODOLOGY.md)** - The revolutionary development approach
-- **[Contributing](../CONTRIBUTING.md)** - How to contribute
+### Multi-Tenant Support
+A single Lesser deployment can host multiple independent instances with complete data isolation.
 
-### Features
-- [Feature List](FEATURES.md) - Complete feature documentation
-- [Authentication](security/authentication/) - Modern auth system
-- [Moderation](implementation/features/MODERATION.md) - Advanced moderation
-- [Push Notifications](implementation/features/PUSH_NOTIFICATIONS.md) - Web Push support
-- [Trends](implementation/features/TRENDS.md) - Trending system
-- [Custom Emojis](implementation/features/CUSTOM_EMOJIS.md) - Emoji support
-- [Announcements](implementation/features/ANNOUNCEMENTS.md) - Instance announcements
+## Getting Help
 
-### Security
-- [API Security](security/API_SECURITY.md) - API security measures
-- [Infrastructure Security](security/INFRASTRUCTURE_SECURITY.md) - AWS security
-- [Content Signatures](security/CONTENT_SIGNATURES.md) - ActivityPub signatures
-- [Modern Authentication](security/authentication/) - WebAuthn, OAuth, Web3
+- **GitHub Issues**: Report bugs or request features
+- **Discussions**: Ask questions and share experiences
+- **CDK Documentation**: See `infra/cdk/README.md` for deployment details
 
-### Legal
-- [Legal Summary](legal/LEGAL_SUMMARY.md) - Legal considerations
-- [Privacy Policy](legal/PRIVACY_POLICY.md) - Privacy policy template
-- [Terms of Service](legal/TERMS_OF_SERVICE.md) - ToS template
-- [License](../LICENSE) - GNU AGPL v3
+## For Developers
 
-### Use Cases
-- [Community Organizations](use-cases/COMMUNITY_ORGANIZATIONS.md)
-- [Government Digital Services](use-cases/GOVERNMENT_DIGITAL_SERVICES.md)
-- [Research Platform](use-cases/RESEARCH_PLATFORM.md)
+- [Development Setup](development.md) - Local development environment
+- [Testing Guide](testing.md) - Running and writing tests
+- [Contributing](../CONTRIBUTING.md) - How to contribute
 
-## 🚀 Quick Links
+## For Operators
 
-- **Deploy Now**: [Quick Start Guide](deployment/QUICK_START.md)
-- **Feature Overview**: [MVP Complete Summary](MVP_COMPLETE_SUMMARY.md)
-- **API Docs**: [API Reference](api/API_REFERENCE.md)
-- **Architecture**: [System Overview](architecture/OVERVIEW.md)
-- **Get Help**: [GitHub Issues](https://github.com/yourusername/lesser/issues)
-
-## 📊 Implementation Highlights
-
-- ✅ **100% Mastodon API Compatible** - All endpoints implemented
-- ✅ **Complete ActivityPub Federation** - Full protocol support
-- ✅ **60/60 GraphQL Operations** - Modern API complete
-- ✅ **AI-Powered Search** - 13 search strategies including semantic
-- ✅ **Enterprise Features** - Cost tracking, trust system, moderation mesh
-- ✅ **Modern Auth** - WebAuthn, OAuth 2.0, Web3 wallets
-
-## 💰 Cost Revolution
-
-Run your own social media instance for $1-10/month:
-- Pay only for actual usage
-- No idle server costs
-- Automatic scaling
-- Detailed cost tracking per user/feature
-
-## 📚 Additional Resources
-
-### Implementation Details
-The [implementation](implementation/) directory contains detailed documentation for specific features.
-
-### Archive
-The [archive](archive/) directory contains historical development documentation, implementation phases, and architectural decisions made during the 5-day build sprint.
+- [Monitoring Guide](monitoring.md) - CloudWatch dashboards and alerts
+- [Security Guide](security.md) - Security best practices
+- [Backup & Recovery](backup-recovery.md) - Data protection strategies

@@ -757,7 +757,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	if len(cmd.MediaIDs) > 0 {
 		r.CostTracker.TrackS3Get(len(cmd.MediaIDs))
 	}
@@ -804,7 +806,9 @@ func (r *mutationResolver) DeleteObject(ctx context.Context, id string) (bool, e
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	return true, nil
 }
@@ -830,7 +834,9 @@ func (r *mutationResolver) LikeObject(ctx context.Context, id string) (*activity
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	// Return activity
 	now := time.Now()
@@ -866,7 +872,9 @@ func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, e
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	return true, nil
 }
@@ -892,7 +900,9 @@ func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activit
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	// Return activity
 	now := time.Now()
@@ -928,7 +938,9 @@ func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (bool, 
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	return true, nil
 }
@@ -956,7 +968,9 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	// Return activity
 	now := time.Now()
@@ -992,7 +1006,9 @@ func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (bool, 
 	}
 
 	// Track costs
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 
 	return true, nil
 }
@@ -1016,7 +1032,9 @@ func (r *mutationResolver) BookmarkObject(ctx context.Context, id string) (*mode
 		return nil, fmt.Errorf("failed to bookmark: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertStatusToObject(ctx, result.Status), nil
 }
 
@@ -1039,7 +1057,9 @@ func (r *mutationResolver) UnbookmarkObject(ctx context.Context, id string) (boo
 		return false, fmt.Errorf("failed to unbookmark: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1062,7 +1082,9 @@ func (r *mutationResolver) PinObject(ctx context.Context, id string) (*model.Obj
 		return nil, fmt.Errorf("failed to pin: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertStatusToObject(ctx, result.Status), nil
 }
 
@@ -1085,7 +1107,9 @@ func (r *mutationResolver) UnpinObject(ctx context.Context, id string) (bool, er
 		return false, fmt.Errorf("failed to unpin: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1109,7 +1133,9 @@ func (r *mutationResolver) BlockActor(ctx context.Context, id string) (*model.Re
 		return nil, fmt.Errorf("failed to block: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(2)
+	if err := r.CostTracker.TrackDynamoWrite(2); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1132,7 +1158,9 @@ func (r *mutationResolver) UnblockActor(ctx context.Context, id string) (bool, e
 		return false, fmt.Errorf("failed to unblock: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1163,7 +1191,9 @@ func (r *mutationResolver) MuteActor(ctx context.Context, id string, muteNotific
 		return nil, fmt.Errorf("failed to mute: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1186,7 +1216,9 @@ func (r *mutationResolver) UnmuteActor(ctx context.Context, id string) (bool, er
 		return false, fmt.Errorf("failed to unmute: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1225,7 +1257,9 @@ func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, in
 		return nil, fmt.Errorf("failed to update relationship: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1259,7 +1293,9 @@ func (r *mutationResolver) CreateList(ctx context.Context, input model.CreateLis
 		return nil, fmt.Errorf("failed to create list: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertListToGraphQL(ctx, result.List), nil
 }
 
@@ -1292,7 +1328,9 @@ func (r *mutationResolver) UpdateList(ctx context.Context, id string, input mode
 		return nil, fmt.Errorf("failed to update list: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertListToGraphQL(ctx, result.List), nil
 }
 
@@ -1315,7 +1353,9 @@ func (r *mutationResolver) DeleteList(ctx context.Context, id string) (bool, err
 		return false, fmt.Errorf("failed to delete list: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1426,7 +1466,9 @@ func (r *mutationResolver) MarkConversationAsRead(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to mark as read: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertConversationToGraphQL(ctx, result.Conversation), nil
 }
 
@@ -1449,7 +1491,9 @@ func (r *mutationResolver) DeleteConversation(ctx context.Context, id string) (b
 		return false, fmt.Errorf("failed to delete conversation: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1483,7 +1527,9 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 		return nil, fmt.Errorf("failed to update media: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertMediaToGraphQL(result.Media), nil
 }
 
@@ -1506,7 +1552,9 @@ func (r *mutationResolver) DismissNotification(ctx context.Context, id string) (
 		return false, fmt.Errorf("failed to dismiss notification: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1597,7 +1645,9 @@ func (r *mutationResolver) ScheduleStatus(ctx context.Context, input model.Sched
 		return nil, fmt.Errorf("failed to schedule status: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertScheduledStatusToGraphQL(ctx, result.ScheduledStatus), nil
 }
 
@@ -1630,7 +1680,9 @@ func (r *mutationResolver) UpdateScheduledStatus(ctx context.Context, id string,
 		return nil, fmt.Errorf("failed to update scheduled status: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertScheduledStatusToGraphQL(ctx, result.ScheduledStatus), nil
 }
 
@@ -1653,7 +1705,9 @@ func (r *mutationResolver) CancelScheduledStatus(ctx context.Context, id string)
 		return false, fmt.Errorf("failed to cancel scheduled status: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
@@ -1688,8 +1742,12 @@ func (r *mutationResolver) CreateEmoji(ctx context.Context, input model.CreateEm
 		return nil, fmt.Errorf("failed to create emoji: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
-	r.CostTracker.TrackS3Put(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
+	if err := r.CostTracker.TrackS3Put(1); err != nil {
+		r.Logger.Warn("Failed to track S3 put cost", zap.Error(err))
+	}
 	return r.convertEmojiToGraphQL(result.Emoji), nil
 }
 
@@ -1721,7 +1779,9 @@ func (r *mutationResolver) UpdateEmoji(ctx context.Context, shortcode string, in
 		return nil, fmt.Errorf("failed to update emoji: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return r.convertEmojiToGraphQL(result.Emoji), nil
 }
 
@@ -1743,7 +1803,9 @@ func (r *mutationResolver) DeleteEmoji(ctx context.Context, shortcode string) (b
 		return false, fmt.Errorf("failed to delete emoji: %w", err)
 	}
 
-	r.CostTracker.TrackDynamoWrite(1)
+	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
+		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
+	}
 	return true, nil
 }
 
