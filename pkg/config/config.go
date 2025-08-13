@@ -28,6 +28,13 @@ type Config struct {
 	JWTSecret            string // For client authentication
 	KMSKeyID             string // AWS KMS key ID for encryption (optional)
 	ReputationPrivateKey string // Private key for reputation system
+	
+	// Privacy Configuration
+	PrivacyMasterKey       string // Master key for privacy hashing (required for audit privacy)
+	EnablePrivacyHashing   bool   // Enable privacy-preserving hashing in audit logs
+	IPLevel         string // Privacy level for IP addresses: none, partial, full
+	EmailLevel      string // Privacy level for email addresses: none, partial, full
+	UsernameLevel   string // Privacy level for usernames: none, partial, full
 
 	// ActivityPub URLs
 	InboxURL     string // Inbox URL pattern
@@ -80,6 +87,13 @@ func loadConfig() *Config {
 		JWTSecret:            getEnvOrPanic("JWT_SECRET"),
 		KMSKeyID:             getEnvOrDefault("KMS_KEY_ID", ""), // Optional - defaults to AWS managed key
 		ReputationPrivateKey: getEnvOrDefault("REPUTATION_PRIVATE_KEY", ""),
+		
+		// Privacy configuration
+		PrivacyMasterKey:       getEnvOrDefault("PRIVACY_MASTER_KEY", ""),
+		EnablePrivacyHashing:   getEnvAsBoolOrDefault("ENABLE_PRIVACY_HASHING", false),
+		IPLevel:         getEnvOrDefault("IP_PRIVACY_LEVEL", "partial"),
+		EmailLevel:      getEnvOrDefault("EMAIL_PRIVACY_LEVEL", "partial"),
+		UsernameLevel:   getEnvOrDefault("USERNAME_PRIVACY_LEVEL", "full"),
 
 		MaxUploadSize:     getEnvAsInt64OrDefault("MAX_UPLOAD_SIZE", 10*1024*1024), // 10MB default
 		PageSize:          getEnvAsIntOrDefault("PAGE_SIZE", 20),

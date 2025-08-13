@@ -198,40 +198,78 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 		zap.String("user_agent", ctx.Header("User-Agent")),
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))))
 
-	// For GET requests, require authentication
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		return lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
-	}
-
-	// Extract and validate bearer token
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return lift.NewLiftError("UNAUTHORIZED", "invalid authorization header format", 401)
-	}
-
-	token := strings.TrimPrefix(authHeader, "Bearer ")
-
-	// Validate the token using auth middleware
-	// Note: This is a simplified approach - in production, you'd want to validate the JWT token
-	if len(token) < 10 {
-		return lift.NewLiftError("UNAUTHORIZED", "invalid token", 401)
-	}
-
-	// Verify the actor exists
-	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
+	// Authenticate and authorize the request
+	actor, err := ih.authenticateInboxRequest(ctx, username)
 	if err != nil {
-		if err.Error() == "actor not found" {
-			return lift.NewLiftError("NOT_FOUND", "actor not found", 404)
-		}
-		ih.logger.Error("failed to get actor", zap.Error(err))
-		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+		return err
 	}
 
 	// Parse pagination parameters
+	limit, cursor, page := ih.parsePaginationParams(ctx)
+
+	// Handle collection metadata request (no page parameter)
+	if page == "" && cursor == "" {
+		return ih.returnInboxCollection(ctx, actor, username)
+	}
+
+	// Get and process activities for the requested page
+	return ih.returnInboxPage(ctx, actor, username, limit, cursor)
+}
+
+// authenticateInboxRequest handles authentication and authorization for inbox GET requests
+func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username string) (*activitypub.Actor, error) {
+	// Validate authentication header
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
+	}
+
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return nil, lift.NewLiftError("UNAUTHORIZED", "invalid authorization header format", 401)
+	}
+
+	// Validate JWT token
+	claims, err := ih.authMiddleware.ValidateToken(authHeader)
+	if err != nil {
+		ih.logger.Warn("JWT validation failed", 
+			zap.Error(err),
+			zap.String("username", username),
+			zap.String("user_agent", ctx.Header("User-Agent")))
+		
+		if err == auth.ErrMissingAuthHeader || err == auth.ErrInvalidToken {
+			return nil, lift.NewLiftError("UNAUTHORIZED", "invalid or expired token", 401)
+		}
+		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication failed", 401)
+	}
+	
+	// Verify user authorization
+	if claims.Username != username {
+		ih.logger.Warn("user mismatch in inbox request",
+			zap.String("token_user", claims.Username),
+			zap.String("requested_user", username))
+		return nil, lift.NewLiftError("FORBIDDEN", "cannot access another user's inbox", 403)
+	}
+
+	// Get and validate actor
+	actor, err := ih.actorRepository.GetActorByUsername(ctx.Context, username)
+	if err != nil {
+		if err.Error() == "actor not found" {
+			return nil, lift.NewLiftError("NOT_FOUND", "actor not found", 404)
+		}
+		ih.logger.Error("failed to get actor", zap.Error(err))
+		return nil, lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
+	}
+
+	return actor, nil
+}
+
+// parsePaginationParams extracts and validates pagination parameters from the request
+func (ih *InboxHandler) parsePaginationParams(ctx *lift.Context) (int, string, string) {
 	limitStr := ctx.Query("limit")
 	if limitStr == "" {
 		limitStr = "20"
 	}
+	
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil || limit < 1 || limit > 100 {
 		limit = 20
@@ -240,32 +278,36 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	cursor := ctx.Query("cursor")
 	page := ctx.Query("page")
 
-	// If no page parameter, return the collection with metadata
-	if page == "" && cursor == "" {
-		// Get first page to calculate total items (this is a simplification)
-		activities, _, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, 1, "")
-		if err != nil {
-			ih.logger.Error("failed to get inbox count", zap.Error(err))
-			return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
-		}
+	return limit, cursor, page
+}
 
-		// Build the collection response
-		collection := &activitypub.OrderedCollection{
-			Collection: activitypub.Collection{
-				BaseObject: activitypub.BaseObject{
-					Context: activitypub.Context,
-					ID:      actor.Inbox,
-					Type:    activitypub.OrderedCollectionType,
-				},
-				TotalItems: len(activities), // This is approximate
-				First:      fmt.Sprintf("%s?page=true", actor.Inbox),
-			},
-		}
-
-		ctx.Response.Headers["Content-Type"] = "application/activity+json"
-		return ctx.JSON(collection)
+// returnInboxCollection returns the inbox collection metadata
+func (ih *InboxHandler) returnInboxCollection(ctx *lift.Context, actor *activitypub.Actor, username string) error {
+	// Get first page to calculate total items (simplified approach)
+	activities, _, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, 1, "")
+	if err != nil {
+		ih.logger.Error("failed to get inbox count", zap.Error(err))
+		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
 	}
 
+	collection := &activitypub.OrderedCollection{
+		Collection: activitypub.Collection{
+			BaseObject: activitypub.BaseObject{
+				Context: activitypub.Context,
+				ID:      actor.Inbox,
+				Type:    activitypub.OrderedCollectionType,
+			},
+			TotalItems: len(activities),
+			First:      fmt.Sprintf("%s?page=true", actor.Inbox),
+		},
+	}
+
+	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	return ctx.JSON(collection)
+}
+
+// returnInboxPage returns a paginated collection of inbox activities
+func (ih *InboxHandler) returnInboxPage(ctx *lift.Context, actor *activitypub.Actor, username string, limit int, cursor string) error {
 	// Get activities for the page
 	activities, nextCursor, err := ih.activityRepository.GetInboxActivities(ctx.Context, username, limit, cursor)
 	if err != nil {
@@ -273,32 +315,48 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 		return lift.NewLiftError("INTERNAL_ERROR", "internal server error", 500)
 	}
 
-	// Enrich activities with objects if they contain Create activities
-	for _, activity := range activities {
-		if activity.Type == activitypub.CreateType && activity.Object != nil {
-			// If Object is just an ID string, fetch the full object
-			if objID, ok := activity.Object.(string); ok {
-				obj, err := ih.objectRepository.GetObject(ctx.Context, objID)
-				if err != nil {
-					ih.logger.Warn("failed to fetch object for activity",
-						zap.String("activity_id", activity.ID),
-						zap.String("object_id", objID),
-						zap.Error(err))
-					// Continue without enrichment
-				} else {
-					activity.Object = obj
-				}
-			}
-		}
-	}
+	// Enrich activities with full object data
+	ih.enrichActivitiesWithObjects(ctx, activities)
 
+	// Build collection page
+	collectionPage := ih.buildCollectionPage(actor, activities, cursor, nextCursor, limit)
+
+	ctx.Response.Headers["Content-Type"] = "application/activity+json"
+	return ctx.JSON(collectionPage)
+}
+
+// enrichActivitiesWithObjects enriches Create activities with full object data
+func (ih *InboxHandler) enrichActivitiesWithObjects(ctx *lift.Context, activities []*activitypub.Activity) {
+	for _, activity := range activities {
+		if activity.Type != activitypub.CreateType || activity.Object == nil {
+			continue
+		}
+
+		objID, ok := activity.Object.(string)
+		if !ok {
+			continue
+		}
+
+		obj, err := ih.objectRepository.GetObject(ctx.Context, objID)
+		if err != nil {
+			ih.logger.Warn("failed to fetch object for activity",
+				zap.String("activity_id", activity.ID),
+				zap.String("object_id", objID),
+				zap.Error(err))
+			continue
+		}
+		activity.Object = obj
+	}
+}
+
+// buildCollectionPage constructs an ActivityPub OrderedCollectionPage
+func (ih *InboxHandler) buildCollectionPage(actor *activitypub.Actor, activities []*activitypub.Activity, cursor, nextCursor string, limit int) *activitypub.OrderedCollectionPage {
 	// Convert activities to ordered items
 	orderedItems := make([]any, len(activities))
 	for i, activity := range activities {
 		orderedItems[i] = activity
 	}
 
-	// Build the collection page response
 	collectionPage := &activitypub.OrderedCollectionPage{
 		CollectionPage: activitypub.CollectionPage{
 			Collection: activitypub.Collection{
@@ -313,18 +371,15 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 		},
 	}
 
-	// Add next link if there are more items
+	// Add pagination links
 	if nextCursor != "" {
 		collectionPage.Next = fmt.Sprintf("%s?page=true&cursor=%s&limit=%d", actor.Inbox, nextCursor, limit)
 	}
-
-	// Add prev link if we have a cursor (meaning this isn't the first page)
 	if cursor != "" {
 		collectionPage.Prev = fmt.Sprintf("%s?page=true&limit=%d", actor.Inbox, limit)
 	}
 
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
-	return ctx.JSON(collectionPage)
+	return collectionPage
 }
 
 // InboxRequest represents an incoming ActivityPub request

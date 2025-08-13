@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -25,19 +25,34 @@ type FederationDeliveryService interface {
 
 // RecoveryFederationService handles ActivityPub notifications for recovery
 type RecoveryFederationService struct {
-	repos      StorageProvider
-	fedService FederationDeliveryService
-	logger     *zap.Logger
-	domain     string
+	repos         StorageProvider
+	fedService    FederationDeliveryService
+	logger        *zap.Logger
+	domain        string
+	secretsManager SecretsManager
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
 func NewRecoveryFederationService(repos StorageProvider, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
+	// Initialize Secrets Manager for system actor keys
+	secretsManager, err := NewAWSSecretsManager(SecretsManagerConfig{
+		Region:      os.Getenv("AWS_REGION"),
+		KeyPrefix:   "lesser/system-actor-keys",
+		CacheTTL:    5 * time.Minute,
+		Description: "Lesser system actor private keys for recovery federation",
+	}, logger.Named("secrets-manager"))
+	if err != nil {
+		logger.Warn("failed to initialize AWS Secrets Manager, system actor keys will not be available",
+			zap.Error(err),
+			zap.String("fallback", "system actor creation will be disabled"))
+	}
+
 	return &RecoveryFederationService{
-		repos:      repos,
-		fedService: fedService,
-		domain:     domain,
-		logger:     logger,
+		repos:          repos,
+		fedService:     fedService,
+		domain:         domain,
+		logger:         logger,
+		secretsManager: secretsManager,
 	}
 }
 
@@ -334,51 +349,55 @@ func (s *RecoveryFederationService) getSystemPublicKey() string {
 		return systemActor.PublicKey.PublicKeyPem
 	}
 
-	// Generate a new key pair for the system actor
-	privateKey, err := federation.GenerateRSAKeyPair(2048)
-	if err != nil {
-		s.logger.Error("failed to generate system actor key pair", zap.Error(err))
-		// Return empty - federation will fail but recovery service won't crash
+	// Check if Secrets Manager is available
+	if s.secretsManager == nil {
+		s.logger.Warn("Secrets Manager not available, cannot generate system actor keys")
 		return ""
 	}
 
-	// Encode the public key to PEM
-	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
+	// Try to retrieve existing private key from Secrets Manager
+	systemKeyID := fmt.Sprintf("system-actor-%s", s.domain)
+	privateKeyPEM, err := s.secretsManager.RetrievePrivateKey(ctx, systemKeyID)
 	if err != nil {
-		s.logger.Error("failed to marshal public key", zap.Error(err))
+		// Generate a new key pair if none exists
+		s.logger.Info("generating new system actor key pair",
+			zap.String("key_id", systemKeyID),
+			zap.Error(err))
+
+		publicKeyPEM, newPrivateKeyPEM, err := s.secretsManager.GenerateAndStoreKeyPair(ctx, systemKeyID)
+		if err != nil {
+			s.logger.Error("failed to generate and store system actor key pair", zap.Error(err))
+			return ""
+		}
+
+		// Store the system actor with the new public key
+		if err := s.storeSystemActorKeys(publicKeyPEM, newPrivateKeyPEM); err != nil {
+			s.logger.Warn("failed to store system actor keys in database", zap.Error(err))
+		}
+
+		return publicKeyPEM
+	}
+
+	// Derive public key from private key
+	publicKeyPEM, err := s.derivePublicKeyFromPrivate(privateKeyPEM)
+	if err != nil {
+		s.logger.Error("failed to derive public key from private key", zap.Error(err))
 		return ""
 	}
 
-	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PUBLIC KEY",
-		Bytes: publicKeyBytes,
-	})
-
-	// Store the private key securely (in production, use AWS Secrets Manager or similar)
-	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
-	if err != nil {
-		s.logger.Error("failed to marshal private key", zap.Error(err))
-		return string(publicKeyPEM)
+	// Store the system actor with the existing keys (if not already stored)
+	if err := s.storeSystemActorKeys(publicKeyPEM, privateKeyPEM); err != nil {
+		s.logger.Debug("system actor already exists or failed to store", zap.Error(err))
 	}
 
-	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: privateKeyBytes,
-	})
-
-	// Store both keys for the system actor
-	if err := s.storeSystemActorKeys(string(publicKeyPEM), string(privateKeyPEM)); err != nil {
-		s.logger.Warn("failed to store system actor keys", zap.Error(err))
-	}
-
-	return string(publicKeyPEM)
+	return publicKeyPEM
 }
 
-// storeSystemActorKeys stores the system actor's key pair
-func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, privateKeyPEM string) error {
+// storeSystemActorKeys stores the system actor (without the private key in database)
+func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, _ string) error {
 	ctx := context.Background()
 
-	// Create or update the system actor with the key pair
+	// Create or update the system actor with only the public key
 	systemActor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
 			ID:   fmt.Sprintf("https://%s/actor/system", s.domain),
@@ -394,12 +413,94 @@ func (s *RecoveryFederationService) storeSystemActorKeys(publicKeyPEM, privateKe
 		},
 	}
 
-	// Store the actor with the private key
-	if err := s.repos.Actor().CreateActor(ctx, systemActor, privateKeyPEM); err != nil {
+	// Store the actor with empty private key (private key is in Secrets Manager)
+	if err := s.repos.Actor().CreateActor(ctx, systemActor, ""); err != nil {
 		// Try updating if it already exists
 		s.logger.Debug("system actor may already exist, continuing", zap.Error(err))
 	}
 
+	return nil
+}
+
+// derivePublicKeyFromPrivate derives a public key PEM from a private key PEM
+func (s *RecoveryFederationService) derivePublicKeyFromPrivate(privateKeyPEM string) (string, error) {
+	// Decode the private key PEM
+	block, _ := pem.Decode([]byte(privateKeyPEM))
+	if block == nil {
+		return "", fmt.Errorf("failed to decode private key PEM")
+	}
+
+	// Parse the private key
+	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		// Try PKCS1 format
+		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse private key: %w", err)
+		}
+	}
+
+	// Extract the public key
+	var publicKey interface{}
+	switch priv := privateKey.(type) {
+	case *rsa.PrivateKey:
+		publicKey = &priv.PublicKey
+	default:
+		return "", fmt.Errorf("unsupported private key type: %T", privateKey)
+	}
+
+	// Marshal the public key
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal public key: %w", err)
+	}
+
+	// Encode to PEM
+	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	})
+
+	return string(publicKeyPEM), nil
+}
+
+// GetSystemActorPrivateKey retrieves the system actor's private key from Secrets Manager
+func (s *RecoveryFederationService) GetSystemActorPrivateKey(ctx context.Context) (string, error) {
+	if s.secretsManager == nil {
+		return "", fmt.Errorf("secrets manager not available")
+	}
+
+	systemKeyID := fmt.Sprintf("system-actor-%s", s.domain)
+	privateKeyPEM, err := s.secretsManager.RetrievePrivateKey(ctx, systemKeyID)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve system actor private key: %w", err)
+	}
+
+	return privateKeyPEM, nil
+}
+
+// RotateSystemActorKey rotates the system actor's key pair
+func (s *RecoveryFederationService) RotateSystemActorKey(ctx context.Context) error {
+	if s.secretsManager == nil {
+		return fmt.Errorf("secrets manager not available")
+	}
+
+	systemKeyID := fmt.Sprintf("system-actor-%s", s.domain)
+	s.logger.Info("rotating system actor key", zap.String("key_id", systemKeyID))
+
+	// Generate new key pair
+	publicKeyPEM, privateKeyPEM, err := s.secretsManager.RotateKey(ctx, systemKeyID)
+	if err != nil {
+		return fmt.Errorf("failed to rotate system actor key: %w", err)
+	}
+
+	// Update the system actor with the new public key
+	if err := s.storeSystemActorKeys(publicKeyPEM, privateKeyPEM); err != nil {
+		s.logger.Warn("failed to update system actor with new public key", zap.Error(err))
+		// Don't fail the rotation - the new key is stored in Secrets Manager
+	}
+
+	s.logger.Info("system actor key rotation completed", zap.String("key_id", systemKeyID))
 	return nil
 }
 

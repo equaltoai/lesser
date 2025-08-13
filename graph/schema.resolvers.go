@@ -3401,8 +3401,180 @@ func (r *queryResolver) ExplainObject(_ context.Context, _ string) (*model.Objec
 }
 
 // FederationStatus is the resolver for the federationStatus field.
-func (r *queryResolver) FederationStatus(_ context.Context, _ string) (*model.FederationStatus, error) {
-	return nil, fmt.Errorf("federation status not yet implemented")
+func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*model.FederationStatus, error) {
+	// Get federation repository for metrics and analytics
+	federationRepo := r.Registry.GetStorage().Federation()
+	if federationRepo == nil {
+		return nil, fmt.Errorf("federation repository not available")
+	}
+
+	// Initialize the federation status response
+	status := &model.FederationStatus{
+		Domain:    domain,
+		Reachable: false,
+	}
+
+	// Get health score and recent metrics
+	healthScore := r.getDomainHealthScore(ctx, federationRepo, domain)
+	recentMetrics := r.getRecentFederationMetrics(ctx, federationRepo, domain)
+
+	// Determine reachability from recent metrics
+	r.determineReachabilityFromMetrics(status, recentMetrics)
+
+	// Get and apply instance information
+	instanceInfo := r.getInstanceInfo(ctx, federationRepo, domain)
+	r.applyInstanceInfoToStatus(status, instanceInfo)
+
+	// Handle case where no instance information is available
+	r.handleMissingInstanceInfo(status, instanceInfo, domain)
+
+	r.Logger.Debug("federation status resolved",
+		zap.String("domain", domain),
+		zap.Bool("reachable", status.Reachable),
+		zap.Float64("health_score", healthScore),
+		zap.Int("recent_metrics_count", len(recentMetrics)),
+		zap.Bool("has_instance_info", instanceInfo != nil))
+
+	return status, nil
+}
+
+// getDomainHealthScore retrieves the health score for a domain
+func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo interface{}, domain string) float64 {
+	repo := federationRepo.(interface {
+		GetDomainHealthScore(context.Context, string) (float64, error)
+	})
+	healthScore, err := repo.GetDomainHealthScore(ctx, domain)
+	if err != nil {
+		r.Logger.Debug("no health score found for domain", 
+			zap.String("domain", domain),
+			zap.Error(err))
+		return 0.0
+	}
+	return healthScore
+}
+
+// getRecentFederationMetrics retrieves recent federation metrics for a domain
+func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federationRepo interface{}, domain string) []*models.FederationAnalyticsTimeSeries {
+	repo := federationRepo.(interface {
+		GetDetailedMetricsByPeriod(context.Context, string, time.Time, time.Time, int) ([]*models.FederationAnalyticsTimeSeries, error)
+	})
+	endTime := time.Now()
+	startTime := endTime.Add(-30 * time.Minute) // Last 30 minutes of activity
+
+	recentMetrics, err := repo.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 10)
+	if err != nil {
+		r.Logger.Debug("no recent metrics found for domain",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return []*models.FederationAnalyticsTimeSeries{}
+	}
+	return recentMetrics
+}
+
+// determineReachabilityFromMetrics analyzes recent metrics to determine domain reachability
+func (r *queryResolver) determineReachabilityFromMetrics(status *model.FederationStatus, recentMetrics []*models.FederationAnalyticsTimeSeries) {
+	if len(recentMetrics) == 0 {
+		return
+	}
+
+	// Check for successful contact in recent metrics
+	if r.findSuccessfulContact(status, recentMetrics) {
+		return
+	}
+
+	// If no successful contact, check for any recent activity
+	r.findRecentActivity(status, recentMetrics)
+}
+
+// findSuccessfulContact looks for metrics with successful contact
+func (r *queryResolver) findSuccessfulContact(status *model.FederationStatus, recentMetrics []*models.FederationAnalyticsTimeSeries) bool {
+	for _, metric := range recentMetrics {
+		if metric.LastSuccessfulContact != nil {
+			status.Reachable = true
+			status.LastContact = (*model.Time)(metric.LastSuccessfulContact)
+			return true
+		}
+	}
+	return false
+}
+
+// findRecentActivity looks for any recent activity indicators
+func (r *queryResolver) findRecentActivity(status *model.FederationStatus, recentMetrics []*models.FederationAnalyticsTimeSeries) {
+	for _, metric := range recentMetrics {
+		if metric.ActivityCount > 0 && metric.InstanceReachability > 0 {
+			status.Reachable = true
+			status.LastContact = (*model.Time)(&metric.Timestamp)
+			return
+		}
+	}
+}
+
+// getInstanceInfo retrieves cached instance information for a domain
+func (r *queryResolver) getInstanceInfo(ctx context.Context, federationRepo interface{}, domain string) *models.FederationInstance {
+	repo := federationRepo.(interface {
+		GetInstanceInfo(context.Context, string) (*models.FederationInstance, error)
+	})
+	instanceInfo, err := repo.GetInstanceInfo(ctx, domain)
+	if err != nil {
+		r.Logger.Debug("could not get instance information",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil
+	}
+	return instanceInfo
+}
+
+// applyInstanceInfoToStatus populates status fields from instance information
+func (r *queryResolver) applyInstanceInfoToStatus(status *model.FederationStatus, instanceInfo *models.FederationInstance) {
+	if instanceInfo == nil {
+		return
+	}
+
+	// Set instance-level information if available
+	if instanceInfo.SharedInbox != "" {
+		status.SharedInbox = &instanceInfo.SharedInbox
+	}
+	if instanceInfo.PublicKey != "" {
+		status.PublicKey = &instanceInfo.PublicKey
+	}
+	if instanceInfo.Software != "" {
+		status.Software = &instanceInfo.Software
+	}
+	if instanceInfo.Version != "" {
+		status.Version = &instanceInfo.Version
+	}
+
+	// Check reachability based on last seen if not already determined
+	r.checkReachabilityFromLastSeen(status, instanceInfo)
+}
+
+// checkReachabilityFromLastSeen updates reachability based on instance last seen time
+func (r *queryResolver) checkReachabilityFromLastSeen(status *model.FederationStatus, instanceInfo *models.FederationInstance) {
+	if status.Reachable || instanceInfo.LastSeen.IsZero() {
+		return
+	}
+
+	// Check if last seen was reasonably recent (within 24 hours)
+	if time.Since(instanceInfo.LastSeen) < 24*time.Hour {
+		status.Reachable = true
+		status.LastContact = (*model.Time)(&instanceInfo.LastSeen)
+	}
+}
+
+// handleMissingInstanceInfo handles the case when no instance information is available
+func (r *queryResolver) handleMissingInstanceInfo(status *model.FederationStatus, instanceInfo *models.FederationInstance, domain string) {
+	if instanceInfo != nil {
+		return
+	}
+
+	r.Logger.Debug("no cached instance information available",
+		zap.String("domain", domain))
+	
+	// For GraphQL queries, we don't want to trigger expensive network operations
+	// Conservative approach: assume not reachable if no cached data
+	if domain != "" {
+		status.Reachable = false
+	}
 }
 
 // AIAnalysis is the resolver for the aiAnalysis field.
