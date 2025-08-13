@@ -356,5 +356,13 @@ func (m *MockRepoStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRep
 	return args.Get(0).(*repositories.CloudWatchMetricsRepository)
 }
 
+func (m *MockRepoStorage) Audit() *repositories.AuditRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.AuditRepository)
+}
+
 // Ensure MockRepoStorage implements RepositoryStorage interface
 var _ core.RepositoryStorage = (*MockRepoStorage)(nil)

@@ -37,7 +37,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -155,7 +155,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -304,7 +304,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -433,7 +433,7 @@ func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {

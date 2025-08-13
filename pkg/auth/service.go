@@ -26,6 +26,7 @@ type AuthService struct {
 	rateLimiter     *RateLimiter
 	webAuthnService *WebAuthnService
 	walletService   *WalletService
+	auditLogger     *AuditLogger
 	jwtSecret       []byte
 }
 
@@ -64,13 +65,17 @@ func NewAuthService(repos StorageProvider) (*AuthService, error) {
 	// Initialize Wallet service
 	walletService := NewWalletService(repos)
 
+	// Initialize Audit Logger
+	auditLogger := NewAuditLogger(repos, common.Logger(), DefaultAuditConfig())
+
 	return &AuthService{
 		repos:           repos,
-		oauthService:    NewOAuthService(jwtSecret, repos),
+		oauthService:    NewOAuthService(jwtSecret, repos, auditLogger),
 		sessionManager:  NewSessionManager(repos),
 		rateLimiter:     NewRateLimiter(repos),
 		webAuthnService: webAuthnService,
 		walletService:   walletService,
+		auditLogger:     auditLogger,
 		jwtSecret:       []byte(jwtSecret),
 	}, nil
 }
@@ -79,6 +84,8 @@ func NewAuthService(repos StorageProvider) (*AuthService, error) {
 func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, password, deviceName, userAgent, ipAddress string) (*AuthResponse, error) {
 	// Check rate limits first
 	if err := as.rateLimiter.CheckRateLimit(ctx, username, ipAddress); err != nil {
+		// Log rate limited attempt
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "rate limited")
 		return nil, err
 	}
 
@@ -87,16 +94,38 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if err != nil {
 		// Record failed attempt
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log failed login - user not found
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "user not found")
 		return nil, ErrInvalidCredentials
 	}
 
 	// Check if user is active
 	if user.Suspended {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log suspended account attempt
+		as.auditLogger.LogEvent(ctx, &AuditEvent{
+			EventType:     AuditLoginSuspended,
+			Username:      username,
+			IPAddress:     ipAddress,
+			UserAgent:     userAgent,
+			DeviceName:    deviceName,
+			Success:       false,
+			FailureReason: "account suspended",
+		})
 		return nil, ErrUserSuspended
 	}
 	if !user.Approved {
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log unapproved account attempt
+		as.auditLogger.LogEvent(ctx, &AuditEvent{
+			EventType:     AuditLoginNotApproved,
+			Username:      username,
+			IPAddress:     ipAddress,
+			UserAgent:     userAgent,
+			DeviceName:    deviceName,
+			Success:       false,
+			FailureReason: "account not approved",
+		})
 		return nil, ErrUserNotApproved
 	}
 
@@ -104,6 +133,15 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if err := VerifyPassword(password, user.PasswordHash); err != nil {
 		// Record failed attempt
 		_ = as.rateLimiter.RecordAttempt(ctx, username, ipAddress, false)
+		// Log failed login - wrong password
+		as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, false, "invalid password")
+		
+		// Check if this might be a brute force attempt
+		if count, _ := as.rateLimiter.GetFailedAttempts(ctx, username); count >= 5 {
+			as.auditLogger.LogSecurityEvent(ctx, AuditBruteForceDetected, username, ipAddress, map[string]interface{}{
+				"failed_attempts": count,
+			})
+		}
 		return nil, ErrInvalidCredentials
 	}
 
@@ -111,6 +149,9 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	if err := as.rateLimiter.RecordAttempt(ctx, username, ipAddress, true); err != nil {
 		common.Logger().Error("failed to record successful login", zap.Error(err))
 	}
+	
+	// Log successful login
+	as.auditLogger.LogLogin(ctx, username, ipAddress, userAgent, deviceName, true, "")
 
 	// Get actor ID for activity recording
 	actor, err := as.repos.Account().GetActor(ctx, username)
@@ -218,18 +259,16 @@ func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID strin
 // generateShortLivedAccessToken creates a JWT with enhanced claims
 func (as *AuthService) generateShortLivedAccessToken(username, sessionID, deviceID string, scopes []string) (string, error) {
 	now := time.Now()
-	claims := EnhancedClaims{
-		Claims: Claims{
-			RegisteredClaims: jwt.RegisteredClaims{
-				Subject:   username,
-				IssuedAt:  jwt.NewNumericDate(now),
-				ExpiresAt: jwt.NewNumericDate(now.Add(ShortAccessTokenDuration)),
-				NotBefore: jwt.NewNumericDate(now),
-			},
-			Username: username,
-			ClientID: "web", // Can be extended for different clients
-			Scopes:   scopes,
+	claims := Claims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   username,
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ShortAccessTokenDuration)),
+			NotBefore: jwt.NewNumericDate(now),
 		},
+		Username:  username,
+		ClientID:  "web", // Can be extended for different clients
+		Scopes:    scopes,
 		SessionID: sessionID,
 		DeviceID:  deviceID,
 	}
@@ -552,9 +591,5 @@ type AuthResponse struct {
 	CredentialID string `json:"credential_id,omitempty"` // WebAuthn credential ID (if applicable)
 }
 
-// EnhancedClaims extends the basic JWT claims with session information
-type EnhancedClaims struct {
-	Claims
-	SessionID string `json:"session_id"`
-	DeviceID  string `json:"device_id"`
-}
+// EnhancedClaims is now an alias for the improved Claims struct
+type EnhancedClaims = Claims

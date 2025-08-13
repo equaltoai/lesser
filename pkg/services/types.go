@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/graph/model"
 )
 
 // ServiceConfig holds configuration for all services
@@ -209,6 +210,9 @@ type FederationService interface {
 	DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
 	DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error
 	DetermineRecipients(ctx context.Context, activity *activitypub.Activity, visibility string) ([]string, error)
+	
+	// Instance relationship management
+	GetInstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error)
 }
 
 // TimelineService handles timeline operations
@@ -224,4 +228,9 @@ type AnalyticsService interface {
 	RecordHashtagUsage(ctx context.Context, hashtags []string, objectID, actorID string) error
 	RecordLinkShare(ctx context.Context, links []string, objectID, actorID string) error
 	RecordEngagement(ctx context.Context, objectID, engagementType, actorID string) error
+	
+	// Infrastructure and health monitoring
+	GetInfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error)
+	GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error)
+	GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"go.uber.org/zap"
 )
 
@@ -58,4 +59,41 @@ func (a *analyticsService) RecordLinkShare(ctx context.Context, links []string, 
 // RecordEngagement records user engagement with content
 func (a *analyticsService) RecordEngagement(ctx context.Context, objectID, engagementType, actorID string) error {
 	return a.storage.RecordStatusEngagement(ctx, objectID, engagementType, actorID)
+}
+
+// GetInfrastructureHealth returns the current infrastructure health status
+func (a *analyticsService) GetInfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error) {
+	// Query storage for real health metrics
+	health, err := a.storage.GetInfrastructureHealth(ctx)
+	if err != nil {
+		a.logger.Error("failed to get infrastructure health", zap.Error(err))
+		return nil, err
+	}
+	return health, nil
+}
+
+// GetInstanceBudgets returns budget information for instances
+func (a *analyticsService) GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
+	// Query storage for budget data
+	budgets, err := a.storage.GetInstanceBudgets(ctx, exceeded)
+	if err != nil {
+		a.logger.Error("failed to get instance budgets", 
+			zap.Bool("exceeded_only", exceeded != nil && *exceeded),
+			zap.Error(err))
+		return nil, err
+	}
+	return budgets, nil
+}
+
+// GetInstanceHealthReport returns comprehensive health report for a domain
+func (a *analyticsService) GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error) {
+	// Query storage for health report data
+	report, err := a.storage.GetInstanceHealthReport(ctx, domain)
+	if err != nil {
+		a.logger.Error("failed to get instance health report",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil, err
+	}
+	return report, nil
 }

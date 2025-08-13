@@ -309,6 +309,32 @@ func (m *MockAccountRepository) GetAccountsCount(ctx context.Context) (int64, er
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockAccountRepository) AddBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Bookmark), args.String(1), args.Error(2)
+}
+
+func (m *MockAccountRepository) GetBookmarkedStatuses(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, username, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
+}
+
 // Helper functions for tests
 
 func setupTestService() (*Service, *MockNotificationRepository, *MockAccountRepository, MockPublisher) {

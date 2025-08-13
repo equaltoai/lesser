@@ -27,6 +27,7 @@ type MediaMetadata struct {
 	Height             int       `json:"height"`              // Video height in pixels
 	Bitrate            int       `json:"bitrate"`             // Bitrate in kbps
 	FileSize           int64     `json:"file_size"`           // Size in bytes
+	Blurhash           string    `json:"blurhash,omitempty"`  // Blurhash for images/video thumbnails
 	ProcessedAt        time.Time `json:"processed_at"`        // When processing completed
 	AvailableQualities []string  `json:"available_qualities"` // Available quality levels
 	Status             string    `json:"status"`              // pending, processing, complete, failed

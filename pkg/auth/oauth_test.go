@@ -10,18 +10,26 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 )
+
+// Helper function to create OAuth service with audit logger for tests
+func createTestOAuthService(secret string, repos StorageProvider) *OAuthService {
+	logger := zap.NewNop()
+	auditLogger := NewAuditLogger(repos, logger, DefaultAuditConfig())
+	return NewOAuthService(secret, repos, auditLogger)
+}
 
 func TestNewOAuthService(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 	assert.NotNil(t, svc)
 	assert.NotNil(t, svc.repos)
 }
 
 func TestValidateClient(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 	ctx := context.Background()
 
 	// Test empty client ID - this should be caught before DB call
@@ -35,7 +43,7 @@ func TestValidateClient(t *testing.T) {
 
 func TestValidateRedirectURI(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 	ctx := context.Background()
 
 	// Test empty client ID - this should be caught before DB call
@@ -53,7 +61,7 @@ func TestValidateRedirectURI(t *testing.T) {
 
 func TestGenerateAuthorizationCode(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
 	code1, err := svc.GenerateAuthorizationCode()
 	require.NoError(t, err)
@@ -69,7 +77,7 @@ func TestGenerateAuthorizationCode(t *testing.T) {
 
 func TestVerifyCodeChallenge(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
 	// Test data from RFC 7636 example
 	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -143,13 +151,15 @@ func TestVerifyCodeChallenge(t *testing.T) {
 
 func TestGenerateTokens(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
+	ctx := context.Background()
 	username := "testuser"
 	clientID := "test-client"
+	ipAddress := "127.0.0.1"
 	scopes := []string{ScopeRead, ScopeWrite}
 
-	accessToken, refreshToken, err := svc.GenerateTokens(username, clientID, scopes)
+	accessToken, refreshToken, err := svc.GenerateTokens(ctx, username, clientID, ipAddress, scopes)
 	require.NoError(t, err)
 	assert.NotEmpty(t, accessToken)
 	assert.NotEmpty(t, refreshToken)
@@ -164,10 +174,11 @@ func TestGenerateTokens(t *testing.T) {
 
 func TestValidateAccessToken(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
+	ctx := context.Background()
 	// Generate a valid token
-	validToken, _, err := svc.GenerateTokens("testuser", "test-client", []string{ScopeRead})
+	validToken, _, err := svc.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{ScopeRead})
 	require.NoError(t, err)
 
 	// Create an expired token
@@ -186,8 +197,8 @@ func TestValidateAccessToken(t *testing.T) {
 
 	// Create a token with wrong signature
 	wrongRepos := mocks.NewMockRepositoryStorage()
-	wrongSvc := NewOAuthService("wrong-secret", wrongRepos)
-	wrongToken, _, err := wrongSvc.GenerateTokens("testuser", "test-client", []string{ScopeRead})
+	wrongSvc := createTestOAuthService("wrong-secret", wrongRepos)
+	wrongToken, _, err := wrongSvc.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{ScopeRead})
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -363,7 +374,7 @@ func TestDefaultScopes(t *testing.T) {
 
 func TestGenerateRefreshToken(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
 	token1, err := svc.generateRefreshToken()
 	require.NoError(t, err)
@@ -379,10 +390,11 @@ func TestGenerateRefreshToken(t *testing.T) {
 
 func TestTokenGeneration(t *testing.T) {
 	mockRepos := mocks.NewMockRepositoryStorage()
-	svc := NewOAuthService("test-secret", mockRepos)
+	svc := createTestOAuthService("test-secret", mockRepos)
 
+	ctx := context.Background()
 	// Test that generated tokens are properly formatted
-	accessToken, refreshToken, err := svc.GenerateTokens("user", "client", []string{ScopeRead})
+	accessToken, refreshToken, err := svc.GenerateTokens(ctx, "user", "client", "127.0.0.1", []string{ScopeRead})
 	require.NoError(t, err)
 
 	// Access token should be a valid JWT

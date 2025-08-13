@@ -528,7 +528,7 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 		zap.String("user_id", notification.UserID))
 
 	// Mark push as sent in the notification
-	if err := np.notificationRepo.MarkPushNotificationSent(ctx, notification.ID); err != nil {
+	if err := np.notificationRepo.MarkNotificationPushSent(ctx, notification.ID); err != nil {
 		np.logger.Warn("failed to mark push as sent", zap.Error(err))
 	}
 

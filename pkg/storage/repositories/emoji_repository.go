@@ -222,6 +222,51 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 	return nil
 }
 
+// GetRemoteEmoji retrieves a remote emoji by shortcode and domain
+func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error) {
+	var model models.EmojiModel
+	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
+	
+	// Remote emojis use a different key pattern
+	err := query.
+		Where("PK", "=", fmt.Sprintf("EMOJI#%s@%s", shortcode, domain)).
+		Where("SK", "=", "EMOJI").
+		First(&model)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, storage.ErrNotFound
+		}
+		r.logger.Error("failed to get remote emoji", 
+			zap.String("shortcode", shortcode),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil, err
+	}
+
+	// Convert to storage model
+	emoji := &storage.CustomEmoji{
+		Shortcode:           model.Shortcode,
+		URL:                 model.URL,
+		StaticURL:           model.StaticURL,
+		VisibleInPicker:     model.VisibleInPicker,
+		Category:            model.Category,
+		CreatedAt:           model.CreatedAt,
+		UpdatedAt:           model.UpdatedAt,
+		Disabled:            model.Disabled,
+		Domain:              model.Domain,
+		ImageRemoteURL:      model.ImageRemoteURL,
+		ImageStorageVersion: model.ImageStorageVersion,
+		ImageFileSize:       model.ImageFileSize,
+		ImageContentType:    model.ImageContentType,
+		ImageWidth:          model.ImageWidth,
+		ImageHeight:         model.ImageHeight,
+		ImageUpdatedAt:      model.ImageUpdatedAt,
+	}
+
+	return emoji, nil
+}
+
 // DeleteCustomEmoji deletes a custom emoji
 func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
 	// Check if emoji exists first

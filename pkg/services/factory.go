@@ -39,6 +39,7 @@ func (f *ServiceFactory) CreateBusinessLogicService() BusinessLogicService {
 		federation,
 		timeline,
 		analytics,
+		nil, // Factory doesn't have publisher access, events won't be emitted
 	)
 }
 

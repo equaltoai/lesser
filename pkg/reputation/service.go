@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 )
 
 // Service provides reputation management functionality
@@ -293,14 +294,16 @@ func (s *Service) getLastActivityTime(ctx context.Context, actorID string) time.
 
 // getLastStatusTime gets the timestamp of the most recent status by an actor
 func (s *Service) getLastStatusTime(ctx context.Context, username string) time.Time {
-	// Get the most recent status (limit to 1)
-	statuses, _, err := s.storage.Status().GetStatusesByAuthor(ctx, username, 1, "")
+	// Get the most recent status using GetUserTimeline (limit to 1)
+	opts := interfaces.PaginationOptions{Limit: 1}
+	result, err := s.storage.Status().GetUserTimeline(ctx, username, opts)
 	if err != nil {
 		s.logger.Warn("Failed to get recent statuses for last activity",
 			zap.String("username", username),
 			zap.Error(err))
 		return time.Time{}
 	}
+	statuses := result.Items
 
 	if len(statuses) == 0 {
 		return time.Time{}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -50,7 +51,7 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -81,23 +82,25 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 		cursor = ctx.Request.Request.QueryParams["max_id"]
 	}
 
-	// Get blocked domains
-	domains, nextCursor, err := h.repos.DomainBlock().GetUserDomainBlocks(ctx.Context, username, limit, cursor)
+	// Use Relationships service
+	result, err := h.registry.Relationships().GetDomainBlocks(ctx.Context, &relationshipsvc.GetDomainBlocksQuery{
+		UserID: username,
+		Limit:  limit,
+		Cursor: cursor,
+	})
 	if err != nil {
-		h.logger.Error("failed to get domain blocks",
-			zap.String("username", username),
-			zap.Error(err))
+		h.logger.Error("failed to get domain blocks", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get domain blocks"})
 	}
 
 	// Set Link header for pagination if there's a cursor
-	if nextCursor != "" && len(domains) > 0 {
+	if result.NextCursor != "" && len(result.Domains) > 0 {
 		linkHeader := fmt.Sprintf(`<%s/api/v1/domain_blocks?max_id=%s&limit=%d>; rel="next"`,
-			h.cfg.BaseURL(), nextCursor, limit)
+			h.cfg.BaseURL(), result.NextCursor, limit)
 		ctx.Response.Header("Link", linkHeader)
 	}
 
-	return ctx.JSON(domains)
+	return ctx.JSON(result.Domains)
 }
 
 // HandleCreateDomainBlockLift handles POST /api/v1/domain_blocks
@@ -134,7 +137,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -180,8 +183,12 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
 	}
 
-	// Add domain block
-	if err := h.repos.DomainBlock().AddDomainBlock(ctx.Context, username, req.Domain); err != nil {
+	// Use Relationships service
+	err := h.registry.Relationships().AddDomainBlock(ctx.Context, &relationshipsvc.AddDomainBlockCommand{
+		UserID: username,
+		Domain: req.Domain,
+	})
+	if err != nil {
 		h.logger.Error("failed to add domain block",
 			zap.String("username", username),
 			zap.String("domain", req.Domain),
@@ -227,7 +234,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -251,8 +258,12 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "domain parameter is required"})
 	}
 
-	// Remove domain block
-	if err := h.repos.DomainBlock().RemoveDomainBlock(ctx.Context, username, domain); err != nil {
+	// Use Relationships service
+	err := h.registry.Relationships().RemoveDomainBlock(ctx.Context, &relationshipsvc.RemoveDomainBlockCommand{
+		UserID: username,
+		Domain: domain,
+	})
+	if err != nil {
 		h.logger.Error("failed to remove domain block",
 			zap.String("username", username),
 			zap.String("domain", domain),

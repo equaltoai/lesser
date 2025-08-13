@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -103,30 +104,18 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		instanceConfig = config.GetInstanceConfig()
 	}
 
-	// Get user statistics
-	totalUsers, err := h.repos.Analytics().GetTotalUserCount(ctx.Context)
+	// Get instance statistics using Accounts service
+	stats, err := h.registry.Accounts().GetInstanceStats(ctx.Context, &accounts.GetInstanceStatsQuery{})
 	if err != nil {
-		h.logger.Warn("failed to get total user count", zap.Error(err))
-		totalUsers = 1 // Default fallback
-	}
-
-	activeMonth, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 30) // Last 30 days
-	if err != nil {
-		h.logger.Warn("failed to get monthly active users", zap.Error(err))
-		activeMonth = 1 // Default fallback
-	}
-
-	activeHalfyear, err := h.repos.Analytics().GetActiveUserCount(ctx.Context, 180) // Last 6 months
-	if err != nil {
-		h.logger.Warn("failed to get halfyear active users", zap.Error(err))
-		activeHalfyear = activeMonth // Fallback to monthly
-	}
-
-	// Get post statistics
-	localPosts, err := h.repos.Instance().GetLocalPostCount(ctx.Context)
-	if err != nil {
-		h.logger.Warn("failed to get local post count", zap.Error(err))
-		localPosts = 0
+		h.logger.Warn("failed to get instance stats", zap.Error(err))
+		// Use defaults
+		stats = &accounts.GetInstanceStatsResult{
+			TotalUsers:     1,
+			ActiveMonth:    1,
+			ActiveHalfyear: 1,
+			LocalPosts:     0,
+			LocalComments:  0,
+		}
 	}
 
 	response := NodeInfo{
@@ -147,12 +136,12 @@ func (h *Handler) HandleNodeInfoLift(ctx *lift.Context) error {
 		OpenRegistrations: instanceConfig.RegistrationsOpen,
 		Usage: NodeInfoUsage{
 			Users: NodeInfoUsers{
-				Total:          totalUsers,
-				ActiveHalfyear: activeHalfyear,
-				ActiveMonth:    activeMonth,
+				Total:          stats.TotalUsers,
+				ActiveHalfyear: stats.ActiveHalfyear,
+				ActiveMonth:    stats.ActiveMonth,
 			},
-			LocalPosts:    int(localPosts),
-			LocalComments: 0, // Lesser doesn't distinguish between posts and comments
+			LocalPosts:    stats.LocalPosts,
+			LocalComments: stats.LocalComments,
 		},
 		Metadata: map[string]any{
 			"nodeName":        instanceConfig.Title,

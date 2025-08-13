@@ -182,6 +182,16 @@ func (rl *RateLimiter) GetAccountStatus(ctx context.Context, username string) (*
 	return status, nil
 }
 
+// GetFailedAttempts returns the number of failed login attempts for a user
+func (rl *RateLimiter) GetFailedAttempts(ctx context.Context, username string) (int, error) {
+	// Get recent attempt count within the time window
+	attempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
+	if err != nil {
+		return 0, err
+	}
+	return attempts, nil
+}
+
 // Helper methods
 
 func (rl *RateLimiter) accountKey(username string) string {

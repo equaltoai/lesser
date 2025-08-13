@@ -10,10 +10,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -199,6 +203,32 @@ func (m *MockAccountRepository) GetAccountsCount(ctx context.Context) (int64, er
 	return args.Get(0).(int64), args.Error(1)
 }
 
+func (m *MockAccountRepository) AddBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *MockAccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Bookmark), args.String(1), args.Error(2)
+}
+
+func (m *MockAccountRepository) GetBookmarkedStatuses(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, username, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
+}
+
 type MockFederationService struct {
 	mock.Mock
 }
@@ -207,6 +237,98 @@ func (m *MockFederationService) QueueActivity(ctx context.Context, activity *act
 	args := m.Called(ctx, activity)
 	return args.Error(0)
 }
+
+// MockCryptoService implements CryptoService for testing
+type MockCryptoService struct {
+	mock.Mock
+}
+
+func (m *MockCryptoService) GenerateRSAKeyPair(bits int) (interface{}, error) {
+	args := m.Called(bits)
+	return args.Get(0), args.Error(1)
+}
+
+func (m *MockCryptoService) EncodePublicKeyPEM(publicKey interface{}) ([]byte, error) {
+	args := m.Called(publicKey)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *MockCryptoService) EncodePrivateKeyPEM(privateKey interface{}) ([]byte, error) {
+	args := m.Called(privateKey)
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+// MockAuthService implements AuthService for testing
+type MockAuthService struct {
+	mock.Mock
+}
+
+func (m *MockAuthService) HashPassword(password string) (string, error) {
+	args := m.Called(password)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockAuthService) ValidatePassword(password, username string) error {
+	args := m.Called(password, username)
+	return args.Error(0)
+}
+
+func (m *MockAuthService) PasswordStrength(password string) int {
+	args := m.Called(password)
+	return args.Int(0)
+}
+
+// MockRepositoryStorage implements core.RepositoryStorage for testing
+type MockRepositoryStorage struct {
+	accountRepo *MockAccountRepository
+}
+
+func (m *MockRepositoryStorage) Account() *repositories.AccountRepository { return nil }
+func (m *MockRepositoryStorage) Actor() *repositories.ActorRepository { return nil }
+func (m *MockRepositoryStorage) Object() *repositories.ObjectRepository { return nil }
+func (m *MockRepositoryStorage) Activity() *repositories.ActivityRepository { return nil }
+func (m *MockRepositoryStorage) Timeline() *repositories.TimelineRepository { return nil }
+func (m *MockRepositoryStorage) Notification() *repositories.NotificationRepository { return nil }
+func (m *MockRepositoryStorage) Like() *repositories.LikeRepository { return nil }
+func (m *MockRepositoryStorage) Moderation() *repositories.ModerationRepository { return nil }
+func (m *MockRepositoryStorage) List() *repositories.ListRepository { return nil }
+func (m *MockRepositoryStorage) Media() *repositories.MediaRepository { return nil }
+func (m *MockRepositoryStorage) Poll() *repositories.PollRepository { return nil }
+func (m *MockRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository { return nil }
+func (m *MockRepositoryStorage) Hashtag() *repositories.HashtagRepository { return nil }
+func (m *MockRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository { return nil }
+func (m *MockRepositoryStorage) Announcement() *repositories.AnnouncementRepository { return nil }
+func (m *MockRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository { return nil }
+func (m *MockRepositoryStorage) Relationship() *repositories.RelationshipRepository { return nil }
+func (m *MockRepositoryStorage) Instance() *repositories.InstanceRepository { return nil }
+func (m *MockRepositoryStorage) Federation() *repositories.FederationRepository { return nil }
+func (m *MockRepositoryStorage) Recovery() *repositories.RecoveryRepository { return nil }
+func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository { return nil }
+func (m *MockRepositoryStorage) Social() *repositories.SocialRepository { return nil }
+func (m *MockRepositoryStorage) User() *repositories.UserRepository { return nil }
+func (m *MockRepositoryStorage) Status() *repositories.StatusRepository { return nil }
+func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository { return nil }
+func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository { return nil }
+func (m *MockRepositoryStorage) Search() *repositories.SearchRepository { return nil }
+func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository { return nil }
+func (m *MockRepositoryStorage) CommunityNote() *repositories.CommunityNoteRepository { return nil }
+func (m *MockRepositoryStorage) AI() *repositories.AIRepository { return nil }
+func (m *MockRepositoryStorage) Conversation() *repositories.ConversationRepository { return nil }
+func (m *MockRepositoryStorage) Marker() *repositories.MarkerRepository { return nil }
+func (m *MockRepositoryStorage) FeaturedTag() *repositories.FeaturedTagRepository { return nil }
+func (m *MockRepositoryStorage) Export() *repositories.ExportRepository { return nil }
+func (m *MockRepositoryStorage) Import() *repositories.ImportRepository { return nil }
+func (m *MockRepositoryStorage) DLQ() *repositories.DLQRepository { return nil }
+func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordRepository { return nil }
+func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
+func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository { return nil }
+func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository { return nil }
+func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository { return nil }
+
+// Utility methods
+func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }
+func (m *MockRepositoryStorage) GetTableName() string { return "test-table" }
+func (m *MockRepositoryStorage) GetLogger() *zap.Logger { return zap.NewNop() }
 
 type MockPublisher struct {
 	mock.Mock
@@ -258,6 +380,8 @@ type AccountsServiceTestSuite struct {
 	accountRepo   *MockAccountRepository
 	publisher     *MockPublisher
 	federation    *MockFederationService
+	crypto        *MockCryptoService
+	auth          *MockAuthService
 	ctx           context.Context
 }
 
@@ -265,13 +389,21 @@ func (suite *AccountsServiceTestSuite) SetupTest() {
 	suite.accountRepo = new(MockAccountRepository)
 	suite.publisher = new(MockPublisher)
 	suite.federation = new(MockFederationService)
+	suite.crypto = new(MockCryptoService)
+	suite.auth = new(MockAuthService)
 	suite.ctx = context.Background()
 
 	logger := zaptest.NewLogger(suite.T())
+	// Create a mock storage that implements core.RepositoryStorage
+	mockStorage := &MockRepositoryStorage{
+		accountRepo: suite.accountRepo,
+	}
 	suite.service = NewService(
-		suite.accountRepo,
+		mockStorage,
 		suite.publisher,
 		suite.federation,
+		suite.crypto,
+		suite.auth,
 		logger,
 		"example.com",
 	)
@@ -541,7 +673,7 @@ func (suite *AccountsServiceTestSuite) TestGetAccount_Success() {
 		ViewerID: "viewer",
 	}
 
-	result, err := suite.service.GetAccount(suite.ctx, query)
+	result, err := suite.service.GetAccount(suite.ctx, query.Username)
 
 	suite.NoError(err)
 	suite.NotNil(result)
@@ -559,7 +691,7 @@ func (suite *AccountsServiceTestSuite) TestGetAccount_ViewOwnAccount() {
 		ViewerID: "testuser", // Viewing own account
 	}
 
-	result, err := suite.service.GetAccount(suite.ctx, query)
+	result, err := suite.service.GetAccount(suite.ctx, query.Username)
 
 	suite.NoError(err)
 	suite.NotNil(result)
@@ -578,7 +710,7 @@ func (suite *AccountsServiceTestSuite) TestGetAccount_SuspendedAccount() {
 		ViewerID: "viewer", // Different viewer
 	}
 
-	result, err := suite.service.GetAccount(suite.ctx, query)
+	result, err := suite.service.GetAccount(suite.ctx, query.Username)
 
 	suite.Error(err)
 	suite.Nil(result)
@@ -593,7 +725,7 @@ func (suite *AccountsServiceTestSuite) TestGetAccount_NotFound() {
 		ViewerID: "viewer",
 	}
 
-	result, err := suite.service.GetAccount(suite.ctx, query)
+	result, err := suite.service.GetAccount(suite.ctx, query.Username)
 
 	suite.Error(err)
 	suite.Nil(result)
@@ -689,12 +821,16 @@ func TestNewService(t *testing.T) {
 	accountRepo := new(MockAccountRepository)
 	publisher := new(MockPublisher)
 	federation := new(MockFederationService)
+	crypto := new(MockCryptoService)
+	auth := new(MockAuthService)
 	logger := zaptest.NewLogger(t)
 
-	service := NewService(accountRepo, publisher, federation, logger, "example.com")
+	mockStorage := &MockRepositoryStorage{
+		accountRepo: accountRepo,
+	}
+	service := NewService(mockStorage, publisher, federation, crypto, auth, logger, "example.com")
 
 	assert.NotNil(t, service)
-	assert.Equal(t, accountRepo, service.accountRepo)
 	assert.Equal(t, publisher, service.publisher)
 	assert.Equal(t, federation, service.federation)
 	assert.NotNil(t, service.logger)
@@ -705,8 +841,13 @@ func TestNewService_NilLogger(t *testing.T) {
 	accountRepo := new(MockAccountRepository)
 	publisher := new(MockPublisher)
 	federation := new(MockFederationService)
+	crypto := new(MockCryptoService)
+	auth := new(MockAuthService)
 
-	service := NewService(accountRepo, publisher, federation, nil, "example.com")
+	mockStorage := &MockRepositoryStorage{
+		accountRepo: accountRepo,
+	}
+	service := NewService(mockStorage, publisher, federation, crypto, auth, nil, "example.com")
 
 	assert.NotNil(t, service)
 	assert.NotNil(t, service.logger) // Should create a no-op logger

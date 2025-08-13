@@ -89,6 +89,7 @@ type MediaProcessor struct {
 	repos                storageCore.RepositoryStorage
 	mediaRepo            *repositories.MediaRepository
 	mediaAnalyticsRepo   *repositories.MediaAnalyticsRepository
+	mediaMetadataRepo    *repositories.MediaMetadataRepository
 	s3Client             *s3.Client
 	mediaConvertClient   *mediaconvert.Client
 	costTracker          *cost.Tracker
@@ -289,6 +290,9 @@ func init() {
 	// Initialize media analytics repository for variant-level cost tracking
 	mediaAnalyticsRepo := repositories.NewMediaAnalyticsRepository(db, cfg.DynamoTableName, logger)
 
+	// Initialize media metadata repository for processing status and blurhash tracking
+	mediaMetadataRepo := repositories.NewMediaMetadataRepository(db, logger)
+
 	// Initialize EMF metrics service for performance monitoring
 	_ = observability.NewEMFMetricsService(logger)
 
@@ -340,6 +344,7 @@ func init() {
 		repos:                repos,
 		mediaRepo:            mediaRepo,
 		mediaAnalyticsRepo:   mediaAnalyticsRepo,
+		mediaMetadataRepo:    mediaMetadataRepo,
 		costTracker:          cost.New(),
 		tableName:            cfg.DynamoTableName,
 		bucketName:           bucketName,
@@ -640,6 +645,14 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		return nil // Don't fail - optimistic concurrency control
 	}
 
+	// Mark MediaMetadata as processing started
+	if err := mp.mediaMetadataRepo.MarkProcessingStarted(ctx, event.MediaID); err != nil {
+		mp.logger.Warn("failed to mark media metadata as processing started",
+			zap.String("media_id", event.MediaID),
+			zap.Error(err))
+		// Continue processing - this is not critical
+	}
+
 	// Get user's media configuration and validate quotas
 	userConfig := mp.getUserMediaConfig(ctx, event.Username)
 
@@ -728,6 +741,13 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 
 	if processingErr != nil {
+		// Mark MediaMetadata as processing failed
+		if err := mp.mediaMetadataRepo.MarkProcessingFailed(ctx, event.MediaID, processingErr.Error()); err != nil {
+			mp.logger.Warn("failed to mark media metadata as processing failed",
+				zap.String("media_id", event.MediaID),
+				zap.Error(err))
+		}
+
 		mp.handleProcessingError(ctx, job, processingErr)
 		return processingErr
 	}
@@ -1139,7 +1159,40 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 		media.S3Key = original.S3Key
 	}
 
-	return mp.mediaRepo.UpdateMedia(ctx, media)
+	// Update the main media record
+	if err := mp.mediaRepo.UpdateMedia(ctx, media); err != nil {
+		return fmt.Errorf("failed to update media record: %w", err)
+	}
+
+	// Create or update MediaMetadata record with processing results
+	processingResult := repositories.ProcessingResult{
+		Width:    result.Width,
+		Height:   result.Height,
+		Duration: result.Duration, // Duration is in milliseconds from result
+		FileSize: 0,              // Would need file size calculation
+		Blurhash: result.Blurhash,
+		Sizes:    make(map[string]repositories.SizeInfo),
+	}
+
+	// Convert ProcessingResult.Sizes to repositories.SizeInfo format
+	for sizeName, sizeInfo := range result.Sizes {
+		processingResult.Sizes[sizeName] = repositories.SizeInfo{
+			Width:  sizeInfo.Width,
+			Height: sizeInfo.Height,
+			S3Key:  sizeInfo.S3Key,
+			URL:    sizeInfo.URL,
+		}
+	}
+
+	// Mark MediaMetadata as processing complete with results
+	if err := mp.mediaMetadataRepo.MarkProcessingComplete(ctx, mediaID, processingResult); err != nil {
+		mp.logger.Warn("failed to update media metadata record",
+			zap.String("media_id", mediaID),
+			zap.Error(err))
+		// Don't fail the entire operation if metadata update fails
+	}
+
+	return nil
 }
 
 func (mp *MediaProcessor) buildMediaURL(s3Key string) string {

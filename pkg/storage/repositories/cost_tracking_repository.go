@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -1734,6 +1735,43 @@ type UserCostRanking struct {
 	ImportCostDollars       float64 `json:"import_cost_dollars"`
 	ExportCostDollars       float64 `json:"export_cost_dollars"`
 	AverageCostPerOperation float64 `json:"average_cost_per_operation"`
+}
+
+// GetActivityCost retrieves cost tracking data for a specific activity
+func (r *CostTrackingRepository) GetActivityCost(ctx context.Context, activityID string) (*models.DynamoDBCostRecord, error) {
+	r.logger.Debug("Getting activity cost",
+		zap.String("activity_id", activityID))
+
+	// Query for cost record with activity-specific partition key
+	var costRecord models.DynamoDBCostRecord
+	
+	// Try to find cost record by activity ID
+	// Using the primary key pattern for activity costs
+	pk := fmt.Sprintf("ACTIVITY_COST#%s", activityID)
+	sk := "COST_RECORD"
+	
+	err := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&costRecord)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug("Activity cost not found",
+				zap.String("activity_id", activityID))
+			return nil, nil
+		}
+		r.logger.Error("Failed to query activity cost",
+			zap.String("activity_id", activityID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query activity cost: %w", err)
+	}
+
+	r.logger.Debug("Retrieved activity cost",
+		zap.String("activity_id", activityID),
+		zap.Int64("total_cost_microcents", costRecord.TotalCostMicroCents))
+
+	return &costRecord, nil
 }
 
 // ImportExportMetrics represents key metrics for import/export operations

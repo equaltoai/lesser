@@ -1,17 +1,14 @@
 package lift
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/google/uuid"
+	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -54,7 +51,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -68,18 +65,7 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		username = claims.Username
 	}
 
-	// Get the account to mute
-	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
-	if err != nil || targetActor == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "account not found"})
-	}
-
-	// Check if already muted
-	existingMute, err := h.repos.Social().GetMute(ctx.Context, username, accountID)
-	if err != nil {
-		h.logger.Error("failed to check existing mute", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
+	// Validation will be handled by the service layer
 
 	// Parse parameters with fallback
 	hideNotifications := false
@@ -102,39 +88,39 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Return existing relationship if already muted
-	if existingMute != nil {
-		// Update notification setting if different
-		if existingMute.HideNotifications != hideNotifications {
-			h.logger.Debug("mute notification setting differs but not updating",
-				zap.String("username", username),
-				zap.String("target", accountID),
-				zap.Bool("existing_hide", existingMute.HideNotifications),
-				zap.Bool("requested_hide", hideNotifications))
+	// Use Relationships service if available
+	if h.registry != nil && h.registry.Relationships() != nil {
+		result, err := h.registry.Relationships().Mute(ctx.Context, &relationshipsvc.MuteCommand{
+			MuterID:           username,
+			MutedID:           accountID,
+			MuteNotifications: hideNotifications,
+		})
+		if err != nil {
+			h.logger.Error("failed to mute via service", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
-
-		relationship := h.getRelationshipLift(ctx.Context, username, accountID)
+		
+		// Convert service result to API format
+		relationship := models.Relationship{
+			ID:                  result.Relationship.ID,
+			Following:           result.Relationship.Following,
+			ShowingReblogs:      result.Relationship.ShowingReblogs,
+			Notifying:           result.Relationship.Notifying,
+			FollowedBy:          result.Relationship.FollowedBy,
+			Blocking:            result.Relationship.Blocking,
+			BlockedBy:           result.Relationship.BlockedBy,
+			Muting:              result.Relationship.Muting,
+			MutingNotifications: result.Relationship.MutingNotifications,
+			Requested:           result.Relationship.Requested,
+			DomainBlocking:      result.Relationship.DomainBlocking,
+			Endorsed:            result.Relationship.Endorsed,
+			Note:                result.Relationship.Note,
+		}
 		return ctx.JSON(relationship)
 	}
-
-	// Create the mute
-	mute := &storage.Mute{
-		ID:                uuid.New().String(),
-		Actor:             username,
-		Object:            accountID,
-		HideNotifications: hideNotifications,
-		Published:         time.Now(),
-		CreatedAt:         time.Now(),
-	}
-
-	if err := h.repos.Social().CreateMute(ctx.Context, mute); err != nil {
-		h.logger.Error("failed to create mute", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Return updated relationship
-	relationship := h.getRelationshipLift(ctx.Context, username, accountID)
-	return ctx.JSON(relationship)
+	
+	// If we reach here, service is not available - return error
+	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
 
 // HandleUnmuteAccountLift handles POST /api/v1/accounts/:id/unmute
@@ -175,7 +161,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -189,15 +175,38 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 		username = claims.Username
 	}
 
-	// Delete the mute
-	if err := h.repos.Social().DeleteMute(ctx.Context, username, accountID); err != nil {
-		h.logger.Error("failed to delete mute", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	// Use Relationships service if available
+	if h.registry != nil && h.registry.Relationships() != nil {
+		result, err := h.registry.Relationships().Unmute(ctx.Context, &relationshipsvc.UnmuteCommand{
+			MuterID: username,
+			MutedID:  accountID,
+		})
+		if err != nil {
+			h.logger.Error("failed to unmute via service", zap.Error(err))
+			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		}
+		
+		// Convert service result to API format
+		relationship := models.Relationship{
+			ID:                  result.Relationship.ID,
+			Following:           result.Relationship.Following,
+			ShowingReblogs:      result.Relationship.ShowingReblogs,
+			Notifying:           result.Relationship.Notifying,
+			FollowedBy:          result.Relationship.FollowedBy,
+			Blocking:            result.Relationship.Blocking,
+			BlockedBy:           result.Relationship.BlockedBy,
+			Muting:              result.Relationship.Muting,
+			MutingNotifications: result.Relationship.MutingNotifications,
+			Requested:           result.Relationship.Requested,
+			DomainBlocking:      result.Relationship.DomainBlocking,
+			Endorsed:            result.Relationship.Endorsed,
+			Note:                result.Relationship.Note,
+		}
+		return ctx.JSON(relationship)
 	}
-
-	// Return updated relationship
-	relationship := h.getRelationshipLift(ctx.Context, username, accountID)
-	return ctx.JSON(relationship)
+	
+	// If we reach here, service is not available - return error
+	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
 
 // HandleGetMutedAccountsLift handles GET /api/v1/mutes
@@ -233,7 +242,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -257,68 +266,38 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 
 	cursor := ctx.Query("max_id")
 
-	// Get muted accounts
-	mutes, nextCursor, err := h.repos.Social().GetMutedUsers(ctx.Context, username, limit, cursor)
-	if err != nil {
-		h.logger.Error("failed to get muted actors", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
+	// Use Relationships service if available
+	if h.registry != nil && h.registry.Relationships() != nil {
+		result, err := h.registry.Relationships().GetMutedUsers(ctx.Context, &relationshipsvc.GetMutedUsersQuery{
+			UserID: username,
+			Limit:  limit,
+			Cursor: cursor,
+		})
+		if err != nil {
+			h.logger.Error("failed to get muted users via service", zap.Error(err))
+			// Continue to fallback implementation below
+		} else {
+			// Convert service result to API format
+			accounts := make([]models.Account, 0, len(result.MutedUsers))
+			for _, mutedUser := range result.MutedUsers {
+				if mutedUser.Actor != nil {
+					converter := mastodon.NewConverter(h.cfg.BaseURL())
+					// Get follower/following counts (simplified for service response)
+					account := converter.ActorToAccountWithCounts(mutedUser.Actor, 0, 0, 0)
+					accounts = append(accounts, account)
+				}
+			}
+			
+			// Set Link header for pagination if there's a next cursor
+			if result.NextCursor != "" {
+				ctx.Response.Header("Link", fmt.Sprintf("<%s/api/v1/mutes?max_id=%s>; rel=\"next\"", h.cfg.BaseURL(), result.NextCursor))
+			}
 
-	// Convert to account models
-	accounts := make([]models.Account, 0, len(mutes))
-	for _, mute := range mutes {
-		actor, err := h.repos.Actor().GetActor(ctx.Context, mute.Object)
-		if err != nil || actor == nil {
-			h.logger.Warn("muted actor not found", zap.String("actor", mute.Object))
-			continue
+			return ctx.JSON(accounts)
 		}
-
-		// Get follower/following counts
-		followers, _, _ := h.repos.Relationship().GetFollowers(ctx.Context, actor.PreferredUsername, 0, "")
-		following, _, _ := h.repos.Relationship().GetFollowing(ctx.Context, actor.PreferredUsername, 0, "")
-		statuses, _, _ := h.repos.Object().GetObjectsByActor(ctx.Context, fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), actor.PreferredUsername), "", 0)
-
-		converter := mastodon.NewConverter(h.cfg.BaseURL())
-		account := converter.ActorToAccountWithCounts(actor, len(followers), len(following), len(statuses))
-		accounts = append(accounts, account)
 	}
-
-	// Set Link header for pagination if there's a next cursor
-	if nextCursor != "" {
-		ctx.Response.Header("Link", fmt.Sprintf("<%s/api/v1/mutes?max_id=%s>; rel=\"next\"", h.cfg.BaseURL(), nextCursor))
-	}
-
-	return ctx.JSON(accounts)
+	
+	// If we reach here, service failed - return error
+	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 }
 
-// getRelationshipLift is a helper to get the relationship between two users
-func (h *Handler) getRelationshipLift(ctx context.Context, sourceUsername, targetUsername string) *models.Relationship {
-	// Check various relationship states
-	followRel, _ := h.repos.Relationship().GetRelationship(ctx, sourceUsername, targetUsername)
-	following := followRel != nil
-	followedByRel, _ := h.repos.Relationship().GetRelationship(ctx, targetUsername, sourceUsername)
-	followedBy := followedByRel != nil
-	blocked, _ := h.repos.Relationship().IsBlocked(ctx, sourceUsername, targetUsername)
-	blockedBy, _ := h.repos.Relationship().IsBlocked(ctx, targetUsername, sourceUsername)
-
-	// Check mute status
-	mute, _ := h.repos.Social().GetMute(ctx, sourceUsername, targetUsername)
-
-	relationship := &models.Relationship{
-		ID:                  targetUsername,
-		Following:           following,
-		FollowedBy:          followedBy,
-		Blocking:            blocked,
-		BlockedBy:           blockedBy,
-		Muting:              mute != nil,
-		MutingNotifications: mute != nil && mute.HideNotifications,
-		ShowingReblogs:      true, // Default to true
-		Notifying:           false,
-		Requested:           false,
-		DomainBlocking:      false,
-		Endorsed:            false,
-		Note:                "",
-	}
-
-	return relationship
-}

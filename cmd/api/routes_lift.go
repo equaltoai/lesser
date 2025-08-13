@@ -114,13 +114,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/media/{id}", lift.HandlerFunc(liftHandler.HandleGetMediaLift))
 	_ = app.PUT("/media/{id}", lift.HandlerFunc(liftHandler.HandleUpdateMediaLift))
 
-	// V2 Media endpoints (async processing with comprehensive status tracking)
-	_ = app.POST("/v2/media", lift.HandlerFunc(liftHandler.HandleUploadMediaV2Lift))
-	_ = app.GET("/v2/media/{id}", lift.HandlerFunc(liftHandler.HandleGetMediaV2Lift))
-	_ = app.PUT("/v2/media/{id}", lift.HandlerFunc(liftHandler.HandleUpdateMediaV2Lift))
-	_ = app.GET("/v2/media/{id}/status", lift.HandlerFunc(liftHandler.HandleMediaStatusV2Lift))
-	_ = app.POST("/v2/media/{id}/cancel", lift.HandlerFunc(liftHandler.HandleCancelMediaProcessingV2Lift))
-	_ = app.POST("/v2/media/{id}/retry", lift.HandlerFunc(liftHandler.HandleRetryMediaProcessingV2Lift))
+	// Note: V2 media endpoints have been consolidated into main media handlers
 
 	// Conversation endpoints (Direct Messages) - always enabled for 100% Mastodon API compatibility
 	_ = app.GET("/api/v1/conversations", lift.HandlerFunc(liftHandler.HandleGetConversationsLift))

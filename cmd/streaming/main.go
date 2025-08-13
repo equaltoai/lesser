@@ -29,9 +29,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/services"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/streaming/handlers"
 )
 
 // StreamMessage represents a message sent over WebSocket
@@ -51,19 +56,23 @@ type StreamEvent struct {
 
 // StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
 type StreamingHandler struct {
-	userRepo       *repositories.UserRepository
-	connectionRepo *repositories.StreamingConnectionRepository
-	costTracker    *repositories.WebSocketCostTracker
-	logger         *zap.Logger
-	cfg            *config.Config
-	apiClient      *apigatewaymanagementapi.Client
+	userRepo        *repositories.UserRepository
+	connectionRepo  *repositories.StreamingConnectionRepository
+	costTracker     *repositories.WebSocketCostTracker
+	logger          *zap.Logger
+	cfg             *config.Config
+	apiClient       *apigatewaymanagementapi.Client
+	commandRouter   *streaming.CommandRouter
+	serviceRegistry *services.Registry
+	storageFactory  core.RepositoryStorage
 }
 
 var (
-	globalCfg aws.Config
-	logger    *zap.Logger
-	cfg       *config.Config
-	handler   *StreamingHandler
+	globalCfg       aws.Config
+	logger          *zap.Logger
+	cfg             *config.Config
+	handler         *StreamingHandler
+	serviceRegistry *services.Registry
 )
 
 func init() {
@@ -109,13 +118,59 @@ func init() {
 	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
 
+	// Initialize service registry
+	storageFactory, err := factory.NewRepositoryFactory(db, tableName, globalCfg, logger)
+	if err != nil {
+		logger.Fatal("failed to create repository factory", zap.Error(err))
+	}
+	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
+	
+	// Convert config to ServiceConfig
+	serviceConfig := &services.ServiceConfig{
+		BaseURL:   cfg.Domain,
+		JWTSecret: cfg.JWTSecret,
+	}
+	
+	serviceRegistry, err = services.NewRegistry(
+		services.WithStorage(storageFactory),
+		services.WithPublisher(publisher),
+		services.WithLogger(logger),
+		services.WithConfig(serviceConfig),
+	)
+	if err != nil {
+		logger.Fatal("failed to create service registry", zap.Error(err))
+	}
+
+	// Initialize command router and register handlers
+	commandRouter := streaming.NewCommandRouter(logger)
+	
+	// Register command handlers
+	statusHandler := handlers.NewStatusCommandHandler(serviceRegistry.Notes(), logger)
+	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
+	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), logger)
+	systemHandler := handlers.NewSystemCommandHandler(
+		serviceRegistry.Notes(),
+		serviceRegistry.Lists(),
+		serviceRegistry.Media(),
+		serviceRegistry.Notifications(),
+		logger,
+	)
+	
+	commandRouter.RegisterHandler(statusHandler)
+	commandRouter.RegisterHandler(accountHandler)
+	commandRouter.RegisterHandler(relationshipHandler)
+	commandRouter.RegisterHandler(systemHandler)
+
 	// Create handler instance
 	handler = &StreamingHandler{
-		userRepo:       userRepo,
-		connectionRepo: connectionRepo,
-		costTracker:    costTracker,
-		logger:         logger,
-		cfg:            cfg,
+		userRepo:        userRepo,
+		connectionRepo:  connectionRepo,
+		costTracker:     costTracker,
+		logger:          logger,
+		cfg:             cfg,
+		commandRouter:   commandRouter,
+		serviceRegistry: serviceRegistry,
+		storageFactory:  storageFactory,
 	}
 }
 
@@ -205,7 +260,10 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 		// Validate OAuth token with auth middleware
 		// Since we can't use RequireAuth (it expects APIGatewayV2HTTPRequest),
 		// we'll extract the token and validate directly
-		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), nil)
+		// Create minimal audit logger for OAuth service
+		// Use storageFactory from the handler
+		auditLogger := auth.NewAuditLogger(sh.storageFactory, logger, auth.DefaultAuditConfig())
+		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), sh.storageFactory, auditLogger)
 		claims, err := authService.ValidateAccessToken(token)
 		if err != nil {
 			logger.Warn("invalid token", zap.Error(err))
@@ -326,6 +384,8 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 		err = sh.handleUnsubscribe(ctx, connection, message)
 	case "ping":
 		err = sh.handlePing(event.RequestContext.ConnectionID)
+	case "command":
+		err = sh.handleCommand(ctx, connection, message)
 	default:
 		logger.Warn("unknown message type", zap.String("type", message.Type))
 		err = sh.sendError(event.RequestContext.ConnectionID, "Unknown message type")
@@ -486,6 +546,118 @@ func (sh *StreamingHandler) handlePing(connectionID string) error {
 	}
 
 	return nil
+}
+
+func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *models.WebSocketConnection, message StreamMessage) error {
+	logger := sh.logger.With(
+		zap.String("connectionID", connection.ConnectionID),
+		zap.String("operation", "command"),
+		zap.String("command_type", sh.getCommandType(message)),
+	)
+
+	// Parse the command from the message payload
+	command, err := sh.parseCommand(message)
+	if err != nil {
+		logger.Error("failed to parse command", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, "Invalid command format")
+	}
+
+	// Create connection info for the command handler
+	connInfo := &streaming.ConnectionInfo{
+		ConnectionID:    connection.ConnectionID,
+		UserID:          connection.UserID,
+		Username:        connection.Username,
+		Streams:         connection.Streams,
+		IsAuthenticated: connection.UserID != "",
+	}
+
+	// Route and execute the command
+	response, err := sh.commandRouter.HandleCommand(ctx, connInfo, command)
+	if err != nil {
+		logger.Error("command execution failed", zap.Error(err))
+		return sh.sendError(connection.ConnectionID, "Command execution failed")
+	}
+
+	// Send the response back to the client
+	if response != nil {
+		return sh.sendCommandResponse(connection.ConnectionID, response)
+	}
+
+	return nil
+}
+
+func (sh *StreamingHandler) parseCommand(message StreamMessage) (*streaming.Command, error) {
+	// Extract command details from message payload
+	var command streaming.Command
+	
+	// Get command ID (required for request/response matching)
+	if id, exists := message.Payload["id"]; exists {
+		if idStr, ok := id.(string); ok {
+			command.ID = idStr
+		} else {
+			return nil, fmt.Errorf("command id must be a string")
+		}
+	} else {
+		return nil, fmt.Errorf("command id is required")
+	}
+
+	// Get command type (required)
+	if cmdType, exists := message.Payload["command"]; exists {
+		if cmdTypeStr, ok := cmdType.(string); ok {
+			command.Type = cmdTypeStr
+		} else {
+			return nil, fmt.Errorf("command type must be a string")
+		}
+	} else {
+		return nil, fmt.Errorf("command type is required")
+	}
+
+	// Get command payload (optional)
+	if payload, exists := message.Payload["data"]; exists {
+		if payloadMap, ok := payload.(map[string]interface{}); ok {
+			command.Payload = payloadMap
+		} else {
+			// Try to convert to map
+			command.Payload = map[string]interface{}{"data": payload}
+		}
+	} else {
+		command.Payload = make(map[string]interface{})
+	}
+
+	return &command, nil
+}
+
+func (sh *StreamingHandler) getCommandType(message StreamMessage) string {
+	if cmdType, exists := message.Payload["command"]; exists {
+		if cmdTypeStr, ok := cmdType.(string); ok {
+			return cmdTypeStr
+		}
+	}
+	return "unknown"
+}
+
+func (sh *StreamingHandler) sendCommandResponse(connectionID string, response *streaming.CommandResponse) error {
+	// Convert response to StreamMessage format
+	responseMsg := StreamMessage{
+		Type: "command_response",
+		Payload: map[string]any{
+			"id":      response.ID,
+			"type":    response.Type,
+			"success": response.Success,
+			"data":    response.Data,
+		},
+	}
+
+	// Add error information if present
+	if response.Error != nil {
+		responseMsg.Payload["error"] = map[string]any{
+			"code":    response.Error.Code,
+			"message": response.Error.Message,
+			"details": response.Error.Details,
+		}
+	}
+
+	return sh.sendMessageToConnection(connectionID, responseMsg)
 }
 
 // Messaging functions

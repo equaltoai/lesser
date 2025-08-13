@@ -173,18 +173,20 @@ func (h *Handler) normalizeStatusID(statusID string) string {
 
 // fetchAndConvertNote fetches an object and converts it to a Note
 func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*activitypub.Note, error) {
-	// Fetch the status
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	// Extract status ID from object ID
+	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
+	
+	// Fetch the status using Notes service
+	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		h.logger.Error("failed to get object", zap.String("object_id", objectID), zap.Error(err))
+		h.logger.Error("failed to get note", zap.String("status_id", statusID), zap.Error(err))
 		return nil, ctx.Status(404).JSON(map[string]string{
 			"error": "status not found",
 		})
 	}
 
-	// Convert to Note
-	return h.convertToNote(ctx, obj, objectID)
-}
+	// Return the Note directly
+	return result.Note, nil}
 
 // convertToNote converts an object to an ActivityPub Note
 func (h *Handler) convertToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
@@ -228,9 +230,9 @@ func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note
 	}
 
 	username := parts[len(parts)-1]
-	authorActor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	result, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
-		h.logger.Warn("failed to get author actor", zap.String("actor_id", note.AttributedTo), zap.Error(err))
+		h.logger.Warn("failed to get author account", zap.String("username", username), zap.Error(err))
 		// Create a minimal actor
 		return &activitypub.Actor{
 			BaseObject: activitypub.BaseObject{
@@ -241,6 +243,7 @@ func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note
 			URL:               note.AttributedTo,
 		}
 	}
+	authorActor := result.Actor
 
 	return authorActor
 }
@@ -432,10 +435,13 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 		return err
 	}
 
-	// Convert object to Note
-	note, err := h.convertObjectToNote(ctx, obj, objectID)
-	if err != nil {
-		return err
+	// Cast object to Note (we now get a Note directly from the service)
+	note, ok := obj.(*activitypub.Note)
+	if !ok {
+		h.logger.Error("object is not a Note", zap.String("object_id", objectID))
+		return ctx.Status(500).JSON(map[string]string{
+			"error": "invalid status type",
+		})
 	}
 
 	// Check if status is embeddable (public/unlisted)
@@ -505,15 +511,18 @@ func (h *Handler) normalizeEmbedObjectID(statusID string) string {
 
 // fetchEmbedObject fetches the object for embedding
 func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, error) {
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	// Extract status ID from object ID
+	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
+	
+	// Fetch the status using Notes service
+	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		h.logger.Error("failed to get object for embed", zap.String("object_id", objectID), zap.Error(err))
+		h.logger.Error("failed to get note for embed", zap.String("status_id", statusID), zap.Error(err))
 		return nil, ctx.Status(404).JSON(map[string]string{
 			"error": "status not found",
 		})
 	}
-	return obj, nil
-}
+	return result.Note, nil}
 
 // convertObjectToNote converts an object to an ActivityPub Note
 func (h *Handler) convertObjectToNote(ctx *lift.Context, obj any, objectID string) (*activitypub.Note, error) {
@@ -576,12 +585,12 @@ func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) 
 		username := parts[len(parts)-1]
 		info.username = username
 
-		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
-		if err == nil {
-			info.actor = actor
-			info.name = actor.Name
+		result, err := h.registry.Accounts().GetAccount(ctx.Context, username)
+		if err == nil && result != nil && result.Actor != nil {
+			info.actor = result.Actor
+			info.name = result.Actor.Name
 			if info.name == "" {
-				info.name = actor.PreferredUsername
+				info.name = result.Actor.PreferredUsername
 			}
 		}
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -577,4 +578,84 @@ func (s *Service) MarkMediaFailed(ctx context.Context, mediaID string, errorMsg 
 		zap.String("error", errorMsg))
 
 	return nil
+}
+
+// GetStreamingURL returns a media streaming URL and metadata for GraphQL
+func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.MediaStream, error) {
+	s.logger.Debug("getting media streaming URL",
+		zap.String("media_id", mediaID))
+
+	// Get the media record
+	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get media: %w", err)
+	}
+
+	// Verify media is ready for streaming
+	if !media.IsReady() {
+		return nil, fmt.Errorf("media not ready for streaming")
+	}
+
+	// Get the media URL (use CDN if available, otherwise construct S3 URL)
+	mediaURL := media.CDNUrl
+	if mediaURL == "" {
+		// Construct S3 URL as fallback
+		mediaURL = fmt.Sprintf("https://%s.s3.amazonaws.com/%s", media.S3Bucket, media.S3Key)
+	}
+
+	// Get thumbnail URL
+	thumbnailURL := mediaURL // Default to same URL
+	if thumbnailVariant, exists := media.GetVariant("thumbnail"); exists {
+		if thumbnailVariant.CDNUrl != "" {
+			thumbnailURL = thumbnailVariant.CDNUrl
+		} else {
+			thumbnailURL = fmt.Sprintf("https://%s.s3.amazonaws.com/%s", media.S3Bucket, thumbnailVariant.S3Key)
+		}
+	}
+
+	// Convert models.Media to model.MediaStream
+	mediaStream := &model.MediaStream{
+		ID:           media.MediaID,
+		URL:          mediaURL,
+		ThumbnailURL: thumbnailURL,
+		Duration:     media.Duration,
+		ExpiresAt:    model.Time(time.Now().Add(24 * time.Hour)), // Default 24h expiry
+	}
+
+	// Add bitrates if this is a video with variants
+	if media.IsVideo() && len(media.Variants) > 0 {
+		var bitrates []*model.Bitrate
+		for name, variant := range media.Variants {
+			if variant.Width > 0 && variant.Height > 0 {
+				// Map quality name to StreamQuality
+				quality := model.StreamQualityMedium // Default
+				switch strings.ToUpper(name) {
+				case "LOW", "THUMBNAIL":
+					quality = model.StreamQualityLow
+				case "MEDIUM", "STANDARD":
+					quality = model.StreamQualityMedium
+				case "HIGH", "HD":
+					quality = model.StreamQualityHigh
+				case "ULTRA", "4K":
+					quality = model.StreamQualityUltra
+				}
+
+				bitrate := &model.Bitrate{
+					Quality:       quality,
+					Width:         variant.Width,
+					Height:        variant.Height,
+					BitsPerSecond: int(variant.FileSize * 8 / int64(media.Duration)), // Rough estimate
+					Codec:         "h264", // Default codec
+				}
+				bitrates = append(bitrates, bitrate)
+			}
+		}
+		mediaStream.Bitrates = bitrates
+	}
+
+	s.logger.Debug("returning media streaming URL",
+		zap.String("media_id", mediaID),
+		zap.String("url", mediaStream.URL))
+
+	return mediaStream, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -190,7 +191,7 @@ func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, followingOnly 
 		return ""
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ""
@@ -328,21 +329,25 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 		return ctx.JSON([]any{})
 	}
 
-	// Get suggestions from storage
-	suggestions, err := h.repos.Search().GetSearchSuggestions(ctx.Context, prefix, 10)
+	// Get suggestions from Notes service
+	result, err := h.registry.Notes().GetSearchSuggestions(ctx.Context, &notes.GetSearchSuggestionsQuery{
+		Prefix: prefix,
+		Limit:  10,
+	})
 	if err != nil {
 		h.logger.Error("failed to get search suggestions",
 			zap.String("prefix", prefix),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "suggestions lookup failed"})
 	}
+	suggestions := result.Suggestions
 
 	// Convert to API response format
 	response := make([]map[string]any, 0, len(suggestions))
 	for _, sugg := range suggestions {
 		response = append(response, map[string]any{
 			"type":  sugg.Type,
-			"value": sugg.Term,
+			"value": sugg.Value,
 			"score": sugg.Score,
 		})
 	}
@@ -448,7 +453,7 @@ func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid authorization header"})
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid access token"})

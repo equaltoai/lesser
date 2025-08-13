@@ -46,9 +46,9 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 				requestsPerMinute = float64(todayRequests) / (hoursSinceStart * 60.0)
 			}
 
-			// Estimate average latency based on operation type
-			// This is a rough estimate - actual latency tracking would need to be implemented
-			avgLatencyMs = 50.0 // Default estimate
+			// No latency data available - return 0.0 instead of fabricated estimate
+			// Actual latency tracking should be implemented to provide real metrics
+			avgLatencyMs = 0.0
 		}
 	}
 
@@ -113,23 +113,8 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Add placeholder data if no real data
-	if len(dailyMetrics) == 0 {
-		for i := 0; i < days; i++ {
-			date := endDate.AddDate(0, 0, -i).Format(common.DateFormat)
-			dailyMetrics = append(dailyMetrics, map[string]any{
-				"date": date,
-				"metrics": map[string]any{
-					"total_requests":     1000 + i*100,
-					"unique_users":       10 + i,
-					"dynamodb_reads":     500 + i*50,
-					"dynamodb_writes":    200 + i*20,
-					"lambda_duration_ms": 150000 + i*1000,
-					"cost_cents":         0.01 + float64(i)*0.001,
-				},
-			})
-		}
-	}
+	// Return empty data if no real metrics available
+	// Never generate fabricated data that could mislead users about actual system performance
 
 	response := map[string]any{
 		"period": map[string]any{
@@ -152,8 +137,10 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	now := time.Now()
 	monthlyProjection := 0.0
 	currentMonthCost := 0.0
-	storageGrowthRate := 5.2 // Default estimate
-	userGrowthRate := 12.5   // Default estimate
+	// Growth rates will be calculated from actual historical data
+	// No default estimates - use 0.0 if insufficient data
+	storageGrowthRate := 0.0
+	userGrowthRate := 0.0
 
 	// Get current month aggregates
 	monthlyAggregate, err := h.repos.Cost().GetMonthlyAggregate(ctx.Context, now.Year(), int(now.Month()))
@@ -210,7 +197,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 				"projected_month":  monthlyProjection,
 				"next_month":       monthlyProjection * (1.0 + userGrowthRate/100.0),
 				"three_months":     monthlyProjection * (1.0 + userGrowthRate/100.0*3.0),
-				"confidence_level": 0.85,
+				"confidence_level": calculateConfidenceLevel(len(dailyAggregates)),
 			},
 			"storage_growth": map[string]any{
 				"monthly_rate_percent": storageGrowthRate,
@@ -318,8 +305,8 @@ func (h *Handler) calculateStorageGrowthRateLift(ctx context.Context) float64 {
 	// Try to get historical storage data
 	storageHistory, err := h.repos.Instance().GetStorageHistory(ctx, days)
 	if err != nil || len(storageHistory) < 2 {
-		// Default growth rate if no historical data
-		return 15.0 // 15% monthly growth estimate
+		// Return 0.0 if insufficient historical data - no fabricated estimates
+		return 0.0
 	}
 
 	// Calculate growth rate between first and last data points
@@ -340,7 +327,7 @@ func (h *Handler) calculateStorageGrowthRateLift(ctx context.Context) float64 {
 	}
 
 	if firstUsage <= 0 {
-		return 15.0 // Default rate if no base usage
+		return 0.0 // Return 0.0 if no base usage data available
 	}
 
 	// Calculate growth rate and annualize to monthly
@@ -384,8 +371,8 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 
 	userHistory, err := h.repos.Instance().GetUserGrowthHistory(ctx, days)
 	if err != nil || len(userHistory) < 2 {
-		// Default growth rate if no historical data
-		return 20.0 // 20% monthly growth estimate
+		// Return 0.0 if insufficient historical data - no fabricated estimates
+		return 0.0
 	}
 
 	// Calculate new user registrations trend
@@ -401,7 +388,7 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	}
 
 	if totalNewUsers <= 0 {
-		return 5.0 // Minimal growth if no new registrations
+		return 0.0 // Return 0.0 if no new registrations tracked
 	}
 
 	// Calculate monthly growth rate based on new registrations
@@ -412,7 +399,7 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	// Get current total users for growth rate calculation
 	currentUsers, err := h.repos.Analytics().GetTotalUserCount(ctx)
 	if err != nil || currentUsers <= 0 {
-		return 20.0 // Default rate
+		return 0.0 // Return 0.0 if current user count unavailable
 	}
 
 	// Growth rate as percentage of current user base
@@ -426,4 +413,22 @@ func (h *Handler) calculateUserGrowthRateLift(ctx context.Context) float64 {
 	}
 
 	return monthlyGrowthRate
+}
+
+// calculateConfidenceLevel calculates confidence based on available data points
+// More data points = higher confidence in projections
+func calculateConfidenceLevel(dataPoints int) float64 {
+	if dataPoints == 0 {
+		return 0.0 // No confidence with no data
+	}
+	if dataPoints < 7 {
+		return 0.3 // Low confidence with less than a week of data
+	}
+	if dataPoints < 14 {
+		return 0.5 // Medium confidence with less than two weeks
+	}
+	if dataPoints < 30 {
+		return 0.7 // Good confidence with less than a month
+	}
+	return 0.9 // High confidence with a month or more of data
 }

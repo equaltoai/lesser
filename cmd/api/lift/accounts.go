@@ -21,11 +21,15 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+const (
+	boolTrue = "true"
 )
 
 // HandleRegistrationLift handles user registration requests
@@ -41,8 +45,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Handle password if provided (optional for WebAuthn registration)
-	var passwordHash string
+	// Validate password strength if provided
 	if req.Password != "" {
 		// Validate password strength
 		if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
@@ -59,87 +62,34 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 					strings.Join(hints, ", ")),
 			})
 		}
-
-		// Hash password
-		hash, err := auth.HashPassword(req.Password)
-		if err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
-		}
-		passwordHash = hash
 	}
 
-	// Create user
-	user := &storage.User{
-		Username:     req.Username,
-		Email:        req.Email,
-		PasswordHash: passwordHash,
-		Approved:     true, // Auto-approve for now, can be changed to require admin approval
-		Suspended:    false,
-		Role:         "user",
-		Locale:       req.Locale,
-	}
-
-	// Don't create account yet - wait until we have the actor
-
-	// Generate RSA keypair for the actor
-	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	// Use Accounts service to register the account
+	accountsService := h.registry.Accounts()
+	result, err := accountsService.RegisterAccount(ctx.Context, &accounts.RegisterAccountCommand{
+		Username:  req.Username,
+		Email:     req.Email,
+		Password:  req.Password,
+		Locale:    req.Locale,
+		Agreement: req.Agreement,
+		Reason:    req.Reason,
+	})
 	if err != nil {
-		h.logger.Error("failed to generate RSA keypair", zap.Error(err))
-		// Clean up user since we couldn't create the actor
-		_ = h.repos.Account().DeleteAccount(ctx.Context, user.Username)
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Encode public key to PEM format
-	publicKeyPEM, err := federation.EncodePublicKeyPEM(&privateKey.PublicKey)
-	if err != nil {
-		h.logger.Error("failed to encode public key", zap.Error(err))
-		// Clean up user since we couldn't create the actor
-		_ = h.repos.Account().DeleteAccount(ctx.Context, user.Username)
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Encode private key to PEM format
-	privateKeyPEM, err := federation.EncodePrivateKeyPEM(privateKey)
-	if err != nil {
-		h.logger.Error("failed to encode private key", zap.Error(err))
-		// Clean up user since we couldn't create the actor
-		_ = h.repos.Account().DeleteAccount(ctx.Context, user.Username)
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Create corresponding actor
-	actorID := fmt.Sprintf("%s/users/%s", h.cfg.BaseURL(), user.Username)
-	actor := activitypub.NewActor(activitypub.PersonType, actorID, user.Username)
-	actor.Name = user.Username
-	actor.URL = fmt.Sprintf("%s/@%s", h.cfg.BaseURL(), user.Username)
-	actor.CreatedAt = &user.CreatedAt // Set actual creation time
-	actor.PublicKey = &activitypub.PublicKey{
-		ID:           fmt.Sprintf("%s#main-key", actorID),
-		Owner:        actorID,
-		PublicKeyPem: string(publicKeyPEM),
-	}
-
-	// Create account with actor together
-	if err := h.repos.Account().CreateAccount(ctx.Context, user.Username, user.Email, user.PasswordHash, user.Approved, actor, string(privateKeyPEM)); err != nil {
-		if strings.Contains(err.Error(), "already exists") {
+		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
 			return ctx.Status(422).JSON(map[string]string{"error": "Username is already taken"})
 		}
-		h.logger.Error("failed to create account with actor", zap.Error(err))
+		if strings.Contains(err.Error(), "validation failed") {
+			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+		}
+		h.logger.Error("failed to register account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Record registration activity for metrics
-	if err := h.repos.Activity().RecordActivity(ctx.Context, "registration", actor.ID, time.Now()); err != nil {
-		// Log the error but don't fail the request
-		h.logger.Warn("failed to record registration activity", zap.Error(err))
 	}
 
 	// Return response
 	resp := models.AccountRegistrationResponse{
-		ID:       actor.ID,
-		Username: user.Username,
-		Email:    user.Email,
+		ID:       result.Actor.ID,
+		Username: result.Account.User.Username,
+		Email:    result.Account.User.Email,
 		Created:  true,
 	}
 
@@ -148,119 +98,52 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 
 // HandleVerifyCredentialsLift returns the current user's information
 func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	// Call Accounts service
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Get user
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
-	if err != nil {
-		h.logger.Error("failed to get user", zap.Error(err))
+		h.logger.Error("failed to get account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, user.Username)
-	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Get real counts - these are not stored on the ActivityPub actor
-	// For now, we'll default to 0 since we just fetched the actor
-	followerCount := 0
-	followingCount := 0
-	statusesCount := 0
-
-	resp := models.VerifyCredentialsResponse{
-		ID:             actor.ID,
-		Username:       user.Username,
-		Acct:           user.Username, // For local accounts, same as username
-		DisplayName:    actor.Name,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == actorTypeService,
-		Discoverable:   actor.Discoverable,
-		Group:          actor.Type == actorTypeGroup,
-		Email:          user.Email,
-		EmailVerified:  true, // No email verification needed - system doesn't use email
-		Note:           actor.Summary,
-		URL:            actor.URL,
-		Avatar:         "",
-		AvatarStatic:   "",
-		Header:         "",
-		HeaderStatic:   "",
-		FollowersCount: followerCount,
-		FollowingCount: followingCount,
-		StatusesCount:  statusesCount,
-		LastStatusAt:   h.formatLastStatusTimeLift(actor.LastStatusAt),
-		Emojis:         []any{},
-		Fields:         []any{},
-		CreatedAt:      user.CreatedAt.Format("2006-01-02T15:04:05.000Z"),
-		Role:           user.Role,
-		Source: map[string]any{
-			"privacy":   "public",
-			"sensitive": false,
-			"language":  user.Locale,
-			"fields":    []any{},
-		},
-	}
-
-	// Populate avatar from actor Icon
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		resp.Avatar = actor.Icon.URL
-		resp.AvatarStatic = actor.Icon.URL
-	}
-
-	// Populate header from actor Image
-	if actor.Image != nil && actor.Image.URL != "" {
-		resp.Header = actor.Image.URL
-		resp.HeaderStatic = actor.Image.URL
-	}
-
-	return ctx.JSON(resp)
+	return ctx.JSON(account)
 }
 
 // HandleUpdateCredentialsLift updates the current user's profile
 func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
-	// Authenticate and get actor
-	claims, actor, err := h.authenticateAndGetActor(ctx)
+	// Parse request
+	var req models.UpdateCredentialsRequest
+	if err := ctx.ParseRequest(&req); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "invalid request format"})
+	}
+
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
 		return err
 	}
 
-	// Parse request data
-	updateReq, fileData, err := h.parseUpdateCredentialsRequest(ctx)
+	// Call Accounts service
+	result, err := h.registry.Accounts().UpdateProfile(ctx.Context, &accounts.UpdateProfileCommand{
+		Username:     claims.Username,
+		DisplayName:  req.DisplayName,
+		Bio:          req.Note,
+		Locked:       req.Locked,
+		Bot:          req.Bot,
+		Discoverable: req.Discoverable,
+		UpdaterID:    claims.Username,
+	})
 	if err != nil {
-		return err
+		h.logger.Error("failed to update profile", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "failed to update profile"})
 	}
 
-	// Handle file uploads
-	if err := h.handleFileUploads(ctx, actor, claims, fileData); err != nil {
-		return err
-	}
-
-	// Update actor with new data
-	h.updateActorFromRequest(actor, updateReq)
-
-	// Save changes
-	if err := h.repos.Actor().UpdateActor(ctx.Context, actor); err != nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Build and return response
-	resp := h.buildCredentialsResponse(ctx, actor, claims)
-
-	return ctx.JSON(resp)
+	return ctx.JSON(result.Account)
 }
 
 // UpdateCredentialsFileData holds file upload data from multipart form
@@ -281,7 +164,7 @@ func (h *Handler) authenticateAndGetActor(ctx *lift.Context) (*auth.Claims, *act
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, nil, ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -292,13 +175,18 @@ func (h *Handler) authenticateAndGetActor(ctx *lift.Context) (*auth.Claims, *act
 		return nil, nil, ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
 	}
 
-	// Get the actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, claims.Username)
+	// Get the account
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		return nil, nil, ctx.Status(404).JSON(map[string]string{"error": "Not found"})
 	}
 
-	return claims, actor, nil
+	// Convert Account to Actor
+	if account.Actor == nil {
+		return nil, nil, ctx.Status(404).JSON(map[string]string{"error": "Actor not found"})
+	}
+
+	return claims, account.Actor, nil
 }
 
 // parseUpdateCredentialsRequest parses both JSON and multipart form requests
@@ -541,7 +429,7 @@ func (h *Handler) updateActorFromRequest(actor *activitypub.Actor, req models.Up
 // buildCredentialsResponse builds the credentials response
 func (h *Handler) buildCredentialsResponse(ctx *lift.Context, actor *activitypub.Actor, claims *auth.Claims) models.VerifyCredentialsResponse {
 	// Get user for email
-	user, err := h.repos.Account().GetUser(ctx.Context, claims.Username)
+	user, err := h.registry.Accounts().GetUser(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get user", zap.Error(err))
 		user = &storage.User{Email: "", Role: "user"} // Default values
@@ -599,53 +487,14 @@ func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
 	}
 
-	// Resolve account ID to actor
-	actor, err := h.resolveAccountIDLift(ctx.Context, accountID)
+	// Call Accounts service
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, accountID)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Get real counts - these are not stored on the ActivityPub actor
-	// For now, we'll default to 0 since we just fetched the actor
-	followerCount := 0
-	followingCount := 0
-	statusesCount := 0
-
-	// Convert to Mastodon account format
-	account := models.Account{
-		ID:             actor.PreferredUsername,
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == actorTypeService,
-		Discoverable:   actor.Discoverable,
-		Group:          actor.Type == actorTypeGroup,
-		CreatedAt:      h.formatActorCreatedTimeLift(actor.CreatedAt),
-		Note:           actor.Summary,
-		URL:            actor.URL,
-		Avatar:         "", // Default empty avatar
-		AvatarStatic:   "", // Default empty avatar
-		Header:         h.getHeaderURLLift(actor),
-		HeaderStatic:   "",
-		FollowersCount: followerCount,
-		FollowingCount: followingCount,
-		StatusesCount:  statusesCount,
-		LastStatusAt:   h.formatLastStatusTimeLift(actor.LastStatusAt),
-		Emojis:         []any{},
-		Fields:         h.parseActorFieldsLift(ctx.Context, actor, actor.Attachment),
-	}
-
-	// Set avatar if icon is present
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		account.Avatar = actor.Icon.URL
-		account.AvatarStatic = actor.Icon.URL
-	}
-
-	// Set default avatar if not present
-	if account.Avatar == "" {
-		account.Avatar = fmt.Sprintf("%s/avatars/default.png", h.cfg.BaseURL())
-		account.AvatarStatic = account.Avatar
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		}
+		h.logger.Error("failed to get account", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
 	return ctx.JSON(account)
@@ -659,32 +508,24 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "acct parameter is required"})
 	}
 
-	// Remove @ prefix if present
-	acct = strings.TrimPrefix(acct, "@")
-
-	// For local accounts, just use the username part
-	username := acct
-	if parts := strings.Split(acct, "@"); len(parts) > 0 {
-		username = parts[0]
-	}
-
-	// Get the actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	// Call Accounts service
+	account, err := h.registry.Accounts().LookupAccount(ctx.Context, &accounts.LookupAccountQuery{
+		Acct:     acct,
+		ViewerID: "", // Anonymous lookup for now
+	})
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		}
+		h.logger.Error("failed to lookup account", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get real counts - these are not stored on the ActivityPub actor
-	// For now, we'll default to 0 since we just fetched the actor
-	followerCount := 0
-	followingCount := 0
-	statusesCount := 0
-
-	// Convert to Mastodon account format with real counts
+	// Convert to Mastodon account format
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
-	account := converter.ActorToAccountWithCounts(actor, followerCount, followingCount, statusesCount)
+	mastodonAccount := converter.ActorToAccountWithCounts(account.Actor, 0, 0, 0)
 
-	return ctx.JSON(account)
+	return ctx.JSON(mastodonAccount)
 }
 
 // relationshipType represents the type of relationship being queried
@@ -706,7 +547,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 	username := accountID
 
 	// Get the actor to verify it exists
-	_, err := h.repos.Actor().GetActor(ctx.Context, username)
+	_, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
 	}
@@ -723,18 +564,18 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 	}
 
 	// Get relationships based on type
-	var relationships []string
+	var relationshipAccounts []*storage.Account
 	var nextCursor string
 
 	switch relType {
 	case relationshipFollowers:
-		relationships, nextCursor, err = h.repos.Relationship().GetFollowers(ctx.Context, username, limit, cursor)
+		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowers(ctx.Context, username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get followers", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 		}
 	case relationshipFollowing:
-		relationships, nextCursor, err = h.repos.Relationship().GetFollowing(ctx.Context, username, limit, cursor)
+		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowing(ctx.Context, username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get following", zap.Error(err))
 			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -743,29 +584,14 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 
 	// Convert relationships to Mastodon account format
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
-	accounts := make([]models.Account, 0, len(relationships))
-	for _, relationshipID := range relationships {
-		// Extract username from relationship ID
-		relatedUsername := converter.ExtractUsernameFromActorID(relationshipID)
-		if relatedUsername == "" {
-			h.logger.Warn("could not extract username from relationship",
-				zap.String("relationship_id", relationshipID),
-				zap.String("type", string(relType)))
+	accounts := make([]models.Account, 0, len(relationshipAccounts))
+	for _, relatedAccount := range relationshipAccounts {
+		if relatedAccount == nil || relatedAccount.Actor == nil {
 			continue
 		}
 
-		// Get the related actor
-		relatedActor, err := h.repos.Actor().GetActor(ctx.Context, relatedUsername)
-		if err != nil {
-			h.logger.Warn("could not get related actor",
-				zap.String("username", relatedUsername),
-				zap.String("type", string(relType)),
-				zap.Error(err))
-			continue
-		}
-
-		// Convert to account
-		account := converter.ActorToAccount(relatedActor)
+		// Convert to account using the Actor from the account we already have
+		account := converter.ActorToAccount(relatedAccount.Actor)
 		accounts = append(accounts, account)
 	}
 
@@ -799,7 +625,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -817,17 +643,14 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "At least one account ID is required"})
 	}
 
-	// Get current user's following list
-	following, _, err := h.repos.Relationship().GetFollowing(ctx.Context, claims.Username, 1000, "") // Get a reasonable number
+	// Use Accounts service to get familiar followers
+	result, err := h.registry.Accounts().GetFamiliarFollowers(ctx.Context, &accounts.GetFamiliarFollowersQuery{
+		AccountIDs: ids,
+		ViewerID:   claims.Username,
+	})
 	if err != nil {
-		h.logger.Error("failed to get following", zap.Error(err))
+		h.logger.Error("failed to get familiar followers", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Create a map of who the current user follows
-	userFollowsMap := make(map[string]bool)
-	for _, followedActorID := range following {
-		userFollowsMap[followedActorID] = true
 	}
 
 	// Build response for each requested account
@@ -836,36 +659,21 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 		Accounts []models.Account `json:"accounts"`
 	}
 
-	results := make([]FamiliarFollowersResponse, 0, len(ids))
+	results := make([]FamiliarFollowersResponse, 0, len(result.Results))
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
 
-	for _, accountID := range ids {
-		// Get followers of this account
-		followers, _, err := h.repos.Relationship().GetFollowers(ctx.Context, accountID, 100, "")
-		if err != nil {
-			// Skip if account not found
-			continue
-		}
-
-		// Find mutual connections (accounts that follow this user AND are followed by the current user)
-		mutualAccounts := make([]models.Account, 0)
-		for _, followerActorID := range followers {
-			if userFollowsMap[followerActorID] {
-				// Get actor details
-				username := converter.ExtractUsernameFromActorID(followerActorID)
-				if username != "" {
-					actor, err := h.repos.Actor().GetActor(ctx.Context, username)
-					if err == nil {
-						account := converter.ActorToAccount(actor)
-						mutualAccounts = append(mutualAccounts, account)
-					}
-				}
+	for _, familiarResult := range result.Results {
+		apiAccounts := make([]models.Account, 0, len(familiarResult.Accounts))
+		for _, storageAccount := range familiarResult.Accounts {
+			if storageAccount.Actor != nil {
+				apiAccount := converter.ActorToAccount(storageAccount.Actor)
+				apiAccounts = append(apiAccounts, apiAccount)
 			}
 		}
-
+		
 		results = append(results, FamiliarFollowersResponse{
-			ID:       accountID,
-			Accounts: mutualAccounts,
+			ID:       familiarResult.ID,
+			Accounts: apiAccounts,
 		})
 	}
 
@@ -879,56 +687,33 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
 	}
 
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	// Call Accounts service
+	result, err := h.registry.Accounts().PinAccount(ctx.Context, &accounts.PinAccountCommand{
+		Username:      claims.Username,
+		TargetAccount: accountID,
+		PinnerID:      claims.Username,
+	})
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check write:accounts scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "Insufficient scope"})
-	}
-
-	// Get target actor to verify it exists
-	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Create pin relationship
-	pin := &storage.AccountPin{
-		Username:       claims.Username,
-		PinnedActorID:  targetActor.ID,
-		PinnedUsername: accountID,
-		CreatedAt:      time.Now(),
-	}
-
-	// Store the pin
-	if err := h.repos.Account().CreateAccountPin(ctx.Context, pin); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		}
 		if strings.Contains(err.Error(), "already pinned") {
 			return ctx.Status(422).JSON(map[string]string{"error": "Account already pinned"})
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
 		}
 		h.logger.Error("failed to pin account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get relationship status to return
-	relationship, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
-	if err != nil {
-		h.logger.Error("failed to get relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return ctx.JSON(relationship)
+	return ctx.JSON(result.Relationship)
 }
 
 // HandleUnpinAccountLift unpins an account from the user's profile
@@ -938,45 +723,30 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
 	}
 
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	// Call Accounts service
+	result, err := h.registry.Accounts().UnpinAccount(ctx.Context, &accounts.UnpinAccountCommand{
+		Username:      claims.Username,
+		TargetAccount: accountID,
+		PinnerID:      claims.Username,
+	})
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check write:accounts scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "Insufficient scope"})
-	}
-
-	// Get target actor to verify it exists
-	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Delete the pin
-	if err := h.repos.Account().DeleteAccountPin(ctx.Context, claims.Username, targetActor.ID); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+		}
 		h.logger.Error("failed to unpin account", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get relationship status to return
-	relationship, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
-	if err != nil {
-		h.logger.Error("failed to get relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return ctx.JSON(relationship)
+	return ctx.JSON(result.Relationship)
 }
 
 // HandleSetAccountNoteLift sets a private note on an account
@@ -986,23 +756,10 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
 	}
 
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check write:accounts scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "Insufficient scope"})
+		return err
 	}
 
 	// Parse request body
@@ -1013,38 +770,25 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Get target actor to verify it exists
-	targetActor, err := h.repos.Actor().GetActor(ctx.Context, accountID)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Create or update account note
-	note := &storage.AccountNote{
+	// Call Accounts service
+	result, err := h.registry.Accounts().SetAccountNote(ctx.Context, &accounts.SetAccountNoteCommand{
 		Username:      claims.Username,
-		TargetActorID: targetActor.ID,
+		TargetAccount: accountID,
 		Note:          req.Comment,
-		CreatedAt:     time.Now(),
-		UpdatedAt:     time.Now(),
-	}
-
-	// Store the note
-	if err := h.repos.Account().CreateAccountNote(ctx.Context, note); err != nil {
+		SetterID:      claims.Username,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+		}
 		h.logger.Error("failed to set account note", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get relationship status to return
-	relationship, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
-	if err != nil {
-		h.logger.Error("failed to get relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Add the note to the relationship
-	relationship["note"] = req.Comment
-
-	return ctx.JSON(relationship)
+	return ctx.JSON(result.Relationship)
 }
 
 // HandleRemoveFromFollowersLift removes a follower from the current user's followers list
@@ -1054,51 +798,30 @@ func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
 	}
 
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Authenticate user
+	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return err
 	}
 
-	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
+	// Call Accounts service
+	result, err := h.registry.Accounts().RemoveFollower(ctx.Context, &accounts.RemoveFollowerCommand{
+		Username:   claims.Username,
+		FollowerID: accountID,
+		RemoverID:  claims.Username,
+	})
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check write:follows scope
-	if !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "Insufficient scope"})
-	}
-
-	// Get target actor to verify it exists
-	_, err = h.repos.Actor().GetActor(ctx.Context, accountID)
-	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
-	}
-
-	// Check if target follows current user using GetRelationship
-	relationship, err := h.repos.Relationship().GetRelationship(ctx.Context, accountID, claims.Username)
-	if err != nil || relationship == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account is not following you"})
-	}
-
-	// Remove the follow relationship
-	if err := h.repos.Relationship().DeleteRelationship(ctx.Context, accountID, claims.Username); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "Account not found or is not following you"})
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+		}
 		h.logger.Error("failed to remove follower", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Get relationship status to return
-	relationshipMap, err := h.getRelationshipMapLift(ctx.Context, claims.Username, accountID)
-	if err != nil {
-		h.logger.Error("failed to get relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return ctx.JSON(relationshipMap)
+	return ctx.JSON(result.Relationship)
 }
 
 // Helper methods for Lift implementation
@@ -1133,52 +856,48 @@ func (h *Handler) resolveAccountIDLift(ctx context.Context, accountID string) (*
 // getRelationshipMapLift gets relationship status for Lift implementation
 func (h *Handler) getRelationshipMapLift(ctx context.Context, currentUsername, targetUsername string) (map[string]any, error) {
 	// Get actors
-	currentActor, err := h.repos.Actor().GetActor(ctx, currentUsername)
+	currentActor, err := h.registry.Accounts().GetAccount(ctx, currentUsername)
 	if err != nil {
 		return nil, err
 	}
 
-	targetActor, err := h.repos.Actor().GetActor(ctx, targetUsername)
+	targetActor, err := h.registry.Accounts().GetAccount(ctx, targetUsername)
 	if err != nil {
 		return nil, err
 	}
 
 	// Check various relationship statuses using GetRelationship
-	followingRel, _ := h.repos.Relationship().GetRelationship(ctx, currentUsername, targetUsername)
+	followingRel, _ := h.registry.Relationships().GetRelationship(ctx, currentUsername, targetUsername)
 	following := followingRel != nil
-	followedByRel, _ := h.repos.Relationship().GetRelationship(ctx, targetUsername, currentUsername)
+	followedByRel, _ := h.registry.Relationships().GetRelationship(ctx, targetUsername, currentUsername)
 	followedBy := followedByRel != nil
 
 	// Check if pinned
-	endorsed, _ := h.repos.Account().IsAccountPinned(ctx, currentUsername, targetActor.ID)
+	endorsed, _ := h.registry.Accounts().IsAccountPinned(ctx, currentUsername, targetActor.User.Username)
 
 	// Get note if exists
-	note, _ := h.repos.User().GetAccountNote(ctx, currentUsername, targetActor.ID)
-	noteText := ""
-	if note != nil {
-		noteText = note.Note
-	}
+	noteText, _ := h.registry.Accounts().GetAccountNote(ctx, currentUsername, targetActor.User.Username)
 
 	// Check if muted
-	muted, _ := h.repos.Social().IsMuted(ctx, currentActor.ID, targetActor.ID)
+	muted, _ := h.registry.Relationships().IsMuted(ctx, currentActor.User.Username, targetActor.User.Username)
 
 	// Check if blocked
-	blocking, _ := h.repos.Relationship().IsBlocked(ctx, currentActor.ID, targetActor.ID)
-	blockedBy, _ := h.repos.Relationship().IsBlocked(ctx, targetActor.ID, currentActor.ID)
+	blocking, _ := h.registry.Relationships().IsBlocked(ctx, currentActor.User.Username, targetActor.User.Username)
+	blockedBy, _ := h.registry.Relationships().IsBlocked(ctx, targetActor.User.Username, currentActor.User.Username)
 
 	// Build relationship response
 	relationship := map[string]any{
 		"id":                   targetUsername,
 		"following":            following,
-		"showing_reblogs":      !h.isReblogFilteredLift(ctx, currentActor.ID, targetActor.ID),
-		"notifying":            h.isNotifyingEnabledLift(ctx, currentActor.ID, targetActor.ID),
+		"showing_reblogs":      !h.isReblogFilteredLift(ctx, currentActor.User.Username, targetActor.User.Username),
+		"notifying":            h.isNotifyingEnabledLift(ctx, currentActor.User.Username, targetActor.User.Username),
 		"followed_by":          followedBy,
 		"blocking":             blocking,
 		"blocked_by":           blockedBy,
 		"muting":               muted,
-		"muting_notifications": h.isNotificationsMutedLift(ctx, currentActor.ID, targetActor.ID),
-		"requested":            h.hasFollowRequestLift(ctx, currentActor.ID, targetActor.ID),
-		"domain_blocking":      h.isDomainBlockedLift(ctx, currentActor.ID, targetActor.ID),
+		"muting_notifications": h.isNotificationsMutedLift(ctx, currentActor.User.Username, targetActor.User.Username),
+		"requested":            h.hasFollowRequestLift(ctx, currentActor.User.Username, targetActor.User.Username),
+		"domain_blocking":      h.isDomainBlockedLift(ctx, currentActor.User.Username, targetActor.User.Username),
 		"endorsed":             endorsed,
 		"note":                 noteText,
 	}
@@ -1321,7 +1040,7 @@ func (h *Handler) parseActorFieldsLift(ctx context.Context, actor *activitypub.A
 func (h *Handler) isReblogFilteredLift(ctx context.Context, followerID, followeeID string) bool {
 	// Check user preference for showing reblogs from this user
 	// Use extended preferences to check if reblogs are filtered
-	showReblogs, err := h.repos.Account().GetPreference(ctx, followerID, fmt.Sprintf("show_reblogs:%s", followeeID))
+	showReblogs, err := h.registry.Accounts().GetPreference(ctx, followerID, fmt.Sprintf("show_reblogs:%s", followeeID))
 	if err != nil {
 		h.logger.Debug("failed to get reblog preference", zap.Error(err))
 		return false // Default to showing reblogs if error
@@ -1340,7 +1059,7 @@ func (h *Handler) isReblogFilteredLift(ctx context.Context, followerID, followee
 // isNotifyingEnabledLift checks if notifications are enabled for a relationship
 func (h *Handler) isNotifyingEnabledLift(ctx context.Context, followerID, followeeID string) bool {
 	// Check user preference for notifications from this user
-	notifyEnabled, err := h.repos.Account().GetPreference(ctx, followerID, fmt.Sprintf("notify:%s", followeeID))
+	notifyEnabled, err := h.registry.Accounts().GetPreference(ctx, followerID, fmt.Sprintf("notify:%s", followeeID))
 	if err != nil {
 		h.logger.Debug("failed to check notification preference", zap.Error(err))
 		return false // Default to not notifying if error
@@ -1357,7 +1076,7 @@ func (h *Handler) isNotifyingEnabledLift(ctx context.Context, followerID, follow
 // isNotificationsMutedLift checks if notifications are muted for a relationship
 func (h *Handler) isNotificationsMutedLift(ctx context.Context, muterID, muteeID string) bool {
 	// Check user preference for muting notifications from this user
-	notifMuted, err := h.repos.Account().GetPreference(ctx, muterID, fmt.Sprintf("mute_notifications:%s", muteeID))
+	notifMuted, err := h.registry.Accounts().GetPreference(ctx, muterID, fmt.Sprintf("mute_notifications:%s", muteeID))
 	if err != nil {
 		h.logger.Debug("failed to check notification mute preference", zap.Error(err))
 		return false // Default to not muted if error
@@ -1374,7 +1093,7 @@ func (h *Handler) isNotificationsMutedLift(ctx context.Context, muterID, muteeID
 // hasFollowRequestLift checks if there's a pending follow request
 func (h *Handler) hasFollowRequestLift(ctx context.Context, requesterID, targetID string) bool {
 	// Check follow request state - returns "pending", "accepted", "rejected", or ""
-	state, err := h.repos.Account().GetFollowRequestState(ctx, requesterID, targetID)
+	state, err := h.registry.Accounts().GetFollowRequestState(ctx, requesterID, targetID)
 	if err != nil {
 		h.logger.Debug("failed to check follow request state", zap.Error(err))
 		return false // Default to no pending request if error
@@ -1392,7 +1111,7 @@ func (h *Handler) isDomainBlockedLift(ctx context.Context, userID, targetID stri
 	}
 
 	// Check if user has blocked this domain
-	blocked, err := h.repos.Account().IsBlockedDomain(ctx, userID, targetDomain)
+	blocked, err := h.registry.Accounts().IsBlockedDomain(ctx, userID, targetDomain)
 	if err != nil {
 		h.logger.Debug("failed to check domain block status", zap.Error(err))
 		return false // Default to not blocked if error
@@ -1421,7 +1140,7 @@ func (h *Handler) extractDomainFromActorIDLift(actorID string) string {
 
 // getFieldVerificationTimeLift gets the verification time for a profile field
 func (h *Handler) getFieldVerificationTimeLift(ctx context.Context, username, fieldName string) any {
-	field, err := h.repos.Account().GetFieldVerification(ctx, username, fieldName)
+	field, err := h.registry.Accounts().GetFieldVerification(ctx, username, fieldName)
 	if err != nil {
 		h.logger.Warn("failed to get field verification",
 			zap.String("username", username),
@@ -1456,7 +1175,7 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	}
 
 	// Check if actor exists
-	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
+	actor, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
 	}
@@ -1490,11 +1209,11 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 
 	// If not requesting a page, return the collection metadata
 	if !isPage {
-		return h.returnActivityPubCollection(ctx, actor, collectionType)
+		return h.returnActivityPubCollection(ctx, actor.Actor, collectionType)
 	}
 
 	// Get collection data with pagination
-	return h.returnActivityPubCollectionPage(ctx, actor, collectionType, cursor, limit)
+	return h.returnActivityPubCollectionPage(ctx, actor.Actor, collectionType, cursor, limit)
 }
 
 // returnActivityPubCollection returns ActivityPub OrderedCollection metadata
@@ -1506,7 +1225,7 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
-				oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 				claims, err := oauthSvc.ValidateAccessToken(token)
 				if err != nil || claims.Username != actor.PreferredUsername {
 					// Other users cannot see private followers
@@ -1528,9 +1247,11 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 
 	switch collectionType {
 	case "followers":
-		totalItems, err = h.repos.Relationship().CountFollowers(ctx.Context, actor.PreferredUsername)
+		count, countErr := h.registry.Relationships().CountFollowers(ctx.Context, actor.PreferredUsername)
+		totalItems, err = int(count), countErr
 	case "following":
-		totalItems, err = h.repos.Relationship().CountFollowing(ctx.Context, actor.PreferredUsername)
+		count, countErr := h.registry.Relationships().CountFollowing(ctx.Context, actor.PreferredUsername)
+		totalItems, err = int(count), countErr
 	}
 
 	if err != nil {
@@ -1573,7 +1294,7 @@ func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *acti
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
-				oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 				claims, err := oauthSvc.ValidateAccessToken(token)
 				if err != nil || claims.Username != actor.PreferredUsername {
 					// Other users cannot see private followers
@@ -1596,9 +1317,27 @@ func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *acti
 
 	switch collectionType {
 	case "followers":
-		usernames, nextCursor, err = h.repos.Relationship().GetFollowers(ctx.Context, actor.PreferredUsername, limit, cursor)
+		accounts, cursor, accountErr := h.registry.Relationships().GetFollowers(ctx.Context, actor.PreferredUsername, limit, cursor)
+		nextCursor, err = cursor, accountErr
+		if err == nil {
+			usernames = make([]string, len(accounts))
+			for i, acc := range accounts {
+				if acc != nil && acc.User != nil {
+					usernames[i] = acc.User.Username
+				}
+			}
+		}
 	case "following":
-		usernames, nextCursor, err = h.repos.Relationship().GetFollowing(ctx.Context, actor.PreferredUsername, limit, cursor)
+		accounts, cursor, accountErr := h.registry.Relationships().GetFollowing(ctx.Context, actor.PreferredUsername, limit, cursor)
+		nextCursor, err = cursor, accountErr
+		if err == nil {
+			usernames = make([]string, len(accounts))
+			for i, acc := range accounts {
+				if acc != nil && acc.User != nil {
+					usernames[i] = acc.User.Username
+				}
+			}
+		}
 	}
 
 	if err != nil {

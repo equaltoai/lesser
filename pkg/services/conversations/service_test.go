@@ -107,6 +107,16 @@ func (m *mockConversationRepository) SearchConversations(ctx context.Context, us
 	return args.Get(0).(*interfaces.PaginatedResult[*models.Conversation]), args.Error(1)
 }
 
+func (m *mockConversationRepository) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
+	args := m.Called(ctx, mute)
+	return args.Error(0)
+}
+
+func (m *mockConversationRepository) DeleteConversationMute(ctx context.Context, username, conversationID string) error {
+	args := m.Called(ctx, username, conversationID)
+	return args.Error(0)
+}
+
 type mockNoteRepository struct {
 	mock.Mock
 }
@@ -462,6 +472,32 @@ func (m *mockAccountRepository) GetAccountsByUsernames(ctx context.Context, user
 func (m *mockAccountRepository) GetAccountsCount(ctx context.Context) (int64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *mockAccountRepository) AddBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *mockAccountRepository) RemoveBookmark(ctx context.Context, username, objectID string) error {
+	args := m.Called(ctx, username, objectID)
+	return args.Error(0)
+}
+
+func (m *mockAccountRepository) GetBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*storage.Bookmark, string, error) {
+	args := m.Called(ctx, username, limit, cursor)
+	if args.Get(0) == nil {
+		return nil, args.String(1), args.Error(2)
+	}
+	return args.Get(0).([]*storage.Bookmark), args.String(1), args.Error(2)
+}
+
+func (m *mockAccountRepository) GetBookmarkedStatuses(ctx context.Context, username string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	args := m.Called(ctx, username, opts)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*interfaces.PaginatedResult[*models.Status]), args.Error(1)
 }
 
 type mockPublisher struct {

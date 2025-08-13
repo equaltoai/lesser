@@ -2838,3 +2838,50 @@ func (r *FederationRepository) GetAffectedFollowingCount(ctx context.Context, us
 
 	return count, nil
 }
+
+// GetFederationCostsByUser returns federation costs for a specific user within a date range
+func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, userID string, startTime, endTime time.Time, limit, offset int) ([]*models.FederationCost, error) {
+	r.logger.Debug("Getting federation costs by user",
+		zap.String("user_id", userID),
+		zap.Time("start_time", startTime),
+		zap.Time("end_time", endTime),
+		zap.Int("limit", limit),
+		zap.Int("offset", offset))
+
+	// Query federation costs for this user within the date range
+	// Using the FederationCost model which tracks costs by user and time period
+	var costs []models.FederationCost
+	
+	// Build the query with user-specific partition key
+	userCostPK := fmt.Sprintf("USER_FEDERATION_COSTS#%s", userID)
+	
+	query := r.db.WithContext(ctx).Model(&models.FederationCost{}).
+		Where("PK", "=", userCostPK).
+		Where("SK", ">=", startTime.Format(time.RFC3339)).
+		Where("SK", "<=", endTime.Format(time.RFC3339)).
+		Limit(limit)
+	
+	if offset > 0 {
+		query = query.Offset(offset)
+	}
+
+	err := query.Scan(&costs)
+	if err != nil {
+		r.logger.Error("Failed to query federation costs by user",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query federation costs: %w", err)
+	}
+
+	// Convert to pointer slice for return
+	result := make([]*models.FederationCost, len(costs))
+	for i := range costs {
+		result[i] = &costs[i]
+	}
+
+	r.logger.Debug("Retrieved federation costs by user",
+		zap.String("user_id", userID),
+		zap.Int("cost_count", len(result)))
+
+	return result, nil
+}

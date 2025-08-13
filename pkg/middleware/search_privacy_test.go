@@ -60,21 +60,25 @@ func createTestContext(path string, queryParams map[string]string, headers map[s
 }
 
 func TestSearchPrivacyMiddleware(t *testing.T) {
-	// Create a test OAuth service
+	// Create a test OAuth service with audit logger
 	testJWTSecret := "test_jwt_secret"
-	oauthService := auth.NewOAuthService(testJWTSecret, nil)
+	logger := zap.NewNop()
+	auditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
+	oauthService := auth.NewOAuthService(testJWTSecret, nil, auditLogger)
 	
+	ctx := context.Background()
 	// Create a valid token for testing
-	validToken, _, _ := oauthService.GenerateTokens("testuser", "test-client", []string{auth.ScopeRead})
+	validToken, _, _ := oauthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	validAuthHeader := "Bearer " + validToken
 	
 	// Create an invalid token with wrong signature
-	wrongOAuthService := auth.NewOAuthService("wrong_secret", nil)
-	invalidToken, _, _ := wrongOAuthService.GenerateTokens("testuser", "test-client", []string{auth.ScopeRead})
+	wrongAuditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
+	wrongOAuthService := auth.NewOAuthService("wrong_secret", nil, wrongAuditLogger)
+	invalidToken, _, _ := wrongOAuthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	invalidAuthHeader := "Bearer " + invalidToken
 	
 	// Create a token with insufficient scope (write only)
-	writeOnlyToken, _, _ := oauthService.GenerateTokens("testuser", "test-client", []string{auth.ScopeWrite})
+	writeOnlyToken, _, _ := oauthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeWrite})
 	writeOnlyAuthHeader := "Bearer " + writeOnlyToken
 
 	tests := []struct {

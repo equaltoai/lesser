@@ -97,6 +97,7 @@ func (m *MockAnalytics) Import() *repositories.ImportRepository { return nil }
 func (m *MockAnalytics) DLQ() *repositories.DLQRepository { return nil }
 func (m *MockAnalytics) MetricRecord() *repositories.MetricRecordRepository { return nil }
 func (m *MockAnalytics) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
+func (m *MockAnalytics) Audit() *repositories.AuditRepository { return nil }
 func (m *MockAnalytics) GetDB() dynamormCore.DB { return nil }
 func (m *MockAnalytics) GetTableName() string { return "test-table" }
 func (m *MockAnalytics) GetLogger() *zap.Logger { return zap.NewNop() }

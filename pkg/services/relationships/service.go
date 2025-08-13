@@ -12,8 +12,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -27,6 +27,9 @@ type Service struct {
 	logger           *zap.Logger
 	domainName       string
 	federation       FederationService
+	
+	// Additional repositories for extended functionality
+	storage core.RepositoryStorage // Full storage interface for access to all repos
 }
 
 // FederationService defines the interface for federation operations
@@ -50,6 +53,29 @@ func NewService(
 	return &Service{
 		relationshipRepo: relationshipRepo,
 		accountRepo:      accountRepo,
+		publisher:        publisher,
+		federation:       federation,
+		logger:           logger,
+		domainName:       domainName,
+	}
+}
+
+// NewServiceWithStorage creates a new Relationships Service with full storage access
+func NewServiceWithStorage(
+	storage core.RepositoryStorage,
+	publisher streaming.Publisher,
+	federation FederationService,
+	logger *zap.Logger,
+	domainName string,
+) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	return &Service{
+		relationshipRepo: nil, // We'll use storage directly for repository access
+		accountRepo:      nil, // We'll use storage directly for repository access
+		storage:          storage,
 		publisher:        publisher,
 		federation:       federation,
 		logger:           logger,
@@ -174,14 +200,40 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	}
 
 	// Check if users exist
-	follower, err := s.accountRepo.GetAccount(ctx, cmd.FollowerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get follower account: %w", err)
-	}
-
-	following, err := s.accountRepo.GetAccount(ctx, cmd.FollowingID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get following account: %w", err)
+	var follower, following *storage.Account
+	var err error
+	
+	if s.accountRepo != nil {
+		follower, err = s.accountRepo.GetAccount(ctx, cmd.FollowerID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get follower account: %w", err)
+		}
+		following, err = s.accountRepo.GetAccount(ctx, cmd.FollowingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get following account: %w", err)
+		}
+	} else if s.storage != nil {
+		// Get accounts via Actor repository (for now)
+		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get follower actor: %w", err)
+		}
+		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowingID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get following actor: %w", err)
+		}
+		
+		// Create account objects
+		follower = &storage.Account{
+			User: &storage.User{Username: followerActor.PreferredUsername},
+			Actor: followerActor,
+		}
+		following = &storage.Account{
+			User: &storage.User{Username: followingActor.PreferredUsername},
+			Actor: followingActor,
+		}
+	} else {
+		return nil, fmt.Errorf("no repository or storage available")
 	}
 
 	// Check if already following
@@ -192,10 +244,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 
 	if isFollowing {
 		// Already following - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.FollowerID,
-			TargetID:    cmd.FollowingID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get existing relationship: %w", err)
 		}
@@ -249,10 +298,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	}
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.FollowerID,
-		TargetID:    cmd.FollowingID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -290,10 +336,7 @@ func (s *Service) Unfollow(ctx context.Context, cmd *UnfollowCommand) (*Relation
 
 	if !isFollowing {
 		// Not following - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.FollowerID,
-			TargetID:    cmd.FollowingID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current relationship: %w", err)
 		}
@@ -326,10 +369,7 @@ func (s *Service) Unfollow(ctx context.Context, cmd *UnfollowCommand) (*Relation
 	s.queueFederationUndo(ctx, follower, following, "Follow")
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.FollowerID,
-		TargetID:    cmd.FollowingID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -368,10 +408,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 
 	if isBlocked {
 		// Already blocked - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.BlockerID,
-			TargetID:    cmd.BlockedID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current relationship: %w", err)
 		}
@@ -424,10 +461,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	s.queueFederationBlock(ctx, blocker, blocked)
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.BlockerID,
-		TargetID:    cmd.BlockedID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -461,10 +495,7 @@ func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*Relationsh
 
 	if !isBlocked {
 		// Not blocked - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.BlockerID,
-			TargetID:    cmd.BlockedID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current relationship: %w", err)
 		}
@@ -497,10 +528,7 @@ func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*Relationsh
 	s.queueFederationUndo(ctx, blocker, blocked, "Block")
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.BlockerID,
-		TargetID:    cmd.BlockedID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -539,10 +567,7 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 
 	if isMuted {
 		// Already muted - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.MuterID,
-			TargetID:    cmd.MutedID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current relationship: %w", err)
 		}
@@ -574,10 +599,7 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 	events := s.emitMuteEvents(ctx, muter, muted, cmd.Duration)
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.MuterID,
-		TargetID:    cmd.MutedID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -611,10 +633,7 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 
 	if !isMuted {
 		// Not muted - return current relationship
-		relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-			RequesterID: cmd.MuterID,
-			TargetID:    cmd.MutedID,
-		})
+		relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get current relationship: %w", err)
 		}
@@ -646,10 +665,7 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 	events := s.emitUnmuteEvents(ctx, muter, muted)
 
 	// Get updated relationship data
-	relationship, err := s.GetRelationship(ctx, &GetRelationshipQuery{
-		RequesterID: cmd.MuterID,
-		TargetID:    cmd.MutedID,
-	})
+	relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
 	}
@@ -665,18 +681,18 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 }
 
 // GetRelationship retrieves relationship status between two users
-func (s *Service) GetRelationship(ctx context.Context, query *GetRelationshipQuery) (*RelationshipData, error) {
+func (s *Service) GetRelationship(ctx context.Context, requesterID, targetID string) (*RelationshipData, error) {
 	s.logger.Debug("getting relationship",
-		zap.String("requester_id", query.RequesterID),
-		zap.String("target_id", query.TargetID))
+		zap.String("requester_id", requesterID),
+		zap.String("target_id", targetID))
 
-	// Validate query
-	if err := s.validateGetRelationshipQuery(query); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+	// Basic validation
+	if requesterID == "" || targetID == "" {
+		return nil, fmt.Errorf("requester_id and target_id are required")
 	}
 
 	// Build relationship data
-	relationship, err := s.buildRelationshipData(ctx, query.RequesterID, query.TargetID)
+	relationship, err := s.buildRelationshipData(ctx, requesterID, targetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build relationship data: %w", err)
 	}
@@ -721,7 +737,736 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 	}, nil
 }
 
+// Domain Block Commands and Queries
+
+// AddDomainBlockCommand contains data needed to add a domain block
+type AddDomainBlockCommand struct {
+	UserID string `json:"user_id" validate:"required"`
+	Domain string `json:"domain" validate:"required"`
+}
+
+// RemoveDomainBlockCommand contains data needed to remove a domain block
+type RemoveDomainBlockCommand struct {
+	UserID string `json:"user_id" validate:"required"`
+	Domain string `json:"domain" validate:"required"`
+}
+
+// GetDomainBlocksQuery contains parameters for retrieving domain blocks
+type GetDomainBlocksQuery struct {
+	UserID string `json:"user_id" validate:"required"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+// GetMutedUsersQuery contains parameters for retrieving muted users
+type GetMutedUsersQuery struct {
+	UserID string `json:"user_id" validate:"required"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+// GetBlockedUsersQuery contains parameters for retrieving blocked users
+type GetBlockedUsersQuery struct {
+	UserID string `json:"user_id" validate:"required"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+// GetFollowersQuery contains parameters for retrieving followers
+type GetFollowersQuery struct {
+	UserID string `json:"user_id" validate:"required"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+// Domain Block Results
+
+// DomainBlocksResult contains domain blocks data
+type DomainBlocksResult struct {
+	Domains    []string           `json:"domains"`
+	NextCursor string             `json:"next_cursor,omitempty"`
+	Events     []*streaming.Event `json:"events"`
+}
+
+// MutedUsersResult contains muted users data  
+type MutedUsersResult struct {
+	MutedUsers []*storage.Account `json:"muted_users"`
+	NextCursor string             `json:"next_cursor,omitempty"`
+	Events     []*streaming.Event `json:"events"`
+}
+
+// BlockedUsersResult contains blocked users data
+type BlockedUsersResult struct {
+	BlockedUsers []*storage.Account `json:"blocked_users"`
+	NextCursor   string             `json:"next_cursor,omitempty"`
+	Events       []*streaming.Event `json:"events"`
+}
+
+// FollowersResult contains followers data
+type FollowersResult struct {
+	Followers  []*storage.Account `json:"followers"`
+	NextCursor string             `json:"next_cursor,omitempty"`
+	Events     []*streaming.Event `json:"events"`
+}
+
+// AddDomainBlock adds a domain block for a user
+func (s *Service) AddDomainBlock(ctx context.Context, cmd *AddDomainBlockCommand) error {
+	s.logger.Info("adding domain block",
+		zap.String("user_id", cmd.UserID),
+		zap.String("domain", cmd.Domain))
+
+	// Validate command
+	if err := s.validateAddDomainBlockCommand(cmd); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get domain block repository from storage
+	if s.storage == nil {
+		return fmt.Errorf("storage not available")
+	}
+
+	domainBlockRepo := s.storage.DomainBlock()
+	if domainBlockRepo == nil {
+		return fmt.Errorf("domain block repository not available")
+	}
+
+	// Add the domain block
+	err := domainBlockRepo.AddDomainBlock(ctx, cmd.UserID, cmd.Domain)
+	if err != nil {
+		return fmt.Errorf("failed to add domain block: %w", err)
+	}
+
+	s.logger.Info("domain block added successfully",
+		zap.String("user_id", cmd.UserID),
+		zap.String("domain", cmd.Domain))
+
+	return nil
+}
+
+// RemoveDomainBlock removes a domain block for a user
+func (s *Service) RemoveDomainBlock(ctx context.Context, cmd *RemoveDomainBlockCommand) error {
+	s.logger.Info("removing domain block",
+		zap.String("user_id", cmd.UserID),
+		zap.String("domain", cmd.Domain))
+
+	// Validate command
+	if err := s.validateRemoveDomainBlockCommand(cmd); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get domain block repository from storage
+	if s.storage == nil {
+		return fmt.Errorf("storage not available")
+	}
+
+	domainBlockRepo := s.storage.DomainBlock()
+	if domainBlockRepo == nil {
+		return fmt.Errorf("domain block repository not available")
+	}
+
+	// Remove the domain block
+	err := domainBlockRepo.RemoveDomainBlock(ctx, cmd.UserID, cmd.Domain)
+	if err != nil {
+		return fmt.Errorf("failed to remove domain block: %w", err)
+	}
+
+	s.logger.Info("domain block removed successfully",
+		zap.String("user_id", cmd.UserID),
+		zap.String("domain", cmd.Domain))
+
+	return nil
+}
+
+// GetDomainBlocks retrieves domain blocks for a user
+func (s *Service) GetDomainBlocks(ctx context.Context, query *GetDomainBlocksQuery) (*DomainBlocksResult, error) {
+	s.logger.Debug("getting domain blocks",
+		zap.String("user_id", query.UserID),
+		zap.Int("limit", query.Limit))
+
+	// Validate query
+	if err := s.validateGetDomainBlocksQuery(query); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get domain block repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	domainBlockRepo := s.storage.DomainBlock()
+	if domainBlockRepo == nil {
+		return nil, fmt.Errorf("domain block repository not available")
+	}
+
+	// Get domain blocks
+	domains, nextCursor, err := domainBlockRepo.GetUserDomainBlocks(ctx, query.UserID, query.Limit, query.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain blocks: %w", err)
+	}
+
+	return &DomainBlocksResult{
+		Domains:    domains,
+		NextCursor: nextCursor,
+		Events:     []*streaming.Event{}, // No events for read operations
+	}, nil
+}
+
+// GetMutedUsers retrieves muted users for a user
+func (s *Service) GetMutedUsers(ctx context.Context, query *GetMutedUsersQuery) (*MutedUsersResult, error) {
+	s.logger.Debug("getting muted users",
+		zap.String("user_id", query.UserID),
+		zap.Int("limit", query.Limit))
+
+	// Validate query  
+	if err := s.validateGetMutedUsersQuery(query); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get social repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	socialRepo := s.storage.Social()
+	if socialRepo == nil {
+		return nil, fmt.Errorf("social repository not available")
+	}
+
+	// Get muted users
+	mutes, nextCursor, err := socialRepo.GetMutedUsers(ctx, query.UserID, query.Limit, query.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get muted users: %w", err)
+	}
+
+	// Convert mutes to accounts
+	var mutedUsers []*storage.Account
+	for _, mute := range mutes {
+		// Get the account for each muted user
+		actor, err := s.storage.Actor().GetActor(ctx, mute.Object)
+		if err != nil {
+			s.logger.Warn("failed to get muted actor", zap.String("actor", mute.Object), zap.Error(err))
+			continue
+		}
+		
+		if actor != nil {
+			// Convert actor to account (simplified conversion)
+			account := &storage.Account{
+				User: &storage.User{
+					Username: actor.PreferredUsername,
+				},
+				Actor: actor,
+			}
+			mutedUsers = append(mutedUsers, account)
+		}
+	}
+
+	return &MutedUsersResult{
+		MutedUsers: mutedUsers,
+		NextCursor: nextCursor,
+		Events:     []*streaming.Event{}, // No events for read operations
+	}, nil
+}
+
+// GetBlockedUsers retrieves blocked users for a user
+func (s *Service) GetBlockedUsers(ctx context.Context, query *GetBlockedUsersQuery) (*BlockedUsersResult, error) {
+	s.logger.Debug("getting blocked users",
+		zap.String("user_id", query.UserID),
+		zap.Int("limit", query.Limit))
+
+	// Validate query  
+	if err := s.validateGetBlockedUsersQuery(query); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not available")
+	}
+
+	// Get blocked users
+	blockedUserIDs, nextCursor, err := relationshipRepo.GetBlockedUsers(ctx, query.UserID, query.Limit, query.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blocked users: %w", err)
+	}
+
+	// Convert blocked user IDs to accounts
+	var blockedUsers []*storage.Account
+	for _, blockedUserID := range blockedUserIDs {
+		// Extract username from actor ID
+		parts := strings.Split(blockedUserID, "/")
+		if len(parts) > 0 {
+			username := parts[len(parts)-1]
+			
+			// Get the actor for each blocked user
+			actor, err := s.storage.Actor().GetActor(ctx, username)
+			if err != nil {
+				s.logger.Warn("failed to get blocked actor", zap.String("actor", blockedUserID), zap.Error(err))
+				continue
+			}
+			
+			if actor != nil {
+				// Convert actor to account
+				account := &storage.Account{
+					User: &storage.User{
+						Username: actor.PreferredUsername,
+					},
+					Actor: actor,
+				}
+				blockedUsers = append(blockedUsers, account)
+			}
+		}
+	}
+
+	return &BlockedUsersResult{
+		BlockedUsers: blockedUsers,
+		NextCursor:   nextCursor,
+		Events:       []*streaming.Event{}, // No events for read operations
+	}, nil
+}
+
+// GetFollowers retrieves followers for a user
+func (s *Service) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
+	s.logger.Debug("getting followers",
+		zap.String("username", username),
+		zap.Int("limit", limit))
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, "", fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, "", fmt.Errorf("relationship repository not available")
+	}
+
+	// Get followers
+	followerIDs, nextCursor, err := relationshipRepo.GetFollowers(ctx, username, limit, cursor)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	// Convert follower IDs to accounts
+	var followers []*storage.Account
+	for _, followerID := range followerIDs {
+		// Get the actor for each follower
+		actor, err := s.storage.Actor().GetActor(ctx, followerID)
+		if err != nil {
+			s.logger.Warn("failed to get follower actor", zap.String("actor", followerID), zap.Error(err))
+			continue
+		}
+		
+		if actor != nil {
+			// Convert actor to account
+			account := &storage.Account{
+				User: &storage.User{
+					Username: actor.PreferredUsername,
+				},
+				Actor: actor,
+			}
+			followers = append(followers, account)
+		}
+	}
+
+	return followers, nextCursor, nil
+}
+
+// GetFollowing retrieves users being followed by a user
+func (s *Service) GetFollowing(ctx context.Context, username string, limit int, cursor string) ([]*storage.Account, string, error) {
+	s.logger.Debug("getting following",
+		zap.String("username", username),
+		zap.Int("limit", limit))
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, "", fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, "", fmt.Errorf("relationship repository not available")
+	}
+
+	// Get following
+	followingIDs, nextCursor, err := relationshipRepo.GetFollowing(ctx, username, limit, cursor)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to get following: %w", err)
+	}
+
+	// Convert following IDs to accounts
+	var following []*storage.Account
+	for _, followingID := range followingIDs {
+		// Get the actor for each following
+		actor, err := s.storage.Actor().GetActor(ctx, followingID)
+		if err != nil {
+			s.logger.Warn("failed to get following actor", zap.String("actor", followingID), zap.Error(err))
+			continue
+		}
+		
+		if actor != nil {
+			// Convert actor to account
+			account := &storage.Account{
+				User: &storage.User{
+					Username: actor.PreferredUsername,
+				},
+				Actor: actor,
+			}
+			following = append(following, account)
+		}
+	}
+
+	return following, nextCursor, nil
+}
+
+// CountFollowers counts the number of followers for a user
+func (s *Service) CountFollowers(ctx context.Context, username string) (int64, error) {
+	relationshipRepo := s.storage.Relationship()
+	count, err := relationshipRepo.CountFollowers(ctx, username)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count followers: %w", err)
+	}
+	return int64(count), nil
+}
+
+// IsMuted checks if one user has muted another
+func (s *Service) IsMuted(ctx context.Context, muterID, mutedID string) (bool, error) {
+	socialRepo := s.storage.Social()
+	isMuted, err := socialRepo.IsMuted(ctx, muterID, mutedID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check mute status: %w", err)
+	}
+	return isMuted, nil
+}
+
+// Follow Request Commands and Queries
+
+// GetFollowRequestsQuery contains parameters for retrieving pending follow requests
+type GetFollowRequestsQuery struct {
+	UserID string `json:"user_id" validate:"required"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+// AcceptFollowRequestCommand contains data needed to accept a follow request
+type AcceptFollowRequestCommand struct {
+	RequesterID string `json:"requester_id" validate:"required"` // User accepting the request
+	FollowerID  string `json:"follower_id" validate:"required"`  // User who sent the request
+}
+
+// RejectFollowRequestCommand contains data needed to reject a follow request
+type RejectFollowRequestCommand struct {
+	RequesterID string `json:"requester_id" validate:"required"` // User rejecting the request
+	FollowerID  string `json:"follower_id" validate:"required"`  // User who sent the request
+}
+
+// Follow Request Results
+
+// FollowRequestsResult contains follow requests data
+type FollowRequestsResult struct {
+	FollowerIDs []string           `json:"follower_ids"`
+	NextCursor  string             `json:"next_cursor,omitempty"`
+	Events      []*streaming.Event `json:"events"`
+}
+
+// GetPendingFollowRequests retrieves pending follow requests for a user
+func (s *Service) GetPendingFollowRequests(ctx context.Context, query *GetFollowRequestsQuery) (*FollowRequestsResult, error) {
+	s.logger.Debug("getting pending follow requests",
+		zap.String("user_id", query.UserID),
+		zap.Int("limit", query.Limit))
+
+	// Validate query
+	if err := s.validateGetFollowRequestsQuery(query); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not available")
+	}
+
+	// Get pending follow requests using the concrete method
+	followerIDs, nextCursor, err := relationshipRepo.GetPendingFollowRequests(ctx, query.UserID, query.Limit, query.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending follow requests: %w", err)
+	}
+
+	return &FollowRequestsResult{
+		FollowerIDs: followerIDs,
+		NextCursor:  nextCursor,
+		Events:      []*streaming.Event{}, // No events for read operations
+	}, nil
+}
+
+// AcceptFollowRequest accepts a pending follow request
+func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequestCommand) (*RelationshipResult, error) {
+	s.logger.Info("accepting follow request",
+		zap.String("requester_id", cmd.RequesterID),
+		zap.String("follower_id", cmd.FollowerID))
+
+	// Validate command
+	if err := s.validateAcceptFollowRequestCommand(cmd); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not available")
+	}
+
+	// Check if the follow request exists
+	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("follow request not found: %w", err)
+	}
+
+	// Accept the follow request
+	err = relationshipRepo.AcceptFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to accept follow request: %w", err)
+	}
+
+	// Get accounts for events
+	var follower, following *storage.Account
+	if s.storage != nil {
+		// Get accounts via Actor repository
+		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		if err != nil {
+			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
+		} else {
+			follower = &storage.Account{
+				User: &storage.User{Username: followerActor.PreferredUsername},
+				Actor: followerActor,
+			}
+		}
+		
+		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		if err != nil {
+			s.logger.Warn("failed to get following actor for events", zap.Error(err))
+		} else {
+			following = &storage.Account{
+				User: &storage.User{Username: followingActor.PreferredUsername},
+				Actor: followingActor,
+			}
+		}
+	}
+
+	// Emit events
+	var events []*streaming.Event
+	if follower != nil && following != nil {
+		activityID := uuid.New().String()
+		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
+		s.queueFederationFollow(ctx, follower, following, activityID)
+	}
+
+	// Get updated relationship data
+	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+	}
+
+	s.logger.Info("follow request accepted",
+		zap.String("requester_id", cmd.RequesterID),
+		zap.String("follower_id", cmd.FollowerID))
+
+	return &RelationshipResult{
+		Relationship: relationship,
+		Events:       events,
+	}, nil
+}
+
+// RejectFollowRequest rejects a pending follow request
+func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequestCommand) (*RelationshipResult, error) {
+	s.logger.Info("rejecting follow request",
+		zap.String("requester_id", cmd.RequesterID),
+		zap.String("follower_id", cmd.FollowerID))
+
+	// Validate command
+	if err := s.validateRejectFollowRequestCommand(cmd); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return nil, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return nil, fmt.Errorf("relationship repository not available")
+	}
+
+	// Check if the follow request exists
+	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("follow request not found: %w", err)
+	}
+
+	// Reject the follow request
+	err = relationshipRepo.RejectFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reject follow request: %w", err)
+	}
+
+	// Get accounts for events (minimal events for rejection)
+	var follower, following *storage.Account
+	if s.storage != nil {
+		// Get accounts via Actor repository
+		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
+		if err != nil {
+			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
+		} else {
+			follower = &storage.Account{
+				User: &storage.User{Username: followerActor.PreferredUsername},
+				Actor: followerActor,
+			}
+		}
+		
+		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
+		if err != nil {
+			s.logger.Warn("failed to get following actor for events", zap.Error(err))
+		} else {
+			following = &storage.Account{
+				User: &storage.User{Username: followingActor.PreferredUsername},
+				Actor: followingActor,
+			}
+		}
+	}
+
+	// Emit minimal events and queue federation rejection
+	var events []*streaming.Event
+	if follower != nil && following != nil {
+		// Queue rejection activity for federation
+		s.queueFederationReject(ctx, follower, following)
+	}
+
+	// Get updated relationship data
+	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.RequesterID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+	}
+
+	s.logger.Info("follow request rejected",
+		zap.String("requester_id", cmd.RequesterID),
+		zap.String("follower_id", cmd.FollowerID))
+
+	return &RelationshipResult{
+		Relationship: relationship,
+		Events:       events,
+	}, nil
+}
+
 // Private helper methods
+
+func (s *Service) validateAddDomainBlockCommand(cmd *AddDomainBlockCommand) error {
+	if cmd.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if cmd.Domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	return nil
+}
+
+func (s *Service) validateRemoveDomainBlockCommand(cmd *RemoveDomainBlockCommand) error {
+	if cmd.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if cmd.Domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	return nil
+}
+
+func (s *Service) validateGetDomainBlocksQuery(query *GetDomainBlocksQuery) error {
+	if query.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100 // Default limit
+	}
+	return nil
+}
+
+func (s *Service) validateGetMutedUsersQuery(query *GetMutedUsersQuery) error {
+	if query.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if query.Limit <= 0 {
+		query.Limit = 40 // Default limit
+	}
+	return nil
+}
+
+func (s *Service) validateGetBlockedUsersQuery(query *GetBlockedUsersQuery) error {
+	if query.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if query.Limit <= 0 {
+		query.Limit = 40 // Default limit
+	}
+	return nil
+}
+
+func (s *Service) validateGetFollowersQuery(query *GetFollowersQuery) error {
+	if query.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100 // Default limit for followers
+	}
+	return nil
+}
+
+func (s *Service) validateGetFollowRequestsQuery(query *GetFollowRequestsQuery) error {
+	if query.UserID == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if query.Limit <= 0 {
+		query.Limit = 100 // Default limit
+	}
+	return nil
+}
+
+func (s *Service) validateAcceptFollowRequestCommand(cmd *AcceptFollowRequestCommand) error {
+	if cmd.RequesterID == "" {
+		return fmt.Errorf("requester_id is required")
+	}
+	if cmd.FollowerID == "" {
+		return fmt.Errorf("follower_id is required")
+	}
+	if cmd.RequesterID == cmd.FollowerID {
+		return fmt.Errorf("cannot accept follow request from self")
+	}
+	return nil
+}
+
+func (s *Service) validateRejectFollowRequestCommand(cmd *RejectFollowRequestCommand) error {
+	if cmd.RequesterID == "" {
+		return fmt.Errorf("requester_id is required")
+	}
+	if cmd.FollowerID == "" {
+		return fmt.Errorf("follower_id is required")
+	}
+	if cmd.RequesterID == cmd.FollowerID {
+		return fmt.Errorf("cannot reject follow request from self")
+	}
+	return nil
+}
 
 func (s *Service) validateFollowCommand(_ context.Context, cmd *FollowCommand) error {
 	if cmd.FollowerID == "" {
@@ -816,8 +1561,18 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 		UpdatedAt: now,
 	}
 
+	// Get relationship repository from storage
+	if s.storage == nil {
+		return data, nil // Return default data if storage not available
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return data, nil // Return default data if repo not available
+	}
+
 	// Get follow status (requester -> target)
-	following, err := s.relationshipRepo.IsFollowing(ctx, requesterID, targetID)
+	following, err := relationshipRepo.IsFollowing(ctx, requesterID, targetID)
 	if err != nil {
 		s.logger.Warn("failed to check following status", zap.Error(err))
 	} else {
@@ -825,7 +1580,7 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 	}
 
 	// Get follow status (target -> requester)
-	followedBy, err := s.relationshipRepo.IsFollowing(ctx, targetID, requesterID)
+	followedBy, err := relationshipRepo.IsFollowing(ctx, targetID, requesterID)
 	if err != nil {
 		s.logger.Warn("failed to check followed_by status", zap.Error(err))
 	} else {
@@ -833,7 +1588,7 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 	}
 
 	// Get block status (requester -> target)
-	blocking, err := s.relationshipRepo.IsBlocked(ctx, requesterID, targetID)
+	blocking, err := relationshipRepo.IsBlocked(ctx, requesterID, targetID)
 	if err != nil {
 		s.logger.Warn("failed to check blocking status", zap.Error(err))
 	} else {
@@ -841,35 +1596,37 @@ func (s *Service) buildRelationshipData(ctx context.Context, requesterID, target
 	}
 
 	// Get block status (target -> requester)
-	blockedBy, err := s.relationshipRepo.IsBlocked(ctx, targetID, requesterID)
+	blockedBy, err := relationshipRepo.IsBlocked(ctx, targetID, requesterID)
 	if err != nil {
 		s.logger.Warn("failed to check blocked_by status", zap.Error(err))
 	} else {
 		data.BlockedBy = blockedBy
 	}
 
-	// Get mute status (requester -> target)
-	muting, err := s.relationshipRepo.IsMuted(ctx, requesterID, targetID)
-	if err != nil {
-		s.logger.Warn("failed to check muting status", zap.Error(err))
-	} else {
-		data.Muting = muting
+	// Get mute status using SocialRepository
+	if socialRepo := s.storage.Social(); socialRepo != nil {
+		muting, err := socialRepo.IsMuted(ctx, requesterID, targetID)
+		if err != nil {
+			s.logger.Warn("failed to check muting status", zap.Error(err))
+		} else {
+			data.Muting = muting
+		}
 	}
 
-	// Get follow request status
-	followStatus, err := s.relationshipRepo.GetFollowStatus(ctx, requesterID, targetID)
+	// Get follow request status by checking if there's a pending request
+	hasPendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, requesterID, targetID)
 	if err != nil {
 		s.logger.Warn("failed to check follow request status", zap.Error(err))
 	} else {
-		data.Requested = (followStatus == models.RelationshipPending)
+		data.Requested = hasPendingRequest
 	}
 
 	// Get reverse follow request status
-	reverseFollowStatus, err := s.relationshipRepo.GetFollowStatus(ctx, targetID, requesterID)
+	hasReversePendingRequest, err := relationshipRepo.HasPendingFollowRequest(ctx, targetID, requesterID)
 	if err != nil {
 		s.logger.Warn("failed to check reverse follow request status", zap.Error(err))
 	} else {
-		data.RequestedBy = (reverseFollowStatus == models.RelationshipPending)
+		data.RequestedBy = hasReversePendingRequest
 	}
 
 	return data, nil
@@ -1199,6 +1956,51 @@ func (s *Service) queueFederationUndo(ctx context.Context, actor, target *storag
 	}
 }
 
+func (s *Service) queueFederationReject(ctx context.Context, follower, following *storage.Account) {
+	if s.federation == nil {
+		s.logger.Debug("federation service not available, skipping reject")
+		return
+	}
+
+	// Only federate to remote users
+	if follower.Actor == nil || isLocalActor(follower.Actor, s.domainName) {
+		return
+	}
+
+	now := time.Now()
+	rejectID := uuid.New().String()
+	
+	// Create the original Follow activity being rejected
+	originalFollow := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context: "https://www.w3.org/ns/activitystreams",
+			Type:    "Follow",
+			ID:      fmt.Sprintf("https://%s/follows/%s", follower.Actor.ID, following.User.Username),
+		},
+		Actor:  follower.Actor.ID,
+		Object: following.Actor.ID,
+	}
+
+	// Create the Reject activity
+	rejectActivity := &activitypub.Activity{
+		BaseObject: activitypub.BaseObject{
+			Context:   "https://www.w3.org/ns/activitystreams",
+			Type:      "Reject",
+			ID:        fmt.Sprintf("https://%s/activities/%s", s.domainName, rejectID),
+			Published: &now,
+		},
+		Actor:  following.Actor.ID,
+		Object: originalFollow,
+	}
+
+	if err := s.federation.QueueActivity(ctx, rejectActivity); err != nil {
+		s.logger.Error("failed to queue federation reject",
+			zap.String("follower", follower.User.Username),
+			zap.String("following", following.User.Username),
+			zap.Error(err))
+	}
+}
+
 // isLocalActor checks if an actor is local to this instance
 func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 	if actor == nil {
@@ -1206,4 +2008,180 @@ func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 	}
 	// Check if the actor ID contains our domain
 	return strings.Contains(actor.ID, domainName)
+}
+
+// IsBlocked checks if one user has blocked another
+func (s *Service) IsBlocked(ctx context.Context, blockerID, blockedID string) (bool, error) {
+	// Check block status through relationship repository
+	if s.storage == nil {
+		return false, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return false, fmt.Errorf("relationship repository not available")
+	}
+
+	isBlocked, err := relationshipRepo.IsBlocked(ctx, blockerID, blockedID)
+	if err != nil {
+		return false, fmt.Errorf("failed to check block status: %w", err)
+	}
+
+	return isBlocked, nil
+}
+
+// CountFollowing counts the number of users that an actor is following
+func (s *Service) CountFollowing(ctx context.Context, username string) (int64, error) {
+	// Count following through relationship repository
+	if s.storage == nil {
+		return 0, fmt.Errorf("storage not available")
+	}
+
+	relationshipRepo := s.storage.Relationship()
+	if relationshipRepo == nil {
+		return 0, fmt.Errorf("relationship repository not available")
+	}
+
+	count, err := relationshipRepo.CountFollowing(ctx, username)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count following: %w", err)
+	}
+
+	return int64(count), nil
+}
+
+// Severance-related types and methods
+
+// AcknowledgeSeveranceCommand contains data needed to acknowledge a severance
+type AcknowledgeSeveranceCommand struct {
+	UserID      string `json:"user_id" validate:"required"`
+	SeveranceID string `json:"severance_id" validate:"required"`
+}
+
+// AcknowledgeSeveranceResult contains the result of acknowledging a severance
+type AcknowledgeSeveranceResult struct {
+	Success bool                 `json:"success"`
+	Events  []*streaming.Event   `json:"events"`
+}
+
+// GetAffectedRelationshipsQuery contains data needed to get affected relationships
+type GetAffectedRelationshipsQuery struct {
+	UserID                 string `json:"user_id" validate:"required"`
+	SeveredRelationshipID  string `json:"severed_relationship_id" validate:"required"`
+}
+
+// AffectedRelationship represents a relationship affected by severance
+type AffectedRelationship struct {
+	ID           string        `json:"id"`
+	Type         string        `json:"type"`
+	AffectedUser storage.User  `json:"affected_user"`
+}
+
+// GetAffectedRelationshipsResult contains the result of getting affected relationships
+type GetAffectedRelationshipsResult struct {
+	Relationships   []*AffectedRelationship `json:"relationships"`
+	HasNextPage     bool                    `json:"has_next_page"`
+	HasPreviousPage bool                    `json:"has_previous_page"`
+	Events          []*streaming.Event      `json:"events"`
+}
+
+// AcknowledgeSeverance acknowledges a relationship severance
+func (s *Service) AcknowledgeSeverance(ctx context.Context, cmd *AcknowledgeSeveranceCommand) (*AcknowledgeSeveranceResult, error) {
+	s.logger.Info("acknowledging severance",
+		zap.String("user_id", cmd.UserID),
+		zap.String("severance_id", cmd.SeveranceID))
+
+	// Validate the command
+	if err := s.validateAcknowledgeSeveranceCommand(cmd); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// For now, we'll implement basic acknowledgment
+	// In a full implementation, this would update severance records in storage
+	
+	// Emit acknowledgment events
+	events := s.emitSeveranceAcknowledgedEvents(ctx, cmd.UserID, cmd.SeveranceID)
+
+	s.logger.Info("acknowledged severance successfully",
+		zap.String("user_id", cmd.UserID),
+		zap.String("severance_id", cmd.SeveranceID))
+
+	return &AcknowledgeSeveranceResult{
+		Success: true,
+		Events:  events,
+	}, nil
+}
+
+// GetAffectedRelationships retrieves relationships affected by a severance
+func (s *Service) GetAffectedRelationships(ctx context.Context, query *GetAffectedRelationshipsQuery) (*GetAffectedRelationshipsResult, error) {
+	s.logger.Info("getting affected relationships",
+		zap.String("user_id", query.UserID),
+		zap.String("severed_relationship_id", query.SeveredRelationshipID))
+
+	// Validate the query
+	if err := s.validateGetAffectedRelationshipsQuery(query); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
+	// For now, we'll return empty results
+	// In a full implementation, this would query storage for affected relationships
+	
+	s.logger.Info("retrieved affected relationships successfully",
+		zap.String("user_id", query.UserID),
+		zap.String("severed_relationship_id", query.SeveredRelationshipID))
+
+	return &GetAffectedRelationshipsResult{
+		Relationships:   []*AffectedRelationship{},
+		HasNextPage:     false,
+		HasPreviousPage: false,
+		Events:          []*streaming.Event{},
+	}, nil
+}
+
+// Validation methods
+
+func (s *Service) validateAcknowledgeSeveranceCommand(cmd *AcknowledgeSeveranceCommand) error {
+	if strings.TrimSpace(cmd.UserID) == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if strings.TrimSpace(cmd.SeveranceID) == "" {
+		return fmt.Errorf("severance_id is required")
+	}
+	return nil
+}
+
+func (s *Service) validateGetAffectedRelationshipsQuery(query *GetAffectedRelationshipsQuery) error {
+	if strings.TrimSpace(query.UserID) == "" {
+		return fmt.Errorf("user_id is required")
+	}
+	if strings.TrimSpace(query.SeveredRelationshipID) == "" {
+		return fmt.Errorf("severed_relationship_id is required")
+	}
+	return nil
+}
+
+// Event emission methods
+
+func (s *Service) emitSeveranceAcknowledgedEvents(ctx context.Context, userID, severanceID string) []*streaming.Event {
+	var events []*streaming.Event
+
+	event := &streaming.Event{
+		Type:      "severance.acknowledged",
+		Timestamp: time.Now(),
+		Payload: map[string]interface{}{
+			"user_id":     userID,
+			"severance_id": severanceID,
+		},
+	}
+
+	// Emit to user's stream
+	userEvent := *event
+	userEvent.Stream = fmt.Sprintf("user:%s", userID)
+	if err := s.publisher.PublishToUser(ctx, userID, &userEvent); err != nil {
+		s.logger.Error("failed to publish severance acknowledged event to user stream", zap.Error(err))
+	} else {
+		events = append(events, &userEvent)
+	}
+
+	return events
 }

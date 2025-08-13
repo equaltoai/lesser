@@ -45,7 +45,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
@@ -112,7 +112,7 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
@@ -171,7 +171,7 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
@@ -238,7 +238,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
@@ -334,7 +334,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
@@ -410,7 +410,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})

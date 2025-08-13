@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -21,8 +22,21 @@ func (h *Handler) HandleGetDirectoryLift(ctx *lift.Context) error {
 	// Parse query parameters
 	params := h.parseDirectoryParams(ctx)
 
-	// Get discoverable accounts
-	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", params.limit*2, false, params.offset)
+	// Get search service
+	searchService := h.registry.Search()
+	if searchService == nil {
+		h.logger.Error("search service not available")
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "search service unavailable"})
+	}
+
+	// Get directory using service
+	result, err := searchService.GetDirectory(ctx.Context, &search.DirectoryQuery{
+		Local:  params.local,
+		Order:  params.order,
+		Limit:  params.limit,
+		Offset: params.offset,
+	})
 	if err != nil {
 		h.logger.Error("failed to get directory", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -31,11 +45,8 @@ func (h *Handler) HandleGetDirectoryLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Convert actors to accounts
-	accounts := h.convertActorsToDirectory(ctx.Context, actors, params.local)
-
-	// Apply ordering
-	h.sortDirectoryAccounts(accounts, params.order)
+	// Convert account results to API format
+	accounts := h.convertDirectoryResultsToAPI(ctx.Context, result.Accounts)
 
 	ctx.Status(http.StatusOK)
 	return ctx.JSON(accounts)
@@ -128,25 +139,21 @@ func (h *Handler) extractFromPathQuery(path, param string) string {
 	return ""
 }
 
-// convertActorsToDirectory converts actors to directory account format
-func (h *Handler) convertActorsToDirectory(ctx context.Context, actors []*activitypub.Actor, localOnly bool) []map[string]any {
-	accounts := make([]map[string]any, 0, len(actors))
+// convertDirectoryResultsToAPI converts search service results to API format
+func (h *Handler) convertDirectoryResultsToAPI(ctx context.Context, results []search.AccountResult) []map[string]any {
+	accounts := make([]map[string]any, 0, len(results))
 
-	for _, actor := range actors {
-		// Filter local only if requested
-		if localOnly && !h.isLocalLift(actor.ID) {
-			continue
-		}
-
-		account := h.buildDirectoryAccount(ctx, actor)
+	for _, result := range results {
+		account := h.buildDirectoryAccountFromResult(ctx, result)
 		accounts = append(accounts, account)
 	}
 
 	return accounts
 }
 
-// buildDirectoryAccount builds a single directory account entry
-func (h *Handler) buildDirectoryAccount(ctx context.Context, actor *activitypub.Actor) map[string]any {
+// buildDirectoryAccountFromResult builds a single directory account entry from service result
+func (h *Handler) buildDirectoryAccountFromResult(ctx context.Context, result search.AccountResult) map[string]any {
+	actor := result.Actor
 	return map[string]any{
 		"id":              actor.ID,
 		"username":        actor.PreferredUsername,
@@ -162,10 +169,10 @@ func (h *Handler) buildDirectoryAccount(ctx context.Context, actor *activitypub.
 		"avatar_static":   h.getActorAvatarURL(actor),
 		"header":          h.getHeaderURLLift(actor),
 		"header_static":   "",
-		"followers_count": h.getFollowerCountLift(ctx, actor.ID),
-		"following_count": h.getFollowingCountLift(ctx, actor.ID),
-		"statuses_count":  h.getStatusCountLift(ctx, actor.ID),
-		"last_status_at":  h.formatLastStatusTimeLift(actor.LastStatusAt),
+		"followers_count": result.FollowersCount,
+		"following_count": result.FollowingCount,
+		"statuses_count":  result.StatusesCount,
+		"last_status_at":  result.LastStatusAt,
 	}
 }
 
@@ -240,7 +247,7 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -260,8 +267,20 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 		}
 	}
 
-	// Get suggestions using the implemented algorithm
-	suggestions, err := h.repos.Actor().GetAccountSuggestions(ctx.Context, claims.Username, limit)
+	// Get search service
+	searchService := h.registry.Search()
+	if searchService == nil {
+		h.logger.Error("search service not available")
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "search service unavailable"})
+	}
+
+	// Get suggestions using service
+	result, err := searchService.GetSuggestions(ctx.Context, &search.SuggestionsQuery{
+		Username: claims.Username,
+		Limit:    limit,
+		Version:  1,
+	})
 	if err != nil {
 		h.logger.Error("failed to get suggestions", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -270,9 +289,10 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 		})
 	}
 
-	// Convert storage suggestions to API format
-	suggestionsList := make([]map[string]any, 0, len(suggestions))
-	for _, actor := range suggestions {
+	// Convert service suggestions to API format (V1)
+	suggestionsList := make([]map[string]any, 0, len(result.Suggestions))
+	for _, item := range result.Suggestions {
+		actor := item.Account.Actor
 		// V1 format wraps account in suggestion object
 		suggestionItem := map[string]any{
 			"account": map[string]any{
@@ -283,16 +303,16 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 				"locked":          actor.ManuallyApprovesFollowers,
 				"bot":             actor.Type == actorTypeService,
 				"discoverable":    actor.Discoverable,
-				"created_at":      actor.Published.Format("2006-01-02T15:04:05.000Z"),
+				"created_at":      h.formatActorCreatedAt(actor),
 				"note":            actor.Summary,
 				"url":             actor.URL,
-				"avatar":          actor.Icon.URL,
-				"avatar_static":   actor.Icon.URL,
+				"avatar":          h.getActorAvatarURL(actor),
+				"avatar_static":   h.getActorAvatarURL(actor),
 				"header":          h.getHeaderURLLift(actor),
 				"header_static":   h.getHeaderURLLift(actor),
-				"followers_count": h.getFollowerCountLift(ctx.Context, actor.ID),
-				"following_count": h.getFollowingCountLift(ctx.Context, actor.ID),
-				"statuses_count":  h.getStatusCountLift(ctx.Context, actor.ID),
+				"followers_count": item.Account.FollowersCount,
+				"following_count": item.Account.FollowingCount,
+				"statuses_count":  item.Account.StatusesCount,
 			},
 		}
 		suggestionsList = append(suggestionsList, suggestionItem)
@@ -329,7 +349,7 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -349,8 +369,20 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 		}
 	}
 
-	// Get suggestions with sources based on mutual follows, interests, etc.
-	actors, err := h.repos.Search().SearchAccounts(ctx.Context, "", limit*2, false, 0)
+	// Get search service
+	searchService := h.registry.Search()
+	if searchService == nil {
+		h.logger.Error("search service not available")
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "search service unavailable"})
+	}
+
+	// Get suggestions using service (V2 includes sources)
+	result, err := searchService.GetSuggestions(ctx.Context, &search.SuggestionsQuery{
+		Username: claims.Username,
+		Limit:    limit,
+		Version:  2,
+	})
 	if err != nil {
 		h.logger.Error("failed to get suggestions", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -359,23 +391,13 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 		})
 	}
 
-	// Filter and format suggestions
-	suggestions := make([]map[string]any, 0, limit)
-	for _, actor := range actors {
-		if len(suggestions) >= limit {
-			break
-		}
-
-		// Check if user follows this account
-		followRel, _ := h.repos.Relationship().GetRelationship(ctx.Context, claims.Username, actor.PreferredUsername)
-		isFollowing := followRel != nil
-		if isFollowing || actor.PreferredUsername == claims.Username {
-			continue
-		}
-
+	// Convert service suggestions to API format (V2)
+	suggestions := make([]map[string]any, 0, len(result.Suggestions))
+	for _, item := range result.Suggestions {
+		actor := item.Account.Actor
 		// V2 format includes sources explaining why this was suggested
 		suggestion := map[string]any{
-			"source": "global", // Can be: staff, past_interactions, global
+			"source": item.Source, // Can be: staff, past_interactions, global
 			"account": map[string]any{
 				"id":              actor.ID,
 				"username":        actor.PreferredUsername,
@@ -384,16 +406,16 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 				"locked":          actor.ManuallyApprovesFollowers,
 				"bot":             actor.Type == actorTypeService,
 				"discoverable":    actor.Discoverable,
-				"created_at":      actor.Published.Format("2006-01-02T15:04:05.000Z"),
+				"created_at":      h.formatActorCreatedAt(actor),
 				"note":            actor.Summary,
 				"url":             actor.URL,
-				"avatar":          actor.Icon.URL,
-				"avatar_static":   actor.Icon.URL,
-				"header":          "",
-				"header_static":   "",
-				"followers_count": h.getFollowerCountLift(ctx.Context, actor.ID),
-				"following_count": h.getFollowingCountLift(ctx.Context, actor.ID),
-				"statuses_count":  h.getStatusCountLift(ctx.Context, actor.ID),
+				"avatar":          h.getActorAvatarURL(actor),
+				"avatar_static":   h.getActorAvatarURL(actor),
+				"header":          h.getHeaderURLLift(actor),
+				"header_static":   h.getHeaderURLLift(actor),
+				"followers_count": item.Account.FollowersCount,
+				"following_count": item.Account.FollowingCount,
+				"statuses_count":  item.Account.StatusesCount,
 			},
 		}
 		suggestions = append(suggestions, suggestion)
@@ -430,7 +452,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -460,8 +482,19 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 		})
 	}
 
-	// Remove suggestion from user's suggestion list
-	if err := h.repos.Actor().RemoveAccountSuggestion(ctx.Context, claims.Username, accountID); err != nil {
+	// Get search service
+	searchService := h.registry.Search()
+	if searchService == nil {
+		h.logger.Error("search service not available")
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": "search service unavailable"})
+	}
+
+	// Remove suggestion using service
+	if err := searchService.RemoveSuggestion(ctx.Context, &search.RemoveSuggestionCommand{
+		Username:  claims.Username,
+		AccountID: accountID,
+	}); err != nil {
 		h.logger.Error("failed to remove suggestion", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{
@@ -501,20 +534,4 @@ func (h *Handler) getAccountAcctLift(actor *activitypub.Actor) string {
 	return actor.PreferredUsername
 }
 
-// getFollowerCountLift gets follower count with error handling
-func (h *Handler) getFollowerCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.repos.Relationship().CountFollowers(ctx, actorID)
-	return count
-}
-
-// getFollowingCountLift gets following count with error handling
-func (h *Handler) getFollowingCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.repos.Relationship().CountFollowing(ctx, actorID)
-	return count
-}
-
-// getStatusCountLift gets status count with error handling
-func (h *Handler) getStatusCountLift(ctx context.Context, actorID string) int {
-	count, _ := h.repos.Status().CountStatusesByAuthor(ctx, actorID)
-	return count
-}
+// Note: Count methods have been removed as they are now handled by the Search service

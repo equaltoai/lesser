@@ -296,7 +296,7 @@ func (r *ScheduledStatusRepository) MarkScheduledStatusPublished(ctx context.Con
 }
 
 // GetScheduledStatusMedia gets media for scheduled status
-func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context, id string) ([]any, error) {
+func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context, id string) ([]*models.Media, error) {
 	// Get the scheduled status first to access its media IDs
 	scheduled, err := r.GetScheduledStatus(ctx, id)
 	if err != nil {
@@ -305,7 +305,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 
 	// If no media IDs, return empty slice
 	if len(scheduled.MediaIDs) == 0 {
-		return []any{}, nil
+		return []*models.Media{}, nil
 	}
 
 	r.logger.Debug("retrieving media attachments for scheduled status",
@@ -317,11 +317,11 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 	if r.mediaRepo == nil {
 		r.logger.Warn("media repository not available, returning empty media list",
 			zap.String("scheduled_status_id", id))
-		return []any{}, nil
+		return []*models.Media{}, nil
 	}
 
 	// Retrieve media attachments by querying each media ID
-	mediaAttachments := make([]any, 0, len(scheduled.MediaIDs))
+	mediaAttachments := make([]*models.Media, 0, len(scheduled.MediaIDs))
 	retrievedCount := 0
 	errorCount := 0
 
@@ -338,9 +338,8 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 			continue // Continue with other media rather than failing entirely
 		}
 
-		// Convert media to Mastodon API compatible attachment
-		attachment := r.convertToMediaAttachment(media, order)
-		mediaAttachments = append(mediaAttachments, attachment)
+		// Add media directly to attachments
+		mediaAttachments = append(mediaAttachments, media)
 		retrievedCount++
 
 		r.logger.Debug("successfully retrieved media attachment",

@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/translation"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -117,7 +118,7 @@ func (h *Handler) authenticateTranslationWithToken(ctx *lift.Context) (string, e
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -154,7 +155,8 @@ func (h *Handler) normalizeTranslationObjectID(statusID string) string {
 
 // getStatusForTranslation retrieves the status object
 func (h *Handler) getStatusForTranslation(ctx *lift.Context, statusID, objectID string) (any, error) {
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	// Use Notes service to get the status
+	note, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		h.logger.Error("failed to get status for translation",
 			zap.String("status_id", statusID),
@@ -162,7 +164,17 @@ func (h *Handler) getStatusForTranslation(ctx *lift.Context, statusID, objectID 
 			zap.Error(err))
 		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
 	}
-	return obj, nil
+	
+	// Convert to generic object for translation
+	summary := ""
+	if note.Note != nil {
+		summary = note.Note.Summary
+	}
+	return map[string]any{
+		"content":  note.Content,
+		"summary":  summary,
+		"language": note.Language,
+	}, nil
 }
 
 // extractTranslatableContent extracts content from the status object
@@ -190,9 +202,14 @@ func (h *Handler) extractStringField(m map[string]any, field string) string {
 
 // getTargetLanguage gets the user's preferred language for translation
 func (h *Handler) getTargetLanguage(ctx *lift.Context, username string) string {
-	userPrefs, err := h.repos.User().GetUserPreferences(ctx.Context, username)
-	if err == nil && userPrefs != nil && userPrefs.Language != "" {
-		return userPrefs.Language
+	// Use Accounts service to get preferences
+	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
+		Username: username,
+	})
+	if err == nil && result != nil && result.Preferences != nil {
+		if lang, ok := result.Preferences["language"].(string); ok && lang != "" {
+			return lang
+		}
 	}
 	return "en" // Default to English
 }

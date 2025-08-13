@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -20,10 +20,9 @@ func TestNotificationRepository_EmailPreferencesAlwaysFalse(t *testing.T) {
 	repo := NewNotificationRepository(mockDB, "test-table", logger)
 
 	// Setup mock to simulate finding existing preferences with email enabled
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationPreferences")).Return(mockQuery)
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "NOTIFICATION_PREFS").Return(mockQuery)
+	mockQuery.On("Filter", "Username", "=", "testuser").Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Run(func(args mock.Arguments) {
 		// Simulate database returning preferences with EmailEnabled: true
 		// This should be overridden to false in the response
@@ -50,11 +49,12 @@ func TestNotificationRepository_UpdatePreferencesIgnoresEmail(t *testing.T) {
 	repo := NewNotificationRepository(mockDB, "test-table", logger)
 
 	// Setup mock for update operation
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationPreferences")).Return(mockQuery)
-	mockQuery.On("CreateOrUpdate").Return(nil)
+	mockQuery.On("Update").Return(nil)
 
 	// Try to update with EmailEnabled: true
-	inputPrefs := &storage.NotificationPreferences{
+	inputPrefs := &models.NotificationPreferences{
 		Username:        "testuser",
 		EmailEnabled:    true, // This should be ignored
 		PushEnabled:     true,
@@ -66,7 +66,7 @@ func TestNotificationRepository_UpdatePreferencesIgnoresEmail(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	err := repo.UpdateNotificationPreferences(ctx, "testuser", inputPrefs)
+	err := repo.UpdateNotificationPreferences(ctx, inputPrefs)
 
 	assert.NoError(t, err)
 
@@ -85,22 +85,22 @@ func TestNotificationRepository_SetEmailPreferenceIgnored(t *testing.T) {
 	repo := NewNotificationRepository(mockDB, "test-table", logger)
 
 	// Setup mock for getting existing preferences
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationPreferences")).Return(mockQuery)
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "NOTIFICATION_PREFS").Return(mockQuery)
+	mockQuery.On("Filter", "Username", "=", "testuser").Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(nil) // Return nil (not found) to test creation path
+	mockQuery.On("Update").Return(nil)
 
 	ctx := context.Background()
 
 	// Try to enable email notifications - should be silently ignored
-	err := repo.SetNotificationPreference(ctx, "testuser", "email", true)
+	err := repo.SetNotificationPreference(ctx, "testuser", "email_follow", true)
 
 	// Should succeed without error (silently ignored)
 	assert.NoError(t, err)
 
 	// Try to disable email notifications - should also be silently ignored
-	err = repo.SetNotificationPreference(ctx, "testuser", "email", false)
+	err = repo.SetNotificationPreference(ctx, "testuser", "email_mention", false)
 
 	// Should succeed without error (silently ignored)
 	assert.NoError(t, err)
@@ -118,21 +118,20 @@ func TestNotificationRepository_SetOtherPreferencesWork(t *testing.T) {
 	repo := NewNotificationRepository(mockDB, "test-table", logger)
 
 	// Setup mock for getting existing preferences and updating
+	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationPreferences")).Return(mockQuery)
-	mockQuery.On("WithContext", mock.Anything).Return(mockQuery)
-	mockQuery.On("Where", "PK", "=", "USER#testuser").Return(mockQuery)
-	mockQuery.On("Where", "SK", "=", "NOTIFICATION_PREFS").Return(mockQuery)
+	mockQuery.On("Filter", "Username", "=", "testuser").Return(mockQuery)
 	mockQuery.On("First", mock.Anything).Return(nil) // Return nil (not found) to test creation path
-	mockQuery.On("CreateOrUpdate").Return(nil)
+	mockQuery.On("Update").Return(nil)
 
 	ctx := context.Background()
 
 	// Test that push preferences work normally
-	err := repo.SetNotificationPreference(ctx, "testuser", "push", true)
+	err := repo.SetNotificationPreference(ctx, "testuser", "push_follow", true)
 	assert.NoError(t, err)
 
 	// Test that mention preferences work normally
-	err = repo.SetNotificationPreference(ctx, "testuser", "mention", false)
+	err = repo.SetNotificationPreference(ctx, "testuser", "push_mention", false)
 	assert.NoError(t, err)
 
 	mockDB.AssertExpectations(t)

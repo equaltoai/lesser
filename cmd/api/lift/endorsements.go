@@ -4,6 +4,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -43,7 +44,7 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -57,8 +58,10 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 		username = claims.Username
 	}
 
-	// Get pinned accounts (which are the endorsed accounts)
-	pins, err := h.repos.Social().GetAccountPins(ctx.Context, username)
+	// Get pinned accounts using Accounts service
+	result, err := h.registry.Accounts().GetAccountPins(ctx.Context, &accounts.GetAccountPinsQuery{
+		Username: username,
+	})
 	if err != nil {
 		h.logger.Error("failed to get account pins", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
@@ -67,28 +70,16 @@ func (h *Handler) HandleGetEndorsementsLift(ctx *lift.Context) error {
 	// Initialize converter
 	converter := mastodon.NewConverter(h.cfg.BaseURL())
 
-	// Convert pins to account objects
-	accounts := make([]models.Account, 0, len(pins))
-	for _, pin := range pins {
-		// Extract username from actor ID
-		username := converter.ExtractUsernameFromActorID(pin.PinnedActorID)
-		if username == "" {
+	// Convert service result to API format
+	apiAccounts := make([]models.Account, 0, len(result.PinnedAccounts))
+	for _, account := range result.PinnedAccounts {
+		if account.Actor == nil {
 			continue
 		}
-
-		// Get the actor
-		actor, err := h.repos.Actor().GetActor(ctx.Context, username)
-		if err != nil {
-			h.logger.Warn("failed to get pinned actor",
-				zap.String("actor_id", pin.PinnedActorID),
-				zap.Error(err))
-			continue
-		}
-
 		// Convert to account
-		account := converter.ActorToAccount(actor)
-		accounts = append(accounts, account)
+		apiAccount := converter.ActorToAccount(account.Actor)
+		apiAccounts = append(apiAccounts, apiAccount)
 	}
 
-	return ctx.JSON(accounts)
+	return ctx.JSON(apiAccounts)
 }

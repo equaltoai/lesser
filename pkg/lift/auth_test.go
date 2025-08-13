@@ -150,11 +150,9 @@ func createTestContextWithPath(path string) *lift.Context {
 // createValidClaims creates valid test claims
 func createValidClaims() *auth.EnhancedClaims {
 	return &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: "testuser",
-			Scopes:   []string{"read", "write"},
-			ClientID: "test-client",
-		},
+		Username: "testuser",
+		Scopes:   []string{"read", "write"},
+		ClientID: "test-client",
 		SessionID: "test-session",
 		DeviceID:  "test-device",
 	}
@@ -182,11 +180,9 @@ func createClaimsForUserType(username string, userType string) *auth.EnhancedCla
 	}
 
 	return &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: username,
-			Scopes:   scopes,
-			ClientID: "test-client",
-		},
+		Username:  username,
+		Scopes:    scopes,
+		ClientID:  "test-client",
 		SessionID: "test-session-" + username,
 		DeviceID:  "test-device-" + username,
 	}
@@ -195,11 +191,9 @@ func createClaimsForUserType(username string, userType string) *auth.EnhancedCla
 // createCustomClaims creates claims with custom scopes
 func createCustomClaims(username string, scopes []string) *auth.EnhancedClaims {
 	return &auth.EnhancedClaims{
-		Claims: auth.Claims{
-			Username: username,
-			Scopes:   scopes,
-			ClientID: "test-client",
-		},
+		Username:  username,
+		Scopes:    scopes,
+		ClientID:  "test-client",
 		SessionID: "test-session-" + username,
 		DeviceID:  "test-device-" + username,
 	}
@@ -545,10 +539,8 @@ func TestLiftAuthService_RequireScope(t *testing.T) {
 
 		// Set up claims with required scope
 		claims := &auth.EnhancedClaims{
-			Claims: auth.Claims{
-				Username: "testuser",
-				Scopes:   []string{"read", "write"},
-			},
+			Username: "testuser",
+			Scopes:   []string{"read", "write"},
 		}
 		ctx.Set("claims", claims)
 
@@ -573,10 +565,8 @@ func TestLiftAuthService_RequireScope(t *testing.T) {
 
 		// Set up claims without required scope
 		claims := &auth.EnhancedClaims{
-			Claims: auth.Claims{
-				Username: "testuser",
-				Scopes:   []string{"read", "write"},
-			},
+			Username: "testuser",
+			Scopes:   []string{"read", "write"},
 		}
 		ctx.Set("claims", claims)
 

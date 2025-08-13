@@ -201,6 +201,11 @@ func (s *Service) RecordLinkShare(ctx context.Context, url string, statusID stri
 	return s.storage.Analytics().RecordLinkShare(ctx, url, statusID, authorID)
 }
 
+// GetStatusesByLink returns statuses that contain a specific link
+func (s *Service) GetStatusesByLink(ctx context.Context, url string, limit int) ([]interface{}, error) {
+	return s.storage.Analytics().GetStatusesByLink(ctx, url, limit)
+}
+
 // Trend represents a general trend
 type Trend struct {
 	Type  string `json:"type"`

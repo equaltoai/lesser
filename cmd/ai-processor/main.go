@@ -20,29 +20,37 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	lesserConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	aiService "github.com/equaltoai/lesser/pkg/services/ai"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
+	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/streaming"
 )
 
 // AIProcessor handles AI-based content analysis for posts and media in the system.
 // It integrates with AWS Bedrock to perform toxicity detection, spam filtering,
 // and automated moderation decisions based on configurable thresholds.
 type AIProcessor struct {
-	db        core.DB
-	tableName string
-	aiService *ai.AIService
-	logger    *zap.Logger
+	db            core.DB
+	tableName     string
+	aiAnalyzer    *ai.AIService // For AI analysis (Comprehend, Rekognition, etc.)
+	aiService     *aiService.Service // For storage and event publishing
+	serviceRegistry *services.Registry
+	logger        *zap.Logger
 }
 
 // NewAIProcessor creates a new AI processor instance configured with the specified
 // database connection, DynamoDB table name, and AI service. The processor will
 // analyze content from stream events and store results for moderation workflows.
-func NewAIProcessor(db core.DB, tableName string, aiService *ai.AIService) *AIProcessor {
+func NewAIProcessor(db core.DB, tableName string, aiAnalyzer *ai.AIService, serviceRegistry *services.Registry) *AIProcessor {
 	return &AIProcessor{
-		db:        db,
-		tableName: tableName,
-		aiService: aiService,
-		logger:    common.Logger(),
+		db:            db,
+		tableName:     tableName,
+		aiAnalyzer:    aiAnalyzer,
+		aiService:     serviceRegistry.AI(),
+		serviceRegistry: serviceRegistry,
+		logger:        common.Logger(),
 	}
 }
 
@@ -84,15 +92,20 @@ func (ap *AIProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEv
 		return fmt.Errorf("failed to extract content: %w", err)
 	}
 
-	// Perform AI analysis (use underlying context)
-	analysis, err := ap.aiService.AnalyzeContent(ctx.Request.Context(), content)
+	// Perform AI analysis using the analyzer (AWS services)
+	analysis, err := ap.aiAnalyzer.AnalyzeContent(ctx.Request.Context(), content)
 	if err != nil {
 		return fmt.Errorf("failed to analyze content: %w", err)
 	}
 
-	// Store analysis result using DynamORM
-	if err := ap.storeAnalysis(ctx, analysis); err != nil {
-		return fmt.Errorf("failed to store analysis: %w", err)
+	// Store analysis and publish events using the service layer
+	saveCmd := &aiService.SaveAnalysisCommand{
+		Analysis: analysis,
+		UserID:   content.AuthorID, // Use author as context for events
+	}
+	_, err = ap.aiService.SaveAnalysis(ctx.Request.Context(), saveCmd)
+	if err != nil {
+		return fmt.Errorf("failed to save analysis: %w", err)
 	}
 
 	// Handle moderation action if needed
@@ -192,35 +205,7 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 	}
 }
 
-func (ap *AIProcessor) storeAnalysis(ctx *lift.Context, analysis *ai.AIAnalysis) error {
-	// Create analysis model for DynamORM
-	analysisRecord := struct {
-		PK               string  `dynamorm:"pk"`
-		SK               string  `dynamorm:"sk"`
-		Type             string  `json:"type"`
-		AnalysisID       string  `json:"analysis_id"`
-		ObjectID         string  `json:"object_id"`
-		ObjectType       string  `json:"object_type"`
-		OverallRisk      float64 `json:"overall_risk"`
-		ModerationAction string  `json:"moderation_action"`
-		CreatedAt        string  `json:"created_at"`
-		TTL              int64   `dynamorm:"ttl"`
-	}{
-		PK:               fmt.Sprintf("ANALYSIS#%s", analysis.ObjectID),
-		SK:               fmt.Sprintf("AI#%s", analysis.ID),
-		Type:             "AIAnalysis",
-		AnalysisID:       analysis.ID,
-		ObjectID:         analysis.ObjectID,
-		ObjectType:       analysis.ObjectType,
-		OverallRisk:      analysis.OverallRisk,
-		ModerationAction: analysis.ModerationAction,
-		CreatedAt:        time.Now().Format(time.RFC3339),
-		TTL:              time.Now().Add(30 * 24 * time.Hour).Unix(),
-	}
-
-	// Store using DynamORM Model Create (use underlying context)
-	return ap.db.WithContext(ctx.Request.Context()).Model(&analysisRecord).Create()
-}
+// storeAnalysis is no longer needed - the service layer handles storage
 
 func (ap *AIProcessor) handleModerationAction(ctx *lift.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
@@ -327,10 +312,32 @@ func init() {
 		logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
 
-	aiService := ai.NewAIService(awsConfig, aiConfig, cfg.DynamoTableName)
+	// Create AI analyzer (for AWS AI services)
+	aiAnalyzer := ai.NewAIService(awsConfig, aiConfig)
+
+	// Create repository factory for storage
+	repoFactory, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	// Create service registry
+	publisher := streaming.NewMockPublisher() // Or real publisher if configured
+	serviceRegistry, err := services.NewRegistry(
+		services.WithStorage(repoFactory),
+		services.WithPublisher(publisher),
+		services.WithLogger(logger),
+		services.WithConfig(&services.ServiceConfig{
+			BaseURL:   fmt.Sprintf("https://%s", cfg.Domain),
+			JWTSecret: cfg.JWTSecret,
+		}),
+	)
+	if err != nil {
+		logger.Fatal("Failed to create service registry", zap.Error(err))
+	}
 
 	// Initialize processor
-	processor = NewAIProcessor(db, cfg.DynamoTableName, aiService)
+	processor = NewAIProcessor(db, cfg.DynamoTableName, aiAnalyzer, serviceRegistry)
 }
 
 func main() {

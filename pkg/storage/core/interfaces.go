@@ -51,6 +51,7 @@ type RepositoryStorage interface {
 	DLQ() *repositories.DLQRepository
 	MetricRecord() *repositories.MetricRecordRepository
 	CloudWatchMetrics() *repositories.CloudWatchMetricsRepository
+	Audit() *repositories.AuditRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

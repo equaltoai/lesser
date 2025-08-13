@@ -5,9 +5,9 @@ import (
 	"strconv"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -20,61 +20,46 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
+	var username string
+	
 	if testUsername != "" {
-		// Get the user's actor directly (test mode)
-		actor, err := h.repos.Actor().GetActor(ctx.Context, testUsername)
-		if err != nil {
-			h.logger.Error("failed to get actor", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-		}
-
-		// Skip to the main logic with test username
-		return h.handleFavoritesLogic(ctx, actor, testUsername)
-	}
-
-	// Extract token from Authorization header
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
+		// Test mode - use test username directly
+		username = testUsername
+	} else {
+		// Extract token from Authorization header
+		authHeader := ctx.Header("Authorization")
 		if authHeader == "" {
-			authHeader = ctx.Request.Request.Headers["authorization"]
+			authHeader = ctx.Header("authorization")
 		}
+
+		// Try direct access to headers if ctx.Header doesn't work
+		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+			authHeader = ctx.Request.Request.Headers["Authorization"]
+			if authHeader == "" {
+				authHeader = ctx.Request.Request.Headers["authorization"]
+			}
+		}
+
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err != nil {
+			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		}
+
+		// Validate token
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		claims, err := oauthSvc.ValidateAccessToken(token)
+		if err != nil {
+			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		}
+
+		// Check read scope
+		if !claims.HasScope(auth.ScopeRead) {
+			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		}
+
+		username = claims.Username
 	}
 
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check read scope
-	if !claims.HasScope(auth.ScopeRead) {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	// Get the user's actor
-	actor, err := h.repos.Actor().GetActor(ctx.Context, claims.Username)
-	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	return h.handleFavoritesLogic(ctx, actor, claims.Username)
-}
-
-// handleFavoritesLogic contains the main favorites logic, separated for testing
-func (h *Handler) handleFavoritesLogic(ctx *lift.Context, actor *activitypub.Actor, username string) error {
 	// Parse query parameters
 	limit := 20
 	limitStr := ctx.Query("limit")
@@ -92,83 +77,51 @@ func (h *Handler) handleFavoritesLogic(ctx *lift.Context, actor *activitypub.Act
 		cursor = ctx.Request.Request.QueryParams["max_id"]
 	}
 
-	// Get liked objects
-	likes, nextCursor, err := h.repos.Like().GetActorLikes(ctx.Context, actor.ID, limit, cursor)
+	// Use Notes service to get favorited statuses
+	notesService := h.registry.Notes()
+	if notesService == nil {
+		h.logger.Error("notes service not available")
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	}
+
+	// Create query for favorited notes
+	query := &notes.ListNotesQuery{
+		TimelineType: "favorites", // Special timeline type for favorites
+		ViewerID:     username,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: cursor,
+		},
+	}
+
+	// Get favorited notes
+	result, err := notesService.GetFavoritedNotes(ctx.Context, query)
 	if err != nil {
-		h.logger.Error("failed to get likes",
-			zap.String("actor_id", actor.ID),
+		h.logger.Error("failed to get favorited notes",
+			zap.String("username", username),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get favorites"})
 	}
 
-	// Initialize converter
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
-
-	// Retrieve the actual objects
-	statuses := make([]*models.Status, 0, len(likes))
-	for _, like := range likes {
-		obj, err := h.repos.Object().GetObject(ctx.Context, like.Object)
+	// Convert to API models
+	apiStatuses := make([]*models.Status, 0, len(result.Notes))
+	for _, note := range result.Notes {
+		apiStatus, err := h.convertStorageStatusToAPI(note, username)
 		if err != nil {
-			h.logger.Warn("failed to get liked object",
-				zap.String("object_id", like.Object),
+			h.logger.Warn("failed to convert status",
+				zap.String("status_id", note.StatusID),
 				zap.Error(err))
 			continue
 		}
-
-		// Get the actor who created the object
-		var attributedTo string
-		var objActor *activitypub.Actor
-
-		switch o := obj.(type) {
-		case *activitypub.Note:
-			attributedTo = o.AttributedTo
-		case map[string]any:
-			if attr, ok := o["attributedTo"].(string); ok {
-				attributedTo = attr
-			}
-		}
-
-		if attributedTo != "" {
-			// Extract username from actor ID
-			objUsername := converter.ExtractUsernameFromActorID(attributedTo)
-			if objUsername != "" {
-				objActor, _ = h.repos.Actor().GetActor(ctx.Context, objUsername)
-			}
-		}
-
-		// Convert to status with context
-		likeCount, _ := h.repos.Like().GetLikeCount(ctx.Context, like.Object)
-		announceCount, _ := h.repos.Like().GetBoostCount(ctx.Context, like.Object)
-
-		// Check if reblogged
-		reblogged := false
-		if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, like.Object); err == nil {
-			reblogged = true
-		}
-
-		// Check if bookmarked
-		bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, like.Object)
-
-		status := converter.ObjectToStatusWithContext(
-			ctx.Context,
-			obj,
-			objActor,
-			int(likeCount),
-			int(announceCount),
-			true, // favorited (always true in favorites timeline)
-			reblogged,
-			bookmarked,
-		)
-
-		statuses = append(statuses, &status)
+		apiStatuses = append(apiStatuses, apiStatus)
 	}
 
 	// Set Link header for pagination if there's a cursor
-	if nextCursor != "" && len(statuses) > 0 {
+	if result.Pagination.NextCursor != "" && len(apiStatuses) > 0 {
 		linkHeader := fmt.Sprintf(`<%s/api/v1/favourites?max_id=%s&limit=%d>; rel="next"`,
-			h.cfg.BaseURL(), nextCursor, limit)
+			h.cfg.BaseURL(), result.Pagination.NextCursor, limit)
 		ctx.Response.Header("Link", linkHeader)
 	}
 
-	return ctx.JSON(statuses)
+	return ctx.JSON(apiStatuses)
 }

@@ -204,8 +204,11 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 		return ctx.Status(400).JSON(map[string]string{"error": "URL parameter required"})
 	}
 
+	// Initialize trend service if not already initialized
+	trendService := trends.NewService(h.repos)
+
 	// Get all statuses that contain this link
-	statuses, err := h.repos.Analytics().GetStatusesByLink(ctx.Context, url, 20)
+	statuses, err := trendService.GetStatusesByLink(ctx.Context, url, 20)
 	if err != nil {
 		h.logger.Error("failed to get statuses by link", zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})

@@ -3,46 +3,31 @@ package lift
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/services/lists"
+	"github.com/equaltoai/lesser/pkg/services/notes"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
-// HandleGetHomeTimelineLift handles GET /api/v1/timelines/home
-func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
-	// Authenticate user
-	username, err := h.authenticateHomeTimeline(ctx)
-	if err != nil {
-		return err
+// Helper functions
+
+// convertStatusesToTimeline converts status models to timeline entries
+func convertStatusesToTimeline(statuses []*storageModels.Status) []*storageModels.Timeline {
+	timeline := make([]*storageModels.Timeline, len(statuses))
+	for i, status := range statuses {
+		timeline[i] = &storageModels.Timeline{
+			PostID: status.StatusID,
+			// Add other fields as needed
+		}
 	}
-
-	// Get the user's actor
-	actor, err := h.getUserActorForTimeline(ctx, username)
-	if err != nil {
-		return err
-	}
-
-	// Parse query parameters
-	params := h.parseHomeTimelineParams(ctx)
-
-	// Get timeline entries
-	entries, cursor, err := h.fetchHomeTimelineEntries(ctx, username, params)
-	if err != nil {
-		return err
-	}
-
-	// Convert entries to statuses
-	statuses := h.convertHomeTimelineEntries(ctx, entries, actor, username)
-
-	// Add pagination header
-	h.setHomeTimelinePagination(ctx, cursor, params.limit)
-
-	return ctx.JSON(statuses)
+	return timeline
 }
 
 // homeTimelineParams holds parameters for home timeline requests
@@ -67,7 +52,7 @@ func (h *Handler) authenticateHomeTimeline(ctx *lift.Context) (string, error) {
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -110,11 +95,12 @@ func (h *Handler) extractAuthorizationHeader(ctx *lift.Context) string {
 
 // getUserActorForTimeline gets the user's actor for timeline operations
 func (h *Handler) getUserActorForTimeline(ctx *lift.Context, username string) (*activitypub.Actor, error) {
-	actor, err := h.repos.Account().GetActor(ctx.Context, username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
+		h.logger.Error("failed to get account", zap.Error(err))
 		return nil, ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
+	actor := account.Actor
 	return actor, nil
 }
 
@@ -146,11 +132,20 @@ func (h *Handler) parseHomeTimelineParams(ctx *lift.Context) homeTimelineParams 
 
 // fetchHomeTimelineEntries fetches timeline entries from the repository
 func (h *Handler) fetchHomeTimelineEntries(ctx *lift.Context, username string, params homeTimelineParams) ([]*storageModels.Timeline, string, error) {
-	entries, cursor, err := h.repos.Timeline().GetHomeTimeline(ctx.Context, username, params.limit, params.maxID)
+	result, err := h.registry.Notes().ListNotes(ctx.Context, &notes.ListNotesQuery{
+		TimelineType: "home",
+		ViewerID:     username,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  params.limit,
+			Cursor: params.maxID,
+		},
+	})
 	if err != nil {
 		h.logger.Error("failed to get home timeline", zap.Error(err))
-		return nil, "", ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return nil, "", err
 	}
+	entries := convertStatusesToTimeline(result.Notes)
+	cursor := result.Pagination.NextCursor
 
 	h.logger.Info("timeline entries fetched",
 		zap.String("username", username),
@@ -180,9 +175,9 @@ func (h *Handler) convertSingleTimelineEntry(ctx *lift.Context, entry *storageMo
 	objectID := h.converter.ExtractIDFromURL(entry.PostID)
 
 	// Get the actual object
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
+	obj, err := h.registry.Notes().GetNote(ctx.Context, objectID)
 	if err != nil {
-		h.logger.Warn("failed to get object from timeline",
+		h.logger.Warn("failed to get note from timeline",
 			zap.String("post_id", entry.PostID),
 			zap.String("object_id", objectID),
 			zap.Error(err))
@@ -242,8 +237,11 @@ func (h *Handler) getObjectActor(ctx *lift.Context, obj any) *activitypub.Actor 
 		return nil
 	}
 
-	objActor, _ := h.repos.Account().GetActor(ctx.Context, objUsername)
-	return objActor
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, objUsername)
+	if err != nil {
+		return nil
+	}
+	return account.Actor
 }
 
 // isActorBlocked checks if an actor is blocked
@@ -252,7 +250,7 @@ func (h *Handler) isActorBlocked(ctx *lift.Context, actor, objActor *activitypub
 		return false
 	}
 
-	if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, actor.ID, objActor.ID); err == nil && isBlocked {
+	if isBlocked, err := h.registry.Relationships().IsBlocked(ctx.Context, actor.ID, objActor.ID); err == nil && isBlocked {
 		// Blocked user
 		return true
 	}
@@ -267,19 +265,19 @@ func (h *Handler) enrichStatusWithInteractions(ctx *lift.Context, status *models
 	}
 
 	// Get interaction counts
-	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, entry.PostID)
-	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, entry.PostID)
+	likeCount64, _ := h.registry.Notes().GetLikeCount(ctx.Context, entry.PostID)
+	announceCount64, _ := h.registry.Notes().GetBoostCount(ctx.Context, entry.PostID)
 	status.FavouritesCount = int(likeCount64)
-	status.ReblogsCount = announceCount
+	status.ReblogsCount = int(announceCount64)
 
 	// Check if current user has interacted
-	if _, err := h.repos.Like().GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
+	if hasLiked, err := h.registry.Notes().HasLiked(ctx.Context, actor.ID, entry.PostID); err == nil && hasLiked {
 		status.Favourited = true
 	}
-	if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
+	if hasReblogged, err := h.registry.Notes().HasReblogged(ctx.Context, actor.ID, entry.PostID); err == nil && hasReblogged {
 		status.Reblogged = true
 	}
-	bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, entry.PostID)
+	bookmarked, _ := h.registry.Notes().IsBookmarked(ctx.Context, username, entry.PostID)
 	status.Bookmarked = bookmarked
 }
 
@@ -295,30 +293,6 @@ func (h *Handler) setHomeTimelinePagination(ctx *lift.Context, cursor string, li
 	}
 	linkURL := h.buildLinkURL("/api/v1/timelines/home", cursor, params)
 	ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
-}
-
-// HandleGetPublicTimelineLift handles GET /api/v1/timelines/public
-func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
-	// Get current user (optional - public timeline doesn't require auth)
-	currentActor := h.getOptionalCurrentActor(ctx)
-
-	// Parse request parameters
-	params := h.parsePublicTimelineParams(ctx)
-
-	// Get timeline entries
-	entries, cursor, err := h.repos.Timeline().GetPublicTimeline(ctx.Context, params.Local, params.Limit, params.MaxID)
-	if err != nil {
-		h.logger.Error("failed to get public timeline", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Process entries into statuses
-	statuses := h.processTimelineEntries(ctx, entries, currentActor, params)
-
-	// Add pagination header
-	h.addPublicTimelinePagination(ctx, cursor, params)
-
-	return ctx.JSON(statuses)
 }
 
 // PublicTimelineParams holds parameters for public timeline requests
@@ -340,8 +314,11 @@ func (h *Handler) getOptionalCurrentActor(ctx *lift.Context) *activitypub.Actor 
 
 	if testUsername != "" {
 		// Test mode - get actor if username provided
-		actor, _ := h.repos.Account().GetActor(ctx.Context, testUsername)
-		return actor
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
+		if err != nil {
+			return nil
+		}
+		return account.Actor
 	}
 
 	// Try to authenticate user but don't fail if not authenticated
@@ -359,10 +336,13 @@ func (h *Handler) getOptionalCurrentActor(ctx *lift.Context) *activitypub.Actor 
 	}
 
 	if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-		oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
-			actor, _ := h.repos.Account().GetActor(ctx.Context, claims.Username)
-			return actor
+			account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+			if err != nil {
+				return nil
+			}
+			return account.Actor
 		}
 	}
 
@@ -417,7 +397,7 @@ func (h *Handler) processTimelineEntries(ctx *lift.Context, entries []*storageMo
 // processTimelineEntry processes a single timeline entry
 func (h *Handler) processTimelineEntry(ctx *lift.Context, entry *storageModels.Timeline, currentActor *activitypub.Actor) (models.Status, bool) {
 	// Get the actual object
-	obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
+	obj, err := h.registry.Notes().GetNote(ctx.Context, entry.PostID)
 	if err != nil {
 		h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
 		return models.Status{}, true // skip
@@ -461,7 +441,7 @@ func (h *Handler) processTimelineEntry(ctx *lift.Context, entry *storageModels.T
 // isBlocked checks if the current actor has blocked the object actor
 func (h *Handler) isBlocked(ctx *lift.Context, currentActor, objActor *activitypub.Actor) bool {
 	if currentActor != nil && objActor != nil {
-		if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID); err == nil && isBlocked {
+		if isBlocked, err := h.registry.Relationships().IsBlocked(ctx.Context, currentActor.ID, objActor.ID); err == nil && isBlocked {
 			return true // blocked user
 		}
 	}
@@ -475,17 +455,17 @@ func (h *Handler) addInteractionData(ctx *lift.Context, status *models.Status, o
 	}
 
 	// Get interaction counts
-	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
-	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
+	likeCount64, _ := h.registry.Notes().GetLikeCount(ctx.Context, objectID)
+	announceCount64, _ := h.registry.Notes().GetBoostCount(ctx.Context, objectID)
 	status.FavouritesCount = int(likeCount64)
-	status.ReblogsCount = announceCount
+	status.ReblogsCount = int(announceCount64)
 
 	// Check if current user has interacted (if authenticated)
 	if currentActor != nil {
-		if _, err := h.repos.Like().GetLike(ctx.Context, currentActor.ID, objectID); err == nil {
+		if hasLiked, err := h.registry.Notes().HasLiked(ctx.Context, currentActor.ID, objectID); err == nil && hasLiked {
 			status.Favourited = true
 		}
-		if _, err := h.repos.Social().GetAnnounce(ctx.Context, currentActor.ID, objectID); err == nil {
+		if hasReblogged, err := h.registry.Notes().HasReblogged(ctx.Context, currentActor.ID, objectID); err == nil && hasReblogged {
 			status.Reblogged = true
 		}
 	}
@@ -538,13 +518,33 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Get authenticated user (if any)
-	user := h.getTagTimelineUser(ctx)
+	username := ""
+	authHeader := h.getAuthHeader(ctx)
+	if authHeader != "" {
+		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
+				username = claims.Username
+			}
+		}
+	}
 
 	// Parse query parameters
 	params := h.parseTagTimelineParams(ctx, hashtag)
 
-	// Get timeline entries
-	entries, cursor, err := h.repos.Timeline().GetHashtagTimeline(ctx.Context, params.Hashtag, params.Local, params.Limit, params.MaxID)
+	// Use the Notes service to get hashtag timeline
+	query := &notes.ListNotesQuery{
+		ViewerID:     username, // May be empty for unauthenticated requests
+		TimelineType: "hashtag",
+		Hashtag:      hashtag,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  params.Limit,
+			Cursor: params.MaxID,
+		},
+		OnlyMedia: params.OnlyMedia,
+	}
+
+	result, err := h.registry.Notes().ListNotes(ctx.Context, query)
 	if err != nil {
 		h.logger.Error("failed to get hashtag timeline",
 			zap.String("hashtag", hashtag),
@@ -552,11 +552,29 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	// Convert entries to statuses
-	statuses := h.processTagTimelineEntries(ctx, entries, params, user)
+	// Convert and filter statuses
+	statuses := make([]*models.Status, 0, len(result.Notes))
+	for _, storageStatus := range result.Notes {
+		// Apply local filter if specified
+		if params.Local && !h.isLocal(storageStatus.AuthorUsername) {
+			continue
+		}
+
+		// Convert to API format
+		apiStatus, err := h.convertStorageStatusToAPI(storageStatus, username)
+		if err != nil {
+			h.logger.Warn("failed to convert status to API format",
+				zap.String("status_id", storageStatus.StatusID),
+				zap.Error(err))
+			continue
+		}
+		statuses = append(statuses, apiStatus)
+	}
 
 	// Add pagination header
-	h.addTagTimelinePaginationHeader(ctx, params, cursor)
+	if result.Pagination != nil && result.Pagination.NextCursor != "" {
+		h.addTagTimelinePaginationHeader(ctx, params, result.Pagination.NextCursor)
+	}
 
 	return ctx.JSON(statuses)
 }
@@ -566,8 +584,11 @@ func (h *Handler) getTagTimelineUser(ctx *lift.Context) *TagTimelineUser {
 	// Check test mode first
 	testUsername := h.getTestUsername(ctx)
 	if testUsername != "" {
-		actor, _ := h.repos.Account().GetActor(ctx.Context, testUsername)
-		return &TagTimelineUser{Actor: actor, Username: testUsername}
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
+		if err != nil {
+			return &TagTimelineUser{}
+		}
+		return &TagTimelineUser{Actor: account.Actor, Username: testUsername}
 	}
 
 	// Try to authenticate regular user
@@ -581,14 +602,17 @@ func (h *Handler) getTagTimelineUser(ctx *lift.Context) *TagTimelineUser {
 		return &TagTimelineUser{}
 	}
 
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return &TagTimelineUser{}
 	}
 
-	actor, _ := h.repos.Account().GetActor(ctx.Context, claims.Username)
-	return &TagTimelineUser{Actor: actor, Username: claims.Username}
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
+	if err != nil {
+		return &TagTimelineUser{}
+	}
+	return &TagTimelineUser{Actor: account.Actor, Username: claims.Username}
 }
 
 // parseTagTimelineParams extracts query parameters
@@ -636,7 +660,7 @@ func (h *Handler) processTagTimelineEntries(ctx *lift.Context, entries []*storag
 // processTagTimelineEntry processes a single timeline entry
 func (h *Handler) processTagTimelineEntry(ctx *lift.Context, entry *storageModels.Timeline, user *TagTimelineUser) (models.Status, bool) {
 	// Get the actual object
-	obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
+	obj, err := h.registry.Notes().GetNote(ctx.Context, entry.PostID)
 	if err != nil {
 		h.logger.Warn("failed to get object from timeline", zap.String("id", entry.PostID), zap.Error(err))
 		return models.Status{}, true
@@ -668,7 +692,7 @@ func (h *Handler) isUserBlocked(ctx *lift.Context, currentActor, objActor *activ
 		return false
 	}
 
-	isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID)
+	isBlocked, err := h.registry.Relationships().IsBlocked(ctx.Context, currentActor.ID, objActor.ID)
 	return err == nil && isBlocked
 }
 
@@ -679,24 +703,24 @@ func (h *Handler) addStatusInteractions(ctx *lift.Context, status *models.Status
 	}
 
 	// Get counts
-	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
-	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
+	likeCount64, _ := h.registry.Notes().GetLikeCount(ctx.Context, objectID)
+	announceCount64, _ := h.registry.Notes().GetBoostCount(ctx.Context, objectID)
 	status.FavouritesCount = int(likeCount64)
-	status.ReblogsCount = announceCount
+	status.ReblogsCount = int(announceCount64)
 
 	// Check user interactions if authenticated
 	if user.Actor == nil {
 		return
 	}
 
-	if _, err := h.repos.Like().GetLike(ctx.Context, user.Actor.ID, objectID); err == nil {
+	if hasLiked, err := h.registry.Notes().HasLiked(ctx.Context, user.Actor.ID, objectID); err == nil && hasLiked {
 		status.Favourited = true
 	}
-	if _, err := h.repos.Social().GetAnnounce(ctx.Context, user.Actor.ID, objectID); err == nil {
+	if hasReblogged, err := h.registry.Notes().HasReblogged(ctx.Context, user.Actor.ID, objectID); err == nil && hasReblogged {
 		status.Reblogged = true
 	}
 	if user.Username != "" {
-		bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, user.Username, objectID)
+		bookmarked, _ := h.registry.Notes().IsBookmarked(ctx.Context, user.Username, objectID)
 		status.Bookmarked = bookmarked
 	}
 }
@@ -735,23 +759,60 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 		return err
 	}
 
-	// Verify list ownership
-	_, err = h.validateListOwnership(ctx, listID, username)
-	if err != nil {
-		return err
-	}
-
 	// Parse timeline parameters
 	limit, cursor := h.parseTimelineParams(ctx)
 
-	// Build timeline response
-	statuses, nextCursor, err := h.buildListTimelineResponse(ctx, listID, username, limit, cursor)
-	if err != nil {
-		return err
+	// Use the Lists service to get list timeline
+	listService := h.registry.Lists()
+	if listService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "Lists service not available"})
 	}
 
-	// Add pagination headers and return response
-	return h.returnTimelineResponse(ctx, statuses, nextCursor, fmt.Sprintf("/api/v1/timelines/list/%s", listID), limit)
+	// Get list timeline through the service
+	timelineResult, err := listService.GetListTimeline(ctx.Context, &lists.GetListTimelineQuery{
+		ListID:   listID,
+		ViewerID: username,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: cursor,
+		},
+	})
+	if err != nil {
+		h.logger.Error("failed to get list timeline",
+			zap.String("list_id", listID),
+			zap.String("username", username),
+			zap.Error(err))
+
+		// Handle specific error cases
+		if strings.Contains(err.Error(), "not found") {
+			return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
+		}
+		if strings.Contains(err.Error(), "unauthorized") {
+			return ctx.Status(403).JSON(map[string]string{"error": "unauthorized"})
+		}
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	}
+
+	// Convert storage statuses to API format
+	apiStatuses := make([]*models.Status, 0, len(timelineResult.Statuses))
+	for _, storageStatus := range timelineResult.Statuses {
+		apiStatus, err := h.convertStorageStatusToAPI(storageStatus, username)
+		if err != nil {
+			h.logger.Warn("failed to convert status to API format",
+				zap.String("status_id", storageStatus.StatusID),
+				zap.Error(err))
+			continue
+		}
+		apiStatuses = append(apiStatuses, apiStatus)
+	}
+
+	// Add pagination header
+	if timelineResult.Pagination != nil && timelineResult.Pagination.NextCursor != "" && len(apiStatuses) > 0 {
+		linkURL := h.buildLinkURL(fmt.Sprintf("/api/v1/timelines/list/%s", listID), timelineResult.Pagination.NextCursor, map[string]string{"limit": strconv.Itoa(limit)})
+		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
+	}
+
+	return ctx.JSON(apiStatuses)
 }
 
 // Helper functions for HandleGetListTimelineLift
@@ -788,7 +849,7 @@ func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope s
 	}
 
 	// Validate token
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -800,20 +861,6 @@ func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope s
 	}
 
 	return claims.Username, nil
-}
-
-// validateListOwnership validates that the user owns the list
-func (h *Handler) validateListOwnership(ctx *lift.Context, listID, username string) (*storage.List, error) {
-	list, err := h.repos.List().GetList(ctx.Context, listID)
-	if err != nil {
-		return nil, ctx.Status(404).JSON(map[string]string{"error": "list not found"})
-	}
-
-	if list.Username != username {
-		return nil, ctx.Status(404).JSON(map[string]string{"error": "list not found"})
-	}
-
-	return list, nil
 }
 
 // parseTimelineParams parses limit and cursor from query parameters
@@ -839,149 +886,6 @@ func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string) {
 	return limit, cursor
 }
 
-// buildListTimelineResponse builds the timeline response with status objects
-func (h *Handler) buildListTimelineResponse(ctx *lift.Context, listID, username string, limit int, cursor string) ([]models.Status, string, error) {
-	// Get list timeline entries
-	entries, nextCursor, err := h.repos.List().GetListTimeline(ctx.Context, listID, limit, cursor)
-	if err != nil {
-		h.logger.Error("failed to get list timeline",
-			zap.String("list_id", listID),
-			zap.Error(err))
-		return nil, "", ctx.Status(500).JSON(map[string]string{"error": "failed to get list timeline"})
-	}
-
-	// Get the user's actor
-	actor, err := h.repos.Account().GetActor(ctx.Context, username)
-	if err != nil {
-		h.logger.Error("failed to get actor", zap.Error(err))
-		return nil, "", ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Build status objects from timeline entries
-	statuses := h.buildStatusesFromEntries(ctx, entries, actor, username)
-
-	return statuses, nextCursor, nil
-}
-
-// buildStatusesFromEntries converts timeline entries to status objects
-func (h *Handler) buildStatusesFromEntries(ctx *lift.Context, entries []*storage.TimelineEntry, actor *activitypub.Actor, username string) []models.Status {
-	statuses := make([]models.Status, 0, len(entries))
-
-	for _, entry := range entries {
-		status, err := h.buildSingleStatusFromEntry(ctx, entry, actor, username)
-		if err != nil {
-			// Log error but continue processing other entries
-			h.logger.Warn("failed to build status from entry",
-				zap.String("object_id", entry.PostID),
-				zap.Error(err))
-			continue
-		}
-
-		if status != nil {
-			statuses = append(statuses, *status)
-		}
-	}
-
-	return statuses
-}
-
-// buildSingleStatusFromEntry builds a single status from a timeline entry
-func (h *Handler) buildSingleStatusFromEntry(ctx *lift.Context, entry *storage.TimelineEntry, actor *activitypub.Actor, username string) (*models.Status, error) {
-	// Get the object
-	obj, err := h.repos.Object().GetObject(ctx.Context, entry.PostID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the object's actor
-	objActor := h.getListObjectActor(ctx, obj)
-
-	// Check if user is blocked
-	if objActor != nil {
-		if h.isListUserBlocked(ctx, actor, objActor) {
-			return nil, nil // Skip blocked users
-		}
-	}
-
-	// Convert to status
-	status := h.converter.ObjectToStatus(obj, objActor)
-
-	// Add interaction data
-	h.addListInteractionData(ctx, &status, entry.PostID, actor.ID, username)
-
-	// Parse and add emojis
-	h.enrichStatusWithEmojis(ctx.Context, &status)
-
-	return &status, nil
-}
-
-// getListObjectActor retrieves the actor who created the object in list timeline
-func (h *Handler) getListObjectActor(ctx *lift.Context, obj any) *activitypub.Actor {
-	var attributedTo string
-
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		attributedTo = o.AttributedTo
-	case map[string]any:
-		if attr, ok := o["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
-	}
-
-	if attributedTo == "" {
-		return nil
-	}
-
-	// Extract username from actor ID
-	objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
-	if objUsername == "" {
-		return nil
-	}
-
-	objActor, _ := h.repos.Account().GetActor(ctx.Context, objUsername)
-	return objActor
-}
-
-// isListUserBlocked checks if the current user has blocked the object's author in list timeline
-func (h *Handler) isListUserBlocked(ctx *lift.Context, currentActor, objActor *activitypub.Actor) bool {
-	isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, currentActor.ID, objActor.ID)
-	return err == nil && isBlocked // If no error and blocked, return true
-}
-
-// addListInteractionData adds interaction counts and user interaction status to a list timeline status
-func (h *Handler) addListInteractionData(ctx *lift.Context, status *models.Status, objectID, actorID, username string) {
-	if objectID == "" {
-		return
-	}
-
-	// Get counts
-	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, objectID)
-	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, objectID)
-	status.FavouritesCount = int(likeCount64)
-	status.ReblogsCount = announceCount
-
-	// Check user interactions
-	if _, err := h.repos.Like().GetLike(ctx.Context, actorID, objectID); err == nil {
-		status.Favourited = true
-	}
-	if _, err := h.repos.Social().GetAnnounce(ctx.Context, actorID, objectID); err == nil {
-		status.Reblogged = true
-	}
-	bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, objectID)
-	status.Bookmarked = bookmarked
-}
-
-// returnTimelineResponse adds pagination headers and returns the timeline response
-func (h *Handler) returnTimelineResponse(ctx *lift.Context, statuses []models.Status, nextCursor, baseURL string, limit int) error {
-	// Add Link header for pagination if there's a cursor
-	if nextCursor != "" && len(statuses) > 0 {
-		linkURL := h.buildLinkURL(baseURL, nextCursor, map[string]string{"limit": strconv.Itoa(limit)})
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
-	}
-
-	return ctx.JSON(statuses)
-}
-
 // HandleGetDirectTimelineLift handles GET /api/v1/timelines/direct
 func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 	// Authenticate user
@@ -990,28 +894,47 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		return err
 	}
 
-	// Get the user's actor
-	actor, err := h.getUserActorForDirectTimeline(ctx, username)
-	if err != nil {
-		return err
-	}
-
 	// Parse query parameters
 	params := h.parseDirectTimelineParams(ctx)
 
-	// Get direct timeline entries
-	entries, cursor, err := h.fetchDirectTimelineEntries(ctx, username, params)
-	if err != nil {
-		return err
+	// Use the Notes service to get direct timeline
+	query := &notes.ListNotesQuery{
+		ViewerID:     username,
+		TimelineType: "direct",
+		Pagination: interfaces.PaginationOptions{
+			Limit:  params.limit,
+			Cursor: params.maxID,
+		},
 	}
 
-	// Convert entries to statuses
-	statuses := h.convertDirectTimelineEntries(ctx, entries, actor, username)
+	result, err := h.registry.Notes().ListNotes(ctx.Context, query)
+	if err != nil {
+		h.logger.Error("failed to get direct timeline",
+			zap.String("username", username),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	}
+
+	// Convert storage statuses to API format
+	apiStatuses := make([]*models.Status, 0, len(result.Notes))
+	for _, storageStatus := range result.Notes {
+		apiStatus, err := h.convertStorageStatusToAPI(storageStatus, username)
+		if err != nil {
+			h.logger.Warn("failed to convert status to API format",
+				zap.String("status_id", storageStatus.StatusID),
+				zap.Error(err))
+			continue
+		}
+		apiStatuses = append(apiStatuses, apiStatus)
+	}
 
 	// Add pagination header
-	h.setDirectTimelinePagination(ctx, cursor, params.limit)
+	if result.Pagination != nil && result.Pagination.NextCursor != "" && len(apiStatuses) > 0 {
+		linkURL := h.buildLinkURL("/api/v1/timelines/direct", result.Pagination.NextCursor, map[string]string{"limit": strconv.Itoa(params.limit)})
+		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
+	}
 
-	return ctx.JSON(statuses)
+	return ctx.JSON(apiStatuses)
 }
 
 // directTimelineParams holds parameters for direct timeline requests
@@ -1036,7 +959,7 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 	}
 
 	// Validate token and get claims
-	oauthSvc := auth.NewOAuthService(h.cfg.JWTSecret, h.repos)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
@@ -1079,12 +1002,12 @@ func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 
 // getUserActorForDirectTimeline gets the user's actor for direct timeline operations
 func (h *Handler) getUserActorForDirectTimeline(ctx *lift.Context, username string) (*activitypub.Actor, error) {
-	actor, err := h.repos.Account().GetActor(ctx.Context, username)
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
 		return nil, ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
 	}
-	return actor, nil
+	return account.Actor, nil
 }
 
 // parseDirectTimelineParams parses query parameters for direct timeline
@@ -1113,149 +1036,6 @@ func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelinePar
 	return params
 }
 
-// fetchDirectTimelineEntries fetches direct timeline entries from the repository
-func (h *Handler) fetchDirectTimelineEntries(ctx *lift.Context, username string, params directTimelineParams) ([]*storageModels.Timeline, string, error) {
-	entries, cursor, err := h.repos.Timeline().GetDirectTimeline(ctx.Context, username, params.limit, params.maxID)
-	if err != nil {
-		h.logger.Error("failed to get direct timeline", zap.Error(err))
-		return nil, "", ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	h.logger.Info("direct timeline entries fetched",
-		zap.String("username", username),
-		zap.Int("count", len(entries)),
-		zap.String("cursor", cursor))
-
-	return entries, cursor, nil
-}
-
-// convertDirectTimelineEntries converts direct timeline entries to API statuses
-func (h *Handler) convertDirectTimelineEntries(ctx *lift.Context, entries []*storageModels.Timeline, actor *activitypub.Actor, username string) []models.Status {
-	statuses := []models.Status{}
-
-	for _, entry := range entries {
-		status := h.convertSingleDirectTimelineEntry(ctx, entry, actor, username)
-		if status != nil {
-			statuses = append(statuses, *status)
-		}
-	}
-
-	return statuses
-}
-
-// convertSingleDirectTimelineEntry converts a single direct timeline entry to a status
-func (h *Handler) convertSingleDirectTimelineEntry(ctx *lift.Context, entry *storageModels.Timeline, actor *activitypub.Actor, username string) *models.Status {
-	// Extract object ID from PostID URL
-	objectID := h.converter.ExtractIDFromURL(entry.PostID)
-
-	// Get the actual object
-	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
-	if err != nil {
-		h.logger.Warn("failed to get object from direct timeline",
-			zap.String("post_id", entry.PostID),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return nil
-	}
-
-	// Get the actor who created the object
-	objActor := h.getDirectTimelineObjectActor(ctx, obj)
-
-	// Check if blocked
-	if h.isActorBlockedForDirect(ctx, actor, objActor) {
-		return nil
-	}
-
-	// Convert to status
-	status := h.converter.ObjectToStatus(obj, objActor)
-
-	// Add interaction data
-	h.enrichDirectStatusWithInteractions(ctx, &status, entry, actor, username)
-
-	// Parse and add emojis
-	h.enrichStatusWithEmojis(ctx.Context, &status)
-
-	return &status
-}
-
-// getDirectTimelineObjectActor retrieves the actor for a direct timeline object
-func (h *Handler) getDirectTimelineObjectActor(ctx *lift.Context, obj any) *activitypub.Actor {
-	var attributedTo string
-
-	switch o := obj.(type) {
-	case *activitypub.Note:
-		attributedTo = o.AttributedTo
-	case map[string]any:
-		if attr, ok := o["attributedTo"].(string); ok {
-			attributedTo = attr
-		}
-	}
-
-	if attributedTo == "" {
-		return nil
-	}
-
-	// Extract username from actor ID
-	objUsername := h.converter.ExtractUsernameFromActorID(attributedTo)
-	if objUsername == "" {
-		return nil
-	}
-
-	objActor, _ := h.repos.Account().GetActor(ctx.Context, objUsername)
-	return objActor
-}
-
-// isActorBlockedForDirect checks if an actor is blocked for direct timeline
-func (h *Handler) isActorBlockedForDirect(ctx *lift.Context, actor, objActor *activitypub.Actor) bool {
-	if objActor == nil {
-		return false
-	}
-
-	if isBlocked, err := h.repos.Relationship().IsBlocked(ctx.Context, actor.ID, objActor.ID); err == nil && isBlocked {
-		// Blocked user
-		return true
-	}
-
-	return false
-}
-
-// enrichDirectStatusWithInteractions adds interaction data to a direct timeline status
-func (h *Handler) enrichDirectStatusWithInteractions(ctx *lift.Context, status *models.Status, entry *storageModels.Timeline, actor *activitypub.Actor, username string) {
-	if entry.PostID == "" {
-		return
-	}
-
-	// Get interaction counts
-	likeCount64, _ := h.repos.Like().GetLikeCount(ctx.Context, entry.PostID)
-	announceCount, _ := h.repos.Social().CountObjectAnnounces(ctx.Context, entry.PostID)
-	status.FavouritesCount = int(likeCount64)
-	status.ReblogsCount = announceCount
-
-	// Check if current user has interacted
-	if _, err := h.repos.Like().GetLike(ctx.Context, actor.ID, entry.PostID); err == nil {
-		status.Favourited = true
-	}
-	if _, err := h.repos.Social().GetAnnounce(ctx.Context, actor.ID, entry.PostID); err == nil {
-		status.Reblogged = true
-	}
-	bookmarked, _ := h.repos.User().IsBookmarked(ctx.Context, username, entry.PostID)
-	status.Bookmarked = bookmarked
-}
-
-// setDirectTimelinePagination sets pagination headers for direct timeline
-func (h *Handler) setDirectTimelinePagination(ctx *lift.Context, cursor string, limit int) {
-	if cursor == "" {
-		return
-	}
-
-	params := make(map[string]string)
-	if limit != 20 {
-		params["limit"] = strconv.Itoa(limit)
-	}
-	linkURL := h.buildLinkURL("/api/v1/timelines/direct", cursor, params)
-	ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
-}
-
 // buildLinkURL is a helper function to build Link header URLs
 func (h *Handler) buildLinkURL(path, cursor string, params map[string]string) string {
 	url := fmt.Sprintf("%s%s?max_id=%s", h.cfg.BaseURL(), path, cursor)
@@ -1264,3 +1044,5 @@ func (h *Handler) buildLinkURL(path, cursor string, params map[string]string) st
 	}
 	return url
 }
+
+// NOTE: convertStorageStatusToAPI has been moved to helpers.go to be shared across all handlers
