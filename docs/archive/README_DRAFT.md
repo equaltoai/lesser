@@ -104,7 +104,7 @@ make deploy
 ### For Contributors
 - [Contributing Guidelines](CONTRIBUTING.md) - Join the project
 - [Developer Guide](DEVELOPER_GUIDELINES.md) - Code standards
-- [Architecture Decisions](ARCHITECTURE_DECISIONS.md) - Design rationale
+- [Architecture Decisions](../architecture/ARCHITECTURE_DECISIONS.md) - Design rationale
 
 ## Performance
 

@@ -4,14 +4,14 @@ Welcome to the Lesser documentation! Lesser is a **100% complete** serverless Ac
 
 ## 🎉 Project Status: MVP Complete
 
-Lesser has achieved complete MVP status with full ActivityPub federation and Mastodon API compatibility. See our **[MVP Complete Summary](MVP_COMPLETE_SUMMARY.md)** for a comprehensive feature list.
+Lesser has achieved complete MVP status with full ActivityPub federation and Mastodon API compatibility. See our **[MVP Complete Summary](implementation/summaries/MVP_COMPLETE_SUMMARY.md)** for a comprehensive feature list.
 
 ## 📖 Documentation Structure
 
 For easy navigation, see our **[Complete Documentation Index](DOCUMENTATION_INDEX.md)**.
 
 ### Getting Started
-- **[MVP Complete Summary](MVP_COMPLETE_SUMMARY.md)** - Complete feature overview
+- **[MVP Complete Summary](implementation/summaries/MVP_COMPLETE_SUMMARY.md)** - Complete feature overview
 - [Quick Start Guide](deployment/QUICK_START.md) - Deploy Lesser in 15 minutes
 - [Instance Configuration Example](deployment/INSTANCE_CONFIG_EXAMPLE.md) - Configuration examples
 - [Migration Guide](deployment/MIGRATION_GUIDE.md) - Migrate from other platforms

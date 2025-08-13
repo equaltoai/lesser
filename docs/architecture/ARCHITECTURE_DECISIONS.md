@@ -1,407 +1,390 @@
-# Lesser Architecture Decisions
+# Architecture Decisions Record
 
-This document records key architectural decisions for the Lesser project. Each decision includes context, options considered, and rationale.
+## Decided Architectures
 
-## Decision Log
+### 1. Real-time System: DynamoDB + Streaming to Reporting System
 
-### 1. Private Key Storage Encryption
-**Status:** 🚨 PENDING IMPLEMENTATION  
-**Decision:** Use AWS KMS for private key encryption
+**Architecture:**
+```
+DynamoDB Main Table 
+    ↓ (DynamoDB Streams)
+Lambda Stream Processor
+    ↓ (Process & Transform)
+Reporting Table (Optimized for Analytics)
+    ↓ (Real-time queries)
+GraphQL Resolvers
+```
 
-**Context:**
-- ActivityPub requires private keys for HTTP signatures
-- Currently storing private keys in plaintext (security risk)
-- Need secure, auditable encryption
+**Implementation Details:**
+- Enable DynamoDB Streams on main table
+- Lambda function processes stream records
+- Transform and aggregate data for reporting
+- Store in separate reporting-optimized table
+- Real-time updates to connected clients via existing WebSocket
 
-**Options Considered:**
-1. **AWS KMS** ✅ SELECTED
-   - Use a single Customer Master Key (CMK)
-   - Encrypt/decrypt private keys on demand
-   - ~$1/month + API calls
-2. Application-level encryption
-   - Would require secure master key management
-   - More complex key rotation
+**Benefits:**
+- Real-time data propagation
+- Optimized reporting queries
+- Maintains data consistency
+- Uses existing infrastructure
 
-**Rationale:**
-- KMS provides hardware security modules (HSM)
-- Automatic key rotation
-- CloudTrail audit logs
-- No key management burden
+### 2. Metrics Storage: Distinct Reporting Table with Extensive Indexing
 
-**Implementation:**
+**Schema Design:**
+```
+Primary Table Pattern: METRICS#<type>#<timestamp>
+GSI1: PK=SERVICE#<name>, SK=TIMESTAMP#<iso>
+GSI2: PK=METRIC_TYPE#<type>, SK=TIMESTAMP#<iso>
+GSI3: PK=DATE#<yyyy-mm-dd>, SK=SERVICE#<name>#<timestamp>
+GSI4: PK=AGGREGATION#<level>, SK=TIMESTAMP#<iso>
+```
+
+**Aggregation Levels:**
+- Raw data points (1 minute buckets)
+- 5-minute aggregates
+- Hourly aggregates
+- Daily summaries
+
+**Index Strategy:**
+- Time-based queries (performance over time)
+- Service-based queries (all metrics for a service)
+- Metric type queries (latency across all services)
+- Date-based queries (daily reports)
+- Aggregation queries (different time granularities)
+
+### 3. Data Retention: Context-Dependent with ≥1 Year for Reporting
+
+**Retention Policies by Data Type:**
+
+#### Operational Data (Short-term)
+- Lambda logs: 30 days
+- Error traces: 90 days
+- Debug logs: 7 days
+- Audit logs: 13 months (compliance)
+
+#### Reporting Data (Long-term)
+- Raw metrics: 30 days
+- 5-minute aggregates: 90 days
+- Hourly aggregates: 1 year (then archive to Glacier)
+- Daily summaries: 1 year (then archive to Glacier)
+- Cost data: 1 year (then archive to Glacier)
+
+#### User Data (Business-dependent)
+- Federation activities: 1 year (for relationship analysis)
+- Moderation events: 2 years (pattern analysis)
+- Performance baselines: 1 year (trend analysis)
+- Infrastructure events: 6 months
+
+#### Implementation:
+- DynamoDB TTL for automated cleanup
+- S3 archival for long-term storage
+- Lifecycle policies for cost optimization
+
+### 4. Cost Model: Practical Metrics for On-Demand Resources
+
+**Requirements from answers.md:**
+- WebAuthn is THE authentication method (passkey required)
+- All 6 subscription resolvers needed for MVP
+- Process metrics from streams as they arrive (real-time)
+- Per-user AND per-instance cost tracking required
+- Data archival to Glacier after 1 year
+- DynamoDB-oriented retry for stream processing
+- Follow Mastodon conventions for public endpoints
+
+**All costs based on actual AWS on-demand pricing:**
+
+#### DynamoDB Costs
+```
+Read Capacity Unit (RCU): $0.25 per million
+Write Capacity Unit (WCU): $1.25 per million
+Storage: $0.25 per GB-month
+Streams: $0.02 per 100,000 reads
+```
+
+#### Lambda Costs
+```
+Invocations: $0.20 per million
+Duration: $0.0000166667 per GB-second
+ARM64: 20% discount on duration
+```
+
+#### S3 Costs
+```
+Standard Storage: $0.023 per GB-month
+Intelligent Tiering: $0.0025 per 1,000 objects
+GET Requests: $0.0004 per 1,000
+PUT Requests: $0.005 per 1,000
+Data Transfer: $0.09 per GB (first 10TB)
+```
+
+#### API Gateway Costs
+```
+WebSocket Connections: $1.00 per million connection-minutes
+WebSocket Messages: $1.00 per million messages
+REST API Requests: $3.50 per million
+```
+
+#### CloudFront Costs
+```
+Data Transfer: $0.085 per GB (US/Europe)
+Requests: $0.0075 per 10,000 HTTP requests
+HTTPS Requests: $0.010 per 10,000 requests
+Origin Shield: $0.110 per 10,000 requests
+```
+
+#### SQS Costs
+```
+Standard Queue: $0.40 per million requests
+FIFO Queue: $0.50 per million requests
+```
+
+#### KMS Costs (for encryption)
+```
+Key Usage: $0.03 per 10,000 requests
+Data Key Generation: $0.03 per 10,000 requests
+```
+
+#### Secrets Manager Costs
+```
+Secret Storage: $0.40 per secret per month
+API Calls: $0.05 per 10,000 calls
+```
+
+## Remaining Design Decisions
+
+### 1. Precise Cost Attribution Model
+
+**Federation Operation Costs:**
+Need to calculate based on actual resource consumption:
+
+```
+Follow Request:
+- 1 Lambda invocation (100ms, 128MB) = $0.000000208
+- 2 DynamoDB writes (follow + activity) = $0.0000025
+- 1 SQS message = $0.0000004
+- KMS encryption (2 operations) = $0.000000006
+Total per follow: ~$0.000003
+
+Status Creation:
+- 1 Lambda invocation (200ms, 256MB) = $0.000000833
+- 3 DynamoDB writes (status + timeline + activity) = $0.00000375
+- Timeline fanout (N followers) = N * $0.0000025
+- KMS encryption (3+ operations) = $0.000000009
+- Media processing (if applicable) = variable
+Total per status: ~$0.000005 + (N * $0.0000025)
+
+Authentication Operations (WebAuthn Primary):
+- WebAuthn verification (Lambda 150ms, 256MB) = $0.000000625 [PRIMARY]
+- Session creation (DynamoDB write + KMS) = $0.00000128
+- JWT validation for API access (Lambda 50ms, 128MB) = $0.0000001
+- OAuth token exchange (fallback, Lambda 100ms, 256MB) = $0.000000417
+- API key validation (admin/service accounts) = $0.000000005
+
+Media Upload:
+- Lambda processing (varies by size/quality)
+- S3 storage costs (encrypted at rest)
+- CloudFront distribution
+- KMS encryption for S3 objects
+- Transcoding costs (if video)
+```
+
+**WebSocket Connection Costs:**
+```
+Per Connection Hour:
+- API Gateway: $0.001
+- Lambda keep-alive: $0.0000033 (assuming 1 invocation/minute)
+- DynamoDB connection tracking: $0.0000025
+- Session token validation: $0.000001 (per validation)
+Total: ~$0.001007 per connection-hour
+
+Per Message:
+- API Gateway: $0.000001
+- Lambda processing (50ms, 128MB): $0.0000001
+- DynamoDB write (if stored): $0.00000125
+- KMS encryption (if message encrypted): $0.000000003
+- Authentication check (if required): $0.0000001
+Total: ~$0.0000024 per message
+
+Connection Authentication:
+- Initial WebSocket handshake auth: $0.0000001
+- Token refresh during connection: $0.000000417
+- Session validation: $0.0000001
+```
+
+### 2. Service Level Objectives (SLOs)
+
+**Performance SLOs:**
+- API Latency P95 < 300ms (99.5% of the time)
+- API Latency P99 < 1000ms (99.9% of the time)
+- Availability > 99.95% (4.5 minutes downtime/month)
+- Error Rate < 0.1% (99.9% success rate)
+
+**Federation SLOs:**
+- Federation delivery P95 < 5 seconds
+- Federation success rate > 99.5%
+- Instance discovery < 1 minute
+
+**Cost SLOs:**
+- Per-user cost < $0.01/month at 1000 users
+- Federation cost < $0.001 per operation
+- Storage cost < $0.10 per GB-month including redundancy
+
+## Implementation Requirements
+
+### 1. Reporting Table Schema
+
 ```go
-// In pkg/storage/dynamodb/actor.go
-func (s *dynamoDBStorage) encryptPrivateKey(ctx context.Context, plaintext string) (string, error) {
-    input := &kms.EncryptInput{
-        KeyId:     aws.String(s.kmsKeyID),
-        Plaintext: []byte(plaintext),
-    }
-    result, err := s.kmsClient.Encrypt(ctx, input)
-    if err != nil {
-        return "", fmt.Errorf("failed to encrypt private key: %w", err)
-    }
-    return base64.StdEncoding.EncodeToString(result.CiphertextBlob), nil
+type MetricRecord struct {
+    PK                string    `dynamodb:"PK"`                // METRICS#<type>#<bucket>
+    SK                string    `dynamodb:"SK"`                // <timestamp>
+    GSI1PK            string    `dynamodb:"GSI1PK"`            // SERVICE#<name>
+    GSI1SK            string    `dynamodb:"GSI1SK"`            // TIMESTAMP#<iso>
+    GSI2PK            string    `dynamodb:"GSI2PK"`            // METRIC_TYPE#<type>
+    GSI2SK            string    `dynamodb:"GSI2SK"`            // TIMESTAMP#<iso>
+    GSI3PK            string    `dynamodb:"GSI3PK"`            // DATE#<yyyy-mm-dd>
+    GSI3SK            string    `dynamodb:"GSI3SK"`            // SERVICE#<name>#<timestamp>
+    
+    MetricType        string    `dynamodb:"metric_type"`
+    ServiceName       string    `dynamodb:"service_name"`
+    Timestamp         time.Time `dynamodb:"timestamp"`
+    
+    // Metric Values
+    Count             int64     `dynamodb:"count,omitempty"`
+    Sum               float64   `dynamodb:"sum,omitempty"`
+    Min               float64   `dynamodb:"min,omitempty"`
+    Max               float64   `dynamodb:"max,omitempty"`
+    P50               float64   `dynamodb:"p50,omitempty"`
+    P95               float64   `dynamodb:"p95,omitempty"`
+    P99               float64   `dynamodb:"p99,omitempty"`
+    
+    // Dimensions
+    Dimensions        map[string]string `dynamodb:"dimensions,omitempty"`
+    
+    // Metadata
+    AggregationLevel  string    `dynamodb:"aggregation_level"` // raw, 5min, hourly, daily
+    TTL               int64     `dynamodb:"ttl,omitempty"`
 }
 ```
 
----
+### 2. Cost Calculation Service
 
-### 2. HTTP Signatures for Federation
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Implement HTTP Signatures following draft-cavage-http-signatures-12
-
-**Context:**
-- ActivityPub requires HTTP signatures for server-to-server authentication
-- Need to verify incoming federation requests
-- Need to sign outgoing federation requests
-
-**Implementation Completed:**
-- `pkg/federation/httpsig.go` - Core implementation
-- RSA-SHA256 algorithm support
-- Timestamp validation (±5 minutes window)
-- Digest calculation and verification
-- Key management utilities (RSA key generation, PEM encoding)
-- 87.4% test coverage
-- Comprehensive documentation in `pkg/federation/README.md`
-
-**Features:**
-- `VerifyHTTPSignature()` - Verify incoming requests
-- `SignHTTPRequest()` - Sign outgoing requests
-- `GenerateRSAKeyPair()` - Generate RSA keys (2048-bit minimum)
-- PEM encoding/decoding utilities
-
-**Future Enhancements:**
-- Ed25519 support for more efficient signatures
-- Integration with AWS KMS for private key encryption
-- Public key caching to reduce lookups
-
----
-
-### 3. Actor Profile Content Negotiation
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Support both HTML and ActivityStreams JSON responses
-
-**Context:**
-- ActivityPub servers need JSON responses
-- Humans need readable HTML profiles
-- Must serve public keys for federation
-
-**Implementation:**
-- `cmd/actor/main.go` - Dual-format responses
-- Content-Type detection based on Accept header
-- Beautiful responsive HTML with Tailwind-inspired styling
-- ActivityStreams JSON with public key
-- 95.5% test coverage
-
-**Benefits:**
-- Single endpoint serves both audiences
-- Better user experience for web browsers
-- Full federation compliance
-- SEO-friendly HTML with meta tags
-
----
-
-### 4. Outbox Activity Creation
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Auto-generate IDs and validate actor ownership
-
-**Context:**
-- Activities need unique IDs
-- Must prevent users from posting as other actors
-- Need user-friendly API
-
-**Implementation:**
-- Auto-generate activity IDs if not provided (timestamp + random)
-- Auto-fill actor field if empty
-- Validate actor matches authenticated user
-- 84.7% test coverage
-
-**Benefits:**
-- Simpler API for clients
-- Prevents spoofing
-- Consistent ID format
-- No client-side ID generation needed
-
-**ID Format:**
-```
-https://example.com/activities/20240115-143022-abc12345
-```
-
----
-
-### 5. Collection Pagination Strategy
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Use OrderedCollection with cursor-based pagination
-
-**Context:**
-- ActivityPub requires OrderedCollection format
-- Need efficient pagination for large collections
-- Must support both collection metadata and pages
-
-**Implementation:**
-- OrderedCollection for metadata (no `?page` parameter)
-- OrderedCollectionPage for paginated results (`?page=true`)
-- Cursor-based pagination for scalability
-- Configurable limits (1-100 items)
-- 81.7% test coverage in outbox
-
-**Benefits:**
-- Standard ActivityPub compliance
-- Efficient for large datasets
-- No offset calculations needed
-- Consistent with other endpoints
-
-**Query Parameters:**
-- `page=true` - Get a page of items
-- `cursor=xxx` - Continue from cursor
-- `limit=20` - Items per page (1-100)
-
----
-
-### 6. Client Authentication Strategy
-**Status:** ✅ IMPLEMENTED  
-**Decision:** OAuth 2.0 with PKCE and JWT tokens
-
-**Context:**
-- Need secure client-to-server authentication
-- Most ActivityPub clients expect OAuth 2.0
-- Must support third-party apps
-
-**Implementation:**
-- `pkg/auth/oauth.go` - OAuth 2.0 service
-- Authorization code flow with mandatory PKCE
-- JWT access tokens (1 hour expiration)
-- Refresh tokens (30 day expiration)
-- Scope-based authorization (read/write)
-- 67% test coverage
-
-**Benefits:**
-- Industry standard OAuth 2.0 compliance
-- PKCE prevents authorization code interception
-- Stateless JWT tokens for scalability
-- Compatible with existing ActivityPub clients
-
-**Token Details:**
-- **Access Tokens**: JWT with HS256, 1 hour expiration
-- **Refresh Tokens**: Opaque tokens, 30 day expiration
-- **Authorization Codes**: 10 minute expiration
-- **Storage**: DynamoDB with automatic TTL cleanup
-
-**Current Limitations:**
-- Single hardcoded client ("dev-client")
-- No actual login page (uses "testuser")
-- No token revocation endpoint
-- No dynamic client registration
-
----
-
-### 7. JWT Token Strategy
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Use JWT for access tokens with HS256 signing
-
-**Context:**
-- Need stateless authentication for Lambda
-- Must include user information and scopes
-- Balance between security and performance
-
-**Implementation:**
 ```go
-type Claims struct {
-    jwt.StandardClaims
-    Username string   `json:"username"`
-    Scopes   []string `json:"scopes"`
-    ClientID string   `json:"client_id"`
+type CostCalculator struct {
+    // AWS pricing data (updated monthly)
+    DynamoDBPricing   PricingTable
+    LambdaPricing     PricingTable
+    S3Pricing         PricingTable
+    KMSPricing        PricingTable
+    SecretsManagerPricing PricingTable
+    APIGatewayPricing PricingTable
+    // ... other services
+}
+
+type AuthenticationCostBreakdown struct {
+    JWTValidation    float64
+    OAuthExchange    float64
+    SessionCreation  float64
+    PasswordHashing  float64
+    WebAuthnVerify   float64
+    KMSOperations    float64
+    SecretsManager   float64
+    Total           float64
+}
+
+func (c *CostCalculator) CalculateAuthenticationCost(authType string, operations int) AuthenticationCostBreakdown {
+    // Calculate costs for different auth methods
+    // Include encryption/KMS costs
+    // Factor in Secrets Manager API calls
+    // Return detailed breakdown
+}
+
+func (c *CostCalculator) CalculateFederationCost(operation FederationOperation) CostBreakdown {
+    // Calculate actual resource usage
+    // Include authentication costs per operation
+    // Include KMS encryption costs
+    // Apply current AWS pricing
+    // Return detailed breakdown including auth overhead
+}
+
+func (c *CostCalculator) CalculateWebSocketCost(connectionMinutes int, messages int, authChecks int) CostBreakdown {
+    // API Gateway connection costs
+    // Lambda processing costs
+    // Authentication validation costs
+    // KMS encryption costs (if applicable)
+    // DynamoDB tracking costs
+    // Return detailed breakdown
 }
 ```
 
-**Rationale:**
-- Stateless - no database lookup needed
-- Standard JWT format for compatibility
-- HS256 sufficient for server-only validation
-- Claims include all needed authorization info
+### 3. Real-time Streaming Pipeline
 
-**Security Measures:**
-- Short expiration (1 hour)
-- Refresh tokens for long-lived sessions
-- JWT secret from environment variable
-- No sensitive data in claims
+```go
+type MetricsStreamProcessor struct {
+    reportingRepo *ReportingRepository
+    calculator    *CostCalculator
+    dlqHandler    *DLQHandler
+}
 
----
+func (p *MetricsStreamProcessor) ProcessStreamRecord(record dynamodb.StreamRecord) error {
+    // Process metrics from streams as they arrive (real-time requirement)
+    // Transform operational data to reporting format
+    // Calculate per-user AND per-instance costs
+    // Store in reporting table with proper indexes
+    // Trigger real-time updates to all 6 subscription types:
+    // - ModerationQueueUpdate
+    // - ThreatIntelligence  
+    // - PerformanceAlert
+    // - InfrastructureEvent
+    // Use DynamoDB-oriented retry on failure
+}
 
-### 8. Activity Delivery Architecture
-**Status:** ✅ IMPLEMENTED  
-**Decision:** DynamoDB Streams → Lambda
-
-**Context:**
-- Need to deliver activities to remote servers
-- Must handle retries and failures gracefully
-- Should scale automatically
-
-**Implementation:**
-- `cmd/activity-processor/main.go` - Stream processor
-- Processes INSERT and MODIFY events
-- Routes inbox/outbox activities
-- HTTP signature signing for delivery
-- 78.5% test coverage
-
-**Benefits:**
-- Leverages existing DynamoDB infrastructure
-- Automatic scaling with Lambda
-- Built-in retry capabilities
-- No additional infrastructure needed
-
-**Future Enhancements:**
-- Implement exponential backoff for retries
-- Add Dead Letter Queue for failed deliveries
-- Metrics and monitoring
-- Shared inbox optimization
-
----
-
-### 9. GetActivity Performance
-**Status:** 🔧 OPTIMIZATION NEEDED  
-**Decision:** Add GSI2 for activity lookups
-
-**Context:**
-- Current implementation uses Scan (inefficient)
-- Need O(1) activity lookups by ID
-- Activities can be in any user's outbox
-
-**Solution:**
-Add a second Global Secondary Index:
-```
-GSI2PK: ACTIVITY#{activity_id}
-GSI2SK: METADATA
+func (p *MetricsStreamProcessor) HandleFailure(record dynamodb.StreamRecord, err error) {
+    // DynamoDB-oriented retry strategy
+    // Not critical but impactful if lots of loss
+    p.dlqHandler.RetryWithExponentialBackoff(record, err)
+}
 ```
 
-**Rationale:**
-- Enables efficient GetActivity queries
-- Minimal storage overhead
-- Can be added without data migration
+### 4. Cost Tracking Requirements
 
----
+```go
+type CostTracker struct {
+    userCosts     map[string]*UserCostSummary     // Per-user tracking required
+    instanceCosts map[string]*InstanceCostSummary // Per-instance tracking required
+}
 
-### 10. Shared Inbox Strategy
-**Status:** 🟢 DEFERRED  
-**Decision:** Implement individual inboxes first
+type UserCostSummary struct {
+    UserID               string
+    WebAuthnOperations   int64   // Primary auth method
+    FederationOperations int64
+    MediaOperations      int64
+    StorageUsage         int64
+    TotalCostMicrocents  int64
+}
 
-**Context:**
-- Shared inbox improves efficiency for multiple followers
-- Adds routing complexity
-- Not required for MVP
+type InstanceCostSummary struct {
+    InstanceDomain       string
+    InboundOperations    int64
+    OutboundOperations   int64
+    BandwidthBytes       int64
+    TotalCostMicrocents  int64
+}
+```
 
-**Rationale:**
-- Start simple with individual delivery
-- Can add shared inbox endpoint later
-- No breaking changes required
-- Measure actual performance first
+### 5. Data Export for Departing Users
 
----
+```go
+func (e *DataExporter) ExportUserData(userID string) (*MastodonCompatibleExport, error) {
+    // Follow Mastodon conventions for data export
+    // Include all user data in portable format
+    // Ensure compliance with data portability requirements
+    // Generate export in Mastodon-compatible format
+}
+```
 
-### 11. Media Storage Architecture
-**Status:** 🟢 DEFERRED  
-**Decision:** S3 with CloudFront CDN
-
-**Context:**
-- Need to store images, videos, avatars
-- Must serve media efficiently
-- Cost optimization important
-
-**Planned Implementation:**
-- S3 bucket with lifecycle policies
-- CloudFront for global CDN
-- Presigned URLs for uploads
-- Image processing Lambda for thumbnails
-
----
-
-### 12. Federation Protocol Support
-**Status:** 📋 PLANNED  
-**Decision:** ActivityPub S2S only initially
-
-**Context:**
-- Multiple federation protocols exist
-- ActivityPub is the modern standard
-- Some servers support legacy protocols
-
-**Rationale:**
-- Focus on ActivityPub for MVP
-- Most active development in Fediverse
-- Can add OStatus/Diaspora later if needed
-
----
-
-### 13. Database Design
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Single-table DynamoDB design
-
-**Context:**
-- Need efficient queries at scale
-- Cost-effective for serverless
-- Must support various access patterns
-
-**Implementation:**
-- Single table with composite keys
-- GSI1 for inbox queries
-- GSI2 (planned) for activity lookups
-- Optimized for common queries
-
----
-
-### 14. Lambda Architecture
-**Status:** ✅ IMPLEMENTED  
-**Decision:** One Lambda per endpoint
-
-**Context:**
-- Need fast cold starts
-- Independent scaling per endpoint
-- Clear separation of concerns
-
-**Benefits:**
-- Minimal cold start time
-- Independent deployment
-- Easier debugging
-- Per-endpoint metrics
-
----
-
-### 15. Infrastructure as Code
-**Status:** ✅ IMPLEMENTED  
-**Decision:** Pulumi with Go
-
-**Context:**
-- Need reproducible deployments
-- Version control for infrastructure
-- Support for multiple environments
-
-**Implementation:**
-- `infra/main.go` - Complete infrastructure definition
-- All AWS resources defined in code
-- Environment-based configuration
-- Automatic resource naming
-
-**Rationale:**
-- Consistency with Lambda functions (also in Go)
-- Type safety and compile-time checks
-- Better than CloudFormation/SAM
-- Native AWS SDK integration
-
----
-
-## Decision Process
-
-When making architecture decisions:
-
-1. **Document the context** - Why is this decision needed?
-2. **List options** - What alternatives were considered?
-3. **Explain rationale** - Why was this option chosen?
-4. **Plan implementation** - How will it be built?
-5. **Set status** - Is it implemented, planned, or pending?
-
-## Status Key
-
-- 🚨 **PENDING IMPLEMENTATION** - Blocking progress
-- 📋 **PLANNED** - Scheduled for implementation
-- 🔧 **OPTIMIZATION NEEDED** - Working but needs improvement
-- 🟢 **DEFERRED** - Intentionally postponed
-- ✅ **IMPLEMENTED** - Completed 
+This architecture ensures:
+1. **Accurate cost tracking** based on real AWS pricing
+2. **High-quality metrics** with proper aggregation and retention
+3. **Real-time capabilities** without sacrificing accuracy
+4. **Scalable reporting** with optimized indexes
+5. **Compliance-ready** data retention policies
