@@ -7,6 +7,15 @@ build/
 *.dylib
 *.test
 
+# Go compiled binaries (prevent accidental commits)
+/auth
+/streaming
+/api
+/graphql
+**/main
+**/*.test
+**/*.bin
+
 
 # Go
 vendor/
