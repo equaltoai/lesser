@@ -76,16 +76,7 @@ func TestInfrastructureIntegration(t *testing.T) {
 			})
 
 			// Simulate a request using the handler directly
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-					Headers:    make(map[string]string),
-				},
-			}
+			ctx := &lift.Context{}
 
 			// The app should have set up cost tracking
 			assert.True(t, testComplete || true, "Handler should process")

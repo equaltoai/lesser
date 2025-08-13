@@ -29,9 +29,7 @@ const (
 	searchTypeStatuses = "statuses"
 
 	// Common status constants
-	statusCompleted  = "completed"
-	statusPending    = "pending"
-	statusProcessing = "processing"
+	statusCompleted = "completed"
 
 	// Moderation category constants
 	moderationCategoryOther   = "other"
@@ -673,7 +671,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 				"error": "VAPID keys not configured - push notifications unavailable",
 			})
 		}
-		
+
 		// In non-production, auto-generate VAPID keys if they don't exist
 		h.logger.Info("VAPID keys not found in non-production environment, generating new keys")
 		vapidKeys, err = h.generateAndStoreVAPIDKeys(ctx.Context)
@@ -1266,13 +1264,13 @@ func getMapKeys(m map[string]any) []string {
 // generateAndStoreVAPIDKeys generates new VAPID keys and stores them in the database
 func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPIDKeys, error) {
 	h.logger.Info("generating new VAPID keys for push notifications")
-	
+
 	// Generate ECDSA P-256 key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate VAPID private key: %w", err)
 	}
-	
+
 	// Convert to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
@@ -1280,7 +1278,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
-	
+
 	// Encode private key (32 bytes)
 	privateKeyBytes := privateKey.D.Bytes()
 	// Pad to 32 bytes if necessary
@@ -1289,7 +1287,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 		privateKeyBytes = append(padding, privateKeyBytes...)
 	}
 	privateKeyBase64 := base64.RawURLEncoding.EncodeToString(privateKeyBytes)
-	
+
 	// Determine the subject (domain)
 	domain := h.cfg.Domain
 	if domain == "" {
@@ -1298,7 +1296,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	if domain == "" {
 		domain = "localhost" // fallback for development
 	}
-	
+
 	// Create VAPID keys object
 	vapidKeys := &storage.VAPIDKeys{
 		PublicKey:  publicKeyBase64,
@@ -1307,16 +1305,16 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	
+
 	// Store the keys
 	err = h.repos.PushSubscription().SetVAPIDKeys(ctx, vapidKeys)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store VAPID keys: %w", err)
 	}
-	
+
 	h.logger.Info("successfully generated and stored new VAPID keys",
 		zap.String("public_key", publicKeyBase64),
 		zap.String("subject", vapidKeys.Subject))
-	
+
 	return vapidKeys, nil
 }

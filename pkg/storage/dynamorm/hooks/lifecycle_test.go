@@ -413,9 +413,7 @@ func TestHookStatsTracker_TrackExecution(t *testing.T) {
 	userType := reflect.TypeOf(TestUser{})
 
 	// Track successful execution
-	if err := tracker.TrackExecution(userType, BeforeCreate, 10*time.Millisecond, nil); err != nil {
-		// Log tracking error but continue
-	}
+	tracker.TrackExecution(userType, BeforeCreate, 10*time.Millisecond, nil)
 
 	stats := tracker.GetStats()
 	key := "hooks.TestUser:before_create"
@@ -443,9 +441,7 @@ func TestHookStatsTracker_Reset(t *testing.T) {
 	tracker := NewHookStatsTracker()
 	userType := reflect.TypeOf(TestUser{})
 
-	if err := tracker.TrackExecution(userType, BeforeCreate, 10*time.Millisecond, nil); err != nil {
-		// Log tracking error but continue
-	}
+	tracker.TrackExecution(userType, BeforeCreate, 10*time.Millisecond, nil)
 	stats := tracker.GetStats()
 	assert.Len(t, stats, 1)
 
@@ -559,9 +555,7 @@ func BenchmarkHookStatsTracker_TrackExecution(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if err := tracker.TrackExecution(userType, BeforeCreate, time.Microsecond, nil); err != nil {
-			// Log tracking error but continue
-		}
+		tracker.TrackExecution(userType, BeforeCreate, time.Microsecond, nil)
 	}
 }
 
@@ -622,9 +616,7 @@ func TestHookStatsTracker_ConcurrentAccess(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < executionsPerGoroutine; j++ {
-				if err := tracker.TrackExecution(userType, BeforeCreate, time.Microsecond, nil); err != nil {
-					// Log tracking error but continue
-				}
+				tracker.TrackExecution(userType, BeforeCreate, time.Microsecond, nil)
 			}
 		}()
 	}

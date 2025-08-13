@@ -59,23 +59,23 @@ type GetScheduledStatusQuery struct {
 
 // ListScheduledStatusesQuery contains parameters for listing scheduled statuses
 type ListScheduledStatusesQuery struct {
-	Username   string                        `json:"username" validate:"required"`
+	Username   string                       `json:"username" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
 // CreateScheduledStatusCommand contains data needed to create a scheduled status
 type CreateScheduledStatusCommand struct {
-	Username      string                 `json:"username" validate:"required"`
-	Status        string                 `json:"status" validate:"required,min=1,max=500"`
-	MediaIDs      []string               `json:"media_ids"`
-	Sensitive     bool                   `json:"sensitive"`
-	SpoilerText   string                 `json:"spoiler_text"`
-	Visibility    string                 `json:"visibility"`
-	Language      string                 `json:"language"`
-	InReplyToID   string                 `json:"in_reply_to_id"`
-	Poll          map[string]any         `json:"poll"`
-	ScheduledAt   time.Time              `json:"scheduled_at" validate:"required"`
-	ApplicationID string                 `json:"application_id"`
+	Username      string         `json:"username" validate:"required"`
+	Status        string         `json:"status" validate:"required,min=1,max=500"`
+	MediaIDs      []string       `json:"media_ids"`
+	Sensitive     bool           `json:"sensitive"`
+	SpoilerText   string         `json:"spoiler_text"`
+	Visibility    string         `json:"visibility"`
+	Language      string         `json:"language"`
+	InReplyToID   string         `json:"in_reply_to_id"`
+	Poll          map[string]any `json:"poll"`
+	ScheduledAt   time.Time      `json:"scheduled_at" validate:"required"`
+	ApplicationID string         `json:"application_id"`
 }
 
 // UpdateScheduledStatusCommand contains data needed to update a scheduled status
@@ -98,22 +98,22 @@ type PublishScheduledStatusCommand struct {
 
 // Result types
 
-// ScheduledStatusResult contains a single scheduled status
-type ScheduledStatusResult struct {
-	ScheduledStatus *storage.ScheduledStatus `json:"scheduled_status"`
-	MediaAttachments []*models.Media         `json:"media_attachments,omitempty"`
-	Events          []*streaming.Event       `json:"events"`
+// StatusResult contains a single scheduled status
+type StatusResult struct {
+	ScheduledStatus  *storage.ScheduledStatus `json:"scheduled_status"`
+	MediaAttachments []*models.Media          `json:"media_attachments,omitempty"`
+	Events           []*streaming.Event       `json:"events"`
 }
 
-// ScheduledStatusListResult contains multiple scheduled statuses
-type ScheduledStatusListResult struct {
+// StatusListResult contains multiple scheduled statuses
+type StatusListResult struct {
 	ScheduledStatuses []*storage.ScheduledStatus          `json:"scheduled_statuses"`
 	Pagination        *interfaces.PaginatedResult[string] `json:"pagination"`
 	Events            []*streaming.Event                  `json:"events"`
 }
 
 // GetScheduledStatus retrieves a single scheduled status by ID
-func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledStatusQuery) (*ScheduledStatusResult, error) {
+func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledStatusQuery) (*StatusResult, error) {
 	s.logger.Info("getting scheduled status",
 		zap.String("id", query.ID),
 		zap.String("username", query.Username))
@@ -145,15 +145,15 @@ func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledSta
 		}
 	}
 
-	return &ScheduledStatusResult{
+	return &StatusResult{
 		ScheduledStatus:  scheduled,
 		MediaAttachments: mediaAttachments,
-		Events:          nil,
+		Events:           nil,
 	}, nil
 }
 
 // ListScheduledStatuses retrieves all scheduled statuses for a user
-func (s *Service) ListScheduledStatuses(ctx context.Context, query *ListScheduledStatusesQuery) (*ScheduledStatusListResult, error) {
+func (s *Service) ListScheduledStatuses(ctx context.Context, query *ListScheduledStatusesQuery) (*StatusListResult, error) {
 	s.logger.Info("listing scheduled statuses",
 		zap.String("username", query.Username),
 		zap.Int("limit", query.Pagination.Limit))
@@ -193,15 +193,15 @@ func (s *Service) ListScheduledStatuses(ctx context.Context, query *ListSchedule
 		pagination.Items[i] = status.ID
 	}
 
-	return &ScheduledStatusListResult{
+	return &StatusListResult{
 		ScheduledStatuses: unpublished,
 		Pagination:        pagination,
-		Events:           nil,
+		Events:            nil,
 	}, nil
 }
 
 // CreateScheduledStatus creates a new scheduled status
-func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateScheduledStatusCommand) (*ScheduledStatusResult, error) {
+func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateScheduledStatusCommand) (*StatusResult, error) {
 	s.logger.Info("creating scheduled status",
 		zap.String("username", cmd.Username),
 		zap.Time("scheduled_at", cmd.ScheduledAt))
@@ -255,15 +255,15 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 	// Emit events for real-time updates
 	events := s.emitScheduledStatusCreatedEvents(ctx, scheduled)
 
-	return &ScheduledStatusResult{
+	return &StatusResult{
 		ScheduledStatus:  scheduled,
 		MediaAttachments: mediaAttachments,
-		Events:          events,
+		Events:           events,
 	}, nil
 }
 
 // UpdateScheduledStatus updates a scheduled status (currently only scheduled time)
-func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateScheduledStatusCommand) (*ScheduledStatusResult, error) {
+func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateScheduledStatusCommand) (*StatusResult, error) {
 	s.logger.Info("updating scheduled status",
 		zap.String("id", cmd.ID),
 		zap.String("username", cmd.Username))
@@ -296,9 +296,9 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 
 	if !updated {
 		// No changes
-		return &ScheduledStatusResult{
+		return &StatusResult{
 			ScheduledStatus: existing,
-			Events:         nil,
+			Events:          nil,
 		}, nil
 	}
 
@@ -318,10 +318,10 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 	// Emit events for real-time updates
 	events := s.emitScheduledStatusUpdatedEvents(ctx, existing)
 
-	return &ScheduledStatusResult{
+	return &StatusResult{
 		ScheduledStatus:  existing,
 		MediaAttachments: mediaAttachments,
-		Events:          events,
+		Events:           events,
 	}, nil
 }
 
@@ -427,7 +427,7 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 }
 
 // validateMediaAttachments validates that media attachments exist
-func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
+func (s *Service) validateMediaAttachments(_ context.Context, mediaIDs []string) error {
 	if len(mediaIDs) > 4 {
 		return fmt.Errorf("cannot attach more than 4 media items")
 	}
@@ -442,9 +442,9 @@ func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []strin
 }
 
 // getMediaAttachments retrieves media attachments by IDs
-func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([]*models.Media, error) {
+func (s *Service) getMediaAttachments(_ context.Context, mediaIDs []string) ([]*models.Media, error) {
 	mediaItems := make([]*models.Media, 0, len(mediaIDs))
-	
+
 	for _, mediaID := range mediaIDs {
 		// Get media from repository
 		// Note: This would need actual implementation

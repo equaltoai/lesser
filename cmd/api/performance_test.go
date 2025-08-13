@@ -76,15 +76,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Create a test context manually
-				ctx := &lift.Context{
-					Request: &lift.Request{
-						Method: "GET",
-						Path:   "/test",
-					},
-					Response: &lift.Response{
-						StatusCode: 200,
-					},
-				}
+				ctx := &lift.Context{}
 				// Note: We can't actually handle the request without proper test utilities
 				// This is just measuring the overhead
 				_ = ctx
@@ -96,15 +88,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Create a test context manually
-				ctx := &lift.Context{
-					Request: &lift.Request{
-						Method: "GET",
-						Path:   "/test",
-					},
-					Response: &lift.Response{
-						StatusCode: 200,
-					},
-				}
+				ctx := &lift.Context{}
 				// Note: We can't actually handle the request without proper test utilities
 				// This is just measuring the overhead
 				_ = ctx
@@ -129,18 +113,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Create a test context manually
-				ctx := &lift.Context{
-					Request: &lift.Request{
-						Method: "GET",
-						Path:   "/test",
-						Headers: map[string]string{
-							"Authorization": "Bearer token",
-						},
-					},
-					Response: &lift.Response{
-						StatusCode: 200,
-					},
-				}
+				ctx := &lift.Context{}
 				// Note: We can't actually handle the request without proper test utilities
 				_ = ctx
 				_ = app
@@ -156,18 +129,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Create a test context manually
-				ctx := &lift.Context{
-					Request: &lift.Request{
-						Method: "GET",
-						Path:   "/test",
-						Headers: map[string]string{
-							"Authorization": "Bearer token",
-						},
-					},
-					Response: &lift.Response{
-						StatusCode: 200,
-					},
-				}
+				ctx := &lift.Context{}
 				// Note: We can't actually handle the request without proper test utilities
 				_ = ctx
 				_ = app
@@ -193,15 +155,7 @@ func BenchmarkInfrastructurePerformance(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			// Create a test context manually
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-				},
-			}
+			ctx := &lift.Context{}
 			// Note: We can't actually handle the request without proper test utilities
 			_ = ctx
 			_ = app
@@ -227,15 +181,7 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			// Create a test context manually
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-				},
-			}
+			ctx := &lift.Context{}
 			// Note: We can't actually handle the request without proper test utilities
 			_ = ctx
 			_ = app
@@ -260,15 +206,7 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			// Create a test context manually
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-				},
-			}
+			ctx := &lift.Context{}
 			// Set up cost tracker for the benchmark
 			tracker := cost.NewWithRequest("bench-req", "bench-op")
 			ctx.Set("cost_tracker", tracker)
@@ -316,15 +254,7 @@ func TestPerformanceMetrics(t *testing.T) {
 
 		// Warm up
 		for i := 0; i < 10; i++ {
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-				},
-			}
+			ctx := &lift.Context{}
 			_ = ctx
 			_ = app
 		}
@@ -333,15 +263,7 @@ func TestPerformanceMetrics(t *testing.T) {
 		latencies := make([]time.Duration, 100)
 		for i := 0; i < 100; i++ {
 			start := time.Now()
-			ctx := &lift.Context{
-				Request: &lift.Request{
-					Method: "GET",
-					Path:   "/test",
-				},
-				Response: &lift.Response{
-					StatusCode: 200,
-				},
-			}
+			ctx := &lift.Context{}
 			// Note: We're just measuring context creation, not actual request handling
 			_ = ctx
 			_ = app
