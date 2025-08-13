@@ -28,7 +28,7 @@ type IntegrationTestHarness struct {
 	config  *TestConfig
 
 	// Test data management
-	actors    []*activitypub.Actor
+	actors     []*activitypub.Actor
 	activities []*activitypub.Activity
 	objects    []any
 
@@ -65,7 +65,7 @@ func NewIntegrationTestHarness(t *testing.T, config *TestConfig) *IntegrationTes
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), config.ServerTimeout)
-	
+
 	logger, _ := zap.NewDevelopment()
 
 	// Initialize storage - always use enhanced mock for testing
@@ -186,24 +186,24 @@ func (h *IntegrationTestHarness) CreateTestActivity(actorID string, activityType
 // WaitForCondition waits for a condition to be true with a timeout
 func (h *IntegrationTestHarness) WaitForCondition(condition func() bool, timeout time.Duration, message string) {
 	deadline := time.Now().Add(timeout)
-	
+
 	for time.Now().Before(deadline) {
 		if condition() {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	
+
 	h.t.Fatalf("Condition not met within timeout: %s", message)
 }
 
 // AssertActivityPubResponse validates an ActivityPub HTTP response
 func (h *IntegrationTestHarness) AssertActivityPubResponse(resp *http.Response, expectedStatus int) {
 	require.Equal(h.t, expectedStatus, resp.StatusCode)
-	
+
 	contentType := resp.Header.Get("Content-Type")
 	require.Contains(h.t, contentType, "application/")
-	
+
 	// Validate ActivityPub-specific headers
 	if resp.StatusCode == http.StatusOK {
 		require.NotEmpty(h.t, resp.Header.Get("Content-Type"))

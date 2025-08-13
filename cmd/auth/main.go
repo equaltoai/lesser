@@ -24,6 +24,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// UnknownIPAddress is used when the client IP address cannot be determined
+	UnknownIPAddress = "unknown"
+)
+
 // AuthHandler handles authentication requests using Lift
 type AuthHandler struct {
 	repos       core.RepositoryStorage
@@ -345,7 +350,7 @@ func (ah *AuthHandler) handleToken(ctx *lift.Context) error {
 		ipAddress = ctx.Header("X-Real-IP")
 	}
 	if ipAddress == "" {
-		ipAddress = "unknown"
+		ipAddress = UnknownIPAddress
 	}
 
 	// Generate access and refresh tokens using the OAuth service
@@ -470,7 +475,7 @@ func (ah *AuthHandler) handleLogin(ctx *lift.Context) error {
 		ipAddress = ctx.Header("X-Real-IP")
 	}
 	if ipAddress == "" {
-		ipAddress = "unknown"
+		ipAddress = UnknownIPAddress
 	}
 
 	// Authenticate user using the auth service
@@ -999,7 +1004,7 @@ func (ah *AuthHandler) handleWalletVerify(ctx *lift.Context) error {
 			ipAddress = ctx.Header("X-Real-IP")
 		}
 		if ipAddress == "" {
-			ipAddress = "unknown"
+			ipAddress = UnknownIPAddress
 		}
 
 		// Generate access token using OAuth service

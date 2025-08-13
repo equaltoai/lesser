@@ -13,25 +13,25 @@ import (
 
 // TracingConfig contains configuration for distributed tracing
 type TracingConfig struct {
-	ServiceName     string
-	ServiceVersion  string
-	SamplingRate    float64
-	DaemonAddress   string
-	UseECS          bool
-	LocalTesting    bool
-	Enabled         bool
+	ServiceName    string
+	ServiceVersion string
+	SamplingRate   float64
+	DaemonAddress  string
+	UseECS         bool
+	LocalTesting   bool
+	Enabled        bool
 }
 
 // TraceContext represents a distributed trace context
 type TraceContext struct {
-	TraceID    string
-	SegmentID  string
-	ParentID   string
-	Sampled    bool
-	RequestID  string
-	UserID     string
-	TenantID   string
-	metadata   map[string]interface{}
+	TraceID   string
+	SegmentID string
+	ParentID  string
+	Sampled   bool
+	RequestID string
+	UserID    string
+	TenantID  string
+	metadata  map[string]interface{}
 }
 
 // TracingManager manages distributed tracing operations
@@ -78,7 +78,7 @@ func (tm *TracingManager) initializeXRay() {
 	}
 
 	// X-Ray logger is configured through AWS SDK
-	
+
 	tm.logger.Info("initialized X-Ray tracing",
 		zap.String("service", tm.config.ServiceName),
 		zap.String("version", tm.config.ServiceVersion),
@@ -94,7 +94,7 @@ func (tm *TracingManager) StartSegment(ctx context.Context, name string) (contex
 
 	// Start segment with proper service name
 	segmentCtx, segment := xray.BeginSegment(ctx, name)
-	
+
 	if segment != nil {
 		// Add service information
 		_ = segment.AddAnnotation("service", tm.config.ServiceName)
@@ -362,7 +362,7 @@ func (tm *TracingManager) CreateTracingMiddleware() func(next func(ctx context.C
 
 			// Execute the handler
 			err := next(segmentCtx)
-			
+
 			// Record error if any
 			if err != nil && segment != nil {
 				_ = segment.AddError(err)

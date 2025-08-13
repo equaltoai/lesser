@@ -36,27 +36,27 @@ type MediaJob struct {
 	Error           string         `json:"error,omitempty"`
 
 	// Idempotency and duplicate prevention
-	IdempotencyKey  string `json:"idempotency_key"`   // Hash of user_id + file_hash + timestamp
-	FileHash        string `json:"file_hash"`         // SHA256 hash of file contents
-	FileSize        int64  `json:"file_size"`         // File size in bytes
+	IdempotencyKey string `json:"idempotency_key"` // Hash of user_id + file_hash + timestamp
+	FileHash       string `json:"file_hash"`       // SHA256 hash of file contents
+	FileSize       int64  `json:"file_size"`       // File size in bytes
 
 	// Processing state tracking
-	StartedAt    *time.Time `json:"started_at,omitempty"`    // When processing actually began
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`  // When processing completed
+	StartedAt     *time.Time `json:"started_at,omitempty"`      // When processing actually began
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`    // When processing completed
 	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"` // Last retry attempt
-	Progress     int        `json:"progress"`               // Progress percentage (0-100)
+	Progress      int        `json:"progress"`                  // Progress percentage (0-100)
 
 	// Retry logic
-	RetryCount    int    `json:"retry_count"`             // Number of retries attempted
-	MaxRetries    int    `json:"max_retries"`             // Maximum retries allowed
-	LastError     string `json:"last_error,omitempty"`    // Last error encountered
+	RetryCount       int        `json:"retry_count"`                  // Number of retries attempted
+	MaxRetries       int        `json:"max_retries"`                  // Maximum retries allowed
+	LastError        string     `json:"last_error,omitempty"`         // Last error encountered
 	RetryScheduledAt *time.Time `json:"retry_scheduled_at,omitempty"` // When next retry is scheduled
 
 	// Budget and timeout enforcement
-	EstimatedCostMicros int64          `json:"estimated_cost_micros"` // Estimated processing cost
-	ActualCostMicros    int64          `json:"actual_cost_micros"`    // Actual cost incurred
-	MaxProcessingTime   time.Duration  `json:"max_processing_time"`   // Maximum allowed processing time
-	ProcessingStartedAt *time.Time     `json:"processing_started_at,omitempty"` // When current processing attempt started
+	EstimatedCostMicros int64         `json:"estimated_cost_micros"`           // Estimated processing cost
+	ActualCostMicros    int64         `json:"actual_cost_micros"`              // Actual cost incurred
+	MaxProcessingTime   time.Duration `json:"max_processing_time"`             // Maximum allowed processing time
+	ProcessingStartedAt *time.Time    `json:"processing_started_at,omitempty"` // When current processing attempt started
 
 	// Timestamps
 	CreatedAt time.Time `json:"created_at"`
@@ -183,14 +183,14 @@ func (mj *MediaJob) SetProcessing() {
 	mj.Status = StatusProcessing
 	mj.Error = ""
 	mj.UpdatedAt = now
-	
+
 	// Set processing timestamps
 	if mj.StartedAt == nil {
 		mj.StartedAt = &now
 	}
 	mj.ProcessingStartedAt = &now
 	mj.LastAttemptAt = &now
-	
+
 	mj.UpdateKeys()
 }
 
@@ -203,10 +203,10 @@ func (mj *MediaJob) SetCompleted(results map[string]any) {
 	mj.UpdatedAt = now
 	mj.CompletedAt = &now
 	mj.Progress = 100
-	
+
 	// Clear TTL for completed jobs to keep them longer
 	mj.ExpiresAt = nil
-	
+
 	mj.UpdateKeys()
 }
 
@@ -218,11 +218,11 @@ func (mj *MediaJob) SetFailed(errorMsg string) {
 	mj.LastError = errorMsg
 	mj.UpdatedAt = now
 	mj.CompletedAt = &now
-	
+
 	// Set TTL for failed jobs (7 days)
 	ttl := now.Add(7 * 24 * time.Hour).Unix()
 	mj.ExpiresAt = &ttl
-	
+
 	mj.UpdateKeys()
 }
 
@@ -279,11 +279,11 @@ func (mj *MediaJob) SetCancelled(reason string) {
 	mj.Error = reason
 	mj.UpdatedAt = now
 	mj.CompletedAt = &now
-	
+
 	// Set TTL for cancelled jobs (24 hours)
 	ttl := now.Add(24 * time.Hour).Unix()
 	mj.ExpiresAt = &ttl
-	
+
 	mj.UpdateKeys()
 }
 
@@ -292,12 +292,12 @@ func (mj *MediaJob) CanRetry() bool {
 	if mj.RetryCount >= mj.MaxRetries {
 		return false
 	}
-	
+
 	// Don't retry if job is not in failed state
 	if mj.Status != StatusFailed {
 		return false
 	}
-	
+
 	// Check if error is retryable (transient vs permanent)
 	return mj.IsRetryableError(mj.LastError)
 }
@@ -305,7 +305,7 @@ func (mj *MediaJob) CanRetry() bool {
 // IsRetryableError determines if an error is retryable
 func (mj *MediaJob) IsRetryableError(errorMsg string) bool {
 	errorLower := strings.ToLower(errorMsg)
-	
+
 	// Permanent errors - don't retry
 	permanentErrors := []string{
 		"invalid format",
@@ -316,13 +316,13 @@ func (mj *MediaJob) IsRetryableError(errorMsg string) bool {
 		"budget exceeded",
 		"quota exceeded",
 	}
-	
+
 	for _, permanentErr := range permanentErrors {
 		if strings.Contains(errorLower, permanentErr) {
 			return false
 		}
 	}
-	
+
 	// Transient errors - retry
 	transientErrors := []string{
 		"timeout",
@@ -333,13 +333,13 @@ func (mj *MediaJob) IsRetryableError(errorMsg string) bool {
 		"service unavailable",
 		"internal error",
 	}
-	
+
 	for _, transientErr := range transientErrors {
 		if strings.Contains(errorLower, transientErr) {
 			return true
 		}
 	}
-	
+
 	// Default to retryable for unknown errors
 	return true
 }
@@ -347,24 +347,24 @@ func (mj *MediaJob) IsRetryableError(errorMsg string) bool {
 // ScheduleRetry schedules the next retry with exponential backoff
 func (mj *MediaJob) ScheduleRetry(baseDelay time.Duration) {
 	mj.RetryCount++
-	
+
 	// Exponential backoff: 1s, 4s, 16s, 64s, etc.
 	delay := baseDelay
 	for i := 0; i < mj.RetryCount; i++ {
 		delay *= 4
 	}
-	
+
 	// Cap maximum delay at 5 minutes
 	if delay > 5*time.Minute {
 		delay = 5 * time.Minute
 	}
-	
+
 	now := time.Now()
 	retryTime := now.Add(delay)
 	mj.RetryScheduledAt = &retryTime
 	mj.Status = StatusPending // Reset to pending for retry
 	mj.UpdatedAt = now
-	
+
 	mj.UpdateKeys()
 }
 
@@ -382,7 +382,7 @@ func (mj *MediaJob) IsBudgetExceeded() bool {
 	if mj.ProcessingStartedAt == nil || mj.MaxProcessingTime == 0 {
 		return false
 	}
-	
+
 	processingDuration := time.Since(*mj.ProcessingStartedAt)
 	return processingDuration > mj.MaxProcessingTime
 }
@@ -395,7 +395,7 @@ func (mj *MediaJob) UpdateProgress(progress int) {
 	if progress > 100 {
 		progress = 100
 	}
-	
+
 	mj.Progress = progress
 	mj.UpdatedAt = time.Now()
 	mj.UpdateKeys()
@@ -419,7 +419,7 @@ func (mj *MediaJob) getDefaultProcessingTimeout() time.Duration {
 	} else if mj.MimeType == "image/gif" {
 		return 60 * time.Second // GIFs: 60 seconds
 	}
-	
+
 	return 2 * time.Minute // Default: 2 minutes
 }
 
@@ -446,11 +446,11 @@ func (mj *MediaJob) GetProcessingDuration() time.Duration {
 	if mj.ProcessingStartedAt == nil {
 		return 0
 	}
-	
+
 	if mj.CompletedAt != nil {
 		return mj.CompletedAt.Sub(*mj.ProcessingStartedAt)
 	}
-	
+
 	return time.Since(*mj.ProcessingStartedAt)
 }
 
@@ -459,14 +459,14 @@ func (mj *MediaJob) GetRemainingProcessingTime() time.Duration {
 	if mj.ProcessingStartedAt == nil || mj.MaxProcessingTime == 0 {
 		return mj.MaxProcessingTime
 	}
-	
+
 	elapsed := time.Since(*mj.ProcessingStartedAt)
 	remaining := mj.MaxProcessingTime - elapsed
-	
+
 	if remaining < 0 {
 		return 0
 	}
-	
+
 	return remaining
 }
 

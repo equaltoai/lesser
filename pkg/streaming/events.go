@@ -47,10 +47,10 @@ const (
 	ConversationDeleted = "conversation.deleted" // Conversation deleted
 
 	// List Events
-	ListCreated   = "list.created"   // List created
-	ListUpdated   = "list.updated"   // List updated (title, privacy)
-	ListDeleted   = "list.deleted"   // List deleted
-	ListMemberAdded = "list.member_added" // Account added to list
+	ListCreated       = "list.created"        // List created
+	ListUpdated       = "list.updated"        // List updated (title, privacy)
+	ListDeleted       = "list.deleted"        // List deleted
+	ListMemberAdded   = "list.member_added"   // Account added to list
 	ListMemberRemoved = "list.member_removed" // Account removed from list
 
 	// Media Events
@@ -91,12 +91,12 @@ const (
 // Stream name constants following Mastodon streaming API
 const (
 	// Public Streams
-	PublicStream      = "public"       // All public posts
-	PublicLocalStream = "public:local" // Local public posts only
+	PublicStream       = "public"        // All public posts
+	PublicLocalStream  = "public:local"  // Local public posts only
 	PublicRemoteStream = "public:remote" // Remote public posts only
 
 	// User Streams
-	UserStream         = "user"         // User's home timeline and notifications
+	UserStream             = "user"              // User's home timeline and notifications
 	UserNotificationStream = "user:notification" // User's notifications only
 
 	// Direct Messages
@@ -251,11 +251,11 @@ func NewMuteEvent(muterID, mutedID string, duration *time.Duration) *Event {
 	eb := NewEvent(RelationshipMuted).
 		WithData("muter_id", muterID).
 		WithData("muted_id", mutedID)
-	
+
 	if duration != nil {
 		eb.WithData("duration", duration.String())
 	}
-	
+
 	return eb.Build()
 }
 
@@ -380,7 +380,7 @@ func IsValidEventType(eventType string) bool {
 		PollVoted: true, PollClosed: true, PollExpired: true,
 		HashtagTrending: true, HashtagFollowed: true,
 	}
-	
+
 	return validTypes[eventType]
 }
 
@@ -397,7 +397,7 @@ func IsValidStreamName(streamName string) bool {
 		DirectStream: true, SystemStream: true,
 		ModerationStream: true, AdminStream: true,
 	}
-	
+
 	if exactMatches[streamName] {
 		return true
 	}

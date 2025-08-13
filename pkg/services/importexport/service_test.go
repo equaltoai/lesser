@@ -357,7 +357,7 @@ func newTestService(
 		logger:        logger,
 		domain:        domain,
 	}
-	
+
 	// We would normally set the repositories, but since they're concrete types
 	// in the real service, we'll work around this for testing
 	return service
@@ -370,7 +370,7 @@ func TestNewService(t *testing.T) {
 	storageClient := &MockStorageClient{}
 	logger := zaptest.NewLogger(t)
 
-	// For this test, we'll use the test helper since the real NewService 
+	// For this test, we'll use the test helper since the real NewService
 	// expects concrete repository types
 	service := newTestService(
 		&MockExportRepository{},

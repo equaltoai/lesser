@@ -49,16 +49,16 @@ func NewService(
 
 // CreateNotificationCommand contains all data needed to create a new notification
 type CreateNotificationCommand struct {
-	UserID     string                 `json:"user_id" validate:"required"`     // Recipient user ID
-	Type       string                 `json:"type" validate:"required"`        // Notification type
-	ActorID    string                 `json:"actor_id" validate:"required"`    // Who triggered the notification
-	ActorType  string                 `json:"actor_type"`                      // Type of actor (user, remote_actor)
-	TargetID   string                 `json:"target_id"`                       // What the notification is about
-	TargetType string                 `json:"target_type"`                     // Type of target (status, user, account)
-	Title      string                 `json:"title"`                           // Notification title
-	Body       string                 `json:"body"`                            // Notification body
-	Data       map[string]interface{} `json:"data"`                            // Additional data
-	GroupKey   string                 `json:"group_key"`                       // Custom group key for consolidation
+	UserID     string                 `json:"user_id" validate:"required"`  // Recipient user ID
+	Type       string                 `json:"type" validate:"required"`     // Notification type
+	ActorID    string                 `json:"actor_id" validate:"required"` // Who triggered the notification
+	ActorType  string                 `json:"actor_type"`                   // Type of actor (user, remote_actor)
+	TargetID   string                 `json:"target_id"`                    // What the notification is about
+	TargetType string                 `json:"target_type"`                  // Type of target (status, user, account)
+	Title      string                 `json:"title"`                        // Notification title
+	Body       string                 `json:"body"`                         // Notification body
+	Data       map[string]interface{} `json:"data"`                         // Additional data
+	GroupKey   string                 `json:"group_key"`                    // Custom group key for consolidation
 }
 
 // MarkAsReadCommand contains data needed to mark a notification as read
@@ -70,9 +70,9 @@ type MarkAsReadCommand struct {
 // ClearCommand contains data needed to clear notifications
 type ClearCommand struct {
 	UserID           string   `json:"user_id" validate:"required"`
-	NotificationIDs  []string `json:"notification_ids"`  // Clear specific notifications
-	Types            []string `json:"types"`             // Clear notifications of specific types
-	ClearAll         bool     `json:"clear_all"`         // Clear all notifications
+	NotificationIDs  []string `json:"notification_ids"`   // Clear specific notifications
+	Types            []string `json:"types"`              // Clear notifications of specific types
+	ClearAll         bool     `json:"clear_all"`          // Clear all notifications
 	OlderThanSeconds int64    `json:"older_than_seconds"` // Clear notifications older than N seconds
 }
 
@@ -84,15 +84,15 @@ type GetNotificationQuery struct {
 
 // ListNotificationsQuery contains parameters for listing notifications with filters
 type ListNotificationsQuery struct {
-	UserID           string                        `json:"user_id" validate:"required"`
-	Types            []string                      `json:"types"`             // Filter by notification types
-	ExcludeTypes     []string                      `json:"exclude_types"`     // Exclude specific types
-	OnlyUnread       bool                          `json:"only_unread"`       // Only unread notifications
-	IncludeRead      bool                          `json:"include_read"`      // Include read notifications (default: true)
-	GroupedOnly      bool                          `json:"grouped_only"`      // Only grouped notifications
-	ActorID          string                        `json:"actor_id"`          // Filter by specific actor
-	TargetType       string                        `json:"target_type"`       // Filter by target type
-	Pagination       interfaces.PaginationOptions `json:"pagination"`
+	UserID       string                       `json:"user_id" validate:"required"`
+	Types        []string                     `json:"types"`         // Filter by notification types
+	ExcludeTypes []string                     `json:"exclude_types"` // Exclude specific types
+	OnlyUnread   bool                         `json:"only_unread"`   // Only unread notifications
+	IncludeRead  bool                         `json:"include_read"`  // Include read notifications (default: true)
+	GroupedOnly  bool                         `json:"grouped_only"`  // Only grouped notifications
+	ActorID      string                       `json:"actor_id"`      // Filter by specific actor
+	TargetType   string                       `json:"target_type"`   // Filter by target type
+	Pagination   interfaces.PaginationOptions `json:"pagination"`
 }
 
 // Result structs for operations
@@ -105,10 +105,10 @@ type NotificationResult struct {
 
 // NotificationListResult contains multiple notifications and pagination information
 type NotificationListResult struct {
-	Notifications []*models.Notification                                `json:"notifications"`
-	Pagination    *interfaces.PaginatedResult[*models.Notification]    `json:"pagination"`
-	Summary       *NotificationSummary                                  `json:"summary"`
-	Events        []*streaming.Event                                     `json:"events"`
+	Notifications []*models.Notification                            `json:"notifications"`
+	Pagination    *interfaces.PaginatedResult[*models.Notification] `json:"pagination"`
+	Summary       *NotificationSummary                              `json:"summary"`
+	Events        []*streaming.Event                                `json:"events"`
 }
 
 // NotificationSummary provides summary statistics

@@ -215,10 +215,10 @@ type ModerationPattern struct {
 	ID          string
 	Name        string
 	Description string
-	Pattern     string   // Regex or keyword pattern
-	Type        string   // "regex", "keyword", "phrase"
-	Category    string   // Primary category
-	Severity    float64  // 0.0 to 1.0
+	Pattern     string  // Regex or keyword pattern
+	Type        string  // "regex", "keyword", "phrase"
+	Category    string  // Primary category
+	Severity    float64 // 0.0 to 1.0
 	Action      ModerationAction
 	Flags       []string // Additional flags or categories
 	CreatedBy   string

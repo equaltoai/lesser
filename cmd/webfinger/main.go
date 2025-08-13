@@ -23,6 +23,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// CacheControlMaxAge defines the cache control header for 24 hours
+	CacheControlMaxAge = "max-age=86400"
+)
+
 // WebFingerHandler handles WebFinger and NodeInfo requests using Lift
 type WebFingerHandler struct {
 	actorRepo  *repositories.ActorRepository
@@ -191,7 +196,7 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
 
 	// Return WebFinger response with proper content type and caching
 	ctx.Response.Headers["Content-Type"] = "application/jrd+json"
-	ctx.Response.Headers["Cache-Control"] = "max-age=86400"
+	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge
 	return ctx.JSON(response)
 }
 
@@ -214,7 +219,7 @@ func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *lift.Context) error {
 		},
 	}
 
-	ctx.Response.Headers["Cache-Control"] = "max-age=86400"
+	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge
 	return ctx.JSON(discovery)
 }
 
@@ -380,8 +385,8 @@ func (wh *WebFingerHandler) handleHostMeta(ctx *lift.Context) error {
 
 	// Set proper content type for XRD documents and caching
 	ctx.Response.Headers["Content-Type"] = "application/xrd+xml"
-	ctx.Response.Headers["Cache-Control"] = "max-age=86400" // Cache for 24 hours
-	
+	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge // Cache for 24 hours
+
 	wh.logger.Debug("returning host-meta XRD document",
 		zap.String("baseURL", wh.cfg.BaseURL()),
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),

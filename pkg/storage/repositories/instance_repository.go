@@ -288,11 +288,11 @@ func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, e
 }
 
 // countLocalComments counts local comments by querying statuses with InReplyToID
-func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, error) {
+func (r *InstanceRepository) countLocalComments(_ context.Context) (int64, error) {
 	// Count statuses where InReplyToID is not empty
 	// This requires scanning statuses, which is expensive
 	// In production, this should be tracked via metrics updated on create/delete
-	
+
 	// For now, return 0 as the metric will be populated over time
 	// TODO: Implement batch counting or use a GSI for efficient counting
 	r.logger.Warn("LOCAL_COMMENTS metric not found, returning 0 (will be populated over time)")

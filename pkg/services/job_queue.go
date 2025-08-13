@@ -23,25 +23,25 @@ type JobQueueService struct {
 
 // ImportJobMessage represents a message for import processing
 type ImportJobMessage struct {
-	ImportID  string            `json:"import_id"`
-	Username  string            `json:"username"`
-	Type      string            `json:"type"`
-	Mode      string            `json:"mode"`
-	S3Key     string            `json:"s3_key"`
-	Timestamp int64             `json:"timestamp"`
-	Options   map[string]any    `json:"options,omitempty"`
+	ImportID  string         `json:"import_id"`
+	Username  string         `json:"username"`
+	Type      string         `json:"type"`
+	Mode      string         `json:"mode"`
+	S3Key     string         `json:"s3_key"`
+	Timestamp int64          `json:"timestamp"`
+	Options   map[string]any `json:"options,omitempty"`
 }
 
 // ExportJobMessage represents a message for export processing
 type ExportJobMessage struct {
-	ExportID     string            `json:"export_id"`
-	Username     string            `json:"username"`
-	Type         string            `json:"type"`
-	Format       string            `json:"format"`
-	IncludeMedia bool              `json:"include_media"`
-	DateRange    *ExportDateRange  `json:"date_range,omitempty"`
-	Options      map[string]any    `json:"options,omitempty"`
-	Timestamp    int64             `json:"timestamp"`
+	ExportID     string           `json:"export_id"`
+	Username     string           `json:"username"`
+	Type         string           `json:"type"`
+	Format       string           `json:"format"`
+	IncludeMedia bool             `json:"include_media"`
+	DateRange    *ExportDateRange `json:"date_range,omitempty"`
+	Options      map[string]any   `json:"options,omitempty"`
+	Timestamp    int64            `json:"timestamp"`
 }
 
 // ExportDateRange for job messages
@@ -53,29 +53,29 @@ type ExportDateRange struct {
 // NewJobQueueService creates a new job queue service
 func NewJobQueueService(logger *zap.Logger) (*JobQueueService, error) {
 	ctx := context.Background()
-	
+
 	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
-	
+
 	// Create SQS client
 	sqsClient := sqs.NewFromConfig(cfg)
-	
+
 	// Initialize queue URLs from environment
 	queueUrls := map[string]string{
 		"import-processing": os.Getenv("IMPORT_QUEUE_URL"),
 		"export-generation": os.Getenv("EXPORT_QUEUE_URL"),
 	}
-	
+
 	// Validate required queue URLs
 	for queueName, queueURL := range queueUrls {
 		if queueURL == "" {
 			logger.Warn("queue URL not configured", zap.String("queue", queueName))
 		}
 	}
-	
+
 	return &JobQueueService{
 		sqsClient: sqsClient,
 		queueUrls: queueUrls,
@@ -90,18 +90,18 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 		q.logger.Warn("import queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
-	
+
 	// Set timestamp if not provided
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().Unix()
 	}
-	
+
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize import message: %w", err)
 	}
-	
+
 	// Send message to SQS
 	input := &sqs.SendMessageInput{
 		QueueUrl:    aws.String(queueURL),
@@ -123,7 +123,7 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 		// Delay processing by 5 seconds to allow database consistency
 		DelaySeconds: 5,
 	}
-	
+
 	_, err = q.sqsClient.SendMessage(ctx, input)
 	if err != nil {
 		q.logger.Error("failed to send import job to queue",
@@ -132,12 +132,12 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 			zap.Error(err))
 		return fmt.Errorf("failed to queue import job: %w", err)
 	}
-	
+
 	q.logger.Info("queued import job",
 		zap.String("import_id", msg.ImportID),
 		zap.String("username", msg.Username),
 		zap.String("type", msg.Type))
-	
+
 	return nil
 }
 
@@ -148,18 +148,18 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 		q.logger.Warn("export queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
-	
+
 	// Set timestamp if not provided
 	if msg.Timestamp == 0 {
 		msg.Timestamp = time.Now().Unix()
 	}
-	
+
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("failed to serialize export message: %w", err)
 	}
-	
+
 	// Send message to SQS
 	input := &sqs.SendMessageInput{
 		QueueUrl:    aws.String(queueURL),
@@ -185,7 +185,7 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 		// Delay processing by 5 seconds to allow database consistency
 		DelaySeconds: 5,
 	}
-	
+
 	_, err = q.sqsClient.SendMessage(ctx, input)
 	if err != nil {
 		q.logger.Error("failed to send export job to queue",
@@ -194,13 +194,13 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 			zap.Error(err))
 		return fmt.Errorf("failed to queue export job: %w", err)
 	}
-	
+
 	q.logger.Info("queued export job",
 		zap.String("export_id", msg.ExportID),
 		zap.String("username", msg.Username),
 		zap.String("type", msg.Type),
 		zap.String("format", msg.Format))
-	
+
 	return nil
 }
 
@@ -210,20 +210,20 @@ func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string,
 	if queueURL == "" {
 		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
-	
+
 	// Serialize message to JSON
 	bodyBytes, err := json.Marshal(messageBody)
 	if err != nil {
 		return fmt.Errorf("failed to serialize message: %w", err)
 	}
-	
+
 	// Send message to SQS
 	input := &sqs.SendMessageInput{
 		QueueUrl:     aws.String(queueURL),
 		MessageBody:  aws.String(string(bodyBytes)),
 		DelaySeconds: delaySeconds,
 	}
-	
+
 	_, err = q.sqsClient.SendMessage(ctx, input)
 	if err != nil {
 		q.logger.Error("failed to send delayed job to queue",
@@ -232,7 +232,7 @@ func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string,
 			zap.Error(err))
 		return fmt.Errorf("failed to queue delayed job: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -242,7 +242,7 @@ func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName strin
 	if queueURL == "" {
 		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
-	
+
 	// Convert messages to SQS batch entries
 	entries := make([]types.SendMessageBatchRequestEntry, 0, len(messages))
 	for i, msg := range messages {
@@ -250,12 +250,12 @@ func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName strin
 		if err != nil {
 			return fmt.Errorf("failed to serialize message %d: %w", i, err)
 		}
-		
+
 		entries = append(entries, types.SendMessageBatchRequestEntry{
 			Id:          aws.String(fmt.Sprintf("msg-%d", i)),
 			MessageBody: aws.String(string(bodyBytes)),
 		})
-		
+
 		// SQS batch limit is 10 messages
 		if len(entries) >= 10 {
 			if err := q.sendBatch(ctx, queueURL, entries); err != nil {
@@ -264,12 +264,12 @@ func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName strin
 			entries = entries[:0] // Clear the slice
 		}
 	}
-	
+
 	// Send remaining messages
 	if len(entries) > 0 {
 		return q.sendBatch(ctx, queueURL, entries)
 	}
-	
+
 	return nil
 }
 
@@ -279,12 +279,12 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 		QueueUrl: aws.String(queueURL),
 		Entries:  entries,
 	}
-	
+
 	result, err := q.sqsClient.SendMessageBatch(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to send message batch: %w", err)
 	}
-	
+
 	// Log any failed messages
 	if len(result.Failed) > 0 {
 		for _, failed := range result.Failed {
@@ -295,7 +295,7 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 		}
 		return fmt.Errorf("failed to send %d messages in batch", len(result.Failed))
 	}
-	
+
 	return nil
 }
 
@@ -305,7 +305,7 @@ func (q *JobQueueService) GetQueueAttributes(ctx context.Context, queueName stri
 	if queueURL == "" {
 		return nil, fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
-	
+
 	input := &sqs.GetQueueAttributesInput{
 		QueueUrl: aws.String(queueURL),
 		AttributeNames: []types.QueueAttributeName{
@@ -314,11 +314,11 @@ func (q *JobQueueService) GetQueueAttributes(ctx context.Context, queueName stri
 			types.QueueAttributeNameApproximateNumberOfMessagesDelayed,
 		},
 	}
-	
+
 	result, err := q.sqsClient.GetQueueAttributes(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get queue attributes: %w", err)
 	}
-	
+
 	return result.Attributes, nil
 }

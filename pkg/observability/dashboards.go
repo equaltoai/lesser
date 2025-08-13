@@ -30,14 +30,14 @@ type DashboardWidget struct {
 
 // DashboardWidgetProps contains widget-specific properties
 type DashboardWidgetProps struct {
-	Title      string            `json:"title"`
-	View       string            `json:"view,omitempty"`
-	Stacked    bool              `json:"stacked,omitempty"`
-	Region     string            `json:"region"`
-	Period     int               `json:"period,omitempty"`
-	Stat       string            `json:"stat,omitempty"`
-	YAxis      *YAxisConfig      `json:"yAxis,omitempty"`
-	Metrics    [][]interface{}   `json:"metrics"`
+	Title       string            `json:"title"`
+	View        string            `json:"view,omitempty"`
+	Stacked     bool              `json:"stacked,omitempty"`
+	Region      string            `json:"region"`
+	Period      int               `json:"period,omitempty"`
+	Stat        string            `json:"stat,omitempty"`
+	YAxis       *YAxisConfig      `json:"yAxis,omitempty"`
+	Metrics     [][]interface{}   `json:"metrics"`
 	Annotations *AnnotationConfig `json:"annotations,omitempty"`
 }
 
@@ -62,11 +62,11 @@ type AnnotationConfig struct {
 
 // HorizontalAnnotation represents a horizontal line annotation
 type HorizontalAnnotation struct {
-	Value     float64 `json:"value"`
-	Label     string  `json:"label,omitempty"`
-	Color     string  `json:"color,omitempty"`
-	Fill      string  `json:"fill,omitempty"`
-	Visible   bool    `json:"visible,omitempty"`
+	Value   float64 `json:"value"`
+	Label   string  `json:"label,omitempty"`
+	Color   string  `json:"color,omitempty"`
+	Fill    string  `json:"fill,omitempty"`
+	Visible bool    `json:"visible,omitempty"`
 }
 
 // VerticalAnnotation represents a vertical line annotation
@@ -90,13 +90,13 @@ func CreateLesserOverviewDashboard(region, environment string) *DashboardConfig 
 				{"Lesser/API", MetricThroughput, DimensionService, "api", map[string]string{"stat": "Sum"}},
 				{".", MetricRequestsPerSecond, ".", ".", map[string]string{"stat": "Average"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Error Rates", 8, 0, 8, 6, [][]interface{}{
 				{"Lesser/API", MetricErrorRate, DimensionService, "api", map[string]string{"stat": "Average"}},
 				{"Lesser/Federation", MetricFederationError, DimensionService, "inbox", map[string]string{"stat": "Sum"}},
 				{"Lesser/Media", "MediaProcessingErrors", DimensionService, "media-processor", map[string]string{"stat": "Sum"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Response Times (P99)", 16, 0, 8, 6, [][]interface{}{
 				{"Lesser/API", MetricLatencyP99, DimensionService, "api", map[string]string{"stat": "Average"}},
 				{"Lesser/Federation", MetricFederationLatency, DimensionService, "inbox", map[string]string{"stat": "Average"}},
@@ -109,18 +109,18 @@ func CreateLesserOverviewDashboard(region, environment string) *DashboardConfig 
 				{"Lesser/Federation", MetricColdStarts, DimensionService, "inbox", map[string]string{"stat": "Sum"}},
 				{"Lesser/Media", MetricColdStarts, DimensionService, "media-processor", map[string]string{"stat": "Sum"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("System Health", 6, 6, 6, 6, [][]interface{}{
 				{"Lesser/API", MetricSystemHealth, DimensionService, "api", map[string]string{"stat": "Average"}},
 				{"Lesser/Federation", MetricSystemHealth, DimensionService, "inbox", map[string]string{"stat": "Average"}},
 				{"Lesser/Media", MetricSystemHealth, DimensionService, "media-processor", map[string]string{"stat": "Average"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Queue Depths", 12, 6, 6, 6, [][]interface{}{
 				{"Lesser/Media", MetricQueueDepth, DimensionQueue, "media-processing", map[string]string{"stat": "Maximum"}},
 				{"Lesser/Federation", MetricQueueDepth, DimensionQueue, "federation-delivery", map[string]string{"stat": "Maximum"}},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Active Users (24h)", 18, 6, 6, 6, [][]interface{}{
 				{"Lesser/API", MetricDailyActiveUsers, DimensionService, "api", map[string]string{"stat": "Maximum"}},
 			}),
@@ -129,12 +129,12 @@ func CreateLesserOverviewDashboard(region, environment string) *DashboardConfig 
 			createMetricWidget("Posts Per Minute", 0, 12, 8, 6, [][]interface{}{
 				{"Lesser/API", MetricPostsPerMinute, DimensionService, "api", map[string]string{"stat": "Sum"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Federation Activity", 8, 12, 8, 6, [][]interface{}{
 				{"Lesser/Federation", MetricInboxMessages, DimensionService, "inbox", map[string]string{"stat": "Sum"}},
 				{"Lesser/Federation", MetricOutboxMessages, DimensionService, "outbox", map[string]string{"stat": "Sum"}},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Media Processing", 16, 12, 8, 6, [][]interface{}{
 				{"Lesser/Media", MetricMediaProcessing, DimensionService, "media-processor", map[string]string{"stat": "Sum"}},
 				{"Lesser/Media", "MediaProcessingCompleted", DimensionService, "media-processor", map[string]string{"stat": "Sum"}},
@@ -147,11 +147,11 @@ func CreateLesserOverviewDashboard(region, environment string) *DashboardConfig 
 				{"Lesser/Federation", MetricCost, DimensionService, "inbox", map[string]string{"stat": "Sum"}},
 				{"Lesser/Media", MetricCost, DimensionService, "media-processor", map[string]string{"stat": "Sum"}},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Cost Per User (USD)", 12, 18, 6, 6, [][]interface{}{
 				{"Lesser/API", MetricCostPerUser, DimensionService, "api", map[string]string{"stat": "Average"}},
 			}),
-			
+
 			createNumberWidget("Cost Per Request (μ¢)", 18, 18, 6, 6, [][]interface{}{
 				{"Lesser/API", MetricCostPerRequest, DimensionService, "api", map[string]string{"stat": "Average"}},
 			}),
@@ -175,7 +175,7 @@ func CreateAPIPerformanceDashboard(region, environment string) *DashboardConfig 
 				{".", ".", ".", "/api/v1/statuses", ".", "GET"},
 				{".", ".", ".", "/api/v1/accounts/relationships", ".", "GET"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Response Times by Endpoint", 12, 0, 12, 6, [][]interface{}{
 				{"Lesser/API", MetricLatencyP90, DimensionEndpoint, "/api/v1/statuses", DimensionMethod, "POST"},
 				{".", ".", ".", "/api/v1/timelines/home", ".", "GET"},
@@ -191,7 +191,7 @@ func CreateAPIPerformanceDashboard(region, environment string) *DashboardConfig 
 				{".", ".", ".", "429"},
 				{".", ".", ".", "500"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Error Types", 8, 6, 8, 6, [][]interface{}{
 				{"Lesser/API", MetricErrors, DimensionErrorType, ErrorTypeAuthentication},
 				{".", ".", ".", ErrorTypeAuthorization},
@@ -199,7 +199,7 @@ func CreateAPIPerformanceDashboard(region, environment string) *DashboardConfig 
 				{".", ".", ".", ErrorTypeRateLimit},
 				{".", ".", ".", ErrorTypeInternal},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Success Rate %", 16, 6, 8, 6, [][]interface{}{
 				{"Lesser/API", MetricSuccessRate, DimensionService, "api", map[string]string{"stat": "Average"}},
 			}),
@@ -209,7 +209,7 @@ func CreateAPIPerformanceDashboard(region, environment string) *DashboardConfig 
 				{"Lesser/API", MetricDynamoReadLatency, DimensionService, "api"},
 				{"Lesser/API", MetricDynamoWriteLatency, DimensionService, "api"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Database Capacity", 12, 12, 12, 6, [][]interface{}{
 				{"Lesser/API", MetricDynamoReadCapacity, DimensionService, "api"},
 				{"Lesser/API", MetricDynamoWriteCapacity, DimensionService, "api"},
@@ -220,7 +220,7 @@ func CreateAPIPerformanceDashboard(region, environment string) *DashboardConfig 
 				{"AWS/Lambda", "Duration", "FunctionName", fmt.Sprintf("lesser-api-%s", environment)},
 				{".", "MemoryUtilization", ".", "."},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Lambda Concurrency", 12, 18, 12, 6, [][]interface{}{
 				{"AWS/Lambda", "ConcurrentExecutions", "FunctionName", fmt.Sprintf("lesser-api-%s", environment)},
 				{"AWS/Lambda", "Throttles", ".", "."},
@@ -241,11 +241,11 @@ func CreateFederationDashboard(region, environment string) *DashboardConfig {
 			createMetricWidget("Inbox Messages", 0, 0, 8, 6, [][]interface{}{
 				{"Lesser/Federation", MetricInboxMessages, DimensionService, "inbox"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Outbox Messages", 8, 0, 8, 6, [][]interface{}{
 				{"Lesser/Federation", MetricOutboxMessages, DimensionService, "outbox"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Signature Verification", 16, 0, 8, 6, [][]interface{}{
 				{"Lesser/Federation", MetricSignatureVerification, "status", "success"},
 				{".", ".", ".", "failure"},
@@ -258,7 +258,7 @@ func CreateFederationDashboard(region, environment string) *DashboardConfig {
 				{".", ".", ".", "fosstodon.org"},
 				{".", ".", ".", "pixelfed.social"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Federation Errors by Instance", 12, 6, 12, 6, [][]interface{}{
 				{"Lesser/Federation", MetricFederationError, DimensionInstance, "mastodon.social"},
 				{".", ".", ".", "mastodon.online"},
@@ -271,12 +271,12 @@ func CreateFederationDashboard(region, environment string) *DashboardConfig {
 				{"Lesser/Federation", MetricFederationLatency, DimensionService, "inbox"},
 				{"Lesser/Federation", MetricFederationLatency, DimensionService, "outbox"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Queue Processing", 8, 12, 8, 6, [][]interface{}{
 				{"Lesser/Federation", MetricQueueDepth, DimensionQueue, "federation-delivery"},
 				{"Lesser/Federation", MetricQueueProcessingTime, DimensionQueue, "federation-delivery"},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Active Instances", 16, 12, 8, 6, [][]interface{}{
 				{"Lesser/Federation", "ActiveInstances", DimensionService, "federation"},
 			}),
@@ -288,7 +288,7 @@ func CreateFederationDashboard(region, environment string) *DashboardConfig {
 				{".", ".", ".", ErrorTypeAuthentication},
 				{".", ".", ".", ErrorTypeRateLimit},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Success Rate %", 12, 18, 12, 6, [][]interface{}{
 				{"Lesser/Federation", MetricSuccessRate, DimensionService, "federation"},
 			}),
@@ -310,13 +310,13 @@ func CreateMediaProcessingDashboard(region, environment string) *DashboardConfig
 				{"Lesser/Media", "MediaProcessingCompleted", DimensionService, "media-processor"},
 				{"Lesser/Media", "MediaProcessingFailed", DimensionService, "media-processor"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Processing Time by Type", 8, 0, 8, 6, [][]interface{}{
 				{"Lesser/Media", MetricMediaProcessingTime, DimensionMediaType, mediaTypeImage},
 				{".", ".", ".", mediaTypeVideo},
 				{".", ".", ".", mediaTypeAudio},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Queue Depth", 16, 0, 8, 6, [][]interface{}{
 				{"Lesser/Media", MetricQueueDepth, DimensionQueue, "media-processing"},
 			}, "timeSeries"),
@@ -328,7 +328,7 @@ func CreateMediaProcessingDashboard(region, environment string) *DashboardConfig
 				{".", ".", ".", mediaTypeAudio},
 				{".", ".", ".", mediaTypeGifv},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("File Sizes Processed", 12, 6, 12, 6, [][]interface{}{
 				{"Lesser/Media", "MediaFileSizeProcessed", DimensionMediaType, mediaTypeImage, map[string]string{"stat": "Average"}},
 				{".", ".", ".", mediaTypeVideo, map[string]string{"stat": "Average"}},
@@ -341,12 +341,12 @@ func CreateMediaProcessingDashboard(region, environment string) *DashboardConfig
 				{".", ".", ".", ErrorTypeTimeout},
 				{".", ".", ".", ErrorTypeInternal},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Retry Analysis", 8, 12, 8, 6, [][]interface{}{
 				{"Lesser/Media", "MediaProcessingRetry", DimensionService, "media-processor"},
 				{"Lesser/Media", "MediaProcessingFailed", DimensionService, "media-processor"},
 			}, "timeSeries"),
-			
+
 			createNumberWidget("Success Rate %", 16, 12, 8, 6, [][]interface{}{
 				{"Lesser/Media", MetricSuccessRate, DimensionService, "media-processor"},
 			}),
@@ -355,7 +355,7 @@ func CreateMediaProcessingDashboard(region, environment string) *DashboardConfig
 			createMetricWidget("Processing Costs", 0, 18, 12, 6, [][]interface{}{
 				{"Lesser/Media", MetricCost, DimensionService, "media-processor"},
 			}, "timeSeries"),
-			
+
 			createMetricWidget("Lambda Performance", 12, 18, 12, 6, [][]interface{}{
 				{"AWS/Lambda", "Duration", "FunctionName", fmt.Sprintf("lesser-media-processor-%s", environment)},
 				{"AWS/Lambda", "MemoryUtilization", ".", "."},
@@ -394,7 +394,7 @@ func createMetricWidget(title string, x, y, width, height int, metrics [][]inter
 					},
 					{
 						Value:   AlertP1ErrorRatePercent,
-						Label:   "P1 Threshold", 
+						Label:   "P1 Threshold",
 						Color:   "#d62728",
 						Visible: true,
 					},

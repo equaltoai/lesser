@@ -704,7 +704,7 @@ func (r *ModerationRepository) UpdateModerationPattern(ctx context.Context, patt
 
 	// Parse severity from string to float64
 	severity, _ := strconv.ParseFloat(pattern.Severity, 64)
-	
+
 	// Create model
 	model := &models.ModerationPattern{
 		PK:          fmt.Sprintf("PATTERN#%s", pattern.ID),
@@ -791,7 +791,7 @@ func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, patt
 
 	// Parse severity from string to float64
 	severity, _ := strconv.ParseFloat(pattern.Severity, 64)
-	
+
 	// Create model
 	model := &models.ModerationPattern{
 		PK:          fmt.Sprintf("PATTERN#%s", pattern.ID),
@@ -2740,19 +2740,19 @@ func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *sto
 
 	// Create model and update keys
 	model := &models.AuditLog{
-		ID:          auditLog.ID,
-		AdminID:     auditLog.AdminID,
-		AdminRole:   auditLog.AdminRole,
-		Action:      auditLog.Action,
-		TargetType:  auditLog.TargetType,
-		TargetID:    auditLog.TargetID,
-		Reason:      auditLog.Reason,
-		Details:     auditLog.Details,
-		IPAddress:   auditLog.IPAddress,
-		UserAgent:   auditLog.UserAgent,
-		RequestID:   auditLog.RequestID,
-		Timestamp:   auditLog.Timestamp,
-		CreatedAt:   auditLog.CreatedAt,
+		ID:         auditLog.ID,
+		AdminID:    auditLog.AdminID,
+		AdminRole:  auditLog.AdminRole,
+		Action:     auditLog.Action,
+		TargetType: auditLog.TargetType,
+		TargetID:   auditLog.TargetID,
+		Reason:     auditLog.Reason,
+		Details:    auditLog.Details,
+		IPAddress:  auditLog.IPAddress,
+		UserAgent:  auditLog.UserAgent,
+		RequestID:  auditLog.RequestID,
+		Timestamp:  auditLog.Timestamp,
+		CreatedAt:  auditLog.CreatedAt,
 	}
 	model.UpdateKeys()
 
@@ -2798,19 +2798,19 @@ func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, curs
 	logs := make([]*storage.AuditLog, 0, len(models))
 	for _, model := range models {
 		log := &storage.AuditLog{
-			ID:          model.ID,
-			AdminID:     model.AdminID,
-			AdminRole:   model.AdminRole,
-			Action:      model.Action,
-			TargetType:  model.TargetType,
-			TargetID:    model.TargetID,
-			Reason:      model.Reason,
-			Details:     model.Details,
-			IPAddress:   model.IPAddress,
-			UserAgent:   model.UserAgent,
-			RequestID:   model.RequestID,
-			Timestamp:   model.Timestamp,
-			CreatedAt:   model.CreatedAt,
+			ID:         model.ID,
+			AdminID:    model.AdminID,
+			AdminRole:  model.AdminRole,
+			Action:     model.Action,
+			TargetType: model.TargetType,
+			TargetID:   model.TargetID,
+			Reason:     model.Reason,
+			Details:    model.Details,
+			IPAddress:  model.IPAddress,
+			UserAgent:  model.UserAgent,
+			RequestID:  model.RequestID,
+			Timestamp:  model.Timestamp,
+			CreatedAt:  model.CreatedAt,
 		}
 		logs = append(logs, log)
 	}
@@ -2852,19 +2852,19 @@ func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID 
 	logs := make([]*storage.AuditLog, 0, len(models))
 	for _, model := range models {
 		log := &storage.AuditLog{
-			ID:          model.ID,
-			AdminID:     model.AdminID,
-			AdminRole:   model.AdminRole,
-			Action:      model.Action,
-			TargetType:  model.TargetType,
-			TargetID:    model.TargetID,
-			Reason:      model.Reason,
-			Details:     model.Details,
-			IPAddress:   model.IPAddress,
-			UserAgent:   model.UserAgent,
-			RequestID:   model.RequestID,
-			Timestamp:   model.Timestamp,
-			CreatedAt:   model.CreatedAt,
+			ID:         model.ID,
+			AdminID:    model.AdminID,
+			AdminRole:  model.AdminRole,
+			Action:     model.Action,
+			TargetType: model.TargetType,
+			TargetID:   model.TargetID,
+			Reason:     model.Reason,
+			Details:    model.Details,
+			IPAddress:  model.IPAddress,
+			UserAgent:  model.UserAgent,
+			RequestID:  model.RequestID,
+			Timestamp:  model.Timestamp,
+			CreatedAt:  model.CreatedAt,
 		}
 		logs = append(logs, log)
 	}
@@ -2907,19 +2907,19 @@ func (r *ModerationRepository) GetAuditLogsByTarget(ctx context.Context, targetI
 	logs := make([]*storage.AuditLog, 0, len(models))
 	for _, model := range models {
 		log := &storage.AuditLog{
-			ID:          model.ID,
-			AdminID:     model.AdminID,
-			AdminRole:   model.AdminRole,
-			Action:      model.Action,
-			TargetType:  model.TargetType,
-			TargetID:    model.TargetID,
-			Reason:      model.Reason,
-			Details:     model.Details,
-			IPAddress:   model.IPAddress,
-			UserAgent:   model.UserAgent,
-			RequestID:   model.RequestID,
-			Timestamp:   model.Timestamp,
-			CreatedAt:   model.CreatedAt,
+			ID:         model.ID,
+			AdminID:    model.AdminID,
+			AdminRole:  model.AdminRole,
+			Action:     model.Action,
+			TargetType: model.TargetType,
+			TargetID:   model.TargetID,
+			Reason:     model.Reason,
+			Details:    model.Details,
+			IPAddress:  model.IPAddress,
+			UserAgent:  model.UserAgent,
+			RequestID:  model.RequestID,
+			Timestamp:  model.Timestamp,
+			CreatedAt:  model.CreatedAt,
 		}
 		logs = append(logs, log)
 	}

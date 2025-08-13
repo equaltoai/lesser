@@ -3,9 +3,10 @@ package federation
 import (
 	"context"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/storage"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage/models"

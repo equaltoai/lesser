@@ -19,28 +19,28 @@ type MockBulkService struct {
 	mock.Mock
 }
 
-func (m *MockBulkService) BulkFollow(ctx context.Context, cmd *bulk.BulkFollowCommand) (*bulk.BulkOperationResult, error) {
+func (m *MockBulkService) BulkFollow(ctx context.Context, cmd *bulk.FollowCommand) (*bulk.OperationResult, error) {
 	args := m.Called(ctx, cmd)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*bulk.BulkOperationResult), args.Error(1)
+	return args.Get(0).(*bulk.OperationResult), args.Error(1)
 }
 
-func (m *MockBulkService) BulkDeleteStatuses(ctx context.Context, cmd *bulk.BulkDeleteStatusesCommand) (*bulk.BulkOperationResult, error) {
+func (m *MockBulkService) BulkDeleteStatuses(ctx context.Context, cmd *bulk.DeleteStatusesCommand) (*bulk.OperationResult, error) {
 	args := m.Called(ctx, cmd)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*bulk.BulkOperationResult), args.Error(1)
+	return args.Get(0).(*bulk.OperationResult), args.Error(1)
 }
 
-func (m *MockBulkService) GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.BulkOperationResult, error) {
+func (m *MockBulkService) GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.OperationResult, error) {
 	args := m.Called(ctx, query)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*bulk.BulkOperationResult), args.Error(1)
+	return args.Get(0).(*bulk.OperationResult), args.Error(1)
 }
 
 type MockImportExportService struct {
@@ -139,7 +139,7 @@ func TestAsyncCommandHandler_HandleBulkFollow_Success(t *testing.T) {
 	}
 
 	// Mock service response
-	mockOperation := &bulk.BulkOperation{
+	mockOperation := &bulk.Operation{
 		ID:        "bulk-op-123",
 		Type:      "bulk_follow",
 		Username:  "testuser",
@@ -151,13 +151,13 @@ func TestAsyncCommandHandler_HandleBulkFollow_Success(t *testing.T) {
 		StartedAt: time.Now(),
 	}
 
-	bulkService.On("BulkFollow", mock.Anything, mock.MatchedBy(func(cmd *bulk.BulkFollowCommand) bool {
+	bulkService.On("BulkFollow", mock.Anything, mock.MatchedBy(func(cmd *bulk.FollowCommand) bool {
 		return cmd.Username == "testuser" &&
 			len(cmd.AccountIDs) == 3 &&
 			cmd.AccountIDs[0] == "user1" &&
 			cmd.Reblogs == true &&
 			cmd.Notify == false
-	})).Return(&bulk.BulkOperationResult{Operation: mockOperation}, nil)
+	})).Return(&bulk.OperationResult{Operation: mockOperation}, nil)
 
 	// Execute
 	response, err := handler.HandleCommand(context.Background(), conn, cmd)
@@ -225,7 +225,7 @@ func TestAsyncCommandHandler_HandleBulkDeleteStatuses_Success(t *testing.T) {
 		},
 	}
 
-	mockOperation := &bulk.BulkOperation{
+	mockOperation := &bulk.Operation{
 		ID:        "bulk-op-456",
 		Type:      "bulk_delete_statuses",
 		Username:  "testuser",
@@ -234,11 +234,11 @@ func TestAsyncCommandHandler_HandleBulkDeleteStatuses_Success(t *testing.T) {
 		StartedAt: time.Now(),
 	}
 
-	bulkService.On("BulkDeleteStatuses", mock.Anything, mock.MatchedBy(func(cmd *bulk.BulkDeleteStatusesCommand) bool {
+	bulkService.On("BulkDeleteStatuses", mock.Anything, mock.MatchedBy(func(cmd *bulk.DeleteStatusesCommand) bool {
 		return cmd.Username == "testuser" &&
 			len(cmd.StatusIDs) == 2 &&
 			cmd.KeepPinned == true
-	})).Return(&bulk.BulkOperationResult{Operation: mockOperation}, nil)
+	})).Return(&bulk.OperationResult{Operation: mockOperation}, nil)
 
 	// Execute
 	response, err := handler.HandleCommand(context.Background(), conn, cmd)

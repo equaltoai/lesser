@@ -226,7 +226,7 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error) {
 	var model models.EmojiModel
 	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	
+
 	// Remote emojis use a different key pattern
 	err := query.
 		Where("PK", "=", fmt.Sprintf("EMOJI#%s@%s", shortcode, domain)).
@@ -237,7 +237,7 @@ func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain 
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		r.logger.Error("failed to get remote emoji", 
+		r.logger.Error("failed to get remote emoji",
 			zap.String("shortcode", shortcode),
 			zap.String("domain", domain),
 			zap.Error(err))

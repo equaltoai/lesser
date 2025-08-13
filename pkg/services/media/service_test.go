@@ -619,8 +619,8 @@ func TestService_ValidateFileExtension(t *testing.T) {
 		{"test.jpg", "image/jpeg", true},
 		{"test.png", "image/png", true},
 		{"test.mp4", "video/mp4", true},
-		{"test.jpg", "video/mp4", false}, // Mismatch
-		{"test", "image/jpeg", false},    // No extension
+		{"test.jpg", "video/mp4", false},  // Mismatch
+		{"test", "image/jpeg", false},     // No extension
 		{"test.exe", "image/jpeg", false}, // Wrong extension
 	}
 
@@ -643,10 +643,10 @@ func TestService_IsValidFocusPoint(t *testing.T) {
 		{"-1.0,1.0", true},
 		{"0,0", true},
 		{"invalid", false},
-		{"0.5", false},      // Missing Y
+		{"0.5", false},         // Missing Y
 		{"0.5,0.5,0.5", false}, // Too many values
-		{"", false},         // Empty
-		{",", false},        // Empty values
+		{"", false},            // Empty
+		{",", false},           // Empty values
 	}
 
 	for _, tt := range tests {

@@ -459,7 +459,7 @@ func (h *Handler) convertScheduledStatusesToAPI(ctx *lift.Context, statuses []*s
 }
 
 // convertScheduledStatusToAPIWithMedia converts a scheduled status to API format with media
-func (h *Handler) convertScheduledStatusToAPIWithMedia(ctx *lift.Context, status *storage.ScheduledStatus, mediaItems []*models.Media) apimodels.ScheduledStatus {
+func (h *Handler) convertScheduledStatusToAPIWithMedia(_ *lift.Context, status *storage.ScheduledStatus, mediaItems []*models.Media) apimodels.ScheduledStatus {
 	// Convert media attachments to []any
 	mediaAttachments := make([]any, 0, len(mediaItems))
 	for _, media := range mediaItems {
@@ -547,9 +547,9 @@ func (h *Handler) convertStoragePollToAPI(poll map[string]any) *apimodels.Poll {
 	if poll == nil {
 		return nil
 	}
-	
+
 	result := &apimodels.Poll{}
-	
+
 	// Extract fields from map
 	if options, ok := poll["options"].([]string); ok {
 		result.Options = options
@@ -563,7 +563,7 @@ func (h *Handler) convertStoragePollToAPI(poll map[string]any) *apimodels.Poll {
 	if hideTotals, ok := poll["hide_totals"].(bool); ok {
 		result.HideTotals = hideTotals
 	}
-	
+
 	return result
 }
 
@@ -572,7 +572,7 @@ func (h *Handler) convertAPIPollToMap(poll *apimodels.Poll) map[string]any {
 	if poll == nil {
 		return nil
 	}
-	
+
 	return map[string]any{
 		"options":     poll.Options,
 		"expires_in":  poll.ExpiresIn,

@@ -32,7 +32,7 @@ func NewFederationService(deps *ServiceDependencies) FederationService {
 func (f *federationService) DeliverToFollowers(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	// Use storage directly if it implements FederationStorage
 	var federationStorage federation.FederationStorage
-	
+
 	// Try to get DB from storage for DynamORM federation storage
 	if db := f.storage.GetDB(); db != nil {
 		// Check if it's a core.DB type
@@ -45,7 +45,7 @@ func (f *federationService) DeliverToFollowers(ctx context.Context, activity *ac
 	} else {
 		return fmt.Errorf("no database available for federation")
 	}
-	
+
 	deliveryService := federation.NewDeliveryService(federationStorage)
 	return deliveryService.DeliverToFollowers(ctx, activity, actor)
 }
@@ -54,7 +54,7 @@ func (f *federationService) DeliverToFollowers(ctx context.Context, activity *ac
 func (f *federationService) DeliverToRecipients(ctx context.Context, activity *activitypub.Activity, actor *activitypub.Actor) error {
 	// Use storage directly if it implements FederationStorage
 	var federationStorage federation.FederationStorage
-	
+
 	// Try to get DB from storage for DynamORM federation storage
 	if db := f.storage.GetDB(); db != nil {
 		// Check if it's a core.DB type
@@ -67,7 +67,7 @@ func (f *federationService) DeliverToRecipients(ctx context.Context, activity *a
 	} else {
 		return fmt.Errorf("no database available for federation")
 	}
-	
+
 	deliveryService := federation.NewDeliveryService(federationStorage)
 
 	return deliveryService.DeliverToRecipients(ctx, activity, actor)
@@ -102,7 +102,7 @@ func (f *federationService) DetermineRecipients(ctx context.Context, activity *a
 				recipients[follower] = true
 			}
 		}
-		
+
 		// Add mentioned users
 		mentions := f.extractMentions(activity)
 		for _, mention := range mentions {
@@ -136,7 +136,7 @@ func (f *federationService) DetermineRecipients(ctx context.Context, activity *a
 			}
 		}
 	}
-	
+
 	if activity.CC != nil {
 		for _, recipient := range activity.CC {
 			if recipient != activitypub.PublicAddress {
@@ -171,7 +171,7 @@ func (f *federationService) getActorByID(ctx context.Context, actorID string) (*
 			username = parts[1]
 		}
 	}
-	
+
 	if username == "" {
 		return nil, fmt.Errorf("invalid actor ID format: %s", actorID)
 	}

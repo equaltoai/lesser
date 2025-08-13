@@ -1,6 +1,6 @@
 // Package relationships provides the core Relationships Service for the Lesser project's API alignment.
-// This service handles all relationship operations including follows, blocks, mutes, and relationship 
-// status management. It emits appropriate events for real-time streaming and queues federation 
+// This service handles all relationship operations including follows, blocks, mutes, and relationship
+// status management. It emits appropriate events for real-time streaming and queues federation
 // activities for remote users.
 package relationships
 
@@ -27,7 +27,7 @@ type Service struct {
 	logger           *zap.Logger
 	domainName       string
 	federation       FederationService
-	
+
 	// Additional repositories for extended functionality
 	storage core.RepositoryStorage // Full storage interface for access to all repos
 }
@@ -87,11 +87,11 @@ func NewServiceWithStorage(
 
 // FollowCommand contains all data needed to follow a user
 type FollowCommand struct {
-	FollowerID   string `json:"follower_id" validate:"required"`
-	FollowingID  string `json:"following_id" validate:"required"`
-	ShowReblogs  bool   `json:"show_reblogs"`  // Whether to show reblogs from this user
-	Notify       bool   `json:"notify"`        // Whether to notify on new posts
-	Languages    []string `json:"languages"`   // Filter to specific languages
+	FollowerID  string   `json:"follower_id" validate:"required"`
+	FollowingID string   `json:"following_id" validate:"required"`
+	ShowReblogs bool     `json:"show_reblogs"` // Whether to show reblogs from this user
+	Notify      bool     `json:"notify"`       // Whether to notify on new posts
+	Languages   []string `json:"languages"`    // Filter to specific languages
 }
 
 // UnfollowCommand contains all data needed to unfollow a user
@@ -115,11 +115,11 @@ type UnblockCommand struct {
 
 // MuteCommand contains all data needed to mute a user
 type MuteCommand struct {
-	MuterID         string         `json:"muter_id" validate:"required"`
-	MutedID         string         `json:"muted_id" validate:"required"`
-	MuteNotifications bool         `json:"mute_notifications"` // Also mute notifications
-	Duration        *time.Duration `json:"duration"`           // Optional duration, nil for indefinite
-	Reason          string         `json:"reason"`             // Optional reason for muting
+	MuterID           string         `json:"muter_id" validate:"required"`
+	MutedID           string         `json:"muted_id" validate:"required"`
+	MuteNotifications bool           `json:"mute_notifications"` // Also mute notifications
+	Duration          *time.Duration `json:"duration"`           // Optional duration, nil for indefinite
+	Reason            string         `json:"reason"`             // Optional reason for muting
 }
 
 // UnmuteCommand contains all data needed to unmute a user
@@ -165,8 +165,8 @@ type RelationshipData struct {
 
 // RelationshipResult contains a relationship and associated events that were emitted
 type RelationshipResult struct {
-	Relationship *RelationshipData   `json:"relationship"`
-	Events       []*streaming.Event  `json:"events"`
+	Relationship *RelationshipData  `json:"relationship"`
+	Events       []*streaming.Event `json:"events"`
 }
 
 // Result contains multiple relationships
@@ -177,10 +177,10 @@ type Result struct {
 
 // FollowResult contains follow-specific data and events
 type FollowResult struct {
-	Relationship *RelationshipData   `json:"relationship"`
-	RequestID    string              `json:"request_id,omitempty"` // If follow requires approval
-	IsFollowing  bool                `json:"is_following"`         // Whether follow was immediately accepted
-	Events       []*streaming.Event  `json:"events"`
+	Relationship *RelationshipData  `json:"relationship"`
+	RequestID    string             `json:"request_id,omitempty"` // If follow requires approval
+	IsFollowing  bool               `json:"is_following"`         // Whether follow was immediately accepted
+	Events       []*streaming.Event `json:"events"`
 }
 
 // Follow initiates a follow relationship, handling locked accounts and emitting events
@@ -202,7 +202,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	// Check if users exist
 	var follower, following *storage.Account
 	var err error
-	
+
 	if s.accountRepo != nil {
 		follower, err = s.accountRepo.GetAccount(ctx, cmd.FollowerID)
 		if err != nil {
@@ -222,14 +222,14 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		if err != nil {
 			return nil, fmt.Errorf("failed to get following actor: %w", err)
 		}
-		
+
 		// Create account objects
 		follower = &storage.Account{
-			User: &storage.User{Username: followerActor.PreferredUsername},
+			User:  &storage.User{Username: followerActor.PreferredUsername},
 			Actor: followerActor,
 		}
 		following = &storage.Account{
-			User: &storage.User{Username: followingActor.PreferredUsername},
+			User:  &storage.User{Username: followingActor.PreferredUsername},
 			Actor: followingActor,
 		}
 	} else {
@@ -268,7 +268,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 
 	// Create follow request
 	activityID := uuid.New().String()
-	
+
 	err = s.relationshipRepo.CreateFollowRequest(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create follow request: %w", err)
@@ -712,7 +712,7 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 	}
 
 	var relationships []*RelationshipData
-	
+
 	// Get relationship data for each target
 	for _, targetID := range query.TargetIDs {
 		relationship, err := s.buildRelationshipData(ctx, query.RequesterID, targetID)
@@ -723,7 +723,7 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 				zap.Error(err))
 			// Create empty relationship data for failed lookups
 			relationship = &RelationshipData{
-				ID: targetID,
+				ID:        targetID,
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			}
@@ -788,7 +788,7 @@ type DomainBlocksResult struct {
 	Events     []*streaming.Event `json:"events"`
 }
 
-// MutedUsersResult contains muted users data  
+// MutedUsersResult contains muted users data
 type MutedUsersResult struct {
 	MutedUsers []*storage.Account `json:"muted_users"`
 	NextCursor string             `json:"next_cursor,omitempty"`
@@ -917,7 +917,7 @@ func (s *Service) GetMutedUsers(ctx context.Context, query *GetMutedUsersQuery) 
 		zap.String("user_id", query.UserID),
 		zap.Int("limit", query.Limit))
 
-	// Validate query  
+	// Validate query
 	if err := s.validateGetMutedUsersQuery(query); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
@@ -947,7 +947,7 @@ func (s *Service) GetMutedUsers(ctx context.Context, query *GetMutedUsersQuery) 
 			s.logger.Warn("failed to get muted actor", zap.String("actor", mute.Object), zap.Error(err))
 			continue
 		}
-		
+
 		if actor != nil {
 			// Convert actor to account (simplified conversion)
 			account := &storage.Account{
@@ -973,7 +973,7 @@ func (s *Service) GetBlockedUsers(ctx context.Context, query *GetBlockedUsersQue
 		zap.String("user_id", query.UserID),
 		zap.Int("limit", query.Limit))
 
-	// Validate query  
+	// Validate query
 	if err := s.validateGetBlockedUsersQuery(query); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
@@ -1001,14 +1001,14 @@ func (s *Service) GetBlockedUsers(ctx context.Context, query *GetBlockedUsersQue
 		parts := strings.Split(blockedUserID, "/")
 		if len(parts) > 0 {
 			username := parts[len(parts)-1]
-			
+
 			// Get the actor for each blocked user
 			actor, err := s.storage.Actor().GetActor(ctx, username)
 			if err != nil {
 				s.logger.Warn("failed to get blocked actor", zap.String("actor", blockedUserID), zap.Error(err))
 				continue
 			}
-			
+
 			if actor != nil {
 				// Convert actor to account
 				account := &storage.Account{
@@ -1060,7 +1060,7 @@ func (s *Service) GetFollowers(ctx context.Context, username string, limit int, 
 			s.logger.Warn("failed to get follower actor", zap.String("actor", followerID), zap.Error(err))
 			continue
 		}
-		
+
 		if actor != nil {
 			// Convert actor to account
 			account := &storage.Account{
@@ -1107,7 +1107,7 @@ func (s *Service) GetFollowing(ctx context.Context, username string, limit int, 
 			s.logger.Warn("failed to get following actor", zap.String("actor", followingID), zap.Error(err))
 			continue
 		}
-		
+
 		if actor != nil {
 			// Convert actor to account
 			account := &storage.Account{
@@ -1249,17 +1249,17 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
 		} else {
 			follower = &storage.Account{
-				User: &storage.User{Username: followerActor.PreferredUsername},
+				User:  &storage.User{Username: followerActor.PreferredUsername},
 				Actor: followerActor,
 			}
 		}
-		
+
 		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
 		if err != nil {
 			s.logger.Warn("failed to get following actor for events", zap.Error(err))
 		} else {
 			following = &storage.Account{
-				User: &storage.User{Username: followingActor.PreferredUsername},
+				User:  &storage.User{Username: followingActor.PreferredUsername},
 				Actor: followingActor,
 			}
 		}
@@ -1331,17 +1331,17 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 			s.logger.Warn("failed to get follower actor for events", zap.Error(err))
 		} else {
 			follower = &storage.Account{
-				User: &storage.User{Username: followerActor.PreferredUsername},
+				User:  &storage.User{Username: followerActor.PreferredUsername},
 				Actor: followerActor,
 			}
 		}
-		
+
 		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.RequesterID)
 		if err != nil {
 			s.logger.Warn("failed to get following actor for events", zap.Error(err))
 		} else {
 			following = &storage.Account{
-				User: &storage.User{Username: followingActor.PreferredUsername},
+				User:  &storage.User{Username: followingActor.PreferredUsername},
 				Actor: followingActor,
 			}
 		}
@@ -1418,16 +1418,6 @@ func (s *Service) validateGetBlockedUsersQuery(query *GetBlockedUsersQuery) erro
 	}
 	if query.Limit <= 0 {
 		query.Limit = 40 // Default limit
-	}
-	return nil
-}
-
-func (s *Service) validateGetFollowersQuery(query *GetFollowersQuery) error {
-	if query.UserID == "" {
-		return fmt.Errorf("user_id is required")
-	}
-	if query.Limit <= 0 {
-		query.Limit = 100 // Default limit for followers
 	}
 	return nil
 }
@@ -1528,16 +1518,6 @@ func (s *Service) validateUnmuteCommand(_ context.Context, cmd *UnmuteCommand) e
 	return nil
 }
 
-func (s *Service) validateGetRelationshipQuery(query *GetRelationshipQuery) error {
-	if query.RequesterID == "" {
-		return fmt.Errorf("requester_id is required")
-	}
-	if query.TargetID == "" {
-		return fmt.Errorf("target_id is required")
-	}
-	return nil
-}
-
 func (s *Service) validateGetRelationshipsQuery(query *GetRelationshipsQuery) error {
 	if query.RequesterID == "" {
 		return fmt.Errorf("requester_id is required")
@@ -1553,7 +1533,7 @@ func (s *Service) validateGetRelationshipsQuery(query *GetRelationshipsQuery) er
 
 func (s *Service) buildRelationshipData(ctx context.Context, requesterID, targetID string) (*RelationshipData, error) {
 	now := time.Now()
-	
+
 	// Initialize with defaults
 	data := &RelationshipData{
 		ID:        targetID,
@@ -1923,7 +1903,7 @@ func (s *Service) queueFederationUndo(ctx context.Context, actor, target *storag
 
 	now := time.Now()
 	undoID := uuid.New().String()
-	
+
 	// Create the original activity being undone
 	originalActivity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -1969,7 +1949,7 @@ func (s *Service) queueFederationReject(ctx context.Context, follower, following
 
 	now := time.Now()
 	rejectID := uuid.New().String()
-	
+
 	// Create the original Follow activity being rejected
 	originalFollow := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
@@ -2060,21 +2040,21 @@ type AcknowledgeSeveranceCommand struct {
 
 // AcknowledgeSeveranceResult contains the result of acknowledging a severance
 type AcknowledgeSeveranceResult struct {
-	Success bool                 `json:"success"`
-	Events  []*streaming.Event   `json:"events"`
+	Success bool               `json:"success"`
+	Events  []*streaming.Event `json:"events"`
 }
 
 // GetAffectedRelationshipsQuery contains data needed to get affected relationships
 type GetAffectedRelationshipsQuery struct {
-	UserID                 string `json:"user_id" validate:"required"`
-	SeveredRelationshipID  string `json:"severed_relationship_id" validate:"required"`
+	UserID                string `json:"user_id" validate:"required"`
+	SeveredRelationshipID string `json:"severed_relationship_id" validate:"required"`
 }
 
 // AffectedRelationship represents a relationship affected by severance
 type AffectedRelationship struct {
-	ID           string        `json:"id"`
-	Type         string        `json:"type"`
-	AffectedUser storage.User  `json:"affected_user"`
+	ID           string       `json:"id"`
+	Type         string       `json:"type"`
+	AffectedUser storage.User `json:"affected_user"`
 }
 
 // GetAffectedRelationshipsResult contains the result of getting affected relationships
@@ -2098,7 +2078,7 @@ func (s *Service) AcknowledgeSeverance(ctx context.Context, cmd *AcknowledgeSeve
 
 	// For now, we'll implement basic acknowledgment
 	// In a full implementation, this would update severance records in storage
-	
+
 	// Emit acknowledgment events
 	events := s.emitSeveranceAcknowledgedEvents(ctx, cmd.UserID, cmd.SeveranceID)
 
@@ -2113,7 +2093,7 @@ func (s *Service) AcknowledgeSeverance(ctx context.Context, cmd *AcknowledgeSeve
 }
 
 // GetAffectedRelationships retrieves relationships affected by a severance
-func (s *Service) GetAffectedRelationships(ctx context.Context, query *GetAffectedRelationshipsQuery) (*GetAffectedRelationshipsResult, error) {
+func (s *Service) GetAffectedRelationships(_ context.Context, query *GetAffectedRelationshipsQuery) (*GetAffectedRelationshipsResult, error) {
 	s.logger.Info("getting affected relationships",
 		zap.String("user_id", query.UserID),
 		zap.String("severed_relationship_id", query.SeveredRelationshipID))
@@ -2125,7 +2105,7 @@ func (s *Service) GetAffectedRelationships(ctx context.Context, query *GetAffect
 
 	// For now, we'll return empty results
 	// In a full implementation, this would query storage for affected relationships
-	
+
 	s.logger.Info("retrieved affected relationships successfully",
 		zap.String("user_id", query.UserID),
 		zap.String("severed_relationship_id", query.SeveredRelationshipID))
@@ -2169,7 +2149,7 @@ func (s *Service) emitSeveranceAcknowledgedEvents(ctx context.Context, userID, s
 		Type:      "severance.acknowledged",
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
-			"user_id":     userID,
+			"user_id":      userID,
 			"severance_id": severanceID,
 		},
 	}

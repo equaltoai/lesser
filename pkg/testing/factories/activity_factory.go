@@ -10,9 +10,9 @@ import (
 
 // ActivityFactory creates ActivityPub activities for testing
 type ActivityFactory struct {
-	domain    string
-	sequence  int
-	baseTime  time.Time
+	domain   string
+	sequence int
+	baseTime time.Time
 }
 
 // NewActivityFactory creates a new activity factory
@@ -58,9 +58,9 @@ func (f *ActivityFactory) CreateActivity(opts ActivityOptions) *activitypub.Acti
 
 	activity := &activitypub.Activity{
 		BaseObject: activitypub.BaseObject{
-			Context: []string{"https://www.w3.org/ns/activitystreams"},
-			ID:      id,
-			Type:    opts.Type,
+			Context:   []string{"https://www.w3.org/ns/activitystreams"},
+			ID:        id,
+			Type:      opts.Type,
 			Published: &published,
 		},
 		Actor: opts.Actor,

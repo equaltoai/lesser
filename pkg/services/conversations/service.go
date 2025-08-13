@@ -23,13 +23,13 @@ import (
 const (
 	// VisibilityDirect represents direct message visibility
 	VisibilityDirect = "direct"
-	
+
 	// ConversationMessageEvent is emitted when a message is sent to a conversation
 	ConversationMessageEvent = "conversation.message"
-	
+
 	// ConversationReadEvent is emitted when a conversation is marked as read
 	ConversationReadEvent = "conversation.read"
-	
+
 	// ConversationUpdatedEvent is emitted when conversation metadata is updated
 	ConversationUpdatedEvent = "conversation.updated"
 )
@@ -79,13 +79,13 @@ func NewService(
 
 // SendDirectMessageCommand contains all data needed to send a direct message
 type SendDirectMessageCommand struct {
-	SenderID     string   `json:"sender_id" validate:"required"`
-	Recipients   []string `json:"recipients" validate:"required,min=1"`
-	Content      string   `json:"content" validate:"required,max=5000"`
-	Sensitive    bool     `json:"sensitive"`
-	Language     string   `json:"language"`
-	MediaIDs     []string `json:"media_ids"`
-	InReplyToID  string   `json:"in_reply_to_id"` // Can reply to messages in the conversation
+	SenderID    string   `json:"sender_id" validate:"required"`
+	Recipients  []string `json:"recipients" validate:"required,min=1"`
+	Content     string   `json:"content" validate:"required,max=5000"`
+	Sensitive   bool     `json:"sensitive"`
+	Language    string   `json:"language"`
+	MediaIDs    []string `json:"media_ids"`
+	InReplyToID string   `json:"in_reply_to_id"` // Can reply to messages in the conversation
 }
 
 // MarkConversationReadCommand contains data needed to mark a conversation as read
@@ -102,16 +102,16 @@ type DeleteConversationCommand struct {
 
 // GetConversationQuery contains parameters for retrieving a conversation
 type GetConversationQuery struct {
-	ConversationID string                        `json:"conversation_id" validate:"required"`
-	ViewerID       string                        `json:"viewer_id" validate:"required"` // Must be a participant
+	ConversationID string                       `json:"conversation_id" validate:"required"`
+	ViewerID       string                       `json:"viewer_id" validate:"required"` // Must be a participant
 	Pagination     interfaces.PaginationOptions `json:"pagination"`
 }
 
 // ListConversationsQuery contains parameters for listing user conversations
 type ListConversationsQuery struct {
-	UserID     string                        `json:"user_id" validate:"required"`
+	UserID     string                       `json:"user_id" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
-	OnlyUnread bool                          `json:"only_unread"`
+	OnlyUnread bool                         `json:"only_unread"`
 }
 
 // Result structs for operations
@@ -131,9 +131,9 @@ type MessageResult struct {
 
 // ConversationWithMessages contains a conversation and its message history
 type ConversationWithMessages struct {
-	Conversation *models.Conversation                       `json:"conversation"`
+	Conversation *models.Conversation                        `json:"conversation"`
 	Messages     *interfaces.PaginatedResult[*models.Status] `json:"messages"`
-	Events       []*streaming.Event                         `json:"events"`
+	Events       []*streaming.Event                          `json:"events"`
 }
 
 // Result contains multiple conversations with pagination
@@ -399,7 +399,7 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 
 func (s *Service) buildActivityPubNote(cmd *SendDirectMessageCommand, messageID string, sender *storage.Account, conversationID string, recipientAccounts map[string]*storage.Account) *activitypub.Note {
 	now := time.Now()
-	
+
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
 			Context:   "https://www.w3.org/ns/activitystreams",
@@ -458,8 +458,8 @@ func (s *Service) emitMessageSentEvents(ctx context.Context, message *models.Sta
 		participantEvent := *event
 		participantEvent.Stream = fmt.Sprintf("user:%s:direct", participantID)
 		if err := s.publisher.PublishToUser(ctx, participantID, &participantEvent); err != nil {
-			s.logger.Error("failed to publish to participant direct stream", 
-				zap.String("participant_id", participantID), 
+			s.logger.Error("failed to publish to participant direct stream",
+				zap.String("participant_id", participantID),
 				zap.Error(err))
 		} else {
 			events = append(events, &participantEvent)
@@ -571,7 +571,7 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 		if err != nil {
 			return nil, fmt.Errorf("failed to get account: %w", err)
 		}
-		
+
 		// Check with actor ID as well
 		if account.Actor == nil || !s.isParticipant(account.Actor.ID, conversation.Participants) {
 			return nil, fmt.Errorf("user is not a participant in this conversation")

@@ -277,7 +277,7 @@ func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID stri
 
 	// Use enhanced signing for better algorithm support
 	algorithm := DetermineSigningAlgorithm(privateKey, true) // Use legacy for max compatibility
-	
+
 	return SignHTTPRequestWithAlgorithm(req, privateKey, keyID, algorithm)
 }
 

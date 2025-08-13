@@ -209,7 +209,7 @@ func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, followingOnly 
 func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearchParams, authenticatedUser string) ([]*activitypub.Actor, error) {
 	// Use privacy-aware search method
 	searchRepo := h.repos.Search()
-	
+
 	// Convert username to actor ID for privacy checks
 	var searcherActorID string
 	if authenticatedUser != "" {
@@ -470,7 +470,7 @@ func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 // performStatusSearch performs the actual status search with privacy enforcement
 func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchParams, authenticatedUser string) ([]storage.StatusSearchResult, error) {
 	searchRepo := h.repos.Search()
-	
+
 	// Convert username to actor ID for privacy checks
 	searcherActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, authenticatedUser)
 

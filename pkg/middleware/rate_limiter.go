@@ -19,24 +19,24 @@ type RateLimiterConfig struct {
 	// Default limits
 	DefaultRequestsPerMinute int
 	DefaultBurstSize         int
-	
+
 	// Endpoint-specific limits
 	EndpointLimits map[string]EndpointLimit
-	
+
 	// Progressive delay configuration
 	EnableProgressiveDelays bool
-	BaseDelayMillis        int
-	MaxDelayMillis         int
-	DelayIncrementFactor   float64
-	
+	BaseDelayMillis         int
+	MaxDelayMillis          int
+	DelayIncrementFactor    float64
+
 	// Sliding window configuration
-	WindowSize       time.Duration
+	WindowSize        time.Duration
 	WindowGranularity time.Duration // How often to update the window
-	
+
 	// Penalty configuration
 	ViolationThreshold int           // Number of violations before penalty
-	PenaltyDuration   time.Duration  // How long to penalize
-	PenaltyMultiplier float64        // Reduce rate limit by this factor during penalty
+	PenaltyDuration    time.Duration // How long to penalize
+	PenaltyMultiplier  float64       // Reduce rate limit by this factor during penalty
 }
 
 // EndpointLimit defines rate limits for a specific endpoint
@@ -45,17 +45,17 @@ type EndpointLimit struct {
 	BurstSize         int
 	WindowSize        time.Duration
 	// Specific limits for authenticated vs anonymous users
-	AuthenticatedRPM  int
-	AnonymousRPM      int
+	AuthenticatedRPM int
+	AnonymousRPM     int
 }
 
 // SlidingWindowCounter tracks requests in a sliding window
 type SlidingWindowCounter struct {
-	mu            sync.RWMutex
-	buckets       map[int64]int // timestamp -> count
-	windowSize    time.Duration
-	granularity   time.Duration
-	lastCleanup   time.Time
+	mu          sync.RWMutex
+	buckets     map[int64]int // timestamp -> count
+	windowSize  time.Duration
+	granularity time.Duration
+	lastCleanup time.Time
 }
 
 // NewSlidingWindowCounter creates a new sliding window counter
@@ -72,11 +72,11 @@ func NewSlidingWindowCounter(windowSize, granularity time.Duration) *SlidingWind
 func (s *SlidingWindowCounter) Increment() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	now := time.Now()
 	bucket := now.Truncate(s.granularity).Unix()
 	s.buckets[bucket]++
-	
+
 	// Cleanup old buckets periodically
 	if now.Sub(s.lastCleanup) > s.windowSize {
 		s.cleanupOldBuckets(now)
@@ -88,24 +88,24 @@ func (s *SlidingWindowCounter) Increment() {
 func (s *SlidingWindowCounter) Count() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	now := time.Now()
 	cutoff := now.Add(-s.windowSize).Unix()
-	
+
 	total := 0
 	for timestamp, count := range s.buckets {
 		if timestamp >= cutoff {
 			total += count
 		}
 	}
-	
+
 	return total
 }
 
 // cleanupOldBuckets removes buckets outside the window
 func (s *SlidingWindowCounter) cleanupOldBuckets(now time.Time) {
 	cutoff := now.Add(-s.windowSize * 2).Unix() // Keep some buffer
-	
+
 	for timestamp := range s.buckets {
 		if timestamp < cutoff {
 			delete(s.buckets, timestamp)
@@ -115,17 +115,17 @@ func (s *SlidingWindowCounter) cleanupOldBuckets(now time.Time) {
 
 // RateLimiter provides enhanced rate limiting with sliding windows
 type RateLimiter struct {
-	config    *RateLimiterConfig
-	repo      *repositories.RateLimitRepository
-	logger    *zap.Logger
-	
+	config *RateLimiterConfig
+	repo   *repositories.RateLimitRepository
+	logger *zap.Logger
+
 	// In-memory sliding window counters for performance
 	counters  map[string]*SlidingWindowCounter
 	counterMu sync.RWMutex
-	
+
 	// Progressive delay tracking
-	delays    map[string]time.Time // track last request time for delays
-	delayMu   sync.RWMutex
+	delays  map[string]time.Time // track last request time for delays
+	delayMu sync.RWMutex
 }
 
 // NewRateLimiter creates a new enhanced rate limiter
@@ -133,7 +133,7 @@ func NewRateLimiter(config *RateLimiterConfig, repo *repositories.RateLimitRepos
 	if config == nil {
 		config = DefaultRateLimiterConfig()
 	}
-	
+
 	return &RateLimiter{
 		config:   config,
 		repo:     repo,
@@ -147,44 +147,44 @@ func NewRateLimiter(config *RateLimiterConfig, repo *repositories.RateLimitRepos
 func DefaultRateLimiterConfig() *RateLimiterConfig {
 	return &RateLimiterConfig{
 		DefaultRequestsPerMinute: 60,
-		DefaultBurstSize:        10,
-		EnableProgressiveDelays: true,
-		BaseDelayMillis:        100,
-		MaxDelayMillis:         5000,
-		DelayIncrementFactor:   1.5,
-		WindowSize:             1 * time.Minute,
-		WindowGranularity:      1 * time.Second,
-		ViolationThreshold:     3,
-		PenaltyDuration:        5 * time.Minute,
-		PenaltyMultiplier:      0.5,
+		DefaultBurstSize:         10,
+		EnableProgressiveDelays:  true,
+		BaseDelayMillis:          100,
+		MaxDelayMillis:           5000,
+		DelayIncrementFactor:     1.5,
+		WindowSize:               1 * time.Minute,
+		WindowGranularity:        1 * time.Second,
+		ViolationThreshold:       3,
+		PenaltyDuration:          5 * time.Minute,
+		PenaltyMultiplier:        0.5,
 		EndpointLimits: map[string]EndpointLimit{
 			"/api/v1/statuses": {
 				RequestsPerMinute: 30,
-				BurstSize:        5,
-				AuthenticatedRPM: 60,
-				AnonymousRPM:     10,
+				BurstSize:         5,
+				AuthenticatedRPM:  60,
+				AnonymousRPM:      10,
 			},
 			"/api/v1/timelines/public": {
 				RequestsPerMinute: 120,
-				BurstSize:        20,
-				AuthenticatedRPM: 180,
-				AnonymousRPM:     60,
+				BurstSize:         20,
+				AuthenticatedRPM:  180,
+				AnonymousRPM:      60,
 			},
 			"/api/v1/accounts/verify_credentials": {
 				RequestsPerMinute: 60,
-				BurstSize:        10,
+				BurstSize:         10,
 			},
 			"/api/v1/media": {
 				RequestsPerMinute: 10,
-				BurstSize:        2,
-				AuthenticatedRPM: 20,
-				AnonymousRPM:     5,
+				BurstSize:         2,
+				AuthenticatedRPM:  20,
+				AnonymousRPM:      5,
 			},
 			"/api/v1/search": {
 				RequestsPerMinute: 30,
-				BurstSize:        5,
-				AuthenticatedRPM: 60,
-				AnonymousRPM:     15,
+				BurstSize:         5,
+				AuthenticatedRPM:  60,
+				AnonymousRPM:      15,
 			},
 		},
 	}
@@ -197,34 +197,34 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 			// Extract client identifier
 			clientID := rl.getClientID(ctx)
 			endpoint := rl.normalizeEndpoint(ctx.Request.Path)
-			
+
 			// Check if client is allowed to proceed
 			allowed, delay, headers := rl.checkRateLimit(ctx.Context, clientID, endpoint, rl.isAuthenticated(ctx))
-			
+
 			// Set rate limit headers
 			for key, value := range headers {
 				ctx.Set(key, value)
 			}
-			
+
 			if !allowed {
 				// Apply progressive delay if configured
 				if rl.config.EnableProgressiveDelays && delay > 0 {
 					time.Sleep(delay)
 				}
-				
+
 				// Return rate limit error
 				return ctx.Status(429).JSON(map[string]interface{}{
-					"error": "Too Many Requests",
-					"message": "Rate limit exceeded. Please slow down.",
+					"error":       "Too Many Requests",
+					"message":     "Rate limit exceeded. Please slow down.",
 					"retry_after": headers["Retry-After"],
 				})
 			}
-			
+
 			// Apply small progressive delay if approaching limit
 			if rl.config.EnableProgressiveDelays {
 				rl.applyProgressiveDelay(clientID)
 			}
-			
+
 			// Continue to next handler
 			return next(ctx)
 		}
@@ -235,41 +235,41 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint string, authenticated bool) (bool, time.Duration, map[string]string) {
 	// Get endpoint-specific configuration
 	limit := rl.getEndpointLimit(endpoint, authenticated)
-	
+
 	// Get or create sliding window counter
 	counter := rl.getOrCreateCounter(clientID, endpoint)
-	
+
 	// Check sliding window count
 	currentCount := counter.Count()
-	
+
 	// Calculate remaining requests
 	remaining := limit.RequestsPerMinute - currentCount
 	if remaining < 0 {
 		remaining = 0
 	}
-	
+
 	// Prepare headers
 	headers := map[string]string{
 		"X-RateLimit-Limit":     strconv.Itoa(limit.RequestsPerMinute),
 		"X-RateLimit-Remaining": strconv.Itoa(remaining),
 		"X-RateLimit-Reset":     strconv.FormatInt(time.Now().Add(rl.config.WindowSize).Unix(), 10),
 	}
-	
+
 	// Check if rate limit exceeded
 	if currentCount >= limit.RequestsPerMinute {
 		// Check for violations and apply penalties
 		violationCount, err := rl.repo.GetViolationCount(ctx, clientID, "", rl.config.WindowSize)
 		if err != nil {
-			rl.logger.Warn("failed to get violation count", 
+			rl.logger.Warn("failed to get violation count",
 				zap.String("client_id", clientID),
 				zap.Error(err))
 			violationCount = 0
 		}
-		
+
 		// Calculate delay based on violations
 		delay := rl.calculateProgressiveDelay(violationCount)
 		headers["Retry-After"] = strconv.Itoa(int(delay.Seconds()))
-		
+
 		// Record violation if threshold exceeded
 		if violationCount >= rl.config.ViolationThreshold {
 			if err := rl.repo.CheckAPIRateLimit(ctx, clientID, endpoint, limit.RequestsPerMinute, rl.config.WindowSize); err != nil {
@@ -279,10 +279,10 @@ func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint st
 					zap.Error(err))
 			}
 		}
-		
+
 		return false, delay, headers
 	}
-	
+
 	// Check burst limit
 	recentCount := rl.getRecentBurstCount(counter, 5*time.Second)
 	if recentCount > limit.BurstSize {
@@ -290,10 +290,10 @@ func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint st
 		headers["Retry-After"] = "1"
 		return false, delay, headers
 	}
-	
+
 	// Increment counter
 	counter.Increment()
-	
+
 	// Update database asynchronously for persistence
 	go func() {
 		if err := rl.repo.CheckAPIRateLimit(context.Background(), clientID, endpoint, limit.RequestsPerMinute, rl.config.WindowSize); err != nil {
@@ -303,7 +303,7 @@ func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint st
 				zap.Error(err))
 		}
 	}()
-	
+
 	return true, 0, headers
 }
 
@@ -320,23 +320,23 @@ func (rl *RateLimiter) getRecentBurstCount(counter *SlidingWindowCounter, durati
 func (rl *RateLimiter) applyProgressiveDelay(clientID string) {
 	rl.delayMu.Lock()
 	defer rl.delayMu.Unlock()
-	
+
 	now := time.Now()
 	lastRequest, exists := rl.delays[clientID]
-	
+
 	if !exists {
 		rl.delays[clientID] = now
 		return
 	}
-	
+
 	// Calculate time since last request
 	timeSinceLastRequest := now.Sub(lastRequest)
-	
+
 	// If requests are coming too fast, apply progressive delay
 	if timeSinceLastRequest < 100*time.Millisecond {
 		// Start with base delay
 		delay := time.Duration(rl.config.BaseDelayMillis) * time.Millisecond
-		
+
 		// Increase delay based on how fast requests are coming
 		if timeSinceLastRequest < 50*time.Millisecond {
 			delay = time.Duration(float64(delay) * rl.config.DelayIncrementFactor)
@@ -344,17 +344,17 @@ func (rl *RateLimiter) applyProgressiveDelay(clientID string) {
 		if timeSinceLastRequest < 25*time.Millisecond {
 			delay = time.Duration(float64(delay) * rl.config.DelayIncrementFactor)
 		}
-		
+
 		// Cap at max delay
 		if delay > time.Duration(rl.config.MaxDelayMillis)*time.Millisecond {
 			delay = time.Duration(rl.config.MaxDelayMillis) * time.Millisecond
 		}
-		
+
 		time.Sleep(delay)
 	}
-	
+
 	rl.delays[clientID] = now
-	
+
 	// Cleanup old entries periodically
 	if len(rl.delays) > 10000 {
 		cutoff := now.Add(-5 * time.Minute)
@@ -371,49 +371,59 @@ func (rl *RateLimiter) calculateProgressiveDelay(violationCount int) time.Durati
 	if violationCount == 0 {
 		return 0
 	}
-	
+
 	// Exponential backoff with jitter
 	baseDelay := time.Duration(rl.config.BaseDelayMillis) * time.Millisecond
-	delay := baseDelay * time.Duration(1<<uint(violationCount-1)) // 2^(violations-1)
-	
+	// Safely convert to uint with bounds checking
+	exponent := violationCount - 1
+	if exponent < 0 {
+		exponent = 0
+	}
+	if exponent > 30 { // Cap to prevent overflow (2^30 is large enough)
+		exponent = 30
+	}
+	// Safe conversion to uint after bounds checking
+	exponentUint := uint(exponent) //nolint:gosec // G115: bounded by check above
+	delay := baseDelay * time.Duration(1<<exponentUint) // 2^(violations-1)
+
 	// Cap at max delay
 	maxDelay := time.Duration(rl.config.MaxDelayMillis) * time.Millisecond
 	if delay > maxDelay {
 		delay = maxDelay
 	}
-	
+
 	return delay
 }
 
 // getOrCreateCounter gets or creates a sliding window counter for a client/endpoint
 func (rl *RateLimiter) getOrCreateCounter(clientID, endpoint string) *SlidingWindowCounter {
 	key := fmt.Sprintf("%s:%s", clientID, endpoint)
-	
+
 	rl.counterMu.RLock()
 	counter, exists := rl.counters[key]
 	rl.counterMu.RUnlock()
-	
+
 	if exists {
 		return counter
 	}
-	
+
 	rl.counterMu.Lock()
 	defer rl.counterMu.Unlock()
-	
+
 	// Double-check after acquiring write lock
 	if counter, exists = rl.counters[key]; exists {
 		return counter
 	}
-	
+
 	// Create new counter
 	counter = NewSlidingWindowCounter(rl.config.WindowSize, rl.config.WindowGranularity)
 	rl.counters[key] = counter
-	
+
 	// Cleanup old counters if too many
 	if len(rl.counters) > 10000 {
 		rl.cleanupOldCounters()
 	}
-	
+
 	return counter
 }
 
@@ -439,7 +449,7 @@ func (rl *RateLimiter) getEndpointLimit(endpoint string, authenticated bool) End
 		}
 		return limit
 	}
-	
+
 	// Check for pattern match (e.g., /api/v1/accounts/*)
 	for pattern, limit := range rl.config.EndpointLimits {
 		if strings.HasSuffix(pattern, "*") {
@@ -454,17 +464,17 @@ func (rl *RateLimiter) getEndpointLimit(endpoint string, authenticated bool) End
 			}
 		}
 	}
-	
+
 	// Return default limit
 	rpm := rl.config.DefaultRequestsPerMinute
 	if authenticated {
 		rpm = rpm * 2 // Authenticated users get double the rate limit
 	}
-	
+
 	return EndpointLimit{
 		RequestsPerMinute: rpm,
-		BurstSize:        rl.config.DefaultBurstSize,
-		WindowSize:       rl.config.WindowSize,
+		BurstSize:         rl.config.DefaultBurstSize,
+		WindowSize:        rl.config.WindowSize,
 	}
 }
 
@@ -474,10 +484,10 @@ func (rl *RateLimiter) normalizeEndpoint(path string) string {
 	if idx := strings.Index(path, "?"); idx != -1 {
 		path = path[:idx]
 	}
-	
+
 	// Remove trailing slash
 	path = strings.TrimSuffix(path, "/")
-	
+
 	// Normalize common patterns
 	// e.g., /api/v1/accounts/123 -> /api/v1/accounts/*
 	parts := strings.Split(path, "/")
@@ -489,7 +499,7 @@ func (rl *RateLimiter) normalizeEndpoint(path string) string {
 			path = strings.Join(parts, "/")
 		}
 	}
-	
+
 	return path
 }
 
@@ -499,12 +509,12 @@ func isID(s string) bool {
 	if _, err := strconv.Atoi(s); err == nil {
 		return true
 	}
-	
+
 	// Check if it looks like a UUID or base64 ID
 	if len(s) >= 16 && !strings.Contains(s, " ") {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -516,7 +526,7 @@ func (rl *RateLimiter) getClientID(ctx *lift.Context) string {
 			return "user:" + id
 		}
 	}
-	
+
 	// Try to get from JWT claims
 	if claims := ctx.Get("claims"); claims != nil {
 		if claimsMap, ok := claims.(map[string]interface{}); ok {
@@ -525,7 +535,7 @@ func (rl *RateLimiter) getClientID(ctx *lift.Context) string {
 			}
 		}
 	}
-	
+
 	// Fall back to IP address
 	ip := rl.getClientIP(ctx)
 	return "ip:" + ip
@@ -541,12 +551,12 @@ func (rl *RateLimiter) getClientIP(ctx *lift.Context) string {
 		}
 		return strings.TrimSpace(xff)
 	}
-	
+
 	// Check X-Real-IP header
 	if xri := ctx.Header("X-Real-IP"); xri != "" {
 		return strings.TrimSpace(xri)
 	}
-	
+
 	// Fall back to remote address from Lambda context if available
 	if ctx.Request != nil && ctx.Request.Request != nil {
 		// Try to get from headers map
@@ -556,7 +566,7 @@ func (rl *RateLimiter) getClientIP(ctx *lift.Context) string {
 			}
 		}
 	}
-	
+
 	return "unknown"
 }
 
@@ -568,12 +578,12 @@ func (rl *RateLimiter) isAuthenticated(ctx *lift.Context) bool {
 			return true
 		}
 	}
-	
+
 	// Check for Authorization header
 	if auth := ctx.Header("Authorization"); auth != "" && strings.HasPrefix(auth, "Bearer ") {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -582,11 +592,11 @@ func (rl *RateLimiter) GetRateLimitStatus(ctx context.Context, clientID, endpoin
 	// Get endpoint configuration
 	authenticated := strings.HasPrefix(clientID, "user:")
 	limit := rl.getEndpointLimit(endpoint, authenticated)
-	
+
 	// Get current count
 	counter := rl.getOrCreateCounter(clientID, endpoint)
 	currentCount := counter.Count()
-	
+
 	// Get violation count
 	violationCount, err := rl.repo.GetViolationCount(ctx, clientID, "", 24*time.Hour)
 	if err != nil {
@@ -595,30 +605,30 @@ func (rl *RateLimiter) GetRateLimitStatus(ctx context.Context, clientID, endpoin
 			zap.Error(err))
 		violationCount = 0
 	}
-	
+
 	// Calculate remaining
 	remaining := limit.RequestsPerMinute - currentCount
 	if remaining < 0 {
 		remaining = 0
 	}
-	
+
 	status := map[string]interface{}{
-		"limit":          limit.RequestsPerMinute,
-		"remaining":      remaining,
-		"reset":          time.Now().Add(rl.config.WindowSize).Unix(),
-		"current_count":  currentCount,
-		"violations":     violationCount,
-		"window_size":    rl.config.WindowSize.String(),
-		"burst_limit":    limit.BurstSize,
+		"limit":         limit.RequestsPerMinute,
+		"remaining":     remaining,
+		"reset":         time.Now().Add(rl.config.WindowSize).Unix(),
+		"current_count": currentCount,
+		"violations":    violationCount,
+		"window_size":   rl.config.WindowSize.String(),
+		"burst_limit":   limit.BurstSize,
 	}
-	
+
 	// Add penalty info if applicable
 	if violationCount >= rl.config.ViolationThreshold {
 		status["penalty_active"] = true
 		status["penalty_multiplier"] = rl.config.PenaltyMultiplier
 		status["effective_limit"] = int(float64(limit.RequestsPerMinute) * rl.config.PenaltyMultiplier)
 	}
-	
+
 	return status, nil
 }
 
@@ -632,19 +642,19 @@ func (rl *RateLimiter) ResetClientLimits(ctx context.Context, clientID string) e
 		}
 	}
 	rl.counterMu.Unlock()
-	
+
 	// Clear delays
 	rl.delayMu.Lock()
 	delete(rl.delays, clientID)
 	rl.delayMu.Unlock()
-	
+
 	// Clear database records
 	if err := rl.repo.ClearLoginAttempts(ctx, clientID); err != nil {
 		return fmt.Errorf("failed to clear database rate limits: %w", err)
 	}
-	
+
 	rl.logger.Info("reset rate limits for client",
 		zap.String("client_id", clientID))
-	
+
 	return nil
 }

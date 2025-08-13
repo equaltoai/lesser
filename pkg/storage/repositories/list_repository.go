@@ -197,36 +197,36 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	query := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username))
-	
+
 	if opts.Limit <= 0 {
 		opts.Limit = 20
 	}
 	query = query.Limit(opts.Limit)
-	
+
 	if opts.Cursor != "" {
 		query = query.Where("ID", ">", opts.Cursor)
 	}
-	
+
 	var lists []models.List
 	err := query.All(&lists)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user lists: %w", err)
 	}
-	
+
 	// Convert to models.List pointers
 	result := &interfaces.PaginatedResult[*models.List]{
 		Items: make([]*models.List, len(lists)),
 	}
-	
+
 	for i := range lists {
 		result.Items[i] = &lists[i]
 	}
-	
+
 	// Set next cursor if we have more results
 	if len(lists) == opts.Limit {
 		result.NextCursor = lists[len(lists)-1].ID
 	}
-	
+
 	return result, nil
 }
 
@@ -236,27 +236,27 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 	query := r.db.WithContext(ctx).Model(&models.ListMember{}).
 		Index("GSI2"). // Assuming GSI2 is AccountID-based index
 		Where("GSI2PK", "=", fmt.Sprintf("ACCOUNT_LISTS#%s", memberUsername))
-	
+
 	if opts.Limit <= 0 {
 		opts.Limit = 20
 	}
 	query = query.Limit(opts.Limit)
-	
+
 	if opts.Cursor != "" {
 		query = query.Where("ID", ">", opts.Cursor)
 	}
-	
+
 	var members []models.ListMember
 	err := query.All(&members)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get list memberships: %w", err)
 	}
-	
+
 	// Now get the actual lists
 	result := &interfaces.PaginatedResult[*models.List]{
 		Items: make([]*models.List, 0, len(members)),
 	}
-	
+
 	for _, member := range members {
 		list, err := r.GetList(ctx, member.ListID)
 		if err != nil {
@@ -265,12 +265,12 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 		}
 		result.Items = append(result.Items, list)
 	}
-	
+
 	// Set next cursor if we have more results
 	if len(members) == opts.Limit && len(members) > 0 {
 		result.NextCursor = members[len(members)-1].ListID
 	}
-	
+
 	return result, nil
 }
 
@@ -288,7 +288,6 @@ func (r *ListRepository) CountUserLists(ctx context.Context, username string) (i
 	return int(count), nil
 }
 
-// AddAccountToList adds an account to a list
 // AddListMember adds a member to a list
 func (r *ListRepository) AddListMember(ctx context.Context, listID, memberUsername string) error {
 	// Get the list to verify it exists and get the owner
@@ -376,7 +375,7 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 	result := &interfaces.PaginatedResult[*storage.Account]{
 		Items: make([]*storage.Account, 0, len(members)),
 	}
-	
+
 	for _, member := range members {
 		// Get the user data
 		var user models.User
@@ -385,12 +384,12 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 			Where("SK", "=", "METADATA").
 			First(&user)
 		if err != nil {
-			r.logger.Warn("failed to get user for list member", 
-				zap.String("account_id", member.AccountID), 
+			r.logger.Warn("failed to get user for list member",
+				zap.String("account_id", member.AccountID),
 				zap.Error(err))
 			continue
 		}
-		
+
 		// Get actor data if exists
 		var actor models.Actor
 		err = r.db.WithContext(ctx).Model(&models.Actor{}).
@@ -398,28 +397,28 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 			Where("SK", "=", "PROFILE").
 			First(&actor)
 		// Actor may not exist for local users, that's ok
-		
+
 		// Convert to storage.Account
 		storageAccount := &storage.Account{
 			User: &storage.User{
-				Username:     user.Username,
-				Email:        user.Email,
-				DisplayName:  user.DisplayName,
-				CreatedAt:    user.CreatedAt,
-				UpdatedAt:    user.UpdatedAt,
-				Approved:     user.Approved,
-				Suspended:    user.Suspended,
-				Silenced:     user.Silenced,
-				Role:         user.Role,
-				Locale:       user.Locale,
+				Username:    user.Username,
+				Email:       user.Email,
+				DisplayName: user.DisplayName,
+				CreatedAt:   user.CreatedAt,
+				UpdatedAt:   user.UpdatedAt,
+				Approved:    user.Approved,
+				Suspended:   user.Suspended,
+				Silenced:    user.Silenced,
+				Role:        user.Role,
+				Locale:      user.Locale,
 			},
 		}
-		
+
 		// Add actor data if available
 		if err == nil && actor.Actor != nil {
 			storageAccount.Actor = actor.Actor
 		}
-		
+
 		result.Items = append(result.Items, storageAccount)
 	}
 
@@ -609,7 +608,6 @@ func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountI
 	return nil
 }
 
-
 // GetExclusiveLists retrieves all exclusive lists for a user
 func (r *ListRepository) GetExclusiveLists(ctx context.Context, username string) ([]*storage.List, error) {
 	// Get all user lists using the paginated version
@@ -729,13 +727,13 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 	if err != nil {
 		return nil, fmt.Errorf("failed to get list members: %w", err)
 	}
-	
+
 	if len(membersResult.Items) == 0 {
 		return &interfaces.PaginatedResult[*models.Status]{
 			Items: []*models.Status{},
 		}, nil
 	}
-	
+
 	// Build query for statuses from list members
 	usernames := make([]string, len(membersResult.Items))
 	for i, account := range membersResult.Items {
@@ -743,16 +741,16 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 			usernames[i] = account.User.Username
 		}
 	}
-	
+
 	// Query statuses from these users
 	if opts.Limit <= 0 {
 		opts.Limit = 20
 	}
-	
+
 	result := &interfaces.PaginatedResult[*models.Status]{
 		Items: make([]*models.Status, 0, opts.Limit),
 	}
-	
+
 	// Get statuses from each user and merge
 	for _, username := range usernames {
 		var statuses []models.Status
@@ -760,36 +758,36 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 			Index("GSI1").
 			Where("GSI1PK", "=", fmt.Sprintf("USER_TIMELINE#%s", username)).
 			Limit(opts.Limit)
-		
+
 		if opts.Cursor != "" {
 			query = query.Where("ID", ">", opts.Cursor)
 		}
-		
+
 		err := query.All(&statuses)
 		if err != nil {
 			r.logger.Warn("failed to get user timeline", zap.String("username", username), zap.Error(err))
 			continue
 		}
-		
+
 		for i := range statuses {
 			result.Items = append(result.Items, &statuses[i])
 			if len(result.Items) >= opts.Limit {
 				break
 			}
 		}
-		
+
 		if len(result.Items) >= opts.Limit {
 			break
 		}
 	}
-	
+
 	// Set cursor if we have max results
 	if len(result.Items) == opts.Limit && len(result.Items) > 0 {
 		// Use the StatusID which should be the primary identifier
 		lastStatus := result.Items[len(result.Items)-1]
 		result.NextCursor = lastStatus.StatusID
 	}
-	
+
 	return result, nil
 }
 

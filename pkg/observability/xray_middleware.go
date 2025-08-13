@@ -50,7 +50,7 @@ func WrapLambdaHandler(config *XRayConfig, logger *zap.Logger, handler lambda.Ha
 		LogLevel:       "info",
 		ServiceVersion: config.ServiceVersion,
 	})
-	
+
 	return handler
 }
 
@@ -81,7 +81,7 @@ func AddServiceAnnotations(ctx context.Context, serviceName, serviceVersion stri
 	if segment := xray.GetSegment(ctx); segment != nil {
 		_ = segment.AddAnnotation("service", serviceName)
 		_ = segment.AddAnnotation("version", serviceVersion)
-		
+
 		if metadata != nil {
 			_ = segment.AddMetadata("service", metadata)
 		}
@@ -128,7 +128,7 @@ func TraceDatabaseOperation(ctx context.Context, operation, tableName string, fn
 	})
 }
 
-// TraceFederationCall traces federation HTTP calls  
+// TraceFederationCall traces federation HTTP calls
 func TraceFederationCall(ctx context.Context, instance, method, url string, fn func(ctx context.Context) error) error {
 	return TraceSubsegment(ctx, "Federation", func(segmentCtx context.Context) error {
 		if segment := xray.GetSegment(segmentCtx); segment != nil {

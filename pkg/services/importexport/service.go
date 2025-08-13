@@ -150,10 +150,10 @@ type ListImportsQuery struct {
 
 // ExportResult contains the result of an export operation
 type ExportResult struct {
-	Export       *models.Export    `json:"export"`
-	DownloadURL  string            `json:"download_url,omitempty"`
-	ExpiresAt    *time.Time        `json:"expires_at,omitempty"`
-	Events       []streaming.Event `json:"-"` // Events emitted during operation
+	Export      *models.Export    `json:"export"`
+	DownloadURL string            `json:"download_url,omitempty"`
+	ExpiresAt   *time.Time        `json:"expires_at,omitempty"`
+	Events      []streaming.Event `json:"-"` // Events emitted during operation
 }
 
 // ImportResult contains the result of an import operation
@@ -167,18 +167,18 @@ type ImportResult struct {
 
 // ExportListResult contains a paginated list of exports
 type ExportListResult struct {
-	Exports    []*models.Export             `json:"exports"`
-	NextCursor string                       `json:"next_cursor"`
-	HasMore    bool                         `json:"has_more"`
-	Events     []streaming.Event           `json:"-"`
+	Exports    []*models.Export  `json:"exports"`
+	NextCursor string            `json:"next_cursor"`
+	HasMore    bool              `json:"has_more"`
+	Events     []streaming.Event `json:"-"`
 }
 
 // ImportListResult contains a paginated list of imports
 type ImportListResult struct {
-	Imports    []*models.Import             `json:"imports"`
-	NextCursor string                       `json:"next_cursor"`
-	HasMore    bool                         `json:"has_more"`
-	Events     []streaming.Event           `json:"-"`
+	Imports    []*models.Import  `json:"imports"`
+	NextCursor string            `json:"next_cursor"`
+	HasMore    bool              `json:"has_more"`
+	Events     []streaming.Event `json:"-"`
 }
 
 // CreateExport creates a new export request and queues it for processing
@@ -314,7 +314,7 @@ func (s *Service) UpdateExportProgress(ctx context.Context, exportID string, pro
 	completionData := map[string]interface{}{
 		"record_count": processed,
 	}
-	
+
 	if err := s.exportRepo.UpdateExportStatus(ctx, exportID, "processing", completionData, ""); err != nil {
 		return fmt.Errorf("failed to update export: %w", err)
 	}
@@ -343,7 +343,7 @@ func (s *Service) CompleteExport(ctx context.Context, exportID string, fileURL s
 	completionData := map[string]interface{}{
 		"download_url": fileURL,
 		"file_size":    int(fileSize),
-		"s3_key":       fileURL, // Assuming fileURL is actually the S3 key
+		"s3_key":       fileURL,                            // Assuming fileURL is actually the S3 key
 		"expires_at":   time.Now().Add(7 * 24 * time.Hour), // 7 days expiry
 	}
 
@@ -388,9 +388,9 @@ func (s *Service) validateCreateExportCommand(cmd *CreateExportCommand) error {
 
 func (s *Service) createExportEvent(eventType string, export *models.Export) streaming.Event {
 	return streaming.Event{
-		Type:      eventType,
-		Stream:    "user",
-		Payload:   map[string]interface{}{
+		Type:   eventType,
+		Stream: "user",
+		Payload: map[string]interface{}{
 			"export": export,
 		},
 		Timestamp: time.Now(),
@@ -419,4 +419,3 @@ func convertStringMapToAny(input map[string]string) map[string]any {
 	}
 	return result
 }
-

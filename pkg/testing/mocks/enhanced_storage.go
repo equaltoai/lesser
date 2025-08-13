@@ -19,16 +19,16 @@ type EnhancedMockStorage struct {
 	mu sync.RWMutex
 
 	// In-memory state
-	actors           map[string]*activitypub.Actor
-	activities       map[string]*activitypub.Activity
-	objects          map[string]interface{}
-	followers        map[string][]string
-	following        map[string][]string
-	timeline         map[string][]*activitypub.Activity
-	notifications    map[string][]*storage.Notification
-	sessions         map[string]*storage.Session
-	users            map[string]*storage.User
-	
+	actors        map[string]*activitypub.Actor
+	activities    map[string]*activitypub.Activity
+	objects       map[string]interface{}
+	followers     map[string][]string
+	following     map[string][]string
+	timeline      map[string][]*activitypub.Activity
+	notifications map[string][]*storage.Notification
+	sessions      map[string]*storage.Session
+	users         map[string]*storage.User
+
 	// Behavioral controls
 	latencySimulation time.Duration
 	errorRate         float64
@@ -160,7 +160,7 @@ func (m *EnhancedMockStorage) StoreActivity(_ context.Context, activity *activit
 		if actorUsername := m.getActorUsernameFromID(activity.Actor); actorUsername != "" {
 			// Add to actor's timeline
 			m.timeline[actorUsername] = append([]*activitypub.Activity{activity}, m.timeline[actorUsername]...)
-			
+
 			// Add to followers' timelines
 			for _, follower := range m.followers[actorUsername] {
 				m.timeline[follower] = append([]*activitypub.Activity{activity}, m.timeline[follower]...)
@@ -353,9 +353,9 @@ func (m *EnhancedMockStorage) GetState() map[string]interface{} {
 // MockExternalService provides a mock for external service dependencies
 type MockExternalService struct {
 	mock.Mock
-	responses    map[string]interface{}
-	requestLog   []MockRequest
-	mu           sync.RWMutex
+	responses  map[string]interface{}
+	requestLog []MockRequest
+	mu         sync.RWMutex
 }
 
 // MockRequest represents a logged request to the mock service
@@ -402,7 +402,7 @@ func (m *MockExternalService) ClearRequestLog() {
 func (m *MockExternalService) LogRequest(method, url string, body interface{}, headers map[string]string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	m.requestLog = append(m.requestLog, MockRequest{
 		Method:    method,
 		URL:       url,
@@ -484,7 +484,7 @@ func (m *MockTestLogger) GetEntries() []LogEntry {
 func (m *MockTestLogger) GetEntriesByLevel(level string) []LogEntry {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	filtered := make([]LogEntry, 0)
 	for _, entry := range m.entries {
 		if entry.Level == level {

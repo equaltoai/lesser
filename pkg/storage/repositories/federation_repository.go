@@ -2851,16 +2851,16 @@ func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, use
 	// Query federation costs for this user within the date range
 	// Using the FederationCost model which tracks costs by user and time period
 	var costs []models.FederationCost
-	
+
 	// Build the query with user-specific partition key
 	userCostPK := fmt.Sprintf("USER_FEDERATION_COSTS#%s", userID)
-	
+
 	query := r.db.WithContext(ctx).Model(&models.FederationCost{}).
 		Where("PK", "=", userCostPK).
 		Where("SK", ">=", startTime.Format(time.RFC3339)).
 		Where("SK", "<=", endTime.Format(time.RFC3339)).
 		Limit(limit)
-	
+
 	if offset > 0 {
 		query = query.Offset(offset)
 	}

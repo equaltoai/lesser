@@ -17,20 +17,20 @@ import (
 // FederationBenchmarkSuite provides federation benchmarks
 type FederationBenchmarkSuite struct {
 	activityProcessor *mocks.MockExternalService
-	actorFactory     *factories.ActorFactory
-	activityFactory  *factories.ActivityFactory
-	testActors       []*activitypub.Actor
-	testActivities   []*activitypub.Activity
+	actorFactory      *factories.ActorFactory
+	activityFactory   *factories.ActivityFactory
+	testActors        []*activitypub.Actor
+	testActivities    []*activitypub.Activity
 }
 
 // NewFederationBenchmarkSuite creates a new federation benchmark suite
 func NewFederationBenchmarkSuite() *FederationBenchmarkSuite {
 	return &FederationBenchmarkSuite{
 		activityProcessor: mocks.NewMockExternalService(),
-		actorFactory:     factories.NewActorFactory("test.example.com"),
-		activityFactory:  factories.NewActivityFactory("test.example.com"),
-		testActors:       make([]*activitypub.Actor, 0),
-		testActivities:   make([]*activitypub.Activity, 0),
+		actorFactory:      factories.NewActorFactory("test.example.com"),
+		activityFactory:   factories.NewActivityFactory("test.example.com"),
+		testActors:        make([]*activitypub.Actor, 0),
+		testActivities:    make([]*activitypub.Activity, 0),
 	}
 }
 
@@ -39,7 +39,7 @@ func NewFederationBenchmarkSuite() *FederationBenchmarkSuite {
 func (s *FederationBenchmarkSuite) Setup(_ *testing.B) { //nolint:revive // b will be used for ReportAllocs in future
 	// Create test actors from different domains
 	domains := []string{"remote1.example.com", "remote2.example.com", "remote3.example.com"}
-	
+
 	for _, domain := range domains {
 		factory := factories.NewActorFactory(domain)
 		for i := 0; i < 50; i++ {
@@ -49,11 +49,11 @@ func (s *FederationBenchmarkSuite) Setup(_ *testing.B) { //nolint:revive // b wi
 			s.testActors = append(s.testActors, actor)
 		}
 	}
-	
+
 	// Create test activities for federation
 	for i := 0; i < 1000; i++ {
 		actor := s.testActors[i%len(s.testActors)]
-		
+
 		activity := s.activityFactory.CreateActivity(factories.ActivityOptions{
 			Type:  "Create",
 			Actor: actor.ID,
@@ -62,7 +62,7 @@ func (s *FederationBenchmarkSuite) Setup(_ *testing.B) { //nolint:revive // b wi
 				actor.ID,
 			),
 		})
-		
+
 		s.testActivities = append(s.testActivities, activity)
 	}
 }
@@ -74,7 +74,7 @@ func (s *FederationBenchmarkSuite) BenchmarkHTTPSignatureVerification(b *testing
 	if err != nil {
 		b.Fatalf("Failed to generate RSA key: %v", err)
 	}
-	
+
 	// Create test signature headers
 	testHeaders := map[string][]string{
 		"Host":           {"test.example.com"},
@@ -83,9 +83,9 @@ func (s *FederationBenchmarkSuite) BenchmarkHTTPSignatureVerification(b *testing
 		"Content-Length": {"1234"},
 		"Signature":      {"test-signature"},
 	}
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		// This would benchmark actual HTTP signature verification
 		// For now, we simulate the computational cost
@@ -93,7 +93,7 @@ func (s *FederationBenchmarkSuite) BenchmarkHTTPSignatureVerification(b *testing
 		if err != nil {
 			b.Fatalf("Failed to sign message: %v", err)
 		}
-		
+
 		// Simulate verification process
 		_ = testHeaders
 	}
@@ -102,19 +102,19 @@ func (s *FederationBenchmarkSuite) BenchmarkHTTPSignatureVerification(b *testing
 // BenchmarkActivityValidation benchmarks ActivityPub activity validation
 func (s *FederationBenchmarkSuite) BenchmarkActivityValidation(b *testing.B) {
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		activity := s.testActivities[i%len(s.testActivities)]
-		
+
 		// Benchmark activity validation
 		if activity.Type == "" {
 			b.Fatalf("Invalid activity type")
 		}
-		
+
 		if activity.Actor == "" {
 			b.Fatalf("Invalid activity actor")
 		}
-		
+
 		// Simulate more complex validation logic
 		_ = validateActivityStructure(activity)
 	}
@@ -123,12 +123,12 @@ func (s *FederationBenchmarkSuite) BenchmarkActivityValidation(b *testing.B) {
 // BenchmarkActorResolution benchmarks remote actor resolution
 func (s *FederationBenchmarkSuite) BenchmarkActorResolution(b *testing.B) {
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		actor := s.testActors[i%len(s.testActors)]
-		
+
 		// Simulate actor resolution process
 		resolved := s.resolveActor(ctx, actor.ID)
 		if resolved == nil {
@@ -140,12 +140,12 @@ func (s *FederationBenchmarkSuite) BenchmarkActorResolution(b *testing.B) {
 // BenchmarkActivityDelivery benchmarks activity delivery
 func (s *FederationBenchmarkSuite) BenchmarkActivityDelivery(b *testing.B) {
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		activity := s.testActivities[i%len(s.testActivities)]
-		
+
 		// Simulate activity delivery
 		err := s.deliverActivity(ctx, activity, "https://remote.example.com/inbox")
 		if err != nil {
@@ -157,12 +157,12 @@ func (s *FederationBenchmarkSuite) BenchmarkActivityDelivery(b *testing.B) {
 // BenchmarkInboxProcessing benchmarks inbox activity processing
 func (s *FederationBenchmarkSuite) BenchmarkInboxProcessing(b *testing.B) {
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		activity := s.testActivities[i%len(s.testActivities)]
-		
+
 		// Simulate inbox processing
 		err := s.processInboxActivity(ctx, activity)
 		if err != nil {
@@ -174,18 +174,18 @@ func (s *FederationBenchmarkSuite) BenchmarkInboxProcessing(b *testing.B) {
 // BenchmarkWebfingerLookup benchmarks WebFinger lookups
 func (s *FederationBenchmarkSuite) BenchmarkWebfingerLookup(b *testing.B) {
 	ctx := context.Background()
-	
+
 	webfingerTargets := []string{
 		"acct:user1@remote1.example.com",
-		"acct:user2@remote2.example.com", 
+		"acct:user2@remote2.example.com",
 		"acct:user3@remote3.example.com",
 	}
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		target := webfingerTargets[i%len(webfingerTargets)]
-		
+
 		// Simulate WebFinger lookup
 		result := s.performWebfingerLookup(ctx, target)
 		if result == nil {
@@ -197,12 +197,12 @@ func (s *FederationBenchmarkSuite) BenchmarkWebfingerLookup(b *testing.B) {
 // BenchmarkFederationCaching benchmarks federation data caching
 func (s *FederationBenchmarkSuite) BenchmarkFederationCaching(b *testing.B) {
 	cache := make(map[string]*activitypub.Actor, 1000)
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		actor := s.testActors[i%len(s.testActors)]
-		
+
 		// Simulate cache lookup
 		if cached, exists := cache[actor.ID]; exists {
 			_ = cached
@@ -217,14 +217,14 @@ func (s *FederationBenchmarkSuite) BenchmarkFederationCaching(b *testing.B) {
 func (s *FederationBenchmarkSuite) BenchmarkBatchActivityProcessing(b *testing.B) {
 	ctx := context.Background()
 	batchSizes := []int{10, 50, 100, 500}
-	
+
 	for _, batchSize := range batchSizes {
 		b.Run(fmt.Sprintf("Batch%d", batchSize), func(b *testing.B) {
 			b.ResetTimer()
-			
+
 			for i := 0; i < b.N; i++ {
 				batch := s.testActivities[i*batchSize : (i*batchSize)+batchSize]
-				
+
 				// Process batch of activities
 				for _, activity := range batch {
 					err := s.processInboxActivity(ctx, activity)
@@ -240,20 +240,20 @@ func (s *FederationBenchmarkSuite) BenchmarkBatchActivityProcessing(b *testing.B
 // BenchmarkConcurrentFederation benchmarks concurrent federation operations
 func (s *FederationBenchmarkSuite) BenchmarkConcurrentFederation(b *testing.B) {
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
-	
+
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
 			activity := s.testActivities[i%len(s.testActivities)]
-			
+
 			// Simulate concurrent federation processing
 			err := s.processInboxActivity(ctx, activity)
 			if err != nil {
 				b.Fatalf("Concurrent federation processing failed: %v", err)
 			}
-			
+
 			i++
 		}
 	})
@@ -269,12 +269,12 @@ func (s *FederationBenchmarkSuite) BenchmarkRemoteInstanceDiscovery(b *testing.B
 		"remote4.example.com",
 		"remote5.example.com",
 	}
-	
+
 	b.ResetTimer()
-	
+
 	for i := 0; i < b.N; i++ {
 		instance := instances[i%len(instances)]
-		
+
 		// Simulate instance discovery
 		info := s.discoverInstance(ctx, instance)
 		if info == nil {
@@ -289,7 +289,7 @@ func validateActivityStructure(activity *activitypub.Activity) bool {
 	if activity.Type == "" || activity.Actor == "" {
 		return false
 	}
-	
+
 	// Additional validation checks
 	time.Sleep(1 * time.Microsecond) // Simulate validation time
 	return true
@@ -300,14 +300,14 @@ func validateActivityStructure(activity *activitypub.Activity) bool {
 func (s *FederationBenchmarkSuite) resolveActor(_ context.Context, actorID string) *activitypub.Actor { //nolint:revive // context will be used for request cancellation
 	// Simulate network delay and processing
 	time.Sleep(5 * time.Microsecond)
-	
+
 	// Find actor in test data
 	for _, actor := range s.testActors {
 		if actor.ID == actorID {
 			return actor
 		}
 	}
-	
+
 	return nil
 }
 
@@ -316,11 +316,11 @@ func (s *FederationBenchmarkSuite) resolveActor(_ context.Context, actorID strin
 func (s *FederationBenchmarkSuite) deliverActivity(_ context.Context, activity *activitypub.Activity, inbox string) error { //nolint:revive // context will be used for HTTP timeouts
 	// Simulate HTTP request processing time
 	time.Sleep(10 * time.Microsecond)
-	
+
 	s.activityProcessor.LogRequest("POST", inbox, activity, map[string]string{
 		"Content-Type": "application/activity+json",
 	})
-	
+
 	return nil
 }
 
@@ -329,7 +329,7 @@ func (s *FederationBenchmarkSuite) deliverActivity(_ context.Context, activity *
 func (s *FederationBenchmarkSuite) processInboxActivity(_ context.Context, activity *activitypub.Activity) error { //nolint:revive // context will be used for transactions
 	// Simulate activity processing
 	time.Sleep(2 * time.Microsecond)
-	
+
 	switch activity.Type {
 	case "Create", "Update", "Delete":
 		// Object processing
@@ -338,10 +338,10 @@ func (s *FederationBenchmarkSuite) processInboxActivity(_ context.Context, activ
 		// Relationship processing
 		time.Sleep(500 * time.Nanosecond)
 	case "Like", "Announce", "Undo":
-		// Interaction processing  
+		// Interaction processing
 		time.Sleep(300 * time.Nanosecond)
 	}
-	
+
 	return nil
 }
 
@@ -350,7 +350,7 @@ func (s *FederationBenchmarkSuite) processInboxActivity(_ context.Context, activ
 func (s *FederationBenchmarkSuite) performWebfingerLookup(_ context.Context, resource string) map[string]interface{} { //nolint:revive // context will be used for HTTP client
 	// Simulate WebFinger lookup delay
 	time.Sleep(15 * time.Microsecond)
-	
+
 	return map[string]interface{}{
 		"subject": resource,
 		"links": []interface{}{
@@ -368,11 +368,11 @@ func (s *FederationBenchmarkSuite) performWebfingerLookup(_ context.Context, res
 func (s *FederationBenchmarkSuite) discoverInstance(_ context.Context, domain string) map[string]interface{} { //nolint:revive // context will be used for discovery
 	// Simulate instance discovery
 	time.Sleep(20 * time.Microsecond)
-	
+
 	return map[string]interface{}{
-		"domain":     domain,
-		"version":    "4.0.0",
-		"title":      fmt.Sprintf("Test Instance %s", domain),
+		"domain":            domain,
+		"version":           "4.0.0",
+		"title":             fmt.Sprintf("Test Instance %s", domain),
 		"short_description": "A test instance for benchmarking",
 	}
 }
@@ -380,7 +380,7 @@ func (s *FederationBenchmarkSuite) discoverInstance(_ context.Context, domain st
 // RunAllFederationBenchmarks runs all federation benchmarks
 func (s *FederationBenchmarkSuite) RunAllFederationBenchmarks(b *testing.B) {
 	s.Setup(b)
-	
+
 	benchmarks := []struct {
 		name string
 		fn   func(*testing.B)
@@ -396,7 +396,7 @@ func (s *FederationBenchmarkSuite) RunAllFederationBenchmarks(b *testing.B) {
 		{"ConcurrentFederation", s.BenchmarkConcurrentFederation},
 		{"RemoteInstanceDiscovery", s.BenchmarkRemoteInstanceDiscovery},
 	}
-	
+
 	for _, benchmark := range benchmarks {
 		b.Run(benchmark.name, benchmark.fn)
 	}

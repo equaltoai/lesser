@@ -82,7 +82,7 @@ const (
 
 	// EventTypeMetricsUpdate represents real-time metrics update events for GraphQL subscriptions
 	EventTypeMetricsUpdate EventType = "metrics.update"
-	
+
 	// EventTypeFederationHealthUpdate represents federation health update events
 	EventTypeFederationHealthUpdate EventType = "federation.health.update"
 	// EventTypeFederationFailure represents federation failure events

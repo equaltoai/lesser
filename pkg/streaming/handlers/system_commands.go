@@ -284,7 +284,7 @@ func (sch *SystemCommandHandler) handleRemoveFromList(ctx context.Context, conn 
 // Media Command Handlers
 
 // handleUploadMedia handles media upload (returns not supported for WebSocket)
-func (sch *SystemCommandHandler) handleUploadMedia(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (sch *SystemCommandHandler) handleUploadMedia(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -395,7 +395,7 @@ func (sch *SystemCommandHandler) handleDismissNotification(ctx context.Context, 
 }
 
 // handleSubscribeTimeline handles subscribing to a timeline for real-time updates
-func (sch *SystemCommandHandler) handleSubscribeTimeline(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (sch *SystemCommandHandler) handleSubscribeTimeline(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -445,7 +445,7 @@ func (sch *SystemCommandHandler) handleSubscribeTimeline(ctx context.Context, co
 }
 
 // handleUnsubscribeTimeline handles unsubscribing from a timeline
-func (sch *SystemCommandHandler) handleUnsubscribeTimeline(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (sch *SystemCommandHandler) handleUnsubscribeTimeline(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -482,7 +482,7 @@ func (sch *SystemCommandHandler) handleUnsubscribeTimeline(ctx context.Context, 
 }
 
 // handleGetServerInfo returns server information
-func (sch *SystemCommandHandler) handleGetServerInfo(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (sch *SystemCommandHandler) handleGetServerInfo(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	// Server info doesn't require authentication
 	
 	// Get server configuration and stats

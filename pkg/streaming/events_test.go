@@ -165,8 +165,8 @@ func TestNewMuteEvent(t *testing.T) {
 
 func TestNewNotificationCreatedEvent(t *testing.T) {
 	notificationData := map[string]interface{}{
-		"actor":      "alice",
-		"status_id":  "123",
+		"actor":     "alice",
+		"status_id": "123",
 	}
 
 	event := NewNotificationCreatedEvent("notif123", "bob", "mention", notificationData)
@@ -193,8 +193,8 @@ func TestNewConversationUpdatedEvent(t *testing.T) {
 
 func TestNewListUpdatedEvent(t *testing.T) {
 	listData := map[string]interface{}{
-		"title":           "My List",
-		"replies_policy":  "followed",
+		"title":          "My List",
+		"replies_policy": "followed",
 	}
 
 	event := NewListUpdatedEvent("list123", "alice", listData)
@@ -311,11 +311,11 @@ func TestIsValidStreamName(t *testing.T) {
 
 	// Test invalid stream names
 	invalidStreams := []string{
-		"", // empty
-		"invalid", // unknown base stream
-		"hashtag:", // missing hashtag name
-		"list:", // missing list ID
-		"user:", // missing user ID
+		"",              // empty
+		"invalid",       // unknown base stream
+		"hashtag:",      // missing hashtag name
+		"list:",         // missing list ID
+		"user:",         // missing user ID
 		"conversation:", // missing conversation ID
 		"random:stream", // unknown prefix
 	}

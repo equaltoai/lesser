@@ -46,7 +46,7 @@ func NewBusinessLogicService(
 ) BusinessLogicService {
 	logger := deps.Logger.(*zap.Logger)
 	storage := CreateStorageAdapter(deps.Repos)
-	
+
 	return &businessLogicService{
 		deps:       deps,
 		storage:    storage,
@@ -360,7 +360,7 @@ func (s *businessLogicService) handleScheduledPost(ctx context.Context, user *Us
 
 	// Create the Note object (but don't publish yet)
 	note, hashtags := s.createNoteFromInput(input, actor, now)
-	
+
 	// Generate scheduled status ID
 	scheduledStatusID := fmt.Sprintf("%s/scheduled_statuses/%s-%d", s.deps.Config.BaseURL, user.Username, now.Unix())
 
@@ -493,11 +493,11 @@ func (s *businessLogicService) processContentAndEmojis(_ context.Context, note *
 	// Parse emojis from note content
 	// For now, we'll use basic emoji parsing without the full parser
 	// since it requires repository access we may not have in this context
-	
+
 	// Extract emoji shortcodes using regex
 	emojiRegex := regexp.MustCompile(`:([a-zA-Z0-9_]+):`)
 	matches := emojiRegex.FindAllStringSubmatch(note.Content, -1)
-	
+
 	// Build emoji tags for found shortcodes
 	// In production, these would be looked up from the database
 	for _, match := range matches {
@@ -514,7 +514,7 @@ func (s *businessLogicService) processContentAndEmojis(_ context.Context, note *
 			note.Tag = append(note.Tag, emojiTag)
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -909,7 +909,7 @@ func (s *businessLogicService) performCascadeDeletion(ctx context.Context, objec
 
 	// 4. Remove boosts/announces of this object
 	if err := s.cascadeDeleteAnnounces(ctx, objectID); err != nil {
-		s.logger.Warn("failed to cascade delete announces", 
+		s.logger.Warn("failed to cascade delete announces",
 			zap.String("object_id", objectID),
 			zap.Error(err))
 		lastErr = err
@@ -940,7 +940,7 @@ func (s *businessLogicService) performCascadeDeletion(ctx context.Context, objec
 
 	s.logger.Info("cascade deletion completed successfully",
 		zap.String("object_id", objectID))
-	
+
 	return nil
 }
 
@@ -949,26 +949,26 @@ func (s *businessLogicService) cascadeDeleteLikes(_ context.Context, objectID st
 	// This would require a method to get all likes for an object and then remove them
 	// For now, log that this should be implemented via the like repository
 	s.logger.Debug("cascade delete likes needed", zap.String("object_id", objectID))
-	
+
 	// In a full implementation, this would:
 	// 1. Query all likes for the object
 	// 2. Delete each like record
 	// 3. Update like counts
-	
+
 	return nil
 }
 
-// cascadeDeleteAnnounces removes all announces/boosts of the deleted object  
+// cascadeDeleteAnnounces removes all announces/boosts of the deleted object
 func (s *businessLogicService) cascadeDeleteAnnounces(_ context.Context, objectID string) error {
 	// This would require announce repository methods
 	s.logger.Debug("cascade delete announces needed", zap.String("object_id", objectID))
-	
+
 	// In a full implementation, this would:
 	// 1. Query all announces for the object
-	// 2. Delete each announce record  
+	// 2. Delete each announce record
 	// 3. Update boost counts
 	// 4. Remove from timelines where it was boosted
-	
+
 	return nil
 }
 
@@ -977,25 +977,25 @@ func (s *businessLogicService) handleReplyChainUpdates(_ context.Context, object
 	// For ActivityPub compliance, replies should not be deleted when parent is deleted
 	// Instead, they become "orphaned" replies
 	s.logger.Debug("handling reply chain updates", zap.String("object_id", objectID))
-	
+
 	// In a full implementation, this would:
 	// 1. Find all replies to this object
 	// 2. Update their inReplyTo field to indicate the parent is deleted
 	// 3. Optionally notify reply authors
-	
+
 	return nil
 }
 
 // removeFromUserCollections removes the object from bookmarks, pins, etc.
 func (s *businessLogicService) removeFromUserCollections(_ context.Context, objectID string) error {
 	s.logger.Debug("removing from user collections", zap.String("object_id", objectID))
-	
+
 	// This would remove the object from:
 	// 1. User bookmarks
-	// 2. Pinned posts 
+	// 2. Pinned posts
 	// 3. Featured posts
 	// 4. Any other collections containing this object
-	
+
 	return nil
 }
 
@@ -1032,12 +1032,12 @@ func (s *businessLogicService) emitUnfollowEvents(ctx context.Context, activity 
 		Stream:    fmt.Sprintf("user:%s", actor.PreferredUsername),
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
-			"activity":    activity,
-			"target_id":   activity.Object.(*activitypub.Activity).Object,
-			"unfollowed":  true,
+			"activity":   activity,
+			"target_id":  activity.Object.(*activitypub.Activity).Object,
+			"unfollowed": true,
 		},
 	}
-	
+
 	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, event); err != nil {
 		s.logger.Error("failed to emit unfollow event", zap.Error(err))
 	}
@@ -1055,7 +1055,7 @@ func (s *businessLogicService) emitUnlikeEvents(ctx context.Context, activity *a
 			"liked":     false,
 		},
 	}
-	
+
 	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, &event); err != nil {
 		s.logger.Error("failed to emit unlike event", zap.Error(err))
 	}
@@ -1073,7 +1073,7 @@ func (s *businessLogicService) emitPostUpdateEvents(ctx context.Context, activit
 			"actor":    actor,
 		},
 	}
-	
+
 	if err := s.publisher.PublishToUser(ctx, actor.PreferredUsername, &userEvent); err != nil {
 		s.logger.Error("failed to emit user update event", zap.Error(err))
 	}
@@ -1090,7 +1090,7 @@ func (s *businessLogicService) emitPostUpdateEvents(ctx context.Context, activit
 				"actor":    actor,
 			},
 		}
-		
+
 		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
 			s.logger.Error("failed to emit public update event", zap.Error(err))
 		}

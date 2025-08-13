@@ -286,7 +286,7 @@ func (s *AIAnalysisSubscription) Close() error {
 // SubscribeToAnalysisEvents creates a subscription channel for AI analysis events
 // Note: This now returns a channel that will be populated by events from the EventBus
 // The actual event publishing happens in the service layer when SaveAnalysis is called
-func (r *AIRepository) SubscribeToAnalysisEvents(ctx context.Context, userID string, objectID *string) (*AIAnalysisSubscription, error) {
+func (r *AIRepository) SubscribeToAnalysisEvents(_ context.Context, userID string, objectID *string) (*AIAnalysisSubscription, error) {
 	subscription := &AIAnalysisSubscription{
 		events: make(chan *AIAnalysisEvent, 100),
 		done:   make(chan struct{}),
@@ -296,60 +296,12 @@ func (r *AIRepository) SubscribeToAnalysisEvents(ctx context.Context, userID str
 	// The subscription channel is returned to the service layer
 	// Events will be published through the EventBus when analyses are saved
 	// The GraphQL subscription manager handles the actual EventBus integration
-	
+
 	r.logger.Info("Created AI analysis subscription channel",
 		zap.String("user_id", userID),
 		zap.Bool("filtered", objectID != nil && *objectID != ""))
-	
+
 	return subscription, nil
 }
 
 // convertAnalysisToResults converts an AI analysis model to a results map
-func (r *AIRepository) convertAnalysisToResults(analysis *models.AIAnalysis) map[string]interface{} {
-	results := make(map[string]interface{})
-	
-	if analysis.TextAnalysis != nil {
-		results["text"] = map[string]interface{}{
-			"sentiment":     analysis.TextAnalysis.Sentiment,
-			"toxicity":      analysis.TextAnalysis.ToxicityScore,
-			"contains_pii":  analysis.TextAnalysis.ContainsPII,
-			"pii_entities":  analysis.TextAnalysis.PIIEntities,
-		}
-	}
-	
-	if analysis.ImageAnalysis != nil {
-		results["image"] = map[string]interface{}{
-			"nsfw":           analysis.ImageAnalysis.IsNSFW,
-			"violence_score": analysis.ImageAnalysis.ViolenceScore,
-			"detected_text":  analysis.ImageAnalysis.DetectedText,
-			"celebrity_faces": analysis.ImageAnalysis.CelebrityFaces,
-		}
-	}
-	
-	if analysis.AIDetection != nil {
-		results["ai_detection"] = map[string]interface{}{
-			"ai_generated":        analysis.AIDetection.AIGeneratedProbability,
-			"pattern_consistency": analysis.AIDetection.PatternConsistency,
-			"style_deviation":     analysis.AIDetection.StyleDeviation,
-		}
-	}
-	
-	if analysis.SpamAnalysis != nil {
-		results["spam"] = map[string]interface{}{
-			"is_spam":    analysis.SpamAnalysis.SpamScore > 0.7,
-			"score":      analysis.SpamAnalysis.SpamScore,
-			"indicators": analysis.SpamAnalysis.SpamIndicators,
-		}
-	}
-	
-	// Add moderation recommendation
-	if analysis.ModerationAction != "" {
-		results["moderation"] = map[string]interface{}{
-			"action":     analysis.ModerationAction,
-			"confidence": analysis.Confidence,
-			"reason":     fmt.Sprintf("Overall risk: %.2f", analysis.OverallRisk),
-		}
-	}
-	
-	return results
-}

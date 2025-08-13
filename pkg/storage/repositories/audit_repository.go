@@ -30,7 +30,7 @@ func NewAuditRepository(db core.DB, logger *zap.Logger) *AuditRepository {
 func (r *AuditRepository) StoreAuditLog(ctx context.Context, log *models.AuthAuditLog) error {
 	// Update keys before saving
 	log.UpdateKeys()
-	
+
 	// Save to DynamoDB
 	if err := r.db.WithContext(ctx).Model(log).Create(); err != nil {
 		r.logger.Error("failed to store audit log",
@@ -39,129 +39,129 @@ func (r *AuditRepository) StoreAuditLog(ctx context.Context, log *models.AuthAud
 			zap.Error(err))
 		return fmt.Errorf("failed to store audit log: %w", err)
 	}
-	
+
 	return nil
 }
 
 // GetAuditLogByID retrieves an audit log by ID and date
 func (r *AuditRepository) GetAuditLogByID(ctx context.Context, id string, date time.Time) (*models.AuthAuditLog, error) {
 	var log models.AuthAuditLog
-	
+
 	pk := fmt.Sprintf("AUDIT#%s", date.Format("2006-01-02"))
 	// We need to search within the date partition for the specific ID
-	
+
 	err := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Where("PK", "=", pk).
 		Where("SK", "BEGINS_WITH", fmt.Sprintf("EVENT#%s", id)).
 		First(&log)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to get audit log: %w", err)
 	}
-	
+
 	return &log, nil
 }
 
 // GetUserAuditLogs retrieves audit logs for a specific user
 func (r *AuditRepository) GetUserAuditLogs(ctx context.Context, username string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error) {
 	var logs []*models.AuthAuditLog
-	
+
 	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-	
+
 	// Add time range filter if specified
 	if !startTime.IsZero() && !endTime.IsZero() {
 		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
 		query = query.Where("GSI1SK", ">=", startTimestamp).Where("GSI1SK", "<=", endTimestamp)
 	}
-	
+
 	// Apply limit
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	// Execute query
 	if err := query.All(&logs); err != nil {
 		return nil, fmt.Errorf("failed to get user audit logs: %w", err)
 	}
-	
+
 	return logs, nil
 }
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address
 func (r *AuditRepository) GetIPAuditLogs(ctx context.Context, ipAddress string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error) {
 	var logs []*models.AuthAuditLog
-	
+
 	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI2").
 		Where("GSI2PK", "=", fmt.Sprintf("IP#%s", ipAddress))
-	
+
 	// Add time range filter if specified
 	if !startTime.IsZero() && !endTime.IsZero() {
 		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
 		query = query.Where("GSI2SK", ">=", startTimestamp).Where("GSI2SK", "<=", endTimestamp)
 	}
-	
+
 	// Apply limit
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	// Execute query
 	if err := query.All(&logs); err != nil {
 		return nil, fmt.Errorf("failed to get IP audit logs: %w", err)
 	}
-	
+
 	return logs, nil
 }
 
 // GetSessionAuditLogs retrieves audit logs for a specific session
 func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID string) ([]*models.AuthAuditLog, error) {
 	var logs []*models.AuthAuditLog
-	
+
 	err := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI3").
 		Where("GSI3PK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
 		All(&logs)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session audit logs: %w", err)
 	}
-	
+
 	return logs, nil
 }
 
 // GetSecurityEvents retrieves security events by severity within a time range
 func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string, startTime, endTime time.Time, limit int) ([]*models.AuthAuditLog, error) {
 	var logs []*models.AuthAuditLog
-	
+
 	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
-	
+
 	// Add time range filter
 	if !startTime.IsZero() && !endTime.IsZero() {
 		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
 		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
 		query = query.Where("GSI4SK", ">=", startTimestamp).Where("GSI4SK", "<=", endTimestamp)
 	}
-	
+
 	// Apply limit
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	// Execute query
 	if err := query.All(&logs); err != nil {
 		return nil, fmt.Errorf("failed to get security events: %w", err)
 	}
-	
+
 	return logs, nil
 }
 
@@ -169,12 +169,12 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 func (r *AuditRepository) GetRecentFailedLogins(ctx context.Context, username string, duration time.Duration) (int, error) {
 	startTime := time.Now().Add(-duration)
 	endTime := time.Now()
-	
+
 	logs, err := r.GetUserAuditLogs(ctx, username, 100, startTime, endTime)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	// Count failed login events
 	count := 0
 	for _, log := range logs {
@@ -182,7 +182,7 @@ func (r *AuditRepository) GetRecentFailedLogins(ctx context.Context, username st
 			count++
 		}
 	}
-	
+
 	return count, nil
 }
 
@@ -190,12 +190,12 @@ func (r *AuditRepository) GetRecentFailedLogins(ctx context.Context, username st
 func (r *AuditRepository) GetRecentIPFailures(ctx context.Context, ipAddress string, duration time.Duration) (int, error) {
 	startTime := time.Now().Add(-duration)
 	endTime := time.Now()
-	
+
 	logs, err := r.GetIPAuditLogs(ctx, ipAddress, 100, startTime, endTime)
 	if err != nil {
 		return 0, err
 	}
-	
+
 	// Count failed events
 	count := 0
 	for _, log := range logs {
@@ -203,7 +203,7 @@ func (r *AuditRepository) GetRecentIPFailures(ctx context.Context, ipAddress str
 			count++
 		}
 	}
-	
+
 	return count, nil
 }
 
@@ -212,25 +212,25 @@ func (r *AuditRepository) GetRecentIPFailures(ctx context.Context, ipAddress str
 func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int) error {
 	// TTL is handled by DynamoDB automatically
 	// This method is here for manual cleanup if needed
-	
+
 	cutoffDate := time.Now().AddDate(0, 0, -retentionDays)
-	
+
 	// Query old logs by date partition
 	for i := 0; i < retentionDays; i++ {
 		date := cutoffDate.AddDate(0, 0, -i)
 		pk := fmt.Sprintf("AUDIT#%s", date.Format("2006-01-02"))
-		
+
 		// Delete all items with this PK
 		// Note: This would need to be done in batches for large datasets
 		var logs []*models.AuthAuditLog
 		err := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 			Where("PK", "=", pk).
 			All(&logs)
-		
+
 		if err != nil {
 			continue // Skip if no logs for this date
 		}
-		
+
 		// Delete each log
 		for _, log := range logs {
 			if err := r.db.WithContext(ctx).Model(log).Delete(); err != nil {
@@ -241,7 +241,7 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -257,28 +257,28 @@ func (r *AuditRepository) StoreAuditEvent(ctx context.Context, eventType, severi
 			metadataStr = string(data)
 		}
 	}
-	
+
 	// Generate unique ID
 	id := fmt.Sprintf("%d-%s", time.Now().UnixNano(), generateAuditID(8))
-	
+
 	log := &models.AuthAuditLog{
-		ID:            id,
-		Timestamp:     time.Now().UTC(),
-		EventType:     eventType,
-		Severity:      severity,
-		Username:      username,
-		UserID:        userID,
-		IPAddress:     ipAddress,
-		UserAgent:     userAgent,
-		DeviceName:    deviceName,
-		SessionID:     sessionID,
-		RequestID:     requestID,
-		Success:       success,
-		FailureReason: failureReason,
-		Metadata:      metadataStr,
+		ID:                id,
+		Timestamp:         time.Now().UTC(),
+		EventType:         eventType,
+		Severity:          severity,
+		Username:          username,
+		UserID:            userID,
+		IPAddress:         ipAddress,
+		UserAgent:         userAgent,
+		DeviceName:        deviceName,
+		SessionID:         sessionID,
+		RequestID:         requestID,
+		Success:           success,
+		FailureReason:     failureReason,
+		Metadata:          metadataStr,
 		DataRetentionDays: 90, // Default retention
 	}
-	
+
 	return r.StoreAuditLog(ctx, log)
 }
 

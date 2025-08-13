@@ -393,7 +393,7 @@ func (r *NotificationRepository) GetPendingPushNotifications(ctx context.Context
 	// Generate next cursor
 	if len(notifications) > opts.Limit {
 		// We got more results than requested, so there are more pages
-		result.NextCursor = fmt.Sprintf("%d", notifications[opts.Limit-1].CreatedAt)
+		result.NextCursor = fmt.Sprintf("%d", notifications[opts.Limit-1].CreatedAt.Unix())
 		result.HasMore = true
 		notifications = notifications[:opts.Limit] // Trim to requested limit
 	}
@@ -662,34 +662,34 @@ func (r *NotificationRepository) GetNotificationsFiltered(ctx context.Context, u
 	if l, ok := filter["limit"].(int); ok && l > 0 && l <= 100 {
 		limit = l
 	}
-	
+
 	cursor := ""
 	if c, ok := filter["cursor"].(string); ok {
 		cursor = c
 	}
-	
+
 	notificationType := ""
 	if t, ok := filter["types"].([]string); ok && len(t) > 0 {
 		notificationType = t[0] // Use first type for simplicity
 	}
-	
+
 	includeRead := true
 	if ir, ok := filter["include_read"].(bool); ok {
 		includeRead = ir
 	}
-	
+
 	// Build pagination options
 	opts := interfaces.PaginationOptions{
 		Limit:  limit,
 		Cursor: cursor,
 	}
-	
+
 	// Get notifications
 	result, err := r.GetUserNotifications(ctx, username, opts)
 	if err != nil {
 		return nil, "", err
 	}
-	
+
 	// Filter results based on criteria
 	filtered := make([]*models.Notification, 0, len(result.Items))
 	for _, notification := range result.Items {
@@ -697,15 +697,15 @@ func (r *NotificationRepository) GetNotificationsFiltered(ctx context.Context, u
 		if !includeRead && notification.IsRead {
 			continue
 		}
-		
+
 		// Filter by type
 		if notificationType != "" && notification.Type != notificationType {
 			continue
 		}
-		
+
 		filtered = append(filtered, notification)
 	}
-	
+
 	return filtered, result.NextCursor, nil
 }
 
@@ -717,7 +717,7 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 	if err != nil {
 		return 0, fmt.Errorf("failed to get notifications: %w", err)
 	}
-	
+
 	deleted := 0
 	for _, notification := range result.Items {
 		if notification.CreatedAt.Before(olderThan) {
@@ -730,44 +730,43 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 			deleted++
 		}
 	}
-	
+
 	return deleted, nil
 }
-
 
 // GetNotificationsAdvanced retrieves notifications with advanced filtering options
 func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, userID string, filters map[string]interface{}, pagination interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
 	query := r.db.WithContext(ctx).Model(&models.Notification{}).
 		Index("user-notifications-index").
 		Filter("UserID", "=", userID)
-	
+
 	// Apply additional filters
 	for key, value := range filters {
 		query = query.Filter(key, "=", value)
 	}
-	
+
 	// Apply pagination with limit
 	if pagination.Limit > 0 {
 		query = query.Limit(pagination.Limit)
 	} else {
 		query = query.Limit(20) // Default limit
 	}
-	
+
 	result := &interfaces.PaginatedResult[*models.Notification]{
 		Items: []*models.Notification{},
 	}
-	
+
 	var notifications []*models.Notification
 	err := query.Scan(&notifications)
 	if err != nil && !errors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to query notifications: %w", err)
 	}
-	
+
 	result.Items = notifications
 	// For now, simple pagination - could enhance with cursor later
 	result.HasMore = len(notifications) == pagination.Limit
 	result.Total = int64(len(notifications))
-	
+
 	return result, nil
 }
 
@@ -777,7 +776,7 @@ func (r *NotificationRepository) GetNotificationPreferences(ctx context.Context,
 	err := r.db.WithContext(ctx).Model(&models.NotificationPreferences{}).
 		Filter("Username", "=", userID).
 		First(&prefs)
-	
+
 	if errors.IsNotFound(err) {
 		// Return default preferences if not found
 		return &models.NotificationPreferences{
@@ -794,23 +793,23 @@ func (r *NotificationRepository) GetNotificationPreferences(ctx context.Context,
 			FavoriteNotifications: true,
 		}, nil
 	}
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get notification preferences: %w", err)
 	}
-	
+
 	return &prefs, nil
 }
 
 // UpdateNotificationPreferences updates notification preferences for a user
 func (r *NotificationRepository) UpdateNotificationPreferences(ctx context.Context, prefs *models.NotificationPreferences) error {
 	prefs.UpdateKeys()
-	
+
 	err := r.db.WithContext(ctx).Model(prefs).Update()
 	if err != nil {
 		return fmt.Errorf("failed to update notification preferences: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -820,7 +819,7 @@ func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("failed to get notification preferences: %w", err)
 	}
-	
+
 	// Update the specific preference
 	switch preferenceType {
 	case "email_follow":
@@ -844,6 +843,6 @@ func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, 
 	default:
 		return fmt.Errorf("unknown preference type: %s", preferenceType)
 	}
-	
+
 	return r.UpdateNotificationPreferences(ctx, prefs)
 }

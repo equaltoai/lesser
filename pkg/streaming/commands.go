@@ -19,17 +19,17 @@ type Command struct {
 
 // CommandResponse represents a WebSocket command response
 type CommandResponse struct {
-	ID      string                 `json:"id"`      // Matching client ID
-	Type    string                 `json:"type"`    // Response type (e.g., "command_result", "command_error")
-	Success bool                   `json:"success"` // Whether command succeeded
-	Data    map[string]interface{} `json:"data"`    // Response data
+	ID      string                 `json:"id"`              // Matching client ID
+	Type    string                 `json:"type"`            // Response type (e.g., "command_result", "command_error")
+	Success bool                   `json:"success"`         // Whether command succeeded
+	Data    map[string]interface{} `json:"data"`            // Response data
 	Error   *CommandError          `json:"error,omitempty"` // Error details if failed
 }
 
 // CommandError represents an error in command execution
 type CommandError struct {
-	Code    string `json:"code"`    // Error code
-	Message string `json:"message"` // Human-readable error message
+	Code    string `json:"code"`              // Error code
+	Message string `json:"message"`           // Human-readable error message
 	Details string `json:"details,omitempty"` // Additional error details
 }
 
@@ -44,12 +44,12 @@ type CommandHandler interface {
 
 // ConnectionInfo contains information about the WebSocket connection
 type ConnectionInfo struct {
-	ConnectionID string   `json:"connection_id"`
-	UserID       string   `json:"user_id"`
-	Username     string   `json:"username"`
-	Streams      []string `json:"streams"`
-	IsAuthenticated bool  `json:"is_authenticated"`
-	Metadata     map[string]interface{} `json:"metadata"` // For storing connection-specific data
+	ConnectionID    string                 `json:"connection_id"`
+	UserID          string                 `json:"user_id"`
+	Username        string                 `json:"username"`
+	Streams         []string               `json:"streams"`
+	IsAuthenticated bool                   `json:"is_authenticated"`
+	Metadata        map[string]interface{} `json:"metadata"` // For storing connection-specific data
 }
 
 // ServiceRegistry defines the interface needed by command handlers
@@ -90,7 +90,7 @@ func (cr *CommandRouter) RegisterHandler(handler CommandHandler) {
 // HandleCommand routes a command to the appropriate handler
 func (cr *CommandRouter) HandleCommand(ctx context.Context, conn *ConnectionInfo, cmd *Command) (*CommandResponse, error) {
 	start := time.Now()
-	
+
 	cr.logger.Info("handling WebSocket command",
 		zap.String("command_id", cmd.ID),
 		zap.String("command_type", cmd.Type),
@@ -105,26 +105,26 @@ func (cr *CommandRouter) HandleCommand(ctx context.Context, conn *ConnectionInfo
 			Message: fmt.Sprintf("Command type '%s' is not supported", cmd.Type),
 			Details: "Available commands: " + cr.getSupportedCommandsList(),
 		}
-		
+
 		response := &CommandResponse{
 			ID:      cmd.ID,
 			Type:    "command_error",
 			Success: false,
 			Error:   err,
 		}
-		
+
 		cr.logger.Warn("unsupported command type",
 			zap.String("command_id", cmd.ID),
 			zap.String("command_type", cmd.Type),
 			zap.Duration("duration", time.Since(start)))
-		
+
 		return response, nil
 	}
 
 	// Execute command with the handler
 	response, err := handler.HandleCommand(ctx, conn, cmd)
 	duration := time.Since(start)
-	
+
 	if err != nil {
 		cr.logger.Error("command handler failed",
 			zap.String("command_id", cmd.ID),
@@ -132,7 +132,7 @@ func (cr *CommandRouter) HandleCommand(ctx context.Context, conn *ConnectionInfo
 			zap.String("handler", fmt.Sprintf("%T", handler)),
 			zap.Error(err),
 			zap.Duration("duration", duration))
-		
+
 		// Create error response if handler didn't provide one
 		if response == nil {
 			response = &CommandResponse{
@@ -172,7 +172,7 @@ func (cr *CommandRouter) getSupportedCommandsList() string {
 	if len(commands) == 0 {
 		return "none"
 	}
-	
+
 	result := ""
 	for i, cmd := range commands {
 		if i > 0 {
@@ -185,7 +185,7 @@ func (cr *CommandRouter) getSupportedCommandsList() string {
 
 // BaseCommandHandler provides common functionality for command handlers
 type BaseCommandHandler struct {
-	logger   *zap.Logger
+	logger *zap.Logger
 }
 
 // NewBaseCommandHandler creates a new base command handler
@@ -195,7 +195,7 @@ func NewBaseCommandHandler(logger *zap.Logger) *BaseCommandHandler {
 	}
 
 	return &BaseCommandHandler{
-		logger:   logger,
+		logger: logger,
 	}
 }
 
@@ -226,7 +226,7 @@ func (bch *BaseCommandHandler) CreateErrorResponse(commandID string, code string
 // RequireAuth checks if the connection is authenticated
 func (bch *BaseCommandHandler) RequireAuth(conn *ConnectionInfo, commandID string) *CommandResponse {
 	if !conn.IsAuthenticated || conn.UserID == "" {
-		return bch.CreateErrorResponse(commandID, "AUTHENTICATION_REQUIRED", 
+		return bch.CreateErrorResponse(commandID, "AUTHENTICATION_REQUIRED",
 			"This command requires authentication", "Please authenticate before using this command")
 	}
 	return nil
@@ -235,18 +235,18 @@ func (bch *BaseCommandHandler) RequireAuth(conn *ConnectionInfo, commandID strin
 // ValidatePayload validates that required fields are present in the command payload
 func (bch *BaseCommandHandler) ValidatePayload(payload map[string]interface{}, required []string, commandID string) *CommandResponse {
 	missing := make([]string, 0)
-	
+
 	for _, field := range required {
 		if _, exists := payload[field]; !exists {
 			missing = append(missing, field)
 		}
 	}
-	
+
 	if len(missing) > 0 {
 		return bch.CreateErrorResponse(commandID, "VALIDATION_ERROR",
 			"Required fields missing", fmt.Sprintf("Missing fields: %v", missing))
 	}
-	
+
 	return nil
 }
 
@@ -309,13 +309,13 @@ func (bch *BaseCommandHandler) ConvertToJSON(data interface{}) (map[string]inter
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal data: %w", err)
 	}
-	
+
 	// Then unmarshal to map[string]interface{}
 	var result map[string]interface{}
 	err = json.Unmarshal(jsonBytes, &result)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal to map: %w", err)
 	}
-	
+
 	return result, nil
 }

@@ -22,11 +22,11 @@ import (
 
 // Service provides media operations
 type Service struct {
-	mediaRepo  interfaces.MediaRepository
-	publisher  streaming.Publisher
-	logger     *zap.Logger
-	s3Bucket   string
-	cdnDomain  string
+	mediaRepo   interfaces.MediaRepository
+	publisher   streaming.Publisher
+	logger      *zap.Logger
+	s3Bucket    string
+	cdnDomain   string
 	maxFileSize int64 // Maximum file size in bytes
 }
 
@@ -84,9 +84,9 @@ type UploadMediaCommand struct {
 // UpdateMediaCommand contains all data needed to update media metadata
 type UpdateMediaCommand struct {
 	MediaID     string `json:"media_id" validate:"required"`
-	UserID      string `json:"user_id" validate:"required"`  // Must be the media owner
+	UserID      string `json:"user_id" validate:"required"`     // Must be the media owner
 	Description string `json:"description" validate:"max=1500"` // Alt text
-	Focus       string `json:"focus"`                            // Focus point for cropping (x,y)
+	Focus       string `json:"focus"`                           // Focus point for cropping (x,y)
 }
 
 // GetMediaQuery contains parameters for retrieving media
@@ -99,13 +99,13 @@ type GetMediaQuery struct {
 
 // Result contains media and associated events that were emitted
 type Result struct {
-	Media  *models.Media       `json:"media"`
+	Media  *models.Media      `json:"media"`
 	Events []*streaming.Event `json:"events"`
 }
 
 // UpdateResult contains updated media and events
 type UpdateResult struct {
-	Media  *models.Media       `json:"media"`
+	Media  *models.Media      `json:"media"`
 	Events []*streaming.Event `json:"events"`
 }
 
@@ -139,7 +139,7 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	s3Key := s.generateS3Key(media.MediaID, cmd.FileName)
 	media.S3Bucket = s.s3Bucket
 	media.S3Key = s3Key
-	
+
 	// Generate CDN URL
 	if s.cdnDomain != "" {
 		media.CDNUrl = fmt.Sprintf("https://%s/%s", s.cdnDomain, s3Key)
@@ -354,7 +354,7 @@ func (s *Service) isValidMediaType(contentType string) bool {
 
 func (s *Service) validateFileExtension(fileName, contentType string) bool {
 	ext := strings.ToLower(filepath.Ext(fileName))
-	
+
 	// Get expected MIME type from extension
 	expectedType := mime.TypeByExtension(ext)
 	if expectedType == "" {
@@ -512,7 +512,7 @@ func (s *Service) queueMediaProcessing(_ context.Context, media *models.Media) {
 
 	// Queue different processing based on media type
 	if media.IsImage() {
-		s.logger.Debug("queuing image processing (thumbnails, blurhash)", 
+		s.logger.Debug("queuing image processing (thumbnails, blurhash)",
 			zap.String("media_id", media.MediaID))
 	} else if media.IsVideo() {
 		s.logger.Debug("queuing video processing (thumbnails, transcoding)",
@@ -645,7 +645,7 @@ func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.M
 					Width:         variant.Width,
 					Height:        variant.Height,
 					BitsPerSecond: int(variant.FileSize * 8 / int64(media.Duration)), // Rough estimate
-					Codec:         "h264", // Default codec
+					Codec:         "h264",                                            // Default codec
 				}
 				bitrates = append(bitrates, bitrate)
 			}

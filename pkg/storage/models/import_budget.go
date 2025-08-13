@@ -34,18 +34,18 @@ type ImportBudget struct {
 	ExportCount int64 `json:"export_count"` // Number of exports this period
 
 	// Alert configuration
-	AlertThresholdPercent float64 `json:"alert_threshold_percent"` // Alert when usage exceeds this percentage
-	AlertSendingEnabled   bool    `json:"alert_sending_enabled"`   // Whether to send alerts
+	AlertThresholdPercent float64    `json:"alert_threshold_percent"`   // Alert when usage exceeds this percentage
+	AlertSendingEnabled   bool       `json:"alert_sending_enabled"`     // Whether to send alerts
 	LastAlertSent         *time.Time `json:"last_alert_sent,omitempty"` // When last alert was sent
 
 	// Status tracking
-	IsActive              bool       `json:"is_active"`                     // Whether budget enforcement is active
-	LastImportAt          *time.Time `json:"last_import_at,omitempty"`      // When last import occurred
-	LastExportAt          *time.Time `json:"last_export_at,omitempty"`      // When last export occurred
-	PeriodStart           time.Time  `json:"period_start"`                  // Start of current budget period
-	PeriodEnd             time.Time  `json:"period_end"`                    // End of current budget period
-	NextResetAt           time.Time  `json:"next_reset_at"`                 // When budget will reset
-	LastResetAt           *time.Time `json:"last_reset_at,omitempty"`       // When budget was last reset
+	IsActive     bool       `json:"is_active"`                // Whether budget enforcement is active
+	LastImportAt *time.Time `json:"last_import_at,omitempty"` // When last import occurred
+	LastExportAt *time.Time `json:"last_export_at,omitempty"` // When last export occurred
+	PeriodStart  time.Time  `json:"period_start"`             // Start of current budget period
+	PeriodEnd    time.Time  `json:"period_end"`               // End of current budget period
+	NextResetAt  time.Time  `json:"next_reset_at"`            // When budget will reset
+	LastResetAt  *time.Time `json:"last_reset_at,omitempty"`  // When budget was last reset
 
 	// TTL for automatic cleanup
 	TTL int64 `json:"ttl,omitempty"`
@@ -188,7 +188,7 @@ func (b *ImportBudget) NeedsReset() bool {
 // Reset resets the budget for a new period
 func (b *ImportBudget) Reset() {
 	now := time.Now()
-	
+
 	// Reset usage counters
 	b.CurrentImportCost = 0
 	b.CurrentExportCost = 0

@@ -40,7 +40,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 
 	// Extract status ID from object ID
 	statusID = strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
-	
+
 	// Get the note using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
@@ -154,7 +154,7 @@ func (h *Handler) normalizeStatusIDForHistory(statusID string) string {
 func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any, error) {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
-	
+
 	// Get the note using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
@@ -199,7 +199,7 @@ func (h *Handler) extractAttributedTo(obj any) string {
 func (h *Handler) fetchEditHistory(ctx *lift.Context, objectID string) []*storage.UpdateHistory {
 	// Extract status ID from object ID
 	statusID := strings.TrimPrefix(objectID, h.cfg.BaseURL()+"/objects/")
-	
+
 	// Get update history using Notes service
 	result, err := h.registry.Notes().GetUpdateHistory(ctx.Context, &notes.GetUpdateHistoryQuery{
 		StatusID: statusID,

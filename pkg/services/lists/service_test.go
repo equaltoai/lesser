@@ -580,9 +580,9 @@ func TestAddToList_Success(t *testing.T) {
 
 	existingList := createTestList()
 	cmd := &AddToListCommand{
-		ListID:        "test_list_123",
+		ListID:         "test_list_123",
 		MemberUsername: "newmember",
-		AdderID:       "testuser",
+		AdderID:        "testuser",
 	}
 
 	listRepo.On("GetList", ctx, "test_list_123").Return(existingList, nil)
@@ -610,9 +610,9 @@ func TestAddToList_AlreadyMember(t *testing.T) {
 
 	existingList := createTestList()
 	cmd := &AddToListCommand{
-		ListID:        "test_list_123",
+		ListID:         "test_list_123",
 		MemberUsername: "existingmember",
-		AdderID:       "testuser",
+		AdderID:        "testuser",
 	}
 
 	listRepo.On("GetList", ctx, "test_list_123").Return(existingList, nil)
@@ -639,9 +639,9 @@ func TestRemoveFromList_Success(t *testing.T) {
 
 	existingList := createTestList()
 	cmd := &RemoveFromListCommand{
-		ListID:        "test_list_123",
+		ListID:         "test_list_123",
 		MemberUsername: "existingmember",
-		RemoverID:     "testuser",
+		RemoverID:      "testuser",
 	}
 
 	listRepo.On("GetList", ctx, "test_list_123").Return(existingList, nil)
@@ -669,9 +669,9 @@ func TestRemoveFromList_NotMember(t *testing.T) {
 
 	existingList := createTestList()
 	cmd := &RemoveFromListCommand{
-		ListID:        "test_list_123",
+		ListID:         "test_list_123",
 		MemberUsername: "nonmember",
-		RemoverID:     "testuser",
+		RemoverID:      "testuser",
 	}
 
 	listRepo.On("GetList", ctx, "test_list_123").Return(existingList, nil)

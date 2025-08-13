@@ -413,7 +413,7 @@ func (r *SearchRepository) SearchStatusesWithPrivacyPaginated(ctx context.Contex
 	// Get results without privacy filtering first (get more to account for filtering)
 	originalLimit := options.Limit
 	options.Limit = originalLimit * 3 // Get more results to account for privacy filtering
-	
+
 	results, _, err := r.SearchStatusesWithOptionsPaginated(ctx, query, options)
 	if err != nil {
 		return nil, nil, err
@@ -512,14 +512,14 @@ func (r *SearchRepository) isStatusPrivate(_ *storage.StatusSearchResult) bool {
 	// For now, we need to query the full status to check visibility
 	// In a real implementation, you might want to include visibility in the search result
 	// or index only public/unlisted content
-	
+
 	// We can make reasonable inferences from the content and context
 	// Direct messages typically have very few recipients and specific patterns
 	// Private posts are typically from followers-only accounts or have limited addressing
-	
+
 	// For safety, we'll be conservative and allow content that's likely public
 	// This is a placeholder - ideally we'd have visibility info in the search index
-	
+
 	return false // Allow all content for now - this should be enhanced with proper visibility checking
 }
 
@@ -1645,7 +1645,7 @@ func (r *SearchRepository) privacyFilterAnalyticsEvent(event *models.SearchAnaly
 // isSensitiveQuery checks if a query contains sensitive information
 func (r *SearchRepository) isSensitiveQuery(query string) bool {
 	query = strings.ToLower(query)
-	
+
 	// Check for email patterns
 	if strings.Contains(query, "@") && strings.Contains(query, ".") {
 		return true
@@ -1669,7 +1669,7 @@ func (r *SearchRepository) isSensitiveQuery(query string) bool {
 // isPersonalQuery checks if a query might be personal/private
 func (r *SearchRepository) isPersonalQuery(query string) bool {
 	query = strings.ToLower(query)
-	
+
 	// Queries that might be personal searches
 	personalIndicators := []string{
 		"direct", "private", "dm", "message",
@@ -1691,11 +1691,11 @@ func (r *SearchRepository) hashQuery(query string) string {
 	if len(query) == 0 {
 		return "[empty]"
 	}
-	
+
 	if len(query) <= 3 {
 		return "[short]"
 	}
-	
+
 	// Return first 2 chars + hash of the rest for trending analysis
 	return fmt.Sprintf("%s_hash_%d", query[:2], len(query))
 }

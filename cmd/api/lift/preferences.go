@@ -141,7 +141,6 @@ func (h *Handler) getPreferencesTestUsername(ctx *lift.Context) string {
 	return testUsername
 }
 
-
 // parsePreferencesUpdateRequest parses the preferences update request
 func (h *Handler) parsePreferencesUpdateRequest(ctx *lift.Context) (map[string]interface{}, error) {
 	var updateReq map[string]interface{}
@@ -177,7 +176,7 @@ func (h *Handler) getOrCreateUserPreferences(ctx *lift.Context, username string)
 		h.logger.Warn("failed to get existing preferences, using defaults", zap.Error(err))
 		return h.createDefaultPreferences()
 	}
-	
+
 	// Convert from map to UserPreferences struct
 	prefs := &storage.UserPreferences{
 		Language:                  h.getStringPreference(result.Preferences, "language", "en"),

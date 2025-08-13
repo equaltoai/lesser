@@ -1,3 +1,4 @@
+//go:build benchmark
 // +build benchmark
 
 package benchmarks
@@ -17,11 +18,11 @@ func TestStorageBenchmarks(t *testing.T) {
 
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	// Setup benchmark data
 	t.Log("Setting up benchmark data...")
 	suite.Setup(&testing.B{})
-	
+
 	t.Log("Storage benchmark suite ready")
 }
 
@@ -29,7 +30,7 @@ func TestStorageBenchmarks(t *testing.T) {
 func BenchmarkStorageOperations(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	suite.Setup(b)
 	suite.RunAllBenchmarks(b)
 }
@@ -45,14 +46,14 @@ func BenchmarkFederationOperations(b *testing.B) {
 func BenchmarkActorCreation(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	suite.BenchmarkCreateActor(b)
 }
 
 func BenchmarkActorRetrieval(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	suite.Setup(b)
 	suite.BenchmarkGetActor(b)
 }
@@ -60,7 +61,7 @@ func BenchmarkActorRetrieval(b *testing.B) {
 func BenchmarkTimelineRetrieval(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	suite.Setup(b)
 	suite.BenchmarkGetTimeline(b)
 }
@@ -68,7 +69,7 @@ func BenchmarkTimelineRetrieval(b *testing.B) {
 func BenchmarkActivityCreation(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
-	
+
 	suite.Setup(b)
 	suite.BenchmarkStoreActivity(b)
 }
@@ -88,13 +89,13 @@ func BenchmarkActivityValidation(b *testing.B) {
 
 func BenchmarkStorageWithLatency(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
-	
+
 	// Simulate network latency
 	storage.SetLatencySimulation(5 * 1000) // 5ms
-	
+
 	suite := NewStorageBenchmarkSuite(storage)
 	suite.Setup(b)
-	
+
 	b.Run("WithLatency", func(b *testing.B) {
 		suite.BenchmarkGetActor(b)
 	})
@@ -102,13 +103,13 @@ func BenchmarkStorageWithLatency(b *testing.B) {
 
 func BenchmarkStorageWithErrors(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
-	
+
 	// Simulate 5% error rate
 	storage.SetErrorRate(0.05)
-	
+
 	suite := NewStorageBenchmarkSuite(storage)
 	suite.Setup(b)
-	
+
 	b.Run("WithErrors", func(b *testing.B) {
 		// This benchmark should handle errors gracefully
 		for i := 0; i < b.N; i++ {
@@ -123,15 +124,15 @@ func BenchmarkMemoryAllocations(b *testing.B) {
 	storage := mocks.NewEnhancedMockStorage()
 	suite := NewStorageBenchmarkSuite(storage)
 	suite.Setup(b)
-	
+
 	b.ReportAllocs()
-	
+
 	for i := 0; i < b.N; i++ {
 		// Test memory allocations for common operations
 		actor := suite.actorFactory.CreateActor(factories.ActorOptions{
 			Username: "memtestuser",
 		})
-		
+
 		_ = storage.CreateActor(nil, actor, "test-key")
 		_, _ = storage.GetActor(nil, actor.PreferredUsername)
 	}

@@ -1692,7 +1692,7 @@ func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objec
 }
 
 // sendTimelineUpdateEvent sends real-time updates to connected WebSocket clients
-func (mp *ModerationProcessor) sendTimelineUpdateEvent(ctx context.Context, username, action string) error {
+func (mp *ModerationProcessor) sendTimelineUpdateEvent(_ context.Context, username, action string) error {
 	// Create timeline update event for WebSocket streaming
 	updateEvent := map[string]interface{}{
 		"event":     "moderation.timeline_update",

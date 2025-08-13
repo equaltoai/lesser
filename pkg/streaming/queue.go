@@ -53,13 +53,13 @@ func (q *dynamoStreamQueue) QueueEventForUser(ctx context.Context, userID string
 	}
 
 	event := &models.StreamingEvent{
-		EventID:   fmt.Sprintf("evt_%d_%s", time.Now().UnixNano(), userID),
-		EventType: eventType,
+		EventID:    fmt.Sprintf("evt_%d_%s", time.Now().UnixNano(), userID),
+		EventType:  eventType,
 		TargetType: "user",
-		TargetID:  userID,
-		Payload:   payload,
-		CreatedAt: time.Now(),
-		TTL:       time.Now().Add(24 * time.Hour).Unix(), // Events expire after 24 hours
+		TargetID:   userID,
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(), // Events expire after 24 hours
 	}
 
 	// Update keys for GSI indexing
@@ -89,13 +89,13 @@ func (q *dynamoStreamQueue) QueueEventForStream(ctx context.Context, streamName 
 	}
 
 	event := &models.StreamingEvent{
-		EventID:   fmt.Sprintf("evt_%d_%s", time.Now().UnixNano(), streamName),
-		EventType: eventType,
+		EventID:    fmt.Sprintf("evt_%d_%s", time.Now().UnixNano(), streamName),
+		EventType:  eventType,
 		TargetType: "stream",
-		TargetID:  streamName,
-		Payload:   payload,
-		CreatedAt: time.Now(),
-		TTL:       time.Now().Add(24 * time.Hour).Unix(),
+		TargetID:   streamName,
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(),
 	}
 
 	event.UpdateKeys()
@@ -123,13 +123,13 @@ func (q *dynamoStreamQueue) QueueEventForConversation(ctx context.Context, conve
 	}
 
 	event := &models.StreamingEvent{
-		EventID:   fmt.Sprintf("evt_%d_conv_%s", time.Now().UnixNano(), conversationID),
-		EventType: eventType,
+		EventID:    fmt.Sprintf("evt_%d_conv_%s", time.Now().UnixNano(), conversationID),
+		EventType:  eventType,
 		TargetType: "conversation",
-		TargetID:  conversationID,
-		Payload:   payload,
-		CreatedAt: time.Now(),
-		TTL:       time.Now().Add(24 * time.Hour).Unix(),
+		TargetID:   conversationID,
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(),
 	}
 
 	event.UpdateKeys()
@@ -157,13 +157,13 @@ func (q *dynamoStreamQueue) QueueEventForFollowers(ctx context.Context, userID s
 	}
 
 	event := &models.StreamingEvent{
-		EventID:   fmt.Sprintf("evt_%d_followers_%s", time.Now().UnixNano(), userID),
-		EventType: eventType,
+		EventID:    fmt.Sprintf("evt_%d_followers_%s", time.Now().UnixNano(), userID),
+		EventType:  eventType,
 		TargetType: "followers",
-		TargetID:  userID, // The user whose followers should receive this
-		Payload:   payload,
-		CreatedAt: time.Now(),
-		TTL:       time.Now().Add(24 * time.Hour).Unix(),
+		TargetID:   userID, // The user whose followers should receive this
+		Payload:    payload,
+		CreatedAt:  time.Now(),
+		TTL:        time.Now().Add(24 * time.Hour).Unix(),
 	}
 
 	event.UpdateKeys()

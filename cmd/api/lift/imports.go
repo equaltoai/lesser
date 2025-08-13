@@ -592,11 +592,11 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	if importRec.Status == statusCompleted {
 		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already completed"})
 	}
-	
+
 	if importRec.Status == ImportStatusFailed {
 		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already failed"})
 	}
-	
+
 	if importRec.Status == ImportStatusCancelled {
 		return ctx.Status(http.StatusConflict).JSON(map[string]any{"error": "import already cancelled"})
 	}
@@ -691,7 +691,7 @@ func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, impor
 			"retry_after":    86400,
 		})
 	}
-	
+
 	return nil
 }
 
@@ -699,21 +699,21 @@ func (h *Handler) checkImportRateLimit(ctx *lift.Context, username string, impor
 func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, req *ImportRequest, fileSize int) error {
 	// Get import repository to access budget methods
 	importRepo := h.repos.Import()
-	
+
 	// Estimate import cost based on file size and type
 	estimatedCost := h.estimateImportCost(req, fileSize)
-	
+
 	// Check budget limits (export cost = 0 for imports)
 	budget, withinLimits, err := importRepo.CheckBudgetLimits(ctx.Context, username, estimatedCost, 0)
 	if err != nil {
 		h.logger.Warn("failed to check budget limits, allowing import", zap.Error(err))
 		return nil // Don't block on budget check errors
 	}
-	
+
 	if !withinLimits {
 		var limitType string
 		var remaining int64
-		
+
 		if budget.IsImportOverLimit(estimatedCost) {
 			limitType = "import"
 			remaining = budget.GetRemainingImportBudget()
@@ -721,30 +721,30 @@ func (h *Handler) checkImportBudgetLimits(ctx *lift.Context, username string, re
 			limitType = "combined"
 			remaining = budget.GetRemainingCombinedBudget()
 		}
-		
+
 		return ctx.Status(http.StatusPaymentRequired).JSON(map[string]any{
-			"error":              fmt.Sprintf("%s budget limit exceeded", limitType),
-			"estimated_cost":     float64(estimatedCost) / 1_000_000.0, // Convert to dollars
-			"remaining_budget":   float64(remaining) / 1_000_000.0,     // Convert to dollars
-			"budget_period":      budget.Period,
-			"budget_resets_at":   budget.NextResetAt.Format(time.RFC3339),
+			"error":            fmt.Sprintf("%s budget limit exceeded", limitType),
+			"estimated_cost":   float64(estimatedCost) / 1_000_000.0, // Convert to dollars
+			"remaining_budget": float64(remaining) / 1_000_000.0,     // Convert to dollars
+			"budget_period":    budget.Period,
+			"budget_resets_at": budget.NextResetAt.Format(time.RFC3339),
 		})
 	}
-	
+
 	return nil
 }
 
 // estimateImportCost provides a rough cost estimate for an import operation
 func (h *Handler) estimateImportCost(req *ImportRequest, fileSize int) int64 {
 	baseCost := int64(30000) // $0.03 base cost in microcents
-	
+
 	// Scale cost based on file size (per KB)
 	fileSizeKB := int64(fileSize) / 1024
 	if fileSizeKB < 1 {
 		fileSizeKB = 1
 	}
 	sizeCost := fileSizeKB * 1000 // $0.001 per KB
-	
+
 	// Adjust cost based on import type
 	switch req.Type {
 	case ExportTypeFollowers, ExportTypeFollowing:
@@ -754,12 +754,12 @@ func (h *Handler) estimateImportCost(req *ImportRequest, fileSize int) int64 {
 	case "bookmarks":
 		baseCost *= 2 // Bookmark processing requires object resolution
 	}
-	
+
 	// Overwrite mode costs more than merge
 	if req.Mode == "overwrite" {
 		baseCost *= 2
 	}
-	
+
 	return baseCost + sizeCost
 }
 
@@ -775,7 +775,7 @@ func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType 
 
 	// Configure validation based on import type
 	config := services.DefaultImportValidationConfig()
-	
+
 	// Adjust limits based on import type
 	switch importType {
 	case ExportTypeFollowers, ExportTypeFollowing:

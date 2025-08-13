@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
-	
+
 	"go.uber.org/zap"
 )
 

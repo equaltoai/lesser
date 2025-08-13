@@ -77,7 +77,7 @@ func (a *analyticsService) GetInstanceBudgets(ctx context.Context, exceeded *boo
 	// Query storage for budget data
 	budgets, err := a.storage.GetInstanceBudgets(ctx, exceeded)
 	if err != nil {
-		a.logger.Error("failed to get instance budgets", 
+		a.logger.Error("failed to get instance budgets",
 			zap.Bool("exceeded_only", exceeded != nil && *exceeded),
 			zap.Error(err))
 		return nil, err

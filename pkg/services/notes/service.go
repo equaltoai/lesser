@@ -27,20 +27,20 @@ const (
 
 // Service provides notes/status operations
 type Service struct {
-	noteRepo         *repositories.StatusRepository
-	accountRepo      interfaces.AccountRepository
-	likeRepo         *repositories.LikeRepository
-	socialRepo       interfaces.SocialRepository
-	conversationRepo interfaces.ConversationRepository
-	objectRepo       *repositories.ObjectRepository
-	searchRepo       *repositories.SearchRepository
+	noteRepo          *repositories.StatusRepository
+	accountRepo       interfaces.AccountRepository
+	likeRepo          *repositories.LikeRepository
+	socialRepo        interfaces.SocialRepository
+	conversationRepo  interfaces.ConversationRepository
+	objectRepo        *repositories.ObjectRepository
+	searchRepo        *repositories.SearchRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
-	userRepo         *repositories.UserRepository
-	scheduledRepo    ScheduledStatusRepository
-	publisher        streaming.Publisher
-	logger           *zap.Logger
-	domainName       string
-	federation       FederationService // Interface to be defined
+	userRepo          *repositories.UserRepository
+	scheduledRepo     ScheduledStatusRepository
+	publisher         streaming.Publisher
+	logger            *zap.Logger
+	domainName        string
+	federation        FederationService // Interface to be defined
 }
 
 // ScheduledStatusRepository defines the interface for scheduled status operations
@@ -78,19 +78,19 @@ func NewService(
 	}
 
 	return &Service{
-		noteRepo:         noteRepo,
-		accountRepo:      accountRepo,
-		likeRepo:         likeRepo,
-		socialRepo:       socialRepo,
-		conversationRepo: conversationRepo,
-		objectRepo:       objectRepo,
-		searchRepo:       searchRepo,
+		noteRepo:          noteRepo,
+		accountRepo:       accountRepo,
+		likeRepo:          likeRepo,
+		socialRepo:        socialRepo,
+		conversationRepo:  conversationRepo,
+		objectRepo:        objectRepo,
+		searchRepo:        searchRepo,
 		communityNoteRepo: communityNoteRepo,
-		userRepo:         userRepo,
-		publisher:        publisher,
-		federation:       federation,
-		logger:           logger,
-		domainName:       domainName,
+		userRepo:          userRepo,
+		publisher:         publisher,
+		federation:        federation,
+		logger:            logger,
+		domainName:        domainName,
 	}
 }
 
@@ -115,21 +115,20 @@ type CreateNoteCommand struct {
 
 // UpdateNoteCommand contains all data needed to update an existing note
 type UpdateNoteCommand struct {
-	StatusID   string   `json:"status_id" validate:"required"`
-	Content    string   `json:"content" validate:"required,max=5000"`
-	Sensitive  bool     `json:"sensitive"`
-	Language   string   `json:"language"`
-	MediaIDs   []string `json:"media_ids"`
-	UpdaterID  string   `json:"updater_id" validate:"required"` // Must be author
+	StatusID  string   `json:"status_id" validate:"required"`
+	Content   string   `json:"content" validate:"required,max=5000"`
+	Sensitive bool     `json:"sensitive"`
+	Language  string   `json:"language"`
+	MediaIDs  []string `json:"media_ids"`
+	UpdaterID string   `json:"updater_id" validate:"required"` // Must be author
 }
 
 // DeleteNoteCommand contains data needed to delete a note
 type DeleteNoteCommand struct {
 	StatusID  string `json:"status_id" validate:"required"`
 	DeleterID string `json:"deleter_id" validate:"required"` // Must be author or admin
-	Reason    string `json:"reason"` // Optional reason for admin deletions
+	Reason    string `json:"reason"`                         // Optional reason for admin deletions
 }
-
 
 // GetNoteQuery contains parameters for retrieving a single note
 type GetNoteQuery struct {
@@ -139,36 +138,35 @@ type GetNoteQuery struct {
 
 // ListNotesQuery contains parameters for listing notes with various filters
 type ListNotesQuery struct {
-	ViewerID       string                        `json:"viewer_id"` // User requesting the timeline
-	TimelineType   string                        `json:"timeline_type" validate:"required,oneof=home public local conversations hashtag user direct list"`
-	AuthorID       string                        `json:"author_id"`       // For user timelines
-	Hashtag        string                        `json:"hashtag"`         // For hashtag timelines
-	ConversationID string                        `json:"conversation_id"` // For conversation threads
-	ParentID       string                        `json:"parent_id"`       // For reply threads
-	ListID         string                        `json:"list_id"`         // For list timelines
+	ViewerID       string                       `json:"viewer_id"` // User requesting the timeline
+	TimelineType   string                       `json:"timeline_type" validate:"required,oneof=home public local conversations hashtag user direct list"`
+	AuthorID       string                       `json:"author_id"`       // For user timelines
+	Hashtag        string                       `json:"hashtag"`         // For hashtag timelines
+	ConversationID string                       `json:"conversation_id"` // For conversation threads
+	ParentID       string                       `json:"parent_id"`       // For reply threads
+	ListID         string                       `json:"list_id"`         // For list timelines
 	Pagination     interfaces.PaginationOptions `json:"pagination"`
-	OnlyMedia      bool                          `json:"only_media"`
-	ExcludeReplies bool                          `json:"exclude_replies"`
-	ExcludeReblogs bool                          `json:"exclude_reblogs"`
-	PinnedOnly     bool                          `json:"pinned_only"`
-	SinceID        string                        `json:"since_id"`        // Get items newer than this ID
-	MinID          string                        `json:"min_id"`          // Get items immediately newer than this ID
+	OnlyMedia      bool                         `json:"only_media"`
+	ExcludeReplies bool                         `json:"exclude_replies"`
+	ExcludeReblogs bool                         `json:"exclude_reblogs"`
+	PinnedOnly     bool                         `json:"pinned_only"`
+	SinceID        string                       `json:"since_id"` // Get items newer than this ID
+	MinID          string                       `json:"min_id"`   // Get items immediately newer than this ID
 }
 
 // Result structs for operations
 
 // NoteResult contains a note and associated events that were emitted
 type NoteResult struct {
-	Note   *models.Status    `json:"note"`
+	Note   *models.Status     `json:"note"`
 	Events []*streaming.Event `json:"events"`
 }
 
-
 // Result contains multiple notes and pagination information
 type Result struct {
-	Notes      []*models.Status                       `json:"notes"`
+	Notes      []*models.Status                            `json:"notes"`
 	Pagination *interfaces.PaginatedResult[*models.Status] `json:"pagination"`
-	Events     []*streaming.Event                      `json:"events"`
+	Events     []*streaming.Event                          `json:"events"`
 }
 
 // CreateNote creates a new note, validates input, stores it, emits events, and queues federation
@@ -520,7 +518,7 @@ func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateNoteComman
 
 func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, author *storage.Account) *activitypub.Note {
 	now := time.Now()
-	
+
 	note := &activitypub.Note{
 		BaseObject: activitypub.BaseObject{
 			Context:   "https://www.w3.org/ns/activitystreams",
@@ -588,8 +586,8 @@ func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.St
 		hashtagEvent := *event
 		hashtagEvent.Stream = fmt.Sprintf("hashtag:%s", hashtag)
 		if err := s.publisher.PublishToStream(ctx, hashtagEvent.Stream, &hashtagEvent); err != nil {
-			s.logger.Error("failed to publish to hashtag stream", 
-				zap.String("hashtag", hashtag), 
+			s.logger.Error("failed to publish to hashtag stream",
+				zap.String("hashtag", hashtag),
 				zap.Error(err))
 		} else {
 			events = append(events, &hashtagEvent)
@@ -765,8 +763,8 @@ func (s *Service) emitUnlikeEvents(ctx context.Context, status *models.Status, u
 		Type:      "status.unliked",
 		Timestamp: time.Now(),
 		Payload: map[string]interface{}{
-			"status":   status,
-			"unliker":  unlikerUsername,
+			"status":  status,
+			"unliker": unlikerUsername,
 		},
 	}
 
@@ -907,7 +905,7 @@ type UnbookmarkNoteCommand struct {
 
 // GetBookmarksQuery represents a request to get user's bookmarked statuses
 type GetBookmarksQuery struct {
-	UserID     string                      `json:"user_id" validate:"required"`
+	UserID     string                       `json:"user_id" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -915,12 +913,12 @@ type GetBookmarksQuery struct {
 type GetTimelineQuery struct {
 	UserID   string `json:"user_id" validate:"required"`
 	Timeline string `json:"timeline" validate:"required,oneof=home public direct list hashtag"` // Type of timeline
-	ListID   string `json:"list_id,omitempty"`     // For list timeline
-	Hashtag  string `json:"hashtag,omitempty"`      // For hashtag timeline
-	Limit    int    `json:"limit,omitempty"`        // Max number of items
-	SinceID  string `json:"since_id,omitempty"`     // Get items newer than this ID
-	MaxID    string `json:"max_id,omitempty"`       // Get items older than this ID
-	MinID    string `json:"min_id,omitempty"`       // Get items immediately newer than this ID
+	ListID   string `json:"list_id,omitempty"`                                                  // For list timeline
+	Hashtag  string `json:"hashtag,omitempty"`                                                  // For hashtag timeline
+	Limit    int    `json:"limit,omitempty"`                                                    // Max number of items
+	SinceID  string `json:"since_id,omitempty"`                                                 // Get items newer than this ID
+	MaxID    string `json:"max_id,omitempty"`                                                   // Get items older than this ID
+	MinID    string `json:"min_id,omitempty"`                                                   // Get items immediately newer than this ID
 }
 
 // BookmarkResult represents the result of a bookmark operation
@@ -1005,7 +1003,7 @@ func (s *Service) GetTimeline(ctx context.Context, query *GetTimelineQuery) (*Re
 	if query.SinceID != "" {
 		listQuery.SinceID = query.SinceID
 	}
-	
+
 	// If MinID is specified, we need to handle it specially
 	if query.MinID != "" {
 		listQuery.MinID = query.MinID
@@ -1083,7 +1081,7 @@ type UnlikeNoteCommand struct {
 
 // GetLikersQuery represents a request to get users who liked a status
 type GetLikersQuery struct {
-	StatusID   string                      `json:"status_id" validate:"required"`
+	StatusID   string                       `json:"status_id" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -1095,7 +1093,7 @@ type LikeResult struct {
 
 // UsersResult represents a list of users (for likers, rebloggers, etc.)
 type UsersResult struct {
-	Users      []*storage.Account                       `json:"users"`
+	Users      []*storage.Account                            `json:"users"`
 	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
 }
 
@@ -1200,9 +1198,9 @@ type UnreblogNoteCommand struct {
 	UnrebloggerID string `json:"unreblogger_id" validate:"required"`
 }
 
-// GetRebleggersQuery represents a request to get users who reblogged a status
+// GetRebloggersQuery represents a request to get users who reblogged a status
 type GetRebloggersQuery struct {
-	StatusID   string                      `json:"status_id" validate:"required"`
+	StatusID   string                       `json:"status_id" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -1300,8 +1298,8 @@ type PinNoteCommand struct {
 
 // UnpinNoteCommand represents a request to unpin a status
 type UnpinNoteCommand struct {
-	StatusID  string `json:"status_id" validate:"required"`
-	PinnerID  string `json:"pinner_id" validate:"required"`
+	StatusID string `json:"status_id" validate:"required"`
+	PinnerID string `json:"pinner_id" validate:"required"`
 }
 
 // PinNote pins a status to user's profile
@@ -1368,8 +1366,8 @@ type MuteNoteCommand struct {
 
 // UnmuteNoteCommand represents a request to unmute a status
 type UnmuteNoteCommand struct {
-	StatusID  string `json:"status_id" validate:"required"`
-	MuterID   string `json:"muter_id" validate:"required"`
+	StatusID string `json:"status_id" validate:"required"`
+	MuterID  string `json:"muter_id" validate:"required"`
 }
 
 // MuteNote mutes a status for a user
@@ -1461,7 +1459,7 @@ func (s *Service) getLikers(ctx context.Context, statusID string, pagination int
 	return accounts, result, nil
 }
 
-func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, rebloggerID, statusID string) error {
+func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ string) error {
 	announce := &storage.Announce{
 		Actor:     actorURL,
 		Object:    objectURL,
@@ -1615,22 +1613,22 @@ func (s *Service) unmuteStatus(ctx context.Context, userID, statusID string) err
 }
 
 // getDirectTimeline retrieves the direct message timeline for a user
-func (s *Service) getListTimeline(ctx context.Context, query *ListNotesQuery) (*Result, error) {
+func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Result, error) {
 	// For now, we'll just return an empty list since we don't have list service integration
 	// In a complete implementation, this would:
 	// 1. Get the list membership
 	// 2. Query statuses from list members
 	// 3. Apply the list's reply policy
-	
+
 	// Get statuses from list members (simplified for now)
 	// This would need to be implemented with proper list service integration
 	allStatuses := make([]*models.Status, 0)
-	
+
 	// In production, we would:
 	// - Get list members from the list repository
 	// - Query statuses from those members
 	// - Apply list-specific filters (replies policy, etc.)
-	
+
 	s.logger.Warn("list timeline not fully implemented",
 		zap.String("list_id", query.ListID),
 		zap.String("viewer_id", query.ViewerID))
@@ -1691,7 +1689,7 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 
 	// Collect all direct message statuses from conversations
 	allStatuses := make([]*models.Status, 0)
-	
+
 	for _, conversation := range conversations {
 		// Get the conversation thread - this returns direct messages
 		threadResult, err := s.noteRepo.GetConversationThread(ctx, conversation.ID, interfaces.PaginationOptions{
@@ -1727,10 +1725,10 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 	if limit <= 0 {
 		limit = 20
 	}
-	
+
 	var paginatedStatuses []*models.Status
 	var finalCursor string
-	
+
 	if len(allStatuses) > limit {
 		paginatedStatuses = allStatuses[:limit]
 		finalCursor = allStatuses[limit-1].StatusID // Use last status ID as cursor
@@ -2107,7 +2105,7 @@ func (s *Service) CountNotesByAuthor(ctx context.Context, authorID string) (int6
 
 // GetUserTimelineQuery represents a request to get a user's timeline
 type GetUserTimelineQuery struct {
-	ActorID string `json:"actor_id" validate:"required"`
+	ActorID    string                       `json:"actor_id" validate:"required"`
 	Pagination interfaces.PaginationOptions `json:"pagination"`
 }
 
@@ -2229,4 +2227,3 @@ func (s *Service) IsBookmarked(ctx context.Context, userID, statusID string) (bo
 
 	return isBookmarked, nil
 }
-

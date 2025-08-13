@@ -75,13 +75,13 @@ const (
 	KeyPatternHashtagSearch = "HASHTAG_SEARCH#%s"
 
 	// Media-related key patterns
-	KeyPatternMedia              = "MEDIA#%s"
-	KeyPatternMediaJob           = "JOB#%s"
-	KeyPatternMediaSpending      = "MEDIA_SPENDING#%s"
-	KeyPatternSpendingTxn        = "SPENDING_TXN#%s"
-	KeyPatternTranscodingJob     = "TRANSCODING_JOB#%s"
-	KeyPatternMediaIdempotency   = "MEDIA_IDEM#%s"
-	KeyPatternMediaBudget        = "MEDIA_BUDGET#%s"
+	KeyPatternMedia            = "MEDIA#%s"
+	KeyPatternMediaJob         = "JOB#%s"
+	KeyPatternMediaSpending    = "MEDIA_SPENDING#%s"
+	KeyPatternSpendingTxn      = "SPENDING_TXN#%s"
+	KeyPatternTranscodingJob   = "TRANSCODING_JOB#%s"
+	KeyPatternMediaIdempotency = "MEDIA_IDEM#%s"
+	KeyPatternMediaBudget      = "MEDIA_BUDGET#%s"
 )
 
 // Table names
@@ -159,15 +159,15 @@ const (
 	MediaStatusReady      = "ready"
 )
 
-// Media processing cost categories 
+// Media processing cost categories
 const (
-	MediaCostUpload      = "upload"
-	MediaCostStorage     = "storage"
-	MediaCostTranscode   = "transcode"
-	MediaCostThumbnail   = "thumbnail"
-	MediaCostModeration  = "moderation"
-	MediaCostAnalysis    = "analysis"
-	MediaCostDelivery    = "delivery"
+	MediaCostUpload     = "upload"
+	MediaCostStorage    = "storage"
+	MediaCostTranscode  = "transcode"
+	MediaCostThumbnail  = "thumbnail"
+	MediaCostModeration = "moderation"
+	MediaCostAnalysis   = "analysis"
+	MediaCostDelivery   = "delivery"
 )
 
 // Media processing task types

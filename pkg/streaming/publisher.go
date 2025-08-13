@@ -389,22 +389,22 @@ func (p *apiGatewayPublisher) GetMetrics() map[string]interface{} {
 
 // mockPublisher implements Publisher for testing
 type mockPublisher struct {
-	events        []MockPublishedEvent
-	mu            sync.RWMutex
-	closed        bool
-	shouldError   bool
-	errorMessage  string
-	delay         time.Duration
-	failAfterN    int  // Fail after N successful publishes
-	publishCount  int
+	events       []MockPublishedEvent
+	mu           sync.RWMutex
+	closed       bool
+	shouldError  bool
+	errorMessage string
+	delay        time.Duration
+	failAfterN   int // Fail after N successful publishes
+	publishCount int
 }
 
 // MockPublishedEvent represents an event that was published via the mock publisher
 type MockPublishedEvent struct {
-	Method          string    `json:"method"`           // "PublishToUser", "PublishToStream", "PublishToConversation"
-	TargetID        string    `json:"target_id"`        // userID, streamName, or conversationID
-	Event           *Event    `json:"event"`
-	PublishedAt     time.Time `json:"published_at"`
+	Method      string    `json:"method"`    // "PublishToUser", "PublishToStream", "PublishToConversation"
+	TargetID    string    `json:"target_id"` // userID, streamName, or conversationID
+	Event       *Event    `json:"event"`
+	PublishedAt time.Time `json:"published_at"`
 }
 
 // NewMockPublisher creates a new mock publisher for testing

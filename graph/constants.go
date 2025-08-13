@@ -105,6 +105,50 @@ const (
 	EventTypeFollowers      = "followers"
 	EventTypeCost           = "cost"
 	VisibilityPublic        = "public"
+	VisibilityUnlisted      = "unlisted"
 	VisibilityDisabled      = "disabled"
 	TagTypeMention          = "Mention"
+)
+
+// Timeline and stream type constants
+const (
+	TimelineTypeHashtag = "hashtag"
+	TimelineTypeList    = "list"
+	TimelineTypeDirect  = "direct"
+	TimelineTypeStatus  = "status"
+)
+
+// Object type constants
+const (
+	ObjectTypeStatus = "status"
+)
+
+// Alert level constants
+const (
+	AlertLevelLow      = "LOW"
+	AlertLevelMedium   = "MEDIUM"
+	AlertLevelHigh     = "HIGH"
+	AlertLevelCritical = "CRITICAL"
+)
+
+// Quote type constants
+const (
+	QuoteType = "quote"
+)
+
+// Moderation action constants
+const (
+	ModerationActionHide   = "hide"
+	ModerationActionRemove = "remove"
+)
+
+// Visibility and severity constants
+const (
+	VisibilityPrivate = "private"
+	SeverityMedium    = "medium"
+)
+
+// None constant
+const (
+	NoneValue = "none"
 )
