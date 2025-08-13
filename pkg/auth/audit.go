@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	lesserconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/privacy"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -195,9 +197,10 @@ type AuditEvent struct {
 
 // AuditLogger handles authentication audit logging
 type AuditLogger struct {
-	repos  StorageProvider
-	logger *zap.Logger
-	config *AuditConfig
+	repos         StorageProvider
+	logger        *zap.Logger
+	config        *AuditConfig
+	privacyHasher *privacy.Hasher
 }
 
 // AuditConfig defines audit logging configuration
@@ -241,10 +244,25 @@ func NewAuditLogger(repos StorageProvider, logger *zap.Logger, config *AuditConf
 		config = DefaultAuditConfig()
 	}
 
+	// Initialize privacy hasher if privacy hashing is enabled
+	var privacyHasher *privacy.Hasher
+	appConfig := lesserconfig.Get()
+	if appConfig.EnablePrivacyHashing && appConfig.PrivacyMasterKey != "" {
+		hasher, err := privacy.NewHasherFromMasterKey(appConfig.PrivacyMasterKey)
+		if err != nil {
+			logger.Error("failed to initialize privacy hasher, privacy hashing disabled",
+				zap.Error(err))
+		} else {
+			privacyHasher = hasher
+			logger.Info("privacy hashing enabled for audit logs")
+		}
+	}
+
 	return &AuditLogger{
-		repos:  repos,
-		logger: logger,
-		config: config,
+		repos:         repos,
+		logger:        logger,
+		config:        config,
+		privacyHasher: privacyHasher,
 	}
 }
 
@@ -289,10 +307,15 @@ func (al *AuditLogger) LogEvent(ctx context.Context, event *AuditEvent) error {
 
 	// Apply privacy settings
 	if al.config.HashIPAddresses && event.IPAddress != "" {
-		event.IPAddress = hashIP(event.IPAddress)
+		event.IPAddress = al.hashIPSecure(event.IPAddress)
 	}
 	if al.config.RedactSensitive {
 		al.redactSensitiveData(event)
+	}
+	
+	// Apply privacy hashing if enabled
+	if al.privacyHasher != nil {
+		al.applyPrivacyHashing(event)
 	}
 
 	// Calculate risk score if not provided
@@ -715,14 +738,112 @@ func generateEventID() string {
 	return base64.URLEncoding.EncodeToString(b)
 }
 
-func hashIP(ip string) string {
-	// Simple hash for privacy (in production, use proper hashing)
+// hashIPSecure provides cryptographically secure IP hashing with fallback to simple masking
+func (al *AuditLogger) hashIPSecure(ip string) string {
+	if al.privacyHasher != nil {
+		// Use secure privacy hashing if available
+		hashedIP, err := al.privacyHasher.HashIP(ip)
+		if err != nil {
+			al.logger.Warn("failed to hash IP with privacy hasher, falling back to simple masking",
+				zap.String("ip", ip),
+				zap.Error(err))
+		} else {
+			return hashedIP
+		}
+	}
+	
+	// Fallback to simple masking for backward compatibility
+	return hashIPSimple(ip)
+}
+
+// hashIPSimple provides simple IP masking (legacy behavior)
+func hashIPSimple(ip string) string {
 	parts := strings.Split(ip, ".")
 	if len(parts) == 4 {
-		// Keep first two octets, hash last two
+		// Keep first two octets, mask last two
 		return fmt.Sprintf("%s.%s.xxx.xxx", parts[0], parts[1])
 	}
 	return "xxx.xxx.xxx.xxx"
+}
+
+// applyPrivacyHashing applies privacy hashing to sensitive fields in audit events
+func (al *AuditLogger) applyPrivacyHashing(event *AuditEvent) {
+	if al.privacyHasher == nil {
+		return
+	}
+	
+	// Hash IP address if not already hashed
+	if event.IPAddress != "" && !al.config.HashIPAddresses {
+		if hashedIP, err := al.privacyHasher.HashIP(event.IPAddress); err == nil {
+			event.IPAddress = hashedIP
+		} else {
+			al.logger.Warn("failed to hash IP address",
+				zap.String("ip", event.IPAddress),
+				zap.Error(err))
+		}
+	}
+	
+	// Hash username if present
+	if event.Username != "" {
+		if hashedUsername, err := al.privacyHasher.HashUsername(event.Username); err == nil {
+			// Store original username length for analytics
+			if event.Metadata == nil {
+				event.Metadata = make(map[string]interface{})
+			}
+			event.Metadata["original_username_length"] = len(event.Username)
+			event.Username = hashedUsername
+		} else {
+			al.logger.Warn("failed to hash username",
+				zap.String("username", event.Username),
+				zap.Error(err))
+		}
+	}
+	
+	// Hash device name as it may contain PII
+	if event.DeviceName != "" {
+		if hashedDevice, err := al.privacyHasher.HashPII(event.DeviceName); err == nil {
+			event.DeviceName = hashedDevice
+		} else {
+			al.logger.Warn("failed to hash device name",
+				zap.String("device", event.DeviceName),
+				zap.Error(err))
+		}
+	}
+	
+	// Hash sensitive metadata fields
+	if event.Metadata != nil {
+		al.hashSensitiveMetadata(event.Metadata)
+	}
+}
+
+// hashSensitiveMetadata applies privacy hashing to sensitive fields in metadata
+func (al *AuditLogger) hashSensitiveMetadata(metadata map[string]interface{}) {
+	sensitiveFields := []string{"email", "phone", "address", "name", "real_name", "full_name"}
+	
+	for key, value := range metadata {
+		keyLower := strings.ToLower(key)
+		
+		// Check if this is a sensitive field
+		isSensitive := false
+		for _, sensitiveField := range sensitiveFields {
+			if strings.Contains(keyLower, sensitiveField) {
+				isSensitive = true
+				break
+			}
+		}
+		
+		if isSensitive {
+			if strValue, ok := value.(string); ok && strValue != "" {
+				if hashedValue, err := al.privacyHasher.HashPII(strValue); err == nil {
+					metadata[key] = hashedValue
+				} else {
+					al.logger.Warn("failed to hash sensitive metadata field",
+						zap.String("field", key),
+						zap.Error(err))
+				}
+			}
+		}
+	}
 }
 
 func (al *AuditLogger) redactSensitiveData(event *AuditEvent) {

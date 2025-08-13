@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/jsonld"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -432,26 +432,16 @@ func (v *Verifier) isInstanceTrusted(instanceURL string) bool {
 	return true
 }
 
-// canonicalizeJSON creates a canonical JSON representation
+// canonicalizeJSON creates a canonical JSON representation using proper JSON-LD canonicalization
+// This follows URDNA2015 algorithm for deterministic canonicalization suitable for cryptographic signatures
 func canonicalizeJSON(v any) ([]byte, error) {
-	// Simple canonicalization - in production use a proper JSON-LD library
-	data, err := json.Marshal(v)
+	// Use the new JSON-LD canonicalization with signature field removal
+	canonical, err := jsonld.CanonicalizeStructToJSON(v, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("JSON-LD canonicalization failed: %w", err)
 	}
-
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		return nil, err
-	}
-
-	// Remove signature fields for canonicalization
-	delete(m, "signature")
-	delete(m, "Signature")
-	delete(m, "issuerProof")
-	delete(m, "IssuerProof")
-
-	return json.Marshal(m)
+	
+	return canonical, nil
 }
 
 // VerifyVouchSignature verifies a vouch's signature using the issuer's public key
