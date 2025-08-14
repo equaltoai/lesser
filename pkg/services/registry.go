@@ -576,9 +576,32 @@ func (r *Registry) Media() *media.Service {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.mediaService == nil {
-		// TODO: Initialize with real repositories
-		r.initialized["Media"] = true
+	if r.mediaService == nil && r.storage != nil {
+		// Initialize the Media service with repository interfaces
+		mediaRepo := r.storage.Media()
+		accountRepo := r.storage.Account()
+
+		// Check if repositories are available
+		if mediaRepo != nil && accountRepo != nil {
+			// Create a simple job queue service if not available
+			// In production, this would be a proper SQS-based implementation
+			jobQueue := &simpleJobQueue{logger: r.logger}
+
+			r.mediaService = media.NewService(
+				mediaRepo,
+				accountRepo,
+				r.publisher,
+				jobQueue,
+				r.logger,
+				"lesser-media-bucket", // Default S3 bucket - should come from config
+				"cdn.example.com",     // Default CDN domain - should come from config
+			)
+			r.initialized["Media"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Media service: required repositories not available")
+			}
+		}
 	}
 
 	return r.mediaService
@@ -1038,4 +1061,23 @@ func (a *federationServiceAdapter) QueueActivity(ctx context.Context, activity *
 	// but we can use DeliverToFollowers as a fallback
 	// In a real implementation, you'd need to implement proper activity queuing
 	return a.federation.DeliverToFollowers(ctx, activity, nil)
+}
+
+// simpleJobQueue provides a basic implementation of JobQueueService for development
+// In production, this would be replaced with a proper SQS-based implementation
+type simpleJobQueue struct {
+	logger *zap.Logger
+}
+
+// QueueMediaJob queues a media processing job (simple in-memory implementation for now)
+func (q *simpleJobQueue) QueueMediaJob(ctx context.Context, msg media.JobMessage) error {
+	if q.logger != nil {
+		q.logger.Info("queued media job", 
+			zap.String("job_id", msg.JobID),
+			zap.String("media_id", msg.MediaID),
+			zap.String("username", msg.Username))
+	}
+	// In production, this would send the message to SQS
+	// For now, we just log it
+	return nil
 }
