@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Lesser is a complete serverless ActivityPub implementation built in just 5 days using AI assistance. It provides:
+Lesser is a complete serverless ActivityPub implementation. It provides:
 - Full Mastodon API compatibility (100% of v1 endpoints)
 - Complete ActivityPub federation protocol implementation
 - GraphQL API with 60 operations

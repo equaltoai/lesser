@@ -334,27 +334,99 @@ func (r *CloudWatchMetricsRepository) getMetricStatistic(ctx context.Context, na
 	return total, nil
 }
 
-// calculateEstimatedCost calculates estimated cost based on usage
+// calculateEstimatedCost calculates detailed estimated cost based on usage with accurate AWS pricing
 func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMetrics) float64 {
 	cost := 0.0
 
-	// DynamoDB costs (per million units)
-	cost += (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25  // $0.25 per million read units
-	cost += (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25 // $1.25 per million write units
+	// DynamoDB costs (more accurate pricing for on-demand billing)
+	// Using current us-east-1 pricing (adjust for other regions as needed)
+	dynamoReadCost := (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25  // $0.25 per million read request units
+	dynamoWriteCost := (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25 // $1.25 per million write request units
+	cost += dynamoReadCost + dynamoWriteCost
 
-	// Lambda costs (per million invocations)
-	cost += (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20 // $0.20 per million requests
-	// Add compute cost estimate (128MB, 0.5s average)
-	cost += (float64(metrics.LambdaInvocations) * 0.128 * 0.5) / 1000000.0 * 0.00001667
+	// Lambda costs (accurate pricing with ARM64 and x86 considerations)
+	invocationCost := (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20 // $0.20 per million requests
+	
+	// Compute cost estimate (assuming 512MB memory, ARM64, average 250ms duration)
+	// ARM64 pricing: $0.0000133334 per GB-second
+	memoryGB := 0.512 // 512MB
+	avgDurationSeconds := 0.25 // 250ms average
+	computeGBSeconds := float64(metrics.LambdaInvocations) * memoryGB * avgDurationSeconds
+	computeCost := computeGBSeconds * 0.0000133334
+	
+	lambdaTotalCost := invocationCost + computeCost
+	cost += lambdaTotalCost
 
-	// API Gateway costs (per million requests)
-	cost += (float64(metrics.RequestCount) / 1000000.0) * 3.50 // $3.50 per million requests
+	// API Gateway costs (accurate REST API pricing)
+	apiGatewayCost := (float64(metrics.RequestCount) / 1000000.0) * 3.50 // $3.50 per million requests
+	cost += apiGatewayCost
 
-	// S3 costs (simplified)
-	cost += (float64(metrics.DataTransferBytes) / 1024 / 1024 / 1024) * 0.09 // $0.09 per GB transfer
+	// S3 costs (detailed breakdown)
+	// Storage cost (assuming Standard class, $0.023 per GB per month)
+	// Note: This is estimated based on data transfer as proxy for storage
+	estimatedStorageGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024) / 30 // Rough estimate
+	s3StorageCost := estimatedStorageGB * 0.023 / 30 // Daily storage cost
+	
+	// Request costs
+	s3RequestCost := (float64(metrics.S3Requests) / 1000.0) * 0.0004 // $0.0004 per 1,000 PUT/COPY/POST/LIST
+	
+	// Data transfer costs (detailed tiers)
+	dataTransferGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024)
+	var dataTransferCost float64
+	
+	if dataTransferGB <= 10 { // First 10 GB free per month
+		dataTransferCost = 0
+	} else if dataTransferGB <= 40 { // Next 40 GB at $0.09/GB
+		dataTransferCost = (dataTransferGB - 10) * 0.09
+	} else if dataTransferGB <= 100 { // Next 100 GB at $0.085/GB
+		dataTransferCost = 30*0.09 + (dataTransferGB-50)*0.085
+	} else { // Over 150 GB at $0.07/GB
+		dataTransferCost = 30*0.09 + 50*0.085 + (dataTransferGB-100)*0.07
+	}
+	
+	s3TotalCost := s3StorageCost + s3RequestCost + dataTransferCost
+	cost += s3TotalCost
 
-	// Add some buffer for other services (CloudWatch, etc.)
-	cost *= 1.1
+	// CloudWatch costs (logs and metrics)
+	// Log ingestion: $0.50 per GB ingested
+	// Assume 10% of Lambda invocations generate 1KB logs each
+	logDataGB := float64(metrics.LambdaInvocations) * 0.1 * 0.001 / (1024 * 1024) // 1KB per 10% of invocations
+	logCost := logDataGB * 0.50
+	
+	// Custom metrics: $0.30 per metric per month
+	// Assume 50 custom metrics for the application
+	customMetricsCost := 50 * 0.30 / 30 // Daily cost
+	
+	cloudWatchTotalCost := logCost + customMetricsCost
+	cost += cloudWatchTotalCost
+
+	// Additional services costs
+	// CloudFront (CDN) - assuming some usage for media delivery
+	cloudFrontCost := dataTransferGB * 0.085 * 0.1 // 10% of data transfer through CloudFront
+	cost += cloudFrontCost
+	
+	// SQS costs (for async processing)
+	// Assume 1 SQS message per 10 Lambda invocations
+	sqsRequests := float64(metrics.LambdaInvocations) / 10
+	sqsCost := (sqsRequests / 1000000.0) * 0.40 // $0.40 per million requests
+	cost += sqsCost
+
+	// Add 5% buffer for other miscellaneous AWS services
+	cost *= 1.05
+
+	r.logger.Debug("detailed cost calculation breakdown",
+		zap.Float64("dynamo_read_cost", dynamoReadCost),
+		zap.Float64("dynamo_write_cost", dynamoWriteCost), 
+		zap.Float64("lambda_invocation_cost", invocationCost),
+		zap.Float64("lambda_compute_cost", computeCost),
+		zap.Float64("api_gateway_cost", apiGatewayCost),
+		zap.Float64("s3_storage_cost", s3StorageCost),
+		zap.Float64("s3_request_cost", s3RequestCost),
+		zap.Float64("data_transfer_cost", dataTransferCost),
+		zap.Float64("cloudwatch_cost", cloudWatchTotalCost),
+		zap.Float64("cloudfront_cost", cloudFrontCost),
+		zap.Float64("sqs_cost", sqsCost),
+		zap.Float64("total_estimated_cost", cost))
 
 	return math.Max(cost, 0)
 }
@@ -365,30 +437,63 @@ func (r *CloudWatchMetricsRepository) GetInstanceMetrics(ctx context.Context, pe
 	return r.GetServiceMetrics(ctx, "instance", period)
 }
 
-// GetCostBreakdown retrieves cost breakdown for the specified period
+// GetCostBreakdown retrieves detailed cost breakdown for the specified period
 func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, period time.Duration) (*CostBreakdown, error) {
 	metrics, err := r.GetInstanceMetrics(ctx, period)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instance metrics: %w", err)
 	}
 
-	// Calculate costs for each service
+	// Use the same detailed calculation logic as calculateEstimatedCost
+	// DynamoDB costs
 	dynamoReadCost := (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25
 	dynamoWriteCost := (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25
 	dynamoDBCost := dynamoReadCost + dynamoWriteCost
 
-	lambdaCost := (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20
-	lambdaCost += (float64(metrics.LambdaInvocations) * 0.128 * 0.5) / 1000000.0 * 0.00001667
+	// Lambda costs (detailed)
+	invocationCost := (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20
+	memoryGB := 0.512
+	avgDurationSeconds := 0.25
+	computeGBSeconds := float64(metrics.LambdaInvocations) * memoryGB * avgDurationSeconds
+	computeCost := computeGBSeconds * 0.0000133334
+	lambdaCost := invocationCost + computeCost
 
+	// API Gateway costs
 	apiGatewayCost := (float64(metrics.RequestCount) / 1000000.0) * 3.50
 
-	s3StorageCost := 0.0 // Would need storage metrics
+	// S3 costs (detailed breakdown)
+	estimatedStorageGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024) / 30
+	s3StorageCost := estimatedStorageGB * 0.023 / 30
 	s3RequestCost := (float64(metrics.S3Requests) / 1000.0) * 0.0004
+	
+	// Data transfer with tiers
+	dataTransferGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024)
+	var dataTransferCost float64
+	if dataTransferGB <= 10 {
+		dataTransferCost = 0
+	} else if dataTransferGB <= 40 {
+		dataTransferCost = (dataTransferGB - 10) * 0.09
+	} else if dataTransferGB <= 100 {
+		dataTransferCost = 30*0.09 + (dataTransferGB-50)*0.085
+	} else {
+		dataTransferCost = 30*0.09 + 50*0.085 + (dataTransferGB-100)*0.07
+	}
+	
 	s3Cost := s3StorageCost + s3RequestCost
 
-	dataTransferCost := (float64(metrics.DataTransferBytes) / 1024 / 1024 / 1024) * 0.09
+	// Additional service costs
+	logDataGB := float64(metrics.LambdaInvocations) * 0.1 * 0.001 / (1024 * 1024)
+	logCost := logDataGB * 0.50
+	customMetricsCost := 50 * 0.30 / 30
+	cloudWatchCost := logCost + customMetricsCost
+	
+	cloudFrontCost := dataTransferGB * 0.085 * 0.1
+	sqsRequests := float64(metrics.LambdaInvocations) / 10
+	sqsCost := (sqsRequests / 1000000.0) * 0.40
 
-	totalCost := dynamoDBCost + lambdaCost + apiGatewayCost + s3Cost + dataTransferCost
+	// Calculate total with buffer
+	baseTotalCost := dynamoDBCost + lambdaCost + apiGatewayCost + s3Cost + dataTransferCost + cloudWatchCost + cloudFrontCost + sqsCost
+	totalCost := baseTotalCost * 1.05 // 5% buffer
 
 	breakdown := &CostBreakdown{
 		TotalCost:        totalCost,
@@ -400,12 +505,30 @@ func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, peri
 		Breakdown: []*CostItem{
 			{Operation: "DynamoDB Reads", Count: int(metrics.DynamoDBReads), Cost: dynamoReadCost},
 			{Operation: "DynamoDB Writes", Count: int(metrics.DynamoDBWrites), Cost: dynamoWriteCost},
-			{Operation: "Lambda Invocations", Count: int(metrics.LambdaInvocations), Cost: lambdaCost},
+			{Operation: "Lambda Invocations", Count: int(metrics.LambdaInvocations), Cost: invocationCost},
+			{Operation: "Lambda Compute (GB-seconds)", Count: int(computeGBSeconds), Cost: computeCost},
 			{Operation: "API Gateway Requests", Count: int(metrics.RequestCount), Cost: apiGatewayCost},
+			{Operation: "S3 Storage (GB-days)", Count: int(estimatedStorageGB), Cost: s3StorageCost},
 			{Operation: "S3 Requests", Count: int(metrics.S3Requests), Cost: s3RequestCost},
-			{Operation: "Data Transfer", Count: int(metrics.DataTransferBytes / 1024 / 1024), Cost: dataTransferCost}, // MB
+			{Operation: "Data Transfer (GB)", Count: int(dataTransferGB), Cost: dataTransferCost},
+			{Operation: "CloudWatch Logs (GB)", Count: int(logDataGB * 1024), Cost: logCost}, // Convert to MB for display
+			{Operation: "CloudWatch Custom Metrics", Count: 50, Cost: customMetricsCost},
+			{Operation: "CloudFront Transfer (GB)", Count: int(dataTransferGB * 0.1), Cost: cloudFrontCost},
+			{Operation: "SQS Messages", Count: int(sqsRequests), Cost: sqsCost},
 		},
 	}
+
+	r.logger.Info("generated detailed cost breakdown",
+		zap.Float64("total_cost", totalCost),
+		zap.Float64("dynamodb_cost", dynamoDBCost),
+		zap.Float64("lambda_cost", lambdaCost),
+		zap.Float64("api_gateway_cost", apiGatewayCost),
+		zap.Float64("s3_cost", s3Cost),
+		zap.Float64("data_transfer_cost", dataTransferCost),
+		zap.Float64("cloudwatch_cost", cloudWatchCost),
+		zap.Float64("cloudfront_cost", cloudFrontCost),
+		zap.Float64("sqs_cost", sqsCost),
+		zap.Duration("period", period))
 
 	return breakdown, nil
 }

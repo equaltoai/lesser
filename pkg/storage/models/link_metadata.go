@@ -62,7 +62,7 @@ func NewLinkMetadata(linkURL string) *LinkMetadata {
 
 // GetLinkMetadataKey returns the key for retrieving link metadata
 func GetLinkMetadataKey(linkURL string) (pk, sk string) {
-	return "LINK#" + linkURL, "METADATA"
+	return "LINK#" + linkURL, SKMetadata
 }
 
 // RecordAccess updates access tracking information

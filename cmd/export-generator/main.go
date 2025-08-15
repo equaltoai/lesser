@@ -28,6 +28,7 @@ import (
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -1449,7 +1450,7 @@ func (ep *ExportProcessor) includeMediaFiles(ctx context.Context, zipWriter *zip
 
 // fetchUserMedia retrieves and converts user media from the repository
 func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) ([]map[string]any, error) {
-	userMediaAny, err := ep.repos.Media().GetUserMedia(ctx, username)
+	userMediaResult, err := ep.repos.Media().GetUserMedia(ctx, username, interfaces.PaginationOptions{Limit: 1000})
 	if err != nil {
 		ep.logger.Error("failed to get user media",
 			zap.String("username", username),
@@ -1458,11 +1459,26 @@ func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) 
 	}
 
 	// Convert to proper media type
-	userMedia := make([]map[string]any, 0, len(userMediaAny))
-	for _, mediaAny := range userMediaAny {
-		if mediaMap, ok := mediaAny.(map[string]any); ok {
-			userMedia = append(userMedia, mediaMap)
+	userMedia := make([]map[string]any, 0, len(userMediaResult.Items))
+	for _, mediaItem := range userMediaResult.Items {
+		if mediaItem == nil {
+			continue
 		}
+		
+		// Convert models.Media to map[string]any for export compatibility
+		mediaMap := map[string]any{
+			"ID":          mediaItem.MediaID,
+			"UserID":      mediaItem.UserID,
+			"Filename":    mediaItem.FileName,
+			"ContentType": mediaItem.ContentType,
+			"FileSize":    mediaItem.FileSize,
+			"S3Key":       mediaItem.S3Key,
+			"CDNUrl":      mediaItem.CDNUrl,
+			"Status":      mediaItem.Status,
+			"CreatedAt":   mediaItem.CreatedAt,
+			"UpdatedAt":   mediaItem.UpdatedAt,
+		}
+		userMedia = append(userMedia, mediaMap)
 	}
 
 	return userMedia, nil

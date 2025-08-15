@@ -210,7 +210,7 @@ func (r *AnnouncementRepository) GetAnnouncements(ctx context.Context, active bo
 	return announcements, err
 }
 
-// GetAnnouncementsPaginated retrieves announcements with pagination
+// GetAnnouncementsPaginated retrieves announcements with pagination using optimized GSI queries
 func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, active bool, limit int, cursor string) ([]*storage.Announcement, string, error) {
 	if limit <= 0 {
 		limit = 20 // Default limit
@@ -219,14 +219,20 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 		limit = 100 // Max limit
 	}
 
-	// Note: In a real implementation, we might want to use a GSI for efficient querying
-	// For now, we'll scan with a filter expression matching the legacy behavior
-	query := r.db.WithContext(ctx).Model(&models.Announcement{})
+	// Use GSI1 for efficient status-based queries with chronological ordering
+	status := "active"
+	if !active {
+		status = "inactive"
+	}
 
-	// Handle cursor-based pagination
+	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
+		Index("status-date-index").
+		Where("GSI1PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", status)).
+		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamps (newest first)
+
+	// Handle cursor-based pagination on GSI1SK
 	if cursor != "" {
-		// Parse cursor to get the last announcement ID
-		query = query.Where("PK", ">", cursor)
+		query = query.Where("GSI1SK", ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -240,7 +246,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 			// Return empty slice when no announcements found
 			return []*storage.Announcement{}, "", nil
 		}
-		return nil, "", fmt.Errorf("failed to scan announcements: %w", err)
+		return nil, "", fmt.Errorf("failed to query announcements with GSI: %w", err)
 	}
 
 	// Generate next cursor
@@ -248,13 +254,12 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 	hasMore := len(modelAnnouncements) > limit
 	if hasMore {
 		// We got more results than requested, so there are more pages
-		nextCursor = modelAnnouncements[limit-1].PK
+		nextCursor = modelAnnouncements[limit-1].GSI1SK
 		// Trim results to requested limit
 		modelAnnouncements = modelAnnouncements[:limit]
 	}
 
 	announcements := make([]*storage.Announcement, 0, len(modelAnnouncements))
-	now := time.Now()
 
 	for _, model := range modelAnnouncements {
 		announcement := &storage.Announcement{
@@ -273,20 +278,93 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 			CreatedBy:   model.CreatedBy,
 		}
 
-		// Filter active announcements if requested
-		if active {
-			// Skip if not yet started
-			if announcement.StartsAt != nil && announcement.StartsAt.After(now) {
-				continue
-			}
-			// Skip if already ended
-			if announcement.EndsAt != nil && announcement.EndsAt.Before(now) {
-				continue
-			}
+		announcements = append(announcements, announcement)
+	}
+
+	r.logger.Debug("retrieved announcements using GSI1",
+		zap.String("status", status),
+		zap.Int("returned_count", len(announcements)),
+		zap.Bool("has_more", hasMore),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+	)
+
+	return announcements, nextCursor, nil
+}
+
+// GetAnnouncementsByAdmin retrieves announcements created by a specific admin using GSI2
+func (r *AnnouncementRepository) GetAnnouncementsByAdmin(ctx context.Context, adminUsername string, limit int, cursor string) ([]*storage.Announcement, string, error) {
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Max limit
+	}
+
+	// Use GSI2 for efficient admin-based queries
+	query := r.db.WithContext(ctx).Model(&models.Announcement{}).
+		Index("admin-index").
+		Where("GSI2PK", "=", "ADMIN#"+adminUsername).
+		OrderBy("GSI2SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination on GSI2SK
+	if cursor != "" {
+		query = query.Where("GSI2SK", "<", cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(limit + 1)
+
+	var modelAnnouncements []*models.Announcement
+	err := query.All(&modelAnnouncements)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Return empty slice when no announcements found
+			return []*storage.Announcement{}, "", nil
+		}
+		return nil, "", fmt.Errorf("failed to query announcements by admin with GSI: %w", err)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	hasMore := len(modelAnnouncements) > limit
+	if hasMore {
+		// We got more results than requested, so there are more pages
+		nextCursor = modelAnnouncements[limit-1].GSI2SK
+		// Trim results to requested limit
+		modelAnnouncements = modelAnnouncements[:limit]
+	}
+
+	announcements := make([]*storage.Announcement, 0, len(modelAnnouncements))
+
+	for _, model := range modelAnnouncements {
+		announcement := &storage.Announcement{
+			ID:          model.ID,
+			Content:     model.Content,
+			Text:        model.Text,
+			PublishedAt: model.PublishedAt,
+			UpdatedAt:   model.UpdatedAt,
+			AllDay:      model.AllDay,
+			StartsAt:    model.StartsAt,
+			EndsAt:      model.EndsAt,
+			Reactions:   convertModelReactionsToStorage(model.Reactions),
+			Tags:        model.Tags,
+			Emojis:      convertModelEmojisToStorage(model.Emojis),
+			Mentions:    convertModelMentionsToStorage(model.Mentions),
+			CreatedBy:   model.CreatedBy,
 		}
 
 		announcements = append(announcements, announcement)
 	}
+
+	r.logger.Debug("retrieved announcements by admin using GSI2",
+		zap.String("admin", adminUsername),
+		zap.Int("returned_count", len(announcements)),
+		zap.Bool("has_more", hasMore),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+	)
 
 	return announcements, nextCursor, nil
 }

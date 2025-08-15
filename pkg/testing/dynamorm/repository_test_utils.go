@@ -4,6 +4,7 @@ package dynamorm
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -442,24 +443,36 @@ func BuildTestTimeline(actorID, statusID string) *models.Timeline {
 
 // Helper functions
 
-// copyStruct copies struct values (simplified version)
+// copyStruct copies struct values using reflection for generic type support
 func copyStruct(src, dest interface{}) {
-	// In a real implementation, use reflection or a library like copier
-	// This is a placeholder
-	switch s := src.(type) {
-	case *models.Actor:
-		if d, ok := dest.(*models.Actor); ok {
-			*d = *s
-		}
-	case *models.Status:
-		if d, ok := dest.(*models.Status); ok {
-			*d = *s
-		}
-	case *models.Timeline:
-		if d, ok := dest.(*models.Timeline); ok {
-			*d = *s
-		}
+	srcVal := reflect.ValueOf(src)
+	destVal := reflect.ValueOf(dest)
+
+	// Ensure we have pointers
+	if srcVal.Kind() != reflect.Ptr || destVal.Kind() != reflect.Ptr {
+		return
 	}
+
+	// Get the underlying elements
+	srcElem := srcVal.Elem()
+	destElem := destVal.Elem()
+
+	// Ensure both are structs and of the same type
+	if srcElem.Kind() != reflect.Struct || destElem.Kind() != reflect.Struct {
+		return
+	}
+
+	if srcElem.Type() != destElem.Type() {
+		return
+	}
+
+	// Ensure dest is settable
+	if !destElem.CanSet() {
+		return
+	}
+
+	// Copy the struct
+	destElem.Set(srcElem)
 }
 
 // AssertEventualConsistency tests eventual consistency scenarios

@@ -138,11 +138,18 @@ func (t *timelineService) updateEngagementCounters(_ context.Context, activity *
 	return nil
 }
 
-func (t *timelineService) removeFromTimeline(_ context.Context, timelineType, objectID string) error {
-	// Remove specific object from specific timeline type
-	// This would involve querying and deleting timeline entries
+func (t *timelineService) removeFromTimeline(ctx context.Context, timelineType, objectID string) error {
+	// Use storage adapter to remove from all timelines at once
+	// This is more efficient than removing from each timeline type individually
+	if err := t.storage.RemoveFromTimelines(ctx, objectID); err != nil {
+		t.logger.Warn("failed to remove from timelines",
+			zap.String("timeline_type", timelineType),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return err
+	}
 
-	t.logger.Debug("removing from timeline",
+	t.logger.Debug("successfully removed from timeline",
 		zap.String("timeline_type", timelineType),
 		zap.String("object_id", objectID))
 

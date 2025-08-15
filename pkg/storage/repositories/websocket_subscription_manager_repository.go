@@ -196,23 +196,44 @@ func (r *WebSocketSubscriptionManagerRepository) CleanupSubscriptions(ctx contex
 }
 
 // GetAllConnections gets all active connections (mainly for broadcasting)
-func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(_ context.Context) ([]models.WebSocketEventConnection, error) {
-	var connections []models.WebSocketEventConnection
+func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.Context) ([]models.WebSocketEventConnection, error) {
+	var connections []models.WebSocketConnection
+	var eventConnections []models.WebSocketEventConnection
 
-	// Since we need all connections, we'll need to scan the table
-	// In a real implementation, you might want to use a GSI or different access pattern
-	// For now, this is not efficiently implemented as DynamORM doesn't support scanning by prefix easily
-	// This method should be reconsidered for production use
-	err := fmt.Errorf("GetAllConnections not efficiently supported by DynamORM - needs redesign")
+	// Use GSI2 to query all connected connections efficiently
+	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Index("gsi2").
+		Where("GSI2PK", "=", "STATE#connected").
+		All(&connections)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return []models.WebSocketEventConnection{}, nil
 		}
-		return nil, fmt.Errorf("failed to get all connections: %w", err)
+		r.logger.Error("failed to get connected websocket connections", zap.Error(err))
+		return nil, fmt.Errorf("failed to get connected connections: %w", err)
 	}
 
-	return connections, nil
+	// Convert WebSocketConnection to WebSocketEventConnection
+	for _, conn := range connections {
+		eventConn := models.WebSocketEventConnection{
+			PK:           conn.PK,
+			SK:           "METADATA", // WebSocketEventConnection uses fixed SK
+			ConnectionID: conn.ConnectionID,
+			UserID:       conn.UserID,
+			ConnectedAt:  conn.Established,
+			LastSeen:     conn.LastActivity,
+			TTL:          conn.TTL,
+		}
+		// Update GSI keys for the event connection
+		eventConn.UpdateKeys()
+		eventConnections = append(eventConnections, eventConn)
+	}
+
+	r.logger.Info("retrieved all active connections",
+		zap.Int("count", len(eventConnections)))
+
+	return eventConnections, nil
 }
 
 // GetUserConnections retrieves all active connection IDs for a user

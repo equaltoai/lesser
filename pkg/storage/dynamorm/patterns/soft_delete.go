@@ -451,12 +451,9 @@ func (r *SoftDeleteRepository) GetSoftDeleteStats(_ context.Context) (SoftDelete
 // Private helper methods
 
 func (r *SoftDeleteRepository) save(_ context.Context, _ interface{}) error {
-	// This is a simplified save operation
-	// In a real implementation, you would use your existing save logic
-	// For now, we'll assume the model can be marshaled to DynamoDB format
-
-	// This would typically use your existing DynamoDB marshaling logic
-	// For the example, we'll return nil
+	// Placeholder save method for soft delete pattern demonstration
+	// This method should be replaced with actual DynamORM save implementation
+	// when integrating into production code
 	return nil
 }
 

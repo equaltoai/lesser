@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	mediaprocessor "github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -23,7 +24,9 @@ import (
 // Service provides media operations
 type Service struct {
 	mediaRepo   interfaces.MediaRepository
+	accountRepo interfaces.AccountRepository
 	publisher   streaming.Publisher
+	jobQueue    JobQueueService
 	logger      *zap.Logger
 	s3Bucket    string
 	cdnDomain   string
@@ -42,10 +45,25 @@ type ProcessingQueue interface {
 	QueueMediaProcessing(ctx context.Context, mediaID string, processingType string) error
 }
 
+// JobQueueService defines the interface for job queue operations
+type JobQueueService interface {
+	QueueMediaJob(ctx context.Context, msg JobMessage) error
+}
+
+// JobMessage represents a message for media processing
+type JobMessage struct {
+	JobID     string `json:"job_id"`
+	MediaID   string `json:"media_id"`
+	Username  string `json:"username"`
+	Timestamp int64  `json:"timestamp"`
+}
+
 // NewService creates a new Media Service with the required dependencies
 func NewService(
 	mediaRepo interfaces.MediaRepository,
+	accountRepo interfaces.AccountRepository,
 	publisher streaming.Publisher,
+	jobQueue JobQueueService,
 	logger *zap.Logger,
 	s3Bucket string,
 	cdnDomain string,
@@ -56,7 +74,9 @@ func NewService(
 
 	return &Service{
 		mediaRepo:   mediaRepo,
+		accountRepo: accountRepo,
 		publisher:   publisher,
+		jobQueue:    jobQueue,
 		logger:      logger,
 		s3Bucket:    s3Bucket,
 		cdnDomain:   cdnDomain,
@@ -145,13 +165,31 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 		media.CDNUrl = fmt.Sprintf("https://%s/%s", s.cdnDomain, s3Key)
 	}
 
-	// Analyze media dimensions for images (simulated)
+	// Analyze media dimensions for images
 	if media.IsImage() {
-		// In real implementation, this would analyze the image
-		// For now, we'll set placeholder values
-		media.Width = 1920
-		media.Height = 1080
-		media.Blurhash = "L6PZfSi_.AyE_3t7t7R**0o#DgR4" // Example blurhash
+		processedImages, err := mediaprocessor.ProcessImage(cmd.FileData, cmd.ContentType)
+		if err != nil {
+			s.logger.Warn("failed to process image, using defaults",
+				zap.String("media_id", media.MediaID),
+				zap.Error(err))
+			// Set default values if processing fails
+			media.Width = 0
+			media.Height = 0
+			media.Blurhash = mediaprocessor.GetDefaultBlurhash()
+		} else {
+			// Extract dimensions and blurhash from the original image
+			if original, exists := processedImages["original"]; exists {
+				media.Width = original.Width
+				media.Height = original.Height
+				media.Blurhash = original.Blurhash
+			} else {
+				s.logger.Warn("original image not found in processed results",
+					zap.String("media_id", media.MediaID))
+				media.Width = 0
+				media.Height = 0
+				media.Blurhash = mediaprocessor.GetDefaultBlurhash()
+			}
+		}
 	}
 
 	// Store the media record
@@ -167,7 +205,12 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 	events := s.emitMediaUploadedEvents(ctx, media)
 
 	// Queue async processing (thumbnails, analysis, etc.)
-	s.queueMediaProcessing(ctx, media)
+	if err := s.queueMediaProcessing(ctx, media); err != nil {
+		// Don't fail the upload if queueing fails - just log the error
+		s.logger.Warn("failed to queue media processing, processing will be skipped",
+			zap.String("media_id", media.MediaID),
+			zap.Error(err))
+	}
 
 	return &Result{
 		Media:  media,
@@ -231,7 +274,7 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 	}
 
 	// Apply privacy checks
-	if err := s.checkMediaAccess(media, query.ViewerID); err != nil {
+	if err := s.checkMediaAccess(ctx, media, query.ViewerID); err != nil {
 		return nil, err
 	}
 
@@ -385,7 +428,7 @@ func (s *Service) generateS3Key(mediaID, fileName string) string {
 	return fmt.Sprintf("media/%s/%s%s", timestamp, mediaID, ext)
 }
 
-func (s *Service) checkMediaAccess(media *models.Media, viewerID string) error {
+func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, viewerID string) error {
 	// Basic privacy check - owner can always access their media
 	if media.UserID == viewerID {
 		return nil
@@ -393,9 +436,30 @@ func (s *Service) checkMediaAccess(media *models.Media, viewerID string) error {
 
 	// Check if media is marked as NSFW and viewer restrictions
 	if media.IsNSFW {
-		// In a real implementation, you'd check viewer preferences/settings
-		s.logger.Debug("media marked as NSFW",
-			zap.String("media_id", media.MediaID))
+		// Get viewer's NSFW preferences
+		allowAccess, requireWarning, err := s.checkNSFWPermissions(ctx, viewerID)
+		if err != nil {
+			s.logger.Error("failed to check NSFW permissions",
+				zap.Error(err),
+				zap.String("media_id", media.MediaID),
+				zap.String("viewer_id", viewerID))
+			// Default to blocking access if preference check fails
+			return NewNSFWBlockedError("Unable to verify content preferences")
+		}
+
+		if !allowAccess {
+			s.logger.Debug("NSFW content blocked by user preferences",
+				zap.String("media_id", media.MediaID),
+				zap.String("viewer_id", viewerID))
+			return NewNSFWBlockedError("NSFW content blocked by your preferences")
+		}
+
+		if requireWarning {
+			s.logger.Debug("NSFW content requires warning",
+				zap.String("media_id", media.MediaID),
+				zap.String("viewer_id", viewerID))
+			// This can be handled by the API layer to show warnings
+		}
 	}
 
 	// Media is generally accessible if it's in "ready" status
@@ -503,24 +567,50 @@ func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media
 	return events
 }
 
-func (s *Service) queueMediaProcessing(_ context.Context, media *models.Media) {
-	// In a real implementation, this would queue processing jobs
-	// For now, we'll just log the intent
-	s.logger.Info("queuing media processing",
-		zap.String("media_id", media.MediaID),
-		zap.String("content_type", media.ContentType))
-
-	// Queue different processing based on media type
-	if media.IsImage() {
-		s.logger.Debug("queuing image processing (thumbnails, blurhash)",
-			zap.String("media_id", media.MediaID))
-	} else if media.IsVideo() {
-		s.logger.Debug("queuing video processing (thumbnails, transcoding)",
-			zap.String("media_id", media.MediaID))
-	} else if media.IsAudio() {
-		s.logger.Debug("queuing audio processing (waveform, metadata)",
-			zap.String("media_id", media.MediaID))
+func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media) error {
+	// Generate a unique job ID for tracking
+	jobID := uuid.New().String()
+	
+	// Create media job message
+	msg := JobMessage{
+		JobID:     jobID,
+		MediaID:   media.MediaID,
+		Username:  media.UserID, // Using UserID as Username for compatibility
+		Timestamp: time.Now().Unix(),
 	}
+
+	// Queue the processing job using the job queue service
+	if err := s.jobQueue.QueueMediaJob(ctx, msg); err != nil {
+		s.logger.Error("failed to queue media processing job",
+			zap.String("media_id", media.MediaID),
+			zap.String("job_id", jobID),
+			zap.String("content_type", media.ContentType),
+			zap.Error(err))
+		return fmt.Errorf("failed to queue media processing: %w", err)
+	}
+
+	s.logger.Info("queued media processing job",
+		zap.String("media_id", media.MediaID),
+		zap.String("job_id", jobID),
+		zap.String("content_type", media.ContentType),
+		zap.String("user_id", media.UserID))
+
+	// Log different processing based on media type for debugging
+	if media.IsImage() {
+		s.logger.Debug("queued image processing (thumbnails, blurhash)",
+			zap.String("media_id", media.MediaID),
+			zap.String("job_id", jobID))
+	} else if media.IsVideo() {
+		s.logger.Debug("queued video processing (thumbnails, transcoding)",
+			zap.String("media_id", media.MediaID),
+			zap.String("job_id", jobID))
+	} else if media.IsAudio() {
+		s.logger.Debug("queued audio processing (waveform, metadata)",
+			zap.String("media_id", media.MediaID),
+			zap.String("job_id", jobID))
+	}
+
+	return nil
 }
 
 // Additional methods for processing callbacks (would be called by async processors)
@@ -658,4 +748,67 @@ func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.M
 		zap.String("url", mediaStream.URL))
 
 	return mediaStream, nil
+}
+
+// checkNSFWPermissions retrieves the user's NSFW content preferences
+// Returns (allowAccess, requireWarning, error)
+func (s *Service) checkNSFWPermissions(ctx context.Context, viewerID string) (bool, bool, error) {
+	// Handle unauthenticated users with safe defaults
+	if viewerID == "" {
+		s.logger.Debug("unauthenticated user accessing NSFW content - blocking")
+		return false, true, nil // Block NSFW for unauthenticated users
+	}
+
+	// Get user preferences from the repository
+	preferences, err := s.accountRepo.GetAccountPreferences(ctx, viewerID)
+	if err != nil {
+		s.logger.Warn("failed to get user NSFW preferences, using safe defaults",
+			zap.Error(err),
+			zap.String("viewer_id", viewerID))
+		// On error, use safe defaults (block NSFW content)
+		return false, true, nil
+	}
+
+	// Extract NSFW preferences with safe defaults
+	allowNSFW := false
+	requireWarning := true
+
+	if allowVal, ok := preferences["allow_nsfw"]; ok {
+		if allow, ok := allowVal.(bool); ok {
+			allowNSFW = allow
+		}
+	}
+
+	if warnVal, ok := preferences["require_nsfw_warning"]; ok {
+		if warn, ok := warnVal.(bool); ok {
+			requireWarning = warn
+		}
+	}
+
+	s.logger.Debug("retrieved NSFW preferences",
+		zap.String("viewer_id", viewerID),
+		zap.Bool("allow_nsfw", allowNSFW),
+		zap.Bool("require_warning", requireWarning))
+
+	return allowNSFW, requireWarning, nil
+}
+
+// NSFWBlockedError represents an error when NSFW content is blocked
+type NSFWBlockedError struct {
+	message string
+}
+
+func (e *NSFWBlockedError) Error() string {
+	return e.message
+}
+
+// NewNSFWBlockedError creates a new NSFW blocked error
+func NewNSFWBlockedError(message string) *NSFWBlockedError {
+	return &NSFWBlockedError{message: message}
+}
+
+// IsNSFWBlocked checks if an error is an NSFW blocked error
+func IsNSFWBlocked(err error) bool {
+	_, ok := err.(*NSFWBlockedError)
+	return ok
 }

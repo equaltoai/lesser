@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -2685,18 +2686,30 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 		return nil // Nothing to delete
 	}
 
-	// Delete entries one by one (in a real implementation, you'd use batch operations)
-	deletedCount := 0
-	for _, entry := range expiredEntries {
-		err := r.db.WithContext(ctx).Model(entry).Delete()
-		if err != nil {
-			r.logger.Error("failed to delete expired timeline entry",
-				zap.String("pk", entry.PK),
-				zap.String("sk", entry.SK),
-				zap.Error(err))
-			return fmt.Errorf("failed to delete timeline entry: %w", err)
-		}
-		deletedCount++
+	// Use batch deletion for efficient processing
+	// Convert timeline entries to keys for batch deletion
+	keys := make([]any, len(expiredEntries))
+	for i, entry := range expiredEntries {
+		// DynamORM expects the actual model as the key for batch delete
+		keys[i] = entry
+	}
+
+	// Perform batch deletion using DynamORM batch operations
+	result, err := batch.BatchDeleteWithCostTracking(ctx, r.db, keys, &timelineCostTracker{logger: r.logger}, r.logger)
+	if err != nil {
+		r.logger.Error("failed to batch delete expired timeline entries",
+			zap.Time("before", before),
+			zap.Int("total_entries", len(expiredEntries)),
+			zap.Error(err))
+		return fmt.Errorf("failed to batch delete timeline entries: %w", err)
+	}
+
+	deletedCount := result.ProcessedItems
+	if result.FailedItems > 0 {
+		r.logger.Warn("some timeline entries failed to delete in batch operation",
+			zap.Int("total_entries", len(expiredEntries)),
+			zap.Int("deleted_count", deletedCount),
+			zap.Int("failed_count", result.FailedItems))
 	}
 
 	r.logger.Info("deleted expired timeline entries",
@@ -2754,10 +2767,10 @@ func (r *UserRepository) getTimelineEntries(ctx context.Context, pk, errorContex
 			Visibility:   e.Visibility,
 			TimelineAt:   e.TimelineAt,
 			ExpiresAt: func() *time.Time {
-				if e.ExpiresAt.IsZero() {
+				if e.TTL == 0 {
 					return nil
 				}
-				t := e.ExpiresAt
+				t := time.Unix(e.TTL, 0)
 				return &t
 			}(),
 			CreatedAt: e.CreatedAt,
@@ -3399,4 +3412,34 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 		return v
 	}
 	return ""
+}
+
+// timelineCostTracker implements the CostTracker interface for timeline deletion operations
+type timelineCostTracker struct {
+	logger *zap.Logger
+	reads  int64
+	writes int64
+}
+
+// CalculateCost returns the current cost metrics
+func (t *timelineCostTracker) CalculateCost() batch.CostMetrics {
+	return batch.CostMetrics{
+		DynamoDBReads:  t.reads,
+		DynamoDBWrites: t.writes,
+	}
+}
+
+// TrackDynamoWrite tracks DynamoDB write operations (deletes)
+func (t *timelineCostTracker) TrackDynamoWrite(items int) {
+	t.writes += int64(items)
+	if t.logger != nil {
+		t.logger.Debug("tracked timeline delete operations",
+			zap.Int("deleted_items", items),
+			zap.Int64("total_writes", t.writes))
+	}
+}
+
+// TrackDynamoRead tracks DynamoDB read operations
+func (t *timelineCostTracker) TrackDynamoRead(items int) {
+	t.reads += int64(items)
 }

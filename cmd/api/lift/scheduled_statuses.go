@@ -216,8 +216,8 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 // HandleCreateScheduledStatusLift handles POST /api/v1/statuses (with scheduled_at)
 func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *apimodels.CreateStatusRequest) (*apimodels.ScheduledStatus, error) {
 	// This is called from the main status creation handler when scheduled_at is present
-	// Authenticate request (should already be done by caller)
-	username := h.getAuthenticatedUsername(ctx)
+	// Authenticate request and extract client ID for application tracking
+	username, clientID := h.getAuthenticatedUsernameAndClientID(ctx)
 	if username == "" {
 		ctx.Status(401)
 		return nil, fmt.Errorf("unauthorized")
@@ -260,7 +260,7 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 		InReplyToID:   statusReq.InReplyToID,
 		Poll:          poll,
 		ScheduledAt:   scheduledAt,
-		ApplicationID: "", // TODO: Get from context if available
+		ApplicationID: clientID,
 	})
 	if err != nil {
 		h.logger.Error("failed to create scheduled status",
@@ -599,19 +599,38 @@ func (h *Handler) parseScheduledStatusRequest(ctx *lift.Context, req interface{}
 	return nil
 }
 
-// getAuthenticatedUsername gets the authenticated username from context
-func (h *Handler) getAuthenticatedUsername(ctx *lift.Context) string {
-	// This would typically be set by authentication middleware
-	// For now, try to extract from headers
+
+// getAuthenticatedUsernameAndClientID gets both username and client ID from the authenticated context
+func (h *Handler) getAuthenticatedUsernameAndClientID(ctx *lift.Context) (string, string) {
+	// For test environments, use test username and default client ID
 	testUsername := h.getScheduledStatusTestUsername(ctx)
 	if testUsername != "" {
-		return testUsername
+		return testUsername, "test-client-id"
 	}
 
 	// Try to get from context if set by middleware
 	if username, ok := ctx.Get("username").(string); ok {
-		return username
+		// Try to get client ID from context as well
+		if clientID, ok := ctx.Get("client_id").(string); ok {
+			return username, clientID
+		}
+		return username, ""
 	}
 
-	return ""
+	// Extract and validate token to get both username and client ID
+	authHeader := h.extractScheduledStatusAuthHeader(ctx)
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", ""
+	}
+
+	// Validate token and extract claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", ""
+	}
+
+	// Return both username and client ID from claims
+	return claims.Username, claims.ClientID
 }

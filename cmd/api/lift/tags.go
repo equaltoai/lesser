@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -193,17 +194,40 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 	response := map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-		"history": []struct {
+		"history": func() []struct {
 			Day      string `json:"day"`
 			Uses     string `json:"uses"`
 			Accounts string `json:"accounts"`
-		}{
-			{
-				Day:      "1668556800",
-				Uses:     "0",
-				Accounts: "0",
-			},
-		},
+		} {
+			// Get real hashtag statistics
+			if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
+				if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
+					history := make([]struct {
+						Day      string `json:"day"`
+						Uses     string `json:"uses"`
+						Accounts string `json:"accounts"`
+					}, len(tagStats.History))
+					for i, entry := range tagStats.History {
+						history[i] = struct {
+							Day      string `json:"day"`
+							Uses     string `json:"uses"`
+							Accounts string `json:"accounts"`
+						}{
+							Day:      entry.Date,
+							Uses:     entry.UsageCount,
+							Accounts: entry.UserCount,
+						}
+					}
+					return history
+				}
+			}
+			// Fallback to empty history
+			return []struct {
+				Day      string `json:"day"`
+				Uses     string `json:"uses"`
+				Accounts string `json:"accounts"`
+			}{}
+		}(),
 		"following": true,
 	}
 
@@ -273,17 +297,40 @@ func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 	response := map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-		"history": []struct {
+		"history": func() []struct {
 			Day      string `json:"day"`
 			Uses     string `json:"uses"`
 			Accounts string `json:"accounts"`
-		}{
-			{
-				Day:      "1668556800",
-				Uses:     "0",
-				Accounts: "0",
-			},
-		},
+		} {
+			// Get real hashtag statistics
+			if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
+				if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
+					history := make([]struct {
+						Day      string `json:"day"`
+						Uses     string `json:"uses"`
+						Accounts string `json:"accounts"`
+					}, len(tagStats.History))
+					for i, entry := range tagStats.History {
+						history[i] = struct {
+							Day      string `json:"day"`
+							Uses     string `json:"uses"`
+							Accounts string `json:"accounts"`
+						}{
+							Day:      entry.Date,
+							Uses:     entry.UsageCount,
+							Accounts: entry.UserCount,
+						}
+					}
+					return history
+				}
+			}
+			// Fallback to empty history
+			return []struct {
+				Day      string `json:"day"`
+				Uses     string `json:"uses"`
+				Accounts string `json:"accounts"`
+			}{}
+		}(),
 		"following": false,
 	}
 
@@ -292,45 +339,93 @@ func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 
 // HandleGetFollowedTagsLift retrieves the list of hashtags the user is following
 func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-		username = claims.Username
+	// Extract username using authentication
+	username, err := h.extractUsernameFromContextForTags(ctx)
+	if err != nil {
+		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
 	}
 
 	// Parse pagination parameters
+	paginationParams := h.extractPaginationParams(ctx)
+
+	// Get followed hashtags
+	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context, username, paginationParams.limit, paginationParams.cursor)
+	if err != nil {
+		h.logger.Error("failed to get followed hashtags", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	}
+
+	// Convert to tag models with following set to true
+	tags := h.buildTagModels(ctx.Context, hashtags)
+
+	// Set Link header for pagination if there's a cursor
+	if nextCursor != "" {
+		ctx.Response.Header("Link", fmt.Sprintf(`<%s/api/v1/followed_tags?max_id=%s>; rel="next"`, h.cfg.BaseURL(), nextCursor))
+	}
+
+	return ctx.JSON(tags)
+}
+
+// extractUsernameFromContextForTags extracts username from test header or OAuth token
+func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, error) {
+	// Test hook - check for test username header
+	testUsername := h.getHeaderValue(ctx, "X-Test-Username")
+	if testUsername != "" {
+		return testUsername, nil
+	}
+
+	// Extract and validate OAuth token
+	authHeader := h.getAuthorizationHeader(ctx)
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", err
+	}
+
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", err
+	}
+
+	return claims.Username, nil
+}
+
+// getHeaderValue gets header value with fallback to direct request access
+func (h *Handler) getHeaderValue(ctx *lift.Context, headerName string) string {
+	value := ctx.Header(headerName)
+	if value == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		value = ctx.Request.Request.Headers[headerName]
+	}
+	return value
+}
+
+// getAuthorizationHeader extracts Authorization header with case variations
+func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if authHeader == "" {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	return authHeader
+}
+
+// paginationParams holds pagination parameters
+type paginationParams struct {
+	limit  int
+	cursor string
+}
+
+// extractPaginationParams extracts and validates pagination parameters
+func (h *Handler) extractPaginationParams(ctx *lift.Context) paginationParams {
 	limit := 100
 	limitStr := ctx.Query("limit")
 	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
@@ -347,40 +442,51 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 		cursor = ctx.Request.Request.QueryParams["max_id"]
 	}
 
-	// Get followed hashtags
-	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context, username, limit, cursor)
-	if err != nil {
-		h.logger.Error("failed to get followed hashtags", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
+	return paginationParams{limit: limit, cursor: cursor}
+}
 
-	// Convert to tag models with following set to true
+// buildTagModels converts hashtags to tag models with history
+func (h *Handler) buildTagModels(ctx context.Context, hashtags []string) []map[string]any {
 	tags := make([]map[string]any, len(hashtags))
 	for i, hashtag := range hashtags {
 		tags[i] = map[string]any{
-			"name": hashtag,
-			"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
-			"history": []struct {
-				Day      string `json:"day"`
-				Uses     string `json:"uses"`
-				Accounts string `json:"accounts"`
-			}{
-				{
-					Day:      "1668556800",
-					Uses:     "0",
-					Accounts: "0",
-				},
-			},
+			"name":      hashtag,
+			"url":       fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
+			"history":   h.getHashtagHistory(ctx, hashtag),
 			"following": true,
 		}
 	}
+	return tags
+}
 
-	// Set Link header for pagination if there's a cursor
-	if nextCursor != "" {
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s/api/v1/followed_tags?max_id=%s>; rel="next"`, h.cfg.BaseURL(), nextCursor))
+// hashtagHistoryEntry represents a single history entry
+type hashtagHistoryEntry struct {
+	Day      string `json:"day"`
+	Uses     string `json:"uses"`
+	Accounts string `json:"accounts"`
+}
+
+// getHashtagHistory retrieves hashtag statistics and formats as history
+func (h *Handler) getHashtagHistory(ctx context.Context, hashtag string) []hashtagHistoryEntry {
+	tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx, hashtag)
+	if err != nil || tagStatsRaw == nil {
+		return []hashtagHistoryEntry{}
 	}
 
-	return ctx.JSON(tags)
+	tagStats, ok := tagStatsRaw.(*storage.HashtagStats)
+	if !ok {
+		return []hashtagHistoryEntry{}
+	}
+
+	history := make([]hashtagHistoryEntry, len(tagStats.History))
+	for i, entry := range tagStats.History {
+		history[i] = hashtagHistoryEntry{
+			Day:      entry.Date,
+			Uses:     entry.UsageCount,
+			Accounts: entry.UserCount,
+		}
+	}
+	return history
 }
 
 // HandleGetFeaturedTagsLift retrieves the user's featured tags
@@ -663,17 +769,40 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		tags[i] = models.Tag{
 			Name: tagName,
 			URL:  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-			History: []struct {
+			History: func() []struct {
 				Day      string `json:"day"`
 				Uses     string `json:"uses"`
 				Accounts string `json:"accounts"`
-			}{
-				{
-					Day:      "1668556800",
-					Uses:     "0",
-					Accounts: "0",
-				},
-			},
+			} {
+				// Get real hashtag statistics
+				if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
+					if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
+						history := make([]struct {
+							Day      string `json:"day"`
+							Uses     string `json:"uses"`
+							Accounts string `json:"accounts"`
+						}, len(tagStats.History))
+						for i, entry := range tagStats.History {
+							history[i] = struct {
+								Day      string `json:"day"`
+								Uses     string `json:"uses"`
+								Accounts string `json:"accounts"`
+							}{
+								Day:      entry.Date,
+								Uses:     entry.UsageCount,
+								Accounts: entry.UserCount,
+							}
+						}
+						return history
+					}
+				}
+				// Fallback to empty history
+				return []struct {
+					Day      string `json:"day"`
+					Uses     string `json:"uses"`
+					Accounts string `json:"accounts"`
+				}{}
+			}(),
 		}
 	}
 

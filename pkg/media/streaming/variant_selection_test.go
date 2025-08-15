@@ -82,6 +82,7 @@ func (m *MockAnalytics) Social() *repositories.SocialRepository                 
 func (m *MockAnalytics) User() *repositories.UserRepository                           { return nil }
 func (m *MockAnalytics) Status() *repositories.StatusRepository                       { return nil }
 func (m *MockAnalytics) Cost() *repositories.CostTrackingRepository                   { return nil }
+func (m *MockAnalytics) WebSocketCost() *repositories.WebSocketCostRepository           { return nil }
 func (m *MockAnalytics) Trust() *repositories.TrustRepository                         { return nil }
 func (m *MockAnalytics) Search() *repositories.SearchRepository                       { return nil }
 func (m *MockAnalytics) Relay() *repositories.RelayRepository                         { return nil }
@@ -98,6 +99,7 @@ func (m *MockAnalytics) DLQ() *repositories.DLQRepository                       
 func (m *MockAnalytics) MetricRecord() *repositories.MetricRecordRepository           { return nil }
 func (m *MockAnalytics) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
 func (m *MockAnalytics) Audit() *repositories.AuditRepository                         { return nil }
+func (m *MockAnalytics) MediaMetadata() *repositories.MediaMetadataRepository         { return nil }
 func (m *MockAnalytics) GetDB() dynamormCore.DB                                       { return nil }
 func (m *MockAnalytics) GetTableName() string                                         { return "test-table" }
 func (m *MockAnalytics) GetLogger() *zap.Logger                                       { return zap.NewNop() }
@@ -488,6 +490,20 @@ func TestVariantSelection_CodecPreference(t *testing.T) {
 
 func TestVariantSelection_ConcurrentUsers(t *testing.T) {
 	streamer := createTestStreamer(t)
+	
+	// Set up mock to handle any user ID with default preferences
+	mockAnalytics := streamer.analytics.(*MockAnalytics)
+	mockAnalytics.On("GetStreamingPreferences", mock.Anything, mock.AnythingOfType("string")).Return(&Preferences{
+		Username:             "",
+		DefaultQuality:       "",
+		AutoQuality:          true,
+		DataSaverMode:        false,
+		MaxBandwidthMbps:     0,
+		PreloadNext:          false,
+		PreferredCodec:       "",
+		BufferSizeSeconds:    0,
+		HDREnabled:           false,
+	}, nil)
 
 	// Simulate concurrent quality selection requests
 	const numUsers = 100

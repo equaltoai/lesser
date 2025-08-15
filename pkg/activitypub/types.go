@@ -56,6 +56,10 @@ type Actor struct {
 	PublicKey         *PublicKey `json:"publicKey,omitempty"`
 	Endpoints         *Endpoints `json:"endpoints,omitempty"`
 
+	// Account migration support
+	AlsoKnownAs []string `json:"alsoKnownAs,omitempty"`
+	MovedTo     string   `json:"movedTo,omitempty"`
+
 	// Mastodon-specific fields
 	ManuallyApprovesFollowers bool         `json:"manuallyApprovesFollowers,omitempty"`
 	Discoverable              bool         `json:"discoverable,omitempty"`

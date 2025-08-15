@@ -1008,6 +1008,181 @@ func (r *ActorRepository) shouldIncludeDiscoverable(actor *activitypub.Actor, su
 	return true
 }
 
+// MigrationInfo represents account migration information
+type MigrationInfo struct {
+	AlsoKnownAs []string `json:"also_known_as"`
+	MovedTo     string   `json:"moved_to,omitempty"`
+}
+
+// UpdateAlsoKnownAs updates the AlsoKnownAs field for an actor
+func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string, alsoKnownAs []string) error {
+	log := r.logger.With(
+		zap.String("method", "UpdateAlsoKnownAs"),
+		zap.String("username", username),
+		zap.Int("also_known_as_count", len(alsoKnownAs)),
+	)
+
+	// Get existing actor first
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
+		First(&actorModel)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Error("actor not found for alsoKnownAs update")
+			return common.ActorNotFoundError{Username: username}
+		}
+		log.Error("failed to get existing actor", zap.Error(err))
+		return fmt.Errorf("failed to get existing actor: %w", err)
+	}
+
+	// Update the alsoKnownAs field in the embedded actor
+	if actorModel.Actor == nil {
+		log.Error("actor data is nil")
+		return fmt.Errorf("actor data is missing")
+	}
+
+	actorModel.Actor.AlsoKnownAs = alsoKnownAs
+
+	// Update using DynamORM
+	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	if err != nil {
+		log.Error("failed to update actor alsoKnownAs", zap.Error(err))
+		return fmt.Errorf("failed to update actor alsoKnownAs: %w", err)
+	}
+
+	log.Info("updated actor alsoKnownAs successfully")
+	return nil
+}
+
+// UpdateMovedTo updates the MovedTo field for an actor
+func (r *ActorRepository) UpdateMovedTo(ctx context.Context, username string, movedTo string) error {
+	log := r.logger.With(
+		zap.String("method", "UpdateMovedTo"),
+		zap.String("username", username),
+		zap.String("moved_to", movedTo),
+	)
+
+	// Get existing actor first
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
+		First(&actorModel)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Error("actor not found for movedTo update")
+			return common.ActorNotFoundError{Username: username}
+		}
+		log.Error("failed to get existing actor", zap.Error(err))
+		return fmt.Errorf("failed to get existing actor: %w", err)
+	}
+
+	// Update the movedTo field in the embedded actor
+	if actorModel.Actor == nil {
+		log.Error("actor data is nil")
+		return fmt.Errorf("actor data is missing")
+	}
+
+	actorModel.Actor.MovedTo = movedTo
+
+	// Update using DynamORM
+	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	if err != nil {
+		log.Error("failed to update actor movedTo", zap.Error(err))
+		return fmt.Errorf("failed to update actor movedTo: %w", err)
+	}
+
+	log.Info("updated actor movedTo successfully")
+	return nil
+}
+
+// CheckAlsoKnownAs checks if targetActorID is in the AlsoKnownAs slice for the given username
+func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string, targetActorID string) (bool, error) {
+	log := r.logger.With(
+		zap.String("method", "CheckAlsoKnownAs"),
+		zap.String("username", username),
+		zap.String("target_actor_id", targetActorID),
+	)
+
+	// Get existing actor
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
+		Select("Actor"). // Only select the Actor field for efficiency
+		First(&actorModel)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Debug("actor not found for alsoKnownAs check")
+			return false, common.ActorNotFoundError{Username: username}
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return false, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Check if the embedded actor data exists
+	if actorModel.Actor == nil {
+		log.Debug("actor data is nil")
+		return false, nil
+	}
+
+	// Check if targetActorID is in the AlsoKnownAs slice
+	for _, actorID := range actorModel.Actor.AlsoKnownAs {
+		if actorID == targetActorID {
+			log.Debug("target actor ID found in alsoKnownAs")
+			return true, nil
+		}
+	}
+
+	log.Debug("target actor ID not found in alsoKnownAs")
+	return false, nil
+}
+
+// GetActorMigrationInfo returns migration information for an actor
+func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username string) (*MigrationInfo, error) {
+	log := r.logger.With(
+		zap.String("method", "GetActorMigrationInfo"),
+		zap.String("username", username),
+	)
+
+	// Get existing actor
+	var actorModel models.Actor
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		Where("PK", "=", "ACTOR#"+username).
+		Where("SK", "=", "PROFILE").
+		Select("Actor"). // Only select the Actor field for efficiency
+		First(&actorModel)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			log.Error("actor not found for migration info")
+			return nil, common.ActorNotFoundError{Username: username}
+		}
+		log.Error("failed to get actor", zap.Error(err))
+		return nil, fmt.Errorf("failed to get actor: %w", err)
+	}
+
+	// Check if the embedded actor data exists
+	if actorModel.Actor == nil {
+		log.Error("actor data is nil")
+		return nil, fmt.Errorf("actor data is missing")
+	}
+
+	// Create and return migration info
+	migrationInfo := &MigrationInfo{
+		AlsoKnownAs: actorModel.Actor.AlsoKnownAs,
+		MovedTo:     actorModel.Actor.MovedTo,
+	}
+
+	log.Debug("retrieved actor migration info",
+		zap.Int("also_known_as_count", len(migrationInfo.AlsoKnownAs)),
+		zap.String("moved_to", migrationInfo.MovedTo),
+	)
+
+	return migrationInfo, nil
+}
+
 // RemoveAccountSuggestion removes an account from suggestions for a user
 func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
 	log := r.logger.With(

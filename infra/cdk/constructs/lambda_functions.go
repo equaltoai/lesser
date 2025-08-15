@@ -28,8 +28,6 @@ type LambdaFunctions struct {
 	// API Functions
 	APIFunction      awslambda.Function
 	GraphQLFunction  awslambda.Function
-	AuthFunction     awslambda.Function
-	AuthAPIFunction  awslambda.Function
 	
 	// Federation Functions
 	InboxFunction     awslambda.Function
@@ -103,11 +101,9 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		Role:         security.LambdaRole, // Use comprehensive security role
 	}
 	
-	// Create Lambda functions matching Pulumi implementation (lines 664-792)
+	// Create Lambda functions - Lift-based implementation
 	functions.APIFunction = createFunction(stack, "api", &commonProps, "../../bin/api.zip")
 	functions.GraphQLFunction = createFunction(stack, "graphql", &commonProps, "../../bin/graphql.zip")
-	functions.AuthFunction = createFunction(stack, "auth", &commonProps, "../../bin/auth.zip")
-	functions.AuthAPIFunction = createFunction(stack, "auth-api", &commonProps, "../../bin/auth-api.zip")
 	
 	// Create federation functions (Pulumi lines 668-691)
 	functions.InboxFunction = createFunction(stack, "inbox", &commonProps, "../../bin/inbox.zip")

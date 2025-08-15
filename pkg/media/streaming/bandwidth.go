@@ -64,7 +64,7 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 	// Also publish to CloudWatch for real-time bandwidth tracking
 	bt.publishBandwidthMetric(ctx, userID, bytesTransferred, now)
 
-	// Track cost (simplified since we're not doing direct DynamoDB operations)
+	// Track analytics operation cost
 	if bt.costTracker != nil {
 		bt.costTracker.TrackDynamoWrite(1)
 	}
@@ -101,7 +101,7 @@ func (bt *BandwidthTracker) GetBandwidthStats(_ context.Context, userID string) 
 		MeasurementWindow: 5 * time.Minute,
 	}
 
-	// Track cost (simplified)
+	// Track operation cost
 	if bt.costTracker != nil {
 		bt.costTracker.TrackDynamoRead(1)
 	}
@@ -141,7 +141,7 @@ func (bt *BandwidthTracker) RecordBandwidthMeasurement(ctx context.Context, user
 	// Publish real-time bandwidth measurement to CloudWatch
 	bt.publishBandwidthMetric(ctx, userID, int64(bandwidth), now)
 
-	// Track cost (simplified)
+	// Track operation cost
 	if bt.costTracker != nil {
 		bt.costTracker.TrackDynamoWrite(1)
 	}

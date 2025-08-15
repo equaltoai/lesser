@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -180,10 +181,8 @@ func (tc *TransactionContext) Put(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-
-	if err := txOps.Put(item); err != nil {
+	// Use DynamORM transaction directly
+	if err := tc.tx.Model(item).Create(); err != nil {
 		return fmt.Errorf("transaction put failed: %w", err)
 	}
 
@@ -199,10 +198,8 @@ func (tc *TransactionContext) Delete(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-
-	if err := txOps.Delete(item); err != nil {
+	// Use DynamORM transaction directly
+	if err := tc.tx.Model(item).Delete(); err != nil {
 		return fmt.Errorf("transaction delete failed: %w", err)
 	}
 
@@ -218,10 +215,8 @@ func (tc *TransactionContext) Update(item any) error {
 		return fmt.Errorf("transaction not initialized")
 	}
 
-	// Create MockTx wrapper for the actual transaction
-	txOps := &dynamorm.MockTx{Tx: *tc.tx}
-
-	if err := txOps.Update(item); err != nil {
+	// Use DynamORM transaction directly
+	if err := tc.tx.Model(item).Update(); err != nil {
 		return fmt.Errorf("transaction update failed: %w", err)
 	}
 
@@ -354,48 +349,61 @@ func (tc *TransactionContext) GetOperationCount() int {
 // FollowUserTransactional implements a follow operation with multiple updates
 func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, followerID, followeeID string) error {
 	return r.tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
-		// This is a conceptual example - actual implementation would depend on
-		// DynamORM's transaction API when it becomes available
-
-		// 1. Create follow relationship
-		follow := map[string]any{
-			"PK":         fmt.Sprintf("USER#%s", followerID),
-			"SK":         fmt.Sprintf("FOLLOWS#%s", followeeID),
-			"FollowerID": followerID,
-			"FolloweeID": followeeID,
-			"CreatedAt":  time.Now(),
-		}
+		now := time.Now()
+		
+		// 1. Create follow relationship using NewFollow constructor
+		activityID := fmt.Sprintf("follow-%s-%s-%d", followerID, followeeID, now.Unix())
+		follow := models.NewFollow(followerID, followeeID, activityID)
+		follow.Accept() // Mark as accepted immediately for direct follows
+		
 		if err := txCtx.Put(follow); err != nil {
 			return fmt.Errorf("failed to create follow relationship: %w", err)
 		}
 
-		// 2. Update follower count (conditional)
-		followeeUpdate := map[string]any{
-			"PK": fmt.Sprintf("USER#%s", followeeID),
-			"SK": fmt.Sprintf("USER#%s", followeeID),
+		// 2. Update follower's actor record (following count)
+		followerActor := &models.Actor{
+			Username: followerID,
 		}
-		if err := txCtx.Update(followeeUpdate); err != nil {
-			return fmt.Errorf("failed to update follower count: %w", err)
-		}
-
-		// 3. Update following count
-		followerUpdate := map[string]any{
-			"PK": fmt.Sprintf("USER#%s", followerID),
-			"SK": fmt.Sprintf("USER#%s", followerID),
-		}
-		if err := txCtx.Update(followerUpdate); err != nil {
-			return fmt.Errorf("failed to update following count: %w", err)
+		followerActor.PK = fmt.Sprintf("ACTOR#%s", followerID)
+		followerActor.SK = "PROFILE"
+		followerActor.FollowingCount++
+		followerActor.UpdatedAt = now
+		
+		if err := txCtx.Update(followerActor); err != nil {
+			return fmt.Errorf("failed to update follower's following count: %w", err)
 		}
 
-		// 4. Add notification
-		notification := map[string]any{
-			"PK":        fmt.Sprintf("USER#%s", followeeID),
-			"SK":        fmt.Sprintf("NOTIF#%s#%s", time.Now().Format("20060102150405"), followerID),
-			"Type":      "follow",
-			"ActorID":   followerID,
-			"CreatedAt": time.Now(),
-			"IsRead":    false,
+		// 3. Update followee's actor record (follower count)
+		followeeActor := &models.Actor{
+			Username: followeeID,
 		}
+		followeeActor.PK = fmt.Sprintf("ACTOR#%s", followeeID)
+		followeeActor.SK = "PROFILE"
+		followeeActor.FollowerCount++
+		followeeActor.UpdatedAt = now
+		
+		if err := txCtx.Update(followeeActor); err != nil {
+			return fmt.Errorf("failed to update followee's follower count: %w", err)
+		}
+
+		// 4. Create follow notification manually
+		notificationID := fmt.Sprintf("notif-%s-%s-%d", followeeID, followerID, now.Unix())
+		notification := &models.Notification{
+			ID:         notificationID,
+			UserID:     followeeID,
+			ActorID:    followerID,
+			Type:       "follow",
+			TargetID:   followerID,
+			TargetType: "user",
+			IsRead:     false,
+			CreatedAt:  now,
+			UpdatedAt:  now,
+			ExpiresAt:  now.Add(30 * 24 * time.Hour).Unix(), // 30 days TTL
+		}
+		// Set up keys manually
+		notification.PK = fmt.Sprintf("NOTIF#%s", followeeID)
+		notification.SK = fmt.Sprintf("%s#%s", now.Format("2006-01-02T15:04:05.000Z"), notificationID)
+		
 		if err := txCtx.Put(notification); err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
@@ -572,26 +580,92 @@ func (tm *TransactionManager) ExecuteWithRetry(ctx context.Context, config Trans
 	return fmt.Errorf("transaction failed after %d attempts: %w", config.MaxRetries+1, lastErr)
 }
 
-// isRetryableError determines if an error is retryable
+// isRetryableError determines if an error is retryable based on AWS DynamoDB error patterns
 func isRetryableError(err error) bool {
-	// This is a simplified implementation - in practice, you'd check for specific
-	// DynamoDB error types like ConditionalCheckFailedException, ThrottlingException, etc.
 	if err == nil {
 		return false
 	}
 
-	errorStr := err.Error()
-	// Check for common retryable patterns
+	errorStr := strings.ToLower(err.Error())
+	
+	// DynamoDB-specific retryable errors
 	retryablePatterns := []string{
-		"temporary error",
+		"throttlingexception",
+		"throttled",
 		"throttle",
+		"provisionedthroughputexceededexception",
+		"serviceexception", 
+		"internalservererror",
+		"temporaryerror",
+		"temporary error",
 		"timeout",
-		"connection",
+		"connection reset",
+		"connection refused", 
+		"network error",
+		"transactionconflictexception",
+		"conditionalcheckfailedexception", // Can be retryable in some cases
+		"requestlimitexceeded",
+		"too many requests",
+		"rate limit",
+		"rate exceeded",
+		"try again",
 		"retry",
+		"busy",
+		"unavailable",
+		"gateway timeout",
+		"bad gateway",
+		"service unavailable",
+		"internal error",
+		"server error",
+		"deadline exceeded",
+		"context deadline exceeded",
+		"i/o timeout",
+		"no such host",
+		"connection timed out",
+		"eof",
+		"broken pipe",
 	}
 
+	// Check for retryable error patterns
 	for _, pattern := range retryablePatterns {
-		if strings.Contains(strings.ToLower(errorStr), pattern) {
+		if strings.Contains(errorStr, pattern) {
+			return true
+		}
+	}
+
+	// Additional checks for AWS SDK error types by checking error structure
+	// Check for specific AWS error codes that are retryable
+	awsRetryableCodes := []string{
+		"throttling",
+		"requesttimeout", 
+		"requesttimewaitstate",
+		"provisionedthroughputexceeded",
+		"serviceunavailable",
+		"slowdown",
+		"requesttimetooskewed",
+		"tokenbucketfull",
+		"internalfailure",
+		"servicefailure",
+	}
+
+	for _, code := range awsRetryableCodes {
+		if strings.Contains(errorStr, code) {
+			return true
+		}
+	}
+
+	// Check for HTTP status codes that indicate retryable errors
+	httpRetryablePatterns := []string{
+		"429", // Too Many Requests
+		"500", // Internal Server Error  
+		"502", // Bad Gateway
+		"503", // Service Unavailable
+		"504", // Gateway Timeout
+		"408", // Request Timeout
+	}
+
+	for _, code := range httpRetryablePatterns {
+		if strings.Contains(errorStr, code) {
 			return true
 		}
 	}

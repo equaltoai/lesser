@@ -21,13 +21,18 @@ import (
 const (
 	// DefaultDomain is the default domain for local development
 	DefaultDomain = "localhost"
+	// LinkTypePhoto represents photo link type
+	LinkTypePhoto = "photo"
+	// LinkTypeVideo represents video link type
+	LinkTypeVideo = "video"
 )
 
 // TrendingRepository implements trending and analytics operations using DynamORM
 type TrendingRepository struct {
-	db     core.DB
-	logger *zap.Logger
-	domain string
+	db         core.DB
+	logger     *zap.Logger
+	domain     string
+	statusRepo *StatusRepository
 }
 
 // NewTrendingRepository creates a new trending repository
@@ -43,6 +48,11 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger) *TrendingRepository {
 		logger: logger,
 		domain: domain,
 	}
+}
+
+// SetStatusRepository sets the status repository dependency for cross-repository operations
+func (r *TrendingRepository) SetStatusRepository(statusRepo *StatusRepository) {
+	r.statusRepo = statusRepo
 }
 
 // RecordHashtagUsage records when a hashtag is used in a status
@@ -401,11 +411,11 @@ func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL s
 	// Determine link type based on URL patterns
 	lowerURL := strings.ToLower(linkURL)
 	if strings.Contains(lowerURL, "youtube.com") || strings.Contains(lowerURL, "youtu.be") {
-		linkType = "video"
+		linkType = LinkTypeVideo
 		title = "YouTube Video"
 	} else if strings.Contains(lowerURL, ".jpg") || strings.Contains(lowerURL, ".png") ||
 		strings.Contains(lowerURL, ".gif") || strings.Contains(lowerURL, ".webp") {
-		linkType = "photo"
+		linkType = LinkTypePhoto
 		title = "Image"
 		image = linkURL
 	}
@@ -1080,19 +1090,19 @@ func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query str
 }
 
 // GetStatusesByLink retrieves statuses that contain a specific link
-func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string, limit int) ([]any, error) {
+func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
 	}
 
-	// Query link trends that match the URL
-	var linkTrends []*models.LinkTrend
-	err := r.db.Model(&models.LinkTrend{}).
-		Where("URL", "=", linkURL).
-		OrderBy("UsageCount", "DESC").
-		Limit(limit).
-		All(&linkTrends)
+	// Check if statusRepo dependency is available
+	if r.statusRepo == nil {
+		r.logger.Error("statusRepo dependency not set for GetStatusesByLink")
+		return nil, fmt.Errorf("statusRepo dependency not available")
+	}
 
+	// Use StatusRepository to fetch actual status objects that contain the link
+	statuses, err := r.statusRepo.GetStatusesByURL(ctx, linkURL, limit)
 	if err != nil {
 		r.logger.Error("failed to get statuses by link",
 			zap.String("link_url", linkURL),
@@ -1100,19 +1110,15 @@ func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string
 		return nil, fmt.Errorf("failed to get statuses by link: %w", err)
 	}
 
-	// Convert to any slice (would normally fetch actual status objects)
-	results := make([]any, len(linkTrends))
-	for i, trend := range linkTrends {
-		// In a real implementation, we would fetch the actual status objects
-		// For now, return basic info
-		results[i] = map[string]interface{}{
-			"url":         trend.URL,
-			"title":       trend.Title,
-			"share_count": trend.ShareCount,
-			"updated_at":  trend.UpdatedAt,
-			"trend_score": trend.TrendScore,
-		}
+	// Convert status objects to any slice for interface compatibility
+	results := make([]any, len(statuses))
+	for i, status := range statuses {
+		results[i] = status
 	}
+
+	r.logger.Info("successfully retrieved statuses by link",
+		zap.String("link_url", linkURL),
+		zap.Int("count", len(statuses)))
 
 	return results, nil
 }
@@ -1917,6 +1923,274 @@ func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, 
 	}
 
 	return stats, nil
+}
+
+// initializeAnalyticsData creates and initializes streaming analytics data structure
+func (r *TrendingRepository) initializeAnalyticsData(mediaID string) *storage.StreamingAnalyticsData {
+	return &storage.StreamingAnalyticsData{
+		MediaID:             mediaID,
+		TotalViews:          0,
+		UniqueViewers:       0,
+		AverageWatchTime:    0,
+		QualityDistribution: make(map[string]*storage.QualityStats),
+		BufferingEvents:     0,
+		CompletionRate:      0.0,
+		RecentMetrics:       make(map[string]interface{}),
+	}
+}
+
+// querySessionEvents retrieves session start events for analysis
+func (r *TrendingRepository) querySessionEvents(ctx context.Context, last7Days time.Time) ([]models.MediaAnalytics, error) {
+	var sessionEvents []models.MediaAnalytics
+	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+		Where("PK", "=", "MEDIA_EVENT#session_start").
+		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
+		All(&sessionEvents)
+
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to query session events: %w", err)
+	}
+
+	return sessionEvents, nil
+}
+
+// processSessionEvent processes a single session event for the target media
+func (r *TrendingRepository) processSessionEvent(
+	event models.MediaAnalytics, 
+	mediaID string, 
+	analytics *storage.StreamingAnalyticsData, 
+	uniqueUsers map[string]bool,
+	sessionMetrics *struct {
+		totalWatchTime        float64
+		totalCompletedSessions int
+	},
+) {
+	if event.MediaID != mediaID {
+		return
+	}
+
+	analytics.TotalViews++
+	
+	// Track unique viewers
+	if event.UserID != "" {
+		uniqueUsers[event.UserID] = true
+	}
+
+	// Aggregate streaming session metrics
+	analytics.StreamingSessions += event.StreamingSessions
+
+	// Calculate watch time from duration
+	if event.Duration > 0 {
+		sessionMetrics.totalWatchTime += event.Duration
+		// If session has duration, consider it completed
+		sessionMetrics.totalCompletedSessions++
+	}
+
+	// Process quality distribution
+	r.updateQualityDistribution(event, analytics)
+
+	// Track bandwidth usage by variant
+	for _, bandwidth := range event.VariantBandwidth {
+		analytics.TotalBandwidthBytes += bandwidth
+	}
+}
+
+// updateQualityDistribution updates quality distribution data from event
+func (r *TrendingRepository) updateQualityDistribution(event models.MediaAnalytics, analytics *storage.StreamingAnalyticsData) {
+	for qualityLevel, viewerCount := range event.QualityDistribution {
+		if existing, ok := analytics.QualityDistribution[qualityLevel]; ok {
+			existing.ViewCount += viewerCount
+			existing.TotalBandwidth += event.VariantBandwidth[qualityLevel]
+		} else {
+			analytics.QualityDistribution[qualityLevel] = &storage.QualityStats{
+				Quality:        qualityLevel,
+				ViewCount:      viewerCount,
+				Percentage:     0, // Will calculate after processing all events
+				TotalBandwidth: event.VariantBandwidth[qualityLevel],
+				AverageBitrate: 0, // Will calculate from variant data
+			}
+		}
+	}
+}
+
+// processSessionEvents processes all session events for analytics
+func (r *TrendingRepository) processSessionEvents(
+	sessionEvents []models.MediaAnalytics, 
+	mediaID string, 
+	analytics *storage.StreamingAnalyticsData,
+) (map[string]bool, *struct {
+	totalWatchTime        float64
+	totalCompletedSessions int
+}) {
+	uniqueUsers := make(map[string]bool)
+	sessionMetrics := &struct {
+		totalWatchTime        float64
+		totalCompletedSessions int
+	}{}
+
+	for _, event := range sessionEvents {
+		r.processSessionEvent(event, mediaID, analytics, uniqueUsers, sessionMetrics)
+	}
+
+	return uniqueUsers, sessionMetrics
+}
+
+// finalizeBasicMetrics calculates final analytics metrics
+func (r *TrendingRepository) finalizeBasicMetrics(
+	analytics *storage.StreamingAnalyticsData, 
+	uniqueUsers map[string]bool, 
+	sessionMetrics *struct {
+		totalWatchTime        float64
+		totalCompletedSessions int
+	},
+) {
+	// Set unique viewers count
+	analytics.UniqueViewers = len(uniqueUsers)
+
+	// Calculate average watch time
+	if analytics.TotalViews > 0 {
+		analytics.AverageWatchTime = sessionMetrics.totalWatchTime / float64(analytics.TotalViews)
+	}
+
+	// Calculate completion rate
+	if analytics.TotalViews > 0 {
+		analytics.CompletionRate = float64(sessionMetrics.totalCompletedSessions) / float64(analytics.TotalViews)
+	}
+}
+
+// queryBufferingEvents retrieves and counts buffering events
+func (r *TrendingRepository) queryBufferingEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	var bufferingEvents []models.MediaAnalytics
+	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+		Where("PK", "=", "MEDIA_EVENT#rebuffer_start").
+		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
+		All(&bufferingEvents)
+
+	if err != nil {
+		return 0, nil // Ignore errors for buffering events
+	}
+
+	totalBufferingEvents := 0
+	for _, event := range bufferingEvents {
+		if event.MediaID == mediaID {
+			totalBufferingEvents++
+		}
+	}
+
+	return totalBufferingEvents, nil
+}
+
+// calculateQualityMetrics calculates quality distribution percentages and bitrates
+func (r *TrendingRepository) calculateQualityMetrics(analytics *storage.StreamingAnalyticsData) {
+	// Calculate total quality views
+	totalQualityViews := 0
+	for _, stats := range analytics.QualityDistribution {
+		totalQualityViews += stats.ViewCount
+	}
+
+	// Calculate percentages and bitrates
+	for _, stats := range analytics.QualityDistribution {
+		if totalQualityViews > 0 {
+			stats.Percentage = float64(stats.ViewCount) / float64(totalQualityViews) * 100
+		}
+		
+		// Calculate average bitrate from bandwidth and view count
+		if stats.ViewCount > 0 && stats.TotalBandwidth > 0 {
+			// Convert bytes to bits and average over sessions
+			stats.AverageBitrate = float64(stats.TotalBandwidth*8) / float64(stats.ViewCount) / 1000 // kbps
+		}
+	}
+}
+
+// addRecentMetrics adds recent performance metrics to analytics
+func (r *TrendingRepository) addRecentMetrics(
+	analytics *storage.StreamingAnalyticsData, 
+	sessionEvents []models.MediaAnalytics, 
+	mediaID string, 
+	last24Hours time.Time,
+) {
+	analytics.RecentMetrics["last_24h_views"] = r.countRecentSessions(sessionEvents, mediaID, last24Hours)
+	analytics.RecentMetrics["peak_concurrent_sessions"] = analytics.StreamingSessions
+	analytics.RecentMetrics["total_bandwidth_gb"] = float64(analytics.TotalBandwidthBytes) / (1024 * 1024 * 1024)
+}
+
+// queryQualityChangeEvents retrieves and counts quality change events
+func (r *TrendingRepository) queryQualityChangeEvents(ctx context.Context, mediaID string, last7Days time.Time) (int, error) {
+	var qualityChangeEvents []models.MediaAnalytics
+	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
+		Where("PK", "begins_with", "QUALITY_CHANGE#").
+		Where("SK", "begins_with", fmt.Sprintf("%d", last7Days.Unix())).
+		All(&qualityChangeEvents)
+
+	if err != nil {
+		return 0, nil // Ignore errors for quality change events
+	}
+
+	qualityChanges := 0
+	for _, event := range qualityChangeEvents {
+		if event.MediaID == mediaID {
+			qualityChanges++
+		}
+	}
+
+	return qualityChanges, nil
+}
+
+// GetStreamingAnalytics retrieves comprehensive streaming analytics for a media item
+func (r *TrendingRepository) GetStreamingAnalytics(ctx context.Context, mediaID string) (*storage.StreamingAnalyticsData, error) {
+	now := time.Now()
+	last24Hours := now.Add(-24 * time.Hour)
+	last7Days := now.Add(-7 * 24 * time.Hour)
+
+	// Initialize analytics data structure
+	analytics := r.initializeAnalyticsData(mediaID)
+
+	// Query session events
+	sessionEvents, err := r.querySessionEvents(ctx, last7Days)
+	if err != nil {
+		r.logger.Error("failed to query session events", zap.String("mediaID", mediaID), zap.Error(err))
+		return nil, err
+	}
+
+	// Process session events
+	uniqueUsers, sessionMetrics := r.processSessionEvents(sessionEvents, mediaID, analytics)
+
+	// Calculate basic metrics
+	r.finalizeBasicMetrics(analytics, uniqueUsers, sessionMetrics)
+
+	// Query and set buffering events
+	bufferingEvents, _ := r.queryBufferingEvents(ctx, mediaID, last7Days)
+	analytics.BufferingEvents = bufferingEvents
+
+	// Calculate quality distribution metrics
+	r.calculateQualityMetrics(analytics)
+
+	// Add recent performance metrics
+	r.addRecentMetrics(analytics, sessionEvents, mediaID, last24Hours)
+
+	// Query and add quality change events
+	qualityChanges, _ := r.queryQualityChangeEvents(ctx, mediaID, last7Days)
+	analytics.RecentMetrics["quality_changes_7d"] = qualityChanges
+
+	r.logger.Debug("retrieved streaming analytics",
+		zap.String("mediaID", mediaID),
+		zap.Int("totalViews", analytics.TotalViews),
+		zap.Int("uniqueViewers", analytics.UniqueViewers),
+		zap.Float64("averageWatchTime", analytics.AverageWatchTime),
+		zap.Int("bufferingEvents", analytics.BufferingEvents))
+
+	return analytics, nil
+}
+
+// countRecentSessions counts sessions within a specific time period
+func (r *TrendingRepository) countRecentSessions(events []models.MediaAnalytics, mediaID string, since time.Time) int {
+	count := 0
+	for _, event := range events {
+		if event.MediaID == mediaID && event.Timestamp.After(since) {
+			count++
+		}
+	}
+	return count
 }
 
 // ========== ModerationAnalytics Methods ==========

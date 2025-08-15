@@ -109,6 +109,15 @@ func (m *MockRepositoryStorage) Media() *repositories.MediaRepository {
 	return args.Get(0).(*repositories.MediaRepository)
 }
 
+// MediaMetadata returns a mock media metadata repository for testing
+func (m *MockRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.MediaMetadataRepository)
+}
+
 // Poll returns a mock poll repository for testing
 func (m *MockRepositoryStorage) Poll() *repositories.PollRepository {
 	args := m.Called()
@@ -242,6 +251,15 @@ func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository {
 		return nil
 	}
 	return args.Get(0).(*repositories.CostTrackingRepository)
+}
+
+// WebSocketCost returns a mock WebSocket cost repository for testing
+func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.WebSocketCostRepository)
 }
 
 // Trust returns a mock trust repository for testing

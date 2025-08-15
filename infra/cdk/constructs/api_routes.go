@@ -105,13 +105,13 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
 	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
 	
-	// OAuth routes
-	addRoute(api, "GET /oauth/{proxy+}", functions.AuthFunction)
-	addRoute(api, "POST /oauth/{proxy+}", functions.AuthFunction)
+	// OAuth routes (handled by native Lift implementation in API)
+	addRoute(api, "GET /oauth/{proxy+}", functions.APIFunction)
+	addRoute(api, "POST /oauth/{proxy+}", functions.APIFunction)
 	
-	// Auth API routes
-	addRoute(api, "GET /auth/{proxy+}", functions.AuthAPIFunction)
-	addRoute(api, "POST /auth/{proxy+}", functions.AuthAPIFunction)
+	// Auth routes (handled by native Lift implementation in API)
+	addRoute(api, "GET /auth/{proxy+}", functions.APIFunction)
+	addRoute(api, "POST /auth/{proxy+}", functions.APIFunction)
 	
 	// ActivityPub routes
 	addRoute(api, "GET /.well-known/webfinger", functions.WebfingerFunction)

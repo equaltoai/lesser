@@ -2,6 +2,9 @@ package repositories
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -427,8 +430,16 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 
 // generateSecureToken generates a cryptographically secure token
 func generateSecureToken() string {
-	// This would use crypto/rand in production
-	return fmt.Sprintf("token_%d_%s", time.Now().UnixNano(), strings.ReplaceAll(time.Now().String(), " ", "_"))
+	// Generate 32 bytes of random data using crypto/rand
+	randomBytes := make([]byte, 32)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		// Fallback to timestamp-based token if crypto/rand fails (should never happen in production)
+		return fmt.Sprintf("fallback_token_%d", time.Now().UnixNano())
+	}
+	
+	// Return hex-encoded secure random token
+	return hex.EncodeToString(randomBytes)
 }
 
 // generateSessionID generates a unique session ID
@@ -734,14 +745,17 @@ func minInt(a, b int) int {
 	return b
 }
 
-// hashTokenForGSI creates a hash of the token for GSI indexing
+// hashTokenForGSI creates a cryptographically secure hash of the token for GSI indexing
 func hashTokenForGSI(token string) string {
-	// In a real implementation, you'd use a proper hash function
-	// For now, just take the first 16 characters
-	if len(token) > 16 {
-		return token[:16]
+	// Use SHA-256 to create a secure hash of the token
+	hash := sha256.Sum256([]byte(token))
+	// Return the first 16 characters of the hex-encoded hash for GSI key
+	// This ensures deterministic, collision-resistant hashing suitable for DynamoDB GSI keys
+	hexHash := hex.EncodeToString(hash[:])
+	if len(hexHash) > 16 {
+		return hexHash[:16]
 	}
-	return token
+	return hexHash
 }
 
 // ===== Device Management Methods =====

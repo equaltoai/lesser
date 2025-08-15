@@ -40,8 +40,6 @@ func GetMiddleware() (*Middleware, error) {
 		return globalMiddleware, nil
 	}
 
-	// TEMPORARY: Storage initialization needs to be passed in
-	// This is part of the migration to Lift
 	return nil, errors.New("GetMiddleware needs storage - use handler's auth middleware instead")
 }
 

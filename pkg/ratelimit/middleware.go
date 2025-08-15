@@ -48,7 +48,7 @@ func Middleware(storage core.RepositoryStorage, config *Config) lift.Middleware 
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 
-			userID, shouldBypass := getUserIDAndCheckBypass(ctx, config, start, next)
+			userID, shouldBypass := getUserIDAndCheckBypass(ctx, config, storage, start, next)
 			if shouldBypass {
 				return executeWithHeaders(ctx, next, config.DefaultLimit, 0, start.Add(time.Hour))
 			}
@@ -71,7 +71,7 @@ func Middleware(storage core.RepositoryStorage, config *Config) lift.Middleware 
 }
 
 // getUserIDAndCheckBypass extracts user ID and checks for admin bypass
-func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, _ time.Time, _ lift.Handler) (string, bool) {
+func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, storage core.RepositoryStorage, _ time.Time, _ lift.Handler) (string, bool) {
 	claims, hasClaims := ctx.Get("claims").(*auth.Claims)
 	var userID string
 	
@@ -79,7 +79,7 @@ func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, _ time.Time, _ l
 		userID = claims.Username
 		
 		// Admin bypass check
-		if config.AdminBypass && isAdminUser(ctx, claims) {
+		if config.AdminBypass && isAdminUser(ctx, claims, storage) {
 			return userID, true
 		}
 	}
@@ -320,15 +320,24 @@ func getClientIP(ctx *lift.Context) string {
 }
 
 // isAdminUser checks if the user has admin privileges
-func isAdminUser(_ *lift.Context, _ *auth.Claims) bool {
-	// This would need to be implemented based on your auth system
-	// For now, return false to be safe
-	// You could check claims.Roles, query user permissions, etc.
+func isAdminUser(ctx *lift.Context, claims *auth.Claims, storage core.RepositoryStorage) bool {
+	// Ensure we have valid claims with username
+	if claims == nil || claims.Username == "" {
+		return false
+	}
 
-	// Example implementation:
-	// return claims != nil && contains(claims.Roles, "admin")
+	// Query user from storage using DynamORM patterns
+	user, err := storage.User().GetUser(ctx.Request.Context(), claims.Username)
+	if err != nil {
+		// Log the error but don't expose it - fail securely
+		common.Logger().Debug("failed to get user for admin check",
+			zap.String("username", claims.Username),
+			zap.Error(err))
+		return false
+	}
 
-	return false // Placeholder - implement based on your auth system
+	// Check if user has admin role
+	return user.Role == "admin"
 }
 
 // executeWithHeaders executes the next handler with rate limit headers set

@@ -8,12 +8,14 @@ require (
 	github.com/99designs/gqlgen v0.17.78
 	github.com/aws/aws-lambda-go v1.49.0
 	github.com/aws/aws-sdk-go v1.55.7
-	github.com/aws/aws-sdk-go-v2 v1.37.2
-	github.com/aws/aws-sdk-go-v2/config v1.29.16
+	github.com/aws/aws-sdk-go-v2 v1.38.0
+	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.1
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.19.2
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.18.4
 	github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi v1.24.3
-	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.7.2
+	github.com/aws/aws-sdk-go-v2/service/bedrock v1.44.0
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.36.0
 	github.com/aws/aws-sdk-go-v2/service/cloudfront v1.46.3
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.3
 	github.com/aws/aws-sdk-go-v2/service/comprehend v1.36.4
@@ -22,7 +24,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/mediaconvert v1.30.0
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.83.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.87.0
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.7
 	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
@@ -40,6 +42,7 @@ require (
 	github.com/gorilla/mux v1.8.1
 	github.com/graph-gophers/dataloader v5.0.0+incompatible
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/oklog/ulid/v2 v2.1.1
 	github.com/pay-theory/dynamorm v1.0.29
 	github.com/pay-theory/lift v1.0.55
 	github.com/shopspring/decimal v1.4.0
@@ -57,27 +60,27 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.11 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.69 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.31 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.2 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.2 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.0 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.18.4 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.36 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/appconfig v1.38.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/appmesh v1.30.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/cloudwatchlogs v1.45.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.25.5 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.7.4 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.8.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.16 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.12.17 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.18.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.3 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/servicediscovery v1.35.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.60.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sso v1.25.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.30.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sts v1.33.21 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sso v1.28.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.33.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sts v1.37.0 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.10.0 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect

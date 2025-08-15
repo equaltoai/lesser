@@ -4,6 +4,8 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -402,27 +404,320 @@ func (abo *AdvancedBatchOperations) BatchUpsertWithConflictResolution(ctx contex
 }
 
 // processBatchWithConflictResolution handles conflicts for a single batch
-func (abo *AdvancedBatchOperations) processBatchWithConflictResolution(ctx context.Context, batch []any, _ func(existing, newItem any) any) error {
-	// This is a conceptual implementation - in practice, you'd need to:
-	// 1. Try batch write
-	// 2. Handle conflicts by reading existing items
-	// 3. Apply conflict resolution
-	// 4. Retry with resolved items
+func (abo *AdvancedBatchOperations) processBatchWithConflictResolution(ctx context.Context, batch []any, conflictResolver func(existing, newItem any) any) error {
+	maxRetries := 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		result, err := abo.batchWriter.WriteItems(ctx, batch)
+		
+		if err == nil {
+			// Success - no conflicts
+			return nil
+		}
 
-	result, err := abo.batchWriter.WriteItems(ctx, batch)
-	if err != nil {
-		// Handle conflicts here if DynamORM provides conflict detection
+		// Check if error indicates conflicts or retryable issues
+		if !isConflictError(err) && !isRetryableError(err) {
+			// Non-retryable error
+			return fmt.Errorf("non-retryable batch error: %w", err)
+		}
+
 		if abo.logger != nil {
 			abo.logger.Warn("batch_conflicts_detected",
 				zap.Int("failed_items", result.FailedItems),
+				zap.Int("attempt", attempt+1),
 				zap.Error(err),
 			)
 		}
-		// In a real implementation, you'd resolve conflicts and retry
-		return err
+
+		// If this is the last attempt, return the error
+		if attempt == maxRetries {
+			return fmt.Errorf("batch failed after %d attempts: %w", maxRetries+1, err)
+		}
+
+		// Try to resolve conflicts by reading existing items and applying resolution
+		if conflictResolver != nil && result.FailedItems > 0 {
+			resolvedBatch, resolveErr := abo.resolveConflicts(ctx, batch, conflictResolver)
+			if resolveErr != nil {
+				abo.logger.Warn("conflict resolution failed, retrying original batch",
+					zap.Error(resolveErr))
+			} else {
+				batch = resolvedBatch
+			}
+		}
+
+		// Exponential backoff before retry
+		backoffDuration := time.Duration(attempt+1) * 100 * time.Millisecond
+		select {
+		case <-time.After(backoffDuration):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 
 	return nil
+}
+
+// isConflictError checks if an error indicates a conflict (conditional check failure, etc.)
+func isConflictError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errorStr := strings.ToLower(err.Error())
+	conflictPatterns := []string{
+		"conditionalcheckfailedexception",
+		"conditional check failed",
+		"transactionconflictexception", 
+		"conflict",
+		"optimistic locking",
+		"version mismatch",
+		"concurrent modification",
+	}
+	
+	for _, pattern := range conflictPatterns {
+		if strings.Contains(errorStr, pattern) {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// resolveConflicts attempts to resolve conflicts by reading existing items and applying conflict resolution
+func (abo *AdvancedBatchOperations) resolveConflicts(ctx context.Context, originalBatch []any, conflictResolver func(existing, newItem any) any) ([]any, error) {
+	if len(originalBatch) == 0 {
+		return originalBatch, nil
+	}
+
+	resolvedBatch := make([]any, 0, len(originalBatch))
+
+	for _, item := range originalBatch {
+		// Extract key information from item to read existing version
+		// This is a simplified approach - in practice you'd need to extract
+		// the primary key based on the item type/structure
+		
+		// Try to read the existing item
+		existingItem, err := abo.readExistingItem(ctx, item)
+		if err != nil {
+			// If item doesn't exist, use original item
+			if isNotFoundError(err) {
+				resolvedBatch = append(resolvedBatch, item)
+				continue
+			}
+			// For other errors, log and use original item
+			if abo.logger != nil {
+				abo.logger.Warn("failed to read existing item for conflict resolution",
+					zap.Error(err))
+			}
+			resolvedBatch = append(resolvedBatch, item)
+			continue
+		}
+
+		// Apply conflict resolution
+		resolvedItem := conflictResolver(existingItem, item)
+		resolvedBatch = append(resolvedBatch, resolvedItem)
+	}
+
+	if abo.logger != nil {
+		abo.logger.Debug("resolved batch conflicts",
+			zap.Int("original_count", len(originalBatch)),
+			zap.Int("resolved_count", len(resolvedBatch)))
+	}
+
+	return resolvedBatch, nil
+}
+
+// readExistingItem attempts to read an existing item from the database
+func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item any) (any, error) {
+	// Extract the primary key and sort key from the item using reflection and interface checking
+	var pk, sk string
+	
+	// Check if item implements a KeyProvider interface
+	if keyProvider, ok := item.(interface {
+		GetPK() string
+		GetSK() string
+	}); ok {
+		pk = keyProvider.GetPK()
+		sk = keyProvider.GetSK()
+	} else if itemMap, ok := item.(map[string]any); ok {
+		// Handle map-based items
+		if pkVal, exists := itemMap["PK"]; exists {
+			pk = fmt.Sprintf("%v", pkVal)
+		}
+		if skVal, exists := itemMap["SK"]; exists {
+			sk = fmt.Sprintf("%v", skVal)
+		}
+	} else {
+		// Use reflection to find PK and SK fields
+		pkField, skField := extractKeysFromStruct(item)
+		pk = pkField
+		sk = skField
+	}
+	
+	if pk == "" {
+		return nil, fmt.Errorf("could not extract primary key from item")
+	}
+	
+	// Note: tableName not needed for current implementation
+	
+	// Create a new instance of the same type for reading
+	existingItem := createSameTypeInstance(item)
+	if existingItem == nil {
+		return nil, fmt.Errorf("could not create instance for reading existing item")
+	}
+	
+	// We need to get the database connection from the parent repository
+	// Since AdvancedBatchOperations doesn't have direct DB access, we need to use the batch reader
+	if abo.batchReader == nil {
+		return nil, fmt.Errorf("batch reader not available for conflict resolution")
+	}
+	
+	// Use batch reader to read the single item
+	keys := []any{
+		map[string]any{
+			"PK": pk,
+			"SK": sk,
+		},
+	}
+	
+	// Create a slice to hold the results
+	var resultItems []any
+	_, err := abo.batchReader.ReadItems(ctx, keys, &resultItems)
+	if err != nil {
+		if isDynamoDBNotFoundError(err) {
+			return nil, fmt.Errorf("item not found")
+		}
+		return nil, fmt.Errorf("failed to read existing item: %w", err)
+	}
+	
+	if len(resultItems) == 0 {
+		return nil, fmt.Errorf("item not found")
+	}
+	
+	return resultItems[0], nil
+}
+
+// extractKeysFromStruct uses reflection to extract PK and SK fields from a struct
+func extractKeysFromStruct(item any) (pk, sk string) {
+	if item == nil {
+		return "", ""
+	}
+	
+	val := reflect.ValueOf(item)
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+	
+	if val.Kind() != reflect.Struct {
+		return "", ""
+	}
+	
+	typ := val.Type()
+	for i := 0; i < val.NumField(); i++ {
+		field := val.Field(i)
+		fieldType := typ.Field(i)
+		
+		// Check field name or DynamoDB tag
+		fieldName := fieldType.Name
+		tag := fieldType.Tag.Get("dynamodbav")
+		
+		if fieldName == "PK" || tag == "PK" || strings.Contains(tag, "PK") {
+			if field.CanInterface() && field.Kind() == reflect.String {
+				pk = field.String()
+			}
+		}
+		
+		if fieldName == "SK" || tag == "SK" || strings.Contains(tag, "SK") {
+			if field.CanInterface() && field.Kind() == reflect.String {
+				sk = field.String()
+			}
+		}
+	}
+	
+	return pk, sk
+}
+
+// createSameTypeInstance creates a new instance of the same type as the given item
+func createSameTypeInstance(item any) any {
+	if item == nil {
+		return nil
+	}
+	
+	typ := reflect.TypeOf(item)
+	
+	// Handle pointer types
+	if typ.Kind() == reflect.Ptr {
+		// Create new instance of the element type, then get its address
+		elemType := typ.Elem()
+		newElem := reflect.New(elemType)
+		return newElem.Interface()
+	}
+	
+	// Handle value types
+	if typ.Kind() == reflect.Struct {
+		newVal := reflect.New(typ)
+		return newVal.Interface()
+	}
+	
+	// Handle map types
+	if typ.Kind() == reflect.Map {
+		newMap := reflect.MakeMap(typ)
+		return newMap.Interface()
+	}
+	
+	// For other types, try to create a zero value
+	newVal := reflect.New(typ)
+	return newVal.Interface()
+}
+
+// isDynamoDBNotFoundError checks if an error is a DynamoDB not found error
+func isDynamoDBNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errorStr := strings.ToLower(err.Error())
+	notFoundPatterns := []string{
+		"not found",
+		"does not exist", 
+		"item not found",
+		"record not found",
+		"resourcenotfoundexception",
+		"no records found",
+		"no items found",
+		"empty result",
+	}
+	
+	for _, pattern := range notFoundPatterns {
+		if strings.Contains(errorStr, pattern) {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// isNotFoundError checks if an error indicates an item was not found
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	
+	errorStr := strings.ToLower(err.Error())
+	notFoundPatterns := []string{
+		"not found",
+		"does not exist",
+		"item not found",
+		"record not found",
+		"resourcenotfoundexception",
+	}
+	
+	for _, pattern := range notFoundPatterns {
+		if strings.Contains(errorStr, pattern) {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // BatchProcessWithRetry processes items with exponential backoff retry

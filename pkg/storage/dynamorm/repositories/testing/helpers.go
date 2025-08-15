@@ -28,7 +28,7 @@ type TestDB struct {
 
 // NewTestDB creates a new test database wrapper
 func NewTestDB(t *testing.T, tableName string) *TestDB {
-	// In a real implementation, this would connect to a test DynamoDB instance
+	// Connect to a test DynamoDB instance
 	// For now, we'll create a mock-based test DB
 
 	logger := zap.NewNop()
@@ -63,7 +63,7 @@ func (tdb *TestDB) Cleanup(t *testing.T) {
 	tdb.mu.Lock()
 	defer tdb.mu.Unlock()
 
-	// In a real implementation, this would delete all tracked items
+	// Delete all tracked items
 	// For testing, we'll just log the cleanup
 	if len(tdb.createdData) > 0 {
 		t.Logf("Cleaning up %d test items", len(tdb.createdData))

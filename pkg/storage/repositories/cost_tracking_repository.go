@@ -56,8 +56,8 @@ func (r *CostTrackingRepository) Create(_ context.Context, tracking *models.Dyna
 	return nil
 }
 
-// BatchCreate creates multiple cost tracking records efficiently
-func (r *CostTrackingRepository) BatchCreate(_ context.Context, trackingList []*models.DynamoDBCostRecord) error {
+// BatchCreate creates multiple cost tracking records efficiently using DynamORM BatchCreate
+func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
 	if len(trackingList) == 0 {
 		return nil
 	}
@@ -69,16 +69,17 @@ func (r *CostTrackingRepository) BatchCreate(_ context.Context, trackingList []*
 		}
 	}
 
-	// Use batch writer for efficiency
-	// Note: This is a simplified version - real implementation would use DynamORM's batch capabilities
-	for _, ct := range trackingList {
-		if err := r.db.Model(ct).Create(); err != nil {
-			r.logger.Error("failed to create cost tracking in batch",
-				zap.String("id", ct.ID),
-				zap.Error(err))
-			// Continue with other records
-		}
+	// Use DynamORM's efficient BatchCreate - splits into chunks of 25 automatically
+	err := r.db.WithContext(ctx).Model(&trackingList[0]).BatchCreate(trackingList)
+	if err != nil {
+		r.logger.Error("failed to batch create cost tracking records",
+			zap.Int("record_count", len(trackingList)),
+			zap.Error(err))
+		return MapErrorWithContext(err, "failed to batch create cost tracking records")
 	}
+
+	r.logger.Debug("batch created cost tracking records",
+		zap.Int("record_count", len(trackingList)))
 
 	return nil
 }

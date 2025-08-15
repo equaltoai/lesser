@@ -40,6 +40,11 @@ const (
 	severityCritical = "critical"
 )
 
+// Action constants
+const (
+	actionSuspend = "suspend"
+)
+
 var (
 	db               core.DB
 	consensusEngine  *moderation.ConsensusEngine
@@ -1306,13 +1311,13 @@ func (mp *ModerationProcessor) notifyFallbackAdmins(ctx context.Context, event *
 func (mp *ModerationProcessor) getPriorityString(severity moderation.Severity) string {
 	switch {
 	case severity >= 9:
-		return "critical"
+		return severityCritical
 	case severity >= 7:
-		return "high"
+		return severityHigh
 	case severity >= 5:
 		return "normal"
 	default:
-		return "low"
+		return severityLow
 	}
 }
 
@@ -1333,7 +1338,7 @@ func (mp *ModerationProcessor) calculateDeadline(severity moderation.Severity) t
 func (mp *ModerationProcessor) getNotificationTitle(event *moderation.ModerationEvent) string {
 	priority := mp.getPriorityString(event.Severity)
 	switch priority {
-	case "critical":
+	case severityCritical:
 		return "🚨 CRITICAL Moderation Required"
 	case "high":
 		return "⚠️ High Priority Moderation"
@@ -1547,7 +1552,7 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 	}
 
 	// For suspension, make content completely private
-	if action == "suspend" {
+	if action == actionSuspend {
 		statusUpdates["visibility"] = "private"
 		statusUpdates["federated"] = false
 	}
@@ -1729,8 +1734,7 @@ func (ms *ModeratorSelector) calculateExpertiseScore(moderator *storage.User, ev
 	// Base score starts at 1.0 for all moderators
 	score := 1.0
 
-	// Category-specific expertise bonuses
-	// In a real implementation, this would be based on stored moderator expertise data
+	// Category-specific expertise bonuses based on moderation history
 	switch event.Category {
 	case moderation.CategorySpam:
 		// Higher score for moderators who have handled spam before
@@ -1824,18 +1828,150 @@ func (ms *ModeratorSelector) sortModeratorsByScore(moderators []struct {
 }
 
 // hasHandledCategory checks if a moderator has experience with a specific category
-func (ms *ModeratorSelector) hasHandledCategory(username, _ string) bool {
-	// In a real implementation, this would query the moderation history
-	// For now, we'll use a simple heuristic based on role and username
-	// This is a placeholder that would need actual storage queries
-
+func (ms *ModeratorSelector) hasHandledCategory(username, category string) bool {
+	ctx := context.Background()
+	
 	// Admin users are assumed to have handled all categories
-	if user, _ := ms.userRepo.GetUser(context.Background(), username); user != nil && user.Role == adminRole {
+	if ms.isAdminUser(ctx, username) {
 		return true
 	}
 
-	// For now, assume moderators have some general experience
+	// Get moderation history for this moderator
+	reviews, err := ms.getModerationHistory(ctx, username, category)
+	if err != nil {
+		return false
+	}
+
+	// Analyze experience based on review history
+	stats := ms.analyzeReviewHistory(reviews, category)
+	hasExperience := ms.evaluateExperience(stats)
+
+	ms.logExperienceCheck(username, category, stats, hasExperience)
+	return hasExperience
+}
+
+// moderationStats holds statistics about a moderator's review history
+type moderationStats struct {
+	categoryCount     int
+	successfulReviews int
+	totalReviews      int
+}
+
+// isAdminUser checks if the user has admin role
+func (ms *ModeratorSelector) isAdminUser(ctx context.Context, username string) bool {
+	user, err := ms.userRepo.GetUser(ctx, username)
+	return err == nil && user != nil && user.Role == adminRole
+}
+
+// getModerationHistory retrieves moderation history with error handling
+func (ms *ModeratorSelector) getModerationHistory(ctx context.Context, username, category string) ([]*models.ModerationReview, error) {
+	reviews, err := ms.moderationRepo.GetModerationDecisionsByModerator(ctx, username, 100)
+	if err != nil {
+		ms.logger.Warn("failed to get moderation history for expertise check",
+			zap.String("username", username),
+			zap.String("category", category),
+			zap.Error(err))
+		return nil, err
+	}
+	return reviews, nil
+}
+
+// analyzeReviewHistory counts relevant reviews and successful reviews for a category
+func (ms *ModeratorSelector) analyzeReviewHistory(reviews []*models.ModerationReview, category string) *moderationStats {
+	stats := &moderationStats{
+		totalReviews: len(reviews),
+	}
+
+	for _, review := range reviews {
+		if review == nil {
+			continue
+		}
+
+		if ms.reviewMatchesCategory(review, category) {
+			stats.categoryCount++
+			if ms.isSuccessfulReview(review) {
+				stats.successfulReviews++
+			}
+		}
+	}
+
+	return stats
+}
+
+// reviewMatchesCategory checks if a review matches the given category
+func (ms *ModeratorSelector) reviewMatchesCategory(review *models.ModerationReview, category string) bool {
+	// First check if category is explicitly tagged
+	if ms.hasMatchingTag(review.Tags, category) {
+		return true
+	}
+
+	// Then check by action/severity patterns
+	return ms.matchesBySeverityAction(review, category)
+}
+
+// hasMatchingTag checks if any tag matches the category
+func (ms *ModeratorSelector) hasMatchingTag(tags []string, category string) bool {
+	for _, tag := range tags {
+		if tag == category {
+			return true
+		}
+	}
 	return false
+}
+
+// matchesBySeverityAction checks category match based on action and severity patterns
+func (ms *ModeratorSelector) matchesBySeverityAction(review *models.ModerationReview, category string) bool {
+	categoryPatterns := map[string]func(*models.ModerationReview) bool{
+		"spam":           func(r *models.ModerationReview) bool { return r.Action == "remove" && r.Severity == "low" },
+		"hate_speech":    func(r *models.ModerationReview) bool { return r.Action == "suspend" || r.Severity == "critical" },
+		"harassment":     func(r *models.ModerationReview) bool { return r.Action == "silence" || r.Severity == "high" },
+		"misinformation": func(r *models.ModerationReview) bool { return r.Action == "warning" && r.Severity == "medium" },
+		"violence":       func(r *models.ModerationReview) bool { return r.Action == "suspend" && r.Severity == "critical" },
+		"nsfw":           func(r *models.ModerationReview) bool { return r.Action == "warning" && r.Severity == "low" },
+	}
+
+	if pattern, exists := categoryPatterns[category]; exists {
+		return pattern(review)
+	}
+	return false
+}
+
+// isSuccessfulReview determines if a review was successful based on confidence and action
+func (ms *ModeratorSelector) isSuccessfulReview(review *models.ModerationReview) bool {
+	return review.Confidence >= 0.7 && review.Action != "none"
+}
+
+// evaluateExperience determines if a moderator has sufficient experience
+func (ms *ModeratorSelector) evaluateExperience(stats *moderationStats) bool {
+	// Three criteria for experience:
+	// 1. At least 5 reviews in this category
+	if stats.categoryCount >= 5 {
+		return true
+	}
+
+	// 2. At least 20 total reviews with some in this category
+	if stats.totalReviews >= 20 && stats.categoryCount >= 1 {
+		return true
+	}
+
+	// 3. High success rate (80%+) with at least 3 reviews in category
+	if stats.categoryCount >= 3 {
+		successRate := float64(stats.successfulReviews) / float64(stats.categoryCount)
+		return successRate >= 0.8
+	}
+
+	return false
+}
+
+// logExperienceCheck logs the experience check results for debugging
+func (ms *ModeratorSelector) logExperienceCheck(username, category string, stats *moderationStats, hasExperience bool) {
+	ms.logger.Debug("checked moderator category experience",
+		zap.String("username", username),
+		zap.String("category", category),
+		zap.Int("category_reviews", stats.categoryCount),
+		zap.Int("total_reviews", stats.totalReviews),
+		zap.Int("successful_reviews", stats.successfulReviews),
+		zap.Bool("has_experience", hasExperience))
 }
 
 // GetReviewQueueForAdmins retrieves review queue items for admin interface

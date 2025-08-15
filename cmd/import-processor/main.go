@@ -715,7 +715,7 @@ func (p *ImportProcessor) processFollowersCSV(reader *csv.Reader) (ImportResult,
 			continue
 		}
 
-		// In a real implementation, we might send follow invites or something
+		// Currently skips processing - future enhancement could send follow invites
 		result.Skipped++
 	}
 

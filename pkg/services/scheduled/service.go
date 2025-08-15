@@ -427,28 +427,69 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 }
 
 // validateMediaAttachments validates that media attachments exist
-func (s *Service) validateMediaAttachments(_ context.Context, mediaIDs []string) error {
+func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
 	if len(mediaIDs) > 4 {
 		return fmt.Errorf("cannot attach more than 4 media items")
 	}
 
 	for _, mediaID := range mediaIDs {
-		// Check if media exists
-		// Note: This would need actual implementation with media service
-		s.logger.Debug("validating media attachment", zap.String("media_id", mediaID))
+		// Validate media ID format
+		if mediaID == "" {
+			return fmt.Errorf("empty media ID provided")
+		}
+
+		// Check if media exists and is accessible
+		media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+		if err != nil {
+			s.logger.Error("failed to get media attachment",
+				zap.String("media_id", mediaID),
+				zap.Error(err))
+			return fmt.Errorf("media attachment %s not found or inaccessible", mediaID)
+		}
+
+		// Validate media is in ready state
+		if media.Status != "ready" && media.Status != "completed" {
+			return fmt.Errorf("media attachment %s is not ready (status: %s)", mediaID, media.Status)
+		}
+
+		// Check media hasn't expired
+		if media.ExpiresAt != nil && time.Now().Unix() > *media.ExpiresAt {
+			return fmt.Errorf("media attachment %s has expired", mediaID)
+		}
+
+		s.logger.Debug("validated media attachment",
+			zap.String("media_id", mediaID),
+			zap.String("content_type", media.ContentType),
+			zap.String("status", media.Status))
 	}
 
 	return nil
 }
 
 // getMediaAttachments retrieves media attachments by IDs
-func (s *Service) getMediaAttachments(_ context.Context, mediaIDs []string) ([]*models.Media, error) {
+func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([]*models.Media, error) {
 	mediaItems := make([]*models.Media, 0, len(mediaIDs))
 
 	for _, mediaID := range mediaIDs {
-		// Get media from repository
-		// Note: This would need actual implementation
-		s.logger.Debug("getting media attachment", zap.String("media_id", mediaID))
+		media, err := s.mediaRepo.GetMedia(ctx, mediaID)
+		if err != nil {
+			s.logger.Error("failed to get media attachment",
+				zap.String("media_id", mediaID),
+				zap.Error(err))
+			return nil, fmt.Errorf("failed to retrieve media attachment %s: %w", mediaID, err)
+		}
+
+		// Only include ready/completed media
+		if media.Status == "ready" || media.Status == "completed" {
+			mediaItems = append(mediaItems, media)
+			s.logger.Debug("retrieved media attachment",
+				zap.String("media_id", mediaID),
+				zap.String("content_type", media.ContentType))
+		} else {
+			s.logger.Warn("skipping media attachment not ready",
+				zap.String("media_id", mediaID),
+				zap.String("status", media.Status))
+		}
 	}
 
 	return mediaItems, nil

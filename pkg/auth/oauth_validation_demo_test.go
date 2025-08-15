@@ -75,7 +75,7 @@ func TestMastodonOAuthValidationDemo(t *testing.T) {
 	})
 
 	t.Run("OAuth Parameter Validation", func(t *testing.T) {
-		ctx := context.TODO()
+		ctx := context.Background()
 		service := &OAuthService{}
 
 		// Test 1: Empty client ID should be rejected

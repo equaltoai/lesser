@@ -39,6 +39,14 @@ type Announcement struct {
 	PK string `dynamorm:"pk" json:"-"`
 	SK string `dynamorm:"sk" json:"-"`
 
+	// GSI1 - Status-based queries (active/inactive)
+	GSI1PK string `dynamorm:"index:status-date-index,pk" json:"gsi1_pk"` // Format: "ANNOUNCEMENT#active" or "ANNOUNCEMENT#inactive"
+	GSI1SK string `dynamorm:"index:status-date-index,sk" json:"gsi1_sk"` // Format: "reverse_timestamp" for chronological order
+
+	// GSI2 - Created by queries (admin management)
+	GSI2PK string `dynamorm:"index:admin-index,pk" json:"gsi2_pk"` // Format: "ADMIN#{admin_username}"
+	GSI2SK string `dynamorm:"index:admin-index,sk" json:"gsi2_sk"` // Format: "{published_at}#{id}"
+
 	// Announcement fields
 	ID          string        `json:"id"`
 	Content     string        `json:"content"`             // HTML content
@@ -60,7 +68,53 @@ type Announcement struct {
 func (a *Announcement) UpdateKeys() error {
 	a.PK = fmt.Sprintf("ANNOUNCEMENT#%s", a.ID)
 	a.SK = "ANNOUNCEMENT"
+	
+	// Set up GSI keys
+	a.setupGSIKeys()
+	
 	return nil
+}
+
+// setupGSIKeys configures GSI partition and sort keys
+func (a *Announcement) setupGSIKeys() {
+	now := time.Now()
+	
+	// GSI1 - Status-based queries with date ordering
+	status := a.getStatusString(now)
+	a.GSI1PK = fmt.Sprintf("ANNOUNCEMENT#%s", status)
+	// Use reverse timestamp for newest-first ordering
+	reverseTimestamp := 9999999999 - a.PublishedAt.Unix()
+	a.GSI1SK = fmt.Sprintf("%010d", reverseTimestamp)
+	
+	// GSI2 - Admin queries
+	if a.CreatedBy != "" {
+		a.GSI2PK = "ADMIN#" + a.CreatedBy
+		a.GSI2SK = fmt.Sprintf("%s#%s", a.PublishedAt.Format(time.RFC3339), a.ID)
+	} else {
+		a.GSI2PK = ""
+		a.GSI2SK = ""
+	}
+}
+
+// getStatusString determines if announcement is active or inactive
+func (a *Announcement) getStatusString(now time.Time) string {
+	// Check if announcement has started (if StartsAt is set)
+	if a.StartsAt != nil && a.StartsAt.After(now) {
+		return "inactive" // Not yet started
+	}
+	
+	// Check if announcement has ended (if EndsAt is set)
+	if a.EndsAt != nil && a.EndsAt.Before(now) {
+		return "inactive" // Already ended
+	}
+	
+	return StatusActive
+}
+
+// IsActive determines if the announcement is currently active
+func (a *Announcement) IsActive() bool {
+	now := time.Now()
+	return a.getStatusString(now) == StatusActive
 }
 
 // BeforeCreate prepares the announcement for creation

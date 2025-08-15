@@ -29,7 +29,7 @@ func NewSubscriptionManager(logger *zap.Logger) *SubscriptionManager {
 	if eventBus != nil {
 		logger.Info("GraphQL subscriptions connected to stream-router event bus")
 	} else {
-		logger.Warn("Stream-router event bus not available, using polling fallback")
+		logger.Warn("Stream-router event bus not available - GraphQL subscriptions will fail until event bus is initialized")
 	}
 
 	manager := NewGraphQLSubscriptionManager(eventBus, logger)

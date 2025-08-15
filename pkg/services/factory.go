@@ -32,6 +32,13 @@ func (f *ServiceFactory) CreateBusinessLogicService() BusinessLogicService {
 	analytics := f.CreateAnalyticsService()
 
 	// Create and return the business logic service
+	// Create job queue service
+	jobQueue, err := NewJobQueueService(f.deps.Logger.(*zap.Logger))
+	if err != nil {
+		f.deps.Logger.(*zap.Logger).Warn("failed to create job queue service, using nil", zap.Error(err))
+		jobQueue = nil
+	}
+
 	return NewBusinessLogicService(
 		f.deps,
 		validation,
@@ -40,6 +47,7 @@ func (f *ServiceFactory) CreateBusinessLogicService() BusinessLogicService {
 		timeline,
 		analytics,
 		nil, // Factory doesn't have publisher access, events won't be emitted
+		jobQueue,
 	)
 }
 

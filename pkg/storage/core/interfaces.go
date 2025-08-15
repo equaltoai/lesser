@@ -21,6 +21,7 @@ type RepositoryStorage interface {
 	Moderation() *repositories.ModerationRepository
 	List() *repositories.ListRepository
 	Media() *repositories.MediaRepository
+	MediaMetadata() *repositories.MediaMetadataRepository
 	Poll() *repositories.PollRepository
 	PushSubscription() *repositories.PushSubscriptionRepository
 	Hashtag() *repositories.HashtagRepository
@@ -36,6 +37,7 @@ type RepositoryStorage interface {
 	User() *repositories.UserRepository
 	Status() *repositories.StatusRepository
 	Cost() *repositories.CostTrackingRepository
+	WebSocketCost() *repositories.WebSocketCostRepository
 	Trust() *repositories.TrustRepository
 	Search() *repositories.SearchRepository
 	Relay() *repositories.RelayRepository

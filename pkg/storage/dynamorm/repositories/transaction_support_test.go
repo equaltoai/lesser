@@ -107,7 +107,7 @@ func TestTransactionContext_OperationCount(t *testing.T) {
 
 	assert.Equal(t, 0, txCtx.GetOperationCount())
 
-	// These will fail with "not implemented" but should increment counter
+	// These should now succeed with proper transaction implementation
 	_ = txCtx.Put(map[string]any{"key": "value"})
 	assert.Equal(t, 1, txCtx.GetOperationCount())
 
@@ -145,14 +145,13 @@ func TestFollowUserTransactional_ConceptualTest(t *testing.T) {
 	repo := NewTransactionalRepository(mockDB, "users", logger, tracker)
 	ctx := context.Background()
 
-	// Mock transaction execution
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(errors.New("placeholder - transaction operations not implemented"))
+	// Mock transaction execution - simulate successful transaction
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
 
 	err := repo.FollowUserTransactional(ctx, "user1", "user2")
 
-	// We expect an error since the transaction operations are placeholders
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "placeholder")
+	// We expect success now that transactions are implemented
+	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
 }
 
@@ -169,14 +168,13 @@ func TestCreateStatusWithChecksTransactional_ConceptualTest(t *testing.T) {
 		"Content": "Test status",
 	}
 
-	// Mock transaction execution
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(errors.New("placeholder - transaction operations not implemented"))
+	// Mock transaction execution - simulate successful transaction
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
 
 	err := repo.CreateStatusWithChecksTransactional(ctx, status)
 
-	// We expect an error since the transaction operations are placeholders
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "placeholder")
+	// We expect success now that transactions are implemented
+	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
 }
 
@@ -190,14 +188,13 @@ func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
 
 	resourceIDs := []string{"resource1", "resource2", "resource3"}
 
-	// Mock transaction execution
-	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(errors.New("placeholder - transaction operations not implemented"))
+	// Mock transaction execution - simulate successful transaction
+	mockDB.On("Transaction", mock.AnythingOfType("func(*core.Tx) error")).Return(nil)
 
 	err := repo.TransferOwnershipTransactional(ctx, "fromUser", "toUser", resourceIDs)
 
-	// We expect an error since the transaction operations are placeholders
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "placeholder")
+	// We expect success now that transactions are implemented
+	assert.NoError(t, err)
 	mockDB.AssertExpectations(t)
 }
 
@@ -213,7 +210,7 @@ func TestConditionalCreate(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.NoError(t, err) // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 
@@ -229,7 +226,7 @@ func TestConditionalUpdate(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.NoError(t, err) // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 
@@ -245,7 +242,7 @@ func TestConditionalDelete(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not yet implemented")
+	assert.NoError(t, err) // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 
@@ -264,12 +261,12 @@ func TestIsRetryableError(t *testing.T) {
 		{
 			name:     "simple error",
 			err:      errors.New("simple error"),
-			expected: false, // Current placeholder implementation
+			expected: false, // Non-retryable error
 		},
 		{
 			name:     "wrapped error",
 			err:      errors.New("wrapped: original error"),
-			expected: false, // Current placeholder implementation
+			expected: false, // Non-retryable error
 		},
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -16,9 +17,10 @@ import (
 
 // StatusRepository implements status operations using DynamORM
 type StatusRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db               core.DB
+	tableName        string
+	logger           *zap.Logger
+	relationshipRepo *RelationshipRepository
 }
 
 // NewStatusRepository creates a new status repository
@@ -28,6 +30,11 @@ func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger) *Stat
 		tableName: tableName,
 		logger:    logger,
 	}
+}
+
+// SetRelationshipRepository sets the relationship repository dependency for cross-repository operations
+func (r *StatusRepository) SetRelationshipRepository(relationshipRepo *RelationshipRepository) {
+	r.relationshipRepo = relationshipRepo
 }
 
 // CreateStatus creates a new status
@@ -96,30 +103,28 @@ func (r *StatusRepository) DeleteStatus(ctx context.Context, statusID string) er
 
 // CountStatusesByAuthor counts the total number of statuses by an author
 func (r *StatusRepository) CountStatusesByAuthor(ctx context.Context, authorID string) (int, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
+	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("author-timeline-index").
 		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", authorID)).
-		All(&statuses)
+		Count()
 	if err != nil {
 		return 0, fmt.Errorf("failed to count statuses by author: %w", err)
 	}
 
-	return len(statuses), nil
+	return int(count), nil
 }
 
 // CountReplies counts the number of replies to a status
 func (r *StatusRepository) CountReplies(ctx context.Context, statusID string) (int, error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
+	count, err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("replies-index").
 		Where("GSI4PK", "=", fmt.Sprintf("REPLIES#%s", statusID)).
-		All(&statuses)
+		Count()
 	if err != nil {
 		return 0, fmt.Errorf("failed to count replies: %w", err)
 	}
 
-	return len(statuses), nil
+	return int(count), nil
 }
 
 // UpdateEngagementMetrics updates the cached engagement metrics for a status
@@ -278,6 +283,55 @@ func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Qu
 	}
 
 	return filteredStatuses, nil
+}
+
+// GetStatusesByURL searches for statuses that contain a specific URL in their URLs field
+func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL string, limit int) ([]*models.Status, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+
+	// Use GSI7 (URL index) to efficiently find statuses containing the target URL
+	normalizedURL := strings.ToLower(strings.TrimSpace(targetURL))
+	var matchingStatuses []models.Status
+	
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("url-index").
+		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Limit(limit).
+		All(&matchingStatuses)
+	
+	if err != nil {
+		r.logger.Error("failed to query statuses by URL",
+			zap.String("target_url", targetURL),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to query statuses by URL: %w", err)
+	}
+
+	// Convert to pointer slice and verify URL matches
+	var results []*models.Status
+	for i := range matchingStatuses {
+		status := &matchingStatuses[i]
+		// Double-check URL match since we only index the first URL
+		for _, url := range status.URLs {
+			if url == targetURL {
+				results = append(results, status)
+				break // Found match, no need to check other URLs for this status
+			}
+		}
+		
+		// Stop if we have enough matches
+		if len(results) >= limit {
+			break
+		}
+	}
+
+	// Sort by published date (most recent first)
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].PublishedAt.After(results[j].PublishedAt)
+	})
+
+	return results, nil
 }
 
 // applyStandardFiltering applies standard non-domain specific filters
@@ -458,30 +512,145 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 	return domain
 }
 
-// GetStatusByURL retrieves a status by its URL
+// GetStatusByURL retrieves a status by its URL using GSI7 URL index
 func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*models.Status, error) {
-	// For now, we'll use a scan to find status by URL - in production you might want a GSI
+	// Normalize the URL for consistent indexing (same as in Status.setupGSIKeys)
+	normalizedURL := strings.ToLower(strings.TrimSpace(url))
+	
+	// Query GSI7 for URL-indexed statuses
 	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).Scan(&statuses)
+	err := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("url-index").
+		Where("GSI7PK", "=", "URL#"+normalizedURL).
+		Scan(&statuses)
+	
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan statuses: %w", err)
+		return nil, fmt.Errorf("failed to query statuses by URL: %w", err)
 	}
 
-	// Find status with matching URL in Note
+	// Find exact match by checking the Note.ID field
 	for _, status := range statuses {
 		if status.Note != nil && status.Note.ID == url {
 			return &status, nil
 		}
 	}
 
+	// If no exact match found, also check the URLs array in case it's a link in content
+	for _, status := range statuses {
+		for _, statusURL := range status.URLs {
+			if statusURL == url {
+				return &status, nil
+			}
+		}
+	}
+
 	return nil, fmt.Errorf("status not found with URL: %s", url)
 }
 
-// GetHomeTimeline retrieves home timeline for a user
-func (r *StatusRepository) GetHomeTimeline(ctx context.Context, _ string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	// This would typically require following relationships to build home timeline
-	// For now, we'll return public timeline as a placeholder
-	return r.GetPublicTimeline(ctx, opts)
+// GetHomeTimeline retrieves home timeline for a user (statuses from accounts they follow)
+func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	// Check if relationship repository dependency is available
+	if r.relationshipRepo == nil {
+		r.logger.Error("relationshipRepo dependency not set for GetHomeTimeline, falling back to public timeline")
+		// Fallback to public timeline if relationship repo is not available
+		return r.GetPublicTimeline(ctx, opts)
+	}
+
+	// Get list of users that this user follows
+	followingUsernames, _, err := r.relationshipRepo.GetFollowing(ctx, userID, 1000, "") // Get up to 1000 followed users
+	if err != nil {
+		r.logger.Error("failed to get following list for home timeline",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		// Fallback to public timeline on error
+		return r.GetPublicTimeline(ctx, opts)
+	}
+
+	// If user follows no one, return empty timeline (not public timeline)
+	if len(followingUsernames) == 0 {
+		r.logger.Debug("user follows no accounts, returning empty home timeline",
+			zap.String("user_id", userID))
+		return &interfaces.PaginatedResult[*models.Status]{
+			Items:      []*models.Status{},
+			NextCursor: "",
+			HasMore:    false,
+			Total:      0,
+		}, nil
+	}
+
+	// Get statuses from all followed users
+	// Note: This is a simplified implementation. In production, you might want to:
+	// 1. Use a pre-computed home timeline cache
+	// 2. Implement pagination across multiple author queries
+	// 3. Use a timeline ranking algorithm
+	var allStatuses []models.Status
+	
+	// Query statuses for each followed user using the author-timeline-index
+	for _, username := range followingUsernames {
+		var userStatuses []models.Status
+		err := r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("author-timeline-index").
+			Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", username)).
+			OrderBy("GSI1SK", "DESC").
+			Limit(20). // Limit per user to avoid overwhelming queries
+			All(&userStatuses)
+		
+		if err != nil {
+			r.logger.Error("failed to get statuses for followed user",
+				zap.String("user_id", userID),
+				zap.String("followed_user", username),
+				zap.Error(err))
+			continue // Skip this user on error
+		}
+		
+		allStatuses = append(allStatuses, userStatuses...)
+	}
+
+	// Sort all statuses by published time (most recent first)
+	sort.Slice(allStatuses, func(i, j int) bool {
+		return allStatuses[i].PublishedAt.After(allStatuses[j].PublishedAt)
+	})
+
+	// Apply pagination limits
+	limit := opts.Limit
+	if limit <= 0 || limit > 40 {
+		limit = 20
+	}
+
+	// Take only the number needed for this page
+	var pageStatuses []models.Status
+	if len(allStatuses) > limit {
+		pageStatuses = allStatuses[:limit]
+	} else {
+		pageStatuses = allStatuses
+	}
+
+	// Convert to pointer slice
+	statusPtrs := make([]*models.Status, len(pageStatuses))
+	for i := range pageStatuses {
+		statusPtrs[i] = &pageStatuses[i]
+	}
+
+	// Generate next cursor if there are more items
+	nextCursor := ""
+	hasMore := len(allStatuses) > limit
+	if hasMore && len(statusPtrs) > 0 {
+		lastStatus := statusPtrs[len(statusPtrs)-1]
+		nextCursor = lastStatus.StatusID
+	}
+
+	r.logger.Debug("successfully built home timeline",
+		zap.String("user_id", userID),
+		zap.Int("following_count", len(followingUsernames)),
+		zap.Int("total_statuses_found", len(allStatuses)),
+		zap.Int("page_statuses", len(statusPtrs)))
+
+	return &interfaces.PaginatedResult[*models.Status]{
+		Items:      statusPtrs,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+		Total:      int64(len(allStatuses)),
+	}, nil
 }
 
 // GetUserTimeline retrieves user's own statuses
@@ -975,15 +1144,22 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 	}, nil
 }
 
-// GetFlaggedStatuses retrieves flagged statuses with pagination
+// GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6 (flagged-content-index)
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	// This would require a GSI for flagged statuses in a real implementation
-	// For now, we'll scan the table (not efficient for production)
+	// Use GSI6 (flagged-content-index) for efficient flagged content queries
 	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Filter("Flagged", "=", true).
-		Limit(opts.Limit).
-		Scan(&statuses)
+	query := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index("flagged-content-index").
+		Where("GSI6PK", "=", "FLAGGED_CONTENT").
+		OrderBy("GSI6SK", "DESC"). // Newest first (descending order by timestamp)
+		Limit(opts.Limit)
+
+	// Add cursor-based pagination if provided
+	if opts.Cursor != "" {
+		query = query.Where("GSI6SK", "<", opts.Cursor)
+	}
+
+	err := query.All(&statuses)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get flagged statuses: %w", err)
 	}

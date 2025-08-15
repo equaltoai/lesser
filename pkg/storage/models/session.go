@@ -2,7 +2,9 @@ package models
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -228,12 +230,14 @@ func generateSecureToken(length int) (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-// hashToken creates a hash of the token for GSI indexing
+// hashToken creates a secure hash of the token for GSI indexing
 func hashToken(token string) string {
-	// In a real implementation, you'd use a proper hash function
-	// For now, just take the first 16 characters
-	if len(token) > 16 {
-		return token[:16]
+	// Use SHA256 to create a secure hash of the token
+	hash := sha256.Sum256([]byte(token))
+	// Return the first 16 characters of the hex-encoded hash for GSI key
+	hexHash := hex.EncodeToString(hash[:])
+	if len(hexHash) > 16 {
+		return hexHash[:16]
 	}
-	return token
+	return hexHash
 }

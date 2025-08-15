@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -1668,22 +1669,18 @@ func (h *Handler) cancelUserFollowRelationships(ctx context.Context, username st
 // markAllUserMediaAsSensitive marks all media uploaded by a user as sensitive
 func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username string) error {
 	// Get all media attachments for this user
-	mediaList, err := h.repos.Media().GetUserMedia(ctx, username)
+	mediaResult, err := h.repos.Media().GetUserMedia(ctx, username, interfaces.PaginationOptions{Limit: 100})
 	if err != nil {
 		return err
 	}
-	// mediaList is already []any, no conversion needed
-	media := mediaList
 
 	// Mark each media item as sensitive
-	for _, mediaInterface := range media {
-		// Handle any type - in practice these would be map[string]any or struct types
-		mediaMap, ok := mediaInterface.(map[string]any)
-		if !ok {
+	for _, mediaItem := range mediaResult.Items {
+		if mediaItem == nil {
 			continue
 		}
 
-		mediaID := getStringFromMap(mediaMap, "ID", "")
+		mediaID := mediaItem.MediaID
 		if mediaID == "" {
 			continue
 		}

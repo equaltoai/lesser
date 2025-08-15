@@ -246,8 +246,7 @@ func (h *Handler) showConsentScreenLift(ctx *lift.Context, authState *storage.OA
 	}
 	app := result.App
 
-	// In a real implementation, this would render an HTML template
-	// For now, we'll return a simple HTML response
+	// Render OAuth authorization HTML template with app details and permissions
 	html := fmt.Sprintf(`
 <!DOCTYPE html>
 <html>
@@ -339,4 +338,269 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 	}
 
 	return true
+}
+
+// HandleOAuthTokenLift handles the OAuth token endpoint using native Lift patterns
+// POST /oauth/token
+func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
+	// Parse form data from request body
+	if len(ctx.Request.Body) == 0 {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error":             "invalid_request", 
+			"error_description": "Empty request body",
+		})
+	}
+
+	params, err := common.ParseFormURLEncoded(string(ctx.Request.Body))
+	if err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error":             "invalid_request",
+			"error_description": "Unable to parse form data",
+		})
+	}
+
+	// Extract form parameters
+	grantType := params["grant_type"]
+	code := params["code"]
+	redirectURI := params["redirect_uri"] 
+	clientID := params["client_id"]
+	clientSecret := params["client_secret"]
+	codeVerifier := params["code_verifier"]
+	refreshToken := params["refresh_token"]
+
+	// Initialize OAuth service
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+
+	switch grantType {
+	case "authorization_code":
+		// Validate required parameters
+		if code == "" || clientID == "" || redirectURI == "" {
+			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				"error":             "invalid_request",
+				"error_description": "Missing required parameters",
+			})
+		}
+
+		// Exchange authorization code for tokens
+		accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx.Context, oauthSvc, code, clientID, redirectURI, codeVerifier, clientSecret)
+		if err != nil {
+			h.logger.Error("failed to exchange authorization code", zap.Error(err))
+			
+			// Return appropriate OAuth error based on the error type
+			if err == auth.ErrInvalidGrant {
+				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+					"error":             "invalid_grant",
+					"error_description": "Invalid authorization code or expired",
+				})
+			}
+			if err == auth.ErrInvalidClient {
+				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+					"error":             "invalid_client",
+					"error_description": "Invalid client credentials",
+				})
+			}
+			if err == auth.ErrInvalidCodeChallenge {
+				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+					"error":             "invalid_grant", 
+					"error_description": "PKCE verification failed",
+				})
+			}
+			
+			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Authorization code exchange failed",
+			})
+		}
+
+		return ctx.JSON(map[string]interface{}{
+			"access_token":  accessToken,
+			"token_type":    "Bearer",
+			"scope":         "read write follow push",
+			"created_at":    fmt.Sprintf("%d", time.Now().Unix()),
+			"expires_in":    3600,
+			"refresh_token": refreshTokenOut,
+		})
+
+	case "refresh_token":
+		// Validate required parameters
+		if refreshToken == "" || clientID == "" {
+			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				"error":             "invalid_request",
+				"error_description": "Missing required parameters",
+			})
+		}
+
+		// Exchange refresh token for new tokens
+		accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx.Context, oauthSvc, refreshToken, clientID, clientSecret)
+		if err != nil {
+			h.logger.Error("failed to refresh tokens", zap.Error(err))
+			
+			// Return appropriate OAuth error based on the error type
+			if err == auth.ErrInvalidToken {
+				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+					"error":             "invalid_grant",
+					"error_description": "Invalid or expired refresh token",
+				})
+			}
+			if err == auth.ErrInvalidClient {
+				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+					"error":             "invalid_client",
+					"error_description": "Invalid client credentials",
+				})
+			}
+			
+			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+				"error":             "invalid_grant",
+				"error_description": "Refresh token exchange failed",
+			})
+		}
+
+		return ctx.JSON(map[string]interface{}{
+			"access_token":  accessToken,
+			"token_type":    "Bearer",
+			"scope":         "read write follow push",
+			"created_at":    fmt.Sprintf("%d", time.Now().Unix()),
+			"expires_in":    3600,
+			"refresh_token": newRefreshToken,
+		})
+
+	default:
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
+			"error":             "unsupported_grant_type",
+			"error_description": "Only authorization_code and refresh_token grant types are supported",
+		})
+	}
+}
+
+// exchangeAuthorizationCode exchanges an authorization code for access and refresh tokens
+func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.OAuthService, code, clientID, redirectURI, codeVerifier, clientSecret string) (string, string, error) {
+	// Validate client credentials if provided
+	if clientSecret != "" {
+		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+			return "", "", err
+		}
+	}
+
+	// Validate redirect URI
+	if err := oauthSvc.ValidateRedirectURI(ctx, clientID, redirectURI); err != nil {
+		return "", "", err
+	}
+
+	// Get authorization code from storage
+	authCode, err := h.repos.Account().GetAuthorizationCode(ctx, code)
+	if err != nil {
+		return "", "", auth.ErrInvalidGrant
+	}
+
+	// Validate authorization code
+	if authCode.ClientID != clientID {
+		return "", "", auth.ErrInvalidGrant
+	}
+
+	// Check expiration
+	if time.Now().After(authCode.ExpiresAt) {
+		// Clean up expired code
+		_ = h.repos.Account().DeleteAuthorizationCode(ctx, code)
+		return "", "", auth.ErrInvalidGrant
+	}
+
+	// Verify PKCE if used
+	if authCode.CodeChallenge != "" || codeVerifier != "" {
+		if err := oauthSvc.VerifyCodeChallenge(authCode.CodeChallenge, codeVerifier, "S256"); err != nil {
+			return "", "", err
+		}
+	}
+
+	// Generate tokens
+	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx, authCode.Username, clientID, "", authCode.Scopes)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate tokens: %w", err)
+	}
+
+	// Store refresh token in storage for later validation
+	oauthRefreshToken := &storage.RefreshToken{
+		Token:     refreshToken,
+		Username:  authCode.Username,
+		ClientID:  clientID,
+		Scopes:    authCode.Scopes,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(auth.RefreshTokenDuration),
+	}
+
+	if err := h.repos.Account().CreateRefreshToken(ctx, oauthRefreshToken); err != nil {
+		h.logger.Error("failed to store refresh token", zap.Error(err))
+		// Continue - access token is still valid
+	}
+
+	// Delete the used authorization code
+	if err := h.repos.Account().DeleteAuthorizationCode(ctx, code); err != nil {
+		h.logger.Error("failed to delete authorization code", zap.Error(err))
+		// Non-critical error, continue
+	}
+
+	return accessToken, refreshToken, nil
+}
+
+// exchangeRefreshToken exchanges a refresh token for new access and refresh tokens
+func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuthService, refreshToken, clientID, clientSecret string) (string, string, error) {
+	// Validate client credentials if provided
+	if clientSecret != "" {
+		if err := oauthSvc.ValidateClient(ctx, clientID, clientSecret); err != nil {
+			return "", "", err
+		}
+	}
+
+	// Get refresh token from storage
+	storedToken, err := h.repos.Account().GetRefreshToken(ctx, refreshToken)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return "", "", auth.ErrInvalidToken
+		}
+		if strings.Contains(err.Error(), "expired") {
+			return "", "", auth.ErrInvalidToken
+		}
+		return "", "", fmt.Errorf("failed to validate refresh token: %w", err)
+	}
+
+	// Validate refresh token belongs to the client
+	if storedToken.ClientID != clientID {
+		return "", "", auth.ErrInvalidToken
+	}
+
+	// Check expiration
+	if time.Now().After(storedToken.ExpiresAt) {
+		// Clean up expired token
+		_ = h.repos.Account().DeleteRefreshToken(ctx, refreshToken)
+		return "", "", auth.ErrInvalidToken
+	}
+
+	// Generate new tokens with same scopes
+	accessToken, newRefreshToken, err := oauthSvc.GenerateTokens(ctx, storedToken.Username, clientID, "", storedToken.Scopes)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to generate new tokens: %w", err)
+	}
+
+	// Create new refresh token record
+	newOAuthRefreshToken := &storage.RefreshToken{
+		Token:     newRefreshToken,
+		Username:  storedToken.Username,
+		ClientID:  clientID,
+		Scopes:    storedToken.Scopes,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(auth.RefreshTokenDuration),
+	}
+
+	// Store new refresh token
+	if err := h.repos.Account().CreateRefreshToken(ctx, newOAuthRefreshToken); err != nil {
+		h.logger.Error("failed to store new refresh token", zap.Error(err))
+		return "", "", fmt.Errorf("failed to store new refresh token: %w", err)
+	}
+
+	// Delete the old refresh token to prevent reuse
+	if err := h.repos.Account().DeleteRefreshToken(ctx, refreshToken); err != nil {
+		h.logger.Error("failed to delete old refresh token", zap.Error(err))
+		// Continue - new token is already stored
+	}
+
+	return accessToken, newRefreshToken, nil
 }

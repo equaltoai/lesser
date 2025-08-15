@@ -2,6 +2,8 @@ package advanced
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"sync"
@@ -591,11 +593,14 @@ type cachedLanguage struct {
 }
 
 func hashText(text string) string {
-	// Simple hash for caching
-	if len(text) > 100 {
-		text = text[:100]
+	// Use SHA-256 to create a cryptographically secure hash of the text for caching
+	hash := sha256.Sum256([]byte(text))
+	// Return first 16 characters of hex-encoded hash for cache key efficiency
+	hexHash := hex.EncodeToString(hash[:])
+	if len(hexHash) > 16 {
+		return hexHash[:16]
 	}
-	return text
+	return hexHash
 }
 
 func isAllCaps(text string) bool {

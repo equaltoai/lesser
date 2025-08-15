@@ -19,6 +19,7 @@ type RelationshipRepository struct {
 	tableName  string
 	logger     *zap.Logger
 	blockRepo  *BlockRepository
+	muteRepo   *MuteRepository
 	socialRepo *SocialRepository
 }
 
@@ -29,6 +30,7 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 		tableName:  tableName,
 		logger:     logger,
 		blockRepo:  NewBlockRepository(db, tableName, logger),
+		muteRepo:   NewMuteRepository(db, tableName, logger),
 		socialRepo: NewSocialRepository(db, logger),
 	}
 }
@@ -286,6 +288,24 @@ func (r *RelationshipRepository) CountFollowing(ctx context.Context, username st
 	}
 
 	return int(count), nil
+}
+
+// GetFollowerCount returns the number of followers for a user (interface method)
+func (r *RelationshipRepository) GetFollowerCount(ctx context.Context, userID string) (int64, error) {
+	count, err := r.CountFollowers(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int64(count), nil
+}
+
+// GetFollowingCount returns the number of users that a user is following (interface method)
+func (r *RelationshipRepository) GetFollowingCount(ctx context.Context, userID string) (int64, error) {
+	count, err := r.CountFollowing(ctx, userID)
+	if err != nil {
+		return 0, err
+	}
+	return int64(count), nil
 }
 
 // UpdateRelationship updates relationship settings (ShowReblogs, Notify, etc.)
@@ -1019,6 +1039,13 @@ func (r *RelationshipRepository) DeleteBlock(ctx context.Context, blockerActor, 
 	return r.blockRepo.DeleteBlock(ctx, blockerActor, blockedActor)
 }
 
+// BlockUser blocks another user
+func (r *RelationshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+	// Generate a unique activity ID for the block action
+	activityID := fmt.Sprintf("block_%s_%s_%d", blockerID, blockedID, time.Now().Unix())
+	return r.blockRepo.CreateBlock(ctx, blockerID, blockedID, activityID)
+}
+
 // IsBlocked checks if one actor has blocked another
 func (r *RelationshipRepository) IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error) {
 	return r.blockRepo.IsBlocked(ctx, blockerActor, blockedActor)
@@ -1052,4 +1079,46 @@ func (r *RelationshipRepository) CountBlockedUsers(ctx context.Context, blockerA
 // CountUsersWhoBlocked returns the number of users who have blocked the given actor
 func (r *RelationshipRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor string) (int, error) {
 	return r.blockRepo.CountUsersWhoBlocked(ctx, blockedActor)
+}
+
+// ===== Mute Methods =====
+
+// CreateMute creates a new mute relationship
+func (r *RelationshipRepository) CreateMute(ctx context.Context, muterActor, mutedActor, activityID string, hideNotifications bool, duration *time.Duration) error {
+	return r.muteRepo.CreateMute(ctx, muterActor, mutedActor, activityID, hideNotifications, duration)
+}
+
+// DeleteMute removes a mute relationship (for Undo Mute)
+func (r *RelationshipRepository) DeleteMute(ctx context.Context, muterActor, mutedActor string) error {
+	return r.muteRepo.DeleteMute(ctx, muterActor, mutedActor)
+}
+
+// IsMuted checks if one actor has muted another
+func (r *RelationshipRepository) IsMuted(ctx context.Context, muterActor, mutedActor string) (bool, error) {
+	return r.muteRepo.IsMuted(ctx, muterActor, mutedActor)
+}
+
+// GetMutedUsers returns a list of users muted by the given actor
+func (r *RelationshipRepository) GetMutedUsers(ctx context.Context, muterActor string, limit int, cursor string) ([]string, string, error) {
+	return r.muteRepo.GetMutedUsers(ctx, muterActor, limit, cursor)
+}
+
+// GetUsersWhoMuted returns a list of users who have muted the given actor
+func (r *RelationshipRepository) GetUsersWhoMuted(ctx context.Context, mutedActor string, limit int, cursor string) ([]string, string, error) {
+	return r.muteRepo.GetUsersWhoMuted(ctx, mutedActor, limit, cursor)
+}
+
+// GetMute retrieves a specific mute relationship
+func (r *RelationshipRepository) GetMute(ctx context.Context, muterActor, mutedActor string) (*storage.Mute, error) {
+	return r.muteRepo.GetMute(ctx, muterActor, mutedActor)
+}
+
+// CountMutedUsers returns the number of users muted by the given actor
+func (r *RelationshipRepository) CountMutedUsers(ctx context.Context, muterActor string) (int, error) {
+	return r.muteRepo.CountMutedUsers(ctx, muterActor)
+}
+
+// CountUsersWhoMuted returns the number of users who have muted the given actor
+func (r *RelationshipRepository) CountUsersWhoMuted(ctx context.Context, mutedActor string) (int, error) {
+	return r.muteRepo.CountUsersWhoMuted(ctx, mutedActor)
 }

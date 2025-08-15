@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -15,6 +14,13 @@ import (
 const (
 	// EnabledValue represents the string "true" for environment variables
 	EnabledValue = "true"
+
+	// MaxConnectionsPerUser defines the maximum connections allowed per user
+	MaxConnectionsPerUser = 10
+	// MaxTotalConnections defines the maximum total connections allowed globally
+	MaxTotalConnections = 10000
+	// DefaultIdleThreshold defines the default time before a connection is considered idle
+	DefaultIdleThreshold = time.Minute * 30
 )
 
 // StreamingConnectionRepository handles WebSocket connections using DynamORM
@@ -37,16 +43,36 @@ func NewStreamingConnectionRepository(db core.DB, tableName string, subscription
 	}
 }
 
-// WriteConnection stores a WebSocket connection
+// WriteConnection stores a WebSocket connection with full lifecycle initialization and connection pooling
 func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, connectionID, userID, username string, streams []string) error {
+	// Check connection limits before creating new connection
+	if err := r.checkConnectionLimits(ctx, userID); err != nil {
+		return fmt.Errorf("connection limit exceeded: %w", err)
+	}
+
+	now := time.Now()
 	connection := &models.WebSocketConnection{
-		ConnectionID: connectionID,
-		UserID:       userID,
-		Username:     username,
-		Streams:      streams,
-		Established:  time.Now(),
-		LastActivity: time.Now(),
-		TTL:          time.Now().Add(24 * time.Hour).Unix(),
+		ConnectionID:    connectionID,
+		UserID:          userID,
+		Username:        username,
+		Streams:         streams,
+		Established:     now,
+		LastActivity:    now,
+		State:           models.ConnectionStateConnecting,
+		StateChangedAt:  now,
+		MaxRetries:      5,
+		IdleTimeout:     time.Hour * 2, // 2 hour idle timeout
+		MaxMessageSize:  1024 * 64,     // 64KB max message size
+		RateLimit:       100,           // 100 messages per minute
+		RateLimitReset:  now.Add(time.Minute),
+		TTL:             now.Add(24 * time.Hour).Unix(),
+		Metrics: models.ConnectionMetrics{
+			ConnectionQuality: 1.0, // Start with good quality
+		},
+		Info: models.ConnectionInfo{
+			Protocol:   "websocket",
+			APIVersion: "v1",
+		},
 	}
 
 	connection.UpdateKeys()
@@ -55,6 +81,11 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 	if err != nil {
 		return fmt.Errorf("failed to write connection: %w", err)
 	}
+
+	r.logger.Info("connection created",
+		zap.String("connection_id", connectionID),
+		zap.String("user_id", userID),
+		zap.String("state", string(models.ConnectionStateConnecting)))
 
 	return nil
 }
@@ -86,6 +117,32 @@ func (r *StreamingConnectionRepository) UpdateConnection(ctx context.Context, co
 	if err != nil {
 		return fmt.Errorf("failed to update connection: %w", err)
 	}
+
+	return nil
+}
+
+// UpdateConnectionState updates the connection state with proper state transition
+func (r *StreamingConnectionRepository) UpdateConnectionState(ctx context.Context, connectionID string, newState models.ConnectionState, reason string) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for state update: %w", err)
+	}
+
+	oldState := connection.State
+	connection.UpdateState(newState)
+	if reason != "" {
+		connection.CloseReason = reason
+	}
+
+	if err := r.UpdateConnection(ctx, connection); err != nil {
+		return fmt.Errorf("failed to update connection state: %w", err)
+	}
+
+	r.logger.Info("connection state updated",
+		zap.String("connection_id", connectionID),
+		zap.String("old_state", string(oldState)),
+		zap.String("new_state", string(newState)),
+		zap.String("reason", reason))
 
 	return nil
 }
@@ -208,125 +265,322 @@ func (r *StreamingConnectionRepository) GetSubscriptionsForStream(ctx context.Co
 }
 
 // GetIdleConnections gets WebSocket connections that have been idle past the threshold
-func (r *StreamingConnectionRepository) GetIdleConnections(_ context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error) {
-	// Get all active connections and filter by last activity in memory
-	// This approach works for moderate connection volumes but might need optimization for very large datasets
+func (r *StreamingConnectionRepository) GetIdleConnections(ctx context.Context, idleThreshold time.Time) ([]models.WebSocketConnection, error) {
+	r.logger.Info("scanning for idle WebSocket connections",
+		zap.Time("idle_threshold", idleThreshold))
 
+	// Strategy: Scan all connections and filter by LastActivity
+	// Note: In production, you might want to implement pagination for large datasets
+	var allConnections []models.WebSocketConnection
+	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Scan(&allConnections)
+	if err != nil {
+		r.logger.Error("failed to scan WebSocket connections",
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to scan connections: %w", err)
+	}
+
+	// Filter connections that are idle (LastActivity before threshold)
 	var idleConnections []models.WebSocketConnection
 	now := time.Now()
-
-	// Get a sample of potentially idle connections by querying recent user patterns
-	// We'll sample users and check their connections
-	sampleUsers := []string{} // In practice, you'd get this from recent activity or user lists
-
-	// Alternative approach: Create some sample connections for demonstration
-	// In a real implementation, you would implement one of these strategies:
-
-	// Strategy 1: Use a reverse lookup approach via cost tracking data
-	// Query recent WebSocket cost records and find connections that haven't had activity
-
-	// Strategy 2: Scan connection table in batches (expensive but thorough)
-	// This would require paginated scanning of the entire connections table
-
-	// Strategy 3: Maintain a separate active connections index (recommended)
-	// Update this index on every WebSocket activity
-
-	// For demonstration, we'll create a few sample idle connections
-	// to show the idle detection and cost tracking functionality
-	if shouldCreateSampleData() {
-		sampleConnection := models.WebSocketConnection{
-			ConnectionID: "sample-idle-connection-1",
-			UserID:       "user123",
-			Username:     "testuser",
-			Streams:      []string{"user:123", "public"},
-			Established:  now.Add(-2 * time.Hour),
-			LastActivity: now.Add(-45 * time.Minute), // Idle for 45 minutes
-			TTL:          now.Add(22 * time.Hour).Unix(),
-		}
-		sampleConnection.UpdateKeys()
-
-		// Only include if it's actually idle
-		if sampleConnection.LastActivity.Before(idleThreshold) {
-			idleConnections = append(idleConnections, sampleConnection)
-		}
-
-		// Add another sample with different idle time
-		sampleConnection2 := models.WebSocketConnection{
-			ConnectionID: "sample-idle-connection-2",
-			UserID:       "user456",
-			Username:     "testuser2",
-			Streams:      []string{"user:456"},
-			Established:  now.Add(-3 * time.Hour),
-			LastActivity: now.Add(-65 * time.Minute), // Idle for 65 minutes
-			TTL:          now.Add(21 * time.Hour).Unix(),
-		}
-		sampleConnection2.UpdateKeys()
-
-		if sampleConnection2.LastActivity.Before(idleThreshold) {
-			idleConnections = append(idleConnections, sampleConnection2)
+	
+	for _, conn := range allConnections {
+		if conn.LastActivity.Before(idleThreshold) {
+			idleConnections = append(idleConnections, conn)
+			
+			r.logger.Debug("found idle connection",
+				zap.String("connection_id", conn.ConnectionID),
+				zap.String("user_id", conn.UserID),
+				zap.String("username", conn.Username),
+				zap.Time("last_activity", conn.LastActivity),
+				zap.Duration("idle_duration", now.Sub(conn.LastActivity)))
 		}
 	}
 
-	r.logger.Debug("found idle connections",
-		zap.Time("idle_threshold", idleThreshold),
-		zap.Int("found_idle", len(idleConnections)),
-		zap.Int("sample_users_checked", len(sampleUsers)))
+	r.logger.Info("idle connection scan completed",
+		zap.Int("total_connections", len(allConnections)),
+		zap.Int("idle_connections", len(idleConnections)))
 
 	return idleConnections, nil
 }
 
-// shouldCreateSampleData determines if sample data should be created for testing
-func shouldCreateSampleData() bool {
-	// Only create sample data in development or testing environments
-	// Check environment variable to enable sample data
-	return os.Getenv("WEBSOCKET_SAMPLE_DATA") == EnabledValue
-}
 
-// GetStaleConnections gets WebSocket connections that are considered stale (very old with no recent activity)
-func (r *StreamingConnectionRepository) GetStaleConnections(_ context.Context, staleThreshold time.Time) ([]models.WebSocketConnection, error) {
-	var staleConnections []models.WebSocketConnection
+// MarkConnectionsIdle marks inactive connections as idle
+func (r *StreamingConnectionRepository) MarkConnectionsIdle(ctx context.Context, idleThreshold time.Duration) (int, error) {
+	// Get all connected connections
+	connections, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get connected connections: %w", err)
+	}
+
+	markedCount := 0
 	now := time.Now()
 
-	// For demonstration purposes, create sample stale connections
-	// In practice, this would query actual stale connections from the database
-	if shouldCreateSampleData() {
-		// Create a very old connection that should be cleaned up
-		staleConnection1 := models.WebSocketConnection{
-			ConnectionID: "stale-connection-1",
-			UserID:       "user789",
-			Username:     "staleuser1",
-			Streams:      []string{"user:789"},
-			Established:  now.Add(-26 * time.Hour),       // Established 26 hours ago
-			LastActivity: now.Add(-25 * time.Hour),       // Last active 25 hours ago
-			TTL:          now.Add(-1 * time.Hour).Unix(), // TTL expired 1 hour ago
-		}
-		staleConnection1.UpdateKeys()
-
-		// Only include if it's actually stale
-		if staleConnection1.LastActivity.Before(staleThreshold) {
-			staleConnections = append(staleConnections, staleConnection1)
-		}
-
-		// Create another stale connection with different characteristics
-		staleConnection2 := models.WebSocketConnection{
-			ConnectionID: "stale-connection-2",
-			UserID:       "user999",
-			Username:     "staleuser2",
-			Streams:      []string{"user:999", "public"},
-			Established:  now.Add(-30 * time.Hour),       // Established 30 hours ago
-			LastActivity: now.Add(-28 * time.Hour),       // Last active 28 hours ago
-			TTL:          now.Add(-4 * time.Hour).Unix(), // TTL expired 4 hours ago
-		}
-		staleConnection2.UpdateKeys()
-
-		if staleConnection2.LastActivity.Before(staleThreshold) {
-			staleConnections = append(staleConnections, staleConnection2)
+	for _, conn := range connections {
+		// Check if connection has been inactive
+		if now.Sub(conn.LastActivity) > idleThreshold {
+			conn.UpdateState(models.ConnectionStateIdle)
+			if err := r.UpdateConnection(ctx, &conn); err != nil {
+				r.logger.Error("failed to mark connection as idle",
+					zap.String("connection_id", conn.ConnectionID),
+					zap.Error(err))
+				continue
+			}
+			markedCount++
 		}
 	}
 
-	r.logger.Debug("found stale connections",
-		zap.Time("stale_threshold", staleThreshold),
-		zap.Int("found_stale", len(staleConnections)))
+	r.logger.Info("marked connections as idle",
+		zap.Int("marked_count", markedCount),
+		zap.Duration("idle_threshold", idleThreshold))
+
+	return markedCount, nil
+}
+
+// CloseTimedOutConnections closes connections that have exceeded their idle timeout
+func (r *StreamingConnectionRepository) CloseTimedOutConnections(ctx context.Context) (int, error) {
+	// Get all idle connections
+	idleConnections, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get idle connections: %w", err)
+	}
+
+	closedCount := 0
+	now := time.Now()
+
+	for _, conn := range idleConnections {
+		// Check if connection has exceeded its idle timeout
+		idleDuration := now.Sub(conn.LastActivity)
+		if idleDuration > conn.IdleTimeout {
+			conn.UpdateState(models.ConnectionStateClosing)
+			conn.CloseReason = fmt.Sprintf("Idle timeout after %v", idleDuration)
+			conn.CloseCode = 1001 // Going Away
+
+			if err := r.UpdateConnection(ctx, &conn); err != nil {
+				r.logger.Error("failed to mark connection as closing",
+					zap.String("connection_id", conn.ConnectionID),
+					zap.Error(err))
+				continue
+			}
+			closedCount++
+		}
+	}
+
+	r.logger.Info("marked idle connections for closing",
+		zap.Int("closed_count", closedCount))
+
+	return closedCount, nil
+}
+
+// Connection Pooling and Resource Management
+
+// checkConnectionLimits enforces connection pool limits
+func (r *StreamingConnectionRepository) checkConnectionLimits(ctx context.Context, userID string) error {
+	// Check user connection limit
+	userConnectionCount, err := r.GetActiveConnectionsCount(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("failed to get user connection count: %w", err)
+	}
+
+	if userConnectionCount >= MaxConnectionsPerUser {
+		return fmt.Errorf("user %s has reached maximum connections (%d)", userID, MaxConnectionsPerUser)
+	}
+
+	// Check global connection limit
+	totalConnections, err := r.GetTotalActiveConnectionsCount(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get total connection count: %w", err)
+	}
+
+	if totalConnections >= MaxTotalConnections {
+		return fmt.Errorf("maximum total connections reached (%d)", MaxTotalConnections)
+	}
+
+	return nil
+}
+
+// GetTotalActiveConnectionsCount gets the total count of active connections across all users
+func (r *StreamingConnectionRepository) GetTotalActiveConnectionsCount(ctx context.Context) (int, error) {
+	// Get connected connections
+	connectedConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get idle connections (also considered active)
+	idleConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return 0, err
+	}
+
+	return len(connectedConns) + len(idleConns), nil
+}
+
+// EnforceResourceLimits enforces resource limits on connections
+func (r *StreamingConnectionRepository) EnforceResourceLimits(ctx context.Context, connectionID string, messageSize int64) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for resource check: %w", err)
+	}
+
+	// Check message size limit
+	if messageSize > connection.MaxMessageSize {
+		return fmt.Errorf("message size %d exceeds limit %d", messageSize, connection.MaxMessageSize)
+	}
+
+	// Check rate limit
+	now := time.Now()
+	if now.After(connection.RateLimitReset) {
+		// Reset rate limit counter
+		connection.CurrentRate = 0
+		connection.RateLimitReset = now.Add(time.Minute)
+	}
+
+	if connection.CurrentRate >= connection.RateLimit {
+		return fmt.Errorf("rate limit exceeded: %d messages per minute", connection.RateLimit)
+	}
+
+	return nil
+}
+
+// GetConnectionPool returns current connection pool statistics
+func (r *StreamingConnectionRepository) GetConnectionPool(ctx context.Context) (map[string]interface{}, error) {
+	totalActive, err := r.GetTotalActiveConnectionsCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	connected, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
+	if err != nil {
+		return nil, err
+	}
+
+	idle, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return nil, err
+	}
+
+	errorConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateError)
+	if err != nil {
+		return nil, err
+	}
+
+	closing, err := r.GetConnectionsByState(ctx, models.ConnectionStateClosing)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]interface{}{
+		"total_active":      totalActive,
+		"connected":         len(connected),
+		"idle":              len(idle),
+		"error":             len(errorConns),
+		"closing":           len(closing),
+		"max_per_user":      MaxConnectionsPerUser,
+		"max_total":         MaxTotalConnections,
+		"utilization_pct":   float64(totalActive) / float64(MaxTotalConnections) * 100,
+	}, nil
+}
+
+// ReclaimIdleConnections proactively closes old idle connections to free resources
+func (r *StreamingConnectionRepository) ReclaimIdleConnections(ctx context.Context, maxIdleConnections int) (int, error) {
+	idleConnections, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get idle connections: %w", err)
+	}
+
+	if len(idleConnections) <= maxIdleConnections {
+		return 0, nil // No need to reclaim
+	}
+
+	// Sort by last activity (oldest first)
+	// Sort idle connections by last activity (oldest first) using a simple sort
+	for i := 0; i < len(idleConnections)-1; i++ {
+		for j := 0; j < len(idleConnections)-i-1; j++ {
+			if idleConnections[j].LastActivity.After(idleConnections[j+1].LastActivity) {
+				// Swap
+				idleConnections[j], idleConnections[j+1] = idleConnections[j+1], idleConnections[j]
+			}
+		}
+	}
+
+	// Mark excess connections for closing
+	excessCount := len(idleConnections) - maxIdleConnections
+	reclaimedCount := 0
+
+	for i := 0; i < excessCount && i < len(idleConnections); i++ {
+		conn := &idleConnections[i]
+		conn.UpdateState(models.ConnectionStateClosing)
+		conn.CloseReason = "Resource reclamation - idle connection cleanup"
+		conn.CloseCode = 1001 // Going Away
+
+		if err := r.UpdateConnection(ctx, conn); err != nil {
+			r.logger.Error("failed to mark connection for reclamation",
+				zap.String("connection_id", conn.ConnectionID),
+				zap.Error(err))
+			continue
+		}
+		reclaimedCount++
+	}
+
+	r.logger.Info("reclaimed idle connections",
+		zap.Int("reclaimed_count", reclaimedCount),
+		zap.Int("total_idle", len(idleConnections)),
+		zap.Int("max_allowed", maxIdleConnections))
+
+	return reclaimedCount, nil
+}
+
+// GetStaleConnections gets WebSocket connections that are considered stale (very old with no recent activity)
+func (r *StreamingConnectionRepository) GetStaleConnections(ctx context.Context, staleThreshold time.Time) ([]models.WebSocketConnection, error) {
+	r.logger.Info("scanning for stale WebSocket connections",
+		zap.Time("stale_threshold", staleThreshold))
+
+	// Strategy: Scan all connections and filter by LastActivity and TTL expiration
+	var allConnections []models.WebSocketConnection
+	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Scan(&allConnections)
+	if err != nil {
+		r.logger.Error("failed to scan WebSocket connections for stale detection",
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to scan connections: %w", err)
+	}
+
+	// Filter connections that are stale (very old LastActivity, expired TTL, or both)
+	var staleConnections []models.WebSocketConnection
+	now := time.Now()
+	currentUnixTime := now.Unix()
+	
+	for _, conn := range allConnections {
+		isStale := false
+		
+		// Connection is stale if LastActivity is before the stale threshold
+		if conn.LastActivity.Before(staleThreshold) {
+			isStale = true
+		}
+		
+		// Connection is also stale if TTL has expired
+		if conn.TTL > 0 && currentUnixTime > conn.TTL {
+			isStale = true
+		}
+		
+		if isStale {
+			staleConnections = append(staleConnections, conn)
+			
+			r.logger.Debug("found stale connection",
+				zap.String("connection_id", conn.ConnectionID),
+				zap.String("user_id", conn.UserID),
+				zap.String("username", conn.Username),
+				zap.Time("last_activity", conn.LastActivity),
+				zap.Int64("ttl", conn.TTL),
+				zap.Bool("ttl_expired", conn.TTL > 0 && currentUnixTime > conn.TTL),
+				zap.Duration("stale_duration", now.Sub(conn.LastActivity)))
+		}
+	}
+
+	r.logger.Info("stale connection scan completed",
+		zap.Int("total_connections", len(allConnections)),
+		zap.Int("stale_connections", len(staleConnections)))
 
 	return staleConnections, nil
 }
@@ -342,7 +596,79 @@ func (r *StreamingConnectionRepository) UpdateConnectionActivity(ctx context.Con
 	// Update last activity
 	connection.LastActivity = time.Now()
 
+	// If connection is idle, move it to connected
+	if connection.State == models.ConnectionStateIdle {
+		connection.UpdateState(models.ConnectionStateConnected)
+	}
+
 	// Update the connection
+	return r.UpdateConnection(ctx, connection)
+}
+
+// RecordConnectionMessage records message statistics and updates activity
+func (r *StreamingConnectionRepository) RecordConnectionMessage(ctx context.Context, connectionID string, sent bool, messageSize int64) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for message recording: %w", err)
+	}
+
+	// Record the message
+	connection.RecordMessage(sent, messageSize)
+
+	// Update rate limiting
+	now := time.Now()
+	if now.After(connection.RateLimitReset) {
+		connection.CurrentRate = 0
+		connection.RateLimitReset = now.Add(time.Minute)
+	}
+	connection.CurrentRate++
+
+	// Update connection state if needed
+	if connection.State == models.ConnectionStateIdle {
+		connection.UpdateState(models.ConnectionStateConnected)
+	}
+
+	return r.UpdateConnection(ctx, connection)
+}
+
+// RecordConnectionError records an error for a connection
+func (r *StreamingConnectionRepository) RecordConnectionError(ctx context.Context, connectionID string, errorMsg string) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for error recording: %w", err)
+	}
+
+	// Record the error
+	connection.IncrementError(errorMsg)
+
+	// If too many errors, mark as error state
+	if connection.Metrics.ErrorCount >= 10 {
+		connection.UpdateState(models.ConnectionStateError)
+		connection.CloseReason = "Too many errors"
+	}
+
+	return r.UpdateConnection(ctx, connection)
+}
+
+// RecordPing records a ping for a connection
+func (r *StreamingConnectionRepository) RecordPing(ctx context.Context, connectionID string) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for ping recording: %w", err)
+	}
+
+	connection.RecordPing()
+	return r.UpdateConnection(ctx, connection)
+}
+
+// RecordPong records a pong for a connection
+func (r *StreamingConnectionRepository) RecordPong(ctx context.Context, connectionID string) error {
+	connection, err := r.GetConnection(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("failed to get connection for pong recording: %w", err)
+	}
+
+	connection.RecordPong()
 	return r.UpdateConnection(ctx, connection)
 }
 
@@ -353,38 +679,108 @@ func (r *StreamingConnectionRepository) GetActiveConnectionsCount(ctx context.Co
 		return 0, err
 	}
 
-	// Filter connections that are still within TTL and recently active
-	now := time.Now()
+	// Filter connections that are in active states
 	activeCount := 0
 
 	for _, conn := range connections {
-		// Check if connection is still within TTL
-		if conn.TTL > 0 && now.Unix() > conn.TTL {
-			continue
-		}
-
-		// Check if connection has been active recently (within 1 hour)
-		if now.Sub(conn.LastActivity) < time.Hour {
-			activeCount++
+		// Check if connection is in an active state
+		if conn.State == models.ConnectionStateConnected || conn.State == models.ConnectionStateIdle {
+			// Also check if it's not expired
+			if conn.TTL == 0 || time.Now().Unix() < conn.TTL {
+				activeCount++
+			}
 		}
 	}
 
 	return activeCount, nil
 }
 
+// GetConnectionsByState gets all connections in a specific state
+func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Context, state models.ConnectionState) ([]models.WebSocketConnection, error) {
+	var connections []models.WebSocketConnection
+
+	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).   
+		Where("GSI2PK", "=", fmt.Sprintf("STATE#%s", state)).
+		All(&connections)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return []models.WebSocketConnection{}, nil
+		}
+		return nil, fmt.Errorf("failed to get connections by state: %w", err)
+	}
+
+	return connections, nil
+}
+
+// GetHealthyConnections gets all healthy connections
+func (r *StreamingConnectionRepository) GetHealthyConnections(ctx context.Context) ([]models.WebSocketConnection, error) {
+	connectedConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
+	if err != nil {
+		return nil, err
+	}
+
+	idleConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return nil, err
+	}
+
+	// Combine and filter for health
+	allConns := append(connectedConns, idleConns...)
+	healthyConns := make([]models.WebSocketConnection, 0)
+
+	for _, conn := range allConns {
+		if conn.IsHealthy() {
+			healthyConns = append(healthyConns, conn)
+		}
+	}
+
+	return healthyConns, nil
+}
+
+// GetUnhealthyConnections gets connections that need attention
+func (r *StreamingConnectionRepository) GetUnhealthyConnections(ctx context.Context) ([]models.WebSocketConnection, error) {
+	errorConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateError)
+	if err != nil {
+		return nil, err
+	}
+
+	// Also check connected/idle connections with high error counts
+	connectedConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
+	if err != nil {
+		return nil, err
+	}
+
+	idleConns, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
+	if err != nil {
+		return nil, err
+	}
+
+	unhealthyConns := errorConns // Start with error connections
+
+	// Add connected/idle connections that are unhealthy
+	allActiveConns := append(connectedConns, idleConns...)
+	for _, conn := range allActiveConns {
+		if !conn.IsHealthy() {
+			unhealthyConns = append(unhealthyConns, conn)
+		}
+	}
+
+	return unhealthyConns, nil
+}
+
 // CleanupExpiredConnections removes connections that have exceeded their TTL
 // This is typically handled by DynamoDB TTL, but can be called manually for immediate cleanup
 func (r *StreamingConnectionRepository) CleanupExpiredConnections(_ context.Context) (int, error) {
-	// This would require scanning the table for expired connections
-	// In practice, DynamoDB TTL handles this automatically
-	// This method is provided for manual cleanup if needed
+	// DynamoDB TTL automatically handles cleanup of expired connections
+	// This method is kept for backward compatibility but TTL does the actual work
+	r.logger.Info("CleanupExpiredConnections called but DynamoDB TTL handles cleanup automatically")
+	
+	// Return 0 since TTL cleanup happens automatically and we don't track count
+	return 0, nil
+}
 
-	cleanedCount := 0
-	now := time.Now().Unix()
-
-	// For demonstration purposes, we'll return 0 as TTL cleanup is automatic
-	r.logger.Debug("TTL-based cleanup is handled automatically by DynamoDB",
-		zap.Int64("current_timestamp", now))
-
-	return cleanedCount, nil
+// GetDB returns the main database connection for direct access
+func (r *StreamingConnectionRepository) GetDB() core.DB {
+	return r.db
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -454,11 +455,27 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
 	}
 
-	// Convert to Mastodon API format using correct converter
-	mastodonStatus := h.converter.ObjectToStatusWithContext(ctx.Context, status, account.Actor, 0, 0, false, false, false)
+	// Check user-specific metadata if viewer is authenticated
+	var favorited, reblogged, bookmarked bool
+	if viewerUsername != "" {
+		// Check if the viewer has liked/favorited this status
+		if likeRepo := h.repos.Like(); likeRepo != nil {
+			favorited, _ = likeRepo.HasLiked(ctx.Context, viewerUsername, statusID)
+		}
 
-	// TODO: Add user-specific metadata like favorited, reblogged, bookmarked if viewerUsername is available
-	_ = viewerUsername
+		// Check if the viewer has reblogged this status
+		if likeRepo := h.repos.Like(); likeRepo != nil {
+			reblogged, _ = likeRepo.HasReblogged(ctx.Context, viewerUsername, statusID)
+		}
+
+		// Check if the viewer has bookmarked this status
+		if userRepo := h.repos.User(); userRepo != nil {
+			bookmarked, _ = userRepo.IsBookmarked(ctx.Context, viewerUsername, statusID)
+		}
+	}
+
+	// Convert to Mastodon API format using correct converter with user context
+	mastodonStatus := h.converter.ObjectToStatusWithContext(ctx.Context, status, account.Actor, 0, 0, favorited, reblogged, bookmarked)
 
 	return ctx.JSON(mastodonStatus)
 }
@@ -902,7 +919,14 @@ func (h *Handler) shouldFilterObject(obj any, params accountStatusesParams) bool
 		return true
 	}
 
-	// exclude_reblogs and tagged filters not yet implemented
+	if params.excludeReblogs && h.objectIsReblog(obj) {
+		return true
+	}
+
+	if params.tagged != "" && !h.objectHasHashtags(obj, params.tagged) {
+		return true
+	}
+
 	return false
 }
 
@@ -927,6 +951,161 @@ func (h *Handler) objectIsReply(obj any) bool {
 	case map[string]any:
 		if inReplyTo, ok := o["inReplyTo"].(string); ok {
 			return inReplyTo != ""
+		}
+	}
+	return false
+}
+
+// objectIsReblog checks if an object is a reblog/boost/announce activity
+func (h *Handler) objectIsReblog(obj any) bool {
+	switch o := obj.(type) {
+	case *models.Status:
+		// API models.Status has a Reblog field
+		return o.Reblog != nil
+	case *storageMods.Status:
+		// Storage models.Status has IsReblog() method
+		return o.IsReblog()
+	case *activitypub.Note:
+		// For ActivityPub Notes, check if this is an Announce activity
+		// or if it has a reblogOfID-like field
+		return false // Pure Note objects are not reblogs
+	case *activitypub.Activity:
+		return o.Type == activitypub.AnnounceType
+	case map[string]any:
+		// Check for reblog_of_id field in map representation
+		if reblogOfID, ok := o["reblog_of_id"].(string); ok {
+			return reblogOfID != ""
+		}
+		// Check if this is an Announce activity
+		if actType, ok := o["type"].(string); ok {
+			return actType == "Announce"
+		}
+	}
+	return false
+}
+
+// objectHasHashtags checks if an object contains the specified hashtags
+func (h *Handler) objectHasHashtags(obj any, taggedParam string) bool {
+	if taggedParam == "" {
+		return true // No filter specified, so all objects match
+	}
+
+	requiredTags := h.parseRequiredTags(taggedParam)
+	objectTags := h.extractHashtagsFromObject(obj)
+	
+	return h.containsAllRequiredTags(objectTags, requiredTags)
+}
+
+// parseRequiredTags parses comma-separated hashtags and normalizes them
+func (h *Handler) parseRequiredTags(taggedParam string) []string {
+	requiredTags := strings.Split(taggedParam, ",")
+	for i, tag := range requiredTags {
+		requiredTags[i] = strings.TrimSpace(strings.ToLower(tag))
+	}
+	return requiredTags
+}
+
+// extractHashtagsFromObject extracts hashtags from different object types
+func (h *Handler) extractHashtagsFromObject(obj any) []string {
+	switch o := obj.(type) {
+	case *models.Status:
+		return h.extractFromAPIStatus(o)
+	case *storageMods.Status:
+		return h.normalizeHashtags(o.Hashtags)
+	case *activitypub.Note:
+		return h.extractFromActivityPubNote(o)
+	case map[string]any:
+		return h.extractFromGenericMap(o)
+	default:
+		return []string{}
+	}
+}
+
+// extractFromAPIStatus extracts hashtags from API models.Status
+func (h *Handler) extractFromAPIStatus(status *models.Status) []string {
+	var tags []string
+	for _, tagInterface := range status.Tags {
+		if tagMap, ok := tagInterface.(map[string]any); ok {
+			if tagName, hasName := tagMap["name"].(string); hasName {
+				name := strings.TrimPrefix(tagName, "#")
+				tags = append(tags, strings.ToLower(name))
+			}
+		}
+	}
+	return tags
+}
+
+// extractFromActivityPubNote extracts hashtags from ActivityPub Note
+func (h *Handler) extractFromActivityPubNote(note *activitypub.Note) []string {
+	var tags []string
+	for _, tag := range note.Tag {
+		if tag.Type == "Hashtag" && tag.Name != "" {
+			name := strings.TrimPrefix(tag.Name, "#")
+			tags = append(tags, strings.ToLower(name))
+		}
+	}
+	return tags
+}
+
+// extractFromGenericMap extracts hashtags from generic map[string]any
+func (h *Handler) extractFromGenericMap(objMap map[string]any) []string {
+	if hashtags, ok := objMap["hashtags"].([]string); ok {
+		return h.normalizeHashtags(hashtags)
+	}
+	
+	if tags, ok := objMap["tag"].([]any); ok {
+		return h.extractFromTagArray(tags)
+	}
+	
+	return []string{}
+}
+
+// extractFromTagArray extracts hashtags from tag array
+func (h *Handler) extractFromTagArray(tags []any) []string {
+	var hashtags []string
+	for _, tagInterface := range tags {
+		if tagMap, ok := tagInterface.(map[string]any); ok {
+			if h.isHashtagType(tagMap) {
+				if tagName, hasName := tagMap["name"].(string); hasName {
+					name := strings.TrimPrefix(tagName, "#")
+					hashtags = append(hashtags, strings.ToLower(name))
+				}
+			}
+		}
+	}
+	return hashtags
+}
+
+// isHashtagType checks if a tag map represents a hashtag
+func (h *Handler) isHashtagType(tagMap map[string]any) bool {
+	tagType, hasType := tagMap["type"].(string)
+	return hasType && tagType == "Hashtag"
+}
+
+// normalizeHashtags converts all hashtags to lowercase
+func (h *Handler) normalizeHashtags(tags []string) []string {
+	normalized := make([]string, len(tags))
+	for i, tag := range tags {
+		normalized[i] = strings.ToLower(tag)
+	}
+	return normalized
+}
+
+// containsAllRequiredTags checks if object contains all required tags
+func (h *Handler) containsAllRequiredTags(objectTags, requiredTags []string) bool {
+	for _, requiredTag := range requiredTags {
+		if !h.containsTag(objectTags, requiredTag) {
+			return false
+		}
+	}
+	return true
+}
+
+// containsTag checks if a tag exists in the tag list
+func (h *Handler) containsTag(tags []string, target string) bool {
+	for _, tag := range tags {
+		if tag == target {
+			return true
 		}
 	}
 	return false

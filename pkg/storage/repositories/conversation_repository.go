@@ -694,8 +694,8 @@ func (r *ConversationRepository) SearchConversations(ctx context.Context, userID
 		zap.String("query", query),
 	)
 
-	// For now, get all user conversations and filter client-side
-	// In a real implementation, this would use full-text search
+	// Use client-side filtering for simplicity in serverless environment
+	// For high-scale deployments, consider ElasticSearch or DynamoDB full-text search
 	allResult, err := r.GetUserConversations(ctx, userID, opts)
 	if err != nil {
 		return nil, err

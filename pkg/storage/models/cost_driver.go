@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+
 // CostDriver represents a major cost contributor
 type CostDriver struct {
 	// Keys
@@ -63,7 +64,7 @@ func GetCostDriversByCategoryKeys(category string) (pk, skPrefix string) {
 // CalculateTrend determines the trend based on previous cost
 func (c *CostDriver) CalculateTrend() {
 	if c.PreviousCost == 0 {
-		c.Trend = "stable"
+		c.Trend = TrendStable
 		return
 	}
 
@@ -72,9 +73,9 @@ func (c *CostDriver) CalculateTrend() {
 	if changePercent > 10 {
 		c.Trend = TrendIncreasing
 	} else if changePercent < -10 {
-		c.Trend = "decreasing"
+		c.Trend = TrendDecreasing
 	} else {
-		c.Trend = "stable"
+		c.Trend = TrendStable
 	}
 }
 
@@ -124,9 +125,9 @@ func (c *CostDriver) FormatCostSummary() string {
 	summary := fmt.Sprintf("%s: $%.2f (%.1f%%)", c.Type, c.Cost, c.PercentOfTotal)
 
 	switch c.Trend {
-	case "increasing":
+	case TrendIncreasing:
 		summary += " ↑"
-	case "decreasing":
+	case TrendDecreasing:
 		summary += " ↓"
 	}
 

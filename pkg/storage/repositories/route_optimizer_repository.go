@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/types"
@@ -294,4 +296,128 @@ func (r *RouteOptimizerRepository) CleanupExpiredResults(_ context.Context, befo
 		zap.Time("before", before))
 
 	return nil
+}
+
+// GetMetricsInRange retrieves delivery results for a specific route within a time range
+func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeID string, start, end time.Time, limit int) ([]*types.DeliveryResult, error) {
+	r.logger.Debug("Getting metrics in range",
+		zap.String("routeID", routeID),
+		zap.Time("start", start),
+		zap.Time("end", end),
+		zap.Int("limit", limit))
+
+	var results []*models.RouteDeliveryResult
+
+	// Query strategy depends on whether we're filtering by specific route
+	if routeID != "" {
+		// Query by specific route using primary key
+		query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+			Where("PK", "=", fmt.Sprintf("ROUTE#%s", routeID)).
+			Where("SK", ">=", fmt.Sprintf("RESULT#%d", start.UnixNano()))
+
+		if !end.IsZero() {
+			query = query.Where("SK", "<=", fmt.Sprintf("RESULT#%d", end.UnixNano()))
+		}
+
+		query = query.OrderBy("SK", "DESC").Limit(limit)
+		
+		err := query.All(&results)
+		if err != nil {
+			r.logger.Error("Failed to get route-specific metrics",
+				zap.String("routeID", routeID),
+				zap.Error(err))
+			return nil, fmt.Errorf("get route metrics: %w", err)
+		}
+	} else {
+		// Query across all routes using GSI1
+		startKey := fmt.Sprintf("%d", start.Unix())
+		query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+			Index("GSI1").
+			Where("GSI1PK", "=", "RESULTS").
+			Where("GSI1SK", ">=", startKey)
+
+		if !end.IsZero() {
+			endKey := fmt.Sprintf("%d", end.Unix())
+			query = query.Where("GSI1SK", "<=", endKey)
+		}
+
+		query = query.OrderBy("GSI1SK", "DESC").Limit(limit)
+
+		err := query.All(&results)
+		if err != nil {
+			r.logger.Error("Failed to get all route metrics",
+				zap.Time("start", start),
+				zap.Time("end", end),
+				zap.Error(err))
+			return nil, fmt.Errorf("get all route metrics: %w", err)
+		}
+	}
+
+	// Convert RouteDeliveryResult to DeliveryResult
+	deliveryResults := make([]*types.DeliveryResult, 0, len(results))
+	for _, result := range results {
+		// Extract instance ID from route if possible (routes often encode instance info)
+		instanceID := r.extractInstanceFromRoute(result.RouteID)
+		
+		deliveryResult := &types.DeliveryResult{
+			MessageID:    result.MessageID,
+			InstanceID:   instanceID,
+			RouteID:      result.RouteID,
+			Success:      result.Success,
+			StatusCode:   result.StatusCode,
+			ErrorMessage: result.ErrorMessage,
+			Attempts:     r.estimateAttempts(result.Success, result.StatusCode),
+			Duration:     time.Duration(result.Duration) * time.Millisecond,
+			BytesSent:    result.BytesSent,
+			Cost:         result.Cost,
+			Timestamp:    result.Timestamp,
+		}
+		deliveryResults = append(deliveryResults, deliveryResult)
+	}
+
+	r.logger.Debug("Retrieved route metrics",
+		zap.String("routeID", routeID),
+		zap.Int("results", len(deliveryResults)))
+
+	return deliveryResults, nil
+}
+
+// extractInstanceFromRoute attempts to extract instance ID from route ID
+func (r *RouteOptimizerRepository) extractInstanceFromRoute(routeID string) string {
+	// Route IDs often contain instance information
+	// This is a heuristic - adjust based on your route ID format
+	if strings.Contains(routeID, "@") {
+		parts := strings.Split(routeID, "@")
+		if len(parts) > 1 {
+			return parts[len(parts)-1] // Return domain part
+		}
+	}
+	
+	// Try to extract from URL-like route IDs
+	if strings.Contains(routeID, "://") {
+		if parsed, err := url.Parse(routeID); err == nil {
+			return parsed.Host
+		}
+	}
+	
+	return "" // No instance ID extractable
+}
+
+// estimateAttempts estimates attempt count based on success and status code
+func (r *RouteOptimizerRepository) estimateAttempts(success bool, statusCode int) int {
+	if success {
+		return 1 // Successful on first try
+	}
+	
+	// Estimate attempts based on status code patterns
+	switch {
+	case statusCode >= 500: // Server errors typically get more retries
+		return 3
+	case statusCode >= 400: // Client errors typically get fewer retries
+		return 2
+	case statusCode == 0: // Network/timeout errors
+		return 3
+	default:
+		return 1
+	}
 }

@@ -1,8 +1,8 @@
 package notes
 
 import (
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/google/uuid"
 )
 
 // convertToStorageNote converts notes.CommunityNote to storage.CommunityNote
@@ -105,7 +105,7 @@ func convertFromStorageVote(storageVote *storage.CommunityNoteVote) Vote {
 	}
 }
 
-// GenerateNoteID generates a unique ID for a note
+// GenerateNoteID generates a unique ID for a note using enhanced ULID generation
 func GenerateNoteID() string {
-	return "CN-" + uuid.New().String()
+	return "CN-" + common.GenerateID()
 }

@@ -823,6 +823,38 @@ func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int,
 	return int(count), nil
 }
 
+// CountWithdrawnQuotes counts the number of withdrawn quotes for a specific note
+func (r *ObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID string) (int, error) {
+	// Count withdrawn quotes by querying all quotes for this note and checking withdrawn status
+	// Since withdrawn quotes have cleared GSI keys, we need to scan by target note ID
+	var quotes []models.QuoteRelationship
+	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+		Where("SK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
+		All(&quotes)
+	
+	if err != nil {
+		r.logger.Error("failed to get quotes for withdrawn count",
+			zap.String("note_id", noteID),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to get quotes for withdrawn count: %w", err)
+	}
+	
+	// Count only withdrawn quotes
+	withdrawnCount := 0
+	for _, quote := range quotes {
+		if quote.Withdrawn {
+			withdrawnCount++
+		}
+	}
+	
+	r.logger.Debug("counted withdrawn quotes for note",
+		zap.String("note_id", noteID),
+		zap.Int("withdrawn_count", withdrawnCount),
+		zap.Int("total_quotes", len(quotes)))
+	
+	return withdrawnCount, nil
+}
+
 // CountReplies counts the number of replies to an object using GSI6
 func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (int, error) {
 	// Ensure we have the full object URL for GSI6 key
@@ -2355,6 +2387,17 @@ func (r *ObjectRepository) CleanupExpiredTombstones(ctx context.Context, batchSi
 
 	r.logger.Info("cleaned up expired tombstones", zap.Int("count", cleaned))
 	return cleaned, nil
+}
+
+// GetObjectHistory retrieves the version history of an object
+func (r *ObjectRepository) GetObjectHistory(ctx context.Context, objectID string) ([]*storage.UpdateHistory, error) {
+	// Get all update history for the object
+	histories, err := r.GetUpdateHistory(ctx, objectID, 100) // Get all versions
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object history: %w", err)
+	}
+	
+	return histories, nil
 }
 
 // ReplaceObjectWithTombstone atomically replaces an object with a tombstone

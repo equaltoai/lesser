@@ -27,6 +27,7 @@ type Timeline struct {
 	GSI4PK string `dynamorm:"index:language-timeline-index,pk" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
 	GSI4SK string `dynamorm:"index:language-timeline-index,sk" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
 
+
 	// Core timeline data
 	TimelineType string `json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG
 	TimelineID   string `json:"timeline_id"`   // Username for HOME, LOCAL/FEDERATED for PUBLIC, list ID for LIST, hashtag for HASHTAG
@@ -53,7 +54,7 @@ type Timeline struct {
 	// Timestamps
 	CreatedAt  time.Time `json:"created_at"`  // When the post was created
 	TimelineAt time.Time `json:"timeline_at"` // When it was added to timeline (for sorting)
-	ExpiresAt  time.Time `json:"expires_at"`  // TTL for auto-deletion
+	TTL        int64     `dynamorm:"ttl" json:"ttl,omitempty"` // DynamoDB TTL (Unix timestamp)
 
 	// DynamORM metadata
 	ModifiedAt time.Time `dynamorm:"updated_at" json:"modified_at"`
@@ -147,11 +148,19 @@ func (t *Timeline) setupGSIKeys() {
 		t.GSI4PK = ""
 		t.GSI4SK = ""
 	}
+
 }
 
 // IsExpired returns true if the timeline entry has expired
 func (t *Timeline) IsExpired() bool {
-	return !t.ExpiresAt.IsZero() && time.Now().After(t.ExpiresAt)
+	return t.TTL > 0 && time.Now().Unix() > t.TTL
+}
+
+// SetTTL sets the TTL for this timeline entry
+func (t *Timeline) SetTTL(expiresAt time.Time) {
+	if !expiresAt.IsZero() {
+		t.TTL = expiresAt.Unix()
+	}
 }
 
 // IsPublic returns true if the timeline entry is publicly visible

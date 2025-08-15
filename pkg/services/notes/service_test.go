@@ -342,6 +342,36 @@ func (m *MockFederationService) QueueActivity(ctx context.Context, activity *act
 	return args.Error(0)
 }
 
+// MockAnalyticsService implements AnalyticsService for testing
+type MockAnalyticsService struct {
+	mock.Mock
+}
+
+func (m *MockAnalyticsService) RecordStatusCreation(ctx context.Context, actorID string, timestamp time.Time) error {
+	args := m.Called(ctx, actorID, timestamp)
+	return args.Error(0)
+}
+
+func (m *MockAnalyticsService) RecordHashtagUsage(ctx context.Context, hashtags []string, objectID, actorID string) error {
+	args := m.Called(ctx, hashtags, objectID, actorID)
+	return args.Error(0)
+}
+
+func (m *MockAnalyticsService) RecordLinkShare(ctx context.Context, links []string, objectID, actorID string) error {
+	args := m.Called(ctx, links, objectID, actorID)
+	return args.Error(0)
+}
+
+func (m *MockAnalyticsService) RecordEngagement(ctx context.Context, objectID, engagementType, actorID string) error {
+	args := m.Called(ctx, objectID, engagementType, actorID)
+	return args.Error(0)
+}
+
+func (m *MockAnalyticsService) RecordInstanceActivity(ctx context.Context, activityType string, timestamp time.Time) error {
+	args := m.Called(ctx, activityType, timestamp)
+	return args.Error(0)
+}
+
 // MockLikeRepository implements interfaces.LikeRepository
 type MockLikeRepository struct {
 	mock.Mock
@@ -408,6 +438,7 @@ func (m *MockSocialRepository) DeleteStatusPin(ctx context.Context, userID, stat
 	args := m.Called(ctx, userID, statusID)
 	return args.Error(0)
 }
+
 
 // MockConversationRepository implements interfaces.ConversationRepository
 type MockConversationRepository struct {
@@ -534,6 +565,7 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 	noteRepo := &MockNoteRepository{}
 	accountRepo := &MockAccountRepository{}
 	publisher := streaming.NewMockPublisher()
+	analytics := &MockAnalyticsService{}
 	federation := &MockFederationService{}
 	logger := zaptest.NewLogger(&testing.T{})
 
@@ -544,6 +576,9 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 	communityNoteRepo := &repositories.CommunityNoteRepository{}
 	userRepo := &repositories.UserRepository{}
 
+	// Create concrete relationship repository for testing
+	relationshipRepo := &repositories.RelationshipRepository{}
+
 	// Use mock interfaces for interface types
 	socialRepo := &MockSocialRepository{}
 	conversationRepo := &MockConversationRepository{}
@@ -553,6 +588,7 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 	service := NewService(
 		nil, // noteRepo - tests will need to be updated to not rely on repository mocking
 		accountRepo,
+		relationshipRepo, // Add the concrete relationship repository
 		likeRepo,
 		socialRepo,
 		conversationRepo,
@@ -561,6 +597,7 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 		communityNoteRepo,
 		userRepo,
 		publisher,
+		analytics, // Analytics service
 		federation,
 		logger,
 		"example.com",

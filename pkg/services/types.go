@@ -34,6 +34,7 @@ type CreatePostInput struct {
 	Language    string
 }
 
+
 // CreatePostResult contains the result of post creation
 type CreatePostResult struct {
 	Activity     *activitypub.Activity
@@ -228,9 +229,11 @@ type AnalyticsService interface {
 	RecordHashtagUsage(ctx context.Context, hashtags []string, objectID, actorID string) error
 	RecordLinkShare(ctx context.Context, links []string, objectID, actorID string) error
 	RecordEngagement(ctx context.Context, objectID, engagementType, actorID string) error
+	RecordInstanceActivity(ctx context.Context, activityType string, timestamp time.Time) error
 
 	// Infrastructure and health monitoring
 	GetInfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error)
 	GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error)
 	GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error)
 }
+

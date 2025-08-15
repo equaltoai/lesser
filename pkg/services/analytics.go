@@ -61,6 +61,11 @@ func (a *analyticsService) RecordEngagement(ctx context.Context, objectID, engag
 	return a.storage.RecordStatusEngagement(ctx, objectID, engagementType, actorID)
 }
 
+// RecordInstanceActivity records instance-level activity metrics
+func (a *analyticsService) RecordInstanceActivity(ctx context.Context, activityType string, timestamp time.Time) error {
+	return a.storage.RecordInstanceActivity(ctx, activityType, timestamp)
+}
+
 // GetInfrastructureHealth returns the current infrastructure health status
 func (a *analyticsService) GetInfrastructureHealth(ctx context.Context) (*model.InfrastructureStatus, error) {
 	// Query storage for real health metrics

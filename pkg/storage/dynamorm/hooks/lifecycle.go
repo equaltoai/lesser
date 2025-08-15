@@ -375,8 +375,8 @@ func AuditHook(ctx context.Context, model any) error {
 		auditData["request_id"] = requestID
 	}
 
-	// In a real implementation, this would write to an audit log table
-	// For now, we'll log it
+	// Currently logs audit events to structured logger for compliance tracking
+	// Future enhancement: Persist audit trail to dedicated DynamoDB audit table
 	if logger := getLoggerFromContext(ctx); logger != nil {
 		logger.Info("audit_trail", zap.Any("audit_data", auditData))
 	}

@@ -8,9 +8,16 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
+	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
+)
+
+// Constants for operation statuses
+const (
+	StatusProcessing = "processing"
+	StatusCompleted  = "completed"
 )
 
 // BulkService defines the interface for bulk operations
@@ -18,6 +25,18 @@ type BulkService interface {
 	BulkFollow(ctx context.Context, cmd *bulk.FollowCommand) (*bulk.OperationResult, error)
 	BulkDeleteStatuses(ctx context.Context, cmd *bulk.DeleteStatusesCommand) (*bulk.OperationResult, error)
 	GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.OperationResult, error)
+	
+	// Bulk Content Management Operations
+	BulkDelete(ctx context.Context, cmd *bulk.DeleteCommand) (*bulk.OperationResult, error)
+	BulkArchive(ctx context.Context, cmd *bulk.ArchiveCommand) (*bulk.OperationResult, error)
+	BulkRestore(ctx context.Context, cmd *bulk.RestoreCommand) (*bulk.OperationResult, error)
+	BulkExport(ctx context.Context, cmd *bulk.ExportCommand) (*bulk.OperationResult, error)
+	BulkListMembers(ctx context.Context, cmd *bulk.ListMembersCommand) (*bulk.OperationResult, error)
+	
+	// Bulk Moderation Operations
+	BulkUnblock(ctx context.Context, cmd *bulk.UnblockCommand) (*bulk.OperationResult, error)
+	BulkMute(ctx context.Context, cmd *bulk.MuteCommand) (*bulk.OperationResult, error)
+	BulkBlock(ctx context.Context, cmd *bulk.BlockCommand) (*bulk.OperationResult, error)
 }
 
 // ImportExportService defines the interface for import/export operations
@@ -25,6 +44,10 @@ type ImportExportService interface {
 	CreateExport(ctx context.Context, cmd *importexport.CreateExportCommand) (*importexport.ExportResult, error)
 	GetExport(ctx context.Context, query *importexport.GetExportQuery) (*importexport.ExportResult, error)
 	ListExports(ctx context.Context, query *importexport.ListExportsQuery) (*importexport.ExportListResult, error)
+	CancelExport(ctx context.Context, cmd *importexport.CancelExportCommand) (*importexport.ExportResult, error)
+	CreateImport(ctx context.Context, cmd *importexport.CreateImportCommand) (*importexport.ImportResult, error)
+	GetImport(ctx context.Context, query *importexport.GetImportQuery) (*importexport.ImportResult, error)
+	ListImports(ctx context.Context, query *importexport.ListImportsQuery) (*importexport.ImportListResult, error)
 }
 
 // AsyncCommandHandler handles WebSocket commands for async operations (bulk ops, import/export)
@@ -32,18 +55,26 @@ type AsyncCommandHandler struct {
 	*streaming.BaseCommandHandler
 	bulkService         BulkService
 	importExportService ImportExportService
+	relationshipsService *relationships.Service
+	publisher           streaming.Publisher
+	logger              *zap.Logger
 }
 
 // NewAsyncCommandHandler creates a new async command handler
 func NewAsyncCommandHandler(
 	bulkService BulkService,
 	importExportService ImportExportService,
+	relationshipsService *relationships.Service,
+	publisher streaming.Publisher,
 	logger *zap.Logger,
 ) *AsyncCommandHandler {
 	return &AsyncCommandHandler{
-		BaseCommandHandler:  streaming.NewBaseCommandHandler(logger),
-		bulkService:         bulkService,
-		importExportService: importExportService,
+		BaseCommandHandler:   streaming.NewBaseCommandHandler(logger),
+		bulkService:          bulkService,
+		importExportService:  importExportService,
+		relationshipsService: relationshipsService,
+		publisher:            publisher,
+		logger:               logger,
 	}
 }
 
@@ -60,6 +91,11 @@ func (ach *AsyncCommandHandler) GetSupportedCommands() []string {
 		streaming.CmdBulkDeleteStatuses,
 		streaming.CmdBulkListMembers,
 		streaming.CmdGetBulkOperation,
+		// Bulk Content Management commands
+		streaming.CmdBulkDelete,
+		streaming.CmdBulkArchive,
+		streaming.CmdBulkRestore,
+		streaming.CmdBulkExport,
 		// Import/Export commands
 		streaming.CmdCreateExport,
 		streaming.CmdGetExport,
@@ -93,6 +129,15 @@ func (ach *AsyncCommandHandler) HandleCommand(ctx context.Context, conn *streami
 		return ach.handleBulkListMembers(ctx, conn, cmd)
 	case streaming.CmdGetBulkOperation:
 		return ach.handleGetBulkOperation(ctx, conn, cmd)
+	// Bulk Content Management commands
+	case streaming.CmdBulkDelete:
+		return ach.handleBulkDelete(ctx, conn, cmd)
+	case streaming.CmdBulkArchive:
+		return ach.handleBulkArchive(ctx, conn, cmd)
+	case streaming.CmdBulkRestore:
+		return ach.handleBulkRestore(ctx, conn, cmd)
+	case streaming.CmdBulkExport:
+		return ach.handleBulkExport(ctx, conn, cmd)
 	// Import/Export commands
 	case streaming.CmdCreateExport:
 		return ach.handleCreateExport(ctx, conn, cmd)
@@ -160,7 +205,7 @@ func (ach *AsyncCommandHandler) handleBulkFollow(ctx context.Context, conn *stre
 }
 
 // handleBulkUnfollow handles bulk unfollow operations
-func (ach *AsyncCommandHandler) handleBulkUnfollow(_ context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+func (ach *AsyncCommandHandler) handleBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -175,11 +220,25 @@ func (ach *AsyncCommandHandler) handleBulkUnfollow(_ context.Context, conn *stre
 			"No account IDs provided", "account_ids array cannot be empty"), nil
 	}
 
-	// Note: BulkUnfollow is not implemented in the bulk service yet
-	// This would need to be added to the bulk service
-	_ = accountIDs // Avoid unused variable warning
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED",
-		"Bulk unfollow not yet implemented", "This feature is coming soon"), nil
+	// Limit batch size to prevent timeouts
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	}
+
+	// Start async processing
+	go ach.processBulkUnfollow(ctx, conn, cmd.ID, accountIDs)
+
+	// Return immediate response indicating processing started
+	data := map[string]interface{}{
+		"operation_id": cmd.ID,
+		"status":       "processing",
+		"total":        len(accountIDs),
+		"processed":    0,
+		"message":      "Bulk unfollow operation started",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
 // handleBulkDeleteStatuses handles bulk status deletion
@@ -404,40 +463,934 @@ func (ach *AsyncCommandHandler) handleListExports(ctx context.Context, conn *str
 	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-// Placeholder handlers for commands not yet implemented
+// Bulk Social Action Command Handlers
 
-func (ach *AsyncCommandHandler) handleBulkMute(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk mute not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleBulkMute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
+	if len(accountIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No account IDs provided", "account_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	}
+
+	// Optional parameters
+	hideNotifications := ach.GetBool(cmd.Payload, "notifications", false)
+
+	// Create bulk mute command
+	bulkCmd := &bulk.MuteCommand{
+		Username:      conn.UserID,
+		AccountIDs:    accountIDs,
+		Notifications: hideNotifications,
+	}
+
+	// Execute bulk mute operation using the bulk service
+	result, err := ach.bulkService.BulkMute(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_OPERATION_ERROR", "Failed to start bulk mute operation", err.Error()), nil
+	}
+
+	// Return operation started response
+	data := map[string]interface{}{
+		"operation_id": result.Operation.ID,
+		"status":       result.Operation.Status,
+		"total":        result.Operation.Total,
+		"message":      "Bulk mute operation started",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkUnmute(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk unmute not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleBulkUnmute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
+	if len(accountIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No account IDs provided", "account_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	}
+
+	// Start async processing
+	go ach.processBulkUnmute(ctx, conn, cmd.ID, accountIDs)
+
+	// Return immediate response indicating processing started
+	data := map[string]interface{}{
+		"operation_id": cmd.ID,
+		"status":       "processing",
+		"total":        len(accountIDs),
+		"processed":    0,
+		"message":      "Bulk unmute operation started",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkBlock(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk block not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleBulkBlock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
+	if len(accountIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No account IDs provided", "account_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	}
+
+	// Create bulk block command
+	bulkCmd := &bulk.BlockCommand{
+		Username:   conn.UserID,
+		AccountIDs: accountIDs,
+	}
+
+	// Execute bulk block operation using the bulk service
+	result, err := ach.bulkService.BulkBlock(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_OPERATION_ERROR", "Failed to start bulk block operation", err.Error()), nil
+	}
+
+	// Return operation started response
+	data := map[string]interface{}{
+		"operation_id": result.Operation.ID,
+		"status":       result.Operation.Status,
+		"total":        result.Operation.Total,
+		"message":      "Bulk block operation started",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkUnblock(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk unblock not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleBulkUnblock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Validate required fields
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	// Extract account IDs from payload
+	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
+	if len(accountIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "No account IDs provided", "At least one account ID is required"), nil
+	}
+
+	// Check limits
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Too many accounts", "Maximum 100 accounts per bulk operation"), nil
+	}
+
+	// Create bulk unblock command
+	bulkCmd := &bulk.UnblockCommand{
+		Username:   conn.UserID,
+		AccountIDs: accountIDs,
+	}
+
+	// Execute bulk unblock operation using the bulk service
+	result, err := ach.bulkService.BulkUnblock(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_OPERATION_ERROR", "Failed to start bulk unblock operation", err.Error()), nil
+	}
+
+	// Return operation started response
+	data := map[string]interface{}{
+		"operation_id": result.Operation.ID,
+		"status":       result.Operation.Status,
+		"total":        result.Operation.Total,
+		"message":      "Bulk unblock operation started",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleBulkListMembers(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Bulk list members not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleBulkListMembers(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Validate required fields
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"list_id", "account_ids", "operation"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	// Extract parameters from payload
+	listID := ach.GetString(cmd.Payload, "list_id", "")
+	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
+	operation := ach.GetString(cmd.Payload, "operation", "")
+
+	// Validate operation type
+	if operation != "add" && operation != "remove" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid operation", "Operation must be 'add' or 'remove'"), nil
+	}
+
+	// Validate account IDs
+	if len(accountIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "No account IDs provided", "At least one account ID is required"), nil
+	}
+
+	// Check limits
+	if len(accountIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Too many accounts", "Maximum 100 accounts per bulk operation"), nil
+	}
+
+	// Create command for bulk service
+	listMembersCmd := &bulk.ListMembersCommand{
+		Username:   conn.Username, // Using Username as required by the command
+		ListID:     listID,
+		AccountIDs: accountIDs,
+		Operation:  operation,
+	}
+
+	// Call the bulk service
+	result, err := ach.bulkService.BulkListMembers(ctx, listMembersCmd)
+	if err != nil {
+		ach.logger.Error("bulk list members operation failed",
+			zap.String("list_id", listID),
+			zap.String("operation", operation),
+			zap.Strings("account_ids", accountIDs),
+			zap.Error(err))
+		return ach.CreateErrorResponse(cmd.ID, "INTERNAL_ERROR", "Bulk operation failed", err.Error()), nil
+	}
+
+	// Return operation result
+	data := map[string]interface{}{
+		"operation_id": result.Operation.ID,
+		"status":       result.Operation.Status,
+		"total":        result.Operation.Total,
+		"processed":    result.Operation.Processed,
+		"successful":   result.Operation.Succeeded,
+		"failed":       result.Operation.Failed,
+		"operation":    operation,
+		"list_id":      listID,
+		"message":      fmt.Sprintf("Bulk %s list members operation started", operation),
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleCancelExport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Cancel export not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleCancelExport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Validate required fields
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"export_id"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	// Extract export ID from payload
+	exportID := ach.GetString(cmd.Payload, "export_id", "")
+	if exportID == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Export ID is required", "Please provide a valid export ID"), nil
+	}
+
+	// Create cancel command for import/export service
+	cancelCmd := &importexport.CancelExportCommand{
+		ExportID: exportID,
+		Username: conn.Username,
+	}
+
+	// Call the import/export service
+	result, err := ach.importExportService.CancelExport(ctx, cancelCmd)
+	if err != nil {
+		ach.logger.Error("cancel export operation failed",
+			zap.String("export_id", exportID),
+			zap.String("username", conn.Username),
+			zap.Error(err))
+		return ach.CreateErrorResponse(cmd.ID, "INTERNAL_ERROR", "Cancel export failed", err.Error()), nil
+	}
+
+	// Return cancellation result
+	data := map[string]interface{}{
+		"export_id": exportID,
+		"status":    result.Export.Status,
+		"message":   "Export cancelled successfully",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleCreateImport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Create import not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleCreateImport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Validate required fields
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"type", "format", "file_url", "merge_strategy"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	// Extract parameters from payload
+	importType := ach.GetString(cmd.Payload, "type", "")
+	format := ach.GetString(cmd.Payload, "format", "")
+	fileURL := ach.GetString(cmd.Payload, "file_url", "")
+	mergeStrategy := ach.GetString(cmd.Payload, "merge_strategy", "")
+	
+	// Get optional options
+	optionsInterface, hasOptions := cmd.Payload["options"]
+	options := make(map[string]string)
+	if hasOptions {
+		if optionsMap, ok := optionsInterface.(map[string]interface{}); ok {
+			for k, v := range optionsMap {
+				if strVal, ok := v.(string); ok {
+					options[k] = strVal
+				}
+			}
+		}
+	}
+
+	// Validate parameters
+	if importType == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Import type is required", "Please provide a valid import type"), nil
+	}
+	if format == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Format is required", "Please provide a valid format"), nil
+	}
+	if fileURL == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "File URL is required", "Please provide a valid file URL"), nil
+	}
+	if mergeStrategy == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Merge strategy is required", "Please provide a valid merge strategy"), nil
+	}
+
+	// Create import command for import/export service
+	importCmd := &importexport.CreateImportCommand{
+		Username:      conn.Username,
+		Type:          importType,
+		Format:        format,
+		FileURL:       fileURL,
+		Options:       options,
+		MergeStrategy: mergeStrategy,
+		RequestedBy:   conn.Username,
+	}
+
+	// Call the import/export service
+	result, err := ach.importExportService.CreateImport(ctx, importCmd)
+	if err != nil {
+		ach.logger.Error("create import operation failed",
+			zap.String("type", importType),
+			zap.String("format", format),
+			zap.String("username", conn.Username),
+			zap.Error(err))
+		return ach.CreateErrorResponse(cmd.ID, "INTERNAL_ERROR", "Create import failed", err.Error()), nil
+	}
+
+	// Return import creation result
+	data := map[string]interface{}{
+		"import_id":      result.Import.ID,
+		"type":           result.Import.Type,
+		"format":         format, // Use format from command since model doesn't store it
+		"status":         result.Import.Status,
+		"merge_strategy": result.Import.Mode, // Use Mode field
+		"message":        "Import created successfully",
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleGetImport(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "Get import not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleGetImport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Validate required fields
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"import_id"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	// Extract import ID from payload
+	importID := ach.GetString(cmd.Payload, "import_id", "")
+	if importID == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Import ID is required", "Please provide a valid import ID"), nil
+	}
+
+	// Create get query for import/export service
+	getQuery := &importexport.GetImportQuery{
+		ImportID: importID,
+		Username: conn.Username,
+	}
+
+	// Call the import/export service
+	result, err := ach.importExportService.GetImport(ctx, getQuery)
+	if err != nil {
+		ach.logger.Error("get import operation failed",
+			zap.String("import_id", importID),
+			zap.String("username", conn.Username),
+			zap.Error(err))
+		return ach.CreateErrorResponse(cmd.ID, "INTERNAL_ERROR", "Get import failed", err.Error()), nil
+	}
+
+	// Return import details
+	data := map[string]interface{}{
+		"import_id": result.Import.ID,
+		"type":      result.Import.Type,
+		"status":    result.Import.Status,
+		"mode":      result.Import.Mode,
+		"processed": result.Processed,
+		"skipped":   result.Skipped,
+		"failed":    result.Failed,
+		"created_at": result.Import.CreatedAt,
+		"updated_at": result.Import.UpdatedAt,
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-func (ach *AsyncCommandHandler) handleListImports(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	return ach.CreateErrorResponse(cmd.ID, "NOT_IMPLEMENTED", "List imports not yet implemented", "This feature is coming soon"), nil
+func (ach *AsyncCommandHandler) handleListImports(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	// Extract optional parameters from payload
+	status := ach.GetString(cmd.Payload, "status", "")
+	limit := ach.GetInt(cmd.Payload, "limit", 50) // Default limit
+	cursor := ach.GetString(cmd.Payload, "cursor", "")
+
+	// Create list query for import/export service
+	listQuery := &importexport.ListImportsQuery{
+		Username: conn.Username,
+		Status:   status,
+		Pagination: interfaces.PaginationOptions{
+			Limit:  limit,
+			Cursor: cursor,
+		},
+	}
+
+	// Call the import/export service
+	result, err := ach.importExportService.ListImports(ctx, listQuery)
+	if err != nil {
+		ach.logger.Error("list imports operation failed",
+			zap.String("username", conn.Username),
+			zap.String("status", status),
+			zap.Error(err))
+		return ach.CreateErrorResponse(cmd.ID, "INTERNAL_ERROR", "List imports failed", err.Error()), nil
+	}
+
+	// Convert imports to response format
+	imports := make([]map[string]interface{}, len(result.Imports))
+	for i, imp := range result.Imports {
+		imports[i] = map[string]interface{}{
+			"import_id":   imp.ID,
+			"type":        imp.Type,
+			"status":      imp.Status,
+			"mode":        imp.Mode,
+			"created_at":  imp.CreatedAt,
+			"updated_at":  imp.UpdatedAt,
+			"progress":    imp.Progress,
+			"total":       imp.Total,
+			"error_count": imp.ErrorCount,
+		}
+		if imp.CompletedAt != nil {
+			imports[i]["completed_at"] = *imp.CompletedAt
+		}
+	}
+
+	// Return import list
+	data := map[string]interface{}{
+		"imports":     imports,
+		"next_cursor": result.NextCursor,
+		"has_more":    result.HasMore,
+		"total":       len(imports),
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
+}
+
+// ===== Bulk Social Action Processing Functions =====
+
+// processBulkUnfollow processes bulk unfollow operations with progress tracking
+func (ach *AsyncCommandHandler) processBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, operationID string, accountIDs []string) {
+	total := len(accountIDs)
+	processed := 0
+	successful := 0
+	failed := 0
+	var errors []string
+
+	// Send initial progress update
+	ach.sendProgressUpdate(conn, operationID, "processing", processed, total, "Starting bulk unfollow operation")
+
+	// Process in batches to manage load
+	batchSize := 10
+	for i := 0; i < len(accountIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+
+		// Process batch
+		for j := i; j < end; j++ {
+			accountID := accountIDs[j]
+			
+			// Create unfollow command
+			unfollowCmd := &relationships.UnfollowCommand{
+				FollowerID:  conn.Username,
+				FollowingID: accountID,
+			}
+
+			// Execute unfollow
+			_, err := ach.relationshipsService.Unfollow(ctx, unfollowCmd)
+			if err != nil {
+				failed++
+				errors = append(errors, fmt.Sprintf("Failed to unfollow %s: %v", accountID, err))
+			} else {
+				successful++
+			}
+
+			processed++
+
+			// Send progress update every 5 operations
+			if processed%5 == 0 || processed == total {
+				status := StatusProcessing
+				if processed == total {
+					status = StatusCompleted
+				}
+				message := fmt.Sprintf("Processed %d/%d unfollows (%d successful, %d failed)", processed, total, successful, failed)
+				ach.sendProgressUpdate(conn, operationID, status, processed, total, message)
+			}
+		}
+
+		// Small delay between batches to avoid overwhelming the system
+		if end < len(accountIDs) {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	// Send final completion update
+	finalMessage := fmt.Sprintf("Bulk unfollow completed: %d successful, %d failed out of %d accounts", successful, failed, total)
+	ach.sendFinalUpdate(conn, operationID, "completed", processed, total, finalMessage, successful, failed, errors)
+}
+
+
+// processBulkUnmute processes bulk unmute operations with progress tracking
+func (ach *AsyncCommandHandler) processBulkUnmute(ctx context.Context, conn *streaming.ConnectionInfo, operationID string, accountIDs []string) {
+	total := len(accountIDs)
+	processed := 0
+	successful := 0
+	failed := 0
+	var errors []string
+
+	// Send initial progress update
+	ach.sendProgressUpdate(conn, operationID, "processing", processed, total, "Starting bulk unmute operation")
+
+	// Process in batches to manage load
+	batchSize := 10
+	for i := 0; i < len(accountIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+
+		// Process batch
+		for j := i; j < end; j++ {
+			accountID := accountIDs[j]
+			
+			// Create unmute command
+			unmuteCmd := &relationships.UnmuteCommand{
+				MuterID: conn.Username,
+				MutedID: accountID,
+			}
+
+			// Execute unmute
+			_, err := ach.relationshipsService.Unmute(ctx, unmuteCmd)
+			if err != nil {
+				failed++
+				errors = append(errors, fmt.Sprintf("Failed to unmute %s: %v", accountID, err))
+			} else {
+				successful++
+			}
+
+			processed++
+
+			// Send progress update every 5 operations
+			if processed%5 == 0 || processed == total {
+				status := StatusProcessing
+				if processed == total {
+					status = StatusCompleted
+				}
+				message := fmt.Sprintf("Processed %d/%d unmutes (%d successful, %d failed)", processed, total, successful, failed)
+				ach.sendProgressUpdate(conn, operationID, status, processed, total, message)
+			}
+		}
+
+		// Small delay between batches to avoid overwhelming the system
+		if end < len(accountIDs) {
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+
+	// Send final completion update
+	finalMessage := fmt.Sprintf("Bulk unmute completed: %d successful, %d failed out of %d accounts", successful, failed, total)
+	ach.sendFinalUpdate(conn, operationID, "completed", processed, total, finalMessage, successful, failed, errors)
+}
+
+
+// ===== Helper Functions for Progress Updates =====
+
+// sendProgressUpdate sends a progress update via WebSocket
+func (ach *AsyncCommandHandler) sendProgressUpdate(conn *streaming.ConnectionInfo, operationID, status string, processed, total int, message string) {
+	// Create progress update event
+	event := &streaming.Event{
+		Type:   "operation.progress",
+		Stream: fmt.Sprintf("user:%s", conn.UserID),
+		Payload: map[string]interface{}{
+			"operation_id": operationID,
+			"status":       status,
+			"processed":    processed,
+			"total":        total,
+			"message":      message,
+			"progress":     float64(processed) / float64(total) * 100,
+		},
+		Timestamp: time.Now(),
+	}
+
+	// Attempt to publish the event if publisher is available
+	if ach.publisher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		if err := ach.publisher.PublishToUser(ctx, conn.UserID, event); err != nil {
+			ach.logger.Warn("failed to send progress update via WebSocket",
+				zap.String("operation_id", operationID),
+				zap.String("user_id", conn.UserID),
+				zap.Error(err))
+		}
+	}
+}
+
+// sendFinalUpdate sends the final completion update with error details
+func (ach *AsyncCommandHandler) sendFinalUpdate(conn *streaming.ConnectionInfo, operationID, finalStatus string, processed, total int, finalMessage string, successful, failed int, errors []string) {
+	// Create final update event
+	event := &streaming.Event{
+		Type:   "operation.completed",
+		Stream: fmt.Sprintf("user:%s", conn.UserID),
+		Payload: map[string]interface{}{
+			"operation_id":   operationID,
+			"status":         finalStatus,
+			"processed":      processed,
+			"total":          total,
+			"message":        finalMessage,
+			"successful":     successful,
+			"failed":         failed,
+			"errors":         errors,
+			"progress":       100.0,
+			"completed_at":   time.Now().Format(time.RFC3339),
+		},
+		Timestamp: time.Now(),
+	}
+
+	// Attempt to publish the event if publisher is available
+	if ach.publisher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		if err := ach.publisher.PublishToUser(ctx, conn.UserID, event); err != nil {
+			ach.logger.Warn("failed to send final update via WebSocket",
+				zap.String("operation_id", operationID),
+				zap.String("user_id", conn.UserID),
+				zap.Error(err))
+		}
+	}
+}
+
+// handleBulkDelete handles bulk deletion of multiple posts/content
+func (ach *AsyncCommandHandler) handleBulkDelete(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"content_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
+	if len(contentIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No content IDs provided", "content_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(contentIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many content items", "Maximum 100 items per batch"), nil
+	}
+
+	// Optional parameters
+	contentType := ach.GetString(cmd.Payload, "content_type", "status") // Default to status
+	permanent := ach.GetBool(cmd.Payload, "permanent", false)           // Default to soft delete
+
+	// Parse date range if provided
+	var dateRange *bulk.DateRange
+	if dateRangeData, exists := cmd.Payload["date_range"].(map[string]interface{}); exists {
+		if startStr := ach.GetString(dateRangeData, "start", ""); startStr != "" {
+			if start, err := time.Parse(time.RFC3339, startStr); err == nil {
+				if endStr := ach.GetString(dateRangeData, "end", ""); endStr != "" {
+					if end, err := time.Parse(time.RFC3339, endStr); err == nil {
+						dateRange = &bulk.DateRange{Start: start, End: end}
+					}
+				}
+			}
+		}
+	}
+
+	bulkCmd := &bulk.DeleteCommand{
+		Username:    conn.Username,
+		ContentIDs:  contentIDs,
+		ContentType: contentType,
+		DateRange:   dateRange,
+		Permanent:   permanent,
+	}
+
+	result, err := ach.bulkService.BulkDelete(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_DELETE_FAILED",
+			"Failed to start bulk delete operation", err.Error()), nil
+	}
+
+	data, err := ach.ConvertToJSON(result.Operation)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
+			"Failed to format response", err.Error()), nil
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
+}
+
+// handleBulkArchive handles bulk archiving of multiple posts
+func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"content_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
+	if len(contentIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No content IDs provided", "content_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(contentIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many content items", "Maximum 100 items per batch"), nil
+	}
+
+	// Optional parameters
+	contentType := ach.GetString(cmd.Payload, "content_type", "status") // Default to status
+
+	// Parse date range if provided
+	var dateRange *bulk.DateRange
+	if dateRangeData, exists := cmd.Payload["date_range"].(map[string]interface{}); exists {
+		if startStr := ach.GetString(dateRangeData, "start", ""); startStr != "" {
+			if start, err := time.Parse(time.RFC3339, startStr); err == nil {
+				if endStr := ach.GetString(dateRangeData, "end", ""); endStr != "" {
+					if end, err := time.Parse(time.RFC3339, endStr); err == nil {
+						dateRange = &bulk.DateRange{Start: start, End: end}
+					}
+				}
+			}
+		}
+	}
+
+	bulkCmd := &bulk.ArchiveCommand{
+		Username:    conn.Username,
+		ContentIDs:  contentIDs,
+		ContentType: contentType,
+		DateRange:   dateRange,
+	}
+
+	result, err := ach.bulkService.BulkArchive(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_ARCHIVE_FAILED",
+			"Failed to start bulk archive operation", err.Error()), nil
+	}
+
+	data, err := ach.ConvertToJSON(result.Operation)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
+			"Failed to format response", err.Error()), nil
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
+}
+
+// handleBulkRestore handles bulk restoration of archived posts
+func (ach *AsyncCommandHandler) handleBulkRestore(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"content_ids"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
+	if len(contentIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No content IDs provided", "content_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(contentIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many content items", "Maximum 100 items per batch"), nil
+	}
+
+	// Optional parameters
+	contentType := ach.GetString(cmd.Payload, "content_type", "status") // Default to status
+
+	// Parse date range if provided
+	var dateRange *bulk.DateRange
+	if dateRangeData, exists := cmd.Payload["date_range"].(map[string]interface{}); exists {
+		if startStr := ach.GetString(dateRangeData, "start", ""); startStr != "" {
+			if start, err := time.Parse(time.RFC3339, startStr); err == nil {
+				if endStr := ach.GetString(dateRangeData, "end", ""); endStr != "" {
+					if end, err := time.Parse(time.RFC3339, endStr); err == nil {
+						dateRange = &bulk.DateRange{Start: start, End: end}
+					}
+				}
+			}
+		}
+	}
+
+	bulkCmd := &bulk.RestoreCommand{
+		Username:    conn.Username,
+		ContentIDs:  contentIDs,
+		ContentType: contentType,
+		DateRange:   dateRange,
+	}
+
+	result, err := ach.bulkService.BulkRestore(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_RESTORE_FAILED",
+			"Failed to start bulk restore operation", err.Error()), nil
+	}
+
+	data, err := ach.ConvertToJSON(result.Operation)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
+			"Failed to format response", err.Error()), nil
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
+}
+
+// handleBulkExport handles bulk export of user content
+func (ach *AsyncCommandHandler) handleBulkExport(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
+		return authErr, nil
+	}
+
+	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"content_ids", "format"}, cmd.ID); validationErr != nil {
+		return validationErr, nil
+	}
+
+	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
+	if len(contentIDs) == 0 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"No content IDs provided", "content_ids array cannot be empty"), nil
+	}
+
+	// Limit batch size to prevent timeouts
+	if len(contentIDs) > 100 {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Too many content items", "Maximum 100 items per batch"), nil
+	}
+
+	format := ach.GetString(cmd.Payload, "format", "")
+	if format == "" {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Export format is required", "format field cannot be empty"), nil
+	}
+
+	// Validate format
+	validFormats := []string{"json", "csv", "activitypub"}
+	isValidFormat := false
+	for _, validFormat := range validFormats {
+		if format == validFormat {
+			isValidFormat = true
+			break
+		}
+	}
+	if !isValidFormat {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
+			"Invalid export format", "format must be one of: json, csv, activitypub"), nil
+	}
+
+	// Optional parameters
+	contentType := ach.GetString(cmd.Payload, "content_type", "status") // Default to status
+	includeMedia := ach.GetBool(cmd.Payload, "include_media", false)
+
+	// Parse date range if provided
+	var dateRange *bulk.DateRange
+	if dateRangeData, exists := cmd.Payload["date_range"].(map[string]interface{}); exists {
+		if startStr := ach.GetString(dateRangeData, "start", ""); startStr != "" {
+			if start, err := time.Parse(time.RFC3339, startStr); err == nil {
+				if endStr := ach.GetString(dateRangeData, "end", ""); endStr != "" {
+					if end, err := time.Parse(time.RFC3339, endStr); err == nil {
+						dateRange = &bulk.DateRange{Start: start, End: end}
+					}
+				}
+			}
+		}
+	}
+
+	bulkCmd := &bulk.ExportCommand{
+		Username:     conn.Username,
+		ContentIDs:   contentIDs,
+		Format:       format,
+		ContentType:  contentType,
+		IncludeMedia: includeMedia,
+		DateRange:    dateRange,
+	}
+
+	result, err := ach.bulkService.BulkExport(ctx, bulkCmd)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "BULK_EXPORT_FAILED",
+			"Failed to start bulk export operation", err.Error()), nil
+	}
+
+	data, err := ach.ConvertToJSON(result.Operation)
+	if err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
+			"Failed to format response", err.Error()), nil
+	}
+
+	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }

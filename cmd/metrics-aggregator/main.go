@@ -357,22 +357,26 @@ func (ma *MetricsAggregator) cleanupOldMetrics(ctx context.Context, beforeTime t
 	return nil
 }
 
-func (ma *MetricsAggregator) cleanupMetricsByGranularity(_ context.Context, granularity string, cutoffTime time.Time) (int, error) {
-	// For now, we'll delegate cleanup to the repository layer since it has more
-	// advanced query capabilities. This maintains DynamORM usage without AWS SDK.
+func (ma *MetricsAggregator) cleanupMetricsByGranularity(ctx context.Context, granularity string, cutoffTime time.Time) (int, error) {
+	// Delegate cleanup to the metrics repository which has proper DynamORM implementation
 	ma.logger.Info("Delegating cleanup to metrics repository",
 		zap.String("granularity", granularity),
 		zap.Time("cutoff_time", cutoffTime))
 
-	// Use the repository's cleanup method if available, or implement a simple approach
-	// This is a placeholder - in production, you'd implement cleanup in the repository
-	deletedCount := 0
+	// Use the repository's cleanup method
+	deletedCount, err := ma.metricsRepository.CleanupOldMetrics(ctx, granularity, cutoffTime)
+	if err != nil {
+		ma.logger.Error("cleanup operation failed",
+			zap.String("granularity", granularity),
+			zap.Time("cutoff_time", cutoffTime),
+			zap.Error(err))
+		return 0, fmt.Errorf("failed to cleanup metrics: %w", err)
+	}
 
-	// Note: For now we're logging the cleanup request but not performing actual deletion
-	// This prevents AWS SDK usage while maintaining the interface
-	ma.logger.Info("Cleanup operation skipped - needs repository implementation",
+	ma.logger.Info("Cleanup operation completed successfully",
 		zap.String("granularity", granularity),
-		zap.Time("cutoff_time", cutoffTime))
+		zap.Time("cutoff_time", cutoffTime),
+		zap.Int("deleted_count", deletedCount))
 
 	return deletedCount, nil
 }

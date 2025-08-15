@@ -19,15 +19,17 @@ type QueryCacheRepository struct {
 	tableName    string
 	logger       *zap.Logger
 	instanceRepo *FederationInstanceRepository
+	routeRepo    *RouteOptimizerRepository
 }
 
 // NewQueryCacheRepository creates a new query cache repository
-func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, instanceRepo *FederationInstanceRepository) *QueryCacheRepository {
+func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, instanceRepo *FederationInstanceRepository, routeRepo *RouteOptimizerRepository) *QueryCacheRepository {
 	return &QueryCacheRepository{
 		db:           db,
 		tableName:    tableName,
 		logger:       logger,
 		instanceRepo: instanceRepo,
+		routeRepo:    routeRepo,
 	}
 }
 
@@ -302,20 +304,20 @@ func (r *QueryCacheRepository) BatchGetInstances(ctx context.Context, instanceID
 }
 
 // GetMetricsInRange retrieves delivery results for metrics queries
-func (r *QueryCacheRepository) GetMetricsInRange(_ context.Context, routeID string, start, end time.Time, limit int) ([]*types.DeliveryResult, error) {
-	// For metrics queries, we don't cache these as they're frequently updated
-	// Use the route optimizer repository to get the data
-	// This method would need to be implemented or we could integrate with route optimizer repository
-
-	r.logger.Debug("Getting metrics in range (no caching for metrics)",
+func (r *QueryCacheRepository) GetMetricsInRange(ctx context.Context, routeID string, start, end time.Time, limit int) ([]*types.DeliveryResult, error) {
+	r.logger.Debug("Getting metrics from cache repository",
 		zap.String("routeID", routeID),
 		zap.Time("start", start),
 		zap.Time("end", end),
 		zap.Int("limit", limit))
 
-	// For now, return empty slice - this would need actual implementation
-	// or delegation to route optimizer repository
-	return []*types.DeliveryResult{}, nil
+	// Metrics queries bypass cache and go directly to route repository for real-time data
+	if r.routeRepo == nil {
+		return nil, fmt.Errorf("route optimizer repository not configured")
+	}
+
+	// Delegate to the route optimizer repository for actual metrics data
+	return r.routeRepo.GetMetricsInRange(ctx, routeID, start, end, limit)
 }
 
 // PrewarmActiveInstances preloads active instances into cache

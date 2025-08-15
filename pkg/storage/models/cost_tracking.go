@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
+
 // DynamoDBCostRecord represents detailed cost tracking data from DynamoDB operations
 type DynamoDBCostRecord struct {
 	// Primary key - using operation type as partition key with timestamp sort key
@@ -163,7 +164,7 @@ func (ct *DynamoDBCostRecord) BeforeCreate() error {
 
 	// Set TTL based on period
 	ttlDays := 30 // Default for raw cost data
-	if ct.Period == "hour" || ct.Period == "day" {
+	if ct.Period == PeriodHour || ct.Period == PeriodDay {
 		ttlDays = 90 // Keep aggregated data longer
 	}
 	ct.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()

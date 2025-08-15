@@ -2,6 +2,8 @@ package moderation
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -387,7 +389,7 @@ func (m *Moderator) recordModerationDecision(ctx context.Context, result *Modera
 		Recommendations: result.Recommendations,
 	}
 
-	// Store decision (this would need to be implemented in storage layer)
+	// Store decision in the database for audit trail and effectiveness tracking
 	return m.storage.StoreModerationDecision(ctx, decision)
 }
 
@@ -418,8 +420,10 @@ func (m *Moderator) ReviewModerationDecision(ctx context.Context, review *Modera
 // Helper functions
 
 func generateTextHash(text string) string {
-	// Simple hash generation - in production, use a proper hash function
-	return fmt.Sprintf("hash_%d", len(text))
+	// Use SHA-256 to create a cryptographically secure hash of the text
+	hash := sha256.Sum256([]byte(text))
+	// Return hex-encoded hash for content identification and deduplication
+	return hex.EncodeToString(hash[:])
 }
 
 // Types for moderation system

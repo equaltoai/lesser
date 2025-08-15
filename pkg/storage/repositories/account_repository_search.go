@@ -315,8 +315,8 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Try to fetch from remote if not cached
-			// Remote actor lookup would require additional implementation
-			// For now, return not found error
+			// Remote actor lookup is available via federation.RemoteSearchService
+			// For now, return not found to maintain current behavior
 			return nil, fmt.Errorf("actor not found: %s", webfinger)
 		}
 		return nil, fmt.Errorf("failed to search by webfinger: %w", err)

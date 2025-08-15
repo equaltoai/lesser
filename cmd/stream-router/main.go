@@ -21,6 +21,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -84,9 +85,123 @@ type StreamRouterHandler struct {
 	wsEndpoint         string
 	userRepo           *repositories.UserRepository
 	actorRepo          *repositories.ActorRepository
+	accountRepo        *repositories.AccountRepository
 	statusRepo         *repositories.StatusRepository
 	eventBus           *streaming.EventBus
+	publisher          streaming.Publisher
+	streamingRepo      *repositories.StreamingConnectionRepository
 	domain             string
+}
+
+// connectionRepositoryAdapter adapts StreamingConnectionRepository to streaming.ConnectionRepository
+type connectionRepositoryAdapter struct {
+	streamingRepo *repositories.StreamingConnectionRepository
+	logger        *zap.Logger
+}
+
+// GetUserConnections implements streaming.ConnectionRepository
+func (a *connectionRepositoryAdapter) GetUserConnections(ctx context.Context, userID string) ([]*streaming.StreamConnection, error) {
+	connections, err := a.streamingRepo.GetConnectionsByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert models.WebSocketConnection to streaming.StreamConnection
+	streamConns := make([]*streaming.StreamConnection, len(connections))
+	for i, conn := range connections {
+		streamConns[i] = &streaming.StreamConnection{
+			ConnectionID: conn.ConnectionID,
+			UserID:       conn.UserID,
+			Username:     conn.Username,
+			Streams:      conn.Streams,
+			LastActivity: conn.LastActivity,
+		}
+	}
+
+	return streamConns, nil
+}
+
+// GetStreamConnections implements streaming.ConnectionRepository
+func (a *connectionRepositoryAdapter) GetStreamConnections(ctx context.Context, streamName string) ([]*streaming.StreamConnection, error) {
+	subscriptions, err := a.streamingRepo.GetSubscriptionsForStream(ctx, streamName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subscriptions for stream %s: %w", streamName, err)
+	}
+
+	if len(subscriptions) == 0 {
+		return []*streaming.StreamConnection{}, nil
+	}
+
+	// Get unique connection IDs from subscriptions
+	connectionIDs := make(map[string]bool)
+	for _, sub := range subscriptions {
+		connectionIDs[sub.ConnectionID] = true
+	}
+
+	// We need to get the full connection details for each connection ID
+	// Since StreamingConnectionRepository doesn't have GetConnection, we need to implement it
+	var streamConns []*streaming.StreamConnection
+	
+	for connID := range connectionIDs {
+		// Get the connection details by querying for the specific connection
+		conn, err := a.getConnectionByID(ctx, connID)
+		if err != nil {
+			a.logger.Warn("failed to get connection details, skipping",
+				zap.String("connection_id", connID),
+				zap.String("stream", streamName),
+				zap.Error(err))
+			continue
+		}
+		
+		if conn != nil {
+			streamConns = append(streamConns, conn)
+		}
+	}
+
+	return streamConns, nil
+}
+
+// getConnectionByID retrieves a connection by its ID
+func (a *connectionRepositoryAdapter) getConnectionByID(ctx context.Context, connectionID string) (*streaming.StreamConnection, error) {
+	// We need to query the connection directly from the database
+	// Since we don't have a direct GetConnection method, we'll scan for it
+	var connections []models.WebSocketConnection
+	
+	// Query by PK pattern CONN#{connectionID}
+	err := a.streamingRepo.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Where("PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
+		All(&connections)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to query connection %s: %w", connectionID, err)
+	}
+	
+	if len(connections) == 0 {
+		return nil, fmt.Errorf("connection %s not found", connectionID)
+	}
+	
+	conn := connections[0]
+	return &streaming.StreamConnection{
+		ConnectionID: conn.ConnectionID,
+		UserID:       conn.UserID,
+		Username:     conn.Username,
+		Streams:      conn.Streams,
+		LastActivity: conn.LastActivity,
+	}, nil
+}
+
+// GetConversationConnections implements streaming.ConnectionRepository  
+func (a *connectionRepositoryAdapter) GetConversationConnections(ctx context.Context, conversationID string) ([]*streaming.StreamConnection, error) {
+	// To get conversation connections, we need to:
+	// 1. Find all participants in the conversation
+	// 2. Get all connections for those participants
+	
+	// First, we need to get the conversation participants
+	// This would typically require a ConversationRepository to get participants
+	// Since we don't have that, we'll use a stream-based approach
+	
+	conversationStreamName := fmt.Sprintf("conversation:%s", conversationID)
+	return a.GetStreamConnections(ctx, conversationStreamName)
 }
 
 var (
@@ -145,12 +260,26 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, logger)
+	accountRepo := repositories.NewAccountRepository(db, tableName, domain, logger)
 	statusRepo := repositories.NewStatusRepository(db, tableName, logger)
 
 	// Initialize API Gateway Management API client
 	apiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
 		o.BaseEndpoint = aws.String(wsEndpoint)
 	})
+
+	// Initialize streaming repository
+	subscriptionDB := lambdaDB.WithLambdaTimeoutBuffer(500) // Separate DB connection for subscriptions
+	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, subscriptionDB, subscriptionsTable, logger)
+
+	// Create connection repository adapter
+	connRepoAdapter := &connectionRepositoryAdapter{
+		streamingRepo: streamingRepo,
+		logger:        logger,
+	}
+
+	// Initialize publisher
+	publisher := streaming.NewAPIGatewayPublisher(apiClient, connRepoAdapter, wsEndpoint, logger)
 
 	// Initialize and start the internal event bus
 	eventBusConfig := streaming.DefaultEventBusConfig()
@@ -176,8 +305,11 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		wsEndpoint:         wsEndpoint,
 		userRepo:           userRepo,
 		actorRepo:          actorRepo,
+		accountRepo:        accountRepo,
 		statusRepo:         statusRepo,
 		eventBus:           eventBus,
+		publisher:          publisher,
+		streamingRepo:      streamingRepo,
 		domain:             domain,
 	}, nil
 }
@@ -639,22 +771,82 @@ func createAccountPayload(accountID, eventType string) (map[string]any, error) {
 
 // broadcastToFollowers sends updates to all followers of an account
 func broadcastToFollowers(accountID string, payload []byte) error {
-	// Query followers for this account
-	// This would typically involve:
-	// 1. Query the followers table/index to get all followers
-	// 2. For each follower, find their active streaming connections
-	// 3. Send the payload to each connection
+	// Extract username from account ID for follower lookup
+	username := extractUsernameFromActorID(accountID)
+	if username == "" {
+		return fmt.Errorf("could not extract username from account ID: %s", accountID)
+	}
 
-	// For now, implement basic logging - in production this would:
-	// - Query GSI2 to get followers
-	// - Query subscriptions table for each follower's connections
-	// - Send via API Gateway WebSocket
+	// Get the handler instance to access repositories
+	if handler == nil {
+		logger.Error("handler not initialized, cannot broadcast to followers")
+		return fmt.Errorf("handler not initialized")
+	}
+
+	// Create a context for the operation
+	ctx := &lift.Context{}
+	ctx.SetRequestID(fmt.Sprintf("broadcast-%d", time.Now().Unix()))
+
+	// Get followers for this account (limit to reasonable batch size for stream processing)
+	followers, _, err := handler.getFollowersForUser(ctx, username, 200)
+	if err != nil {
+		logger.Error("failed to get followers for broadcast",
+			zap.String("account_id", accountID),
+			zap.String("username", username),
+			zap.Error(err))
+		return fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	if len(followers) == 0 {
+		logger.Debug("no followers found for account",
+			zap.String("account_id", accountID),
+			zap.String("username", username))
+		return nil
+	}
 
 	logger.Info("broadcasting account update to followers",
 		zap.String("account_id", accountID),
+		zap.String("username", username),
+		zap.Int("follower_count", len(followers)),
 		zap.Int("payload_size", len(payload)))
 
-	// Placeholder implementation - would be replaced with actual follower query and broadcast
+	// Send to each follower's user stream
+	var errors []error
+	successCount := 0
+
+	for _, followerUsername := range followers {
+		streamName := fmt.Sprintf("user:%s", followerUsername)
+		
+		// Create account update message for the follower's stream
+		message := StreamMessage{
+			Event:   "account.update",
+			Payload: payload,
+			Stream:  streamName,
+		}
+
+		if err := handler.broadcastMessage(ctx, message); err != nil {
+			logger.Warn("failed to broadcast to follower",
+				zap.String("account_id", accountID),
+				zap.String("follower", followerUsername),
+				zap.String("stream", streamName),
+				zap.Error(err))
+			errors = append(errors, err)
+		} else {
+			successCount++
+		}
+	}
+
+	logger.Info("completed follower broadcast",
+		zap.String("account_id", accountID),
+		zap.Int("total_followers", len(followers)),
+		zap.Int("successful", successCount),
+		zap.Int("failed", len(errors)))
+
+	// Return error only if all broadcasts failed
+	if len(errors) == len(followers) && len(errors) > 0 {
+		return fmt.Errorf("failed to broadcast to all %d followers", len(errors))
+	}
+
 	return nil
 }
 
@@ -982,21 +1174,35 @@ func GetGlobalEventBusMetrics() *streaming.EventBusMetrics {
 
 // getStreamSubscriptions retrieves active subscriptions for a stream
 func (h *StreamRouterHandler) getStreamSubscriptions(ctx *lift.Context, streamName string) ([]string, error) {
-	// In a production implementation, this would:
-	// 1. Query the subscriptions table/index by stream name
-	// 2. Return all active connection IDs for this stream
-	// 3. Handle pagination if there are many subscribers
-
 	h.logger.Debug("getting subscriptions for stream",
 		zap.String("request_id", ctx.GetRequestID()),
 		zap.String("stream", streamName))
 
-	// Placeholder implementation - would query subscription repository
-	// Example query pattern:
-	// subscriptions, err := h.subscriptionRepo.GetStreamSubscriptions(ctx, streamName)
+	// Use the StreamingConnectionRepository to get subscriptions for the stream
+	subscriptions, err := h.streamingRepo.GetSubscriptionsForStream(ctx, streamName)
+	if err != nil {
+		h.logger.Error("failed to get subscriptions from repository",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("stream", streamName),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get subscriptions: %w", err)
+	}
 
-	// For now, return empty slice to allow compilation
-	return []string{}, nil
+	// Extract connection IDs from subscription objects
+	connectionIDs := make([]string, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		if subscription.ConnectionID != "" {
+			connectionIDs = append(connectionIDs, subscription.ConnectionID)
+		}
+	}
+
+	h.logger.Debug("found subscriptions for stream",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("stream", streamName),
+		zap.Int("subscription_count", len(subscriptions)),
+		zap.Int("connection_count", len(connectionIDs)))
+
+	return connectionIDs, nil
 }
 
 // removeSubscription removes a stale subscription
@@ -1006,20 +1212,31 @@ func (h *StreamRouterHandler) removeSubscription(ctx *lift.Context, streamName, 
 		zap.String("stream", streamName),
 		zap.String("connection_id", connectionID))
 
-	// In a production implementation, this would:
-	// 1. Remove the subscription from the database
-	// 2. Clean up any associated resources
-	// 3. Log the removal for audit purposes
+	// Remove the subscription from the database using the streaming repository
+	err := h.streamingRepo.DeleteSubscription(ctx, connectionID, streamName)
+	if err != nil {
+		h.logger.Error("failed to remove subscription",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("stream", streamName),
+			zap.String("connection_id", connectionID),
+			zap.Error(err))
+		return
+	}
 
-	// Example implementation:
-	// err := h.subscriptionRepo.RemoveSubscription(ctx, streamName, connectionID)
-	// if err != nil {
-	//     h.logger.Error("failed to remove subscription",
-	//         zap.String("request_id", ctx.GetRequestID()),
-	//         zap.String("stream", streamName),
-	//         zap.String("connection_id", connectionID),
-	//         zap.Error(err))
-	// }
+	h.logger.Info("successfully removed stale subscription",
+		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("stream", streamName),
+		zap.String("connection_id", connectionID))
+
+	// Also try to remove the connection entirely if it's stale
+	err = h.streamingRepo.DeleteConnection(ctx, connectionID)
+	if err != nil {
+		h.logger.Warn("failed to remove stale connection, but subscription was removed",
+			zap.String("request_id", ctx.GetRequestID()),
+			zap.String("connection_id", connectionID),
+			zap.Error(err))
+		// This is not critical - the subscription removal is what matters
+	}
 }
 
 // isStaleConnection checks if an error indicates a stale connection
@@ -1185,24 +1402,133 @@ func (h *StreamRouterHandler) removeFromFollowerTimelines(ctx *lift.Context, act
 	return nil
 }
 
-// removeFromHashtagStreams removes objects from hashtag streams (implementation placeholder)
-func (h *StreamRouterHandler) removeFromHashtagStreams(_ *lift.Context, objectID string) error {
-	// This would need to:
-	// 1. Look up hashtags associated with the deleted object
-	// 2. Send deletion events to each hashtag stream
-	// For now, just log that this should be implemented
-	h.logger.Debug("hashtag stream removal needed", zap.String("object_id", objectID))
+// removeFromHashtagStreams removes objects from hashtag streams when content is deleted
+func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, objectID string) error {
+	logger := h.logger.With(zap.String("object_id", objectID))
+	
+	// Step 1: Get the status content to extract hashtags
+	status, err := h.statusRepo.GetStatus(ctx, objectID)
+	if err != nil {
+		// Status not found is not an error for deletion - it may already be cleaned up
+		if strings.Contains(err.Error(), "not found") {
+			logger.Debug("status not found for hashtag removal, may already be deleted")
+			return nil
+		}
+		logger.Error("failed to get status for hashtag extraction", zap.Error(err))
+		return fmt.Errorf("failed to get status for hashtag extraction: %w", err)
+	}
+
+	// Step 2: Extract hashtags from status content
+	var hashtags []string
+	if status.Content != "" {
+		hashtags = mastodon.ExtractHashtags(status.Content)
+	}
+	
+	if len(hashtags) == 0 {
+		logger.Debug("no hashtags found in deleted object")
+		return nil
+	}
+
+	// Step 3: Create deletion event for hashtag streams
+	deletionEvent := &streaming.Event{
+		Type:      streaming.StatusDeleted,
+		Payload: map[string]interface{}{
+			"id":         objectID,
+			"deleted_at": time.Now().Format(time.RFC3339),
+		},
+		Timestamp: time.Now(),
+	}
+
+	// Step 4: Send deletion event to each hashtag stream
+	var errors []error
+	for _, hashtag := range hashtags {
+		streamName := streaming.HashtagStreamName(hashtag)
+		
+		if err := h.publisher.PublishToStream(ctx, streamName, deletionEvent); err != nil {
+			logger.Warn("failed to remove object from hashtag stream",
+				zap.String("hashtag", hashtag),
+				zap.String("stream", streamName),
+				zap.Error(err))
+			errors = append(errors, fmt.Errorf("hashtag %s: %w", hashtag, err))
+		} else {
+			logger.Debug("successfully removed object from hashtag stream",
+				zap.String("hashtag", hashtag),
+				zap.String("stream", streamName))
+		}
+	}
+
+	// Return combined errors if any occurred, but don't fail the entire operation
+	if len(errors) > 0 {
+		logger.Warn("some hashtag stream removals failed",
+			zap.Int("failed_count", len(errors)),
+			zap.Int("total_hashtags", len(hashtags)))
+		// Don't return error to avoid failing the tombstone processing
+		// Hashtag stream cleanup is not critical for data consistency
+	}
+
+	logger.Info("completed hashtag stream removal",
+		zap.Strings("hashtags", hashtags),
+		zap.Int("streams_updated", len(hashtags)-len(errors)))
+
 	return nil
 }
 
-// getFollowersForUser gets a limited list of followers for an actor (placeholder implementation)
-func (h *StreamRouterHandler) getFollowersForUser(_ *lift.Context, username string, limit int) ([]string, string, error) {
-	// This would use the relationship repository to get actual followers
-	// For now, return empty slice to avoid errors
-	h.logger.Debug("getting followers for user", 
+// getFollowersForUser gets a limited list of followers for an actor
+func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username string, limit int) ([]string, string, error) {
+	logger := h.logger.With(
 		zap.String("username", username),
 		zap.Int("limit", limit))
-	return []string{}, "", nil
+	
+	// Validate inputs
+	if username == "" {
+		return nil, "", fmt.Errorf("username cannot be empty")
+	}
+	
+	if limit <= 0 || limit > 500 {
+		limit = 100 // Default reasonable limit
+	}
+
+	// Call the AccountRepository GetFollowers method
+	actors, nextCursor, err := h.accountRepo.GetFollowers(ctx, username, limit, "")
+	if err != nil {
+		logger.Error("failed to get followers from account repository", zap.Error(err))
+		return nil, "", fmt.Errorf("failed to get followers: %w", err)
+	}
+
+	if len(actors) == 0 {
+		logger.Debug("no followers found for user")
+		return []string{}, "", nil
+	}
+
+	// Convert Actor objects to username strings
+	followerUsernames := make([]string, 0, len(actors))
+	for _, actor := range actors {
+		if actor == nil {
+			logger.Warn("encountered nil actor in followers list")
+			continue
+		}
+		
+		// Extract username from actor ID or preferredUsername
+		username := h.extractUsernameFromActorID(actor.ID)
+		if username == "" && actor.PreferredUsername != "" {
+			username = actor.PreferredUsername
+		}
+		
+		if username != "" {
+			followerUsernames = append(followerUsernames, username)
+		} else {
+			logger.Warn("could not extract username from actor",
+				zap.String("actor_id", actor.ID),
+				zap.String("preferred_username", actor.PreferredUsername))
+		}
+	}
+
+	logger.Info("successfully retrieved followers",
+		zap.Int("total_actors", len(actors)),
+		zap.Int("valid_usernames", len(followerUsernames)),
+		zap.String("next_cursor", nextCursor))
+
+	return followerUsernames, nextCursor, nil
 }
 
 // extractUsernameFromActorID extracts username from actor ID URL  

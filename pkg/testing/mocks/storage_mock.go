@@ -4103,6 +4103,7 @@ type MockRepositoryStorage struct {
 	moderationRepo       *repositories.ModerationRepository
 	listRepo             *repositories.ListRepository
 	mediaRepo            *repositories.MediaRepository
+	mediaMetadataRepo    *repositories.MediaMetadataRepository
 	pollRepo             *repositories.PollRepository
 	hashtagRepo          *repositories.HashtagRepository
 	scheduledStatusRepo  *repositories.ScheduledStatusRepository
@@ -4151,6 +4152,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	moderationRepo := repositories.NewModerationRepository(nil, "test-table", logger)
 	listRepo := repositories.NewListRepository(nil, "test-table", logger)
 	mediaRepo := repositories.NewMediaRepository(nil, "test-table", logger)
+	mediaMetadataRepo := repositories.NewMediaMetadataRepository(nil, logger)
 	pollRepo := repositories.NewPollRepository(nil, "test-table", logger)
 	hashtagRepo := repositories.NewHashtagRepository(nil, "test-table", logger, "test.example.com")
 	scheduledStatusRepo := repositories.NewScheduledStatusRepository(nil, "test-table", logger)
@@ -4176,6 +4178,8 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	exportRepo := repositories.NewExportRepository(nil, "test-table", logger)
 	importRepo := repositories.NewImportRepository(nil, "test-table", logger)
 	dlqRepo := repositories.NewDLQRepository(nil, "test-table", logger)
+	emojiRepo := repositories.NewEmojiRepository(nil, logger)
+	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger)
 
 	return &MockRepositoryStorage{
 		accountRepo:          accountRepo,
@@ -4188,6 +4192,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		moderationRepo:       moderationRepo,
 		listRepo:             listRepo,
 		mediaRepo:            mediaRepo,
+		mediaMetadataRepo:    mediaMetadataRepo,
 		pollRepo:             pollRepo,
 		hashtagRepo:          hashtagRepo,
 		scheduledStatusRepo:  scheduledStatusRepo,
@@ -4208,6 +4213,8 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 		searchRepo:           searchRepo,
 		relayRepo:            relayRepo,
 		communityNoteRepo:    repositories.NewCommunityNoteRepository(&dynamorm.DB{}, "test-table", logger),
+		emojiRepo:            emojiRepo,
+		rateLimitRepo:        rateLimitRepo,
 		markerRepo:           markerRepo,
 		featuredTagRepo:      featuredTagRepo,
 		aiRepo:               aiRepo,
@@ -4265,6 +4272,11 @@ func (m *MockRepositoryStorage) List() *repositories.ListRepository {
 // Media returns the mock media repository
 func (m *MockRepositoryStorage) Media() *repositories.MediaRepository {
 	return m.mediaRepo
+}
+
+// MediaMetadata returns the mock media metadata repository
+func (m *MockRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository {
+	return m.mediaMetadataRepo
 }
 
 // Poll returns the mock poll repository
@@ -4345,6 +4357,11 @@ func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
 // Cost returns the mock cost tracking repository
 func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository {
 	return m.costRepo
+}
+
+// WebSocketCost returns a mock WebSocket cost repository
+func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository {
+	return nil // Mock implementation
 }
 
 // Trust returns the mock trust repository

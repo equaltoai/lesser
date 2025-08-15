@@ -214,6 +214,14 @@ func (m *MockRepoStorage) Cost() *repositories.CostTrackingRepository {
 	return args.Get(0).(*repositories.CostTrackingRepository)
 }
 
+func (m *MockRepoStorage) WebSocketCost() *repositories.WebSocketCostRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.WebSocketCostRepository)
+}
+
 func (m *MockRepoStorage) Trust() *repositories.TrustRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -362,6 +370,14 @@ func (m *MockRepoStorage) Audit() *repositories.AuditRepository {
 		return nil
 	}
 	return args.Get(0).(*repositories.AuditRepository)
+}
+
+func (m *MockRepoStorage) MediaMetadata() *repositories.MediaMetadataRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.MediaMetadataRepository)
 }
 
 // Ensure MockRepoStorage implements RepositoryStorage interface

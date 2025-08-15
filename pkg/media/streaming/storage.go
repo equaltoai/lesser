@@ -193,7 +193,7 @@ func (s *S3MediaStorage) GetSegmentInfo(mediaID string, quality Quality, segment
 
 	segment := &Segment{
 		Index:    segmentIndex,
-		Duration: 0, // Would need to be parsed from segment metadata
+		Duration: 0, // Default segment duration - could be populated from config.SegmentDuration
 		URL:      s.getSegmentURL(segmentPath),
 		Size:     segmentSize,
 	}
@@ -231,7 +231,7 @@ func (s *S3MediaStorage) ListSegments(mediaID string, quality Quality) ([]*Segme
 
 				segment := &Segment{
 					Index:    segmentIndex,
-					Duration: 0, // Would need segment duration info
+					Duration: 0, // Default segment duration - could be populated from config.SegmentDuration
 					URL:      s.getSegmentURL(*obj.Key),
 					Size:     objSize,
 				}

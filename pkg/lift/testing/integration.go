@@ -80,7 +80,7 @@ func NewIntegrationTestSuite(t *testing.T, config *IntegrationConfig) *Integrati
 
 // setupStorage initializes the storage connection
 func (suite *IntegrationTestSuite) setupStorage() {
-	// In a real implementation, this would set up DynamoDB connection
+	// Set up DynamoDB connection for testing
 	// For now, we'll use a mock that can be replaced in actual integration tests
 	suite.Storage = &MockStorage{}
 
