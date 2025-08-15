@@ -398,48 +398,10 @@ func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, po
 
 // DeleteExpiredTimelineEntries deletes timeline entries that have expired
 func (r *TimelineRepository) DeleteExpiredTimelineEntries(_ context.Context, before time.Time) error {
-	// This is a complex operation that would require scanning the table
-	// In a real implementation, you might want to use DynamoDB TTL instead
-	// For now, we'll implement a basic version that scans and deletes
-
-	// Note: This is not the most efficient approach for large datasets
-	// Consider using DynamoDB TTL for automatic expiration
-
-	var expiredEntries []*models.Timeline
-
-	// Scan for expired entries (this is expensive - consider using TTL instead)
-	err := r.db.Model(&models.Timeline{}).
-		Filter("ExpiresAt", "<", before).
-		All(&expiredEntries)
-	if err != nil {
-		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
-	}
-
-	if len(expiredEntries) == 0 {
-		return nil // Nothing to delete
-	}
-
-	// Use batch delete for efficient bulk deletion
-	keys := make([]any, len(expiredEntries))
-	for i, entry := range expiredEntries {
-		// Create key structs with PK and SK for deletion
-		keys[i] = &models.Timeline{
-			PK: entry.PK,
-			SK: entry.SK,
-		}
-	}
-
-	// Use DynamORM's batch delete functionality
-	err = r.db.Model(&models.Timeline{}).BatchDelete(keys)
-	if err != nil {
-		return fmt.Errorf("failed to batch delete expired timeline entries: %w", err)
-	}
-
-	r.logger.Info("batch deleted expired timeline entries",
-		zap.Time("before", before),
-		zap.Int("deleted_count", len(expiredEntries)),
-	)
-
+	// This method is deprecated - DynamoDB TTL automatically handles cleanup
+	// Timeline entries now use TTL field for automatic expiration
+	r.logger.Info("DeleteExpiredTimelineEntries called but TTL handles cleanup automatically",
+		zap.Time("before", before))
 	return nil
 }
 

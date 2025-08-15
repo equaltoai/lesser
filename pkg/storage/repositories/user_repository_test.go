@@ -52,7 +52,7 @@ func TestUpdateUser_EmptyUpdates(t *testing.T) {
 	assert.IsType(t, common.ValidationError{}, err)
 }
 
-func TestGetUserByProviderID_NotImplemented(t *testing.T) {
+func TestGetUserByProviderID_Success(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
@@ -78,7 +78,7 @@ func TestGetUserByProviderID_NotImplemented(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
-func TestLinkProviderAccount_NotImplemented(t *testing.T) {
+func TestLinkProviderAccount_Success(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
@@ -104,7 +104,7 @@ func TestLinkProviderAccount_NotImplemented(t *testing.T) {
 	mockQuery.AssertExpectations(t)
 }
 
-func TestUnlinkProviderAccount_NotImplemented(t *testing.T) {
+func TestUnlinkProviderAccount_Success(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()

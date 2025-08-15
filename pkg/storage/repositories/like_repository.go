@@ -177,6 +177,21 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 	return result, nextCursor, nil
 }
 
+// CountActorLikes returns the total number of likes by an actor
+func (r *LikeRepository) CountActorLikes(ctx context.Context, actorID string) (int64, error) {
+	query := r.db.WithContext(ctx).Model(&models.Like{}).
+		Index("gsi1-index").
+		Where("GSI1PK", "=", fmt.Sprintf("actor#%s#likes", actorID))
+
+	var likes []models.Like
+	err := query.All(&likes)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count actor likes: %w", err)
+	}
+
+	return int64(len(likes)), nil
+}
+
 // HasLiked checks if an actor has liked an object
 func (r *LikeRepository) HasLiked(ctx context.Context, actor, object string) (bool, error) {
 	like, err := r.GetLike(ctx, actor, object)
@@ -338,23 +353,31 @@ func (r *LikeRepository) GetBoostCount(ctx context.Context, statusID string) (in
 	return count, nil
 }
 
-// IncrementReblogCount increments the reblog count on an object
-func (r *LikeRepository) IncrementReblogCount(_ context.Context, objectID string) error {
-	// This method would typically update a counter field on the object
-	// For now, we'll implement a basic increment pattern
-	// In a real implementation, this might use UpdateExpression to atomically increment
+// IncrementReblogCount increments the reblog count on a status
+func (r *LikeRepository) IncrementReblogCount(ctx context.Context, objectID string) error {
+	// Use DynamORM's atomic increment functionality
+	pk := fmt.Sprintf("status#%s", objectID)
+	sk := fmt.Sprintf("status#%s", objectID)
 
-	r.logger.Info("incrementing reblog count",
+	// Create a partial status with just the keys and the field to increment
+	statusUpdate := &models.Status{
+		PK: pk,
+		SK: sk,
+	}
+
+	// Use DynamORM's increment functionality for atomic updates
+	err := r.db.WithContext(ctx).Model(statusUpdate).
+		Update("ReblogCount", "ReblogCount + 1")
+
+	if err != nil {
+		r.logger.Error("failed to increment reblog count",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return fmt.Errorf("failed to increment reblog count: %w", err)
+	}
+
+	r.logger.Info("incremented reblog count",
 		zap.String("object_id", objectID))
-
-	// Note: This is a simplified implementation
-	// In practice, you might want to:
-	// 1. Get the current object
-	// 2. Use an atomic update to increment a reblog_count field
-	// 3. Or maintain a separate counter record
-
-	// For now, this is a no-op that logs the operation
-	// The actual implementation would depend on the object model structure
 
 	return nil
 }

@@ -56,12 +56,12 @@ type StreamEvent struct {
 
 // StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
 type StreamingHandler struct {
-	userRepo        *repositories.UserRepository
-	connectionRepo  *repositories.StreamingConnectionRepository
-	costTracker     *repositories.WebSocketCostTracker
-	logger          *zap.Logger
-	cfg             *config.Config
-	apiClient       *apigatewaymanagementapi.Client
+	userRepo          *repositories.UserRepository
+	connectionRepo    *repositories.StreamingConnectionRepository
+	costTracker       *repositories.WebSocketCostTracker
+	logger            *zap.Logger
+	cfg               *config.Config
+	apiClient         *apigatewaymanagementapi.Client
 	commandRouter   *streaming.CommandRouter
 	serviceRegistry *services.Registry
 	storageFactory  core.RepositoryStorage

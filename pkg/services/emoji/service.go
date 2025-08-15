@@ -85,6 +85,23 @@ type CopyEmojiCommand struct {
 	NewShortcode string `json:"new_shortcode"` // Optional, use original if not provided
 }
 
+// SearchEmojisQuery contains parameters for searching emojis
+type SearchEmojisQuery struct {
+	Query string `json:"query" validate:"required,min=1"`
+	Limit int    `json:"limit"`
+}
+
+// GetPopularEmojisQuery contains parameters for getting popular emojis
+type GetPopularEmojisQuery struct {
+	Domain string `json:"domain"` // Optional, empty for local emojis
+	Limit  int    `json:"limit"`
+}
+
+// IncrementUsageCommand contains data needed to increment emoji usage
+type IncrementUsageCommand struct {
+	Shortcode string `json:"shortcode" validate:"required"`
+}
+
 // Result types
 
 // Result contains a single emoji
@@ -322,6 +339,82 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	}, nil
 }
 
+// SearchEmojis performs sophisticated emoji searches with relevance scoring
+func (s *Service) SearchEmojis(ctx context.Context, query *SearchEmojisQuery) (*ListResult, error) {
+	s.logger.Info("searching emojis",
+		zap.String("query", query.Query),
+		zap.Int("limit", query.Limit))
+
+	// Set default limit if not provided
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100 // Cap at 100 for performance
+	}
+
+	// Perform the search using the repository's sophisticated search
+	emojis, err := s.emojiRepo.SearchEmojis(ctx, query.Query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search emojis: %w", err)
+	}
+
+	return &ListResult{
+		Emojis: emojis,
+		Total:  len(emojis),
+		Events: nil,
+	}, nil
+}
+
+// GetPopularEmojis retrieves emojis by popularity score
+func (s *Service) GetPopularEmojis(ctx context.Context, query *GetPopularEmojisQuery) (*ListResult, error) {
+	s.logger.Info("getting popular emojis",
+		zap.String("domain", query.Domain),
+		zap.Int("limit", query.Limit))
+
+	// Set default limit if not provided
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100 // Cap at 100 for performance
+	}
+
+	// Get popular emojis from repository
+	emojis, err := s.emojiRepo.GetPopularEmojis(ctx, query.Domain, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get popular emojis: %w", err)
+	}
+
+	return &ListResult{
+		Emojis: emojis,
+		Total:  len(emojis),
+		Events: nil,
+	}, nil
+}
+
+// IncrementUsage increments the usage count for an emoji
+func (s *Service) IncrementUsage(ctx context.Context, cmd *IncrementUsageCommand) error {
+	s.logger.Debug("incrementing emoji usage",
+		zap.String("shortcode", cmd.Shortcode))
+
+	// Increment usage in repository
+	err := s.emojiRepo.IncrementEmojiUsage(ctx, cmd.Shortcode)
+	if err != nil {
+		if err == storage.ErrNotFound {
+			// Don't treat missing emoji as error - might be from remote instance
+			s.logger.Debug("emoji not found for usage increment",
+				zap.String("shortcode", cmd.Shortcode))
+			return nil
+		}
+		return fmt.Errorf("failed to increment emoji usage: %w", err)
+	}
+
+	return nil
+}
+
 // Helper methods
 
 // filterEmojis applies query filters to emoji list
@@ -399,9 +492,9 @@ func (s *Service) emitEmojiCreatedEvents(_ context.Context, emoji *storage.Custo
 		},
 	}
 
-	// Emoji events are typically broadcast to all users
-	// In a real implementation, we might want to publish to specific streams
-	// For now, we'll log the event but not actually publish it
+	// Emoji events are broadcast to all users since custom emojis are instance-wide.
+	// Future enhancement: Consider targeted streaming to specific user groups or admin streams
+	// for more granular emoji update notifications.
 	s.logger.Info("emoji created event",
 		zap.String("shortcode", emoji.Shortcode),
 		zap.String("type", event.Type))

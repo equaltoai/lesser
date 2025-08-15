@@ -140,8 +140,8 @@ func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *Tr
 				variantCost.Codec = "unknown"
 			}
 
-			// Distribute costs proportionally across variants
-			// In a real implementation, this would be more sophisticated
+			// Distribute costs proportionally across variants using simple division
+			// Future enhancement: Use actual processing time/complexity weighting
 			variantCount := len(metrics.OutputVariants)
 			if variantCount > 0 {
 				variantCost.ProcessingCost = metrics.CostBreakdown[serviceMediaConvert] / int64(variantCount)

@@ -5,6 +5,7 @@ package graph
 const (
 	ContentTypeSpam = "spam"
 	ContentTypeNote = "note"
+	ContentType     = "content"
 )
 
 // Health status constants
@@ -151,4 +152,32 @@ const (
 // None constant
 const (
 	NoneValue = "none"
+)
+
+// Vote type constants
+const (
+	VoteTypeHelpful    = "helpful"
+	VoteTypeNotHelpful = "not_helpful"
+)
+
+// Job status constants
+const (
+	JobStatusCompleted  = "completed"
+	JobStatusProcessing = "processing"
+	JobStatusStatus     = "status"
+)
+
+// Event type constants
+const (
+	EventTypeFlagged = "flagged"
+)
+
+// Account type constants
+const (
+	AccountType = "account"
+)
+
+// Text type constants
+const (
+	TextType = "text"
 )

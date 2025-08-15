@@ -1,17 +1,24 @@
 package advanced
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -872,6 +879,11 @@ type VideoAnalyzer struct {
 	// Image analyzer for frame analysis
 	imageAnalyzer *ImageAnalyzer
 
+	// S3 client for frame uploads
+	s3Client   *s3.Client
+	s3Uploader *manager.Uploader
+	bucketName string
+
 	// Cache for results
 	resultCache sync.Map
 	cacheTTL    time.Duration
@@ -879,15 +891,275 @@ type VideoAnalyzer struct {
 
 // NewVideoAnalyzer creates a new video analyzer
 func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *ModerationConfig, costTracker CostTracker) *VideoAnalyzer {
+	// Initialize S3 client for frame uploads
+	s3Client := s3.NewFromConfig(aws.Config{})
+	uploader := manager.NewUploader(s3Client)
+	
+	// Get bucket name from environment or default
+	bucketName := os.Getenv("MEDIA_BUCKET_NAME")
+	if bucketName == "" {
+		bucketName = "lesser-media" // default bucket name
+	}
+	
 	return &VideoAnalyzer{
 		client:        client,
 		logger:        logger,
 		config:        config,
 		costTracker:   costTracker,
 		imageAnalyzer: NewImageAnalyzer(client, logger, config, costTracker),
+		s3Client:      s3Client,
+		s3Uploader:    uploader,
+		bucketName:    bucketName,
 		cacheTTL:      30 * time.Minute, // Longer cache for videos due to processing cost
 	}
 }
+
+// extractFrameAtTimestamp extracts a single frame from video at the specified timestamp
+func (va *VideoAnalyzer) extractFrameAtTimestamp(ctx context.Context, video *rekognitionTypes.Video, timestamp time.Duration) (string, error) {
+	if video.S3Object == nil {
+		return "", fmt.Errorf("S3 object information required for frame extraction")
+	}
+
+	bucket := aws.ToString(video.S3Object.Bucket)
+	key := aws.ToString(video.S3Object.Name)
+	
+	va.logger.Debug("extracting frame from video",
+		zap.String("bucket", bucket),
+		zap.String("key", key),
+		zap.Duration("timestamp", timestamp))
+
+	// Download video file from S3 to temporary location
+	tempVideoPath, err := va.downloadVideoFromS3(ctx, bucket, key)
+	if err != nil {
+		return "", fmt.Errorf("failed to download video from S3: %w", err)
+	}
+	defer va.cleanupLocalFile(tempVideoPath)
+
+	// Extract frame using FFmpeg
+	frameImagePath, err := va.extractFrameWithFFmpeg(tempVideoPath, timestamp)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract frame with FFmpeg: %w", err)
+	}
+	defer va.cleanupLocalFile(frameImagePath)
+
+	// Upload extracted frame to S3 for analysis
+	frameS3URL, err := va.uploadFrameToS3(ctx, frameImagePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload frame to S3: %w", err)
+	}
+
+	va.logger.Debug("successfully extracted and uploaded frame",
+		zap.String("frame_s3_url", frameS3URL),
+		zap.Duration("timestamp", timestamp))
+
+	return frameS3URL, nil
+}
+
+// downloadVideoFromS3 downloads video file from S3 to local temporary file
+func (va *VideoAnalyzer) downloadVideoFromS3(ctx context.Context, bucket, key string) (string, error) {
+	// Create temporary file for video
+	tempFile, err := va.createTempFile("video_", ".mp4")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer func() {
+		if err := tempFile.Close(); err != nil {
+			va.logger.Error("Failed to close temp file", zap.Error(err))
+		}
+	}()
+
+	// Download from S3
+	downloader := manager.NewDownloader(va.s3Client)
+	_, err = downloader.Download(ctx, tempFile, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		va.cleanupLocalFile(tempFile.Name())
+		return "", fmt.Errorf("failed to download from S3: %w", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+// extractFrameWithFFmpeg uses FFmpeg to extract a frame at the specified timestamp
+func (va *VideoAnalyzer) extractFrameWithFFmpeg(videoPath string, timestamp time.Duration) (string, error) {
+	// Create temporary file for extracted frame
+	frameFile, err := va.createTempFile("frame_", ".jpg")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file for frame: %w", err)
+	}
+	if err := frameFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close frame file: %w", err)
+	} // Close file handle so ffmpeg can write to it
+
+	// Convert timestamp to FFmpeg format (HH:MM:SS.mmm)
+	timestampStr := fmt.Sprintf("%.3f", timestamp.Seconds())
+
+	// Run FFmpeg command to extract frame
+	// #nosec G204 - ffmpeg command with validated input paths for video processing
+	cmd := exec.Command("ffmpeg",
+		"-i", videoPath,                    // Input video file
+		"-ss", timestampStr,                // Seek to timestamp
+		"-vframes", "1",                    // Extract only 1 frame
+		"-q:v", "2",                        // High quality
+		"-y",                               // Overwrite output file
+		frameFile.Name(),                   // Output frame file
+	)
+
+	// Capture FFmpeg output for debugging
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err = cmd.Run()
+	if err != nil {
+		va.cleanupLocalFile(frameFile.Name())
+		return "", fmt.Errorf("FFmpeg command failed: %w, stderr: %s", err, stderr.String())
+	}
+
+	// Verify frame file was created and has content
+	if fileInfo, err := os.Stat(frameFile.Name()); err != nil || fileInfo.Size() == 0 {
+		va.cleanupLocalFile(frameFile.Name())
+		return "", fmt.Errorf("extracted frame file is empty or missing")
+	}
+
+	va.logger.Debug("FFmpeg frame extraction completed",
+		zap.String("frame_path", frameFile.Name()),
+		zap.Duration("timestamp", timestamp))
+
+	return frameFile.Name(), nil
+}
+
+// uploadFrameToS3 uploads extracted frame image to S3 and returns the URL
+func (va *VideoAnalyzer) uploadFrameToS3(ctx context.Context, framePath string) (string, error) {
+	// Open frame file
+	// #nosec G304 - framePath is from controlled temp file creation
+	frameFile, err := os.Open(framePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open frame file: %w", err)
+	}
+	defer func() {
+		if err := frameFile.Close(); err != nil {
+			va.logger.Error("Failed to close frame file", zap.Error(err))
+		}
+	}()
+
+	// Generate unique S3 key for frame
+	frameKey, err := va.generateFrameS3Key()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate S3 key: %w", err)
+	}
+
+	// Upload to S3
+	_, err = va.s3Uploader.Upload(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(va.bucketName),
+		Key:         aws.String(frameKey),
+		Body:        frameFile,
+		ContentType: aws.String("image/jpeg"),
+		Metadata: map[string]string{
+			"purpose":    "moderation-frame",
+			"created-at": time.Now().Format(time.RFC3339),
+			"ttl":        fmt.Sprintf("%d", time.Now().Add(1*time.Hour).Unix()), // 1 hour TTL
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to upload frame to S3: %w", err)
+	}
+
+	// Construct S3 URL
+	frameURL := fmt.Sprintf("s3://%s/%s", va.bucketName, frameKey)
+	
+	va.logger.Debug("uploaded frame to S3",
+		zap.String("s3_key", frameKey),
+		zap.String("s3_url", frameURL))
+
+	return frameURL, nil
+}
+
+// cleanupTemporaryFrame removes the temporary frame from S3
+func (va *VideoAnalyzer) cleanupTemporaryFrame(ctx context.Context, frameURL string) {
+	if !isS3URL(frameURL) {
+		va.logger.Warn("cannot cleanup non-S3 frame URL", zap.String("url", frameURL))
+		return
+	}
+
+	bucket, key, err := parseS3URL(frameURL)
+	if err != nil {
+		va.logger.Warn("failed to parse S3 URL for cleanup", zap.String("url", frameURL), zap.Error(err))
+		return
+	}
+
+	_, err = va.s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		va.logger.Warn("failed to cleanup temporary frame", 
+			zap.String("s3_url", frameURL),
+			zap.Error(err))
+	} else {
+		va.logger.Debug("cleaned up temporary frame", zap.String("s3_url", frameURL))
+	}
+}
+
+// Helper methods
+
+// createTempFile creates a temporary file with the given prefix and suffix
+func (va *VideoAnalyzer) createTempFile(prefix, suffix string) (*os.File, error) {
+	tempDir := os.TempDir()
+	randomBytes := make([]byte, 8)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return nil, fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	
+	fileName := fmt.Sprintf("%s%s%s", prefix, hex.EncodeToString(randomBytes), suffix)
+	filePath := filepath.Join(tempDir, fileName)
+	
+	// #nosec G304 - filePath is controlled by createTempFile method
+	return os.Create(filePath)
+}
+
+// cleanupLocalFile removes a local temporary file
+func (va *VideoAnalyzer) cleanupLocalFile(filePath string) {
+	if err := os.Remove(filePath); err != nil {
+		va.logger.Warn("failed to cleanup local file", zap.String("path", filePath), zap.Error(err))
+	} else {
+		va.logger.Debug("cleaned up local file", zap.String("path", filePath))
+	}
+}
+
+// generateFrameS3Key generates a unique S3 key for extracted frames
+func (va *VideoAnalyzer) generateFrameS3Key() (string, error) {
+	randomBytes := make([]byte, 16)
+	if _, err := rand.Read(randomBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	
+	timestamp := time.Now().Format("2006/01/02")
+	frameID := hex.EncodeToString(randomBytes)
+	
+	return fmt.Sprintf("moderation/frames/%s/%s.jpg", timestamp, frameID), nil
+}
+
+// parseS3URL parses an S3 URL and returns bucket and key
+func parseS3URL(s3URL string) (bucket, key string, err error) {
+	if !strings.HasPrefix(s3URL, "s3://") {
+		return "", "", fmt.Errorf("invalid S3 URL format: %s", s3URL)
+	}
+	
+	// Remove s3:// prefix
+	path := s3URL[5:]
+	
+	// Split into bucket and key
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid S3 URL format: %s", s3URL)
+	}
+	
+	return parts[0], parts[1], nil
+}
+
 
 // AnalyzeVideo performs comprehensive video analysis with frame sampling and audio processing
 func (va *VideoAnalyzer) AnalyzeVideo(ctx context.Context, videoURL string, _ ContentMetadata) (*VideoAnalysis, error) {
@@ -1238,18 +1510,9 @@ func (va *VideoAnalyzer) getVideoDuration(_ context.Context, video *rekognitionT
 	return defaultDuration, nil
 }
 
-func (va *VideoAnalyzer) analyzeKeyFrames(_ context.Context, video *rekognitionTypes.Video, intervals []time.Duration) ([]FrameAnalysis, error) {
+func (va *VideoAnalyzer) analyzeKeyFrames(ctx context.Context, video *rekognitionTypes.Video, intervals []time.Duration) ([]FrameAnalysis, error) {
 	// Extract frames at specified intervals and analyze as images
 	var frames []FrameAnalysis
-
-	// For production implementation, this would involve:
-	// 1. Using AWS Lambda with FFmpeg layer to extract frames
-	// 2. Storing extracted frames temporarily in S3
-	// 3. Analyzing each frame using existing ImageAnalyzer
-	// 4. Cleaning up temporary files
-
-	// Since this requires complex video processing infrastructure,
-	// we'll provide a framework that can be enhanced with actual implementation
 
 	va.logger.Info("analyzing key frames",
 		zap.String("bucket", aws.ToString(video.S3Object.Bucket)),
@@ -1257,13 +1520,11 @@ func (va *VideoAnalyzer) analyzeKeyFrames(_ context.Context, video *rekognitionT
 		zap.Int("intervals", len(intervals)))
 
 	for i, timestamp := range intervals {
-		// In production, you would:
-		// 1. Extract frame at timestamp using FFmpeg
-		// 2. Upload frame to temporary S3 location
-		// 3. Analyze frame using ImageAnalyzer
-		// 4. Delete temporary frame
+		va.logger.Debug("processing frame",
+			zap.Int("frame_index", i),
+			zap.Duration("timestamp", timestamp))
 
-		// For now, create a basic frame analysis structure
+		// Initialize frame analysis structure
 		frameAnalysis := FrameAnalysis{
 			Timestamp: timestamp,
 			ImageAnalysis: ImageAnalysis{
@@ -1282,29 +1543,73 @@ func (va *VideoAnalyzer) analyzeKeyFrames(_ context.Context, video *rekognitionT
 			},
 		}
 
-		// In a real implementation, you might call something like:
-		// frameImageURL := va.extractFrameAtTimestamp(ctx, video, timestamp)
-		// if frameImageURL != "" {
-		//     imageAnalysis, err := va.imageAnalyzer.AnalyzeImage(ctx, frameImageURL, metadata)
-		//     if err != nil {
-		//         va.logger.Warn("frame analysis failed", zap.Error(err))
-		//     } else {
-		//         frameAnalysis.ImageAnalysis = *imageAnalysis
-		//     }
-		//     va.cleanupTemporaryFrame(ctx, frameImageURL)
-		// }
+		// Extract frame at timestamp using FFmpeg
+		frameImageURL, err := va.extractFrameAtTimestamp(ctx, video, timestamp)
+		if err != nil {
+			va.logger.Warn("frame extraction failed", 
+				zap.Int("frame_index", i),
+				zap.Duration("timestamp", timestamp),
+				zap.Error(err))
+			// Continue with empty analysis for this frame
+		} else {
+			// Analyze extracted frame using existing ImageAnalyzer
+			metadata := ContentMetadata{
+				ContentType: ContentTypeImage,
+				Context:     "video_frame",
+				Timestamp:   time.Now(),
+			}
+			
+			imageAnalysis, err := va.imageAnalyzer.AnalyzeImage(ctx, frameImageURL, metadata)
+			if err != nil {
+				va.logger.Warn("frame analysis failed", 
+					zap.String("frame_url", frameImageURL),
+					zap.Int("frame_index", i),
+					zap.Duration("timestamp", timestamp),
+					zap.Error(err))
+				// Continue with empty analysis for this frame
+			} else {
+				// Use the actual analysis results
+				frameAnalysis.ImageAnalysis = *imageAnalysis
+				
+				va.logger.Debug("completed frame analysis",
+					zap.String("frame_url", frameImageURL),
+					zap.Int("frame_index", i),
+					zap.Duration("timestamp", timestamp),
+					zap.Bool("explicit_detected", imageAnalysis.Explicit.IsExplicit),
+					zap.Bool("violence_detected", imageAnalysis.Violence.HasViolence),
+					zap.Int("objects_detected", len(imageAnalysis.Objects)),
+					zap.Int("faces_detected", len(imageAnalysis.Faces)),
+					zap.Int("text_detected", len(imageAnalysis.Text)))
+			}
+			
+			// Clean up temporary frame from S3
+			va.cleanupTemporaryFrame(ctx, frameImageURL)
+		}
 
 		frames = append(frames, frameAnalysis)
-
-		va.logger.Debug("processed frame",
-			zap.Int("frame_index", i),
-			zap.Duration("timestamp", timestamp))
 	}
 
 	va.logger.Info("completed key frame analysis",
-		zap.Int("total_frames", len(frames)))
+		zap.Int("total_frames", len(frames)),
+		zap.Int("successful_extractions", va.countSuccessfulFrames(frames)))
 
 	return frames, nil
+}
+
+// countSuccessfulFrames counts frames that were successfully analyzed
+func (va *VideoAnalyzer) countSuccessfulFrames(frames []FrameAnalysis) int {
+	count := 0
+	for _, frame := range frames {
+		// Consider a frame successful if it has any analysis data
+		if frame.ImageAnalysis.Explicit.Confidence > 0 ||
+		   frame.ImageAnalysis.Violence.Confidence > 0 ||
+		   len(frame.ImageAnalysis.Objects) > 0 ||
+		   len(frame.ImageAnalysis.Faces) > 0 ||
+		   len(frame.ImageAnalysis.Text) > 0 {
+			count++
+		}
+	}
+	return count
 }
 
 func (va *VideoAnalyzer) transcribeAudio(_ context.Context, video *rekognitionTypes.Video) (*AudioAnalysis, error) {

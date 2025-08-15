@@ -2246,6 +2246,46 @@ func (r *ModerationRepository) CountPendingFlags(ctx context.Context) (int, erro
 	return int(count), nil
 }
 
+// DeleteFlag removes a flag
+func (r *ModerationRepository) DeleteFlag(ctx context.Context, id string) error {
+	// First find the flag to get its primary key information
+	flag, err := r.GetFlag(ctx, id)
+	if err != nil {
+		return fmt.Errorf("failed to find flag: %w", err)
+	}
+
+	// Convert to model to get correct keys
+	model := &models.Flag{
+		ID:         flag.ID,
+		Actor:      flag.Actor,
+		Object:     flag.Object,
+		Content:    flag.Content,
+		Published:  flag.Published,
+		Status:     flag.Status,
+		ReviewedBy: flag.ReviewedBy,
+		ReviewedAt: flag.ReviewedAt,
+		ReviewNote: flag.ReviewNote,
+		CreatedAt:  flag.CreatedAt,
+	}
+	model.UpdateKeys()
+
+	// Delete the flag
+	if err := r.db.WithContext(ctx).Model(model).Delete(); err != nil {
+		r.logger.Error("Failed to delete flag",
+			zap.Error(err),
+			zap.String("flag_id", id),
+			zap.String("actor", flag.Actor))
+		return fmt.Errorf("failed to delete flag: %w", err)
+	}
+
+	r.logger.Debug("Deleted flag",
+		zap.String("flag_id", id),
+		zap.String("actor", flag.Actor),
+		zap.Strings("objects", flag.Object))
+
+	return nil
+}
+
 // ADDITIONAL REPORT METHODS
 
 // CreateReport creates a new report
@@ -3330,4 +3370,26 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 	}
 
 	return nil
+}
+
+// GetModerationDecisionsByModerator retrieves moderation decisions made by a specific moderator
+func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Context, moderatorUsername string, limit int) ([]*models.ModerationReview, error) {
+	// Query moderation reviews by reviewer ID using the existing key structure
+	// ModerationReview has SK=REVIEWER#{reviewer_id}, so we can scan for reviews by this moderator
+	
+	var reviews []*models.ModerationReview
+	
+	// Query reviews where SK starts with "REVIEWER#{moderatorUsername}"
+	query := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
+		Where("SK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
+	
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+	
+	if err := query.All(&reviews); err != nil {
+		return nil, fmt.Errorf("failed to get reviews by moderator %s: %w", moderatorUsername, err)
+	}
+	
+	return reviews, nil
 }

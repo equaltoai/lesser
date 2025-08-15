@@ -28,6 +28,7 @@ type User struct {
 	GSI4PK string `dynamorm:"index:status-index,pk" json:"gsi4_pk"` // Format: "STATUS#{status}"
 	GSI4SK string `dynamorm:"index:status-index,sk" json:"gsi4_sk"` // Format: "{username}"
 
+
 	// Core user data
 	Username     string    `json:"username"`
 	Email        string    `json:"email,omitempty"`         // Optional - not required for email-free auth
@@ -43,6 +44,10 @@ type User struct {
 
 	// Recovery options (email-free)
 	RecoveryMethods []string `json:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
+
+	// NSFW Content Preferences
+	AllowNSFW         bool `json:"allow_nsfw"`          // Whether user allows viewing NSFW content
+	RequireNSFWWarning bool `json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
 
 	// Version for optimistic locking
 	Version int `dynamorm:"version" json:"version"`
@@ -63,6 +68,11 @@ func (u *User) BeforeCreate() error {
 	if u.Role == "" {
 		u.Role = "user"
 	}
+
+	// Set safe default NSFW preferences (conservative defaults for new users)
+	// Users can opt-in to NSFW content after registration
+	u.AllowNSFW = false         // Default: block NSFW content
+	u.RequireNSFWWarning = true // Default: show warnings even when NSFW is allowed
 
 	// Set up primary key - matches legacy exactly
 	u.PK = "USER#" + u.Username
@@ -109,6 +119,7 @@ func (u *User) setupGSIKeys() {
 	status := u.getStatusString()
 	u.GSI4PK = "STATUS#" + status
 	u.GSI4SK = username
+
 }
 
 // getStatusString returns a string representation of the user's status

@@ -51,10 +51,11 @@ type FileValidationConfig struct {
 
 // DefaultImportValidationConfig returns default config for imports
 func DefaultImportValidationConfig() FileValidationConfig {
+	const applicationJSON = "application/json"
 	return FileValidationConfig{
 		MaxSizeBytes: 100 * 1024 * 1024, // 100MB
 		AllowedTypes: []string{
-			"application/json",
+			applicationJSON,
 			"text/csv",
 			"text/plain",
 			"application/octet-stream", // For base64 decoded files
@@ -168,13 +169,14 @@ func (fv *FileValidationService) detectContentType(data []byte, result *FileVali
 	result.ContentType = contentType
 
 	// Enhanced detection for common import formats
+	const applicationJSON = "application/json"
 	if len(data) > 0 {
 		switch {
 		case bytes.HasPrefix(data, []byte("{")):
-			result.ContentType = "application/json"
+			result.ContentType = applicationJSON
 			result.DetectedFormat = FormatJSON
 		case bytes.HasPrefix(data, []byte("[")):
-			result.ContentType = "application/json"
+			result.ContentType = applicationJSON
 			result.DetectedFormat = FormatJSON
 		case strings.Contains(string(data[:minInt(200, len(data))]), ","):
 			result.ContentType = "text/csv"

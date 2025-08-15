@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -28,7 +29,11 @@ type Handler struct {
 
 // NewHandler creates a new handler with dependencies
 func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware *auth.Middleware, streamQueue streaming.StreamQueueService) *Handler {
-	converter := mastodon.NewConverter(cfg.BaseURL())
+	// Create emoji repository
+	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), logger)
+	
+	// Create converter with emoji repository access
+	converter := mastodon.NewConverterWithEmojis(cfg.BaseURL(), emojiRepo)
 
 	// Create service layer
 	serviceConfig := &services.ServiceConfig{
@@ -99,4 +104,23 @@ func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string)
 	}
 
 	return claims, nil
+}
+
+// getOptionalAuthenticatedUser extracts user context if authentication is provided and valid
+// Returns empty string if not authenticated or token is invalid (for public content access)
+func (h *Handler) getOptionalAuthenticatedUser(ctx *lift.Context) string {
+	token := h.getBearerTokenLift(ctx)
+	if token == "" {
+		return ""
+	}
+
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		// Token validation failed but we continue for public content
+		h.logger.Debug("Token validation failed, continuing for public content", zap.Error(err))
+		return ""
+	}
+
+	return claims.Username
 }

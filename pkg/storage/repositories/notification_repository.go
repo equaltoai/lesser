@@ -408,9 +408,86 @@ func (r *NotificationRepository) GetPendingPushNotifications(ctx context.Context
 
 // GetNotificationGroups retrieves notification groups for a user with pagination
 func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
-	// For now, return the same as GetUserNotifications since grouping is complex
-	// In a real implementation, this would use the GSI3 index for group queries
-	return r.GetUserNotifications(ctx, userID, opts)
+	if opts.Limit <= 0 {
+		opts.Limit = 20
+	}
+	if opts.Limit > 100 {
+		opts.Limit = 100
+	}
+
+	// Use GSI3 to efficiently query grouped notifications
+	// We'll get all groups and then filter for the user
+	query := r.db.WithContext(ctx).Model(&models.Notification{}).
+		Index("group-index")
+
+	// Handle cursor-based pagination on GSI3SK
+	if opts.Cursor != "" {
+		query = query.Where("GSI3SK", "<", opts.Cursor)
+	}
+
+	// Order by GSI3SK (timestamp#id) to get chronological groups
+	query = query.OrderBy("GSI3SK", "DESC").
+		Limit(opts.Limit + 1) // Get one extra to check for more results
+
+	var allNotifications []models.Notification
+	err := query.All(&allNotifications)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get notification groups: %w", err)
+	}
+
+	// Filter notifications for the specific user and group them
+	userGroups := make(map[string]*models.Notification)
+	groupKeys := make([]string, 0)
+	
+	for i := range allNotifications {
+		notif := &allNotifications[i]
+		if notif.UserID != userID {
+			continue // Skip notifications for other users
+		}
+		
+		// Keep only the most recent notification per group
+		if existing, exists := userGroups[notif.GroupKey]; !exists || notif.CreatedAt.After(existing.CreatedAt) {
+			if !exists {
+				groupKeys = append(groupKeys, notif.GroupKey)
+			}
+			userGroups[notif.GroupKey] = notif
+		}
+	}
+
+	// Build result
+	result := &interfaces.PaginatedResult[*models.Notification]{
+		Items: make([]*models.Notification, 0, len(userGroups)),
+		Total: -1, // Not calculated for grouped results
+	}
+
+	// Add grouped notifications in order
+	actualCount := 0
+	for _, groupKey := range groupKeys {
+		if actualCount >= opts.Limit {
+			// We have more results
+			result.HasMore = true
+			break
+		}
+		if notif, exists := userGroups[groupKey]; exists {
+			result.Items = append(result.Items, notif)
+			actualCount++
+		}
+	}
+
+	// Set next cursor if we have more results
+	if result.HasMore && len(result.Items) > 0 {
+		lastNotif := result.Items[len(result.Items)-1]
+		result.NextCursor = lastNotif.GSI3SK
+	}
+
+	r.logger.Debug("retrieved notification groups using GSI3",
+		zap.String("user_id", userID),
+		zap.Int("total_groups", len(userGroups)),
+		zap.Int("returned_count", len(result.Items)),
+		zap.Bool("has_more", result.HasMore),
+	)
+
+	return result, nil
 }
 
 // ConsolidateNotifications consolidates notifications by group key

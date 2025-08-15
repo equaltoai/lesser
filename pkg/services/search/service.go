@@ -26,6 +26,7 @@ type Service struct {
 	actorRepo        *repositories.ActorRepository
 	relationshipRepo *repositories.RelationshipRepository
 	statusRepo       *repositories.StatusRepository
+	hashtagRepo      *repositories.HashtagRepository
 	publisher        streaming.Publisher
 	logger           *zap.Logger
 	domain           string
@@ -37,6 +38,7 @@ func NewService(
 	actorRepo *repositories.ActorRepository,
 	relationshipRepo *repositories.RelationshipRepository,
 	statusRepo *repositories.StatusRepository,
+	hashtagRepo *repositories.HashtagRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
 	domain string,
@@ -46,6 +48,7 @@ func NewService(
 		actorRepo:        actorRepo,
 		relationshipRepo: relationshipRepo,
 		statusRepo:       statusRepo,
+		hashtagRepo:      hashtagRepo,
 		publisher:        publisher,
 		logger:           logger,
 		domain:           domain,
@@ -401,12 +404,25 @@ func (s *Service) searchHashtags(ctx context.Context, query *Query) ([]HashtagRe
 			})
 		}
 
+		// Check if current user follows this hashtag
+		following := false
+		if query.AccountID != "" && s.hashtagRepo != nil {
+			if isFollowing, err := s.hashtagRepo.IsFollowingHashtag(ctx, query.AccountID, hashtag.Name); err == nil {
+				following = isFollowing
+			} else {
+				s.logger.Warn("failed to check hashtag following status",
+					zap.String("user_id", query.AccountID),
+					zap.String("hashtag", hashtag.Name),
+					zap.Error(err))
+			}
+		}
+
 		// Build the result using available HashtagResult fields
 		result := HashtagResult{
 			Name:      hashtag.Name,
 			URL:       fmt.Sprintf("https://%s/tags/%s", s.domain, hashtag.Name),
 			History:   history,
-			Following: false, // TODO: Check if current user follows this hashtag
+			Following: following,
 		}
 
 		hashtagResults = append(hashtagResults, result)

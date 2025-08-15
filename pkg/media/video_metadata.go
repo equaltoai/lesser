@@ -591,6 +591,7 @@ func (p *VideoMetadataParser) calculateDerivedMetadata(metadata *VideoMetadata) 
 }
 
 // fallbackMetadata provides reasonable defaults when parsing fails
+// Returns metadata with sensible defaults, but with an error indicating fallback was used
 func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoMetadata, error) {
 	// Set reasonable defaults based on file size and common resolutions
 	if metadata.Width == 0 || metadata.Height == 0 {
@@ -637,7 +638,9 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 
 	metadata.FrameRate = 25.0 // Default frame rate
 
-	return metadata, errors.New("failed to parse video metadata, using fallback values")
+	// Return populated fallback metadata with error indicating parsing failed
+	// Callers should use the returned metadata even when error is non-nil
+	return metadata, errors.New("video metadata parsing failed, populated with fallback values")
 }
 
 // IsVideoCodecExported is an exported version of isVideoCodec for testing/demo purposes

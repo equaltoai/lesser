@@ -43,6 +43,14 @@ type Status struct {
 	GSI5PK string `dynamorm:"index:hashtag-index,pk" json:"gsi5_pk,omitempty"` // Format: "HASHTAG#{hashtag}"
 	GSI5SK string `dynamorm:"index:hashtag-index,sk" json:"gsi5_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
 
+	// GSI6 - Flagged content moderation
+	GSI6PK string `dynamorm:"index:flagged-content-index,pk" json:"gsi6_pk,omitempty"` // Format: "FLAGGED_CONTENT"
+	GSI6SK string `dynamorm:"index:flagged-content-index,sk" json:"gsi6_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+
+	// GSI7 - URL index for link searches
+	GSI7PK string `dynamorm:"index:url-index,pk" json:"gsi7_pk,omitempty"` // Format: "URL#{normalized_url}"
+	GSI7SK string `dynamorm:"index:url-index,sk" json:"gsi7_sk,omitempty"` // Format: "{published_timestamp}#{status_id}"
+
 	// Core status data
 	StatusID       string            `json:"status_id"`
 	Note           *activitypub.Note `dynamorm:"json" json:"note"`      // The actual ActivityPub Note
@@ -266,14 +274,35 @@ func (s *Status) setupGSIKeys() {
 		s.GSI4SK = ""
 	}
 
-	// GSI5 - Hashtag index (we'll use the first hashtag for now)
-	// In a real implementation, you might want to create multiple records for multiple hashtags
+	// GSI5 - Primary hashtag index (use the first hashtag for primary record)
+	// Additional hashtag records will be created separately via CreateHashtagIndexRecords
 	if len(s.Hashtags) > 0 {
 		s.GSI5PK = "HASHTAG#" + s.Hashtags[0]
 		s.GSI5SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
 	} else {
 		s.GSI5PK = ""
 		s.GSI5SK = ""
+	}
+
+	// GSI6 - Flagged content moderation (only for flagged statuses)
+	if s.Flagged {
+		s.GSI6PK = "FLAGGED_CONTENT"
+		s.GSI6SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
+	} else {
+		s.GSI6PK = ""
+		s.GSI6SK = ""
+	}
+
+	// GSI7 - URL index (use the first URL for primary record)
+	// Additional URL records will be created separately if needed
+	if len(s.URLs) > 0 {
+		// Normalize the URL for consistent indexing
+		normalizedURL := strings.ToLower(strings.TrimSpace(s.URLs[0]))
+		s.GSI7PK = "URL#" + normalizedURL
+		s.GSI7SK = fmt.Sprintf("%s#%s", timestampStr, statusID)
+	} else {
+		s.GSI7PK = ""
+		s.GSI7SK = ""
 	}
 }
 
@@ -370,6 +399,11 @@ func (s *Status) IsDeleted() bool {
 // IsFlagged returns true if the status has been flagged for moderation
 func (s *Status) IsFlagged() bool {
 	return s.Flagged
+}
+
+// IsReblog returns true if the status is a reblog/boost of another status
+func (s *Status) IsReblog() bool {
+	return s.ReblogOfID != ""
 }
 
 // IsRecipient checks if the given actor ID is a recipient of this status
@@ -552,4 +586,112 @@ func (s *Status) SanitizeForActor(viewerID string) *Status {
 	}
 
 	return &sanitized
+}
+
+// StatusHashtagIndex represents a separate record for each hashtag in a status
+type StatusHashtagIndex struct {
+	PK string `dynamorm:"pk" json:"pk"` // Format: "HASHTAG_INDEX#{hashtag}"
+	SK string `dynamorm:"sk" json:"sk"` // Format: "{published_timestamp}#{status_id}"
+	
+	// Reference back to the original status
+	StatusID    string    `json:"status_id"`
+	AuthorID    string    `json:"author_id"`
+	Hashtag     string    `json:"hashtag"`
+	PublishedAt time.Time `json:"published_at"`
+	Visibility  string    `json:"visibility"`
+	
+	// TTL for cleanup (optional - could be set to expire old hashtag indices)
+	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
+}
+
+// UpdateKeys sets the DynamoDB keys for hashtag index records
+func (shi *StatusHashtagIndex) UpdateKeys() {
+	timestampStr := shi.PublishedAt.Format("2006-01-02T15:04:05.000Z")
+	shi.PK = fmt.Sprintf("HASHTAG_INDEX#%s", shi.Hashtag)
+	shi.SK = fmt.Sprintf("%s#%s", timestampStr, shi.StatusID)
+	
+	// Set TTL to 1 year for hashtag indices (can be adjusted based on retention policy)
+	shi.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
+}
+
+// CreateHashtagIndexRecords creates separate index records for each hashtag in the status
+func (s *Status) CreateHashtagIndexRecords() []*StatusHashtagIndex {
+	if len(s.Hashtags) <= 1 {
+		// No additional records needed - primary record handles single hashtag
+		return nil
+	}
+	
+	// Create index records for hashtags 2 and beyond (first hashtag is handled by primary record)
+	records := make([]*StatusHashtagIndex, 0, len(s.Hashtags)-1)
+	
+	for i := 1; i < len(s.Hashtags); i++ {
+		hashtag := s.Hashtags[i]
+		if hashtag == "" {
+			continue
+		}
+		
+		record := &StatusHashtagIndex{
+			StatusID:    s.StatusID,
+			AuthorID:    s.AuthorID,
+			Hashtag:     hashtag,
+			PublishedAt: s.PublishedAt,
+			Visibility:  s.Visibility,
+		}
+		record.UpdateKeys()
+		records = append(records, record)
+	}
+	
+	return records
+}
+
+// GetAllHashtagIndexRecords creates index records for ALL hashtags (including the first one)
+// This is useful when you need separate records for all hashtags regardless of the primary record
+func (s *Status) GetAllHashtagIndexRecords() []*StatusHashtagIndex {
+	if len(s.Hashtags) == 0 {
+		return nil
+	}
+	
+	records := make([]*StatusHashtagIndex, 0, len(s.Hashtags))
+	
+	for _, hashtag := range s.Hashtags {
+		if hashtag == "" {
+			continue
+		}
+		
+		record := &StatusHashtagIndex{
+			StatusID:    s.StatusID,
+			AuthorID:    s.AuthorID,
+			Hashtag:     hashtag,
+			PublishedAt: s.PublishedAt,
+			Visibility:  s.Visibility,
+		}
+		record.UpdateKeys()
+		records = append(records, record)
+	}
+	
+	return records
+}
+
+// DeleteHashtagIndexRecords creates delete operations for all hashtag index records
+func (s *Status) DeleteHashtagIndexRecords() []map[string]interface{} {
+	if len(s.Hashtags) == 0 {
+		return nil
+	}
+	
+	deleteOps := make([]map[string]interface{}, 0, len(s.Hashtags))
+	timestampStr := s.PublishedAt.Format("2006-01-02T15:04:05.000Z")
+	
+	for _, hashtag := range s.Hashtags {
+		if hashtag == "" {
+			continue
+		}
+		
+		deleteOp := map[string]interface{}{
+			"PK": fmt.Sprintf("HASHTAG_INDEX#%s", hashtag),
+			"SK": fmt.Sprintf("%s#%s", timestampStr, s.StatusID),
+		}
+		deleteOps = append(deleteOps, deleteOp)
+	}
+	
+	return deleteOps
 }

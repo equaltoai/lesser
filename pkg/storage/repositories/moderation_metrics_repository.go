@@ -84,16 +84,13 @@ func (r *moderationMetricsRepository) RecordMetricsEntries(ctx context.Context, 
 		entry.CreatedAt = time.Now()
 	}
 
-	// Use batch create for efficiency - process in batch
-	for _, entry := range entries {
-		err := r.db.WithContext(ctx).Model(entry).Create()
-		if err != nil {
-			r.logger.Error("failed to record metrics entry in batch",
-				zap.String("metric_type", entry.MetricType),
-				zap.Int64("count", entry.Count),
-				zap.Error(err))
-			return fmt.Errorf("record metrics entry in batch: %w", err)
-		}
+	// Use DynamORM's efficient BatchCreate - automatically handles chunking
+	err := r.db.WithContext(ctx).Model(&entries[0]).BatchCreate(entries)
+	if err != nil {
+		r.logger.Error("failed to batch create metrics entries",
+			zap.Int("count", len(entries)),
+			zap.Error(err))
+		return fmt.Errorf("batch create metrics entries: %w", err)
 	}
 
 	r.logger.Info("recorded metrics entries batch",

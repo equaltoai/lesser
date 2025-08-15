@@ -18,6 +18,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // AccountRepository unifies User and Actor operations into a single repository
@@ -803,16 +804,19 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	// In a full implementation, this would use search indices or full-text search
 
 	var users []models.User
-	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
-		Index("user-list-index").
-		Where("GSI1PK", "=", "USERS")
-
+	
 	// Apply limit
 	limit := opts.Limit
 	if limit <= 0 || limit > 100 {
 		limit = 20 // Default limit
 	}
-	queryBuilder = queryBuilder.Limit(limit + 1) // +1 to check if there are more results
+	
+	// Use the user list GSI (GSI1) which is more efficient than scanning
+	// This still requires client-side filtering but operates on a smaller dataset
+	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
+		Index("user-list-index").
+		Where("GSI1PK", "=", "USERS").
+		Limit(500) // Reasonable limit for search results
 
 	// Apply cursor for pagination
 	if opts.Cursor != "" {
@@ -822,17 +826,23 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 		}
 	}
 
-	err := queryBuilder.Scan(&users)
+	err := queryBuilder.All(&users)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "search")
 	}
 
 	// Filter by query (simple contains check)
 	var filteredUsers []models.User
+	queryLower := strings.ToLower(query)
 	for _, user := range users {
-		if strings.Contains(strings.ToLower(user.Username), strings.ToLower(query)) ||
-			strings.Contains(strings.ToLower(user.DisplayName), strings.ToLower(query)) {
+		if strings.Contains(strings.ToLower(user.Username), queryLower) ||
+			strings.Contains(strings.ToLower(user.DisplayName), queryLower) {
 			filteredUsers = append(filteredUsers, user)
+		}
+		
+		// Stop if we have enough results
+		if len(filteredUsers) >= opts.Limit {
+			break
 		}
 	}
 
@@ -1104,7 +1114,7 @@ func (r *AccountRepository) GetAccountFeatures(ctx context.Context, username str
 // ===== Authentication Operations =====
 
 // ValidateCredentials validates username and password credentials
-func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, _ string) (*storage.Account, error) {
+func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, password string) (*storage.Account, error) {
 	// Get user
 	user, err := r.GetUser(ctx, username)
 	if err != nil {
@@ -1116,9 +1126,10 @@ func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, _
 		return nil, fmt.Errorf("password authentication not available for user")
 	}
 
-	// For demo purposes, we'll assume password validation is done elsewhere
-	// In a real implementation, you would use bcrypt or similar to compare
-	// the password with the stored hash
+	// Verify password using bcrypt
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		return nil, fmt.Errorf("invalid credentials")
+	}
 
 	// Get the full account
 	return r.GetAccount(ctx, username)

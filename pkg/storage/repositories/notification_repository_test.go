@@ -51,7 +51,7 @@ func TestNotificationRepository_UpdatePreferencesIgnoresEmail(t *testing.T) {
 	// Setup mock for update operation
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
 	mockDB.On("Model", mock.AnythingOfType("*models.NotificationPreferences")).Return(mockQuery)
-	mockQuery.On("Update").Return(nil)
+	mockQuery.On("Update", mock.Anything).Return(nil)
 
 	// Try to update with EmailEnabled: true
 	inputPrefs := &models.NotificationPreferences{

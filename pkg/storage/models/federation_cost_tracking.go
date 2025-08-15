@@ -93,6 +93,7 @@ type FederationCostTracking struct {
 	// NEW: Per-route delivery metrics
 	RouteLatency      map[string]int64   `json:"route_latency"`       // Per-route response times in ms
 	RouteErrors       map[string]int     `json:"route_errors"`        // Per-route error counts
+	RouteAttempts     map[string]int     `json:"route_attempts"`      // Per-route total attempts
 	RouteSuccessRates map[string]float64 `json:"route_success_rates"` // Per-route success rates
 
 	// NEW: Enhanced retry tracking
@@ -216,6 +217,9 @@ func (f *FederationCostTracking) AddRouteDeliveryAttempt(routeID string, bytes i
 	if f.RouteErrors == nil {
 		f.RouteErrors = make(map[string]int)
 	}
+	if f.RouteAttempts == nil {
+		f.RouteAttempts = make(map[string]int)
+	}
 	if f.RouteSuccessRates == nil {
 		f.RouteSuccessRates = make(map[string]float64)
 	}
@@ -239,13 +243,18 @@ func (f *FederationCostTracking) AddRouteDeliveryAttempt(routeID string, bytes i
 		}
 	}
 
-	// Update success rate
-	// In a real implementation, we'd need to track total attempts per route
-	// This is a simplified version assuming we track successes vs failures
-	if success {
-		f.RouteSuccessRates[routeID] = 1.0 // Simplified - would be running average
+	// Track total attempts and calculate success rate
+	f.RouteAttempts[routeID]++
+	
+	// Calculate success rate: (total attempts - errors) / total attempts
+	totalAttempts := f.RouteAttempts[routeID]
+	errorCount := f.RouteErrors[routeID]
+	successCount := totalAttempts - errorCount
+	
+	if totalAttempts > 0 {
+		f.RouteSuccessRates[routeID] = float64(successCount) / float64(totalAttempts)
 	} else {
-		f.RouteSuccessRates[routeID] = 0.0 // Simplified - would be running average
+		f.RouteSuccessRates[routeID] = 0.0
 	}
 
 	// Update overall delivery tracking

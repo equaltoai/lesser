@@ -305,7 +305,7 @@ func (s *MonitoringStack) CreateLogGroups(appName string, environment string) ma
 
 	// Lambda function log groups with configurable retention
 	lambdaFunctions := []string{
-		"api", "auth", "auth-api", "graphql", "inbox", "outbox", "webfinger",
+		"api", "graphql", "inbox", "outbox", "webfinger",
 		"streaming", "stream-router", "activity-processor", "notification-processor",
 		"moderation-processor", "cost-aggregator", "trend-aggregator", "media-processor",
 		"export-generator", "import-processor", "federation-delivery", "push-notification",

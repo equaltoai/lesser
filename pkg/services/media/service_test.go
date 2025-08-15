@@ -136,22 +136,34 @@ func (m *MockMediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, 
 	return args.Get(0).(int64), args.Error(1)
 }
 
+type MockJobQueueService struct {
+	mock.Mock
+}
+
+func (m *MockJobQueueService) QueueMediaJob(ctx context.Context, msg JobMessage) error {
+	args := m.Called(ctx, msg)
+	return args.Error(0)
+}
+
 // Test helper functions
 
-func createTestService(t *testing.T) (*Service, *MockMediaRepository, streaming.Publisher) {
+func createTestService(t *testing.T) (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher) {
 	mediaRepo := new(MockMediaRepository)
 	publisher := streaming.NewMockPublisher()
+	jobQueue := new(MockJobQueueService)
 	logger := zaptest.NewLogger(t)
 
 	service := NewService(
 		mediaRepo,
+		nil, // accountRepo - not needed for most media tests
 		publisher,
+		jobQueue,
 		logger,
 		"test-bucket",
 		"cdn.example.com",
 	)
 
-	return service, mediaRepo, publisher
+	return service, mediaRepo, jobQueue, publisher
 }
 
 func createValidUploadCommand() *UploadMediaCommand {
@@ -200,12 +212,13 @@ func createTestMedia() *models.Media {
 // Test UploadMedia method
 
 func TestService_UploadMedia_Success(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, jobQueue, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
 	// Mock expectations
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	// Execute
 	result, err := service.UploadMedia(ctx, cmd)
@@ -238,7 +251,7 @@ func TestService_UploadMedia_Success(t *testing.T) {
 }
 
 func TestService_UploadMedia_ValidationErrors(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -319,7 +332,7 @@ func TestService_UploadMedia_ValidationErrors(t *testing.T) {
 }
 
 func TestService_UploadMedia_RepositoryError(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
@@ -341,7 +354,7 @@ func TestService_UploadMedia_RepositoryError(t *testing.T) {
 // Test UpdateMedia method
 
 func TestService_UpdateMedia_Success(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	ctx := context.Background()
 
@@ -372,7 +385,7 @@ func TestService_UpdateMedia_Success(t *testing.T) {
 }
 
 func TestService_UpdateMedia_ValidationErrors(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -425,7 +438,7 @@ func TestService_UpdateMedia_ValidationErrors(t *testing.T) {
 }
 
 func TestService_UpdateMedia_NotFound(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	ctx := context.Background()
 
@@ -444,7 +457,7 @@ func TestService_UpdateMedia_NotFound(t *testing.T) {
 }
 
 func TestService_UpdateMedia_Unauthorized(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	cmd := createValidUpdateCommand()
 	cmd.UserID = "different-user" // Different user
 	ctx := context.Background()
@@ -468,7 +481,7 @@ func TestService_UpdateMedia_Unauthorized(t *testing.T) {
 // Test GetMedia method
 
 func TestService_GetMedia_Success(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	query := &GetMediaQuery{
 		MediaID:  "media123",
 		ViewerID: "user123",
@@ -495,7 +508,7 @@ func TestService_GetMedia_Success(t *testing.T) {
 }
 
 func TestService_GetMedia_NotReady(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	query := &GetMediaQuery{
 		MediaID:  "media123",
 		ViewerID: "different-user",
@@ -522,7 +535,7 @@ func TestService_GetMedia_NotReady(t *testing.T) {
 // Test processing callback methods
 
 func TestService_MarkMediaProcessed_Success(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	mediaID := "media123"
 	variants := map[string]models.MediaVariant{
 		"thumbnail": {
@@ -557,7 +570,7 @@ func TestService_MarkMediaProcessed_Success(t *testing.T) {
 }
 
 func TestService_MarkMediaFailed_Success(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, _, _ := createTestService(t)
 	mediaID := "media123"
 	errorMsg := "Processing failed"
 	ctx := context.Background()
@@ -585,7 +598,7 @@ func TestService_MarkMediaFailed_Success(t *testing.T) {
 // Test validation helper methods
 
 func TestService_IsValidMediaType(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		contentType string
@@ -609,7 +622,7 @@ func TestService_IsValidMediaType(t *testing.T) {
 }
 
 func TestService_ValidateFileExtension(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		fileName    string
@@ -633,7 +646,7 @@ func TestService_ValidateFileExtension(t *testing.T) {
 }
 
 func TestService_IsValidFocusPoint(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	tests := []struct {
 		focus    string
@@ -658,7 +671,7 @@ func TestService_IsValidFocusPoint(t *testing.T) {
 }
 
 func TestService_GenerateS3Key(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	mediaID := "test-media-123"
 	fileName := "test.jpg"
@@ -674,7 +687,7 @@ func TestService_GenerateS3Key(t *testing.T) {
 // Test service configuration
 
 func TestService_SetMaxFileSize(t *testing.T) {
-	service, _, _ := createTestService(t)
+	service, _, _, _ := createTestService(t)
 
 	// Default should be 50MB
 	assert.Equal(t, int64(50*1024*1024), service.maxFileSize)
@@ -687,27 +700,31 @@ func TestService_SetMaxFileSize(t *testing.T) {
 
 // Benchmark tests
 
-func createTestServiceForBenchmark() (*Service, *MockMediaRepository, streaming.Publisher) {
+func createTestServiceForBenchmark() (*Service, *MockMediaRepository, *MockJobQueueService, streaming.Publisher) {
 	mediaRepo := new(MockMediaRepository)
 	publisher := streaming.NewMockPublisher()
+	jobQueue := new(MockJobQueueService)
 	logger := zaptest.NewLogger(&testing.T{})
 
 	service := NewService(
 		mediaRepo,
+		nil, // accountRepo - not needed for benchmarks
 		publisher,
+		jobQueue,
 		logger,
 		"test-bucket",
 		"cdn.example.com",
 	)
 
-	return service, mediaRepo, publisher
+	return service, mediaRepo, jobQueue, publisher
 }
 
 func BenchmarkService_UploadMedia(b *testing.B) {
-	service, mediaRepo, _ := createTestServiceForBenchmark()
+	service, mediaRepo, jobQueue, _ := createTestServiceForBenchmark()
 	ctx := context.Background()
 
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	cmd := createValidUploadCommand()
 
@@ -721,7 +738,7 @@ func BenchmarkService_UploadMedia(b *testing.B) {
 }
 
 func BenchmarkService_UpdateMedia(b *testing.B) {
-	service, mediaRepo, _ := createTestServiceForBenchmark()
+	service, mediaRepo, _, _ := createTestServiceForBenchmark()
 	ctx := context.Background()
 
 	testMedia := createTestMedia()
@@ -742,12 +759,13 @@ func BenchmarkService_UpdateMedia(b *testing.B) {
 // Test event emission edge cases
 
 func TestService_EmitEvents_PublisherError(t *testing.T) {
-	service, mediaRepo, _ := createTestService(t)
+	service, mediaRepo, jobQueue, _ := createTestService(t)
 	cmd := createValidUploadCommand()
 	ctx := context.Background()
 
 	// Mock expectations
 	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(nil)
+	jobQueue.On("QueueMediaJob", ctx, mock.AnythingOfType("media.JobMessage")).Return(nil)
 
 	// Execute
 	result, err := service.UploadMedia(ctx, cmd)

@@ -358,8 +358,8 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		URL:                fmt.Sprintf("https://%s/@%s/%s", h.cfg.BaseURL(), storageStatus.AuthorUsername, storageStatus.StatusID),
 	}
 
-	// Poll support would go here when implemented
-	// For now, polls are not supported in the storage model
+	// Poll support is implemented in polls.go handler
+	// Status.Poll field would be populated here if the status has an associated poll
 
 	return apiStatus, nil
 }

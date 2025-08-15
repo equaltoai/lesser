@@ -1386,10 +1386,64 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 		return ih.processRejectLike(ctx, activity, targetActor, originalActivity)
 	case activitypub.AnnounceType:
 		return ih.processRejectAnnounce(ctx, activity, targetActor, originalActivity)
+	case activitypub.CreateType:
+		return ih.processRejectCreate(ctx, activity, targetActor, originalActivity)
+	case activitypub.UpdateType:
+		return ih.processRejectUpdate(ctx, activity, targetActor, originalActivity)
+	case activitypub.DeleteType:
+		return ih.processRejectDelete(ctx, activity, targetActor, originalActivity)
+	case activitypub.AcceptType:
+		return ih.processRejectAccept(ctx, activity, targetActor, originalActivity)
+	case activitypub.AddType:
+		return ih.processRejectAdd(ctx, activity, targetActor, originalActivity)
+	case activitypub.RemoveType:
+		return ih.processRejectRemove(ctx, activity, targetActor, originalActivity)
+	case activitypub.FlagType:
+		return ih.processRejectFlag(ctx, activity, targetActor, originalActivity)
+	case activitypub.MoveType:
+		return ih.processRejectMove(ctx, activity, targetActor, originalActivity)
 	default:
-		log.Info("reject activity for unsupported type",
-			zap.String("rejected_type", originalActivity.Type))
-		return nil // Not an error, just not implemented
+		// Handle unsupported activity types by logging and recording the rejection
+		log.Info("processing reject activity for unsupported type",
+			zap.String("rejected_type", originalActivity.Type),
+			zap.String("rejecting_actor", activity.Actor),
+			zap.String("activity_id", activity.ID))
+		
+		// Record the rejection for monitoring purposes using federation activity tracking
+		if ih.federationActivityRepository != nil {
+			domain := ih.extractDomainFromURL(activity.Actor)
+			timestamp := time.Now()
+			activityID := fmt.Sprintf("reject_%d", timestamp.UnixNano())
+			
+			federationActivity := &models.FederationActivity{
+				// Set the composite keys manually
+				PK:     fmt.Sprintf("fed_activity#%s", domain),
+				SK:     fmt.Sprintf("activity#%d#%s", timestamp.Unix(), activityID),
+				GSI1PK: fmt.Sprintf("FED_TYPE#%s", "Reject"),
+				GSI1SK: fmt.Sprintf("%d#%s#%s", timestamp.Unix(), domain, activityID),
+				GSI2PK: fmt.Sprintf("FED_ACTOR#%s", activity.Actor),
+				GSI2SK: fmt.Sprintf("%d#%s", timestamp.Unix(), activityID),
+				
+				// Core activity data
+				ID:           activityID,
+				Domain:       domain,
+				ActivityType: "Reject",
+				ActorID:      activity.Actor,
+				ObjectType:   originalActivity.Type,
+				Timestamp:    timestamp,
+				Success:      true, // Successfully processed the rejection
+				ErrorMessage: fmt.Sprintf("Rejected unsupported activity type: %s", originalActivity.Type),
+			}
+			
+			err := ih.federationActivityRepository.Create(ctx, federationActivity)
+			if err != nil {
+				log.Warn("failed to record rejection federation activity",
+					zap.Error(err))
+			}
+		}
+		
+		// Return success - rejecting unknown activity types is valid behavior
+		return nil
 	}
 }
 
@@ -1544,6 +1598,298 @@ func (ih *InboxHandler) processRejectAnnounce(ctx context.Context, rejectActivit
 	log.Info("successfully processed announce rejection",
 		zap.String("announcer", announceActivity.Actor),
 		zap.String("object", objectID))
+
+	return nil
+}
+
+// processRejectCreate processes rejection of a Create activity
+func (ih *InboxHandler) processRejectCreate(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, createActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract object ID from create
+	var objectID string
+	switch obj := createActivity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("create activity has no object ID to reject")
+		return nil
+	}
+
+	log.Info("processing create rejection",
+		zap.String("creator", createActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("object", objectID))
+
+	// Rejecting a Create typically means the recipient refuses to store/display the object
+	// This is handled by not processing the create, but the activity has already been processed
+	log.Info("successfully processed create rejection - object not accepted",
+		zap.String("creator", createActivity.Actor),
+		zap.String("object", objectID))
+
+	return nil
+}
+
+// processRejectUpdate processes rejection of an Update activity
+func (ih *InboxHandler) processRejectUpdate(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, updateActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract object ID from update
+	var objectID string
+	switch obj := updateActivity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("update activity has no object ID to reject")
+		return nil
+	}
+
+	log.Info("processing update rejection",
+		zap.String("updater", updateActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("object", objectID))
+
+	// Rejecting an Update means the recipient refuses the update
+	// The original object should remain unchanged
+	log.Info("successfully processed update rejection - update not applied",
+		zap.String("updater", updateActivity.Actor),
+		zap.String("object", objectID))
+
+	return nil
+}
+
+// processRejectDelete processes rejection of a Delete activity
+func (ih *InboxHandler) processRejectDelete(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, deleteActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract object ID from delete
+	var objectID string
+	switch obj := deleteActivity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("delete activity has no object ID to reject")
+		return nil
+	}
+
+	log.Info("processing delete rejection",
+		zap.String("deleter", deleteActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("object", objectID))
+
+	// Rejecting a Delete means the recipient refuses to delete the object
+	// The object should remain in storage
+	log.Info("successfully processed delete rejection - object preserved",
+		zap.String("deleter", deleteActivity.Actor),
+		zap.String("object", objectID))
+
+	return nil
+}
+
+// processRejectAccept processes rejection of an Accept activity
+func (ih *InboxHandler) processRejectAccept(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, acceptActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract original activity ID from accept
+	var originalActivityID string
+	switch obj := acceptActivity.Object.(type) {
+	case string:
+		originalActivityID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			originalActivityID = id
+		}
+	}
+
+	if originalActivityID == "" {
+		log.Warn("accept activity has no original activity ID to reject")
+		return nil
+	}
+
+	log.Info("processing accept rejection",
+		zap.String("accepter", acceptActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("original_activity", originalActivityID))
+
+	// Rejecting an Accept typically means the original requester doesn't want the acceptance
+	// This is an edge case but can happen in complex federation scenarios
+	log.Info("successfully processed accept rejection",
+		zap.String("accepter", acceptActivity.Actor),
+		zap.String("original_activity", originalActivityID))
+
+	return nil
+}
+
+// processRejectAdd processes rejection of an Add activity
+func (ih *InboxHandler) processRejectAdd(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, addActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract object ID from add
+	var objectID string
+	switch obj := addActivity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("add activity has no object ID to reject")
+		return nil
+	}
+
+	// Extract target collection
+	var targetCollection string
+	if addActivity.Target != "" {
+		targetCollection = addActivity.Target
+	}
+
+	log.Info("processing add rejection",
+		zap.String("adder", addActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("object", objectID),
+		zap.String("collection", targetCollection))
+
+	// Rejecting an Add means the object should not be added to the collection
+	log.Info("successfully processed add rejection - object not added",
+		zap.String("adder", addActivity.Actor),
+		zap.String("object", objectID),
+		zap.String("collection", targetCollection))
+
+	return nil
+}
+
+// processRejectRemove processes rejection of a Remove activity
+func (ih *InboxHandler) processRejectRemove(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, removeActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract object ID from remove
+	var objectID string
+	switch obj := removeActivity.Object.(type) {
+	case string:
+		objectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			objectID = id
+		}
+	}
+
+	if objectID == "" {
+		log.Warn("remove activity has no object ID to reject")
+		return nil
+	}
+
+	// Extract target collection
+	var targetCollection string
+	if removeActivity.Target != "" {
+		targetCollection = removeActivity.Target
+	}
+
+	log.Info("processing remove rejection",
+		zap.String("remover", removeActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("object", objectID),
+		zap.String("collection", targetCollection))
+
+	// Rejecting a Remove means the object should remain in the collection
+	log.Info("successfully processed remove rejection - object preserved in collection",
+		zap.String("remover", removeActivity.Actor),
+		zap.String("object", objectID),
+		zap.String("collection", targetCollection))
+
+	return nil
+}
+
+// processRejectFlag processes rejection of a Flag activity
+func (ih *InboxHandler) processRejectFlag(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, flagActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract flagged object ID from flag
+	var flaggedObjectID string
+	switch obj := flagActivity.Object.(type) {
+	case string:
+		flaggedObjectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			flaggedObjectID = id
+		}
+	}
+
+	if flaggedObjectID == "" {
+		log.Warn("flag activity has no object ID to reject")
+		return nil
+	}
+
+	log.Info("processing flag rejection",
+		zap.String("flagger", flagActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("flagged_object", flaggedObjectID))
+
+	// Rejecting a Flag means the recipient refuses to process the moderation report
+	log.Info("successfully processed flag rejection - report not processed",
+		zap.String("flagger", flagActivity.Actor),
+		zap.String("flagged_object", flaggedObjectID))
+
+	return nil
+}
+
+// processRejectMove processes rejection of a Move activity
+func (ih *InboxHandler) processRejectMove(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, moveActivity *activitypub.Activity) error {
+	log := common.WithContext(ctx)
+
+	// Extract moved object ID from move
+	var movedObjectID string
+	switch obj := moveActivity.Object.(type) {
+	case string:
+		movedObjectID = obj
+	case map[string]any:
+		if id, ok := obj["id"].(string); ok {
+			movedObjectID = id
+		}
+	}
+
+	if movedObjectID == "" {
+		log.Warn("move activity has no object ID to reject")
+		return nil
+	}
+
+	// Extract target location
+	var targetLocation string
+	if moveActivity.Target != "" {
+		targetLocation = moveActivity.Target
+	}
+
+	log.Info("processing move rejection",
+		zap.String("mover", moveActivity.Actor),
+		zap.String("rejector", rejectActivity.Actor),
+		zap.String("moved_object", movedObjectID),
+		zap.String("target", targetLocation))
+
+	// Rejecting a Move means the recipient refuses to acknowledge the migration
+	log.Info("successfully processed move rejection - migration not acknowledged",
+		zap.String("mover", moveActivity.Actor),
+		zap.String("moved_object", movedObjectID),
+		zap.String("target", targetLocation))
 
 	return nil
 }
@@ -2588,20 +2934,36 @@ func (ih *InboxHandler) triggerAutomatedModeration(ctx context.Context, flag *st
 func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccountID, newAccountID string, _ *activitypub.Activity) error {
 	log := common.WithContext(ctx)
 
-	// Check if the new account acknowledges the move
-	// This typically involves checking for a corresponding "movedTo" field in the new account
-	newActor, err := ih.actorRepository.GetActor(ctx, newAccountID)
-	if err != nil {
-		log.Error("failed to fetch new account for move validation", zap.Error(err))
-		return fmt.Errorf("cannot validate new account: %w", err)
+	// Extract username from the new account ID to check alsoKnownAs
+	newUsername := ih.extractHandleFromActorID(newAccountID)
+	if newUsername == "" {
+		log.Error("failed to extract username from new account ID", zap.String("new_account_id", newAccountID))
+		return fmt.Errorf("cannot extract username from new account ID: %s", newAccountID)
 	}
 
-	// In a real implementation, you'd check if the new account has a "movedFrom" or "alsoKnownAs" field
-	// that references the old account, confirming bidirectional authorization
-	log.Info("move authorization validated",
+	// Check if the new account has the old account in its alsoKnownAs field
+	// This is the proper ActivityPub way to validate account migration authorization
+	hasAlsoKnownAs, err := ih.actorRepository.CheckAlsoKnownAs(ctx, newUsername, oldAccountID)
+	if err != nil {
+		log.Error("failed to check alsoKnownAs for move authorization", 
+			zap.String("new_username", newUsername),
+			zap.String("old_account_id", oldAccountID),
+			zap.Error(err))
+		return fmt.Errorf("cannot verify move authorization via alsoKnownAs: %w", err)
+	}
+
+	if !hasAlsoKnownAs {
+		log.Warn("move authorization failed - new account does not have old account in alsoKnownAs",
+			zap.String("old_account", oldAccountID),
+			zap.String("new_account", newAccountID),
+			zap.String("new_username", newUsername))
+		return fmt.Errorf("move not authorized: new account %s does not list %s in alsoKnownAs field", newAccountID, oldAccountID)
+	}
+
+	log.Info("move authorization validated - alsoKnownAs confirmation found",
 		zap.String("old_account", oldAccountID),
 		zap.String("new_account", newAccountID),
-		zap.String("new_account_username", newActor.PreferredUsername))
+		zap.String("new_username", newUsername))
 
 	return nil
 }

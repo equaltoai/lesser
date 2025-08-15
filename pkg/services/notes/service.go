@@ -29,6 +29,7 @@ const (
 type Service struct {
 	noteRepo          *repositories.StatusRepository
 	accountRepo       interfaces.AccountRepository
+	relationshipRepo  *repositories.RelationshipRepository
 	likeRepo          *repositories.LikeRepository
 	socialRepo        interfaces.SocialRepository
 	conversationRepo  interfaces.ConversationRepository
@@ -36,8 +37,10 @@ type Service struct {
 	searchRepo        *repositories.SearchRepository
 	communityNoteRepo *repositories.CommunityNoteRepository
 	userRepo          *repositories.UserRepository
+	pollRepo          *repositories.PollRepository
 	scheduledRepo     ScheduledStatusRepository
 	publisher         streaming.Publisher
+	analytics         AnalyticsService
 	logger            *zap.Logger
 	domainName        string
 	federation        FederationService // Interface to be defined
@@ -57,10 +60,20 @@ type FederationService interface {
 	QueueActivity(ctx context.Context, activity *activitypub.Activity) error
 }
 
+// AnalyticsService defines the interface for analytics operations needed by the notes service
+type AnalyticsService interface {
+	RecordStatusCreation(ctx context.Context, actorID string, timestamp time.Time) error
+	RecordHashtagUsage(ctx context.Context, hashtags []string, objectID, actorID string) error
+	RecordLinkShare(ctx context.Context, links []string, objectID, actorID string) error
+	RecordEngagement(ctx context.Context, objectID, engagementType, actorID string) error
+	RecordInstanceActivity(ctx context.Context, activityType string, timestamp time.Time) error
+}
+
 // NewService creates a new Notes Service with the required dependencies
 func NewService(
 	noteRepo *repositories.StatusRepository,
 	accountRepo interfaces.AccountRepository,
+	relationshipRepo *repositories.RelationshipRepository,
 	likeRepo *repositories.LikeRepository,
 	socialRepo interfaces.SocialRepository,
 	conversationRepo interfaces.ConversationRepository,
@@ -68,7 +81,9 @@ func NewService(
 	searchRepo *repositories.SearchRepository,
 	communityNoteRepo *repositories.CommunityNoteRepository,
 	userRepo *repositories.UserRepository,
+	pollRepo *repositories.PollRepository,
 	publisher streaming.Publisher,
+	analytics AnalyticsService,
 	federation FederationService,
 	logger *zap.Logger,
 	domainName string,
@@ -80,6 +95,7 @@ func NewService(
 	return &Service{
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
+		relationshipRepo:  relationshipRepo,
 		likeRepo:          likeRepo,
 		socialRepo:        socialRepo,
 		conversationRepo:  conversationRepo,
@@ -87,7 +103,9 @@ func NewService(
 		searchRepo:        searchRepo,
 		communityNoteRepo: communityNoteRepo,
 		userRepo:          userRepo,
+		pollRepo:          pollRepo,
 		publisher:         publisher,
+		analytics:         analytics,
 		federation:        federation,
 		logger:            logger,
 		domainName:        domainName,
@@ -107,6 +125,9 @@ type CreateNoteCommand struct {
 	ConversationID string   `json:"conversation_id"`
 	MediaIDs       []string `json:"media_ids"`
 	PollOptions    []string `json:"poll_options"`
+	PollExpiresIn  int      `json:"poll_expires_in"`  // Duration in seconds
+	PollMultiple   bool     `json:"poll_multiple"`    // Allow multiple choices
+	PollHideTotals bool     `json:"poll_hide_totals"` // Hide vote counts until poll ends
 	ToRecipients   []string `json:"to_recipients"`
 	CcRecipients   []string `json:"cc_recipients"`
 	BtoRecipients  []string `json:"bto_recipients"`
@@ -230,10 +251,31 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		return nil, fmt.Errorf("failed to create status: %w", err)
 	}
 
-	// TODO: Update instance metrics after successful creation
-	// - If status.InReplyToID != "": increment LOCAL_COMMENTS metric
-	// - Else: increment LOCAL_POSTS metric
-	// This ensures accurate tracking of posts vs comments for NodeInfo
+	// Create poll if poll options are provided
+	if len(cmd.PollOptions) > 0 {
+		if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
+			// Log error but don't fail status creation
+			s.logger.Error("failed to create poll for status",
+				zap.String("status_id", statusID),
+				zap.Error(err))
+		}
+	}
+
+	// Update instance metrics after successful creation
+	if s.analytics != nil {
+		activityType := "post" // Default to post
+		if status.InReplyToID != "" {
+			activityType = "comment" // This is a reply/comment
+		}
+		
+		if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
+			// Log the error but don't fail the creation - metrics are not critical
+			s.logger.Warn("failed to record instance metrics", 
+				zap.String("activity_type", activityType),
+				zap.String("status_id", statusID),
+				zap.Error(err))
+		}
+	}
 
 	s.logger.Info("created note successfully",
 		zap.String("status_id", statusID),
@@ -322,8 +364,17 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 
 	// Verify permission (author or admin)
 	if status.AuthorID != cmd.DeleterID {
-		// TODO: Add admin check here when admin service is available
-		return fmt.Errorf("unauthorized: only the author can delete their posts")
+		// Check if deleter is an admin
+		isAdmin := false
+		if s.userRepo != nil {
+			if deleter, err := s.userRepo.GetUser(ctx, cmd.DeleterID); err == nil && deleter != nil {
+				isAdmin = deleter.Role == "admin"
+			}
+		}
+		
+		if !isAdmin {
+			return fmt.Errorf("unauthorized: only the author or admin can delete posts")
+		}
 	}
 
 	// Perform soft delete
@@ -365,6 +416,106 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 
 	// Return the status directly since we simplified the method
 	return status, nil
+}
+
+// GetNoteWithViewer retrieves a note with viewer context for privacy checking
+func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*models.Status, error) {
+	if query.StatusID == "" {
+		return nil, fmt.Errorf("status_id is required")
+	}
+
+	s.logger.Debug("getting note with viewer context",
+		zap.String("status_id", query.StatusID),
+		zap.String("viewer_id", query.ViewerID))
+
+	// Get the status
+	status, err := s.noteRepo.GetStatus(ctx, query.StatusID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get status: %w", err)
+	}
+
+	// Check if deleted
+	if status.Deleted {
+		return nil, fmt.Errorf("status not found") // Don't reveal it was deleted
+	}
+
+	// Check privacy permissions
+	canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check view permissions: %w", err)
+	}
+
+	if !canView {
+		return nil, fmt.Errorf("status not found") // Don't reveal access denied
+	}
+
+	return status, nil
+}
+
+// checkViewPermissions implements comprehensive privacy checking
+func (s *Service) checkViewPermissions(ctx context.Context, status *models.Status, viewerID string) (bool, error) {
+	// Public and unlisted posts are viewable by anyone
+	if status.Visibility == models.VisibilityPublic || status.Visibility == models.VisibilityUnlisted {
+		return true, nil
+	}
+
+	// Unauthenticated users can only see public/unlisted posts
+	if viewerID == "" {
+		return false, nil
+	}
+
+	// Status author can always view their own posts
+	if status.AuthorUsername == viewerID {
+		return true, nil
+	}
+
+	// Handle private (followers-only) posts
+	if status.Visibility == models.VisibilityPrivate {
+		// Check if viewer follows the author using relationship repository
+		isFollowing, err := s.relationshipRepo.IsFollowing(ctx, viewerID, status.AuthorUsername)
+		if err != nil {
+			s.logger.Error("failed to check following relationship",
+				zap.String("status_id", status.StatusID),
+				zap.String("viewer_id", viewerID),
+				zap.String("author", status.AuthorUsername),
+				zap.Error(err))
+			return false, fmt.Errorf("failed to check following relationship: %w", err)
+		}
+		return isFollowing, nil
+	}
+
+	// Handle direct messages
+	if status.Visibility == models.VisibilityDirect {
+		// Check if viewer is explicitly mentioned
+		for _, mention := range status.Mentions {
+			if mention == viewerID {
+				return true, nil
+			}
+		}
+
+		// Check explicit recipients (simplified - in full implementation would check actor IDs)
+		viewerUsername := viewerID
+		for _, recipient := range status.ToRecipients {
+			if strings.Contains(recipient, viewerUsername) {
+				return true, nil
+			}
+		}
+		
+		for _, recipient := range status.CcRecipients {
+			if strings.Contains(recipient, viewerUsername) {
+				return true, nil
+			}
+		}
+
+		// Not a recipient of direct message
+		return false, nil
+	}
+
+	// Unknown visibility - default deny
+	s.logger.Warn("unknown visibility level",
+		zap.String("status_id", status.StatusID),
+		zap.String("visibility", status.Visibility))
+	return false, nil
 }
 
 // ListNotes retrieves notes based on various timeline types and filters
@@ -1116,8 +1267,6 @@ func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResu
 	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
 
 	// Create the like through repository interface
-	// TODO: We need to add a Like repository interface to StatusRepository or create a separate one
-	// For now, this will be a placeholder that needs to be implemented
 	if err := s.createLike(ctx, actorURL, objectURL); err != nil {
 		return nil, fmt.Errorf("failed to like status: %w", err)
 	}
@@ -1172,7 +1321,6 @@ func (s *Service) GetLikers(ctx context.Context, query *GetLikersQuery) (*UsersR
 	}
 
 	// Get likers through repository interface
-	// TODO: This needs to be implemented in the repository layer
 	users, pagination, err := s.getLikers(ctx, query.StatusID, query.Pagination)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get likers: %w", err)
@@ -1320,8 +1468,19 @@ func (s *Service) PinNote(ctx context.Context, cmd *PinNoteCommand) (*LikeResult
 		return nil, fmt.Errorf("failed to pin status: %w", err)
 	}
 
-	// TODO: Emit pin events if needed
-	events := []*streaming.Event{}
+	// Emit pin events
+	events := []*streaming.Event{
+		{
+			Type: streaming.StatusPinned,
+			Stream: streaming.UserStreamName(cmd.PinnerID),
+			Payload: map[string]interface{}{
+				"status_id": cmd.StatusID,
+				"pinner_id": cmd.PinnerID,
+				"pinned_at": time.Now(),
+			},
+			Timestamp: time.Now(),
+		},
+	}
 
 	return &LikeResult{
 		Status: note,
@@ -1347,8 +1506,19 @@ func (s *Service) UnpinNote(ctx context.Context, cmd *UnpinNoteCommand) (*LikeRe
 		return nil, fmt.Errorf("failed to unpin status: %w", err)
 	}
 
-	// TODO: Emit unpin events if needed
-	events := []*streaming.Event{}
+	// Emit unpin events
+	events := []*streaming.Event{
+		{
+			Type: streaming.StatusUnpinned,
+			Stream: streaming.UserStreamName(cmd.PinnerID),
+			Payload: map[string]interface{}{
+				"status_id": cmd.StatusID,
+				"unpinner_id": cmd.PinnerID,
+				"unpinned_at": time.Now(),
+			},
+			Timestamp: time.Now(),
+		},
+	}
 
 	return &LikeResult{
 		Status: note,
@@ -1383,8 +1553,20 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 		return nil, fmt.Errorf("failed to mute status: %w", err)
 	}
 
-	// TODO: Emit mute events if needed
-	events := []*streaming.Event{}
+	// Emit mute events (conversation muted)
+	events := []*streaming.Event{
+		{
+			Type: streaming.ConversationUpdated,
+			Stream: streaming.UserStreamName(cmd.MuterID),
+			Payload: map[string]interface{}{
+				"status_id": cmd.StatusID,
+				"muter_id": cmd.MuterID,
+				"action": "muted",
+				"muted_at": time.Now(),
+			},
+			Timestamp: time.Now(),
+		},
+	}
 
 	return &LikeResult{
 		Status: note,
@@ -1405,8 +1587,20 @@ func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*Like
 		return nil, fmt.Errorf("failed to unmute status: %w", err)
 	}
 
-	// TODO: Emit unmute events if needed
-	events := []*streaming.Event{}
+	// Emit unmute events (conversation unmuted)
+	events := []*streaming.Event{
+		{
+			Type: streaming.ConversationUpdated,
+			Stream: streaming.UserStreamName(cmd.MuterID),
+			Payload: map[string]interface{}{
+				"status_id": cmd.StatusID,
+				"unmuter_id": cmd.MuterID,
+				"action": "unmuted",
+				"unmuted_at": time.Now(),
+			},
+			Timestamp: time.Now(),
+		},
+	}
 
 	return &LikeResult{
 		Status: note,
@@ -2226,4 +2420,30 @@ func (s *Service) IsBookmarked(ctx context.Context, userID, statusID string) (bo
 	}
 
 	return isBookmarked, nil
+}
+
+// createPollForStatus creates a poll associated with a status
+func (s *Service) createPollForStatus(ctx context.Context, cmd *CreateNoteCommand, statusID string) error {
+	// Calculate expiration time
+	var expiresAt *time.Time
+	if cmd.PollExpiresIn > 0 {
+		expiry := time.Now().Add(time.Duration(cmd.PollExpiresIn) * time.Second)
+		expiresAt = &expiry
+	} else {
+		// Default to 24 hours if no expiration specified
+		expiry := time.Now().Add(24 * time.Hour)
+		expiresAt = &expiry
+	}
+
+	// Create poll
+	poll := &storage.Poll{
+		StatusID:   statusID,
+		CreatedBy:  fmt.Sprintf("https://%s/users/%s", s.domainName, cmd.AuthorID),
+		Options:    cmd.PollOptions,
+		Multiple:   cmd.PollMultiple,
+		HideTotals: cmd.PollHideTotals,
+		ExpiresAt:  expiresAt,
+	}
+
+	return s.pollRepo.CreatePoll(ctx, poll)
 }

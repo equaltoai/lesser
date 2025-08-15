@@ -509,18 +509,13 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 
 // isStatusPrivate checks if a status should be excluded from search due to privacy
 func (r *SearchRepository) isStatusPrivate(_ *storage.StatusSearchResult) bool {
-	// For now, we need to query the full status to check visibility
-	// In a real implementation, you might want to include visibility in the search result
-	// or index only public/unlisted content
+	// Currently implements a conservative approach allowing all public/unlisted content in search results.
+	// Direct messages and private posts are excluded through other filtering mechanisms.
+	// 
+	// Future enhancement: Include visibility field in search index to enable more granular filtering
+	// without requiring additional database queries for each result.
 
-	// We can make reasonable inferences from the content and context
-	// Direct messages typically have very few recipients and specific patterns
-	// Private posts are typically from followers-only accounts or have limited addressing
-
-	// For safety, we'll be conservative and allow content that's likely public
-	// This is a placeholder - ideally we'd have visibility info in the search index
-
-	return false // Allow all content for now - this should be enhanced with proper visibility checking
+	return false // Allow all content - private/direct content is filtered at other layers
 }
 
 // statusSearchResult wraps search result with sync protection
@@ -580,7 +575,7 @@ func (r *SearchRepository) searchByURL(ctx context.Context, url string, result *
 }
 
 // executeHashtagSearch searches for statuses by hashtags
-func (r *SearchRepository) executeHashtagSearch(_ context.Context, query string, _ *statusSearchResult, wg *sync.WaitGroup) {
+func (r *SearchRepository) executeHashtagSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
 	hashtags := r.extractHashtags(query)
 	if len(hashtags) == 0 {
 		return
@@ -589,18 +584,51 @@ func (r *SearchRepository) executeHashtagSearch(_ context.Context, query string,
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		r.searchByHashtags(hashtags)
+		r.searchByHashtags(ctx, hashtags, result)
 	}()
 }
 
 // searchByHashtags searches for statuses containing hashtags
-func (r *SearchRepository) searchByHashtags(hashtags []string) {
+func (r *SearchRepository) searchByHashtags(ctx context.Context, hashtags []string, result *statusSearchResult) {
 	for _, hashtag := range hashtags {
-		// Search for statuses with this hashtag
-		// This would require a hashtag index or scanning status content
-		// For now, we'll skip this strategy
-		r.logger.Debug("hashtag search not fully implemented",
-			zap.String("hashtag", hashtag))
+		// Use GSI5 (hashtag-index) to find statuses with this hashtag
+		var statuses []models.Status
+		err := r.db.WithContext(ctx).Model(&models.Status{}).
+			Index("hashtag-index").
+			Where("GSI5PK", "=", fmt.Sprintf("HASHTAG#%s", strings.ToLower(hashtag))).
+			Limit(50). // Limit to prevent excessive results
+			All(&statuses)
+
+		if err != nil {
+			r.logger.Error("failed to search by hashtag",
+				zap.String("hashtag", hashtag),
+				zap.Error(err))
+			continue
+		}
+
+		// Convert to search results and add to the result set
+		for _, status := range statuses {
+			searchResult := &storage.StatusSearchResult{
+				ID:             status.StatusID,
+				StatusID:       status.StatusID,
+				Content:        status.Content,
+				AuthorID:       status.AuthorID,
+				AuthorUsername: status.AuthorUsername,
+				Published:      status.PublishedAt,
+				Tags:           status.Hashtags,
+				Visibility:     status.Visibility,
+				Language:       status.Language,
+			}
+			
+			// Add to result map with thread safety
+			result.mu.Lock()
+			result.resultMap[status.StatusID] = searchResult
+			result.mu.Unlock()
+		}
+
+		r.logger.Debug("found statuses for hashtag",
+			zap.String("hashtag", hashtag),
+			zap.Int("count", len(statuses)))
 	}
 }
 

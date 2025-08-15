@@ -106,6 +106,10 @@ const (
 
 	// TrendIncreasing indicates an increasing trend
 	TrendIncreasing = "increasing"
+	// TrendDecreasing indicates a decreasing trend
+	TrendDecreasing = "decreasing"
+	// TrendStable indicates a stable trend
+	TrendStable     = "stable"
 )
 
 // Resource category constants
@@ -121,6 +125,8 @@ const (
 const (
 	PeriodRaw     = "raw"
 	Period5Min    = "5min"
+	PeriodHour    = "hour"
+	PeriodDay     = "day"
 	PeriodWeek    = "week"
 	PeriodMonth   = "month"
 	PeriodMonthly = "monthly"
@@ -188,6 +194,19 @@ const (
 // Visibility constants for activity permissions
 const (
 	VisibilityDisabled = "disabled"
+)
+
+// Cost tier constants
+const (
+	CostTierLow     = "low"
+	CostTierMedium  = "medium"
+	CostTierHigh    = "high"
+	CostTierPremium = "premium"
+)
+
+// Period time constants  
+const (
+	PeriodTimeHour = "hour"
 )
 
 // Other constants

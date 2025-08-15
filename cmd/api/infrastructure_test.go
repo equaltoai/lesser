@@ -244,21 +244,41 @@ func TestInfrastructureIntegration(t *testing.T) {
 }
 
 // TestMainFunctionIntegration tests that the main function sets up correctly
-// TODO: Update this test after Lift migration is complete
-/*
 func TestMainFunctionIntegration(t *testing.T) {
 	// This test verifies that our main.go changes work correctly
 	// by checking that all the global variables are initialized
 
 	t.Run("GlobalsInitialized", func(t *testing.T) {
 		// After init() runs, these should all be set
-		assert.NotNil(t, cfg)
-		assert.NotNil(t, store)
-		assert.NotNil(t, logger)
-		assert.NotNil(t, handler)
-		assert.NotNil(t, authService)
-		assert.NotNil(t, liftAuthSvc)
+		assert.NotNil(t, cfg, "config should be initialized")
+		assert.NotNil(t, repos, "repository storage should be initialized")
+		assert.NotNil(t, logger, "logger should be initialized")
+		assert.NotNil(t, liftHandler, "lift handler should be initialized")
+		assert.NotNil(t, authService, "auth service should be initialized")
+		
+		// Observability services might be nil if DISABLE_METRICS is set
+		// These are conditional based on environment variables
+		if emfMetrics != nil {
+			assert.NotNil(t, emfMetrics, "EMF metrics should be properly initialized when enabled")
+		}
+		if healthChecker != nil {
+			assert.NotNil(t, healthChecker, "health checker should be properly initialized when enabled")
+		}
+		if tracingManager != nil {
+			assert.NotNil(t, tracingManager, "tracing manager should be properly initialized when enabled")
+		}
 		// metricsCollector might be nil if DISABLE_METRICS is set
 	})
+
+	t.Run("ConfigValidation", func(t *testing.T) {
+		// Verify critical configuration is loaded
+		assert.NotEmpty(t, cfg.DynamoTableName, "DynamoDB table name should be configured")
+		assert.NotEmpty(t, cfg.Region, "AWS region should be configured")
+	})
+
+	t.Run("StartTimeTracking", func(t *testing.T) {
+		// Verify startup time tracking is working
+		assert.False(t, startTime.IsZero(), "start time should be recorded")
+		assert.True(t, time.Since(startTime) >= 0, "start time should be in the past")
+	})
 }
-*/

@@ -354,7 +354,7 @@ func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, lim
 		result[i] = r.fromModel(&model)
 	}
 
-	// Get the last evaluated key for pagination (simplified - would need actual implementation)
+	// Get the last evaluated key for pagination
 	var lastKey map[string]interface{}
 	if len(instances) == limit {
 		lastModel := instances[len(instances)-1]

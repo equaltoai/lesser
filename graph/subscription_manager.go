@@ -150,17 +150,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 
 	subscriptionID := fmt.Sprintf("timeline_%s_%s_%d", username, timelineType, time.Now().UnixNano())
 
-	// Try to use event bus if available
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createEventBusSubscription(ctx, subscriptionID, "timeline", username, filter, ch)
+	// Use event bus for timeline subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for timeline subscription")
 	}
 
-	// Fallback to polling if event bus not available
-	sm.logger.Info("Event bus not available, using polling fallback for timeline subscription",
-		zap.String("username", username),
-		zap.String("timeline_type", string(timelineType)))
-
-	return sm.createPollingSubscription(ctx, subscriptionID, "timeline", username, ch)
+	return sm.createEventBusSubscription(ctx, subscriptionID, "timeline", username, filter, ch)
 }
 
 // SubscribeToNotifications subscribes to notification events using the event bus
@@ -181,14 +176,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Conte
 
 	subscriptionID := fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createNotificationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+	// Use event bus for notification subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for notification subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for notifications",
-		zap.String("username", username))
-
-	return sm.createNotificationPollingSubscription(ctx, subscriptionID, username, ch)
+	return sm.createNotificationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
 }
 
 // SubscribeToCostUpdates subscribes to cost update events using the event bus
@@ -210,14 +203,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context
 
 	subscriptionID := fmt.Sprintf("cost_%s_%d", username, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createCostEventBusSubscription(ctx, subscriptionID, username, filter, ch, threshold)
+	// Use event bus for cost update subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for cost update subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for cost updates",
-		zap.String("username", username))
-
-	return sm.createCostPollingSubscription(ctx, subscriptionID, username, ch, threshold)
+	return sm.createCostEventBusSubscription(ctx, subscriptionID, username, filter, ch, threshold)
 }
 
 // SubscribeToModerationEvents subscribes to moderation events using the event bus
@@ -243,14 +234,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Co
 
 	subscriptionID := fmt.Sprintf("moderation_%s_%d", getStringValue(actorID), time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createModerationEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
+	// Use event bus for moderation subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for moderation subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for moderation events",
-		zap.String("actor_id", getStringValue(actorID)))
-
-	return sm.createModerationPollingSubscription(ctx, subscriptionID, actorID, ch)
+	return sm.createModerationEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
 }
 
 // SubscribeToTrustUpdates subscribes to trust score updates using the event bus
@@ -273,14 +262,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 
 	subscriptionID := fmt.Sprintf("trust_%s_%d", actorID, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createTrustEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
+	// Use event bus for trust subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for trust subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for trust updates",
-		zap.String("actor_id", actorID))
-
-	return sm.createTrustPollingSubscription(ctx, subscriptionID, actorID, ch)
+	return sm.createTrustEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
 }
 
 // SubscribeToAIAnalysis subscribes to AI analysis updates using the event bus
@@ -309,14 +296,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context,
 
 	subscriptionID := fmt.Sprintf("ai_%s_%d", getStringValue(objectID), time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createAIEventBusSubscription(ctx, subscriptionID, objectID, filter, ch)
+	// Use event bus for AI analysis subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for AI analysis subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for AI analysis",
-		zap.String("object_id", getStringValue(objectID)))
-
-	return sm.createAIPollingSubscription(ctx, subscriptionID, objectID, ch)
+	return sm.createAIEventBusSubscription(ctx, subscriptionID, objectID, filter, ch)
 }
 
 // SubscribeToHashtagActivity subscribes to hashtag activity using the event bus
@@ -347,15 +332,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 
 	subscriptionID := fmt.Sprintf("hashtag_%s_%d", username, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createHashtagEventBusSubscription(ctx, subscriptionID, username, hashtags, filter, ch)
+	// Use event bus for hashtag activity subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for hashtag activity subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for hashtag activity",
-		zap.String("username", username),
-		zap.Strings("hashtags", hashtags))
-
-	return sm.createHashtagPollingSubscription(ctx, subscriptionID, username, hashtags, ch)
+	return sm.createHashtagEventBusSubscription(ctx, subscriptionID, username, hashtags, filter, ch)
 }
 
 // SubscribeToQuoteActivity subscribes to quote activity using the event bus
@@ -383,15 +365,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 
 	subscriptionID := fmt.Sprintf("quote_%s_%s_%d", username, noteID, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createQuoteEventBusSubscription(ctx, subscriptionID, username, noteID, noteObj, filter, ch)
+	// Use event bus for quote activity subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for quote activity subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for quote activity",
-		zap.String("username", username),
-		zap.String("note_id", noteID))
-
-	return sm.createQuotePollingSubscription(ctx, subscriptionID, username, noteID, noteObj, ch)
+	return sm.createQuoteEventBusSubscription(ctx, subscriptionID, username, noteID, noteObj, filter, ch)
 }
 
 // SubscribeToMetricsUpdates subscribes to real-time metrics updates using the event bus
@@ -441,16 +420,12 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 
 	subscriptionID := fmt.Sprintf("metrics_%s_%d", username, time.Now().UnixNano())
 
-	if sm.eventBus != nil && sm.eventBus.IsRunning() {
-		return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)
+	// Use event bus for metrics subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, fmt.Errorf("event bus is not available for metrics subscription")
 	}
 
-	sm.logger.Info("Event bus not available, using polling fallback for metrics updates",
-		zap.String("username", username),
-		zap.Strings("categories", categories),
-		zap.Strings("services", services))
-
-	return sm.createMetricsPollingSubscription(ctx, subscriptionID, username, categories, services, threshold, ch)
+	return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)
 }
 
 // Helper function to get string value from pointer

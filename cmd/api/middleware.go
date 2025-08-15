@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -217,11 +218,11 @@ const (
 
 // createRBACMiddleware creates middleware for role-based access control
 // This middleware should be used after authentication middleware
-func createRBACMiddleware(requiredPermission string) lift.Middleware {
+func createRBACMiddleware(requiredPermission string, repos core.RepositoryStorage) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Check if the user has the required permissions
-			if err := checkUserPermissions(ctx, requiredPermission); err != nil {
+			if err := checkUserPermissions(ctx, requiredPermission, repos); err != nil {
 				ctx.Status(403)
 				return ctx.JSON(map[string]string{
 					"error": "insufficient_permissions",
@@ -236,20 +237,21 @@ func createRBACMiddleware(requiredPermission string) lift.Middleware {
 }
 
 // checkUserPermissions checks if the current user has the required permission level
-func checkUserPermissions(ctx *lift.Context, requiredPermission string) error {
+func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos core.RepositoryStorage) error {
 	// Get user claims from context (set by auth middleware)
 	claims, ok := ctx.Get("claims").(*auth.Claims)
 	if !ok || claims == nil {
 		return fmt.Errorf("unauthorized: no valid claims found")
 	}
 
-	// Get user role from claims or fetch from storage
-	// The Claims struct doesn't have a Role field, so we need to fetch it from storage
+	// Get user role from storage
 	userRole := "user" // Default role
-
-	// TODO: Fetch user role from storage using claims.Username
-	// For now, we'll need to get the user role from the storage
-	// This is a simplified implementation
+	if repos != nil && repos.User() != nil {
+		if user, err := repos.User().GetUser(ctx.Request.Context(), claims.Username); err == nil && user != nil {
+			userRole = user.Role
+		}
+		// If user lookup fails, we fall back to default "user" role for security
+	}
 
 	// Check permission hierarchy
 	switch requiredPermission {
@@ -277,17 +279,17 @@ func checkUserPermissions(ctx *lift.Context, requiredPermission string) error {
 }
 
 // AdminOnlyMiddleware creates middleware that requires admin permissions
-func AdminOnlyMiddleware() lift.Middleware {
-	return createRBACMiddleware(PermissionAdmin)
+func AdminOnlyMiddleware(repos core.RepositoryStorage) lift.Middleware {
+	return createRBACMiddleware(PermissionAdmin, repos)
 }
 
 // ModeratorOrHigherMiddleware creates middleware that requires moderator or admin permissions
-func ModeratorOrHigherMiddleware() lift.Middleware {
-	return createRBACMiddleware(PermissionModerator)
+func ModeratorOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
+	return createRBACMiddleware(PermissionModerator, repos)
 }
 
 // ViewerOrHigherMiddleware creates middleware that requires viewer, moderator, or admin permissions
-func ViewerOrHigherMiddleware() lift.Middleware {
-	return createRBACMiddleware(PermissionViewer)
+func ViewerOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
+	return createRBACMiddleware(PermissionViewer, repos)
 }
 

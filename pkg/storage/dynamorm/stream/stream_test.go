@@ -153,7 +153,12 @@ func TestProcessStreamRecords(t *testing.T) {
 	processed := make(map[string]TestModel)
 
 	// Process the records
-	err := ProcessStreamRecords(context.Background(), records, func(_ context.Context, record events.DynamoDBEventRecord, item TestModel) error {
+	err := ProcessStreamRecords(context.Background(), records, func(ctx context.Context, record events.DynamoDBEventRecord) error {
+		// Unmarshal the record to TestModel
+		var item TestModel
+		if err := UnmarshalItem(record, &item); err != nil {
+			return err
+		}
 		processed[record.EventID] = item
 		return nil
 	})

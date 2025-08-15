@@ -29,16 +29,23 @@ func NewLike(actor, object string) *Like {
 	id := fmt.Sprintf("%s/activities/like-%d", actor, now.UnixNano())
 
 	like := &Like{
-		PK:        fmt.Sprintf("object#%s#likes", object),
-		SK:        fmt.Sprintf("actor#%s", actor),
-		GSI1PK:    fmt.Sprintf("actor#%s#likes", actor),
-		GSI1SK:    fmt.Sprintf("%s#%s", now.Format(time.RFC3339), object),
 		ID:        id,
 		Actor:     actor,
 		Object:    object,
 		Published: now,
 		CreatedAt: now,
 	}
-
+	
+	// Use UpdateKeys to set all key fields consistently
+	like.UpdateKeys()
 	return like
+}
+
+// UpdateKeys updates the primary and GSI keys based on current field values
+// This ensures consistency when Actor, Object, or timestamps change
+func (l *Like) UpdateKeys() {
+	l.PK = fmt.Sprintf("object#%s#likes", l.Object)
+	l.SK = fmt.Sprintf("actor#%s", l.Actor)
+	l.GSI1PK = fmt.Sprintf("actor#%s#likes", l.Actor)
+	l.GSI1SK = fmt.Sprintf("%s#%s", l.CreatedAt.Format(time.RFC3339), l.Object)
 }

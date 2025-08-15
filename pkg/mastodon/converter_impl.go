@@ -13,17 +13,27 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // converterImpl implements the Converter interface
 type converterImpl struct {
-	baseURL string
+	baseURL   string
+	emojiRepo *repositories.EmojiRepository
 }
 
 // NewConverter creates a new converter instance
 func NewConverter(baseURL string) Converter {
 	return &converterImpl{baseURL: baseURL}
+}
+
+// NewConverterWithEmojis creates a new converter instance with emoji repository access
+func NewConverterWithEmojis(baseURL string, emojiRepo *repositories.EmojiRepository) Converter {
+	return &converterImpl{
+		baseURL:   baseURL,
+		emojiRepo: emojiRepo,
+	}
 }
 
 // ActorToAccount converts an ActivityPub Actor to a Mastodon Account
@@ -558,6 +568,79 @@ func (c *converterImpl) PollToAPI(poll *storage.Poll, userVotes []int) models.Po
 		Voted:       len(userVotes) > 0,
 		OwnVotes:    userVotes,
 		OptionsData: optionsData,
-		Emojis:      []any{}, // TODO: Extract emojis from options if needed
+		Emojis:      c.extractCustomEmojisFromPollOptions(poll.Options),
 	}
+}
+
+// extractCustomEmojisFromPollOptions extracts custom emoji codes from poll option text
+func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []any {
+	emojis := make([]any, 0)
+	emojiMap := make(map[string]bool) // To avoid duplicates
+	
+	for _, option := range options {
+		// Look for custom emoji patterns like :custom_emoji:
+		if emojiCodes := c.findEmojiCodes(option); len(emojiCodes) > 0 {
+			for _, code := range emojiCodes {
+				if !emojiMap[code] {
+					// Get real emoji data from repository if available
+					if c.emojiRepo != nil {
+						if emoji, err := c.emojiRepo.GetCustomEmoji(context.Background(), code); err == nil {
+							emojis = append(emojis, map[string]any{
+								"shortcode":         emoji.Shortcode,
+								"url":               emoji.URL,
+								"static_url":        emoji.StaticURL,
+								"visible_in_picker": emoji.VisibleInPicker,
+								"category":          emoji.Category,
+							})
+							emojiMap[code] = true
+						}
+						// If emoji not found in repository, don't add a placeholder
+					}
+					// If no emoji repository available, don't add placeholder emojis
+				}
+			}
+		}
+	}
+	
+	return emojis
+}
+
+// findEmojiCodes finds custom emoji codes in text (format :code:)
+func (c *converterImpl) findEmojiCodes(text string) []string {
+	codes := make([]string, 0)
+	start := 0
+	
+	for {
+		startIdx := strings.Index(text[start:], ":")
+		if startIdx == -1 {
+			break
+		}
+		startIdx += start
+		
+		endIdx := strings.Index(text[startIdx+1:], ":")
+		if endIdx == -1 {
+			break
+		}
+		endIdx += startIdx + 1
+		
+		code := text[startIdx+1 : endIdx]
+		if len(code) > 0 && c.isValidEmojiCode(code) {
+			codes = append(codes, code)
+		}
+		start = endIdx + 1
+	}
+	
+	return codes
+}
+
+// isValidEmojiCode checks if an emoji code is valid
+func (c *converterImpl) isValidEmojiCode(code string) bool {
+	// Valid emoji codes contain only letters, numbers, and underscores
+	for _, r := range code {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
+			(r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return len(code) >= 2 && len(code) <= 32
 }

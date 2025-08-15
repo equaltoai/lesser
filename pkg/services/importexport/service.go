@@ -419,3 +419,230 @@ func convertStringMapToAny(input map[string]string) map[string]any {
 	}
 	return result
 }
+
+// CancelExport cancels a pending or processing export operation
+func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*ExportResult, error) {
+	s.logger.Info("canceling export",
+		zap.String("export_id", cmd.ExportID),
+		zap.String("username", cmd.Username))
+
+	// Get the export to verify ownership and current status
+	export, err := s.exportRepo.GetExport(ctx, cmd.ExportID)
+	if err != nil {
+		s.logger.Error("failed to get export for cancellation",
+			zap.String("export_id", cmd.ExportID),
+			zap.Error(err))
+		return nil, fmt.Errorf("export not found: %w", err)
+	}
+
+	// Verify ownership
+	if export.Username != cmd.Username {
+		s.logger.Warn("unauthorized export cancellation attempt",
+			zap.String("export_id", cmd.ExportID),
+			zap.String("owner", export.Username),
+			zap.String("requester", cmd.Username))
+		return nil, fmt.Errorf("not authorized to cancel this export")
+	}
+
+	// Check if export can be cancelled
+	if export.Status == "completed" {
+		return nil, fmt.Errorf("cannot cancel completed export")
+	}
+	if export.Status == "cancelled" {
+		return nil, fmt.Errorf("export is already cancelled")
+	}
+	if export.Status == "failed" {
+		return nil, fmt.Errorf("cannot cancel failed export")
+	}
+
+	// Update export status to cancelled
+	err = s.exportRepo.UpdateExportStatus(ctx, cmd.ExportID, "cancelled", nil, "Cancelled by user request")
+	if err != nil {
+		s.logger.Error("failed to update export status to cancelled",
+			zap.String("export_id", cmd.ExportID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to cancel export: %w", err)
+	}
+
+	// Get updated export
+	cancelledExport, err := s.exportRepo.GetExport(ctx, cmd.ExportID)
+	if err != nil {
+		s.logger.Error("failed to get cancelled export",
+			zap.String("export_id", cmd.ExportID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get cancelled export: %w", err)
+	}
+
+	// Emit cancellation event
+	if s.publisher != nil {
+		event := streaming.Event{
+			Type:   "export.cancelled",
+			Stream: "user",
+			Payload: map[string]interface{}{
+				"export_id": cmd.ExportID,
+				"type":      export.Type,
+				"format":    export.Format,
+				"status":    "cancelled",
+			},
+			Timestamp: time.Now(),
+		}
+		
+		err = s.publisher.PublishToUser(ctx, cmd.Username, &event)
+		if err != nil {
+			s.logger.Warn("failed to publish export cancellation event",
+				zap.String("export_id", cmd.ExportID),
+				zap.Error(err))
+		}
+	}
+
+	s.logger.Info("export cancelled successfully",
+		zap.String("export_id", cmd.ExportID),
+		zap.String("username", cmd.Username))
+
+	return &ExportResult{
+		Export: cancelledExport,
+	}, nil
+}
+
+// CreateImport creates a new import request for data portability
+func (s *Service) CreateImport(ctx context.Context, cmd *CreateImportCommand) (*ImportResult, error) {
+	s.logger.Info("creating import",
+		zap.String("username", cmd.Username),
+		zap.String("type", cmd.Type),
+		zap.String("format", cmd.Format),
+		zap.String("merge_strategy", cmd.MergeStrategy))
+
+	// Create import record
+	importRecord := &models.Import{
+		ID:        uuid.New().String(),
+		Username:  cmd.Username,
+		Type:      cmd.Type,
+		Mode:      cmd.MergeStrategy, // Map MergeStrategy to Mode
+		Status:    "pending",
+		S3Key:     cmd.FileURL, // Store file URL/S3 key
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// Save to database
+	err := s.importRepo.CreateImport(ctx, importRecord)
+	if err != nil {
+		s.logger.Error("failed to create import record",
+			zap.String("username", cmd.Username),
+			zap.String("type", cmd.Type),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to create import: %w", err)
+	}
+
+	// Queue the import job for async processing
+	if s.queueService != nil {
+		err = s.queueService.QueueImportJob(ctx, importRecord.ID)
+		if err != nil {
+			s.logger.Error("failed to queue import job",
+				zap.String("import_id", importRecord.ID),
+				zap.Error(err))
+			// Don't fail the request, just log the error
+			// The import can still be processed manually
+		}
+	}
+
+	// Emit creation event
+	if s.publisher != nil {
+		event := streaming.Event{
+			Type:   "import.created",
+			Stream: "user",
+			Payload: map[string]interface{}{
+				"import_id":      importRecord.ID,
+				"type":           importRecord.Type,
+				"format":         cmd.Format, // Use format from command
+				"status":         importRecord.Status,
+				"merge_strategy": importRecord.Mode, // Use Mode field
+			},
+			Timestamp: time.Now(),
+		}
+		
+		err = s.publisher.PublishToUser(ctx, cmd.Username, &event)
+		if err != nil {
+			s.logger.Warn("failed to publish import creation event",
+				zap.String("import_id", importRecord.ID),
+				zap.Error(err))
+		}
+	}
+
+	s.logger.Info("import created successfully",
+		zap.String("import_id", importRecord.ID),
+		zap.String("username", cmd.Username))
+
+	return &ImportResult{
+		Import:    importRecord,
+		Processed: 0,
+		Skipped:   0,
+		Failed:    0,
+	}, nil
+}
+
+// GetImport retrieves details of a specific import request
+func (s *Service) GetImport(ctx context.Context, query *GetImportQuery) (*ImportResult, error) {
+	s.logger.Info("getting import",
+		zap.String("import_id", query.ImportID),
+		zap.String("username", query.Username))
+
+	// Get the import from repository
+	importRecord, err := s.importRepo.GetImport(ctx, query.ImportID)
+	if err != nil {
+		s.logger.Error("failed to get import",
+			zap.String("import_id", query.ImportID),
+			zap.Error(err))
+		return nil, fmt.Errorf("import not found: %w", err)
+	}
+
+	// Verify ownership
+	if importRecord.Username != query.Username {
+		s.logger.Warn("unauthorized import access attempt",
+			zap.String("import_id", query.ImportID),
+			zap.String("owner", importRecord.Username),
+			zap.String("requester", query.Username))
+		return nil, fmt.Errorf("not authorized to access this import")
+	}
+
+	return &ImportResult{
+		Import:    importRecord,
+		Processed: importRecord.Progress,
+		Skipped:   importRecord.SkipCount,
+		Failed:    importRecord.ErrorCount,
+	}, nil
+}
+
+// ListImports retrieves all imports for a user with optional filtering
+func (s *Service) ListImports(ctx context.Context, query *ListImportsQuery) (*ImportListResult, error) {
+	s.logger.Info("listing imports",
+		zap.String("username", query.Username),
+		zap.String("status", query.Status))
+
+	// Get imports from repository
+	imports, nextCursor, err := s.importRepo.GetImportsForUser(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
+	if err != nil {
+		s.logger.Error("failed to list imports",
+			zap.String("username", query.Username),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to list imports: %w", err)
+	}
+
+	// Filter by status if specified
+	var filteredImports []*models.Import
+	if query.Status != "" {
+		for _, imp := range imports {
+			if imp.Status == query.Status {
+				filteredImports = append(filteredImports, imp)
+			}
+		}
+	} else {
+		filteredImports = imports
+	}
+
+	return &ImportListResult{
+		Imports:    filteredImports,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
+	}, nil
+}

@@ -115,6 +115,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	excludeReplies := ctx.Query("exclude_replies") == boolTrue
 	excludeReblogs := ctx.Query("exclude_reblogs") == boolTrue
 	pinnedOnly := ctx.Query("pinned") == boolTrue
+	tagged := ctx.Query("tagged")
 
 	// Optional viewer authentication for private posts
 	var viewerID string
@@ -142,6 +143,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 		ExcludeReplies: excludeReplies,
 		ExcludeReblogs: excludeReblogs,
 		PinnedOnly:     pinnedOnly,
+		Hashtag:        tagged, // Use Hashtag field instead of Tagged
 		Pagination: interfaces.PaginationOptions{
 			Limit:  limit,
 			Cursor: maxID,

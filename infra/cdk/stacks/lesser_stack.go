@@ -32,6 +32,8 @@ type LesserStack struct {
 	FederationQueue     awssqs.Queue
 	FederationDLQ       awssqs.Queue
 	PushQueue           awssqs.Queue
+	ImportExportQueue   awssqs.Queue
+	ImportExportDLQ     awssqs.Queue
 	PrivateKey          awssecretsmanager.ISecret
 	Certificate         awscertificatemanager.Certificate
 	Functions           *localconstructs.LambdaFunctions
@@ -228,6 +230,25 @@ func (s *LesserStack) createSQSQueues() {
 		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(1)),    // 1 day
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
 	})
+
+	// Create import/export dead letter queue
+	s.ImportExportDLQ = awssqs.NewQueue(s.Stack, jsii.String("ImportExportDLQ"), &awssqs.QueueProps{
+		QueueName:         jsii.String(fmt.Sprintf("lesser-import-export-dlq-%s", s.Environment)),
+		RetentionPeriod:   awscdk.Duration_Days(jsii.Number(14)), // 14 days
+		VisibilityTimeout: awscdk.Duration_Seconds(jsii.Number(30)),
+	})
+
+	// Create import/export queue with DLQ redrive policy
+	s.ImportExportQueue = awssqs.NewQueue(s.Stack, jsii.String("ImportExportQueue"), &awssqs.QueueProps{
+		QueueName:              jsii.String(fmt.Sprintf("lesser-import-export-queue-%s", s.Environment)),
+		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(15)), // 15 minutes for processing time
+		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(7)),     // 7 days
+		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
+		DeadLetterQueue: &awssqs.DeadLetterQueue{
+			MaxReceiveCount: jsii.Number(3), // After 3 failed attempts, send to DLQ
+			Queue:           s.ImportExportDLQ,
+		},
+	})
 }
 
 func (s *LesserStack) createLambdaFunctions() {
@@ -308,6 +329,11 @@ func (s *LesserStack) createOutputs() {
 	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationQueueUrl"), &awscdk.CfnOutputProps{
 		Value:       s.FederationQueue.QueueUrl(),
 		Description: jsii.String("Federation queue URL"),
+	})
+
+	awscdk.NewCfnOutput(s.Stack, jsii.String("ImportExportQueueUrl"), &awscdk.CfnOutputProps{
+		Value:       s.ImportExportQueue.QueueUrl(),
+		Description: jsii.String("Import/Export queue URL"),
 	})
 	
 	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationDLQUrl"), &awscdk.CfnOutputProps{

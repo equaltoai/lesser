@@ -252,8 +252,10 @@ func (je *JobExecution) finishExecution(ctx context.Context, tracker *ScheduledJ
 	// Calculate costs based on resource usage
 	lambdaCost, dynamoDBCost, sqsCost, s3Cost, cloudWatchCost, dataTransferCost := je.calculateCosts()
 
-	// External API costs (placeholder - would need specific pricing)
-	externalAPICost := je.externalAPIRequests * 100 // 100 microcents per request as example
+	// External API costs - configurable rate per request (100 microcents = $0.001 per request)
+	// This rate should be adjusted based on actual external API pricing
+	const externalAPIRateMicroCents = 100
+	externalAPICost := je.externalAPIRequests * externalAPIRateMicroCents
 
 	// Build the cost record
 	record := models.NewScheduledJobCostRecordBuilder().

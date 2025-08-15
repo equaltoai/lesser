@@ -76,7 +76,7 @@ type CreateStatusRequest struct {
 	Status      string   `json:"status"`                   // Text content of the status
 	InReplyToID string   `json:"in_reply_to_id,omitempty"` // ID of the status being replied to
 	MediaIDs    []string `json:"media_ids,omitempty"`      // Array of media attachment IDs
-	Poll        *Poll    `json:"poll,omitempty"`           // Poll object (not yet implemented)
+	Poll        *Poll    `json:"poll,omitempty"`           // Poll object
 	Sensitive   bool     `json:"sensitive"`                // Mark status as sensitive
 	SpoilerText string   `json:"spoiler_text,omitempty"`   // Content warning
 	Visibility  string   `json:"visibility"`               // public, unlisted, private, direct

@@ -56,9 +56,11 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
@@ -75,6 +77,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
@@ -82,6 +86,12 @@ import (
 const (
 	// DefaultLocalhost is the default domain name when no config is provided
 	DefaultLocalhost = "localhost"
+)
+
+// Priority constants for federation activities
+const (
+	federationPriorityHigh   = "high"
+	federationPriorityNormal = "normal"
 )
 
 // EventBus defines the interface for GraphQL event subscriptions
@@ -254,6 +264,9 @@ func (r *Registry) BusinessLogic() BusinessLogicService {
 
 	// Double-check pattern in case another goroutine initialized it
 	if r.businessLogic == nil {
+		// Get or create job queue service
+		jobQueue := r.getJobQueue()
+
 		r.businessLogic = NewBusinessLogicService(
 			deps,
 			validation,
@@ -262,6 +275,7 @@ func (r *Registry) BusinessLogic() BusinessLogicService {
 			timeline,
 			analytics,
 			r.publisher,
+			jobQueue,
 		)
 		r.initialized["BusinessLogic"] = true
 	}
@@ -465,6 +479,7 @@ func (r *Registry) Notes() *notes.Service {
 		searchRepo := r.storage.Search()
 		communityNoteRepo := r.storage.CommunityNote()
 		userRepo := r.storage.User()
+		pollRepo := r.storage.Poll()
 
 		// Check if repositories are available
 		if statusRepo != nil && accountRepo != nil {
@@ -481,6 +496,7 @@ func (r *Registry) Notes() *notes.Service {
 			r.notesService = notes.NewService(
 				statusRepo,
 				accountRepo,
+				r.storage.Relationship(), // Add relationship repository
 				likeRepo,
 				socialRepo,
 				conversationRepo,
@@ -488,8 +504,10 @@ func (r *Registry) Notes() *notes.Service {
 				searchRepo,
 				communityNoteRepo,
 				userRepo,
+				pollRepo, // Add poll repository
 				r.publisher,
-				nil, // Federation service - TODO: wire up when available
+				r.Analytics(), // Analytics service
+				r.createNotesFederationAdapter(), // Federation service adapter
 				r.logger,
 				domainName,
 			)
@@ -517,7 +535,7 @@ func (r *Registry) Accounts() *accounts.Service {
 		r.accountsService = accounts.NewService(
 			r.storage,
 			r.publisher,
-			nil, // federation service - not available yet
+			r.createAccountsFederationAdapter(), // federation service adapter
 			cryptoAdapter,
 			authAdapter,
 			r.logger,
@@ -548,7 +566,7 @@ func (r *Registry) Relationships() *relationships.Service {
 		r.relationshipsService = relationships.NewServiceWithStorage(
 			r.storage,
 			r.publisher,
-			nil, // federation service - not available yet
+			r.createRelationshipsFederationAdapter(), // federation service adapter
 			r.logger,
 			domainName,
 		)
@@ -564,8 +582,40 @@ func (r *Registry) Conversations() *conversations.Service {
 	defer r.mu.Unlock()
 
 	if r.conversationsService == nil {
-		// TODO: Initialize with real repositories
-		r.initialized["Conversations"] = true
+		conversationRepo := r.storage.Conversation()
+		noteRepo := r.storage.Status()
+		accountRepo := r.storage.Account()
+		
+		// Check if required repositories are available
+		if conversationRepo != nil && noteRepo != nil && accountRepo != nil {
+			domainName := DefaultLocalhost
+			if r.config != nil && r.config.BaseURL != "" {
+				// Extract domain from base URL
+				if strings.HasPrefix(r.config.BaseURL, "https://") {
+					domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
+				} else if strings.HasPrefix(r.config.BaseURL, "http://") {
+					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
+				}
+			}
+			
+			// Create a simple federation service adapter for conversations
+			federationService := &simpleFederationService{logger: r.logger}
+			
+			r.conversationsService = conversations.NewService(
+				conversationRepo,
+				noteRepo,
+				accountRepo,
+				r.publisher,
+				federationService,
+				r.logger,
+				domainName,
+			)
+			r.initialized["Conversations"] = true
+		} else {
+			if r.logger != nil {
+				r.logger.Warn("failed to initialize Conversations service: required repositories not available")
+			}
+		}
 	}
 
 	return r.conversationsService
@@ -586,12 +636,15 @@ func (r *Registry) Media() *media.Service {
 			// Create a simple job queue service if not available
 			// In production, this would be a proper SQS-based implementation
 			jobQueue := &simpleJobQueue{logger: r.logger}
+			
+			// Create an adapter for the media service's job queue interface
+			mediaJobQueue := &mediaJobQueueAdapter{jobQueue: jobQueue}
 
 			r.mediaService = media.NewService(
 				mediaRepo,
 				accountRepo,
 				r.publisher,
-				jobQueue,
+				mediaJobQueue,
 				r.logger,
 				"lesser-media-bucket", // Default S3 bucket - should come from config
 				"cdn.example.com",     // Default CDN domain - should come from config
@@ -784,9 +837,10 @@ func (r *Registry) Search() *search.Service {
 		actorRepo := r.storage.Actor()
 		relationshipRepo := r.storage.Relationship()
 		statusRepo := r.storage.Status()
+		hashtagRepo := r.storage.Hashtag()
 
 		// Check if repositories are available
-		if searchRepo != nil && actorRepo != nil && relationshipRepo != nil && statusRepo != nil {
+		if searchRepo != nil && actorRepo != nil && relationshipRepo != nil && statusRepo != nil && hashtagRepo != nil {
 			domainName := DefaultLocalhost
 			if r.config != nil && r.config.BaseURL != "" {
 				// Extract domain from base URL
@@ -802,6 +856,7 @@ func (r *Registry) Search() *search.Service {
 				actorRepo,
 				relationshipRepo,
 				statusRepo,
+				hashtagRepo,
 				r.publisher,
 				r.logger,
 				domainName,
@@ -823,51 +878,109 @@ func (r *Registry) ImportExport() *importexport.Service {
 	defer r.mu.Unlock()
 
 	if r.importExportService == nil && r.storage != nil {
-		// Initialize the ImportExport service with repository interfaces
-		exportRepo := r.storage.Export()
-		importRepo := r.storage.Import()
-		statusRepo := r.storage.Status()
-		accountRepo := r.storage.Account()
-		mediaRepo := r.storage.Media()
-		socialRepo := r.storage.Social()
-
-		// Check if repositories are available
-		if exportRepo != nil && importRepo != nil && statusRepo != nil && accountRepo != nil && mediaRepo != nil && socialRepo != nil {
-			domainName := DefaultLocalhost
-			if r.config != nil && r.config.BaseURL != "" {
-				// Extract domain from base URL
-				if strings.HasPrefix(r.config.BaseURL, "https://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "https://")
-				} else if strings.HasPrefix(r.config.BaseURL, "http://") {
-					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
-				}
-			}
-
-			// TODO: Need to implement QueueService and StorageClient interfaces
-			// For now, pass nil - these will need to be added to registry dependencies
-			r.importExportService = importexport.NewService(
-				exportRepo,
-				importRepo,
-				statusRepo,
-				accountRepo,
-				mediaRepo,
-				socialRepo,
-				r.publisher,
-				nil, // queueService - TODO: implement
-				nil, // storageClient - TODO: implement
-				r.logger,
-				domainName,
-			)
+		if r.initializeImportExportService() {
 			r.initialized["ImportExport"] = true
-		} else {
-			if r.logger != nil {
-				r.logger.Warn("failed to initialize ImportExport service: required repositories not available")
-			}
 		}
 	}
 
 	return r.importExportService
 }
+
+// initializeImportExportService initializes the ImportExport service with all dependencies
+func (r *Registry) initializeImportExportService() bool {
+	// Get and validate all required repositories
+	repos := r.getImportExportRepositories()
+	if !r.validateImportExportRepositories(repos) {
+		return false
+	}
+
+	// Extract domain name from configuration
+	domainName := r.extractDomainName()
+
+	// Initialize AWS services for import/export
+	ctx := context.Background()
+	queueService, queueErr := NewAWSQueueService(ctx, r.logger)
+	storageClient, storageErr := NewAWSS3StorageClient(ctx, r.logger)
+	
+	// Log errors but don't fail initialization - services can work without AWS integration
+	if queueErr != nil {
+		r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing", 
+			zap.Error(queueErr))
+	}
+	if storageErr != nil {
+		r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support", 
+			zap.Error(storageErr))
+	}
+
+	// Create the ImportExport service
+	r.importExportService = importexport.NewService(
+		repos.exportRepo,
+		repos.importRepo,
+		repos.statusRepo,
+		repos.accountRepo,
+		repos.mediaRepo,
+		repos.socialRepo,
+		r.publisher,
+		queueService,  // Will be nil if initialization failed
+		storageClient, // Will be nil if initialization failed
+		r.logger,
+		domainName,
+	)
+
+	return true
+}
+
+// importExportRepositories holds all required repositories for ImportExport service
+type importExportRepositories struct {
+	exportRepo  *repositories.ExportRepository
+	importRepo  *repositories.ImportRepository
+	statusRepo  *repositories.StatusRepository
+	accountRepo interfaces.AccountRepository
+	mediaRepo   *repositories.MediaRepository
+	socialRepo  interfaces.SocialRepository
+}
+
+// getImportExportRepositories retrieves all required repositories
+func (r *Registry) getImportExportRepositories() importExportRepositories {
+	return importExportRepositories{
+		exportRepo:  r.storage.Export(),
+		importRepo:  r.storage.Import(),
+		statusRepo:  r.storage.Status(),
+		accountRepo: r.storage.Account(),
+		mediaRepo:   r.storage.Media(),
+		socialRepo:  r.storage.Social(),
+	}
+}
+
+// validateImportExportRepositories checks if all required repositories are available
+func (r *Registry) validateImportExportRepositories(repos importExportRepositories) bool {
+	if repos.exportRepo == nil || repos.importRepo == nil || repos.statusRepo == nil ||
+		repos.accountRepo == nil || repos.mediaRepo == nil || repos.socialRepo == nil {
+		if r.logger != nil {
+			r.logger.Warn("failed to initialize ImportExport service: required repositories not available")
+		}
+		return false
+	}
+	return true
+}
+
+// extractDomainName extracts domain name from configuration
+func (r *Registry) extractDomainName() string {
+	if r.config == nil || r.config.BaseURL == "" {
+		return DefaultLocalhost
+	}
+
+	baseURL := r.config.BaseURL
+	if strings.HasPrefix(baseURL, "https://") {
+		return strings.TrimPrefix(baseURL, "https://")
+	}
+	if strings.HasPrefix(baseURL, "http://") {
+		return strings.TrimPrefix(baseURL, "http://")
+	}
+
+	return DefaultLocalhost
+}
+
 
 // Bulk returns the Bulk service, initializing it if necessary
 func (r *Registry) Bulk() *bulk.Service {
@@ -900,7 +1013,11 @@ func (r *Registry) Bulk() *bulk.Service {
 			// Create adapter for federation service interface
 			var bulkFederation bulk.FederationService
 			if federationService != nil {
-				bulkFederation = &federationServiceAdapter{federationService}
+				jobQueue := r.getJobQueue()
+				bulkFederation = &federationServiceAdapter{
+					federation: federationService,
+					jobQueue:   jobQueue,
+				}
 			}
 
 			r.bulkService = bulk.NewService(
@@ -923,6 +1040,39 @@ func (r *Registry) Bulk() *bulk.Service {
 	}
 
 	return r.bulkService
+}
+
+// createNotesFederationAdapter creates an adapter that implements notes.FederationService
+// by wrapping the main FederationService
+func (r *Registry) createNotesFederationAdapter() *queueFederationAdapter {
+	mainFederation := r.Federation()
+	return &queueFederationAdapter{
+		federation: mainFederation,
+		storage:    r.storage,
+		logger:     r.logger,
+	}
+}
+
+// createAccountsFederationAdapter creates an adapter that implements accounts.FederationService
+// by wrapping the main FederationService
+func (r *Registry) createAccountsFederationAdapter() *queueFederationAdapter {
+	mainFederation := r.Federation()
+	return &queueFederationAdapter{
+		federation: mainFederation,
+		storage:    r.storage,
+		logger:     r.logger,
+	}
+}
+
+// createRelationshipsFederationAdapter creates an adapter that implements relationships.FederationService
+// by wrapping the main FederationService
+func (r *Registry) createRelationshipsFederationAdapter() *queueFederationAdapter {
+	mainFederation := r.Federation()
+	return &queueFederationAdapter{
+		federation: mainFederation,
+		storage:    r.storage,
+		logger:     r.logger,
+	}
 }
 
 // EventBus returns the EventBus interface for GraphQL subscriptions
@@ -1053,14 +1203,108 @@ func convertInternalEventToGraphQL(event *streaming.InternalEvent) interface{} {
 // federationServiceAdapter adapts the registry's FederationService to the bulk service's interface
 type federationServiceAdapter struct {
 	federation FederationService
+	jobQueue   JobQueueServiceInterface
 }
 
 // QueueActivity implements bulk.FederationService
 func (a *federationServiceAdapter) QueueActivity(ctx context.Context, activity *activitypub.Activity) error {
-	// The registry's FederationService doesn't have QueueActivity directly,
-	// but we can use DeliverToFollowers as a fallback
-	// In a real implementation, you'd need to implement proper activity queuing
-	return a.federation.DeliverToFollowers(ctx, activity, nil)
+	if a.jobQueue == nil {
+		// Fallback to direct delivery if queue is not available
+		return a.federation.DeliverToFollowers(ctx, activity, nil)
+	}
+
+	// Serialize activity to map for queuing
+	activityData := make(map[string]interface{})
+	if data, err := json.Marshal(activity); err == nil {
+		_ = json.Unmarshal(data, &activityData)
+	}
+
+	// Determine recipients based on activity
+	recipients, err := a.determineRecipients(ctx, activity)
+	if err != nil {
+		// If we can't determine recipients, fall back to delivery
+		return a.federation.DeliverToFollowers(ctx, activity, nil)
+	}
+
+	// Determine priority based on activity type
+	priority := a.determinePriority(activity)
+
+	// Create activity job message
+	activityJob := ActivityJobMessage{
+		ActivityID:   activity.ID,
+		ActivityData: activityData,
+		ActorID:      activity.Actor,
+		Recipients:   recipients,
+		Priority:     priority,
+		Timestamp:    time.Now().Unix(),
+	}
+
+	// Queue the activity for delivery
+	return a.jobQueue.QueueActivityJob(ctx, activityJob)
+}
+
+// determineRecipients extracts recipients from the activity
+func (a *federationServiceAdapter) determineRecipients(_ context.Context, activity *activitypub.Activity) ([]string, error) {
+	var recipients []string
+	
+	// Add 'to' recipients
+	recipients = append(recipients, activity.To...)
+	
+	// Add 'cc' recipients
+	recipients = append(recipients, activity.CC...)
+	
+	// Filter out public addresses and collections, keep only specific actors
+	var filteredRecipients []string
+	for _, recipient := range recipients {
+		if recipient != activitypub.PublicAddress && 
+		   !strings.Contains(recipient, "/followers") && 
+		   !strings.Contains(recipient, "/following") {
+			filteredRecipients = append(filteredRecipients, recipient)
+		}
+	}
+	
+	// If no specific recipients but has followers collection, use federation service
+	if len(filteredRecipients) == 0 && a.federation != nil {
+		// This would need to get followers, but for now return empty to use fallback
+		return []string{}, nil
+	}
+	
+	return filteredRecipients, nil
+}
+
+// determinePriority assigns priority based on activity type
+func (a *federationServiceAdapter) determinePriority(activity *activitypub.Activity) string {
+	switch activity.Type {
+	case "Delete", "Undo":
+		return federationPriorityHigh // Deletions and undos should be processed quickly
+	case "Follow", "Accept", "Reject":
+		return federationPriorityHigh // Social actions should be timely
+	case "Like", "Announce":
+		return federationPriorityNormal // Engagement can have normal priority
+	case "Create", "Update":
+		return federationPriorityNormal // Content creation is important but not urgent
+	case "Flag", "Block":
+		return federationPriorityHigh // Moderation actions need quick processing
+	default:
+		return federationPriorityNormal
+	}
+}
+
+// mediaJobQueueAdapter adapts our JobQueueServiceInterface to the media service's JobQueueService interface
+type mediaJobQueueAdapter struct {
+	jobQueue JobQueueServiceInterface
+}
+
+// QueueMediaJob implements the media service's JobQueueService interface
+func (a *mediaJobQueueAdapter) QueueMediaJob(ctx context.Context, msg media.JobMessage) error {
+	// Convert media.JobMessage to our MediaJobMessage
+	mediaJobMsg := MediaJobMessage{
+		JobID:     msg.JobID,
+		MediaID:   msg.MediaID,
+		Username:  msg.Username,
+		Timestamp: msg.Timestamp,
+	}
+	return a.jobQueue.QueueMediaJob(ctx, mediaJobMsg)
 }
 
 // simpleJobQueue provides a basic implementation of JobQueueService for development
@@ -1069,15 +1313,199 @@ type simpleJobQueue struct {
 	logger *zap.Logger
 }
 
-// QueueMediaJob queues a media processing job (simple in-memory implementation for now)
-func (q *simpleJobQueue) QueueMediaJob(ctx context.Context, msg media.JobMessage) error {
+// QueueImportJob queues an import processing job (simple logging implementation)
+func (q *simpleJobQueue) QueueImportJob(_ context.Context, msg ImportJobMessage) error {
 	if q.logger != nil {
-		q.logger.Info("queued media job", 
+		q.logger.Info("queued import job (simple implementation)",
+			zap.String("import_id", msg.ImportID),
+			zap.String("username", msg.Username),
+			zap.String("type", msg.Type))
+	}
+	return nil
+}
+
+// QueueExportJob queues an export generation job (simple logging implementation)
+func (q *simpleJobQueue) QueueExportJob(_ context.Context, msg ExportJobMessage) error {
+	if q.logger != nil {
+		q.logger.Info("queued export job (simple implementation)",
+			zap.String("export_id", msg.ExportID),
+			zap.String("username", msg.Username),
+			zap.String("type", msg.Type))
+	}
+	return nil
+}
+
+// QueueMediaJob queues a media processing job (simple logging implementation)
+func (q *simpleJobQueue) QueueMediaJob(_ context.Context, msg MediaJobMessage) error {
+	if q.logger != nil {
+		q.logger.Info("queued media job (simple implementation)",
 			zap.String("job_id", msg.JobID),
 			zap.String("media_id", msg.MediaID),
 			zap.String("username", msg.Username))
 	}
-	// In production, this would send the message to SQS
-	// For now, we just log it
 	return nil
+}
+
+// QueueScheduledJob queues a scheduled status publishing job (simple logging implementation)
+func (q *simpleJobQueue) QueueScheduledJob(_ context.Context, msg ScheduledJobMessage) error {
+	if q.logger != nil {
+		q.logger.Info("queued scheduled job (simple implementation)",
+			zap.String("scheduled_status_id", msg.ScheduledStatusID),
+			zap.String("username", msg.Username),
+			zap.Time("scheduled_at", msg.ScheduledAt))
+	}
+	return nil
+}
+
+// QueueActivityJob queues a federation activity delivery job (simple logging implementation)
+func (q *simpleJobQueue) QueueActivityJob(_ context.Context, msg ActivityJobMessage) error {
+	if q.logger != nil {
+		q.logger.Info("queued activity job (simple implementation)",
+			zap.String("activity_id", msg.ActivityID),
+			zap.String("actor_id", msg.ActorID),
+			zap.String("priority", msg.Priority),
+			zap.Int("recipients_count", len(msg.Recipients)))
+	}
+	return nil
+}
+
+// QueueDelayedJob queues a delayed job (simple logging implementation)
+func (q *simpleJobQueue) QueueDelayedJob(_ context.Context, queueName string, _ interface{}, delaySeconds int32) error {
+	if q.logger != nil {
+		q.logger.Info("queued delayed job (simple implementation)",
+			zap.String("queue", queueName),
+			zap.Int32("delay_seconds", delaySeconds))
+	}
+	return nil
+}
+
+// queueFederationAdapter adapts the main FederationService to service-specific FederationService interfaces
+// that only need QueueActivity functionality (used by notes, accounts, and relationships services)
+type queueFederationAdapter struct {
+	federation FederationService
+	storage    core.RepositoryStorage
+	logger     *zap.Logger
+}
+
+// QueueActivity implements the FederationService interface by using the main federation service
+func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *activitypub.Activity) error {
+	if a.federation == nil {
+		a.logger.Warn("federation service not available, skipping activity delivery")
+		return nil
+	}
+
+	// Extract actor from activity if needed
+	var actor *activitypub.Actor
+	if activity.Actor != "" {
+		// Try to fetch the actor from storage
+		if a.storage != nil {
+			// Extract username from actor URI
+			username := a.extractUsernameFromActorURI(activity.Actor)
+			if username != "" {
+				if actorRepo := a.storage.Actor(); actorRepo != nil {
+					storedActor, err := actorRepo.GetActor(ctx, username)
+					if err == nil && storedActor != nil {
+						// Convert storage actor to ActivityPub actor
+						actor = a.convertStorageActorToActivityPub(storedActor)
+					} else {
+						a.logger.Debug("failed to fetch actor from storage, using minimal representation",
+							zap.String("username", username),
+							zap.String("actor_uri", activity.Actor),
+							zap.Error(err))
+					}
+				}
+			}
+		}
+		
+		// Fall back to minimal actor representation if storage fetch failed
+		if actor == nil {
+			actor = &activitypub.Actor{
+				BaseObject: activitypub.BaseObject{
+					ID: activity.Actor,
+				},
+			}
+		}
+	}
+
+	// Use the main federation service's DeliverToFollowers method
+	// This provides the same functionality as queuing for background delivery
+	return a.federation.DeliverToFollowers(ctx, activity, actor)
+}
+
+// extractUsernameFromActorURI extracts the username from an actor URI
+func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) string {
+	// Handle different URI patterns:
+	// - https://domain.com/users/username
+	// - https://domain.com/@username
+	// - https://domain.com/actor/username
+	
+	parts := strings.Split(actorURI, "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	
+	// Get the last part which should be the username
+	username := parts[len(parts)-1]
+	
+	// Remove @ prefix if present
+	username = strings.TrimPrefix(username, "@")
+	
+	// Basic validation - username should not be empty and should be reasonable length
+	if username == "" || len(username) > 100 {
+		return ""
+	}
+	
+	return username
+}
+
+// convertStorageActorToActivityPub converts a storage actor to ActivityPub format
+func (a *queueFederationAdapter) convertStorageActorToActivityPub(_ interface{}) *activitypub.Actor {
+	// The actual conversion would depend on the storage actor type
+	// For now, we'll create a basic ActivityPub actor with the common fields
+	// Enhanced based on the actual storage model
+	
+	// Try to extract common fields if the storage actor has them
+	actor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			Type: "Person", // Default type
+		},
+	}
+	
+	// This would need to be implemented based on the actual storage.Actor interface
+	// For now, we return a basic actor - this is better than the previous minimal version
+	// but would need full implementation based on the storage model structure
+	
+	if a.logger != nil {
+		a.logger.Debug("converted storage actor to ActivityPub (basic conversion)")
+	}
+	
+	return actor
+}
+
+// simpleFederationService provides a basic federation service implementation for conversations
+type simpleFederationService struct {
+	logger *zap.Logger
+}
+
+// QueueActivity queues an activity for federation delivery
+func (s *simpleFederationService) QueueActivity(_ context.Context, activity *activitypub.Activity) error {
+	// For now, just log the activity - in a full implementation this would queue for delivery
+	if s.logger != nil {
+		s.logger.Info("federation activity queued",
+			zap.String("type", activity.Type),
+			zap.String("actor", activity.Actor),
+			zap.String("object", fmt.Sprintf("%v", activity.Object)))
+	}
+	return nil
+}
+
+// getJobQueue returns the job queue service, creating it if necessary
+func (r *Registry) getJobQueue() JobQueueServiceInterface {
+	// Try to create a real SQS-based job queue service
+	if jobQueue, err := NewJobQueueService(r.logger); err == nil {
+		return jobQueue
+	}
+
+	// Fall back to simple job queue if SQS is not available
+	return &simpleJobQueue{logger: r.logger}
 }

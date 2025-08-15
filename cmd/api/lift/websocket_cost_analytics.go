@@ -1,6 +1,3 @@
-//go:build ignore
-// +build ignore
-
 package lift
 
 import (
@@ -15,6 +12,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+)
+
+// Constants for repeated strings
+const (
+	periodDay        = "day"
+	trendIncreasing  = "increasing"
+	trendDecreasing  = "decreasing"
 )
 
 // WebSocketCostAnalyticsRequest represents requests for WebSocket cost analytics
@@ -289,7 +293,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 // buildWebSocketCostTrends builds cost trends analysis
 func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time, period string) (*WebSocketCostTrends, error) {
 	if period == "" {
-		period = "day"
+		period = periodDay
 	}
 
 	trends := &WebSocketCostTrends{
@@ -298,11 +302,27 @@ func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostR
 		TrendAnalysis: &WebSocketTrendAnalysis{},
 	}
 
-	// Get aggregated data for the period
-	// For now, simulate trend data since we'd need actual aggregation records
-	// In a real implementation, this would query WebSocketCostAggregation records
+	// Get actual aggregated cost data from the database
+	dataPoints, err := h.aggregateWebSocketCostData(costRepo, startTime, endTime, period)
+	if err != nil {
+		h.logger.Warn("failed to aggregate WebSocket cost data, using empty trends",
+			zap.Error(err),
+			zap.String("period", period))
+		// Return empty trends rather than simulated data
+		return trends, nil
+	}
 
-	// Generate sample data points based on period
+	trends.DataPoints = dataPoints
+
+	// Analyze trends
+	trends.TrendAnalysis = h.analyzeWebSocketTrends(trends.DataPoints)
+
+	return trends, nil
+}
+
+// aggregateWebSocketCostData aggregates real WebSocket cost data by time period
+func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time, period string) ([]WebSocketCostDataPoint, error) {
+	// Determine the aggregation interval
 	var interval time.Duration
 	switch period {
 	case "hour":
@@ -317,27 +337,105 @@ func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostR
 		interval = 24 * time.Hour
 	}
 
-	// Create data points (this would be replaced with actual database queries)
+	// Get all cost records for the time period
+	// We'll fetch a larger set to ensure we don't miss any data
+	allCosts, err := costRepo.GetRecentCosts(context.Background(), startTime.Add(-7*24*time.Hour), 50000)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cost records: %w", err)
+	}
+
+	// Filter to only include costs within our date range
+	var relevantCosts []*models.WebSocketCostRecord
+	for _, cost := range allCosts {
+		if cost.Timestamp.After(startTime.Add(-time.Minute)) && cost.Timestamp.Before(endTime.Add(time.Minute)) {
+			relevantCosts = append(relevantCosts, cost)
+		}
+	}
+
+	// Create time buckets for aggregation
+	buckets := make(map[time.Time]*webSocketCostBucket)
 	current := startTime
 	for current.Before(endTime) {
-		// In a real implementation, query aggregated data for this time window
-		dataPoint := WebSocketCostDataPoint{
-			Timestamp:        current,
-			CostDollars:      0.0, // Would be calculated from actual data
-			Connections:      0,   // Would be calculated from actual data
-			Messages:         0,   // Would be calculated from actual data
-			UniqueUsers:      0,   // Would be calculated from actual data
-			AverageLatencyMs: 0.0, // Would be calculated from actual data
+		buckets[current] = &webSocketCostBucket{
+			Timestamp:   current,
+			CostSum:     0.0,
+			UserSet:     make(map[string]bool),
+			ConnectionSet: make(map[string]bool),
+			MessageCount: 0,
+			LatencySum:  0.0,
+			LatencyCount: 0,
 		}
-
-		trends.DataPoints = append(trends.DataPoints, dataPoint)
 		current = current.Add(interval)
 	}
 
-	// Analyze trends
-	trends.TrendAnalysis = h.analyzeWebSocketTrends(trends.DataPoints)
+	// Aggregate data into buckets
+	for _, cost := range relevantCosts {
+		// Find the appropriate bucket for this cost record
+		bucketTime := h.findBucketTime(cost.Timestamp, startTime, interval)
+		if bucket, exists := buckets[bucketTime]; exists {
+			bucket.CostSum += cost.EstimatedCostDollars
+			
+			if cost.UserID != "" {
+				bucket.UserSet[cost.UserID] = true
+			}
+			
+			bucket.ConnectionSet[cost.ConnectionID] = true
+			
+			// Count messages (operations that involve data transfer)
+			if cost.OperationType == "message" || cost.OperationType == "broadcast" {
+				bucket.MessageCount++
+			}
+			
+			// Track latency if available
+			if cost.ResponseLatencyMs > 0 {
+				bucket.LatencySum += float64(cost.ResponseLatencyMs)
+				bucket.LatencyCount++
+			}
+		}
+	}
 
-	return trends, nil
+	// Convert buckets to data points
+	var dataPoints []WebSocketCostDataPoint
+	current = startTime
+	for current.Before(endTime) {
+		if bucket, exists := buckets[current]; exists {
+			dataPoint := WebSocketCostDataPoint{
+				Timestamp:   bucket.Timestamp,
+				CostDollars: bucket.CostSum,
+				Connections: int64(len(bucket.ConnectionSet)),
+				Messages:    bucket.MessageCount,
+				UniqueUsers: int64(len(bucket.UserSet)),
+			}
+			
+			// Calculate average latency
+			if bucket.LatencyCount > 0 {
+				dataPoint.AverageLatencyMs = bucket.LatencySum / float64(bucket.LatencyCount)
+			}
+			
+			dataPoints = append(dataPoints, dataPoint)
+		}
+		current = current.Add(interval)
+	}
+
+	return dataPoints, nil
+}
+
+// webSocketCostBucket represents an aggregation bucket for cost data
+type webSocketCostBucket struct {
+	Timestamp     time.Time
+	CostSum       float64
+	UserSet       map[string]bool
+	ConnectionSet map[string]bool
+	MessageCount  int64
+	LatencySum    float64
+	LatencyCount  int
+}
+
+// findBucketTime finds the appropriate bucket time for a given timestamp
+func (h *Handler) findBucketTime(timestamp, startTime time.Time, interval time.Duration) time.Time {
+	elapsed := timestamp.Sub(startTime)
+	bucketIndex := int64(elapsed / interval)
+	return startTime.Add(time.Duration(bucketIndex) * interval)
 }
 
 // analyzeWebSocketTrends performs sophisticated trend analysis using the cost analytics service
@@ -358,89 +456,14 @@ func (h *Handler) analyzeWebSocketTrends(dataPoints []WebSocketCostDataPoint) *W
 		timestamps[i] = dp.Timestamp
 	}
 
-	// Use the sophisticated analytics service for trend analysis
-	analyticsService := h.repos.CostAnalytics() // Assume this exists in repository
-	if analyticsService != nil {
-		trendAnalysis, err := analyticsService.CalculateGrowthTrends(context.Background(), "websocket_cost", len(dataPoints), timestamps[0])
-		if err != nil {
-			h.logger.Warn("Failed to perform sophisticated trend analysis, using fallback",
-				zap.Error(err))
-			return h.fallbackTrendAnalysis(dataPoints)
-		}
-
-		// Map sophisticated analysis to WebSocket trend format
-		return h.mapToWebSocketTrendAnalysis(trendAnalysis, dataPoints)
+	// Calculate trend analysis directly from data points
+	if len(dataPoints) > 1 {
+		return h.enhancedLocalTrendAnalysis(dataPoints)
 	}
-
-	// Fallback to enhanced local analysis if service unavailable
-	return h.enhancedLocalTrendAnalysis(dataPoints)
-}
-
-// mapToWebSocketTrendAnalysis maps sophisticated trend analysis to WebSocket format
-func (h *Handler) mapToWebSocketTrendAnalysis(trendAnalysis interface{}, dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
-	// Extract sophisticated analysis results
-	// This would use the actual TrendAnalysis struct from the analytics service
-	
-	analysis := &WebSocketTrendAnalysis{
-		TrendDirection: "stable",
-		GrowthRate:     0,
-	}
-
-	// Calculate basic metrics from data points
-	if len(dataPoints) >= 2 {
-		firstCost := dataPoints[0].CostDollars
-		lastCost := dataPoints[len(dataPoints)-1].CostDollars
-
-		// Calculate linear regression for sophisticated trend detection
-		n := float64(len(dataPoints))
-		var sumX, sumY, sumXY, sumX2 float64
-
-		for i, dp := range dataPoints {
-			x := float64(i)
-			y := dp.CostDollars
-			sumX += x
-			sumY += y
-			sumXY += x * y
-			sumX2 += x * x
-		}
-
-		// Calculate regression slope
-		denominator := n*sumX2 - sumX*sumX
-		if denominator != 0 {
-			slope := (n*sumXY - sumX*sumY) / denominator
-			
-			// Determine trend direction based on slope significance
-			if slope > 0.01 {
-				analysis.TrendDirection = "increasing"
-			} else if slope < -0.01 {
-				analysis.TrendDirection = "decreasing"
-			} else {
-				analysis.TrendDirection = "stable"
-			}
-
-			// Calculate trend percentage
-			if firstCost > 0 {
-				analysis.TrendPercentage = ((lastCost - firstCost) / firstCost) * 100
-			}
-		}
-
-		// Compound growth rate calculation
-		periods := float64(len(dataPoints) - 1)
-		if periods > 0 && firstCost > 0 && lastCost > 0 {
-			// CAGR formula: (Ending Value / Beginning Value)^(1/n) - 1
-			cagr := math.Pow(lastCost/firstCost, 1.0/periods) - 1.0
-			analysis.GrowthRate = cagr * 100
-		}
-	}
-
-	// Enhanced peak and low analysis with statistical significance
-	analysis = h.enhancedPeakLowAnalysis(analysis, dataPoints)
-
-	// Seasonal pattern detection
-	analysis.SeasonalFactors = h.detectSeasonalPatterns(dataPoints)
 
 	return analysis
 }
+
 
 // enhancedLocalTrendAnalysis provides sophisticated local trend analysis
 func (h *Handler) enhancedLocalTrendAnalysis(dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
@@ -520,144 +543,8 @@ func (h *Handler) calculateExponentialSmoothingGrowthRate(dataPoints []WebSocket
 	return 0
 }
 
-// enhancedPeakLowAnalysis performs enhanced peak and low detection
-func (h *Handler) enhancedPeakLowAnalysis(analysis *WebSocketTrendAnalysis, dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
-	if len(dataPoints) < 3 {
-		return analysis
-	}
 
-	// Local maxima and minima detection using derivatives
-	var peaks, lows []time.Time
-	
-	for i := 1; i < len(dataPoints)-1; i++ {
-		current := dataPoints[i].CostDollars
-		prev := dataPoints[i-1].CostDollars
-		next := dataPoints[i+1].CostDollars
 
-		// Peak detection: current > both neighbors with significance threshold
-		threshold := 0.05 // 5% threshold for significance
-		if current > prev*(1+threshold) && current > next*(1+threshold) {
-			peaks = append(peaks, dataPoints[i].Timestamp)
-		}
-
-		// Low detection: current < both neighbors with significance threshold
-		if current < prev*(1-threshold) && current < next*(1-threshold) {
-			lows = append(lows, dataPoints[i].Timestamp)
-		}
-	}
-
-	// Set most significant peak and low
-	if len(peaks) > 0 {
-		analysis.PeakHour = peaks[len(peaks)-1].Format("15:04 MST")
-	}
-	if len(lows) > 0 {
-		analysis.LowHour = lows[len(lows)-1].Format("15:04 MST")
-	}
-
-	return analysis
-}
-
-// detectSeasonalPatterns detects seasonal patterns in WebSocket cost data
-func (h *Handler) detectSeasonalPatterns(dataPoints []WebSocketCostDataPoint) []string {
-	var patterns []string
-
-	if len(dataPoints) < 7 {
-		return patterns
-	}
-
-	// Analyze day-of-week patterns
-	dowCosts := make(map[time.Weekday][]float64)
-	for _, dp := range dataPoints {
-		dow := dp.Timestamp.Weekday()
-		dowCosts[dow] = append(dowCosts[dow], dp.CostDollars)
-	}
-
-	// Calculate averages and detect patterns
-	dowAverages := make(map[time.Weekday]float64)
-	var overallAvg float64
-	totalPoints := 0
-
-	for dow, costs := range dowCosts {
-		if len(costs) > 0 {
-			sum := 0.0
-			for _, cost := range costs {
-				sum += cost
-				totalPoints++
-			}
-			dowAverages[dow] = sum / float64(len(costs))
-			overallAvg += sum
-		}
-	}
-
-	if totalPoints > 0 {
-		overallAvg /= float64(totalPoints)
-	}
-
-	// Detect significant deviations (more than 15% from average)
-	for dow, avg := range dowAverages {
-		if avg > overallAvg*1.15 {
-			patterns = append(patterns, fmt.Sprintf("high_%s", dow.String()))
-		} else if avg < overallAvg*0.85 {
-			patterns = append(patterns, fmt.Sprintf("low_%s", dow.String()))
-		}
-	}
-
-	// Detect hourly patterns if we have enough data points
-	if len(dataPoints) > 24 {
-		hourPatterns := h.detectHourlyPatterns(dataPoints, overallAvg)
-		patterns = append(patterns, hourPatterns...)
-	}
-
-	return patterns
-}
-
-// detectHourlyPatterns detects hour-of-day cost patterns
-func (h *Handler) detectHourlyPatterns(dataPoints []WebSocketCostDataPoint, overallAvg float64) []string {
-	var patterns []string
-
-	// Group by hour
-	hourCosts := make(map[int][]float64)
-	for _, dp := range dataPoints {
-		hour := dp.Timestamp.Hour()
-		hourCosts[hour] = append(hourCosts[hour], dp.CostDollars)
-	}
-
-	// Calculate hourly averages
-	hourAverages := make(map[int]float64)
-	for hour, costs := range hourCosts {
-		if len(costs) > 0 {
-			sum := 0.0
-			for _, cost := range costs {
-				sum += cost
-			}
-			hourAverages[hour] = sum / float64(len(costs))
-		}
-	}
-
-	// Find peak and low hours
-	var peakHour, lowHour int
-	var peakAvg, lowAvg float64
-	for hour, avg := range hourAverages {
-		if hour == 0 || avg > peakAvg {
-			peakAvg = avg
-			peakHour = hour
-		}
-		if hour == 0 || avg < lowAvg {
-			lowAvg = avg
-			peakHour = hour
-		}
-	}
-
-	// Add patterns if significantly different from overall average
-	if peakAvg > overallAvg*1.25 {
-		patterns = append(patterns, fmt.Sprintf("peak_hour_%02d", peakHour))
-	}
-	if lowAvg < overallAvg*0.75 {
-		patterns = append(patterns, fmt.Sprintf("low_hour_%02d", lowHour))
-	}
-
-	return patterns
-}
 
 // addStatisticalSignificance adds statistical significance metrics to trend analysis
 func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
@@ -698,40 +585,6 @@ func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, d
 	return analysis
 }
 
-// fallbackTrendAnalysis provides basic trend analysis as fallback
-func (h *Handler) fallbackTrendAnalysis(dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
-	analysis := &WebSocketTrendAnalysis{
-		TrendDirection: "stable",
-	}
-
-	if len(dataPoints) < 2 {
-		return analysis
-	}
-
-	// Basic first-to-last comparison
-	firstCost := dataPoints[0].CostDollars
-	lastCost := dataPoints[len(dataPoints)-1].CostDollars
-
-	if lastCost > firstCost*1.05 { // 5% threshold
-		analysis.TrendDirection = "increasing"
-		if firstCost > 0 {
-			analysis.TrendPercentage = ((lastCost - firstCost) / firstCost) * 100
-		}
-	} else if lastCost < firstCost*0.95 {
-		analysis.TrendDirection = "decreasing"
-		if firstCost > 0 {
-			analysis.TrendPercentage = ((firstCost - lastCost) / firstCost) * 100
-		}
-	}
-
-	// Simple growth rate
-	periods := float64(len(dataPoints) - 1)
-	if periods > 0 && firstCost > 0 {
-		analysis.GrowthRate = ((lastCost - firstCost) / firstCost / periods) * 100
-	}
-
-	return analysis
-}
 
 // GetUserWebSocketBudget retrieves budget information for a user
 func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {
@@ -785,7 +638,7 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 		MessagesPerMinute int     `json:"messages_per_minute,omitempty"`
 	}
 
-	if ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+	if len(ctx.Request.Body) > 0 {
 		if err := json.Unmarshal(ctx.Request.Body, &budgetReq); err != nil {
 			return nil, lift.ValidationError("invalid request body")
 		}

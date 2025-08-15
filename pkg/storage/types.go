@@ -640,6 +640,13 @@ type CustomEmoji struct {
 	ImageHeight         int       `json:"image_height"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+
+	// Enhanced fields for sophisticated queries
+	UsageCount      int64     `json:"usage_count"`          // How many times this emoji has been used
+	LastUsedAt      time.Time `json:"last_used_at"`         // When this emoji was last used
+	PopularityScore float64   `json:"popularity_score"`     // Calculated popularity score
+	SearchKeywords  []string  `json:"search_keywords"`      // Additional search terms
+	AltText         string    `json:"alt_text,omitempty"`   // Alternative text for accessibility
 }
 
 // Announcement represents an admin announcement

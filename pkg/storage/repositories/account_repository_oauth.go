@@ -555,8 +555,8 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ s
 		query = query.Limit(limit)
 	}
 
-	// For cursor-based pagination, you would need additional GSI setup
-	// This is a simplified implementation
+	// Note: Full cursor-based pagination would require GSI optimization
+	// Current implementation uses scan with limit
 	err := query.Scan(&clientModels)
 	if err != nil {
 		r.logger.Error("failed to list OAuth clients", zap.Error(err))

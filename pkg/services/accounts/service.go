@@ -15,8 +15,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
+)
+
+// Collection type constants
+const (
+	collectionFollowers = "followers"
 )
 
 // Service provides account operations
@@ -858,16 +864,38 @@ func (s *Service) GetFollowing(ctx context.Context, query *GetFollowingQuery) (*
 		return nil, fmt.Errorf("account not found: %w", err)
 	}
 
-	// Similar to GetFollowers - placeholder implementation
+	// Get following relationships from storage
+	followingUsernames, nextCursor, err := s.storage.Relationship().GetFollowing(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get following list: %w", err)
+	}
+
+	// Convert relationship results to accounts
+	accounts := make([]*storage.Account, 0, len(followingUsernames))
+	for _, username := range followingUsernames {
+		// Get full account details
+		account, err := s.storage.Account().GetAccount(ctx, username)
+		if err != nil {
+			s.logger.Warn("failed to get account details for following user",
+				zap.String("username", username),
+				zap.Error(err))
+			continue // Skip accounts we can't fetch
+		}
+		accounts = append(accounts, account)
+	}
+
+	// Build pagination result
+	pagination := &interfaces.PaginatedResult[*storage.Account]{
+		Items:      accounts,
+		NextCursor: nextCursor,
+		HasMore:    nextCursor != "",
+		Total:      int64(len(accounts)), // Note: This is only current page count, not total
+	}
+
 	return &FollowingResult{
-		Following: []*storage.Account{},
-		Pagination: &interfaces.PaginatedResult[*storage.Account]{
-			Items:      []*storage.Account{},
-			NextCursor: "",
-			HasMore:    false,
-			Total:      0,
-		},
-		Events: []*streaming.Event{},
+		Following:  accounts,
+		Pagination: pagination,
+		Events:     []*streaming.Event{},
 	}, nil
 }
 
@@ -1003,15 +1031,28 @@ func (s *Service) PinAccount(ctx context.Context, cmd *PinAccountCommand) (*Rela
 		return nil, fmt.Errorf("failed to pin account: %w", err)
 	}
 
-	// Return relationship status (placeholder)
-	return &RelationshipResult{
-		Relationship: map[string]any{
+	// Get actual relationship status after pinning
+	relationship, err := s.getAccountRelationship(ctx, cmd.Username, cmd.TargetAccount)
+	if err != nil {
+		s.logger.Error("failed to get relationship status after pinning",
+			zap.String("username", cmd.Username),
+			zap.String("target", cmd.TargetAccount),
+			zap.Error(err))
+		// Return basic relationship data even if we can't get full details
+		relationship = map[string]any{
 			"id":          cmd.TargetAccount,
 			"endorsed":    true,
-			"following":   false, // Would need to check actual relationship
+			"following":   false,
 			"followed_by": false,
-		},
-		Events: []*streaming.Event{},
+		}
+	} else {
+		// Ensure endorsed is set to true since we just pinned
+		relationship["endorsed"] = true
+	}
+
+	return &RelationshipResult{
+		Relationship: relationship,
+		Events:       []*streaming.Event{},
 	}, nil
 }
 
@@ -1038,15 +1079,23 @@ func (s *Service) UnpinAccount(ctx context.Context, cmd *UnpinAccountCommand) (*
 		return nil, fmt.Errorf("failed to unpin account: %w", err)
 	}
 
-	// Return relationship status (placeholder)
+	// Get complete relationship status
+	relationship, err := s.getAccountRelationship(ctx, cmd.Username, cmd.TargetAccount)
+	if err != nil {
+		s.logger.Warn("failed to get relationship status after unpinning",
+			zap.String("username", cmd.Username),
+			zap.String("target", cmd.TargetAccount),
+			zap.Error(err))
+		// Return minimal relationship data as fallback
+		relationship = map[string]any{
+			"id":       cmd.TargetAccount,
+			"endorsed": false,
+		}
+	}
+
 	return &RelationshipResult{
-		Relationship: map[string]any{
-			"id":          cmd.TargetAccount,
-			"endorsed":    false,
-			"following":   false, // Would need to check actual relationship
-			"followed_by": false,
-		},
-		Events: []*streaming.Event{},
+		Relationship: relationship,
+		Events:       []*streaming.Event{},
 	}, nil
 }
 
@@ -1126,15 +1175,23 @@ func (s *Service) SetAccountNote(ctx context.Context, cmd *SetAccountNoteCommand
 		return nil, fmt.Errorf("failed to set account note: %w", err)
 	}
 
-	// Return relationship status with note
+	// Get complete relationship status including the new note
+	relationship, err := s.getAccountRelationship(ctx, cmd.Username, cmd.TargetAccount)
+	if err != nil {
+		s.logger.Warn("failed to get relationship status after setting note",
+			zap.String("username", cmd.Username),
+			zap.String("target", cmd.TargetAccount),
+			zap.Error(err))
+		// Return minimal relationship data with the note as fallback
+		relationship = map[string]any{
+			"id":   cmd.TargetAccount,
+			"note": cmd.Note,
+		}
+	}
+
 	return &RelationshipResult{
-		Relationship: map[string]any{
-			"id":          cmd.TargetAccount,
-			"note":        cmd.Note,
-			"following":   false, // Would need to check actual relationship
-			"followed_by": false,
-		},
-		Events: []*streaming.Event{},
+		Relationship: relationship,
+		Events:       []*streaming.Event{},
 	}, nil
 }
 
@@ -1217,8 +1274,8 @@ func (s *Service) RemoveFollower(ctx context.Context, cmd *RemoveFollowerCommand
 			"id":                   cmd.FollowerID,
 			"following":            following,
 			"followed_by":          followedBy,
-			"blocking":             false, // TODO: Check block status if needed
-			"blocked_by":           false,
+			"blocking":             s.checkBlocking(ctx, relationshipRepo, cmd.RemoverID, cmd.FollowerID),
+			"blocked_by":           s.checkBlocking(ctx, relationshipRepo, cmd.FollowerID, cmd.RemoverID),
 			"muting":               false,
 			"muting_notifications": false,
 			"requested":            false,
@@ -1244,67 +1301,179 @@ func (s *Service) GetActivityPubCollection(ctx context.Context, query *GetActivi
 		return nil, fmt.Errorf("account not found: %w", err)
 	}
 
-	// Check privacy settings for followers collection
-	if query.CollectionType == "followers" && account.Actor.ManuallyApprovesFollowers {
-		// Check if viewer is authorized (only account owner can see private followers)
-		if query.ViewerID != query.Username {
-			// Return empty collection for privacy protection
-			return &ActivityPubCollectionResult{
-				Collection: map[string]any{
-					"@context":   "https://www.w3.org/ns/activitystreams",
-					"id":         fmt.Sprintf("%s/%s", account.Actor.ID, query.CollectionType),
-					"type":       "OrderedCollection",
-					"totalItems": 0,
-				},
-				Events: []*streaming.Event{},
-			}, nil
-		}
+	// Check privacy permissions
+	if !s.canViewCollection(query, account) {
+		return s.createEmptyCollection(account.Actor.ID, query.CollectionType), nil
 	}
 
-	// Build collection ID
 	collectionID := fmt.Sprintf("%s/%s", account.Actor.ID, query.CollectionType)
 
-	// If not requesting a page, return collection metadata
+	// Return collection metadata if not requesting a page
 	if !query.Page {
-		// Get total count (placeholder - would need proper repository integration)
-		totalItems := 0
+		return s.buildCollectionMetadata(ctx, query, collectionID)
+	}
 
-		collection := map[string]any{
+	// Return page data with actual follower/following data
+	return s.buildCollectionPage(ctx, query, collectionID)
+}
+
+// canViewCollection checks if the viewer has permission to see the collection
+func (s *Service) canViewCollection(query *GetActivityPubCollectionQuery, account *storage.Account) bool {
+	if query.CollectionType != collectionFollowers {
+		return true
+	}
+	if !account.Actor.ManuallyApprovesFollowers {
+		return true
+	}
+	return query.ViewerID == query.Username
+}
+
+// createEmptyCollection returns an empty collection for privacy protection
+func (s *Service) createEmptyCollection(actorID, collectionType string) *ActivityPubCollectionResult {
+	return &ActivityPubCollectionResult{
+		Collection: map[string]any{
 			"@context":   "https://www.w3.org/ns/activitystreams",
-			"id":         collectionID,
+			"id":         fmt.Sprintf("%s/%s", actorID, collectionType),
 			"type":       "OrderedCollection",
-			"totalItems": totalItems,
-		}
+			"totalItems": 0,
+		},
+		Events: []*streaming.Event{},
+	}
+}
 
-		// Add first page link if there are items
-		if totalItems > 0 {
-			collection["first"] = fmt.Sprintf("%s?page=1", collectionID)
-		}
+// buildCollectionMetadata creates collection metadata with total counts
+func (s *Service) buildCollectionMetadata(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) (*ActivityPubCollectionResult, error) {
+	totalItems := s.getCollectionCount(ctx, query)
 
-		return &ActivityPubCollectionResult{
-			Collection: collection,
-			Events:     []*streaming.Event{},
-		}, nil
+	collection := map[string]any{
+		"@context":   "https://www.w3.org/ns/activitystreams",
+		"id":         collectionID,
+		"type":       "OrderedCollection",
+		"totalItems": totalItems,
 	}
 
-	// Return page data (placeholder implementation)
-	pageID := fmt.Sprintf("%s?page=1", collectionID)
-	if query.Cursor != "" {
-		pageID = fmt.Sprintf("%s&cursor=%s", pageID, query.Cursor)
+	if totalItems > 0 {
+		collection["first"] = fmt.Sprintf("%s?page=1", collectionID)
 	}
+
+	return &ActivityPubCollectionResult{
+		Collection: collection,
+		Events:     []*streaming.Event{},
+	}, nil
+}
+
+// getCollectionCount returns the total count for the collection type
+func (s *Service) getCollectionCount(ctx context.Context, query *GetActivityPubCollectionQuery) int {
+	switch query.CollectionType {
+	case collectionFollowers:
+		if count, err := s.storage.Relationship().CountFollowers(ctx, query.Username); err == nil {
+			return count
+		}
+		s.logger.Warn("failed to get followers count")
+	case "following":
+		if count, err := s.storage.Relationship().CountFollowing(ctx, query.Username); err == nil {
+			return count
+		}
+		s.logger.Warn("failed to get following count")
+	}
+	return 0
+}
+
+// buildCollectionPage creates a collection page with actual data
+func (s *Service) buildCollectionPage(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) (*ActivityPubCollectionResult, error) {
+	pageID := s.buildPageID(collectionID, query.Cursor)
+	orderedItems, nextPageID := s.getPageData(ctx, query, collectionID)
 
 	page := map[string]any{
 		"@context":     "https://www.w3.org/ns/activitystreams",
 		"id":           pageID,
 		"type":         "OrderedCollectionPage",
 		"partOf":       collectionID,
-		"orderedItems": []any{}, // Would contain actual follower/following URLs
+		"orderedItems": orderedItems,
+	}
+
+	if nextPageID != "" {
+		page["next"] = nextPageID
 	}
 
 	return &ActivityPubCollectionResult{
 		Collection: page,
 		Events:     []*streaming.Event{},
 	}, nil
+}
+
+// buildPageID constructs the page ID with optional cursor
+func (s *Service) buildPageID(collectionID, cursor string) string {
+	pageID := fmt.Sprintf("%s?page=1", collectionID)
+	if cursor != "" {
+		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
+	}
+	return pageID
+}
+
+// getPageData fetches and converts usernames to ActivityPub actor URLs
+func (s *Service) getPageData(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) ([]any, string) {
+	switch query.CollectionType {
+	case collectionFollowers:
+		return s.getFollowersPageData(ctx, query, collectionID)
+	case "following":
+		return s.getFollowingPageData(ctx, query, collectionID)
+	default:
+		return []any{}, ""
+	}
+}
+
+// getFollowersPageData handles followers collection page data
+func (s *Service) getFollowersPageData(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) ([]any, string) {
+	usernames, nextCursor, err := s.storage.Relationship().GetFollowers(ctx, query.Username, query.Limit, query.Cursor)
+	if err != nil {
+		s.logger.Error("failed to get followers for ActivityPub collection", zap.Error(err))
+		return []any{}, ""
+	}
+
+	orderedItems := s.convertUsernamesToActorIDs(ctx, usernames, "follower")
+	nextPageID := s.buildNextPageID(collectionID, nextCursor)
+	return orderedItems, nextPageID
+}
+
+// getFollowingPageData handles following collection page data
+func (s *Service) getFollowingPageData(ctx context.Context, query *GetActivityPubCollectionQuery, collectionID string) ([]any, string) {
+	usernames, nextCursor, err := s.storage.Relationship().GetFollowing(ctx, query.Username, query.Limit, query.Cursor)
+	if err != nil {
+		s.logger.Error("failed to get following for ActivityPub collection", zap.Error(err))
+		return []any{}, ""
+	}
+
+	orderedItems := s.convertUsernamesToActorIDs(ctx, usernames, "following")
+	nextPageID := s.buildNextPageID(collectionID, nextCursor)
+	return orderedItems, nextPageID
+}
+
+// convertUsernamesToActorIDs converts a list of usernames to ActivityPub actor IDs
+func (s *Service) convertUsernamesToActorIDs(ctx context.Context, usernames []string, logContext string) []any {
+	orderedItems := make([]any, 0, len(usernames))
+	
+	for _, username := range usernames {
+		account, err := s.storage.Account().GetAccount(ctx, username)
+		if err != nil {
+			s.logger.Warn("failed to get account details", 
+				zap.String("username", username), 
+				zap.String("context", logContext),
+				zap.Error(err))
+			continue
+		}
+		orderedItems = append(orderedItems, account.Actor.ID)
+	}
+	
+	return orderedItems
+}
+
+// buildNextPageID constructs the next page URL if cursor is available
+func (s *Service) buildNextPageID(collectionID, nextCursor string) string {
+	if nextCursor == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s?page=1&cursor=%s", collectionID, nextCursor)
 }
 
 // RegisterAccount creates a new user account with actor
@@ -2027,4 +2196,216 @@ func (s *Service) GetAccountNote(ctx context.Context, currentUsername, targetAct
 	}
 
 	return note.Note, nil
+}
+
+// checkBlocking checks if one user has blocked another user
+func (s *Service) checkBlocking(ctx context.Context, relationshipRepo *repositories.RelationshipRepository, blockerID, blockedID string) bool {
+	if relationshipRepo == nil {
+		return false
+	}
+	
+	// Check if blockerID has blocked blockedID
+	blocked, err := relationshipRepo.IsBlocked(ctx, blockerID, blockedID)
+	if err != nil {
+		// Log the error but don't fail the request
+		s.logger.Warn("failed to check blocking status",
+			zap.String("blocker_id", blockerID),
+			zap.String("blocked_id", blockedID),
+			zap.Error(err))
+		return false
+	}
+	
+	return blocked
+}
+
+// getAccountRelationship retrieves the full relationship status between two accounts
+func (s *Service) getAccountRelationship(ctx context.Context, username, targetAccount string) (map[string]any, error) {
+	if err := s.validateRelationshipStorage(); err != nil {
+		return nil, err
+	}
+
+	relationshipData := s.buildRelationshipData(ctx, username, targetAccount)
+	
+	return map[string]any{
+		"id":                   targetAccount,
+		"following":            relationshipData.Following,
+		"followed_by":          relationshipData.FollowedBy,
+		"blocking":             relationshipData.Blocking,
+		"blocked_by":           relationshipData.BlockedBy,
+		"muting":               relationshipData.Muting,
+		"muting_notifications": relationshipData.MutingNotifications,
+		"requested":            relationshipData.Requested,
+		"domain_blocking":      relationshipData.DomainBlocking,
+		"showing_reblogs":      true, // Default to true unless we have specific reblog preference tracking
+		"endorsed":             relationshipData.Endorsed,
+		"note":                 relationshipData.AccountNote,
+	}, nil
+}
+
+// relationshipData holds all relationship status information
+type relationshipData struct {
+	Following            bool
+	FollowedBy           bool
+	Blocking             bool
+	BlockedBy            bool
+	Muting               bool
+	MutingNotifications  bool
+	Requested            bool
+	DomainBlocking       bool
+	Endorsed             bool
+	AccountNote          string
+}
+
+// validateRelationshipStorage checks if storage and relationship repo are available
+func (s *Service) validateRelationshipStorage() error {
+	if s.storage == nil {
+		return fmt.Errorf("storage not available")
+	}
+	if s.storage.Relationship() == nil {
+		return fmt.Errorf("relationship repository not available")
+	}
+	return nil
+}
+
+// buildRelationshipData collects all relationship information
+func (s *Service) buildRelationshipData(ctx context.Context, username, targetAccount string) *relationshipData {
+	data := &relationshipData{}
+	
+	relationshipRepo := s.storage.Relationship()
+	
+	// Basic relationship checks
+	data.Following = s.checkFollowingStatus(ctx, relationshipRepo, username, targetAccount)
+	data.FollowedBy = s.checkFollowingStatus(ctx, relationshipRepo, targetAccount, username)
+	data.Blocking = s.checkBlocking(ctx, relationshipRepo, username, targetAccount)
+	data.BlockedBy = s.checkBlocking(ctx, relationshipRepo, targetAccount, username)
+	
+	// Muting checks
+	data.Muting = s.checkMutingStatus(ctx, relationshipRepo, username, targetAccount)
+	data.MutingNotifications = s.checkMutingNotifications(ctx, relationshipRepo, username, targetAccount, data.Muting)
+	
+	// Additional relationship status
+	data.Requested = s.checkFollowRequest(ctx, relationshipRepo, username, targetAccount)
+	data.DomainBlocking = s.checkDomainBlocking(ctx, username, targetAccount)
+	data.Endorsed = s.checkEndorsementStatus(ctx, username, targetAccount)
+	data.AccountNote = s.getAccountNoteText(ctx, username, targetAccount)
+	
+	return data
+}
+
+// checkFollowingStatus checks if one user follows another
+func (s *Service) checkFollowingStatus(ctx context.Context, repo *repositories.RelationshipRepository, follower, followee string) bool {
+	following, err := repo.IsFollowing(ctx, follower, followee)
+	if err != nil {
+		s.logger.Warn("failed to check following status",
+			zap.String("follower", follower),
+			zap.String("followee", followee),
+			zap.Error(err))
+		return false
+	}
+	return following
+}
+
+// checkMutingStatus checks if one user has muted another
+func (s *Service) checkMutingStatus(ctx context.Context, repo *repositories.RelationshipRepository, muter, muted string) bool {
+	muting, err := repo.IsMuted(ctx, muter, muted)
+	if err != nil {
+		s.logger.Warn("failed to check muting status",
+			zap.String("muter", muter),
+			zap.String("muted", muted),
+			zap.Error(err))
+		return false
+	}
+	return muting
+}
+
+// checkMutingNotifications checks if notifications are muted for a muted user
+func (s *Service) checkMutingNotifications(ctx context.Context, repo *repositories.RelationshipRepository, username, targetAccount string, isMuting bool) bool {
+	if !isMuting {
+		return false
+	}
+	
+	muteDetails, err := repo.GetMute(ctx, username, targetAccount)
+	if err != nil || muteDetails == nil {
+		return false
+	}
+	
+	return muteDetails.HideNotifications || !muteDetails.Notifications
+}
+
+// checkFollowRequest checks if there's a pending follow request
+func (s *Service) checkFollowRequest(ctx context.Context, repo *repositories.RelationshipRepository, requester, target string) bool {
+	requested, err := repo.HasFollowRequest(ctx, requester, target)
+	if err != nil {
+		return false
+	}
+	return requested
+}
+
+// checkDomainBlocking checks if the user has blocked the target's domain
+func (s *Service) checkDomainBlocking(ctx context.Context, username, targetAccount string) bool {
+	domain := s.extractDomainFromAccount(targetAccount)
+	if domain == "" {
+		return false
+	}
+	
+	accountRepo := s.storage.Account()
+	if accountRepo == nil {
+		return false
+	}
+	
+	domainBlocking, err := accountRepo.IsBlockedDomain(ctx, username, domain)
+	if err != nil {
+		return false
+	}
+	return domainBlocking
+}
+
+// extractDomainFromAccount extracts domain from an account identifier
+func (s *Service) extractDomainFromAccount(account string) string {
+	if !strings.Contains(account, "@") {
+		return ""
+	}
+	
+	parts := strings.Split(account, "@")
+	if len(parts) <= 1 {
+		return ""
+	}
+	
+	return parts[len(parts)-1]
+}
+
+// checkEndorsementStatus checks if the user has endorsed/pinned the target account
+func (s *Service) checkEndorsementStatus(ctx context.Context, username, targetAccount string) bool {
+	userRepo := s.storage.User()
+	if userRepo == nil {
+		return false
+	}
+	
+	pins, err := userRepo.GetAccountPins(ctx, username)
+	if err != nil {
+		return false
+	}
+	
+	for _, pin := range pins {
+		if pin.PinnedActorID == targetAccount {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// getAccountNoteText retrieves the account note for the target account
+func (s *Service) getAccountNoteText(ctx context.Context, username, targetAccount string) string {
+	userRepo := s.storage.User()
+	if userRepo == nil {
+		return ""
+	}
+	
+	note, err := userRepo.GetAccountNote(ctx, username, targetAccount)
+	if err != nil || note == nil {
+		return ""
+	}
+	
+	return note.Note
 }

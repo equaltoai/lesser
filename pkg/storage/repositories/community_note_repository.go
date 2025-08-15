@@ -30,6 +30,48 @@ func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger
 	}
 }
 
+// GetDB returns the database connection for shared use
+func (r *CommunityNoteRepository) GetDB() core.DB {
+	return r.db
+}
+
+// GetTableName returns the table name for shared use
+func (r *CommunityNoteRepository) GetTableName() string {
+	return r.tableName
+}
+
+// GetUserVotingHistory retrieves a user's voting history for reputation calculation
+func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, userID string, limit int) ([]*storage.CommunityNoteVote, error) {
+	var votes []models.CommunityNoteVote
+	
+	// Query using GSI to get all votes by this user
+	err := r.db.WithContext(ctx).Model(&models.CommunityNoteVote{}).
+		Index("user-votes-index").
+		Where("GSI1PK", "=", "VOTES#"+userID).
+		OrderBy("GSI1SK", "DESC"). // Most recent first
+		Limit(limit).
+		All(&votes)
+		
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user voting history: %w", err)
+	}
+	
+	// Convert to storage models
+	result := make([]*storage.CommunityNoteVote, len(votes))
+	for i, model := range votes {
+		result[i] = &storage.CommunityNoteVote{
+			NoteID:    model.NoteID,
+			VoterID:   model.VoterID,
+			VoteType:  model.VoteType,
+			Helpful:   model.Helpful,
+			Weight:    model.Weight,
+			CreatedAt: model.CreatedAt,
+		}
+	}
+	
+	return result, nil
+}
+
 // CreateCommunityNote creates a new community note
 func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *storage.CommunityNote) error {
 	// Generate ID if not provided

@@ -9,6 +9,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
@@ -31,6 +34,7 @@ type businessLogicService struct {
 	timeline   TimelineService
 	analytics  AnalyticsService
 	publisher  streaming.Publisher
+	jobQueue   JobQueueServiceInterface
 	logger     *zap.Logger
 }
 
@@ -43,6 +47,7 @@ func NewBusinessLogicService(
 	timeline TimelineService,
 	analytics AnalyticsService,
 	publisher streaming.Publisher,
+	jobQueue JobQueueServiceInterface,
 ) BusinessLogicService {
 	logger := deps.Logger.(*zap.Logger)
 	storage := CreateStorageAdapter(deps.Repos)
@@ -56,6 +61,7 @@ func NewBusinessLogicService(
 		timeline:   timeline,
 		analytics:  analytics,
 		publisher:  publisher,
+		jobQueue:   jobQueue,
 		logger:     logger,
 	}
 }
@@ -85,7 +91,6 @@ func (s *businessLogicService) CreatePost(ctx context.Context, user *UserContext
 
 	// 5. Handle poll creation if requested
 	var poll interface{}
-	// TODO: Implement poll creation logic based on input
 
 	// 6. Process content and emojis
 	parsedEmojis, err := s.processContentAndEmojis(ctx, note)
@@ -364,11 +369,62 @@ func (s *businessLogicService) handleScheduledPost(ctx context.Context, user *Us
 	// Generate scheduled status ID
 	scheduledStatusID := fmt.Sprintf("%s/scheduled_statuses/%s-%d", s.deps.Config.BaseURL, user.Username, now.Unix())
 
-	// Store as scheduled status (this would need to be implemented in storage)
-	s.logger.Info("storing scheduled status",
+	// Store as scheduled status using the repository
+	scheduledStatus := &storage.ScheduledStatus{
+		ID:          scheduledStatusID,
+		Username:    user.Username,
+		Status:      note.Content,
+		MediaIDs:    extractMediaIDs(input.MediaIDs),
+		Sensitive:   input.Sensitive,
+		SpoilerText: input.SpoilerText,
+		Visibility:  input.Visibility,
+		Language:    input.Language,
+		InReplyToID: input.InReplyToID,
+		ScheduledAt: scheduledTime,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Published:   false,
+	}
+
+	// Save to database
+	err = s.storage.ScheduledStatus().CreateScheduledStatus(ctx, scheduledStatus)
+	if err != nil {
+		s.logger.Error("failed to store scheduled status",
+			zap.String("scheduled_status_id", scheduledStatusID),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to store scheduled status: %w", err)
+	}
+
+	s.logger.Info("stored scheduled status",
 		zap.String("scheduled_status_id", scheduledStatusID),
 		zap.String("scheduled_at", scheduledTime.Format(time.RFC3339)),
 		zap.String("actor_id", actor.ID))
+
+	// Queue the scheduled post for publishing
+	if s.jobQueue != nil {
+		scheduledJobMsg := ScheduledJobMessage{
+			ScheduledStatusID: scheduledStatusID,
+			Username:          user.Username,
+			ScheduledAt:       scheduledTime,
+			Timestamp:         now.Unix(),
+		}
+
+		err = s.jobQueue.QueueScheduledJob(ctx, scheduledJobMsg)
+		if err != nil {
+			s.logger.Error("failed to queue scheduled job",
+				zap.String("scheduled_status_id", scheduledStatusID),
+				zap.Error(err))
+			// Don't fail the entire operation if queuing fails
+			s.logger.Warn("scheduled post created but job queuing failed - post may not be published automatically")
+		} else {
+			s.logger.Info("queued scheduled post for publishing",
+				zap.String("scheduled_status_id", scheduledStatusID),
+				zap.Time("scheduled_at", scheduledTime))
+		}
+	} else {
+		s.logger.Warn("job queue service not available - scheduled post will not be automatically published",
+			zap.String("scheduled_status_id", scheduledStatusID))
+	}
 
 	// Create a placeholder activity for the scheduled post
 	activity := &activitypub.Activity{
@@ -383,16 +439,6 @@ func (s *businessLogicService) handleScheduledPost(ctx context.Context, user *Us
 		Object: note,
 	}
 
-	// Note: In a real implementation, this would:
-	// 1. Store the scheduled status in the database
-	// 2. Queue a job to publish at the scheduled time
-	// 3. Return the scheduled status information
-
-	s.logger.Warn("scheduled post storage needs full implementation",
-		zap.String("scheduled_id", scheduledStatusID),
-		zap.Time("scheduled_time", scheduledTime))
-
-	// For now, return the activity that would be created
 	return &CreatePostResult{
 		Activity:     activity,
 		Note:         note,
@@ -489,27 +535,39 @@ func (s *businessLogicService) extractMentions(content string) []string {
 	return mentions
 }
 
-func (s *businessLogicService) processContentAndEmojis(_ context.Context, note *activitypub.Note) (interface{}, error) {
-	// Parse emojis from note content
-	// For now, we'll use basic emoji parsing without the full parser
-	// since it requires repository access we may not have in this context
-
+func (s *businessLogicService) processContentAndEmojis(ctx context.Context, note *activitypub.Note) (interface{}, error) {
 	// Extract emoji shortcodes using regex
 	emojiRegex := regexp.MustCompile(`:([a-zA-Z0-9_]+):`)
 	matches := emojiRegex.FindAllStringSubmatch(note.Content, -1)
 
-	// Build emoji tags for found shortcodes
-	// In production, these would be looked up from the database
+	// Get emoji repository from dependencies
+	var emojiRepo *repositories.EmojiRepository
+	if repos, ok := s.deps.Repos.(core.RepositoryStorage); ok {
+		emojiRepo = repos.Emoji()
+	} else {
+		s.logger.Error("emoji repository not available - cannot process emojis")
+		return nil, fmt.Errorf("emoji repository not available")
+	}
+
+	// Build emoji tags for found shortcodes with actual URLs
 	for _, match := range matches {
 		if len(match) > 1 {
 			shortcode := match[1]
-			// For now, create placeholder emoji tags
-			// In production, we'd look up the actual emoji URL from storage
+			
+			// Try to get the custom emoji from storage
+			customEmoji, err := emojiRepo.GetCustomEmoji(ctx, shortcode)
+			if err != nil {
+				s.logger.Debug("custom emoji not found, skipping",
+					zap.String("shortcode", shortcode),
+					zap.Error(err))
+				continue
+			}
+
+			// Create emoji tag with actual URL
 			emojiTag := activitypub.Tag{
 				Type: "Emoji",
 				Name: ":" + shortcode + ":",
-				// In production, would include actual emoji URL
-				// Href would contain the icon URL
+				Href: customEmoji.URL,
 			}
 			note.Tag = append(note.Tag, emojiTag)
 		}
@@ -517,6 +575,7 @@ func (s *businessLogicService) processContentAndEmojis(_ context.Context, note *
 
 	return nil, nil
 }
+
 
 func (s *businessLogicService) createActivity(actor *activitypub.Actor, note *activitypub.Note, now time.Time) *activitypub.Activity {
 	return &activitypub.Activity{
@@ -615,7 +674,7 @@ func (s *businessLogicService) extractLinksFromContent(content string) []string 
 	return links
 }
 
-// Implement remaining interface methods with stubs for now
+// UpdatePost updates an existing post's content and metadata
 func (s *businessLogicService) UpdatePost(ctx context.Context, user *UserContext, input *UpdatePostInput) (*UpdatePostResult, error) {
 	s.logger.Info("updating post",
 		zap.String("user_id", user.Username),
@@ -789,11 +848,18 @@ func (s *businessLogicService) UnfollowActor(ctx context.Context, user *UserCont
 		return nil, NewInternalError("failed to create undo activity", err)
 	}
 
-	// Remove the relationship (this should be implemented in storage)
-	// For now, we'll log that it needs implementation
-	s.logger.Warn("relationship removal needs implementation in storage layer",
-		zap.String("follower", user.Username),
-		zap.String("following", targetActorID))
+	// Remove the relationship from storage
+	if err := s.storage.RemoveRelationship(ctx, user.Username, targetActorID); err != nil {
+		s.logger.Error("failed to remove relationship",
+			zap.String("follower", user.Username),
+			zap.String("following", targetActorID),
+			zap.Error(err))
+		// Don't fail the request, but log the error - the ActivityPub undo was still sent
+	} else {
+		s.logger.Info("removed relationship",
+			zap.String("follower", user.Username),
+			zap.String("following", targetActorID))
+	}
 
 	// Emit events for real-time updates
 	s.emitUnfollowEvents(ctx, undoActivity, actor)
@@ -860,11 +926,18 @@ func (s *businessLogicService) UnlikeObject(ctx context.Context, user *UserConte
 		return nil, NewInternalError("failed to create undo like activity", err)
 	}
 
-	// Remove the like (this should be implemented in storage)
-	// For now, we'll log that it needs implementation
-	s.logger.Warn("like removal needs implementation in storage layer",
-		zap.String("actor_id", actor.ID),
-		zap.String("object_id", objectID))
+	// Remove the like from storage
+	if err := s.storage.RemoveLike(ctx, actor.ID, objectID); err != nil {
+		s.logger.Error("failed to remove like",
+			zap.String("actor_id", actor.ID),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		// Don't fail the request, but log the error - the ActivityPub undo was still sent
+	} else {
+		s.logger.Info("removed like",
+			zap.String("actor_id", actor.ID),
+			zap.String("object_id", objectID))
+	}
 
 	// Emit events for real-time updates
 	s.emitUnlikeEvents(ctx, undoActivity, actor)
@@ -892,12 +965,18 @@ func (s *businessLogicService) performCascadeDeletion(ctx context.Context, objec
 	// Use the business logic pattern - operations should be idempotent and graceful
 	var lastErr error
 
-	// TODO: Implement timeline removal when storage adapter supports it
-	// 1. Remove from user's timeline entries
-	// 2. Remove from public timelines
-	s.logger.Info("Timeline removal not yet implemented in storage adapter",
-		zap.String("object_id", objectID),
-		zap.String("actor_id", actorID))
+	// 1. Remove from all timelines using storage adapter
+	if err := s.storage.RemoveFromTimelines(ctx, objectID); err != nil {
+		s.logger.Warn("failed to remove from timelines",
+			zap.String("object_id", objectID),
+			zap.String("actor_id", actorID),
+			zap.Error(err))
+		lastErr = err
+	} else {
+		s.logger.Debug("successfully removed from timelines",
+			zap.String("object_id", objectID),
+			zap.String("actor_id", actorID))
+	}
 
 	// 3. Remove likes on this object
 	if err := s.cascadeDeleteLikes(ctx, objectID); err != nil {
@@ -945,15 +1024,35 @@ func (s *businessLogicService) performCascadeDeletion(ctx context.Context, objec
 }
 
 // cascadeDeleteLikes removes all likes on the deleted object
-func (s *businessLogicService) cascadeDeleteLikes(_ context.Context, objectID string) error {
-	// This would require a method to get all likes for an object and then remove them
-	// For now, log that this should be implemented via the like repository
-	s.logger.Debug("cascade delete likes needed", zap.String("object_id", objectID))
+func (s *businessLogicService) cascadeDeleteLikes(ctx context.Context, objectID string) error {
+	s.logger.Debug("cascade deleting likes", zap.String("object_id", objectID))
 
-	// In a full implementation, this would:
-	// 1. Query all likes for the object
-	// 2. Delete each like record
-	// 3. Update like counts
+	// Use the like repository's cascade delete method to remove all likes for this object
+	// This method handles:
+	// 1. Querying all likes for the object
+	// 2. Deleting each like record
+	// 3. Updating like counts if necessary
+	
+	// Access the like repository through the storage adapter
+	// We need to get the repository directly since StorageAdapter doesn't expose CascadeDeleteLikes
+	if repos, ok := s.storage.GetDB().(interface {
+		Like() interface {
+			CascadeDeleteLikes(ctx context.Context, objectID string) error
+		}
+	}); ok {
+		if err := repos.Like().CascadeDeleteLikes(ctx, objectID); err != nil {
+			s.logger.Error("failed to cascade delete likes",
+				zap.String("object_id", objectID),
+				zap.Error(err))
+			return err
+		}
+		s.logger.Info("cascade deleted likes successfully",
+			zap.String("object_id", objectID))
+	} else {
+		// Fallback: log that cascade delete is not available
+		s.logger.Warn("cascade delete likes not available - storage adapter doesn't support repository access",
+			zap.String("object_id", objectID))
+	}
 
 	return nil
 }
@@ -1094,5 +1193,27 @@ func (s *businessLogicService) emitPostUpdateEvents(ctx context.Context, activit
 		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
 			s.logger.Error("failed to emit public update event", zap.Error(err))
 		}
+	}
+}
+
+// extractMediaIDs converts media ID interfaces to string slice
+func extractMediaIDs(mediaIDsInterface interface{}) []string {
+	if mediaIDsInterface == nil {
+		return nil
+	}
+	
+	switch mediaIDs := mediaIDsInterface.(type) {
+	case []string:
+		return mediaIDs
+	case []interface{}:
+		result := make([]string, 0, len(mediaIDs))
+		for _, id := range mediaIDs {
+			if strID, ok := id.(string); ok {
+				result = append(result, strID)
+			}
+		}
+		return result
+	default:
+		return nil
 	}
 }

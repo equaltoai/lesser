@@ -50,6 +50,7 @@ type RepositoryFactory struct {
 	socialRepo            *repositories.SocialRepository
 	statusRepo            *repositories.StatusRepository
 	costRepo              *repositories.CostTrackingRepository
+	webSocketCostRepo     *repositories.WebSocketCostRepository
 	searchRepo            *repositories.SearchRepository
 	relayRepo             *repositories.RelayRepository
 	communityNoteRepo     *repositories.CommunityNoteRepository
@@ -117,6 +118,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.socialRepo = repositories.NewSocialRepository(f.db, f.logger)
 	f.statusRepo = repositories.NewStatusRepository(f.db, f.tableName, f.logger)
 	f.costRepo = repositories.NewCostTrackingRepository(f.db, f.tableName, f.logger)
+	f.webSocketCostRepo = repositories.NewWebSocketCostRepository(f.db, f.tableName, f.logger)
 	f.trustRepo = repositories.NewTrustRepository(f.db, f.logger)
 	f.searchRepo = repositories.NewSearchRepository(f.db, f.logger)
 	f.relayRepo = repositories.NewRelayRepository(f.db, f.tableName, f.logger)
@@ -329,6 +331,11 @@ func (f *RepositoryFactory) Status() *repositories.StatusRepository {
 // Cost returns the Cost repository instance
 func (f *RepositoryFactory) Cost() *repositories.CostTrackingRepository {
 	return f.costRepo
+}
+
+// WebSocketCost returns the WebSocketCost repository instance
+func (f *RepositoryFactory) WebSocketCost() *repositories.WebSocketCostRepository {
+	return f.webSocketCostRepo
 }
 
 // Search returns the Search repository instance

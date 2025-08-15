@@ -32,6 +32,12 @@ const (
 	collectionTypeLiked     = "liked"
 )
 
+// HTTP constants
+const (
+	contentTypeActivityJSON = "application/activity+json"
+	cacheControlMaxAge300   = "max-age=300"
+)
+
 // CollectionsHandler handles ActivityPub federation collections using Lift
 type CollectionsHandler struct {
 	actorRepo        *repositories.ActorRepository
@@ -145,6 +151,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	// Parse query parameters
 	isPage := ctx.Query("page") != ""
 	cursor := ctx.Query("cursor")
+	direction := ctx.Query("dir") // Check for direction parameter
 	limit := 20 // default
 	if l := ctx.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
@@ -155,6 +162,11 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	// If not requesting a page, return the collection metadata
 	if !isPage {
 		return ch.returnCollection(ctx, actor, collectionType)
+	}
+
+	// Handle reverse pagination if dir=prev is specified
+	if direction == "prev" {
+		return ch.handleReverseDirection(ctx, actor, collectionType, username, cursor, limit)
 	}
 
 	// Get relationships based on type
@@ -220,13 +232,13 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 		hasItems = count > 0
 		itemCount = count
 	case collectionTypeLiked:
-		likes, _, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, 1, "")
+		count, err := ch.likeRepo.CountActorLikes(ctx.Context, actor.ID)
 		if err != nil {
 			ch.logger.Error("failed to get liked count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
-		hasItems = len(likes) > 0
-		itemCount = len(likes) // TODO: Add CountActorLikes method
+		hasItems = count > 0
+		itemCount = int(count)
 	}
 
 	// Build collection URL
@@ -250,8 +262,8 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	}
 
 	// Set ActivityPub content type and caching headers
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
-	ctx.Response.Headers["Cache-Control"] = "max-age=300"
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
 	return ctx.JSON(collection)
 }
 
@@ -314,14 +326,204 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 
 	// Add prev link if this is not the first page
 	if cursor != "" {
-		// In a real implementation, you'd need to implement reverse pagination
-		// For now, we'll just indicate that there are previous items
-		page.Prev = fmt.Sprintf("%s?page=1", collectionID)
+		// Generate previous page cursor for reverse pagination
+		prevCursor := ch.generatePreviousCursor(cursor, collectionType, usernames, likes)
+		if prevCursor != "" {
+			page.Prev = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d&dir=prev", collectionID, prevCursor, limit)
+		} else {
+			// If we can't generate a proper reverse cursor, link to the first page
+			page.Prev = fmt.Sprintf("%s?page=1", collectionID)
+		}
 	}
 
 	// Set ActivityPub content type and caching headers
-	ctx.Response.Headers["Content-Type"] = "application/activity+json"
-	ctx.Response.Headers["Cache-Control"] = "max-age=300"
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
+	return ctx.JSON(page)
+}
+
+// generatePreviousCursor generates a cursor for reverse pagination
+func (ch *CollectionsHandler) generatePreviousCursor(_ string, collectionType string, usernames []string, likes []*storage.Like) string {
+	// For reverse pagination, we need to create a cursor that points to the item before the first item in the current page
+	// This is collection-type specific
+	
+	if len(usernames) == 0 && len(likes) == 0 {
+		return ""
+	}
+	
+	switch collectionType {
+	case collectionTypeFollowers, collectionTypeFollowing:
+		if len(usernames) > 0 {
+			// Use the first username as the reverse cursor
+			// This assumes the cursor format is based on username ordering
+			firstUsername := usernames[0]
+			// Create a reverse cursor that would fetch items before this username
+			return fmt.Sprintf("before_%s", firstUsername)
+		}
+	case collectionTypeLiked:
+		if len(likes) > 0 {
+			// Use the first like's ID or timestamp for reverse cursor
+			firstLike := likes[0]
+			// Create a reverse cursor that would fetch items before this like
+			return fmt.Sprintf("before_%s", firstLike.ID)
+		}
+	}
+	
+	return ""
+}
+
+// handleReverseDirection handles reverse pagination when dir=prev is specified
+func (ch *CollectionsHandler) handleReverseDirection(ctx *lift.Context, actor *activitypub.Actor, collectionType, username, cursor string, limit int) error {
+	// For reverse pagination, we need to fetch items in reverse order
+	// This would typically involve modifying the query to sort in the opposite direction
+	// and then reversing the results
+	
+	var usernames []string
+	var likes []*storage.Like
+	var nextCursor string
+	var err error
+	
+	// Extract the actual cursor value (remove the "before_" prefix if present)
+	actualCursor := strings.TrimPrefix(cursor, "before_")
+	
+	switch collectionType {
+	case collectionTypeFollowers:
+		// For reverse pagination, we'd need a special method that fetches in reverse order
+		// Since we don't have that, we'll simulate it by fetching forward with a modified cursor
+		usernames, nextCursor, err = ch.relationshipRepo.GetFollowers(ctx.Context, username, limit, actualCursor)
+		// Reverse the order of results for reverse pagination
+		if err == nil {
+			ch.reverseStringSlice(usernames)
+		}
+	case collectionTypeFollowing:
+		usernames, nextCursor, err = ch.relationshipRepo.GetFollowing(ctx.Context, username, limit, actualCursor)
+		if err == nil {
+			ch.reverseStringSlice(usernames)
+		}
+	case collectionTypeLiked:
+		modelLikes, likesNextCursor, err := ch.likeRepo.GetActorLikes(ctx.Context, actor.ID, limit, actualCursor)
+		if err == nil {
+			nextCursor = likesNextCursor
+			// Convert and reverse
+			likes = make([]*storage.Like, len(modelLikes))
+			for i, modelLike := range modelLikes {
+				likes[i] = &storage.Like{
+					ID:        modelLike.ID,
+					Actor:     modelLike.Actor,
+					Object:    modelLike.Object,
+					CreatedAt: modelLike.CreatedAt,
+				}
+			}
+			ch.reverseLikeSlice(likes)
+		}
+	}
+	
+	if err != nil {
+		ch.logger.Error("failed to get relationships for reverse pagination",
+			zap.String("type", collectionType),
+			zap.Error(err))
+		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
+	}
+	
+	// For reverse pagination, the "next" cursor becomes previous, and we generate a new next cursor
+	prevCursor := nextCursor
+	nextCursor = ch.generateNextCursorForReverse(collectionType, usernames, likes)
+	
+	// Build and return page with swapped navigation
+	return ch.returnCollectionPageReverse(ctx, actor, collectionType, usernames, likes, cursor, prevCursor, nextCursor, limit)
+}
+
+// reverseStringSlice reverses a slice of strings in place
+func (ch *CollectionsHandler) reverseStringSlice(slice []string) {
+	for i, j := 0, len(slice)-1; i < j; i, j = i+1, j-1 {
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+}
+
+// reverseLikeSlice reverses a slice of likes in place
+func (ch *CollectionsHandler) reverseLikeSlice(slice []*storage.Like) {
+	for i, j := 0, len(slice)-1; i < j; i, j = i+1, j-1 {
+		slice[i], slice[j] = slice[j], slice[i]
+	}
+}
+
+// generateNextCursorForReverse generates a next cursor when doing reverse pagination
+func (ch *CollectionsHandler) generateNextCursorForReverse(collectionType string, usernames []string, likes []*storage.Like) string {
+	switch collectionType {
+	case collectionTypeFollowers, collectionTypeFollowing:
+		if len(usernames) > 0 {
+			return fmt.Sprintf("after_%s", usernames[len(usernames)-1])
+		}
+	case collectionTypeLiked:
+		if len(likes) > 0 {
+			return fmt.Sprintf("after_%s", likes[len(likes)-1].ID)
+		}
+	}
+	return ""
+}
+
+// returnCollectionPageReverse returns a page with reverse pagination links
+func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, prevCursor, nextCursor string, limit int) error {
+	// Similar to returnCollectionPage but with swapped prev/next logic for reverse pagination
+	ch.logger.Debug("returning reverse collection page",
+		zap.String("actor", actor.ID),
+		zap.String("collection_type", collectionType),
+		zap.Int("usernames_count", len(usernames)),
+		zap.Int("likes_count", len(likes)))
+
+	// Build collection and page URLs
+	collectionID := fmt.Sprintf("%s/%s", actor.ID, collectionType)
+	pageID := fmt.Sprintf("%s?page=1&dir=prev", collectionID)
+	if cursor != "" {
+		pageID = fmt.Sprintf("%s&cursor=%s", pageID, cursor)
+	}
+
+	// Convert to appropriate URLs based on collection type
+	var orderedItems []any
+
+	if collectionType == "liked" {
+		orderedItems = make([]any, len(likes))
+		for i, like := range likes {
+			orderedItems[i] = like.Object
+		}
+	} else {
+		orderedItems = make([]any, len(usernames))
+		for i, username := range usernames {
+			if strings.HasPrefix(ch.cfg.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
+			} else {
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.cfg.Domain, username)
+			}
+		}
+	}
+
+	// Build the page
+	page := &activitypub.OrderedCollectionPage{
+		CollectionPage: activitypub.CollectionPage{
+			Collection: activitypub.Collection{
+				BaseObject: activitypub.BaseObject{
+					Context: activitypub.Context,
+					ID:      pageID,
+					Type:    activitypub.OrderedCollectionPageType,
+				},
+				OrderedItems: orderedItems,
+			},
+			PartOf: collectionID,
+		},
+	}
+
+	// For reverse pagination: next goes forward, prev goes further back
+	if nextCursor != "" {
+		page.Next = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d", collectionID, nextCursor, limit)
+	}
+	
+	if prevCursor != "" {
+		page.Prev = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d&dir=prev", collectionID, prevCursor, limit)
+	}
+
+	// Set ActivityPub content type and caching headers
+	ctx.Response.Headers["Content-Type"] = contentTypeActivityJSON
+	ctx.Response.Headers["Cache-Control"] = cacheControlMaxAge300
 	return ctx.JSON(page)
 }
 

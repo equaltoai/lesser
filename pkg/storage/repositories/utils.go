@@ -1,6 +1,7 @@
 package repositories
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -212,24 +213,37 @@ func NewPaginationUtils() *PaginationUtils {
 	return &PaginationUtils{}
 }
 
-// EncodeCursor encodes pagination cursor (basic base64 encoding)
+// EncodeCursor encodes pagination cursor using proper base64 encoding
 func (p *PaginationUtils) EncodeCursor(pk, sk string) string {
-	// In a real implementation, this would use proper base64 encoding
-	// For now, we'll use a simple concatenation
-	return fmt.Sprintf("%s|%s", pk, sk)
+	// Create a proper cursor format with timestamp for enhanced sorting
+	cursor := fmt.Sprintf("%s|%s|%d", pk, sk, time.Now().UnixMilli())
+	return base64.URLEncoding.EncodeToString([]byte(cursor))
 }
 
-// DecodeCursor decodes pagination cursor
+// DecodeCursor decodes pagination cursor from base64 format
 func (p *PaginationUtils) DecodeCursor(cursor string) (pk, sk string, err error) {
 	if cursor == "" {
 		return "", "", nil
 	}
 
-	parts := strings.Split(cursor, "|")
-	if len(parts) != 2 {
+	// Decode from base64
+	decoded, err := base64.URLEncoding.DecodeString(cursor)
+	if err != nil {
+		// Fallback to legacy format for backward compatibility
+		parts := strings.Split(cursor, "|")
+		if len(parts) == 2 {
+			return parts[0], parts[1], nil
+		}
 		return "", "", fmt.Errorf("invalid cursor format")
 	}
 
+	// Parse the decoded cursor
+	parts := strings.Split(string(decoded), "|")
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("invalid cursor format")
+	}
+
+	// Return pk and sk (ignore timestamp if present for now)
 	return parts[0], parts[1], nil
 }
 

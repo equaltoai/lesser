@@ -89,6 +89,12 @@ const (
 	CmdBulkDeleteStatuses = "bulk_delete_statuses"
 	CmdBulkListMembers    = "bulk_list_members"
 	CmdGetBulkOperation   = "get_bulk_operation"
+	
+	// Bulk Content Management Commands
+	CmdBulkDelete  = "bulk_delete"
+	CmdBulkArchive = "bulk_archive"
+	CmdBulkRestore = "bulk_restore"
+	CmdBulkExport  = "bulk_export"
 
 	// Import/Export Commands
 	CmdCreateExport = "create_export"
@@ -422,6 +428,38 @@ func GetCommandInfo() map[string]CommandInfo {
 			Description:    "Get the status of a bulk operation",
 			RequiresAuth:   true,
 			RequiredFields: []string{"operation_id"},
+		},
+		CmdBulkDelete: {
+			Type:           CmdBulkDelete,
+			Category:       CategoryBulk,
+			Description:    "Delete multiple posts/content in bulk",
+			RequiresAuth:   true,
+			RequiredFields: []string{"content_ids"},
+			OptionalFields: []string{"content_type", "date_range", "permanent"},
+		},
+		CmdBulkArchive: {
+			Type:           CmdBulkArchive,
+			Category:       CategoryBulk,
+			Description:    "Archive multiple posts in bulk",
+			RequiresAuth:   true,
+			RequiredFields: []string{"content_ids"},
+			OptionalFields: []string{"content_type", "date_range"},
+		},
+		CmdBulkRestore: {
+			Type:           CmdBulkRestore,
+			Category:       CategoryBulk,
+			Description:    "Restore multiple archived posts in bulk",
+			RequiresAuth:   true,
+			RequiredFields: []string{"content_ids"},
+			OptionalFields: []string{"content_type", "date_range"},
+		},
+		CmdBulkExport: {
+			Type:           CmdBulkExport,
+			Category:       CategoryBulk,
+			Description:    "Export multiple pieces of content in bulk",
+			RequiresAuth:   true,
+			RequiredFields: []string{"content_ids", "format"},
+			OptionalFields: []string{"content_type", "include_media", "date_range"},
 		},
 
 		// Import/Export Commands

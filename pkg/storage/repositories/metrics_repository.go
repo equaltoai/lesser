@@ -56,8 +56,8 @@ func (r *MetricsRepository) Create(_ context.Context, metrics *models.Metrics) e
 	return nil
 }
 
-// BatchCreate creates multiple metrics records efficiently
-func (r *MetricsRepository) BatchCreate(_ context.Context, metricsList []*models.Metrics) error {
+// BatchCreate creates multiple metrics records efficiently using DynamORM batch operations
+func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*models.Metrics) error {
 	if len(metricsList) == 0 {
 		return nil
 	}
@@ -69,16 +69,23 @@ func (r *MetricsRepository) BatchCreate(_ context.Context, metricsList []*models
 		}
 	}
 
-	// Use batch writer for efficiency
-	// Note: This is a simplified version - real implementation would use DynamORM's batch capabilities
-	for _, m := range metricsList {
-		if err := r.db.Model(m).Create(); err != nil {
-			r.logger.Error("failed to create metric in batch",
-				zap.String("id", m.ID),
-				zap.Error(err))
-			// Continue with other metrics
-		}
+	// Convert to []any for DynamORM batch operations
+	items := make([]any, len(metricsList))
+	for i, m := range metricsList {
+		items[i] = m
 	}
+
+	// Use DynamORM's batch create functionality
+	err := r.db.WithContext(ctx).Model(&models.Metrics{}).BatchCreate(items)
+	if err != nil {
+		r.logger.Error("batch create failed",
+			zap.Int("count", len(metricsList)),
+			zap.Error(err))
+		return fmt.Errorf("failed to batch create metrics: %w", err)
+	}
+
+	r.logger.Debug("batch created metrics",
+		zap.Int("count", len(metricsList)))
 
 	return nil
 }
@@ -392,6 +399,125 @@ type ServiceStats struct {
 	Max        float64
 }
 
+// CleanupOldMetrics removes metrics older than the cutoff time for a specific granularity/period
+func (r *MetricsRepository) CleanupOldMetrics(ctx context.Context, granularity string, cutoffTime time.Time) (int, error) {
+	r.logger.Info("Starting metrics cleanup",
+		zap.String("granularity", granularity),
+		zap.Time("cutoff_time", cutoffTime))
+
+	deletedCount := 0
+
+	// Cleanup aggregated metrics based on granularity
+	if granularity == "aggregated" || granularity == ConnectionTypeAll {
+		periods := []string{"minute", "hour", "day", "week", "month"}
+		for _, period := range periods {
+			count, err := r.cleanupAggregatedMetricsByPeriod(ctx, period, cutoffTime)
+			if err != nil {
+				r.logger.Error("failed to cleanup aggregated metrics",
+					zap.String("period", period),
+					zap.Error(err))
+				continue
+			}
+			deletedCount += count
+		}
+	}
+
+	// Cleanup raw metrics if specified
+	if granularity == "raw" || granularity == "all" {
+		count, err := r.cleanupRawMetrics(ctx, cutoffTime)
+		if err != nil {
+			r.logger.Error("failed to cleanup raw metrics", zap.Error(err))
+		} else {
+			deletedCount += count
+		}
+	}
+
+	r.logger.Info("Metrics cleanup completed",
+		zap.String("granularity", granularity),
+		zap.Int("deleted_count", deletedCount))
+
+	return deletedCount, nil
+}
+
+// cleanupAggregatedMetricsByPeriod removes old aggregated metrics for a specific period
+func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context, period string, cutoffTime time.Time) (int, error) {
+	deletedCount := 0
+
+	// Query for old aggregated metrics using aggregate-index
+	var oldMetrics []models.AggregatedMetrics
+	
+	// We need to query by period prefix since we can't easily do time-based filtering in DynamoDB
+	// This is a limitation but necessary to avoid expensive scans
+	err := r.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
+		Index("aggregate-index").
+		Where("GSI2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
+		Where("GSI2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
+		All(&oldMetrics)
+	
+	if err != nil {
+		return 0, fmt.Errorf("failed to query old aggregated metrics: %w", err)
+	}
+
+	// Delete old metrics in batches
+	for _, metric := range oldMetrics {
+		if metric.WindowStart.Before(cutoffTime) {
+			err := r.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
+				Where("PK", "=", metric.PK).
+				Where("SK", "=", metric.SK).
+				Delete()
+			if err != nil {
+				r.logger.Warn("failed to delete aggregated metric",
+					zap.String("pk", metric.PK),
+					zap.String("sk", metric.SK),
+					zap.Error(err))
+				continue
+			}
+			deletedCount++
+		}
+	}
+
+	return deletedCount, nil
+}
+
+// cleanupRawMetrics removes old raw metrics
+func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime time.Time) (int, error) {
+	deletedCount := 0
+
+	// Query for old raw metrics - this is more challenging with single table design
+	// We'll need to scan through metric types and clean based on timestamp
+	var oldMetrics []models.Metrics
+	
+	// Use a broad query and filter in application code
+	// This is not ideal but necessary with DynamoDB's query limitations
+	err := r.db.WithContext(ctx).Model(&models.Metrics{}).
+		Where("PK", "begins_with", "metrics#").
+		All(&oldMetrics)
+	
+	if err != nil {
+		return 0, fmt.Errorf("failed to query old raw metrics: %w", err)
+	}
+
+	// Filter and delete old metrics
+	for _, metric := range oldMetrics {
+		if metric.Timestamp.Before(cutoffTime) {
+			err := r.db.WithContext(ctx).Model(&models.Metrics{}).
+				Where("PK", "=", metric.PK).
+				Where("SK", "=", metric.SK).
+				Delete()
+			if err != nil {
+				r.logger.Warn("failed to delete raw metric",
+					zap.String("pk", metric.PK),
+					zap.String("sk", metric.SK),
+					zap.Error(err))
+				continue
+			}
+			deletedCount++
+		}
+	}
+
+	return deletedCount, nil
+}
+
 // calculateMetricPercentiles calculates percentiles for a slice of metric values
 // Returns a map with p50, p90, p95, and p99 percentiles
 func calculateMetricPercentiles(values []float64) map[string]float64 {
@@ -625,19 +751,19 @@ func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, r
 		}
 	}
 
-	// Create each record (in a real implementation, this would use DynamORM's batch capabilities)
-	var errors []error
-	for _, record := range records {
-		if err := r.Create(ctx, record); err != nil {
-			r.logger.Error("failed to create metric record in batch",
-				zap.String("id", record.MetricID),
-				zap.Error(err))
-			errors = append(errors, err)
-		}
+	// Convert to []any for DynamORM batch operations
+	items := make([]any, len(records))
+	for i, record := range records {
+		items[i] = record
 	}
 
-	if len(errors) > 0 {
-		return fmt.Errorf("batch create had %d errors, first: %w", len(errors), errors[0])
+	// Use DynamORM's batch create functionality
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).BatchCreate(items)
+	if err != nil {
+		r.logger.Error("batch create failed",
+			zap.Int("count", len(records)),
+			zap.Error(err))
+		return fmt.Errorf("failed to batch create metric records: %w", err)
 	}
 
 	r.logger.Debug("batch created metric records", zap.Int("count", len(records)))

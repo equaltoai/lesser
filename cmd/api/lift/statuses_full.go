@@ -4,12 +4,15 @@
 package lift
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/services/notes"
+	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -37,15 +40,32 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 		return err
 	}
 
+	// Extract poll data if poll is provided
+	var pollOptions []string
+	var pollExpiresIn int
+	var pollMultiple bool
+	var pollHideTotals bool
+	
+	if req.Poll != nil && len(req.Poll.Options) > 0 {
+		pollOptions = req.Poll.Options
+		pollExpiresIn = req.Poll.ExpiresIn
+		pollMultiple = req.Poll.Multiple
+		pollHideTotals = req.Poll.HideTotals
+	}
+
 	// Call Notes service
 	result, err := h.registry.Notes().CreateNote(ctx.Context, &notes.CreateNoteCommand{
-		AuthorID:    claims.Username,
-		Content:     req.Status,
-		Visibility:  req.Visibility,
-		Sensitive:   req.Sensitive,
-		Language:    req.Language,
-		InReplyToID: req.InReplyToID,
-		MediaIDs:    req.MediaIDs,
+		AuthorID:       claims.Username,
+		Content:        req.Status,
+		Visibility:     req.Visibility,
+		Sensitive:      req.Sensitive,
+		Language:       req.Language,
+		InReplyToID:    req.InReplyToID,
+		MediaIDs:       req.MediaIDs,
+		PollOptions:    pollOptions,
+		PollExpiresIn:  pollExpiresIn,
+		PollMultiple:   pollMultiple,
+		PollHideTotals: pollHideTotals,
 	})
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
@@ -54,6 +74,11 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 
 	// Convert to Mastodon API format using converter
 	mastodonStatus := h.converter.NotesToStatus(result.Note)
+
+	// Enrich with poll data if poll exists
+	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, result.Note.StatusID, claims.Username); err != nil {
+		h.logger.Warn("failed to enrich status with poll data", zap.Error(err))
+	}
 
 	// Return created status
 	return ctx.Status(http.StatusCreated).JSON(mastodonStatus)
@@ -66,26 +91,44 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
 	}
 
-	// Optional authentication for privacy filtering (not implemented yet)
-	token := h.getBearerTokenLift(ctx)
-	if token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		if _, err := oauthSvc.ValidateAccessToken(token); err != nil {
-			// Token validation failed but we continue for public content
-			h.logger.Debug("Token validation failed, continuing for public content", zap.Error(err))
-		}
-	}
+	// Extract optional authenticated user context for privacy filtering
+	viewerID := h.getOptionalAuthenticatedUser(ctx)
 
-	// Call Notes service with proper privacy filtering
+	// Call Notes service to get the note
 	note, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
 		}
+		if strings.Contains(err.Error(), "access denied") {
+			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		}
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
 	}
 
-	return ctx.JSON(note)
+	// Check privacy permissions for the viewer using robust authorization
+	canView, err := h.checkStatusViewPermission(ctx.Context, note, viewerID)
+	if err != nil {
+		h.logger.Error("failed to check status view permissions",
+			zap.String("status_id", statusID),
+			zap.String("viewer_id", viewerID),
+			zap.Error(err))
+		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+	}
+	
+	if !canView {
+		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+	}
+
+	// Convert to Mastodon API format using converter
+	mastodonStatus := h.converter.NotesToStatus(note)
+
+	// Enrich with poll data if poll exists
+	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, note.StatusID, viewerID); err != nil {
+		h.logger.Warn("failed to enrich status with poll data", zap.Error(err))
+	}
+
+	return ctx.JSON(mastodonStatus)
 }
 
 // HandleDeleteStatusFull deletes a status using the Notes service
@@ -121,5 +164,130 @@ func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 }
 
 // Helper methods
+
+// checkStatusViewPermission implements comprehensive privacy checking for status visibility
+func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
+	// Import the visibility constants
+	const (
+		VisibilityPublic   = "public"
+		VisibilityUnlisted = "unlisted" 
+		VisibilityPrivate  = "private"
+		VisibilityDirect   = "direct"
+	)
+
+	// Public and unlisted posts are viewable by anyone
+	if status.Visibility == VisibilityPublic || status.Visibility == VisibilityUnlisted {
+		return true, nil
+	}
+
+	// Unauthenticated users can only see public/unlisted posts
+	if viewerID == "" {
+		return false, nil
+	}
+
+	// Status author can always view their own posts
+	if status.AuthorUsername == viewerID {
+		return true, nil
+	}
+
+	// Handle private (followers-only) posts
+	if status.Visibility == VisibilityPrivate {
+		return h.checkPrivateVisibility(ctx, status, viewerID)
+	}
+
+	// Handle direct messages
+	if status.Visibility == VisibilityDirect {
+		return h.checkDirectMessageVisibility(status, viewerID), nil
+	}
+
+	// Unknown visibility level - default to private
+	h.logger.Warn("unknown visibility level encountered",
+		zap.String("status_id", status.StatusID),
+		zap.String("visibility", status.Visibility))
+	return false, nil
+}
+
+// checkPrivateVisibility checks if viewer can see private (followers-only) posts
+func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
+	isFollowing, err := h.repos.Relationship().IsFollowing(ctx, viewerID, status.AuthorUsername)
+	if err != nil {
+		return false, fmt.Errorf("failed to check following relationship: %w", err)
+	}
+	return isFollowing, nil
+}
+
+// checkDirectMessageVisibility checks if viewer can see direct messages
+func (h *Handler) checkDirectMessageVisibility(status *storageModels.Status, viewerID string) bool {
+	// Check if viewer is explicitly mentioned in the status
+	if h.isViewerMentioned(status.Mentions, viewerID) {
+		return true
+	}
+
+	// Check if viewer is in any recipient list
+	return h.isViewerInRecipientLists(status, viewerID)
+}
+
+// isViewerMentioned checks if viewer is mentioned in the status
+func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
+	for _, mention := range mentions {
+		if mention == viewerID {
+			return true
+		}
+	}
+	return false
+}
+
+// isViewerInRecipientLists checks all recipient lists for viewer
+func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerID string) bool {
+	viewerActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, viewerID)
+	
+	// Check all recipient lists
+	recipientLists := [][]string{
+		status.ToRecipients,
+		status.CcRecipients,
+		status.BtoRecipients,
+		status.BccRecipients,
+	}
+	
+	for _, recipients := range recipientLists {
+		for _, recipient := range recipients {
+			if recipient == viewerActorID {
+				return true
+			}
+		}
+	}
+	
+	return false
+}
+
+// enrichStatusWithPoll adds poll data to a status if it exists
+func (h *Handler) enrichStatusWithPoll(ctx context.Context, status *models.Status, statusID, userID string) error {
+	// Try to get poll by status ID
+	poll, err := h.repos.Poll().GetPollByStatusID(ctx, statusID)
+	if err != nil {
+		// If poll not found, that's okay - not all statuses have polls
+		if strings.Contains(err.Error(), "not found") {
+			return nil
+		}
+		return fmt.Errorf("failed to get poll: %w", err)
+	}
+
+	// Get user's votes if authenticated
+	var userVotes []int
+	if userID != "" {
+		// Get user's actor ID
+		if account, err := h.registry.Accounts().GetAccount(ctx, userID); err == nil && account.Actor != nil {
+			if hasVoted, votes, err := h.repos.Poll().HasUserVoted(ctx, poll.ID, account.Actor.ID); err == nil && hasVoted {
+				userVotes = votes
+			}
+		}
+	}
+
+	// Convert poll to API format and add to status
+	pollAPI := h.converter.PollToAPI(poll, userVotes)
+	status.Poll = &pollAPI
+
+	return nil
+}
 
 // generateRandomStringFull generates a random string for IDs

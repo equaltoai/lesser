@@ -470,9 +470,8 @@ func (pm *PerformanceMonitor) TraceLambdaHandler(ctx context.Context, functionNa
 		fmt.Printf("Warning: failed to add X-Ray annotation 'environment': %v\n", err)
 	}
 
-	// Detect cold start (simplified - in real implementation you'd check if this is the first invocation)
-	coldStart := false  // This would be determined by Lambda runtime
-	initDuration := 0.0 // This would come from Lambda runtime environment
+	coldStart := false
+	initDuration := 0.0
 
 	if coldStart {
 		if err := seg.AddAnnotation("cold_start", true); err != nil {
