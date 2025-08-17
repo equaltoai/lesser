@@ -14,6 +14,7 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -87,8 +88,8 @@ func (s *DLQSender) SendFailedMessage(ctx context.Context, service string, origi
 
 // SendBatchFailedMessages sends multiple failed messages to DLQ
 func (s *DLQSender) SendBatchFailedMessages(ctx context.Context, service string, failures []ProcessingFailure) error {
-	if len(failures) == 0 {
-		return nil
+	if err := common.ValidateSliceNotEmpty("failures", failures); err != nil {
+		return nil // Empty slice is not an error for this function
 	}
 
 	dlqQueueName := s.getDLQQueueName(service)
@@ -289,8 +290,8 @@ func (s *DLQSender) sendBatchToDLQ(ctx context.Context, queueURL string, service
 		})
 	}
 
-	if len(entries) == 0 {
-		return nil
+	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
+		return nil // Empty entries is not an error
 	}
 
 	// Send batch
@@ -304,7 +305,7 @@ func (s *DLQSender) sendBatchToDLQ(ctx context.Context, queueURL string, service
 	}
 
 	// Log any failed entries
-	if len(result.Failed) > 0 {
+	if err := common.ValidateSliceNotEmpty("result.Failed", result.Failed); err == nil {
 		s.logger.Warn("some messages failed to send to DLQ",
 			zap.Int("failed_count", len(result.Failed)),
 			zap.Int("successful_count", len(result.Successful)),
@@ -397,7 +398,7 @@ func WrapSQSHandler(service string, handler func(context.Context, events.SQSEven
 		}
 
 		// Send failures to DLQ
-		if len(failures) > 0 {
+		if err := common.ValidateSliceNotEmpty("failures", failures); err == nil {
 			if dlqErr := sender.SendBatchFailedMessages(ctx, service, failures); dlqErr != nil {
 				logger.Error("failed to send failures to DLQ",
 					zap.String("service", service),
@@ -414,7 +415,7 @@ func WrapSQSHandler(service string, handler func(context.Context, events.SQSEven
 // SendIndividualFailures sends individual message failures to DLQ
 // This is useful when processing messages individually within a batch
 func SendIndividualFailures(ctx context.Context, service string, failures []ProcessingFailure, logger *zap.Logger) {
-	if len(failures) == 0 {
+	if err := common.ValidateSliceNotEmpty("failures", failures); err != nil {
 		return
 	}
 

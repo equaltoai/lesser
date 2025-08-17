@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"golang.org/x/crypto/argon2"
 )
 
@@ -157,7 +158,7 @@ func GenerateMasterKeyBase64() (string, error) {
 
 // Hash provides privacy-preserving hashing for different data types
 func (ph *Hasher) Hash(data string, dataType DataType) (string, error) {
-	if data == "" {
+	if err := common.ValidateRequiredParam("data", data); err != nil {
 		return "", nil
 	}
 
@@ -168,7 +169,7 @@ func (ph *Hasher) Hash(data string, dataType DataType) (string, error) {
 
 // HashIP provides IP address privacy hashing with optional subnet preservation
 func (ph *Hasher) HashIP(ipAddress string) (string, error) {
-	if ipAddress == "" {
+	if err := common.ValidateRequiredParam("ip_address", ipAddress); err != nil {
 		return "", nil
 	}
 
@@ -188,7 +189,7 @@ func (ph *Hasher) HashIP(ipAddress string) (string, error) {
 
 // HashEmail provides email privacy hashing with optional domain preservation
 func (ph *Hasher) HashEmail(email string) (string, error) {
-	if email == "" {
+	if err := common.ValidateRequiredParam("email", email); err != nil {
 		return "", nil
 	}
 
@@ -208,7 +209,7 @@ func (ph *Hasher) HashEmail(email string) (string, error) {
 
 // HashUsername provides username privacy hashing
 func (ph *Hasher) HashUsername(username string) (string, error) {
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return "", nil
 	}
 
@@ -228,7 +229,7 @@ func (ph *Hasher) HashUsername(username string) (string, error) {
 
 // HashPII provides PII privacy hashing
 func (ph *Hasher) HashPII(pii string) (string, error) {
-	if pii == "" {
+	if err := common.ValidateRequiredParam("pii", pii); err != nil {
 		return "", nil
 	}
 

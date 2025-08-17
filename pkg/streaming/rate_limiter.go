@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WebSocketRateLimiter provides rate limiting for WebSocket connections and commands
@@ -502,7 +503,7 @@ func (wrl *WebSocketRateLimiter) updateGlobalConnection(identifier, connectionID
 		delete(globalLimit.activeConnections, connectionID)
 
 		// Cleanup if no active connections
-		if len(globalLimit.activeConnections) == 0 {
+		if err := common.ValidateSliceNotEmpty("globalLimit.activeConnections", globalLimit.activeConnections); err != nil {
 			wrl.globalMu.Lock()
 			delete(wrl.globalLimits, identifier)
 			wrl.globalMu.Unlock()

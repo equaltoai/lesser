@@ -17,6 +17,9 @@ const (
 	StatusHealthy   = "healthy"
 	StatusCritical  = "critical"
 	StatusWarning   = "warning"
+	StatusLow       = "low"
+	StatusHigh      = "high"
+	StatusMedium    = "medium"
 )
 
 // Period constants - these supplement models.Period* constants

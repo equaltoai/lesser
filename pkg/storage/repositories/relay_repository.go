@@ -18,17 +18,34 @@ import (
 
 // RelayRepository implements relay operations using DynamORM
 type RelayRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db         core.DB
+	tableName  string
+	logger     *zap.Logger
+	queryUtils *QueryUtils
 }
 
 // NewRelayRepository creates a new relay repository
 func NewRelayRepository(db core.DB, tableName string, logger *zap.Logger) *RelayRepository {
 	return &RelayRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		queryUtils: NewQueryUtils(db, logger),
+	}
+}
+
+// convertModelToRelayInfo converts a relay model to storage type
+func (r *RelayRepository) convertModelToRelayInfo(model *models.Relay) *storage.RelayInfo {
+	return &storage.RelayInfo{
+		URL:        model.URL,
+		InboxURL:   model.InboxURL,
+		Active:     model.Active,
+		CreatedAt:  model.CreatedAt,
+		LastSeenAt: model.LastSeenAt,
+		Domain:     model.Domain,
+		Status:     model.Status,
+		ErrorCount: model.ErrorCount,
+		TTL:        model.TTL,
 	}
 }
 
@@ -79,10 +96,7 @@ func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*s
 	logger := r.logger.With(zap.String("operation", "GetRelayInfo"), zap.String("relay_url", relayURL))
 
 	var model models.Relay
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Where("PK", "=", fmt.Sprintf("RELAY#%s", relayURL)).
-		Where("SK", "=", "INFO").
-		First(&model)
+	err := r.queryUtils.GetItemByPK(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -93,17 +107,7 @@ func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*s
 	}
 
 	// Convert to storage type
-	relay := &storage.RelayInfo{
-		URL:        model.URL,
-		InboxURL:   model.InboxURL,
-		Active:     model.Active,
-		CreatedAt:  model.CreatedAt,
-		LastSeenAt: model.LastSeenAt,
-		Domain:     model.Domain,
-		Status:     model.Status,
-		ErrorCount: model.ErrorCount,
-		TTL:        model.TTL,
-	}
+	relay := r.convertModelToRelayInfo(&model)
 
 	logger.Debug("retrieved relay info successfully")
 	return relay, nil
@@ -113,10 +117,7 @@ func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*s
 func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) error {
 	logger := r.logger.With(zap.String("operation", "RemoveRelayInfo"), zap.String("relay_url", relayURL))
 
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Where("PK", "=", fmt.Sprintf("RELAY#%s", relayURL)).
-		Where("SK", "=", "INFO").
-		Delete()
+	err := r.queryUtils.DeleteItem(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &models.Relay{})
 
 	if err != nil {
 		logger.Error("failed to remove relay info", zap.Error(err))
@@ -131,11 +132,9 @@ func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) 
 func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.RelayInfo, error) {
 	logger := r.logger.With(zap.String("operation", "GetActiveRelays"))
 
-	var relays []models.Relay
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "ACTIVE_RELAYS").
-		All(&relays)
+	result, err := r.queryUtils.QueryByGSI(ctx, "GSI1", "ACTIVE_RELAYS", "", &QueryOptions{
+		Limit: 1000, // Reasonable limit for active relays
+	})
 
 	if err != nil {
 		logger.Error("failed to query active relays", zap.Error(err))
@@ -143,22 +142,15 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 	}
 
 	// Convert to storage types
-	results := make([]*storage.RelayInfo, len(relays))
-	for i, model := range relays {
-		results[i] = &storage.RelayInfo{
-			URL:        model.URL,
-			InboxURL:   model.InboxURL,
-			Active:     model.Active,
-			CreatedAt:  model.CreatedAt,
-			LastSeenAt: model.LastSeenAt,
-			Domain:     model.Domain,
-			Status:     model.Status,
-			ErrorCount: model.ErrorCount,
-			TTL:        model.TTL,
+	results := make([]*storage.RelayInfo, 0, len(result.Items))
+	for _, item := range result.Items {
+		relay := r.mapItemToRelayInfo(item)
+		if relay != nil {
+			results = append(results, relay)
 		}
 	}
 
-	logger.Info("retrieved active relays", zap.Int("count", len(relays)))
+	logger.Info("retrieved active relays", zap.Int("count", len(results)))
 	return results, nil
 }
 
@@ -213,17 +205,7 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 	// Convert to storage types
 	results := make([]*storage.RelayInfo, len(relays))
 	for i, model := range relays {
-		results[i] = &storage.RelayInfo{
-			URL:        model.URL,
-			InboxURL:   model.InboxURL,
-			Active:     model.Active,
-			CreatedAt:  model.CreatedAt,
-			LastSeenAt: model.LastSeenAt,
-			Domain:     model.Domain,
-			Status:     model.Status,
-			ErrorCount: model.ErrorCount,
-			TTL:        model.TTL,
-		}
+		results[i] = r.convertModelToRelayInfo(&model)
 	}
 
 	logger.Info("retrieved all relays", zap.Int("count", len(relays)))
@@ -384,4 +366,40 @@ func decodeCursor(cursor string) (map[string]interface{}, error) {
 	}
 
 	return key, nil
+}
+
+// mapItemToRelayInfo converts a map[string]interface{} to RelayInfo
+func (r *RelayRepository) mapItemToRelayInfo(item map[string]interface{}) *storage.RelayInfo {
+	relay := &storage.RelayInfo{}
+	
+	// Map fields from the item
+	if url, ok := item["URL"].(string); ok {
+		relay.URL = url
+	}
+	if inboxURL, ok := item["InboxURL"].(string); ok {
+		relay.InboxURL = inboxURL
+	}
+	if active, ok := item["Active"].(bool); ok {
+		relay.Active = active
+	}
+	if createdAt, ok := item["CreatedAt"].(time.Time); ok {
+		relay.CreatedAt = createdAt
+	}
+	if lastSeenAt, ok := item["LastSeenAt"].(time.Time); ok {
+		relay.LastSeenAt = lastSeenAt
+	}
+	if domain, ok := item["Domain"].(string); ok {
+		relay.Domain = domain
+	}
+	if status, ok := item["Status"].(string); ok {
+		relay.Status = status
+	}
+	if errorCount, ok := item["ErrorCount"].(int); ok {
+		relay.ErrorCount = errorCount
+	}
+	if ttl, ok := item["TTL"].(int64); ok {
+		relay.TTL = ttl
+	}
+	
+	return relay
 }

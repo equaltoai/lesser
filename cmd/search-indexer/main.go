@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -24,25 +23,26 @@ import (
 
 // SearchIndexer handles search index operations for content
 type SearchIndexer struct {
-	db          core.DB
-	tableName   string
-	logger      *zap.Logger
-	costRepo    *repositories.SearchCostRepository
-	costTracker *cost.Tracker
+	db             core.DB
+	tableName      string
+	logger         *zap.Logger
+	costRepo       *repositories.SearchCostRepository
+	unifiedTracker *cost.UnifiedTracker
 }
 
 // NewSearchIndexer creates a new search indexer instance
 func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
-	logger := common.Logger()
-	costRepo := repositories.NewSearchCostRepository(db, logger)
-	costTracker := cost.NewWithRequest("search-indexer", "search_indexing")
+	costRepo := repositories.NewSearchCostRepository(db, lambdaCtx.Logger)
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, lambdaCtx.Logger, "SearchIndexer", "", "")
 
 	return &SearchIndexer{
-		db:          db,
-		tableName:   tableName,
-		logger:      logger,
-		costRepo:    costRepo,
-		costTracker: costTracker,
+		db:             db,
+		tableName:      tableName,
+		logger:         lambdaCtx.Logger,
+		costRepo:       costRepo,
+		unifiedTracker: unifiedTracker,
 	}
 }
 
@@ -383,7 +383,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 }
 
 // recordIndexingCost records the cost of indexing operations
-func (si *SearchIndexer) recordIndexingCost(_ *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
+func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, writeCount int64, err error) {
 	// Complete cost tracking
 	responseTime := time.Since(startTime)
 	costData.ResponseTimeMs = responseTime.Milliseconds()
@@ -391,11 +391,9 @@ func (si *SearchIndexer) recordIndexingCost(_ *lift.Context, costData *models.Se
 	costData.DynamoWrites = writeCount
 	costData.DynamoQueries = 1 // Indexing typically involves create operations
 
-	// Track costs in cost tracker
-	if si.costTracker != nil {
-		if err := si.costTracker.TrackDynamoWrite(int(writeCount)); err != nil {
-			si.logger.Warn("failed to track cost", zap.Error(err))
-		}
+	// Track costs using centralized tracker
+	if err := si.unifiedTracker.TrackDynamoWrite(ctx.Request.Context(), si.tableName, writeCount); err != nil {
+		si.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	// Calculate costs
@@ -437,31 +435,37 @@ func (si *SearchIndexer) calculateIndexingCost(writeCount int64) int64 {
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
+	lambdaCtx *common.LambdaContext
 	processor *SearchIndexer
 	db        core.DB
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
+	// Initialize Lambda with processor configuration for search indexing
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "search-indexer",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewSearchIndexer(db, cfg.DynamoTableName)
+	processor = NewSearchIndexer(db, lambdaCtx.Config.DynamoTableName)
 }
 
 func main() {
 	// Use Lift DynamoDB stream pattern with proper middleware and error handling
-	patterns.StartDynamoDBStreamLambda("search-indexer", processor, logger)
+	patterns.StartDynamoDBStreamLambda("search-indexer", processor, lambdaCtx.Logger)
 }

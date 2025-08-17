@@ -122,7 +122,7 @@ func (m *Metrics) BeforeCreate() error {
 	m.UpdatedAt = now
 
 	// Generate ID if not provided
-	if m.ID == "" {
+	if common.ValidateRequiredParam(m.ID, "m.ID") != nil {
 		m.ID = uuid.New().String()
 	}
 
@@ -184,13 +184,13 @@ func (m *Metrics) setupGSIKeys() {
 
 // Validate performs validation on the Metrics
 func (m *Metrics) Validate() error {
-	if strings.TrimSpace(m.ID) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.ID), "ID") != nil {
 		return fmt.Errorf("ID is required")
 	}
-	if strings.TrimSpace(m.Type) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.Type), "Type") != nil {
 		return fmt.Errorf("type is required")
 	}
-	if strings.TrimSpace(m.Service) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.Service), "Service") != nil {
 		return fmt.Errorf("service is required")
 	}
 	if !isValidMetricType(m.Type) {
@@ -231,10 +231,10 @@ func (am *AggregatedMetrics) BeforeUpdate() error {
 
 // Validate for AggregatedMetrics
 func (am *AggregatedMetrics) Validate() error {
-	if strings.TrimSpace(am.Type) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(am.Type), "Type") != nil {
 		return fmt.Errorf("type is required")
 	}
-	if strings.TrimSpace(am.Period) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(am.Period), "Period") != nil {
 		return fmt.Errorf("period is required")
 	}
 	if am.WindowStart.IsZero() {
@@ -474,21 +474,21 @@ func (MetricRecord) TableName() string {
 // UpdateKeys implements BaseModel interface and populates ALL GSI keys based on record data
 func (m *MetricRecord) UpdateKeys() error {
 	// Validation
-	if strings.TrimSpace(m.MetricType) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.MetricType), "MetricType") != nil {
 		return fmt.Errorf("MetricType is required")
 	}
-	if strings.TrimSpace(m.ServiceName) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.ServiceName), "ServiceName") != nil {
 		return fmt.Errorf("ServiceName is required")
 	}
 	if m.Timestamp.IsZero() {
 		return fmt.Errorf("timestamp is required")
 	}
-	if strings.TrimSpace(m.AggregationLevel) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.AggregationLevel), "AggregationLevel") != nil {
 		return fmt.Errorf("AggregationLevel is required")
 	}
 
 	// Generate ID if not provided
-	if m.MetricID == "" {
+	if common.ValidateRequiredParam(m.MetricID, "m.MetricID") != nil {
 		m.MetricID = uuid.New().String()
 	}
 
@@ -600,10 +600,10 @@ func (m *MetricRecord) BeforeUpdate() error {
 
 // Validate performs validation on the MetricRecord
 func (m *MetricRecord) Validate() error {
-	if strings.TrimSpace(m.MetricType) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.MetricType), "MetricType") != nil {
 		return fmt.Errorf("MetricType is required")
 	}
-	if strings.TrimSpace(m.ServiceName) == "" {
+	if common.ValidateRequiredParam(strings.TrimSpace(m.ServiceName), "ServiceName") != nil {
 		return fmt.Errorf("ServiceName is required")
 	}
 	if m.Timestamp.IsZero() {

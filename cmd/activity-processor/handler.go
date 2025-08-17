@@ -14,12 +14,14 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/routing"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/transformations"
 )
 
 // ActivityDirection represents the direction of an activity (inbox or outbox)
@@ -111,7 +113,7 @@ type ActivityHandler struct {
 func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	logger := zap.L()
 	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
 	return &ActivityHandler{
@@ -306,7 +308,7 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 		return fmt.Errorf("follow activity has invalid object type")
 	}
 
-	if targetUser == "" {
+	if err := common.ValidateRequiredParam("targetUser", targetUser); err != nil {
 		h.Logger.Error("Follow activity missing target user",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("follow activity missing target user")
@@ -316,7 +318,13 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 	followerUsername := h.extractUsernameFromActorURI(activity.Actor)
 	targetUsername := h.extractUsernameFromActorURI(targetUser)
 
-	if followerUsername == "" || targetUsername == "" {
+	if err := common.ValidateRequiredParam("followerUsername", followerUsername); err != nil {
+		h.Logger.Error("Failed to extract usernames from Follow activity",
+			zap.String("actor", activity.Actor),
+			zap.String("target", targetUser))
+		return fmt.Errorf("failed to extract usernames from Follow activity")
+	}
+	if err := common.ValidateRequiredParam("targetUsername", targetUsername); err != nil {
 		h.Logger.Error("Failed to extract usernames from Follow activity",
 			zap.String("actor", activity.Actor),
 			zap.String("target", targetUser))
@@ -408,7 +416,10 @@ func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *a
 		}
 	}
 
-	if follower == "" || accepter == "" {
+	if err := common.ValidateRequiredParam("follower", follower); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("accepter", accepter); err != nil {
 		h.Logger.Error("Failed to extract usernames from Accept activity",
 			zap.String("accepter", accepter),
 			zap.String("follower", follower))
@@ -595,6 +606,35 @@ func (h *ActivityHandler) interfaceSliceToStringSlice(slice []interface{}) []str
 func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activitypub.Activity, visibility string) (*models.Status, error) {
 	statusID := h.extractStatusID(note.ID)
 	
+	// NOTE: This transformation demonstrates the framework usage but is not ideal here
+	// since we're creating a storage model, not an API response model.
+	// The transformations framework is designed for API model generation.
+	
+	// Create an object map from the Note for transformation demonstration
+	statusMap := map[string]interface{}{
+		"id":        note.ID,
+		"content":   note.Content,
+		"published": note.Published,
+		"type":      note.Type,
+	}
+	
+	// Create a fake actor for the transformation (this is suboptimal)
+	username := ""
+	if parts := strings.Split(note.AttributedTo, "/"); len(parts) > 0 {
+		username = parts[len(parts)-1]
+	}
+	fakeActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   note.AttributedTo,
+			Type: "Person",
+		},
+		PreferredUsername: username,
+	}
+	
+	// Use transformation framework to get base structure
+	apiStatus := transformations.ObjectToStatusBase(statusMap, fakeActor, "https://"+os.Getenv("DOMAIN_NAME"))
+	
+	// Create storage model with transformation-derived and specific fields
 	status := &models.Status{
 		StatusID:      statusID,
 		Note:          note,
@@ -606,6 +646,9 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 		BccRecipients: note.BCC,
 		CreatedAt:     time.Now(),
 		ModifiedAt:    time.Now(),
+		// Use transformation for content extraction
+		Content:       apiStatus.Content,
+		Sensitive:     apiStatus.Sensitive,
 	}
 
 	// Set published time from Note if available
@@ -638,7 +681,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 	var contentPreview string
 	if status.Note != nil && status.Note.Content != "" {
 		contentPreview = status.Note.Content
-		if len(contentPreview) > 500 {
+		if err := common.ValidateStringLength("contentPreview", contentPreview, 0, 500); err == nil {
 			contentPreview = contentPreview[:500] + "..."
 		}
 	}
@@ -725,7 +768,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 	}
 
 	// Create timeline entries if any were added
-	if len(timelineEntries) > 0 {
+	if err := common.ValidateSliceNotEmpty("timelineEntries", timelineEntries); err == nil {
 		if err := h.TimelineRepo.CreateTimelineEntries(ctx, timelineEntries); err != nil {
 			h.Logger.Error("Failed to create timeline entries",
 				zap.String("status_id", status.StatusID),
@@ -748,7 +791,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 //nolint:unused // Helper method for timeline processing
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
 	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
 	return strings.Contains(actorID, domain)
@@ -760,7 +803,7 @@ func (h *ActivityHandler) isLocalActor(actorID string) bool {
 func (h *ActivityHandler) extractStatusID(noteID string) string {
 	// Extract the last part of the URL as status ID
 	parts := strings.Split(noteID, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return noteID
@@ -814,7 +857,10 @@ func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *a
 		}
 	}
 
-	if follower == "" || rejecter == "" {
+	if err := common.ValidateRequiredParam("follower", follower); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("rejecter", rejecter); err != nil {
 		h.Logger.Error("Failed to extract usernames from Reject activity",
 			zap.String("rejecter", rejecter),
 			zap.String("follower", follower))
@@ -901,7 +947,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 		return fmt.Errorf("delete activity has invalid object type")
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Delete activity missing object ID",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("delete activity missing object ID")
@@ -1069,7 +1115,7 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 		return fmt.Errorf("like activity has invalid object type")
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Like activity missing object ID",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("like activity missing object ID")
@@ -1077,7 +1123,7 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 
 	// Extract the actor doing the liking
 	actorURI := activity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		h.Logger.Error("Like activity missing actor",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("like activity missing actor")
@@ -1182,7 +1228,7 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 		return fmt.Errorf("announce activity has invalid object type")
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Announce activity missing object ID",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("announce activity missing object ID")
@@ -1190,7 +1236,7 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 
 	// Extract the actor doing the announcing
 	actorURI := activity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		h.Logger.Error("Announce activity missing actor",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("announce activity missing actor")
@@ -1440,7 +1486,7 @@ func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *a
 		}
 	}
 
-	if targetActor == "" {
+	if err := common.ValidateRequiredParam("targetActor", targetActor); err != nil {
 		return fmt.Errorf("unable to extract target actor from follow activity")
 	}
 
@@ -1476,12 +1522,12 @@ func (h *ActivityHandler) processUndoLike(ctx context.Context, undoActivity *act
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from like activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo like activity missing actor")
 	}
 
@@ -1517,12 +1563,12 @@ func (h *ActivityHandler) processUndoAnnounce(ctx context.Context, undoActivity 
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from announce activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo announce activity missing actor")
 	}
 
@@ -1558,12 +1604,12 @@ func (h *ActivityHandler) processUndoBlock(ctx context.Context, undoActivity *ac
 		}
 	}
 
-	if blockedActor == "" {
+	if err := common.ValidateRequiredParam("blockedActor", blockedActor); err != nil {
 		return fmt.Errorf("unable to extract blocked actor from block activity")
 	}
 
 	blockerActor := undoActivity.Actor
-	if blockerActor == "" {
+	if err := common.ValidateRequiredParam("blockerActor", blockerActor); err != nil {
 		return fmt.Errorf("undo block activity missing actor")
 	}
 
@@ -1599,12 +1645,12 @@ func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from create activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo create activity missing actor")
 	}
 
@@ -1640,12 +1686,12 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from update activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo update activity missing actor")
 	}
 
@@ -1659,7 +1705,7 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 		return fmt.Errorf("failed to get object history: %w", err)
 	}
 	
-	if len(history) == 0 {
+	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		h.Logger.Warn("no history found for object, cannot undo update",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
@@ -1708,12 +1754,12 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from delete activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo delete activity missing actor")
 	}
 
@@ -1797,12 +1843,12 @@ func (h *ActivityHandler) processUndoAccept(_ context.Context, undoActivity *act
 		}
 	}
 
-	if originalActivityID == "" {
+	if err := common.ValidateRequiredParam("originalActivityID", originalActivityID); err != nil {
 		return fmt.Errorf("unable to extract original activity ID from accept activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo accept activity missing actor")
 	}
 
@@ -1831,12 +1877,12 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 		}
 	}
 
-	if flaggedObjectID == "" {
+	if err := common.ValidateRequiredParam("flaggedObjectID", flaggedObjectID); err != nil {
 		return fmt.Errorf("unable to extract flagged object ID from flag activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo flag activity missing actor")
 	}
 
@@ -1858,7 +1904,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 		}
 	}
 
-	if targetFlagID == "" {
+	if err := common.ValidateRequiredParam("targetFlagID", targetFlagID); err != nil {
 		h.Logger.Warn("No pending flag found to undo",
 			zap.String("actor", actorURI),
 			zap.String("flagged_object_id", flaggedObjectID))
@@ -1924,18 +1970,18 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 		}
 	}
 
-	if movedToTarget == "" {
+	if err := common.ValidateRequiredParam("movedToTarget", movedToTarget); err != nil {
 		return fmt.Errorf("unable to extract moved-to target from move activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo move activity missing actor")
 	}
 
 	// Extract username from actor URI for repository operations
 	username := h.extractUsernameFromActorURI(actorURI)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("unable to extract username from actor URI: %s", actorURI)
 	}
 
@@ -2036,12 +2082,12 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from add activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo add activity missing actor")
 	}
 
@@ -2055,7 +2101,7 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 
 	// Extract list ID from target collection
 	listID := h.extractListIDFromCollection(targetCollection)
-	if listID == "" {
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", targetCollection),
 			zap.String("activity_id", undoActivity.ID))
@@ -2084,7 +2130,7 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 
 	// Extract username from object ID and remove from list (undoing the Add)
 	memberUsername := h.extractUsernameFromActor(objectID)
-	if memberUsername == "" {
+	if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 		h.Logger.Error("Unable to extract username from object ID",
 			zap.String("object_id", objectID))
 		return fmt.Errorf("unable to extract username from object ID")
@@ -2125,12 +2171,12 @@ func (h *ActivityHandler) processUndoRemove(ctx context.Context, undoActivity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return fmt.Errorf("unable to extract object ID from remove activity")
 	}
 
 	actorURI := undoActivity.Actor
-	if actorURI == "" {
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		return fmt.Errorf("undo remove activity missing actor")
 	}
 
@@ -2144,7 +2190,7 @@ func (h *ActivityHandler) processUndoRemove(ctx context.Context, undoActivity *a
 
 	// Extract list ID from target collection
 	listID := h.extractListIDFromCollection(targetCollection)
-	if listID == "" {
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", targetCollection),
 			zap.String("activity_id", undoActivity.ID))
@@ -2173,7 +2219,7 @@ func (h *ActivityHandler) processUndoRemove(ctx context.Context, undoActivity *a
 
 	// Extract username from object ID and add back to list (undoing the Remove)
 	memberUsername := h.extractUsernameFromActor(objectID)
-	if memberUsername == "" {
+	if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 		h.Logger.Error("Unable to extract username from object ID",
 			zap.String("object_id", objectID))
 		return fmt.Errorf("unable to extract username from object ID")
@@ -2230,7 +2276,7 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 		return fmt.Errorf("block activity has invalid object type")
 	}
 
-	if blockedActor == "" {
+	if err := common.ValidateRequiredParam("blockedActor", blockedActor); err != nil {
 		h.Logger.Error("Block activity missing blocked actor",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("block activity missing blocked actor")
@@ -2238,7 +2284,7 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 
 	// Extract the actor doing the blocking
 	blockerActor := activity.Actor
-	if blockerActor == "" {
+	if err := common.ValidateRequiredParam("blockerActor", blockerActor); err != nil {
 		h.Logger.Error("Block activity missing blocker actor",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("block activity missing blocker actor")
@@ -2321,7 +2367,7 @@ func (h *ActivityHandler) processFlagActivity(ctx context.Context, activity *act
 		return fmt.Errorf("unable to extract flagged object from Flag activity")
 	}
 
-	if len(flaggedObjects) == 0 {
+	if err := common.ValidateSliceNotEmpty("flaggedObjects", flaggedObjects); err != nil {
 		return fmt.Errorf("no flagged objects found in Flag activity")
 	}
 
@@ -2402,7 +2448,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 		zap.String("target", activity.Target))
 
 	// Validate required fields for Move activity
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
 		h.Logger.Warn("move activity missing target")
 		return fmt.Errorf("move activity must specify a target account")
 	}
@@ -2413,7 +2459,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 
 	// Extract username from old account ID
 	oldUsername := h.extractUsernameFromActorURI(oldAccountID)
-	if oldUsername == "" {
+	if err := common.ValidateRequiredParam("oldUsername", oldUsername); err != nil {
 		return fmt.Errorf("unable to extract username from old actor URI: %s", oldAccountID)
 	}
 
@@ -2482,7 +2528,7 @@ func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *acti
 		zap.String("actor", activity.Actor))
 
 	// Extract the target collection from activity.Target
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
 		h.Logger.Error("Add activity missing target collection",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("add activity missing target collection")
@@ -2517,13 +2563,13 @@ func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *acti
 		return fmt.Errorf("unable to extract object from Add activity")
 	}
 
-	if len(objectIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
 		return fmt.Errorf("no objects found to add in Add activity")
 	}
 
 	// Extract list ID from target (format: https://domain.com/users/username/lists/{listID})
 	listID := h.extractListIDFromCollection(activity.Target)
-	if listID == "" {
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", activity.Target),
 			zap.String("activity_id", activity.ID))
@@ -2554,7 +2600,7 @@ func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *acti
 	for _, objectID := range objectIDs {
 		// Extract username from object ID (assume format: https://domain.com/users/username)
 		memberUsername := h.extractUsernameFromActor(objectID)
-		if memberUsername == "" {
+		if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 			h.Logger.Warn("Unable to extract username from object ID",
 				zap.String("object_id", objectID))
 			continue
@@ -2590,7 +2636,7 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 		zap.String("actor", activity.Actor))
 
 	// Extract the target collection from activity.Target
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
 		h.Logger.Error("Remove activity missing target collection",
 			zap.String("activity_id", activity.ID))
 		return fmt.Errorf("remove activity missing target collection")
@@ -2625,13 +2671,13 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 		return fmt.Errorf("unable to extract object from Remove activity")
 	}
 
-	if len(objectIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
 		return fmt.Errorf("no objects found to remove in Remove activity")
 	}
 
 	// Extract list ID from target
 	listID := h.extractListIDFromCollection(activity.Target)
-	if listID == "" {
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", activity.Target),
 			zap.String("activity_id", activity.ID))
@@ -2662,7 +2708,7 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 	for _, objectID := range objectIDs {
 		// Extract username from object ID
 		memberUsername := h.extractUsernameFromActor(objectID)
-		if memberUsername == "" {
+		if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 			h.Logger.Warn("Unable to extract username from object ID",
 				zap.String("object_id", objectID))
 			continue
@@ -2714,7 +2760,7 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 		recipients = append(recipients, activity.CC...)
 	}
 
-	if len(recipients) == 0 {
+	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {
 		h.Logger.Debug("No recipients found for activity, skipping delivery",
 			zap.String("activity_id", activity.ID))
 		return nil
@@ -2723,7 +2769,7 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 	// Filter out local recipients and public addresses
 	remoteRecipients := h.filterRemoteRecipients(recipients)
 	
-	if len(remoteRecipients) == 0 {
+	if err := common.ValidateSliceNotEmpty("remoteRecipients", remoteRecipients); err != nil {
 		h.Logger.Debug("No remote recipients found for activity, skipping delivery",
 			zap.String("activity_id", activity.ID),
 			zap.Any("all_recipients", recipients))
@@ -2794,7 +2840,7 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 //nolint:unused // Helper method for deliverActivity
 func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
 	
@@ -2814,7 +2860,7 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 		}
 		
 		// Skip empty recipients
-		if recipient == "" {
+		if err := common.ValidateRequiredParam("recipient", recipient); err != nil {
 			continue
 		}
 		
@@ -2848,7 +2894,7 @@ func (h *ActivityHandler) extractUsernameFromActorURI(actorURI string) string {
 	
 	// Fallback: extract the last path segment
 	parts = strings.Split(strings.TrimSuffix(actorURI, "/"), "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	
@@ -2861,7 +2907,7 @@ func (h *ActivityHandler) extractUsernameFromActorURI(actorURI string) string {
 func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, status *models.Status, actorID, postID, _ string, isReply bool, inReplyTo string, createdAt time.Time) error {
 	// Extract username from actor ID for follower lookup
 	actorUsername := h.extractUsernameFromActorURI(actorID)
-	if actorUsername == "" {
+	if err := common.ValidateRequiredParam("actorUsername", actorUsername); err != nil {
 		return fmt.Errorf("failed to extract username from actor ID: %s", actorID)
 	}
 
@@ -2906,7 +2952,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 	}
 
 	// Batch create timeline entries for better performance
-	if len(timelineEntries) > 0 {
+	if err := common.ValidateSliceNotEmpty("timelineEntries", timelineEntries); err == nil {
 		if err := h.TimelineRepo.CreateTimelineEntries(ctx, timelineEntries); err != nil {
 			h.Logger.Error("Failed to create timeline entries for followers",
 				zap.String("actor_username", actorUsername),
@@ -2954,7 +3000,7 @@ func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) stri
 	
 	// Fallback: try to extract the last path segment
 	parts := strings.Split(strings.TrimSuffix(collectionURI, "/"), "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	

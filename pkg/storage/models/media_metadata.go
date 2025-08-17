@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaMetadata represents metadata about media files stored in S3
@@ -84,7 +85,7 @@ func (m *MediaMetadata) BeforeCreate() error {
 	}
 
 	// Set default status if not set
-	if m.Status == "" {
+	if err := common.ValidateRequiredParam("m.Status", m.Status); err != nil {
 		m.Status = StatusPending
 	}
 
@@ -111,7 +112,7 @@ func (m *MediaMetadata) BeforeUpdate() error {
 
 // Validate performs validation on the MediaMetadata
 func (m *MediaMetadata) Validate() error {
-	if strings.TrimSpace(m.MediaID) == "" {
+	if err := common.ValidateRequiredParam("strings.TrimSpace(m.MediaID)", strings.TrimSpace(m.MediaID)); err != nil {
 		return fmt.Errorf("MediaID is required")
 	}
 

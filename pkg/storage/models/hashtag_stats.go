@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HashtagStats represents statistics for a hashtag
@@ -92,7 +93,7 @@ func (h *HashtagStats) AddHistoryEntry(date time.Time, usageCount, userCount int
 
 // GetAverageUsage calculates the average usage over the history period
 func (h *HashtagStats) GetAverageUsage() float64 {
-	if len(h.History) == 0 {
+	if err := common.ValidateSliceNotEmpty("h.History", h.History); err != nil {
 		return float64(h.UsageCount)
 	}
 

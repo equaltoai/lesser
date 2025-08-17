@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Subscriber represents a subscriber to the event bus
@@ -240,7 +241,7 @@ func (eb *EventBus) Subscribe(subscriberID string, filter *EventFilter, bufferSi
 		return nil, fmt.Errorf("event bus is not running")
 	}
 
-	if subscriberID == "" {
+	if err := common.ValidateRequiredParam("subscriberID", subscriberID); err != nil {
 		subscriberID = fmt.Sprintf("sub_%d", time.Now().UnixNano())
 	}
 

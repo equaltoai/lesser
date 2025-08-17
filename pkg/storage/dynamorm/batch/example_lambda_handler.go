@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Example Lambda handlers demonstrating SQS batch processing
@@ -189,7 +190,7 @@ func SendNotificationBatchToSQS(sqsURL string, userIDs []string, statusID, autho
 
 // OptimalBatchSize calculates the optimal batch size based on payload size
 func OptimalBatchSize(items []any) int {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return 0
 	}
 

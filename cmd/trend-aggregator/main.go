@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -127,7 +126,7 @@ func (h *TrendAggregatorHandler) aggregateHashtagTrends(ctx context.Context, sin
 	for _, hashtag := range hashtags {
 		// Extract user ID from hashtag data (assuming it's in the struct)
 		userID := hashtag.UserID // This field might need adjustment based on actual struct
-		if userID == "" {
+		if err := common.ValidateRequiredParam("userID", userID); err != nil {
 			continue // Skip if no user ID
 		}
 
@@ -273,7 +272,7 @@ func (h *TrendAggregatorHandler) aggregateLinkTrends(ctx context.Context, since 
 	linkStats := make(map[string]*LinkTrendData)
 	for _, link := range links {
 		userID := link.UserID
-		if userID == "" {
+		if err := common.ValidateRequiredParam("userID", userID); err != nil {
 			continue // Skip if no user ID
 		}
 
@@ -428,31 +427,37 @@ type LinkTrendStorage struct {
 }
 
 var (
-	logger  *zap.Logger
-	cfg     *config.Config
-	handler *TrendAggregatorHandler
-	db      core.DB
+	lambdaCtx *common.LambdaContext
+	handler   *TrendAggregatorHandler
+	db        core.DB
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
+	// Initialize Lambda with basic configuration for trend aggregation
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "trend-aggregator",
+		LambdaType:         common.LambdaTypeBasic,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize handler
-	handler = NewTrendAggregatorHandler(db, logger)
+	handler = NewTrendAggregatorHandler(db, lambdaCtx.Logger)
 }
 
 func main() {
 	// Use Lift EventBridge pattern for scheduled trend aggregation
-	patterns.StartScheduledLambda("trend-aggregator", handler, logger)
+	patterns.StartScheduledLambda("trend-aggregator", handler, lambdaCtx.Logger)
 }

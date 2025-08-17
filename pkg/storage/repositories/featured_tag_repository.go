@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FeaturedTagRepository implements featured tag operations using DynamORM
@@ -107,7 +108,7 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 		}
 	}
 
-	if targetID == "" {
+	if err := common.ValidateRequiredParam("targetID", targetID); err != nil {
 		return storage.ErrNotFound
 	}
 

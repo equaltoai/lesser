@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -125,7 +126,7 @@ func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, li
 
 	// Generate next cursor
 	var nextCursor string
-	if len(likes) > limit {
+	if err := common.ValidateSliceLength("likes", likes, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = likes[limit-1].SK
 		likes = likes[:limit] // Trim to requested limit
@@ -162,7 +163,7 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 
 	// Generate next cursor
 	var nextCursor string
-	if len(likes) > limit {
+	if err := common.ValidateSliceLength("likes", likes, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = likes[limit-1].GSI1SK
 		likes = likes[:limit] // Trim to requested limit
@@ -224,7 +225,7 @@ func (r *LikeRepository) CascadeDeleteLikes(ctx context.Context, objectID string
 		}
 
 		// If no likes found, we're done
-		if len(likes) == 0 {
+		if err := common.ValidateSliceNotEmpty("likes", likes); err != nil {
 			break
 		}
 

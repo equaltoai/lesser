@@ -44,6 +44,10 @@ func NewFederationRepository(db core.DB, logger *zap.Logger) *FederationReposito
 
 // GetInstanceInfo retrieves information about a federated instance
 func (r *FederationRepository) GetInstanceInfo(ctx context.Context, domain string) (*storage.InstanceInfo, error) {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return nil, err
+	}
+
 	var instance models.FederationInstance
 
 	err := r.db.WithContext(ctx).Model(&models.FederationInstance{}).
@@ -183,6 +187,10 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 
 // GetInstanceStats retrieves comprehensive statistics for a specific instance
 func (r *FederationRepository) GetInstanceStats(ctx context.Context, domain string) (*storage.InstanceStats, error) {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return nil, err
+	}
+
 	// Get instance info
 	instanceInfo, err := r.GetInstanceInfo(ctx, domain)
 	if err != nil {
@@ -257,7 +265,7 @@ func (r *FederationRepository) GetInstanceStats(ctx context.Context, domain stri
 
 // RecordFederationActivity records a single federation activity for cost tracking
 func (r *FederationRepository) RecordFederationActivity(ctx context.Context, activity *storage.FederationActivity) error {
-	if activity.ID == "" {
+	if err := common.ValidateRequiredParam("activity.ID", activity.ID); err != nil {
 		activity.ID = fmt.Sprintf("fed_activity_%s", generateFederationRandomString(12))
 	}
 
@@ -337,6 +345,10 @@ func (r *FederationRepository) GetFederationCosts(ctx context.Context, startTime
 
 // GetInstanceHealthReport generates a health report for a specific instance
 func (r *FederationRepository) GetInstanceHealthReport(ctx context.Context, domain string, period time.Duration) (*storage.InstanceHealthReport, error) {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return nil, err
+	}
+
 	// Calculate time range
 	endTime := time.Now()
 	startTime := endTime.Add(-period)
@@ -598,7 +610,7 @@ func (r *FederationRepository) GetFederationNodesByHealth(ctx context.Context, h
 
 // GetFederationEdges retrieves edges between specified domains
 func (r *FederationRepository) GetFederationEdges(ctx context.Context, domains []string) ([]*storage.FederationEdge, error) {
-	if len(domains) == 0 {
+	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
 		return []*storage.FederationEdge{}, nil
 	}
 
@@ -646,6 +658,10 @@ func (r *FederationRepository) GetFederationEdges(ctx context.Context, domains [
 
 // GetInstanceMetadata retrieves metadata for a specific instance
 func (r *FederationRepository) GetInstanceMetadata(ctx context.Context, domain string) (*storage.InstanceMetadata, error) {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return nil, err
+	}
+
 	var metadata models.InstanceMetadata
 
 	err := r.db.WithContext(ctx).Model(&models.InstanceMetadata{}).
@@ -735,7 +751,7 @@ func (r *FederationRepository) computeFederationClusters(ctx context.Context) ([
 		return nil, fmt.Errorf("failed to get federation nodes: %w", err)
 	}
 
-	if len(nodes) == 0 {
+	if err := common.ValidateSliceNotEmpty("nodes", nodes); err != nil {
 		return []models.InstanceCluster{}, nil
 	}
 
@@ -782,7 +798,7 @@ func (r *FederationRepository) computeFederationClusters(ctx context.Context) ([
 
 // clusterByConnectionStrength uses a simple clustering algorithm based on connection strength
 func (r *FederationRepository) clusterByConnectionStrength(nodes []*storage.FederationNode, edges []*storage.FederationEdge) []*storage.InstanceCluster {
-	if len(nodes) == 0 {
+	if err := common.ValidateSliceNotEmpty("nodes", nodes); err != nil {
 		return []*storage.InstanceCluster{}
 	}
 
@@ -865,7 +881,7 @@ func (r *FederationRepository) addConnectedNodes(domain string, connectionMap ma
 
 // findCenterNode finds the most connected node in the cluster
 func (r *FederationRepository) findCenterNode(instances []string, connectionMap map[string]map[string]float64, nodes []*storage.FederationNode) string {
-	if len(instances) == 0 {
+	if err := common.ValidateSliceNotEmpty("instances", instances); err != nil {
 		return ""
 	}
 	if len(instances) == 1 {
@@ -1091,6 +1107,13 @@ func (r *FederationRepository) updateAggregatedCosts(ctx context.Context, activi
 
 // AcknowledgeSeverance marks a severance as acknowledged by the user
 func (r *FederationRepository) AcknowledgeSeverance(ctx context.Context, userID, domain string) error {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return err
+	}
+
 	// Get the existing severance record
 	var severance models.FederationSeverance
 	err := r.db.WithContext(ctx).Model(&models.FederationSeverance{}).
@@ -1132,6 +1155,13 @@ func (r *FederationRepository) AcknowledgeSeverance(ctx context.Context, userID,
 
 // AttemptReconnection records an attempt to reconnect to a severed domain
 func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, domain string) error {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return err
+	}
+
 	now := time.Now()
 
 	attempt := &models.ReconnectionAttempt{
@@ -1232,6 +1262,10 @@ func (r *FederationRepository) performReconnection(ctx context.Context, attempt 
 
 // performConnectivityTest tests basic HTTP connectivity to the domain
 func (r *FederationRepository) performConnectivityTest(ctx context.Context, domain string) error {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return err
+	}
+
 	// Create HTTP client with security features
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -1277,6 +1311,10 @@ func (r *FederationRepository) performConnectivityTest(ctx context.Context, doma
 
 // verifyNodeInfo checks if the domain supports NodeInfo (ActivityPub indicator)
 func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string) error {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return err
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	nodeInfoURL := fmt.Sprintf("https://%s/.well-known/nodeinfo", domain)
@@ -1326,7 +1364,7 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 		}
 	}
 
-	if nodeInfoEndpoint == "" {
+	if err := common.ValidateRequiredParam("nodeInfoEndpoint", nodeInfoEndpoint); err != nil {
 		return fmt.Errorf("no supported nodeinfo version found")
 	}
 
@@ -1339,6 +1377,10 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 
 // testWebFingerResolution tests WebFinger resolution capability
 func (r *FederationRepository) testWebFingerResolution(ctx context.Context, domain string) error {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return err
+	}
+
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	// Test WebFinger with a common test pattern
@@ -1568,8 +1610,8 @@ func (r *FederationRepository) GetRecentInstanceConnections(ctx context.Context,
 
 // UpdateFederationNode updates or creates a federation node
 func (r *FederationRepository) UpdateFederationNode(ctx context.Context, node *storage.FederationNode) error {
-	if node.Domain == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", node.Domain); err != nil {
+		return err
 	}
 
 	// Convert to model
@@ -1615,8 +1657,11 @@ func (r *FederationRepository) UpdateFederationNode(ctx context.Context, node *s
 
 // UpdateFederationEdge updates or creates a federation edge
 func (r *FederationRepository) UpdateFederationEdge(ctx context.Context, edge *storage.FederationEdge) error {
-	if edge.SourceDomain == "" || edge.TargetDomain == "" {
-		return fmt.Errorf("source and target domains are required")
+	if err := common.ValidateRequiredParam("source_domain", edge.SourceDomain); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("target_domain", edge.TargetDomain); err != nil {
+		return err
 	}
 
 	// Convert to model
@@ -1654,8 +1699,8 @@ func (r *FederationRepository) UpdateFederationEdge(ctx context.Context, edge *s
 
 // UpdateInstanceMetadata updates instance metadata
 func (r *FederationRepository) UpdateInstanceMetadata(ctx context.Context, metadata *storage.InstanceMetadata) error {
-	if metadata.Domain == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", metadata.Domain); err != nil {
+		return err
 	}
 
 	// Set last updated time
@@ -1697,8 +1742,11 @@ func (r *FederationRepository) UpdateInstanceMetadata(ctx context.Context, metad
 
 // StoreFederationTimeSeries stores time-series federation metrics
 func (r *FederationRepository) StoreFederationTimeSeries(ctx context.Context, data *storage.FederationTimeSeries) error {
-	if data.Domain == "" || data.Period == "" {
-		return fmt.Errorf("domain and period are required")
+	if err := common.ValidateRequiredParam("domain", data.Domain); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("period", data.Period); err != nil {
+		return err
 	}
 
 	// Convert to model
@@ -1737,8 +1785,8 @@ func (r *FederationRepository) StoreFederationTimeSeries(ctx context.Context, da
 
 // StoreInstanceCluster stores a calculated federation cluster
 func (r *FederationRepository) StoreInstanceCluster(ctx context.Context, cluster *storage.InstanceCluster) error {
-	if cluster.ClusterID == "" {
-		return fmt.Errorf("cluster ID is required")
+	if err := common.ValidateRequiredParam("cluster_id", cluster.ClusterID); err != nil {
+		return err
 	}
 
 	cluster.Size = len(cluster.Instances)
@@ -1774,7 +1822,7 @@ func (r *FederationRepository) StoreInstanceCluster(ctx context.Context, cluster
 // CreateSeveredRelationship records a new severed federation relationship
 func (r *FederationRepository) CreateSeveredRelationship(ctx context.Context, rel *models.SeveredRelationship) error {
 	// Generate ID if not provided
-	if rel.ID == "" {
+	if err := common.ValidateRequiredParam("rel.ID", rel.ID); err != nil {
 		rel.ID = fmt.Sprintf("%s-%s-%d", rel.LocalInstance, rel.RemoteInstance, time.Now().Unix())
 	}
 
@@ -1863,7 +1911,7 @@ func (r *FederationRepository) GetSeveredRelationship(ctx context.Context, local
 		return nil, fmt.Errorf("failed to query severed relationship: %w", err)
 	}
 
-	if len(relationships) == 0 {
+	if err := common.ValidateSliceNotEmpty("relationships", relationships); err != nil {
 		return nil, fmt.Errorf("no severed relationship found between %s and %s", localInstance, remoteInstance)
 	}
 
@@ -1873,7 +1921,10 @@ func (r *FederationRepository) GetSeveredRelationship(ctx context.Context, local
 // UpdateSeveredRelationship updates an existing severed relationship
 func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, rel *models.SeveredRelationship) error {
 	// Ensure keys are set
-	if rel.PK == "" || rel.SK == "" {
+	if err := common.ValidateRequiredParam("rel.PK", rel.PK); err != nil {
+		rel.UpdateKeys()
+	}
+	if err := common.ValidateRequiredParam("rel.SK", rel.SK); err != nil {
 		rel.UpdateKeys()
 	}
 
@@ -2495,11 +2546,11 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 
 // StoreDetailedFederationMetrics stores detailed federation time series record with 5-minute aggregation
 func (r *FederationRepository) StoreDetailedFederationMetrics(ctx context.Context, metrics *models.FederationAnalyticsTimeSeries) error {
-	if metrics.Domain == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", metrics.Domain); err != nil {
+		return err
 	}
-	if metrics.Period == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", metrics.Period); err != nil {
+		return err
 	}
 
 	// Update keys and calculate health score
@@ -2528,10 +2579,10 @@ func (r *FederationRepository) StoreDetailedFederationMetrics(ctx context.Contex
 
 // GetDetailedFederationMetrics retrieves detailed time series data for federation metrics
 func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context, domain, period string, startTime, endTime time.Time) ([]*models.FederationAnalyticsTimeSeries, error) {
-	if domain == "" {
-		return nil, fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return nil, err
 	}
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = models.Period5Min // Default to 5-minute aggregation
 	}
 
@@ -2573,7 +2624,7 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 
 // GetDetailedMetricsByPeriod retrieves detailed time series data across all domains for a specific period
 func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, period string, startTime, endTime time.Time, limit int) ([]*models.FederationAnalyticsTimeSeries, error) {
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "5min"
 	}
 
@@ -2620,6 +2671,10 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 
 // GetDomainHealthScore calculates the current health score for a domain
 func (r *FederationRepository) GetDomainHealthScore(ctx context.Context, domain string) (float64, error) {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return 0, err
+	}
+
 	// Get the most recent 5-minute metrics
 	endTime := time.Now()
 	startTime := endTime.Add(-5 * time.Minute)
@@ -2629,7 +2684,7 @@ func (r *FederationRepository) GetDomainHealthScore(ctx context.Context, domain 
 		return 0, fmt.Errorf("failed to get recent metrics: %w", err)
 	}
 
-	if len(metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		// No recent data, return neutral score
 		return 50.0, nil
 	}
@@ -2710,7 +2765,7 @@ func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, d
 		return fmt.Errorf("failed to get source metrics: %w", err)
 	}
 
-	if len(sourceMetrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("sourceMetrics", sourceMetrics); err != nil {
 		// No data to aggregate
 		return nil
 	}
@@ -2777,9 +2832,16 @@ func (r *FederationRepository) GetFederationAlertsData(ctx context.Context) ([]m
 // GetAffectedFollowersCount returns the count of followers affected by a domain severance
 // This counts how many followers from the specified remote domain were lost when severance occurred
 func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, userID, domain string) (int, error) {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return 0, err
+	}
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
+		return 0, err
+	}
+
 	// Get the severed relationship for this domain
 	localInstance := os.Getenv("DOMAIN_NAME")
-	if localInstance == "" {
+	if err := common.ValidateRequiredParam("localInstance", localInstance); err != nil {
 		localInstance = DefaultDomain
 	}
 
@@ -2812,7 +2874,7 @@ func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, us
 func (r *FederationRepository) GetAffectedFollowingCount(ctx context.Context, userID, domain string) (int, error) {
 	// Get the severed relationship for this domain
 	localInstance := os.Getenv("DOMAIN_NAME")
-	if localInstance == "" {
+	if err := common.ValidateRequiredParam("localInstance", localInstance); err != nil {
 		localInstance = DefaultDomain
 	}
 

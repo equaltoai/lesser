@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -687,8 +688,11 @@ func (s *Service) GetRelationship(ctx context.Context, requesterID, targetID str
 		zap.String("target_id", targetID))
 
 	// Basic validation
-	if requesterID == "" || targetID == "" {
-		return nil, fmt.Errorf("requester_id and target_id are required")
+	if err := common.ValidateRequiredParam("requester_id", requesterID); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateRequiredParam("target_id", targetID); err != nil {
+		return nil, err
 	}
 
 	// Build relationship data
@@ -1373,28 +1377,28 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 // Private helper methods
 
 func (s *Service) validateAddDomainBlockCommand(cmd *AddDomainBlockCommand) error {
-	if cmd.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", cmd.UserID); err != nil {
+		return err
 	}
-	if cmd.Domain == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", cmd.Domain); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateRemoveDomainBlockCommand(cmd *RemoveDomainBlockCommand) error {
-	if cmd.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", cmd.UserID); err != nil {
+		return err
 	}
-	if cmd.Domain == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", cmd.Domain); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateGetDomainBlocksQuery(query *GetDomainBlocksQuery) error {
-	if query.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", query.UserID); err != nil {
+		return err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 100 // Default limit
@@ -1403,8 +1407,8 @@ func (s *Service) validateGetDomainBlocksQuery(query *GetDomainBlocksQuery) erro
 }
 
 func (s *Service) validateGetMutedUsersQuery(query *GetMutedUsersQuery) error {
-	if query.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", query.UserID); err != nil {
+		return err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 40 // Default limit
@@ -1413,8 +1417,8 @@ func (s *Service) validateGetMutedUsersQuery(query *GetMutedUsersQuery) error {
 }
 
 func (s *Service) validateGetBlockedUsersQuery(query *GetBlockedUsersQuery) error {
-	if query.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", query.UserID); err != nil {
+		return err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 40 // Default limit
@@ -1423,8 +1427,8 @@ func (s *Service) validateGetBlockedUsersQuery(query *GetBlockedUsersQuery) erro
 }
 
 func (s *Service) validateGetFollowRequestsQuery(query *GetFollowRequestsQuery) error {
-	if query.UserID == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", query.UserID); err != nil {
+		return err
 	}
 	if query.Limit <= 0 {
 		query.Limit = 100 // Default limit
@@ -1433,11 +1437,11 @@ func (s *Service) validateGetFollowRequestsQuery(query *GetFollowRequestsQuery) 
 }
 
 func (s *Service) validateAcceptFollowRequestCommand(cmd *AcceptFollowRequestCommand) error {
-	if cmd.RequesterID == "" {
-		return fmt.Errorf("requester_id is required")
+	if err := common.ValidateRequiredParam("requester_id", cmd.RequesterID); err != nil {
+		return err
 	}
-	if cmd.FollowerID == "" {
-		return fmt.Errorf("follower_id is required")
+	if err := common.ValidateRequiredParam("follower_id", cmd.FollowerID); err != nil {
+		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
 		return fmt.Errorf("cannot accept follow request from self")
@@ -1446,11 +1450,11 @@ func (s *Service) validateAcceptFollowRequestCommand(cmd *AcceptFollowRequestCom
 }
 
 func (s *Service) validateRejectFollowRequestCommand(cmd *RejectFollowRequestCommand) error {
-	if cmd.RequesterID == "" {
-		return fmt.Errorf("requester_id is required")
+	if err := common.ValidateRequiredParam("requester_id", cmd.RequesterID); err != nil {
+		return err
 	}
-	if cmd.FollowerID == "" {
-		return fmt.Errorf("follower_id is required")
+	if err := common.ValidateRequiredParam("follower_id", cmd.FollowerID); err != nil {
+		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
 		return fmt.Errorf("cannot reject follow request from self")
@@ -1459,70 +1463,70 @@ func (s *Service) validateRejectFollowRequestCommand(cmd *RejectFollowRequestCom
 }
 
 func (s *Service) validateFollowCommand(_ context.Context, cmd *FollowCommand) error {
-	if cmd.FollowerID == "" {
-		return fmt.Errorf("follower_id is required")
+	if err := common.ValidateRequiredParam("follower_id", cmd.FollowerID); err != nil {
+		return err
 	}
-	if cmd.FollowingID == "" {
-		return fmt.Errorf("following_id is required")
+	if err := common.ValidateRequiredParam("following_id", cmd.FollowingID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateUnfollowCommand(_ context.Context, cmd *UnfollowCommand) error {
-	if cmd.FollowerID == "" {
-		return fmt.Errorf("follower_id is required")
+	if err := common.ValidateRequiredParam("follower_id", cmd.FollowerID); err != nil {
+		return err
 	}
-	if cmd.FollowingID == "" {
-		return fmt.Errorf("following_id is required")
+	if err := common.ValidateRequiredParam("following_id", cmd.FollowingID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateBlockCommand(_ context.Context, cmd *BlockCommand) error {
-	if cmd.BlockerID == "" {
-		return fmt.Errorf("blocker_id is required")
+	if err := common.ValidateRequiredParam("blocker_id", cmd.BlockerID); err != nil {
+		return err
 	}
-	if cmd.BlockedID == "" {
-		return fmt.Errorf("blocked_id is required")
+	if err := common.ValidateRequiredParam("blocked_id", cmd.BlockedID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateUnblockCommand(_ context.Context, cmd *UnblockCommand) error {
-	if cmd.BlockerID == "" {
-		return fmt.Errorf("blocker_id is required")
+	if err := common.ValidateRequiredParam("blocker_id", cmd.BlockerID); err != nil {
+		return err
 	}
-	if cmd.BlockedID == "" {
-		return fmt.Errorf("blocked_id is required")
+	if err := common.ValidateRequiredParam("blocked_id", cmd.BlockedID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateMuteCommand(_ context.Context, cmd *MuteCommand) error {
-	if cmd.MuterID == "" {
-		return fmt.Errorf("muter_id is required")
+	if err := common.ValidateRequiredParam("muter_id", cmd.MuterID); err != nil {
+		return err
 	}
-	if cmd.MutedID == "" {
-		return fmt.Errorf("muted_id is required")
+	if err := common.ValidateRequiredParam("muted_id", cmd.MutedID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateUnmuteCommand(_ context.Context, cmd *UnmuteCommand) error {
-	if cmd.MuterID == "" {
-		return fmt.Errorf("muter_id is required")
+	if err := common.ValidateRequiredParam("muter_id", cmd.MuterID); err != nil {
+		return err
 	}
-	if cmd.MutedID == "" {
-		return fmt.Errorf("muted_id is required")
+	if err := common.ValidateRequiredParam("muted_id", cmd.MutedID); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateGetRelationshipsQuery(query *GetRelationshipsQuery) error {
-	if query.RequesterID == "" {
-		return fmt.Errorf("requester_id is required")
+	if err := common.ValidateRequiredParam("requester_id", query.RequesterID); err != nil {
+		return err
 	}
-	if len(query.TargetIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("query.TargetIDs", query.TargetIDs); err != nil {
 		return fmt.Errorf("target_ids cannot be empty")
 	}
 	if len(query.TargetIDs) > 40 {
@@ -2121,21 +2125,21 @@ func (s *Service) GetAffectedRelationships(_ context.Context, query *GetAffected
 // Validation methods
 
 func (s *Service) validateAcknowledgeSeveranceCommand(cmd *AcknowledgeSeveranceCommand) error {
-	if strings.TrimSpace(cmd.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", strings.TrimSpace(cmd.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(cmd.SeveranceID) == "" {
-		return fmt.Errorf("severance_id is required")
+	if err := common.ValidateRequiredParam("severance_id", strings.TrimSpace(cmd.SeveranceID)); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (s *Service) validateGetAffectedRelationshipsQuery(query *GetAffectedRelationshipsQuery) error {
-	if strings.TrimSpace(query.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", strings.TrimSpace(query.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(query.SeveredRelationshipID) == "" {
-		return fmt.Errorf("severed_relationship_id is required")
+	if err := common.ValidateRequiredParam("severed_relationship_id", strings.TrimSpace(query.SeveredRelationshipID)); err != nil {
+		return err
 	}
 	return nil
 }

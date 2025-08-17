@@ -7,6 +7,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -53,7 +54,7 @@ func (r *WebSocketCostRepository) Create(ctx context.Context, record *models.Web
 
 // BatchCreate creates multiple WebSocket cost tracking records efficiently
 func (r *WebSocketCostRepository) BatchCreate(ctx context.Context, records []*models.WebSocketCostRecord) error {
-	if len(records) == 0 {
+	if common.ValidateSliceNotEmpty("records", records) != nil {
 		return nil
 	}
 
@@ -632,7 +633,7 @@ func (r *WebSocketCostRepository) GetUserAggregation(ctx context.Context, userID
 		return nil, MapErrorWithContext(err, "failed to get user WebSocket cost aggregation")
 	}
 
-	if len(aggregations) == 0 {
+	if common.ValidateSliceNotEmpty("aggregations", aggregations) != nil {
 		return nil, fmt.Errorf("aggregation not found")
 	}
 
@@ -670,7 +671,7 @@ func (r *WebSocketCostRepository) AggregateWebSocketCosts(ctx context.Context, o
 		return fmt.Errorf("failed to list costs for aggregation: %w", err)
 	}
 
-	if len(costs) == 0 {
+	if common.ValidateSliceNotEmpty("costs", costs) != nil {
 		return nil // Nothing to aggregate
 	}
 
@@ -847,7 +848,7 @@ func (r *WebSocketCostRepository) calculateAverages(aggregation *models.WebSocke
 		aggregation.AverageMemoryUsage = collectors.totalMemoryUsage / float64(collectors.measurementCount)
 	}
 
-	if len(collectors.latencyValues) > 0 {
+	if common.ValidateSliceNotEmpty("collectors.latencyValues", collectors.latencyValues) == nil {
 		var totalLatency float64
 		for _, latency := range collectors.latencyValues {
 			totalLatency += latency
@@ -875,13 +876,13 @@ func (r *WebSocketCostRepository) calculateMessageMetrics(aggregation *models.We
 
 // calculatePercentiles calculates percentile metrics
 func (r *WebSocketCostRepository) calculatePercentiles(aggregation *models.WebSocketCostAggregation, collectors *webSocketMetricCollectors) {
-	if len(collectors.costValues) > 0 {
+	if common.ValidateSliceNotEmpty("collectors.costValues", collectors.costValues) == nil {
 		aggregation.CostPercentiles = calculateWebSocketPercentiles(collectors.costValues)
 	}
-	if len(collectors.latencyValues) > 0 {
+	if common.ValidateSliceNotEmpty("collectors.latencyValues", collectors.latencyValues) == nil {
 		aggregation.LatencyPercentiles = calculateWebSocketPercentiles(collectors.latencyValues)
 	}
-	if len(collectors.durationValues) > 0 {
+	if common.ValidateSliceNotEmpty("collectors.durationValues", collectors.durationValues) == nil {
 		aggregation.ConnectionDurationPercentiles = calculateWebSocketPercentiles(collectors.durationValues)
 	}
 }
@@ -936,7 +937,7 @@ func (r *WebSocketCostRepository) GetTopCostlyUsers(ctx context.Context, startDa
 			continue
 		}
 
-		if cost.UserID == "" {
+		if err := common.ValidateRequiredParam("cost.UserID", cost.UserID); err != nil {
 			continue
 		}
 
@@ -992,7 +993,7 @@ func (r *WebSocketCostRepository) GetTopCostlyUsers(ctx context.Context, startDa
 
 // Helper function to calculate percentiles (same as in cost_tracking_repository.go)
 func calculateWebSocketPercentiles(values []float64) map[string]float64 {
-	if len(values) == 0 {
+	if common.ValidateSliceNotEmpty("values", values) != nil {
 		return map[string]float64{
 			"p50": 0,
 			"p90": 0,
@@ -1019,7 +1020,7 @@ func calculateWebSocketPercentiles(values []float64) map[string]float64 {
 
 // getWebSocketPercentileValue calculates the value at a specific percentile
 func getWebSocketPercentileValue(sorted []float64, percentile float64) float64 {
-	if len(sorted) == 0 {
+	if common.ValidateSliceNotEmpty("sorted", sorted) != nil {
 		return 0
 	}
 

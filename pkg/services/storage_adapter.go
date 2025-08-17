@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -354,7 +355,7 @@ func (r *repositoryStorageAdapter) checkQueueHealth(ctx context.Context) ([]*mod
 		dlqStatus.Depth = len(recentMessages)
 		dlqStatus.DlqCount = len(recentMessages)
 
-		if len(recentMessages) > 0 {
+		if err := common.ValidateSliceNotEmpty("recent_messages", recentMessages); err == nil {
 			// Find oldest message
 			oldestTime := recentMessages[0].FirstSeenAt
 			for _, msg := range recentMessages {
@@ -768,7 +769,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 	}
 	
 	// Add some general recommendations if none exist
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Instance is operating normally")
 		if activeUsers > 0 {
 			recommendations = append(recommendations, "Consider implementing caching to improve performance")
@@ -916,7 +917,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 	}
 	
 	// If no recommendations were generated, add a default one
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, &model.FederationRecommendation{
 			Type:            model.RecommendationTypePerformance,
 			Priority:        model.PriorityLow,

@@ -1,13 +1,16 @@
 package ratelimit
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -85,9 +88,9 @@ func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, storage core.Rep
 	}
 	
 	// For unauthenticated users, use IP-based rate limiting
-	if userID == "" {
+	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
 		userID = getClientIP(ctx)
-		if userID == "" {
+		if err := common.ValidateRequiredParam("client_ip", userID); err != nil {
 			userID = "anonymous"
 		}
 	}
@@ -169,18 +172,33 @@ func trackCostIfEnabled(ctx *lift.Context, config *Config, rateLimitErr error) {
 		return
 	}
 	
-	tracker := ctx.Get("cost_tracker")
+	// Get unified cost tracker from context
+	tracker := ctx.Get("unified_cost_tracker")
 	if tracker == nil {
+		// Fallback to creating a temporary tracker
+		logger := common.Logger()
+		tracker = cost.NewRepositoryTracker(nil, logger, "RateLimitMiddleware", "", "")
+	}
+	
+	unifiedTracker, ok := tracker.(*cost.UnifiedTracker)
+	if !ok {
 		return
 	}
-
-	// Track rate limiting cost (minimal DynamoDB read/write)
-	if t, ok := tracker.(interface{ TrackDynamoDBRead() }); ok {
-		t.TrackDynamoDBRead()
+	
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("table_name", tableName); err != nil {
+		tableName = "lesser-main"
 	}
+	
+	// Track rate limiting cost using centralized tracker
+	backgroundCtx := context.Background()
+	if err := unifiedTracker.TrackDynamoRead(backgroundCtx, tableName, 1); err != nil {
+		common.Logger().Warn("failed to track rate limit read cost", zap.Error(err))
+	}
+	
 	if rateLimitErr == nil {
-		if t, ok := tracker.(interface{ TrackDynamoDBWrite() }); ok {
-			t.TrackDynamoDBWrite()
+		if err := unifiedTracker.TrackDynamoWrite(backgroundCtx, tableName, 1); err != nil {
+			common.Logger().Warn("failed to track rate limit write cost", zap.Error(err))
 		}
 	}
 }
@@ -322,7 +340,10 @@ func getClientIP(ctx *lift.Context) string {
 // isAdminUser checks if the user has admin privileges
 func isAdminUser(ctx *lift.Context, claims *auth.Claims, storage core.RepositoryStorage) bool {
 	// Ensure we have valid claims with username
-	if claims == nil || claims.Username == "" {
+	if claims == nil {
+		return false
+	}
+	if err := common.ValidateRequiredParam("username", claims.Username); err != nil {
 		return false
 	}
 
@@ -367,7 +388,7 @@ func FederationRateLimitMiddleware(storage core.RepositoryStorage) lift.Middlewa
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Extract domain from request
 			domain := extractFederationDomain(ctx)
-			if domain == "" {
+			if err := common.ValidateRequiredParam("domain", domain); err != nil {
 				// Not a federation request, skip rate limiting
 				return next.Handle(ctx)
 			}

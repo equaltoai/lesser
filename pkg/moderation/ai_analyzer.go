@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIAnalyzer provides AI-powered content analysis for moderation
@@ -95,7 +97,7 @@ func (ai *AIAnalyzer) AnalyzeImage(ctx context.Context, content *ImageContent) (
 		analysis.DetectedText = text
 
 		// If text was found, analyze it too
-		if len(text) > 0 {
+		if err := common.ValidateSliceNotEmpty("text", text); err == nil {
 			combinedText := strings.Join(text, " ")
 			if textAnalysis, err := ai.AnalyzeText(ctx, &TextContent{
 				ID:   content.ID + "_extracted_text",
@@ -133,7 +135,7 @@ func (ai *AIAnalyzer) detectLanguage(ctx context.Context, text string) (string, 
 		return "", err
 	}
 
-	if len(result.Languages) > 0 {
+	if err := common.ValidateSliceNotEmpty("result.Languages", result.Languages); err == nil {
 		return *result.Languages[0].LanguageCode, nil
 	}
 
@@ -360,7 +362,7 @@ func (ai *AIAnalyzer) calculateTextModerationScore(analysis *TextAnalysis) float
 	}
 
 	// PII detection contribution
-	if len(analysis.PIIEntities) > 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.PIIEntities", analysis.PIIEntities); err == nil {
 		score += float64(len(analysis.PIIEntities)) * 15.0
 	}
 
@@ -431,7 +433,7 @@ func (ai *AIAnalyzer) generateTextRecommendations(analysis *TextAnalysis) []stri
 		recommendations = append(recommendations, "Flag for manual review")
 	}
 
-	if len(analysis.PIIEntities) > 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.PIIEntities", analysis.PIIEntities); err == nil {
 		recommendations = append(recommendations, "Contains PII - consider redaction")
 	}
 
@@ -462,7 +464,7 @@ func (ai *AIAnalyzer) generateImageRecommendations(analysis *ImageAnalysis) []st
 		}
 	}
 
-	if len(analysis.DetectedText) > 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.DetectedText", analysis.DetectedText); err == nil {
 		recommendations = append(recommendations, "Contains text - analyze extracted text for harmful content")
 	}
 

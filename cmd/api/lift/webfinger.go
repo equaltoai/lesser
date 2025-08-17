@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -34,11 +35,11 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	resource := ctx.Query("resource")
 
 	// Fallback to direct query param access if ctx.Query doesn't work
-	if resource == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("resource", resource); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		resource = ctx.Request.Request.QueryParams["resource"]
 	}
 
-	if resource == "" {
+	if err := common.ValidateRequiredParam("resource", resource); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "resource parameter is required"})
 	}
 
@@ -138,7 +139,7 @@ func (h *Handler) parseWebFingerResourceLift(resource string) (username, domain 
 	domain = parts[1]
 
 	// Basic validation
-	if username == "" || domain == "" {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{"username": username, "domain": domain}); err != nil {
 		return "", "", errors.New("username and domain cannot be empty")
 	}
 

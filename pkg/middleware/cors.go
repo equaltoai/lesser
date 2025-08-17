@@ -98,7 +98,7 @@ func CORS(config CORSConfig) func(func(events.APIGatewayV2HTTPRequest) (*events.
 // extractOrigin extracts the origin from request headers
 func extractOrigin(headers map[string]string) string {
 	origin := headers["Origin"]
-	if origin == "" {
+	if err := common.ValidateRequiredParam("origin", origin); err != nil {
 		origin = headers["origin"]
 	}
 	return origin
@@ -201,7 +201,7 @@ func setCORSHeaders(headers map[string]string, config CORSConfig, origin string,
 // addVaryHeader adds or updates the Vary header
 func addVaryHeader(headers map[string]string) {
 	existing := headers["Vary"]
-	if existing == "" {
+	if err := common.ValidateRequiredParam("existing", existing); err != nil {
 		headers["Vary"] = "Origin"
 	} else if !strings.Contains(existing, "Origin") {
 		headers["Vary"] = existing + ", Origin"
@@ -285,7 +285,7 @@ func setHTTPCORSHeaders(w http.ResponseWriter, config CORSConfig, origin string,
 // addHTTPVaryHeader adds or updates the Vary header for HTTP responses
 func addHTTPVaryHeader(w http.ResponseWriter) {
 	existing := w.Header().Get("Vary")
-	if existing == "" {
+	if err := common.ValidateRequiredParam("existing", existing); err != nil {
 		w.Header().Set("Vary", "Origin")
 	} else if !strings.Contains(existing, "Origin") {
 		w.Header().Set("Vary", existing+", Origin")

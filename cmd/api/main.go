@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	liftHandlers "github.com/equaltoai/lesser/cmd/api/lift"
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -30,12 +29,26 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
+	
+	"github.com/equaltoai/lesser/pkg/storage/models"
+)
+
+// Context key types for type-safe context values
+type contextKey string
+
+const (
+	latencyStartKey contextKey = "latency_start"
+	endpointKey     contextKey = "endpoint"
+	methodKey       contextKey = "method"
+	pathKey         contextKey = "path"
 )
 
 var (
+	lambdaCtx         *common.LambdaContext
 	cfg               *config.Config
 	repos             core.RepositoryStorage
 	logger            *zap.Logger
@@ -45,30 +58,93 @@ var (
 	healthChecker     *observability.HealthChecker
 	metricsCollector  *observability.MetricsCollector
 	tracingManager    *observability.TracingManager
+	latencyAggregator *observability.LatencyAggregator
+	latencyAlerter    *observability.LatencyAlerter
 	startTime         time.Time
 )
 
 
 func init() {
 	startTime = time.Now()
-	cfg = config.Get()
-	logger = common.Logger()
 
-	// Initialize DynamORM
+	// Initialize Lambda with standardized configuration
+	lambdaConfig := common.LambdaConfig{
+		ServiceName:        "api",
+		LambdaType:         common.LambdaTypeAPI,
+		// Feature flags will be auto-detected from environment
+		RequestTimeout:     30 * time.Second,
+	}
+
+	// Use standardized Lambda initialization
+	lambdaCtx = common.MustInitializeLambda(lambdaConfig)
+
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		// Fallback to manual initialization for services requiring it
+		initializeManualServices()
+	} else {
+		// Extract standardized services
+		extractStandardizedServices()
+	}
+
+	// Initialize API-specific services
+	initializeAPISpecificServices()
+}
+
+// extractStandardizedServices extracts services from standardized initialization
+func extractStandardizedServices() {
+	// Extract basic services
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	
+	// Extract storage services
+	if lambdaCtx.Repos != nil {
+		repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	}
+	
+	// Extract auth services
+	if lambdaCtx.AuthService != nil {
+		authService = lambdaCtx.AuthService.(*auth.AuthService)
+	}
+	
+	// Extract observability services
+	if lambdaCtx.EMFMetrics != nil {
+		emfMetrics = lambdaCtx.EMFMetrics.(*observability.EMFMetrics)
+	}
+	if lambdaCtx.HealthChecker != nil {
+		healthChecker = lambdaCtx.HealthChecker.(*observability.HealthChecker)
+	}
+	if lambdaCtx.TracingManager != nil {
+		tracingManager = lambdaCtx.TracingManager.(*observability.TracingManager)
+	}
+	if lambdaCtx.MetricsCollector != nil {
+		metricsCollector = lambdaCtx.MetricsCollector.(*observability.MetricsCollector)
+	}
+	if lambdaCtx.LatencyAggregator != nil {
+		latencyAggregator = lambdaCtx.LatencyAggregator.(*observability.LatencyAggregator)
+	}
+	if lambdaCtx.LatencyAlerter != nil {
+		latencyAlerter = lambdaCtx.LatencyAlerter.(*observability.LatencyAlerter)
+	}
+	
+	logger.Info("extracted services from standardized initialization")
+}
+
+// initializeManualServices provides fallback manual initialization
+func initializeManualServices() {
+	logger = lambdaCtx.Logger
+	cfg = lambdaCtx.Config
+	
+	logger.Info("falling back to manual service initialization")
+	
+	// Manual DynamORM initialization
 	tableName := os.Getenv("DYNAMODB_TABLE")
-	if tableName == "" {
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = cfg.DynamoTableName
 	}
-	if tableName == "" {
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
-	}
-
-	// Load AWS configuration
-	awsCfg, err := awsConfig.LoadDefaultConfig(context.Background(),
-		awsConfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
 
 	// Initialize DynamORM with Lambda optimizations
@@ -77,8 +153,8 @@ func init() {
 		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
-	// Create repository storage using new factory pattern with AWS config
-	repos, err = factory.NewRepositoryFactory(db, tableName, awsCfg, logger)
+	// Create repository storage using factory pattern
+	repos, err = factory.NewRepositoryFactory(db, tableName, lambdaCtx.AWSServices.Config, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -89,15 +165,7 @@ func init() {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
 
-	// Initialize Lift-native auth service (not currently used but initialized for future use)
-	_ = liftAuth.NewLiftAuthService(authService)
-
-	// Validate VAPID keys in production environment
-	if err := liftHandlers.ValidateVAPIDKeysForProduction(context.Background(), repos, logger); err != nil {
-		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
-	}
-
-	// Initialize observability services
+	// Initialize observability services manually
 	if os.Getenv("DISABLE_METRICS") != envTrue {
 		// EMF Metrics for CloudWatch integration
 		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/API", "api")
@@ -105,8 +173,8 @@ func init() {
 		emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
 		emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
 		
-		// Legacy metrics collector (if needed)
-		cloudWatchClient := cloudwatch.NewFromConfig(awsCfg)
+		// Legacy metrics collector
+		cloudWatchClient := cloudwatch.NewFromConfig(lambdaCtx.AWSServices.Config)
 		metricsCollector = observability.NewMetricsCollector(cloudWatchClient, "Lesser/API", logger)
 		
 		// Health checker
@@ -116,7 +184,7 @@ func init() {
 			CacheTimeout:     30 * time.Second,
 			DependencyChecks: true,
 		}
-		healthChecker = observability.NewHealthChecker(logger, awsCfg, "api", cfg.Version, healthConfig)
+		healthChecker = observability.NewHealthChecker(logger, lambdaCtx.AWSServices.Config, "api", cfg.Version, healthConfig)
 		
 		// Distributed tracing
 		tracingConfig := &observability.TracingConfig{
@@ -127,26 +195,81 @@ func init() {
 		}
 		tracingManager = observability.NewTracingManager(logger, tracingConfig)
 		
-		logger.Info("initialized observability services",
-			zap.String("emf_enabled", "true"),
-			zap.String("health_checks_enabled", "true"),
-			zap.String("tracing_enabled", fmt.Sprintf("%t", tracingManager.IsEnabled())),
-			zap.String("metrics_namespace", "Lesser/API"))
+		// Latency aggregation and alerting
+		metricsRecorder := observability.NewDefaultMetricsRecorder(
+			func(ctx context.Context, metric *models.MetricRecord) error {
+				return repos.MetricRecord().CreateMetricRecord(ctx, metric)
+			},
+			"api",
+		)
+		
+		// Initialize latency aggregator
+		latencyAggregator = observability.NewLatencyAggregator(
+			logger,
+			metricsRecorder,
+			observability.WithAggregateInterval(5*time.Minute),
+			observability.WithRetentionPeriod(24*time.Hour),
+			observability.WithMaxBuckets(1000),
+		)
+		latencyAggregator.Start()
+		
+		// Initialize latency alerter
+		latencyAlerter = observability.NewLatencyAlerter(logger, metricsRecorder)
+		
+		logger.Info("initialized observability services manually")
+	}
+}
+
+// initializeAPISpecificServices initializes API-specific services
+func initializeAPISpecificServices() {
+	// Initialize Lift-native auth service (future use)
+	_ = liftAuth.NewLiftAuthService(authService)
+
+	// Validate VAPID keys in production environment
+	if err := liftHandlers.ValidateVAPIDKeysForProduction(context.Background(), repos, logger); err != nil {
+		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
 	}
 
-	// Create handler with all dependencies
+	// Create auth middleware
 	legacyAuthMiddleware, err := auth.GetMiddleware()
 	if err != nil {
 		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
 	}
 
-	// Create stream queue service for queueing events to DynamoDB
-	streamQueue := streaming.NewDynamoStreamQueue(db, tableName, logger)
+	// Create stream queue service with proper fallback
+	var streamQueue streaming.StreamQueueService
+	if lambdaCtx.StreamQueue != nil {
+		// Try to cast from standardized initialization
+		if sq, ok := lambdaCtx.StreamQueue.(streaming.StreamQueueService); ok {
+			streamQueue = sq
+		}
+	}
+	
+	if streamQueue == nil {
+		// Fallback to manual stream queue creation
+		// Get or create DynamORM client with proper type
+		var coreDB dynamormCore.DB
+		if lambdaCtx.DynamoDB != nil {
+			if db, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok {
+				coreDB = db
+			}
+		}
+		
+		if coreDB == nil {
+			// Last resort: create DynamORM client
+			manualDB, dbErr := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+			if dbErr != nil {
+				logger.Fatal("Failed to initialize DynamORM for stream queue", zap.Error(dbErr))
+			}
+			coreDB = manualDB
+		}
+		streamQueue = streaming.NewDynamoStreamQueue(coreDB, cfg.DynamoTableName, logger)
+	}
 
 	// Create Lift handler for all endpoints
-	// The handler uses repos which implements RepositoryStorage
-	// StreamQueue writes events to DynamoDB for the stream-router to process
 	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware, streamQueue)
+	
+	logger.Info("initialized API-specific services")
 }
 
 func main() {
@@ -180,6 +303,9 @@ func main() {
 	if emfMetrics != nil {
 		app.Use(createEMFMetricsMiddleware())
 	}
+
+	// Add comprehensive latency tracking middleware
+	app.Use(createLatencyTrackingMiddleware())
 
 	// Add rate limiting middleware (before routes)
 	if os.Getenv("DISABLE_RATE_LIMITING") != "true" {
@@ -222,20 +348,198 @@ func main() {
 			}
 		}
 
-		// CRITICAL: Flush all metrics before Lambda terminates
-		// This ensures all metrics are written to CloudWatch
-		if emfMetrics != nil {
-			emfMetrics.Flush()
-		}
-		
-		if metricsCollector != nil {
-			metricsCollector.Flush()
-		}
+			// Use standardized observability flushing
+		lambdaCtx.FlushObservabilityServices()
 
 		return result, err
 	}
 
 	lambda.Start(lambdaHandler)
+}
+
+// requestInfo holds extracted request information
+type requestInfo struct {
+	method    string
+	path      string
+	endpoint  string
+	userAgent string
+	clientIP  string
+}
+
+// extractRequestInfo extracts request information from Lift context
+func extractRequestInfo(ctx *lift.Context) requestInfo {
+	info := requestInfo{
+		method: "GET",
+		path:   "/",
+	}
+	
+	if ctx.Request == nil || ctx.Request.Request == nil {
+		info.endpoint = info.method + " " + info.path
+		return info
+	}
+	
+	req := ctx.Request.Request
+	info.method = req.Method
+	info.path = req.Path
+	info.userAgent = req.Headers["User-Agent"]
+	
+	if xForwarded := req.Headers["X-Forwarded-For"]; xForwarded != "" {
+		info.clientIP = xForwarded
+	}
+	
+	info.endpoint = info.method + " " + info.path
+	return info
+}
+
+// addLatencyContextValues adds latency tracking values to context
+func addLatencyContextValues(ctx *lift.Context, info requestInfo, startTime time.Time) {
+	ctx.Context = context.WithValue(ctx.Context, latencyStartKey, startTime)
+	ctx.Context = context.WithValue(ctx.Context, endpointKey, info.endpoint)
+	ctx.Context = context.WithValue(ctx.Context, methodKey, info.method)
+	ctx.Context = context.WithValue(ctx.Context, pathKey, info.path)
+}
+
+// recordDynamoDBLatencyMetric records latency metric to DynamoDB asynchronously
+func recordDynamoDBLatencyMetric(ctx context.Context, info requestInfo, statusCode int, totalLatency time.Duration) {
+	go func() {
+		if err := recordLatencyMetric(ctx, "api_endpoint", info.endpoint, totalLatency, map[string]string{
+			"endpoint":    info.path,
+			"method":      info.method,
+			"status_code": fmt.Sprintf("%d", statusCode),
+			"user_agent":  info.userAgent,
+			"client_ip":   info.clientIP,
+		}); err != nil {
+			logger.Warn("failed to record latency metric", zap.Error(err))
+		}
+	}()
+}
+
+// recordAggregatorLatency records latency to the aggregator if available
+func recordAggregatorLatency(info requestInfo, totalLatency time.Duration) {
+	if latencyAggregator == nil {
+		return
+	}
+	latencyAggregator.RecordLatency(info.endpoint, "api", totalLatency)
+}
+
+
+// calculatePercentiles extracts percentile values from stats
+func calculatePercentiles(stats interface{}, totalLatency time.Duration) (float64, float64) {
+	defaultMs := float64(totalLatency.Milliseconds())
+	p95Ms, p99Ms := defaultMs, defaultMs
+	
+	if stats == nil {
+		return p95Ms, p99Ms
+	}
+	
+	// Try type assertion for stats with Percentiles field
+	if statsType := stats; statsType != nil {
+		// Use reflection-like approach to safely access percentiles
+		if statsMap, ok := stats.(map[string]interface{}); ok {
+			if percentiles, exists := statsMap["Percentiles"]; exists {
+				if percMap, ok := percentiles.(map[string]float64); ok {
+					if p95Val, exists := percMap["p95"]; exists {
+						p95Ms = p95Val
+					}
+					if p99Val, exists := percMap["p99"]; exists {
+						p99Ms = p99Val
+					}
+				}
+			}
+		}
+	}
+	
+	return p95Ms, p99Ms
+}
+
+// checkLatencyAlerting performs latency alerting if alerter is available
+func checkLatencyAlerting(ctx context.Context, info requestInfo, totalLatency time.Duration) {
+	if latencyAlerter == nil {
+		return
+	}
+	
+	stats, _ := latencyAggregator.GetCurrentStats(info.endpoint, "api")
+	p95Ms, p99Ms := calculatePercentiles(stats, totalLatency)
+	
+	latencyAlerter.CheckLatency(ctx, "api_endpoint", "api",
+		float64(totalLatency.Milliseconds()), p95Ms, p99Ms)
+}
+
+// determineErrorType maps status code to error type
+func determineErrorType(statusCode int) string {
+	if statusCode < 400 || statusCode >= 500 {
+		return observability.ErrorTypeInternal
+	}
+	
+	switch statusCode {
+	case 401:
+		return observability.ErrorTypeAuthentication
+	case 403:
+		return observability.ErrorTypeAuthorization
+	case 404:
+		return observability.ErrorTypeNotFound
+	case 409:
+		return observability.ErrorTypeConflict
+	case 429:
+		return observability.ErrorTypeRateLimit
+	default:
+		return observability.ErrorTypeValidation
+	}
+}
+
+// recordEMFMetrics records metrics to EMF if available
+func recordEMFMetrics(info requestInfo, statusCode int, totalLatency time.Duration, err error) {
+	if emfMetrics == nil {
+		return
+	}
+	
+	dimensions := map[string]string{
+		observability.DimensionEndpoint:   info.path,
+		observability.DimensionMethod:     info.method,
+		observability.DimensionStatusCode: fmt.Sprintf("%d", statusCode),
+	}
+	
+	emfMetrics.RecordLatency(info.endpoint, totalLatency)
+	
+	if err != nil {
+		errorType := determineErrorType(statusCode)
+		dimensions[observability.DimensionErrorType] = errorType
+		emfMetrics.RecordError(info.endpoint, errorType)
+	} else {
+		emfMetrics.RecordSuccess(info.endpoint)
+	}
+	
+	emfMetrics.RecordThroughput(info.endpoint, 1)
+}
+
+// createLatencyTrackingMiddleware creates comprehensive latency tracking middleware
+func createLatencyTrackingMiddleware() lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			startTime := time.Now()
+			info := extractRequestInfo(ctx)
+			
+			addLatencyContextValues(ctx, info, startTime)
+			
+			// Execute request
+			err := next.Handle(ctx)
+			
+			// Calculate latency and determine status
+			totalLatency := time.Since(startTime)
+			statusCode := 200
+			if err != nil {
+				statusCode = 500 // Default error status
+			}
+			
+			// Record metrics to all available systems
+			recordDynamoDBLatencyMetric(ctx.Context, info, statusCode, totalLatency)
+			recordAggregatorLatency(info, totalLatency)
+			checkLatencyAlerting(ctx.Context, info, totalLatency)
+			recordEMFMetrics(info, statusCode, totalLatency, err)
+			
+			return err
+		})
+	}
 }
 
 // createEMFMetricsMiddleware creates middleware for EMF metrics collection
@@ -510,4 +814,39 @@ func createTracingMiddleware() lift.Middleware {
 			return err
 		})
 	}
+}
+
+const (
+	envTrue = "true"
+)
+
+// recordLatencyMetric records latency metrics to DynamoDB using DynamORM
+func recordLatencyMetric(ctx context.Context, metricType, operation string, duration time.Duration, dimensions map[string]string) error {
+	if repos == nil {
+		return fmt.Errorf("repositories not initialized")
+	}
+	
+	// Create metric record
+	metric := &models.MetricRecord{
+		MetricType:       metricType,
+		ServiceName:      "api",
+		Timestamp:        time.Now(),
+		AggregationLevel: "raw",
+		Unit:             "ms",
+		Dimensions:       dimensions,
+		// Statistical values for single measurement
+		Count: 1,
+		Sum:   float64(duration.Milliseconds()),
+		Min:   float64(duration.Milliseconds()),
+		Max:   float64(duration.Milliseconds()),
+		P50:   float64(duration.Milliseconds()),
+		P95:   float64(duration.Milliseconds()),
+		P99:   float64(duration.Milliseconds()),
+	}
+	
+	// Add operation to dimensions
+	metric.AddDimension("operation", operation)
+	
+	// Store to DynamoDB via metrics repository
+	return repos.MetricRecord().CreateMetricRecord(ctx, metric)
 }

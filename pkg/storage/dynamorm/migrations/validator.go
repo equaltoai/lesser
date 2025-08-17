@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ValidationResult contains the results of migration validation
@@ -171,7 +172,7 @@ func (v *Validator) validateMigration(ctx context.Context, migration Migration, 
 
 // validateIDFormat validates the migration ID format
 func (v *Validator) validateIDFormat(id string) error {
-	if id == "" {
+	if err := common.ValidateRequiredParam("id", id); err != nil {
 		return fmt.Errorf("migration ID cannot be empty")
 	}
 
@@ -254,7 +255,7 @@ func (v *Validator) ValidateRollback(ctx context.Context, opts RollbackOptions) 
 		return nil, err
 	}
 
-	if len(toRollback) == 0 {
+	if err := common.ValidateSliceNotEmpty("toRollback", toRollback); err != nil {
 		result.Warnings = append(result.Warnings, ValidationWarning{
 			Type:    "no_migrations",
 			Message: "No migrations to rollback",

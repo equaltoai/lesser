@@ -71,7 +71,7 @@ func (sct *SearchCostTracking) UpdateKeys() {
 		sct.Timestamp = time.Now()
 	}
 
-	if sct.Date == "" {
+	if err := common.ValidateRequiredParam("sct.Date", sct.Date); err != nil {
 		sct.Date = sct.Timestamp.Format(common.DateFormat)
 	}
 

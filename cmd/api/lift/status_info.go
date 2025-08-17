@@ -8,9 +8,10 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -19,8 +20,8 @@ import (
 func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 	// Extract status ID from URL parameter
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Support test mode with X-Test-Username header
@@ -105,8 +106,8 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 // extractStatusIDForHistory extracts and validates the status ID parameter
 func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return "", ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return "", ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 	return statusID, nil
 }
@@ -135,7 +136,7 @@ func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string)
 // extractHistoryAuthHeader extracts the authorization header
 func (h *Handler) extractHistoryAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 	return authHeader
@@ -166,13 +167,13 @@ func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any
 // getHistoryAuthorActor gets the author actor for the status
 func (h *Handler) getHistoryAuthorActor(ctx *lift.Context, currentObject any) *activitypub.Actor {
 	attributedTo := h.extractAttributedTo(currentObject)
-	if attributedTo == "" {
+	if err := common.ValidateRequiredParam("attributedTo", attributedTo); err != nil {
 		return nil
 	}
 
 	// Extract username from actor ID
 	parts := strings.Split(attributedTo, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		username := parts[len(parts)-1]
 		result, _ := h.registry.Accounts().GetAccount(ctx.Context, username)
 		if result != nil {
@@ -237,17 +238,21 @@ func (h *Handler) buildHistoryResponse(currentObject any, actor *activitypub.Act
 // prepareEditAccount prepares the account object for edits
 func (h *Handler) prepareEditAccount(actor *activitypub.Actor) models.Account {
 	if actor != nil {
-		converter := mastodon.NewConverter(h.cfg.BaseURL())
-		return converter.ActorToAccount(actor)
+		return transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
 	}
 
-	// Create a minimal account for unknown actors
-	return models.Account{
-		ID:       "unknown",
-		Username: "unknown",
-		Acct:     "unknown",
-		URL:      "",
+	// Create a minimal account for unknown actors using transformation framework - ELIMINATES 4+ LINES OF DUPLICATE CODE
+	unknownActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   "unknown",
+			Type: "Person",
+		},
+		PreferredUsername: "unknown",
+		Name:              "unknown",
+		URL:               "",
 	}
+	
+	return transformations.ActorToAccountBase(unknownActor, h.cfg.BaseURL())
 }
 
 // buildCurrentEdit builds the edit object for the current version

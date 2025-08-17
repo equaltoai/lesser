@@ -10,509 +10,352 @@ import (
 	"go.uber.org/zap"
 )
 
-// StatusCommandHandler handles WebSocket commands related to statuses/notes
-type StatusCommandHandler struct {
+// StatusCommandHandlerV2 handles WebSocket commands related to statuses/notes with reduced duplication
+type StatusCommandHandlerV2 struct {
 	*streaming.BaseCommandHandler
 	notesService *notes.Service
+	executors    map[string]CommandExecutor
 }
 
-// NewStatusCommandHandler creates a new status command handler
-func NewStatusCommandHandler(notesService *notes.Service, logger *zap.Logger) *StatusCommandHandler {
-	return &StatusCommandHandler{
+// NewStatusCommandHandlerV2 creates a new status command handler with reduced duplication
+func NewStatusCommandHandlerV2(notesService *notes.Service, logger *zap.Logger) *StatusCommandHandlerV2 {
+	handler := &StatusCommandHandlerV2{
 		BaseCommandHandler: streaming.NewBaseCommandHandler(logger),
 		notesService:       notesService,
+		executors:          make(map[string]CommandExecutor),
+	}
+	
+	// Initialize executors for each command type
+	handler.initializeExecutors()
+	
+	return handler
+}
+
+// initializeExecutors sets up the command executors for each command type
+func (sch *StatusCommandHandlerV2) initializeExecutors() {
+	// Helper function to get string from payload
+	getString := func(payload map[string]interface{}, key, defaultVal string) string {
+		if val, ok := payload[key].(string); ok {
+			return val
+		}
+		return defaultVal
+	}
+	
+	// Helper function to get bool from payload
+	getBool := func(payload map[string]interface{}, key string, defaultVal bool) bool {
+		if val, ok := payload[key].(bool); ok {
+			return val
+		}
+		return defaultVal
+	}
+	
+	// Helper function to get string slice from payload
+	getStringSlice := func(payload map[string]interface{}, key string) []string {
+		if val, ok := payload[key].([]interface{}); ok {
+			result := make([]string, 0, len(val))
+			for _, v := range val {
+				if s, ok := v.(string); ok {
+					result = append(result, s)
+				}
+			}
+			return result
+		}
+		return []string{}
+	}
+	
+	// Create Status executor
+	sch.executors[streaming.CmdCreateStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"status"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.CreateNoteCommand{
+				AuthorID:    conn.UserID,
+				Content:     getString(payload, "status", ""),
+				InReplyToID: getString(payload, "in_reply_to_id", ""),
+				MediaIDs:    getStringSlice(payload, "media_ids"),
+				Sensitive:   getBool(payload, "sensitive", false),
+				Visibility:  getString(payload, "visibility", "public"),
+				Language:    getString(payload, "language", ""),
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.CreateNote(ctx, cmd.(*notes.CreateNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Note, nil
+		},
+		responseKey: "",
+	}
+	
+	// Delete Status executor
+	sch.executors[streaming.CmdDeleteStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.DeleteNoteCommand{
+				StatusID:  getString(payload, "id", ""),
+				DeleterID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			err := sch.notesService.DeleteNote(ctx, cmd.(*notes.DeleteNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			statusID := cmd.(*notes.DeleteNoteCommand).StatusID
+			return map[string]interface{}{
+				"deleted": true,
+				"id":      statusID,
+			}, nil
+		},
+		responseKey: "",
+	}
+	
+	// Favorite Status executor
+	sch.executors[streaming.CmdFavoriteStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.LikeNoteCommand{
+				StatusID: getString(payload, "id", ""),
+				LikerID:  conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.LikeNote(ctx, cmd.(*notes.LikeNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Unfavorite Status executor
+	sch.executors[streaming.CmdUnfavoriteStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.UnlikeNoteCommand{
+				StatusID:  getString(payload, "id", ""),
+				UnlikerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.UnlikeNote(ctx, cmd.(*notes.UnlikeNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Reblog Status executor
+	sch.executors[streaming.CmdReblogStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.ReblogNoteCommand{
+				StatusID:    getString(payload, "id", ""),
+				RebloggerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.ReblogNote(ctx, cmd.(*notes.ReblogNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Unreblog Status executor
+	sch.executors[streaming.CmdUnreblogStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.UnreblogNoteCommand{
+				StatusID:      getString(payload, "id", ""),
+				UnrebloggerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.UnreblogNote(ctx, cmd.(*notes.UnreblogNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Bookmark Status executor
+	sch.executors[streaming.CmdBookmarkStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.BookmarkNoteCommand{
+				StatusID:     getString(payload, "id", ""),
+				BookmarkerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.BookmarkNote(ctx, cmd.(*notes.BookmarkNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Unbookmark Status executor
+	sch.executors[streaming.CmdUnbookmarkStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.UnbookmarkNoteCommand{
+				StatusID:       getString(payload, "id", ""),
+				UnbookmarkerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.UnbookmarkNote(ctx, cmd.(*notes.UnbookmarkNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Mute Status executor
+	sch.executors[streaming.CmdMuteStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.MuteNoteCommand{
+				StatusID: getString(payload, "id", ""),
+				MuterID:  conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.MuteNote(ctx, cmd.(*notes.MuteNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Unmute Status executor
+	sch.executors[streaming.CmdUnmuteStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.UnmuteNoteCommand{
+				StatusID: getString(payload, "id", ""),
+				MuterID:  conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.UnmuteNote(ctx, cmd.(*notes.UnmuteNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Pin Status executor
+	sch.executors[streaming.CmdPinStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.PinNoteCommand{
+				StatusID: getString(payload, "id", ""),
+				PinnerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.PinNote(ctx, cmd.(*notes.PinNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
+	}
+	
+	// Unpin Status executor
+	sch.executors[streaming.CmdUnpinStatus] = &SimpleStatusExecutor{
+		requiresAuth:   true,
+		requiredFields: []string{"id"},
+		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+			return &notes.UnpinNoteCommand{
+				StatusID: getString(payload, "id", ""),
+				PinnerID: conn.UserID,
+			}
+		},
+		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
+			result, err := sch.notesService.UnpinNote(ctx, cmd.(*notes.UnpinNoteCommand))
+			if err != nil {
+				return nil, err
+			}
+			return result.Status, nil
+		},
+		responseKey: "",
 	}
 }
 
 // GetSupportedCommands returns the list of commands this handler supports
-func (sch *StatusCommandHandler) GetSupportedCommands() []string {
-	return []string{
-		streaming.CmdCreateStatus,
-		streaming.CmdDeleteStatus,
-		streaming.CmdFavoriteStatus,
-		streaming.CmdUnfavoriteStatus,
-		streaming.CmdReblogStatus,
-		streaming.CmdUnreblogStatus,
-		streaming.CmdBookmarkStatus,
-		streaming.CmdUnbookmarkStatus,
-		streaming.CmdMuteStatus,
-		streaming.CmdUnmuteStatus,
-		streaming.CmdPinStatus,
-		streaming.CmdUnpinStatus,
+func (sch *StatusCommandHandlerV2) GetSupportedCommands() []string {
+	commands := make([]string, 0, len(sch.executors))
+	for cmd := range sch.executors {
+		commands = append(commands, cmd)
 	}
+	return commands
 }
 
-// HandleCommand processes status-related WebSocket commands
-func (sch *StatusCommandHandler) HandleCommand(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	switch cmd.Type {
-	case streaming.CmdCreateStatus:
-		return sch.handleCreateStatus(ctx, conn, cmd)
-	case streaming.CmdDeleteStatus:
-		return sch.handleDeleteStatus(ctx, conn, cmd)
-	case streaming.CmdFavoriteStatus:
-		return sch.handleFavoriteStatus(ctx, conn, cmd)
-	case streaming.CmdUnfavoriteStatus:
-		return sch.handleUnfavoriteStatus(ctx, conn, cmd)
-	case streaming.CmdReblogStatus:
-		return sch.handleReblogStatus(ctx, conn, cmd)
-	case streaming.CmdUnreblogStatus:
-		return sch.handleUnreblogStatus(ctx, conn, cmd)
-	case streaming.CmdBookmarkStatus:
-		return sch.handleBookmarkStatus(ctx, conn, cmd)
-	case streaming.CmdUnbookmarkStatus:
-		return sch.handleUnbookmarkStatus(ctx, conn, cmd)
-	case streaming.CmdMuteStatus:
-		return sch.handleMuteStatus(ctx, conn, cmd)
-	case streaming.CmdUnmuteStatus:
-		return sch.handleUnmuteStatus(ctx, conn, cmd)
-	case streaming.CmdPinStatus:
-		return sch.handlePinStatus(ctx, conn, cmd)
-	case streaming.CmdUnpinStatus:
-		return sch.handleUnpinStatus(ctx, conn, cmd)
-	default:
-		return sch.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND", 
+// HandleCommand processes status-related WebSocket commands with reduced duplication
+func (sch *StatusCommandHandlerV2) HandleCommand(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	executor, exists := sch.executors[cmd.Type]
+	if !exists {
+		return sch.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND",
 			"Unsupported status command", fmt.Sprintf("Command %s not supported by status handler", cmd.Type)), nil
 	}
+	
+	// Map command type to error code
+	errorCode := getErrorCodeForCommand(cmd.Type)
+	
+	// Use the generic execution flow
+	return ExecuteGenericCommand(ctx, sch.BaseCommandHandler, conn, cmd, executor, errorCode)
 }
 
-// handleCreateStatus handles creating a new status
-func (sch *StatusCommandHandler) handleCreateStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
+// getErrorCodeForCommand returns the appropriate error code for a command type
+func getErrorCodeForCommand(cmdType string) string {
+	errorCodes := map[string]string{
+		streaming.CmdCreateStatus:      "CREATE_FAILED",
+		streaming.CmdDeleteStatus:      "DELETE_FAILED",
+		streaming.CmdFavoriteStatus:    "FAVORITE_FAILED",
+		streaming.CmdUnfavoriteStatus:  "UNFAVORITE_FAILED",
+		streaming.CmdReblogStatus:      "REBLOG_FAILED",
+		streaming.CmdUnreblogStatus:    "UNREBLOG_FAILED",
+		streaming.CmdBookmarkStatus:    "BOOKMARK_FAILED",
+		streaming.CmdUnbookmarkStatus:  "UNBOOKMARK_FAILED",
+		streaming.CmdMuteStatus:        "MUTE_FAILED",
+		streaming.CmdUnmuteStatus:      "UNMUTE_FAILED",
+		streaming.CmdPinStatus:         "PIN_FAILED",
+		streaming.CmdUnpinStatus:       "UNPIN_FAILED",
 	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"status"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
+	
+	if code, exists := errorCodes[cmdType]; exists {
+		return code
 	}
-
-	// Extract parameters
-	statusText := sch.GetString(cmd.Payload, "status", "")
-	inReplyToID := sch.GetString(cmd.Payload, "in_reply_to_id", "")
-	mediaIDs := sch.GetStringSlice(cmd.Payload, "media_ids")
-	sensitive := sch.GetBool(cmd.Payload, "sensitive", false)
-	visibility := sch.GetString(cmd.Payload, "visibility", "public")
-	language := sch.GetString(cmd.Payload, "language", "")
-
-	// Create the status using the notes service
-	createCmd := &notes.CreateNoteCommand{
-		AuthorID:    conn.UserID,
-		Content:     statusText,
-		InReplyToID: inReplyToID,
-		MediaIDs:    mediaIDs,
-		Sensitive:   sensitive,
-		Visibility:  visibility,
-		Language:    language,
-	}
-
-	result, err := sch.notesService.CreateNote(ctx, createCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CREATE_FAILED", 
-			"Failed to create status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Note)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleDeleteStatus handles deleting a status
-func (sch *StatusCommandHandler) handleDeleteStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Delete the status using the notes service
-	deleteCmd := &notes.DeleteNoteCommand{
-		StatusID:  statusID,
-		DeleterID: conn.UserID,
-	}
-
-	err := sch.notesService.DeleteNote(ctx, deleteCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "DELETE_FAILED", 
-			"Failed to delete status", err.Error()), nil
-	}
-
-	// Return success response
-	data := map[string]interface{}{
-		"deleted": true,
-		"id":      statusID,
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleFavoriteStatus handles favoriting a status
-func (sch *StatusCommandHandler) handleFavoriteStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Favorite the status using the notes service
-	favoriteCmd := &notes.LikeNoteCommand{
-		StatusID: statusID,
-		LikerID:  conn.UserID,
-	}
-
-	result, err := sch.notesService.LikeNote(ctx, favoriteCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "FAVORITE_FAILED", 
-			"Failed to favorite status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleUnfavoriteStatus handles removing favorite from a status
-func (sch *StatusCommandHandler) handleUnfavoriteStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Unfavorite the status using the notes service
-	unfavoriteCmd := &notes.UnlikeNoteCommand{
-		StatusID:  statusID,
-		UnlikerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.UnlikeNote(ctx, unfavoriteCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UNFAVORITE_FAILED", 
-			"Failed to unfavorite status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleReblogStatus handles reblogging/boosting a status
-func (sch *StatusCommandHandler) handleReblogStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Reblog the status using the notes service
-	reblogCmd := &notes.ReblogNoteCommand{
-		StatusID:    statusID,
-		RebloggerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.ReblogNote(ctx, reblogCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "REBLOG_FAILED", 
-			"Failed to reblog status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleUnreblogStatus handles removing reblog/boost from a status
-func (sch *StatusCommandHandler) handleUnreblogStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Unreblog the status using the notes service
-	unreblogCmd := &notes.UnreblogNoteCommand{
-		StatusID:      statusID,
-		UnrebloggerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.UnreblogNote(ctx, unreblogCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UNREBLOG_FAILED", 
-			"Failed to unreblog status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleBookmarkStatus handles bookmarking a status
-func (sch *StatusCommandHandler) handleBookmarkStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Bookmark the status using the notes service
-	bookmarkCmd := &notes.BookmarkNoteCommand{
-		StatusID:     statusID,
-		BookmarkerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.BookmarkNote(ctx, bookmarkCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "BOOKMARK_FAILED", 
-			"Failed to bookmark status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleUnbookmarkStatus handles removing bookmark from a status
-func (sch *StatusCommandHandler) handleUnbookmarkStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Unbookmark the status using the notes service
-	unbookmarkCmd := &notes.UnbookmarkNoteCommand{
-		StatusID:       statusID,
-		UnbookmarkerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.UnbookmarkNote(ctx, unbookmarkCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UNBOOKMARK_FAILED", 
-			"Failed to unbookmark status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleMuteStatus handles muting a status
-func (sch *StatusCommandHandler) handleMuteStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Mute the status using the notes service
-	muteCmd := &notes.MuteNoteCommand{
-		StatusID: statusID,
-		MuterID:  conn.UserID,
-	}
-
-	result, err := sch.notesService.MuteNote(ctx, muteCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "MUTE_FAILED", 
-			"Failed to mute status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleUnmuteStatus handles unmuting a status
-func (sch *StatusCommandHandler) handleUnmuteStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Unmute the status using the notes service
-	unmuteCmd := &notes.UnmuteNoteCommand{
-		StatusID: statusID,
-		MuterID:  conn.UserID,
-	}
-
-	result, err := sch.notesService.UnmuteNote(ctx, unmuteCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UNMUTE_FAILED", 
-			"Failed to unmute status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handlePinStatus handles pinning a status
-func (sch *StatusCommandHandler) handlePinStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Pin the status using the notes service
-	pinCmd := &notes.PinNoteCommand{
-		StatusID: statusID,
-		PinnerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.PinNote(ctx, pinCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "PIN_FAILED", 
-			"Failed to pin status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
-}
-
-// handleUnpinStatus handles unpinning a status
-func (sch *StatusCommandHandler) handleUnpinStatus(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	// Check authentication
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	statusID := sch.GetString(cmd.Payload, "id", "")
-
-	// Unpin the status using the notes service
-	unpinCmd := &notes.UnpinNoteCommand{
-		StatusID: statusID,
-		PinnerID: conn.UserID,
-	}
-
-	result, err := sch.notesService.UnpinNote(ctx, unpinCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UNPIN_FAILED", 
-			"Failed to unpin status", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Status)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
+	return "COMMAND_FAILED"
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // User represents a user account stored in DynamoDB using DynamORM
@@ -65,7 +66,7 @@ func (u *User) BeforeCreate() error {
 	u.UpdatedAt = now
 
 	// Set default role if not specified
-	if u.Role == "" {
+	if err := common.ValidateRequiredParam("u.Role", u.Role); err != nil {
 		u.Role = "user"
 	}
 

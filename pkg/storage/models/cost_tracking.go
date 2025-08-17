@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -150,7 +151,7 @@ func (ct *DynamoDBCostRecord) BeforeCreate() error {
 	ct.UpdatedAt = now
 
 	// Generate ID if not provided
-	if ct.ID == "" {
+	if err := common.ValidateRequiredParam("ID", ct.ID); err != nil {
 		ct.ID = uuid.New().String()
 	}
 
@@ -208,14 +209,14 @@ func (ct *DynamoDBCostRecord) setupGSIKeys() {
 
 // Validate performs validation on the DynamoDBCostRecord
 func (ct *DynamoDBCostRecord) Validate() error {
-	if strings.TrimSpace(ct.ID) == "" {
-		return fmt.Errorf("ID is required")
+	if err := common.ValidateRequiredParam("ID", strings.TrimSpace(ct.ID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(ct.OperationType) == "" {
-		return fmt.Errorf("OperationType is required")
+	if err := common.ValidateRequiredParam("OperationType", strings.TrimSpace(ct.OperationType)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(ct.Table) == "" {
-		return fmt.Errorf("table is required")
+	if err := common.ValidateRequiredParam("table", strings.TrimSpace(ct.Table)); err != nil {
+		return err
 	}
 	if !isValidOperationType(ct.OperationType) {
 		return fmt.Errorf("invalid operation type: %s", ct.OperationType)
@@ -270,11 +271,11 @@ func (act *DynamoDBCostAggregation) BeforeUpdate() error {
 
 // Validate for DynamoDBCostAggregation
 func (act *DynamoDBCostAggregation) Validate() error {
-	if strings.TrimSpace(act.OperationType) == "" {
-		return fmt.Errorf("OperationType is required")
+	if err := common.ValidateRequiredParam("OperationType", strings.TrimSpace(act.OperationType)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(act.Period) == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", strings.TrimSpace(act.Period)); err != nil {
+		return err
 	}
 	if act.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")

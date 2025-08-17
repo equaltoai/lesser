@@ -41,7 +41,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		params, err := common.ParseMultipartForm(body, contentType)
 		if err != nil {
 			h.logger.Error("failed to parse multipart form", zap.Error(err))
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return h.respondBadRequest(ctx, err.Error())
 		}
 
 		req.ClientName = params["client_name"]
@@ -53,7 +53,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		params, err := common.ParseFormURLEncoded(body)
 		if err != nil {
 			h.logger.Error("failed to parse form data", zap.Error(err))
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return h.respondBadRequest(ctx, err.Error())
 		}
 
 		req.ClientName = params["client_name"]
@@ -89,7 +89,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 					zap.Error(formErr),
 					zap.Error(jsonErr),
 					zap.String("body_preview", truncateStringLift(body, 200)))
-				return ctx.Status(400).JSON(map[string]string{"error": "unable to parse request body as form data or JSON"})
+				return h.respondBadRequest(ctx, "unable to parse request body as form data or JSON")
 			}
 		}
 	}
@@ -102,21 +102,21 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		zap.String("website", req.Website))
 
 	// Validate request
-	if req.ClientName == "" {
+	if err := common.ValidateRequiredParam("client_name", req.ClientName); err != nil {
 		h.logger.Info("validation failed: client_name is required")
-		return ctx.Status(422).JSON(map[string]string{"error": "client_name is required"})
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
-	if req.RedirectURIs == "" {
+	if err := common.ValidateRequiredParam("redirect_uris", req.RedirectURIs); err != nil {
 		h.logger.Info("validation failed: redirect_uris is required")
-		return ctx.Status(422).JSON(map[string]string{"error": "redirect_uris is required"})
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
 	// Parse redirect URIs (can be space or newline separated)
 	redirectURIs := strings.Fields(req.RedirectURIs)
-	if len(redirectURIs) == 0 {
+	if err := common.ValidateSliceNotEmpty("redirect_uris", redirectURIs); err != nil {
 		h.logger.Info("validation failed: at least one redirect_uri is required")
-		return ctx.Status(422).JSON(map[string]string{"error": "at least one redirect_uri is required"})
+		return h.respondUnprocessableEntity(ctx, "at least one redirect_uri is required")
 	}
 
 	h.logger.Info("parsed redirect URIs",
@@ -125,7 +125,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 
 	// Validate redirect URIs
 	for _, uri := range redirectURIs {
-		if uri == "" {
+		if err := common.ValidateRequiredParam("uri", uri); err != nil {
 			continue
 		}
 		// Allow special redirect URI for out-of-band flows
@@ -140,7 +140,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		if !strings.Contains(uri, ":") {
 			h.logger.Info("validation failed: invalid redirect_uri format",
 				zap.String("uri", uri))
-			return ctx.Status(422).JSON(map[string]string{"error": fmt.Sprintf("invalid redirect_uri format: %s", uri)})
+			return h.respondUnprocessableEntity(ctx, fmt.Sprintf("invalid redirect_uri format: %s", uri))
 		}
 	}
 
@@ -203,14 +203,14 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// This endpoint expects a Bearer token with app credentials
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse the token to get app credentials
@@ -225,7 +225,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 		client, err := h.repos.Account().GetOAuthClient(ctx.Context, claims.ClientID)
 		if err != nil {
 			h.logger.Error("failed to get OAuth client", zap.Error(err))
-			return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
+			return h.respondUnauthorized(ctx)
 		}
 
 		// Get VAPID public key

@@ -24,7 +24,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -112,38 +111,44 @@ func (rl *RateLimiter) Allow(userID string) bool {
 
 // NewPushDeliveryProcessor creates a new push delivery processor
 func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
-	// Initialize DynamORM
+	// Use standardized Lambda initialization
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName:        "push-delivery",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableHealthCheck:  false,
+		EnableTracing:      true,
+		EnableCostTracking: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
+	}
+
+	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+		return nil, fmt.Errorf("failed to initialize DynamORM database: %w", err)
 	}
 
-	// Get table name
-	cfg := config.Get()
-	tableName := cfg.DynamoTableName
-	if tableName == "" {
+	// Initialize repository factory
+	tableName := lambdaCtx.Config.DynamoTableName
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Create repository factory
-	logger := common.Logger()
-	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
+	repos, err := factory.NewRepositoryFactory(db, tableName, lambdaCtx.AWSServices.Config, lambdaCtx.Logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create repository factory: %w", err)
 	}
 
+	// Set storage in lambdaCtx for reference
+	lambdaCtx.DynamoDB = db
+	lambdaCtx.Repos = repos
+
 	return &PushDeliveryProcessor{
 		repos:  repos,
-		logger: common.Logger(),
-		cfg:    config.Get(),
+		logger: lambdaCtx.Logger,
+		cfg:    lambdaCtx.Config,
 		rateLimiter: &RateLimiter{
 			limits: make(map[string]*userLimit),
 		},
@@ -156,7 +161,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 // HandleSQSBatch processes a batch of SQS messages concurrently
 func (pdp *PushDeliveryProcessor) HandleSQSBatch(ctx *lift.Context, event events.SQSEvent) error {
 	requestID, _ := ctx.Get("requestID").(string)
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("push-%d", time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}
@@ -250,7 +255,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 		return fmt.Errorf("failed to get push subscriptions: %w", err)
 	}
 
-	if len(subscriptions) == 0 {
+	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
 		pdp.logger.Debug("no push subscriptions for user",
 			zap.String("username", notification.Username),
 		)

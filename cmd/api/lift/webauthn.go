@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -14,37 +15,20 @@ import (
 func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return h.respondUnauthorized(ctx)
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Begin registration
 	options, challenge, err := authService.BeginWebAuthnRegistration(ctx.Context, username)
 	if err != nil {
-		if err == auth.ErrWebAuthnNotConfigured {
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "WebAuthn not configured",
-			})
-		}
-		h.logger.Error("failed to begin WebAuthn registration", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to begin registration",
-		})
+		return h.handleAuthServiceError(ctx, err, "begin registration")
 	}
 
 	// Return options and challenge
@@ -62,11 +46,8 @@ func (h *Handler) HandleBeginWebAuthnRegistrationLift(ctx *lift.Context) error {
 func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse request body
@@ -75,37 +56,20 @@ func (h *Handler) HandleFinishWebAuthnRegistrationLift(ctx *lift.Context) error 
 		Response       json.RawMessage `json:"response"`
 		CredentialName string          `json:"credential_name"`
 	}
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "invalid request body",
-		})
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Finish registration
 	err = authService.FinishWebAuthnRegistration(ctx.Context, username, req.Challenge, req.Response, req.CredentialName)
 	if err != nil {
-		if err == auth.ErrChallengeNotFound {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid or expired challenge",
-			})
-		}
-		h.logger.Error("failed to finish WebAuthn registration", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to complete registration",
-		})
+		return h.handleAuthServiceError(ctx, err, "complete registration")
 	}
 
 	ctx.Status(http.StatusOK)
@@ -121,50 +85,24 @@ func (h *Handler) HandleBeginWebAuthnLoginLift(ctx *lift.Context) error {
 	var req struct {
 		Username string `json:"username"`
 	}
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "invalid request body",
-		})
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
-	if req.Username == "" {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "username required",
-		})
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return h.respondBadRequest(ctx, "username required")
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Begin login
 	options, challenge, err := authService.BeginWebAuthnLogin(ctx.Context, req.Username)
 	if err != nil {
-		if err == auth.ErrUserHasNoCredentials {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "no passkeys registered for this user",
-			})
-		}
-		if err == auth.ErrWebAuthnNotConfigured {
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "WebAuthn not configured",
-			})
-		}
-		h.logger.Error("failed to begin WebAuthn login", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to begin login",
-		})
+		return h.handleAuthServiceError(ctx, err, "begin login")
 	}
 
 	// Return options and challenge
@@ -187,63 +125,33 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 		Response   json.RawMessage `json:"response"`
 		DeviceName string          `json:"device_name"`
 	}
-	if err := ctx.ParseRequest(&req); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "invalid request body",
-		})
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
-	if req.Username == "" || req.Challenge == "" {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "username and challenge required",
-		})
+	if err := common.ValidateRequiredParam("username", req.Username); err != nil {
+		return h.respondBadRequest(ctx, "username required")
+	}
+	if err := common.ValidateRequiredParam("challenge", req.Challenge); err != nil {
+		return h.respondBadRequest(ctx, "challenge required")
 	}
 
 	// Get device info
-	userAgent := ctx.Header("User-Agent")
-	ipAddress := ctx.Header("X-Forwarded-For")
-	if ipAddress == "" {
-		ipAddress = ctx.Header("X-Real-IP")
-	}
-	if ipAddress == "" {
-		ipAddress = "unknown"
-	}
-	if req.DeviceName == "" {
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	if err := common.ValidateRequiredParam("device_name", req.DeviceName); err != nil {
 		req.DeviceName = "WebAuthn Device"
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Finish login and create session
 	authResponse, err := authService.FinishWebAuthnLogin(ctx.Context, req.Username, req.Challenge, req.Response, req.DeviceName, userAgent, ipAddress)
 	if err != nil {
-		if err == auth.ErrChallengeNotFound {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid or expired challenge",
-			})
-		}
-		if err == auth.ErrInvalidCredential {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid credential",
-			})
-		}
-		h.logger.Error("failed to finish WebAuthn login", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to complete login",
-		})
+		return h.handleAuthServiceError(ctx, err, "complete login")
 	}
 
 	ctx.Status(http.StatusOK)
@@ -255,7 +163,7 @@ func (h *Handler) HandleFinishWebAuthnLoginLift(ctx *lift.Context) error {
 func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -304,7 +212,7 @@ func (h *Handler) HandleListWebAuthnCredentialsLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -313,7 +221,7 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 
 	// Get credential ID from path
 	credentialID := ctx.Param("credentialId")
-	if credentialID == "" {
+	if err := common.ValidateRequiredParam("credentialId", credentialID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "credential ID required",
@@ -363,7 +271,7 @@ func (h *Handler) HandleDeleteWebAuthnCredentialLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) error {
 	// Get authenticated user from context
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -372,7 +280,7 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 
 	// Get credential ID from path
 	credentialID := ctx.Param("credentialId")
-	if credentialID == "" {
+	if err := common.ValidateRequiredParam("credentialId", credentialID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "credential ID required",
@@ -390,7 +298,7 @@ func (h *Handler) HandleUpdateWebAuthnCredentialNameLift(ctx *lift.Context) erro
 		})
 	}
 
-	if req.Name == "" {
+	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "name required",

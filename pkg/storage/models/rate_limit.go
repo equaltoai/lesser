@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // LoginAttempt represents a login attempt record for rate limiting
@@ -22,7 +24,7 @@ type LoginAttempt struct {
 func (la *LoginAttempt) UpdateKeys() {
 	// PK is set when creating the record (RATELIMIT#{identifier})
 	// SK is set when creating the record (timestamp in RFC3339Nano)
-	if la.Type == "" {
+	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
 		la.Type = "LoginAttempt"
 	}
 }
@@ -55,7 +57,7 @@ type RateLimitLockout struct {
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
 func (rll *RateLimitLockout) UpdateKeys() {
 	// PK and SK are set when creating the record
-	if rll.Type == "" {
+	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
 		rll.Type = "RateLimitLockout"
 	}
 }
@@ -98,7 +100,7 @@ type APIRateLimit struct {
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
 func (arl *APIRateLimit) UpdateKeys() {
 	// PK and SK are set when creating/updating the record
-	if arl.Type == "" {
+	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
 		arl.Type = "APIRateLimit"
 	}
 }
@@ -160,7 +162,7 @@ type RateLimitViolation struct {
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
 func (rlv *RateLimitViolation) UpdateKeys() {
-	if rlv.Type == "" {
+	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
 		rlv.Type = "RateLimitViolation"
 	}
 }

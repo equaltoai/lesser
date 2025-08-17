@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EMFMetrics handles CloudWatch EMF metric emission
@@ -113,7 +114,7 @@ func (emf *EMFMetrics) PutMetric(name string, value float64, unit string, dimens
 	emf.metadata[name+"_timestamp"] = time.Now().UnixMilli()
 }
 
-// RecordLatency records latency metrics
+// RecordLatency records latency metrics with enhanced percentile tracking
 func (emf *EMFMetrics) RecordLatency(operation string, duration time.Duration) {
 	if !emf.enabled {
 		return
@@ -128,10 +129,78 @@ func (emf *EMFMetrics) RecordLatency(operation string, duration time.Duration) {
 
 	emf.PutMetric("Latency", durationMs, "Milliseconds", dimensions)
 
-	// Also record percentile-friendly metrics
+	// Record percentile-friendly metrics for CloudWatch insights
 	emf.PutMetric("LatencyP50", durationMs, "Milliseconds", dimensions)
 	emf.PutMetric("LatencyP90", durationMs, "Milliseconds", dimensions)
+	emf.PutMetric("LatencyP95", durationMs, "Milliseconds", dimensions)
 	emf.PutMetric("LatencyP99", durationMs, "Milliseconds", dimensions)
+	emf.PutMetric("LatencyP999", durationMs, "Milliseconds", dimensions)
+
+	// Record latency distribution for alerting
+	emf.recordLatencyDistribution(operation, durationMs, dimensions)
+}
+
+// recordLatencyDistribution records latency in buckets for better alerting
+func (emf *EMFMetrics) recordLatencyDistribution(operation string, durationMs float64, baseDimensions map[string]string) {
+	// Create dimensions with latency bucket
+	dimensions := make(map[string]string)
+	for k, v := range baseDimensions {
+		dimensions[k] = v
+	}
+
+	// Classify latency into buckets
+	var bucket string
+	switch {
+	case durationMs < 10:
+		bucket = "under_10ms"
+	case durationMs < 50:
+		bucket = "10ms_to_50ms"
+	case durationMs < 100:
+		bucket = "50ms_to_100ms"
+	case durationMs < 200:
+		bucket = "100ms_to_200ms"
+	case durationMs < 500:
+		bucket = "200ms_to_500ms"
+	case durationMs < 1000:
+		bucket = "500ms_to_1s"
+	case durationMs < 2000:
+		bucket = "1s_to_2s"
+	case durationMs < 5000:
+		bucket = "2s_to_5s"
+	default:
+		bucket = "over_5s"
+	}
+
+	dimensions["LatencyBucket"] = bucket
+	emf.PutMetric("LatencyDistribution", 1.0, "Count", dimensions)
+
+	// Record SLA compliance metrics
+	emf.recordSLACompliance(operation, durationMs, baseDimensions)
+}
+
+// recordSLACompliance records SLA compliance metrics
+func (emf *EMFMetrics) recordSLACompliance(_ string, durationMs float64, baseDimensions map[string]string) {
+	// Define SLA thresholds (can be made configurable)
+	slaThresholds := map[string]float64{
+		"fast":     100,  // 100ms
+		"normal":   500,  // 500ms
+		"slow":     2000, // 2s
+		"critical": 5000, // 5s
+	}
+
+	for slaLevel, threshold := range slaThresholds {
+		dimensions := make(map[string]string)
+		for k, v := range baseDimensions {
+			dimensions[k] = v
+		}
+		dimensions["SLALevel"] = slaLevel
+
+		if durationMs <= threshold {
+			emf.PutMetric("SLACompliance", 1.0, "Count", dimensions)
+		} else {
+			emf.PutMetric("SLAViolation", 1.0, "Count", dimensions)
+		}
+	}
 }
 
 // RecordThroughput records throughput metrics
@@ -307,7 +376,7 @@ func (emf *EMFMetrics) Flush() {
 	emf.mu.Lock()
 	defer emf.mu.Unlock()
 
-	if len(emf.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("emf.metrics", emf.metrics); err != nil {
 		return
 	}
 

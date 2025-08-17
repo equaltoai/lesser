@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EnhancedRetryMessage represents a message for polynomial retry delivery
@@ -185,7 +186,7 @@ func (p *EnhancedRetryProcessor) ProcessEnhancedRetry(ctx context.Context, messa
 	}
 
 	// Check if all deliveries succeeded
-	if len(newFailures) == 0 {
+	if err := common.ValidateSliceNotEmpty("newFailures", newFailures); err != nil {
 		log.Info("All retry deliveries successful")
 		return p.recordFinalSuccess(ctx, message)
 	}

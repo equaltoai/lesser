@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -66,7 +67,7 @@ func (pm *PatternMatcher) CreatePattern(ctx context.Context, pattern *Moderation
 	}
 
 	// Generate ID if not provided
-	if pattern.ID == "" {
+	if err := common.ValidateRequiredParam("pattern.ID", pattern.ID); err != nil {
 		pattern.ID = generatePatternID(pattern.Name)
 	}
 
@@ -188,11 +189,11 @@ func (pm *PatternMatcher) MatchContent(_ context.Context, content string, _ Cont
 // Helper methods
 
 func (pm *PatternMatcher) validatePattern(pattern *ModerationPattern) error {
-	if pattern.Name == "" {
+	if err := common.ValidateRequiredParam("pattern.Name", pattern.Name); err != nil {
 		return fmt.Errorf("pattern name required")
 	}
 
-	if pattern.Pattern == "" {
+	if err := common.ValidateRequiredParam("pattern.Pattern", pattern.Pattern); err != nil {
 		return fmt.Errorf("pattern required")
 	}
 

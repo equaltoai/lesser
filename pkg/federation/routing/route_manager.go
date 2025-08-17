@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/httpclient"
@@ -203,13 +204,13 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 		return nil, fmt.Errorf("get routes: %w", err)
 	}
 
-	if len(routes) == 0 {
+	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
 		return nil, types.ErrNoHealthyRoutes
 	}
 
 	// Filter by message type support
 	supportedRoutes := m.filterByMessageType(routes, messageType)
-	if len(supportedRoutes) == 0 {
+	if err := common.ValidateSliceNotEmpty("supportedRoutes", supportedRoutes); err != nil {
 		return nil, fmt.Errorf("no routes support message type: %s", messageType)
 	}
 
@@ -222,7 +223,7 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 		return m.selectRouteInEmergencyMode(destination, messageType)
 	}
 
-	if len(healthyRoutes) == 0 {
+	if err := common.ValidateSliceNotEmpty("healthyRoutes", healthyRoutes); err != nil {
 		// Try half-open circuits as last resort
 		for _, route := range supportedRoutes {
 			if m.circuitBreaker != nil && m.circuitBreaker.GetStatus(route.InstanceID) == types.CircuitHalfOpen {
@@ -517,7 +518,7 @@ func (m *Manager) GetRouteMetrics(destination string) (*types.RouteMetrics, erro
 		return nil, err
 	}
 
-	if len(routes) == 0 {
+	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
 		return nil, fmt.Errorf("no routes for destination: %s", destination)
 	}
 
@@ -616,7 +617,7 @@ func (m *Manager) MonitorInstanceHealth() error {
 		return fmt.Errorf("list instances: %w", err)
 	}
 
-	if len(instances) == 0 {
+	if err := common.ValidateSliceNotEmpty("instances", instances); err != nil {
 		m.logger.Info("No instances to monitor")
 		return nil
 	}
@@ -864,7 +865,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 		routeMap[target] = route
 	}
 
-	if len(routeMap) == 0 {
+	if err := common.ValidateSliceNotEmpty("routeMap", routeMap); err != nil {
 		return nil, fmt.Errorf("no routes available for any target")
 	}
 
@@ -1074,10 +1075,10 @@ func (m *Manager) deliverToRoute(ctx context.Context, route *types.Route, messag
 
 	// Determine the target inbox URL
 	targetInbox := instance.SharedInboxURL
-	if targetInbox == "" {
+	if err := common.ValidateRequiredParam("targetInbox", targetInbox); err != nil {
 		targetInbox = instance.InboxURL
 	}
-	if targetInbox == "" {
+	if err := common.ValidateRequiredParam("targetInbox", targetInbox); err != nil {
 		result.Success = false
 		result.ErrorMessage = "no inbox URL available for instance"
 		result.Duration = time.Since(startTime)
@@ -1249,7 +1250,7 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 		return nil, fmt.Errorf("get routes in emergency mode: %w", err)
 	}
 
-	if len(routes) == 0 {
+	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
 		return nil, types.ErrNoHealthyRoutes
 	}
 
@@ -1300,7 +1301,7 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 // prepareActivityForDelivery converts a federation message to an ActivityPub activity
 func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types.FederationMessage, targets []string) (*activitypub.Activity, *activitypub.Actor, error) {
 	// If the message already has a payload, try to parse it as an activity
-	if len(message.Payload) > 0 {
+	if err := common.ValidateSliceNotEmpty("message.Payload", message.Payload); err == nil {
 		var activity activitypub.Activity
 		if err := json.Unmarshal(message.Payload, &activity); err == nil {
 			// Get the signing actor
@@ -1324,7 +1325,7 @@ func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types
 	}
 
 	// Set recipients
-	if len(targets) > 0 {
+	if err := common.ValidateSliceNotEmpty("targets", targets); err == nil {
 		activity.To = targets
 	}
 
@@ -1350,7 +1351,7 @@ func (m *Manager) getSigningActor(ctx context.Context, actorID string) (*activit
 
 	// Extract username from actor ID
 	username := extractUsernameFromActorID(actorID)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, fmt.Errorf("could not extract username from actor ID: %s", actorID)
 	}
 
@@ -1464,7 +1465,7 @@ func extractUsernameFromActorID(actorID string) string {
 
 	// Extract from path - typical format: /users/username or /actors/username
 	path := u.Path
-	if path == "" {
+	if err := common.ValidateRequiredParam("path", path); err != nil {
 		return ""
 	}
 
@@ -1477,7 +1478,7 @@ func extractUsernameFromActorID(actorID string) string {
 	}
 
 	// Fallback: use the last path segment
-	if len(parts) > 1 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil && len(parts) > 1 {
 		return string(parts[len(parts)-1])
 	}
 
@@ -1492,7 +1493,7 @@ func (m *Manager) recordDetailedCostTracking(ctx context.Context, message *types
 
 	// Extract domain from route or result
 	domain := route.Domain
-	if domain == "" && route.Endpoint != nil {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil && route.Endpoint != nil {
 		domain = route.Endpoint.Host
 	}
 

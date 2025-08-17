@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -116,7 +117,7 @@ func NewJobQueueService(logger *zap.Logger) (*JobQueueService, error) {
 
 	// Validate required queue URLs
 	for queueName, queueURL := range queueUrls {
-		if queueURL == "" {
+		if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
 			logger.Warn("queue URL not configured", zap.String("queue", queueName))
 		}
 	}
@@ -131,7 +132,7 @@ func NewJobQueueService(logger *zap.Logger) (*JobQueueService, error) {
 // QueueImportJob queues an import job for processing
 func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessage) error {
 	queueURL := q.queueUrls["import-processing"]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("import_queue_url", queueURL); err != nil {
 		q.logger.Warn("import queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
@@ -189,7 +190,7 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 // QueueExportJob queues an export job for processing
 func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessage) error {
 	queueURL := q.queueUrls["export-generation"]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("export_queue_url", queueURL); err != nil {
 		q.logger.Warn("export queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
@@ -252,7 +253,7 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 // QueueMediaJob queues a media processing job
 func (q *JobQueueService) QueueMediaJob(ctx context.Context, msg MediaJobMessage) error {
 	queueURL := q.queueUrls["media-processing"]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("media_queue_url", queueURL); err != nil {
 		q.logger.Warn("media queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
@@ -311,7 +312,7 @@ func (q *JobQueueService) QueueMediaJob(ctx context.Context, msg MediaJobMessage
 // QueueScheduledJob queues a scheduled status publishing job
 func (q *JobQueueService) QueueScheduledJob(ctx context.Context, msg ScheduledJobMessage) error {
 	queueURL := q.queueUrls["scheduled-publishing"]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("scheduled_queue_url", queueURL); err != nil {
 		q.logger.Warn("scheduled publishing queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
@@ -386,7 +387,7 @@ func (q *JobQueueService) QueueScheduledJob(ctx context.Context, msg ScheduledJo
 // QueueActivityJob queues a federation activity delivery job
 func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobMessage) error {
 	queueURL := q.queueUrls["federation-delivery"]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("federation_delivery_queue_url", queueURL); err != nil {
 		q.logger.Warn("federation delivery queue URL not configured, skipping queue operation")
 		return nil // Don't fail the request if queue is not configured
 	}
@@ -397,7 +398,7 @@ func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobM
 	}
 
 	// Set default priority if not provided
-	if msg.Priority == "" {
+	if err := common.ValidateRequiredParam("priority", msg.Priority); err != nil {
 		msg.Priority = priorityNormal
 	}
 
@@ -465,7 +466,7 @@ func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobM
 // QueueDelayedJob queues a job with a specific delay
 func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string, messageBody interface{}, delaySeconds int32) error {
 	queueURL := q.queueUrls[queueName]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
 		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
 
@@ -497,7 +498,7 @@ func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string,
 // SendBatchMessages sends multiple messages to a queue in a single batch operation
 func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName string, messages []interface{}) error {
 	queueURL := q.queueUrls[queueName]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
 		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
 
@@ -560,7 +561,7 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 // GetQueueAttributes gets attributes for a queue (useful for monitoring)
 func (q *JobQueueService) GetQueueAttributes(ctx context.Context, queueName string) (map[string]string, error) {
 	queueURL := q.queueUrls[queueName]
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
 		return nil, fmt.Errorf("queue URL not configured for queue: %s", queueName)
 	}
 

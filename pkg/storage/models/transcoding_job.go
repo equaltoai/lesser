@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TranscodingJob tracks detailed metrics and costs for individual transcoding operations
@@ -123,7 +125,7 @@ func (tj *TranscodingJob) BeforeCreate() error {
 	tj.ExpiresAt = &expires
 
 	// Set default status if not provided
-	if tj.Status == "" {
+	if err := common.ValidateRequiredParam("status", tj.Status); err != nil {
 		tj.Status = "processing"
 	}
 
@@ -182,13 +184,13 @@ func (tj *TranscodingJob) calculateEfficiencyMetrics() {
 
 // Validate performs validation on the TranscodingJob
 func (tj *TranscodingJob) Validate() error {
-	if strings.TrimSpace(tj.JobID) == "" {
+	if err := common.ValidateRequiredParam("JobID", strings.TrimSpace(tj.JobID)); err != nil {
 		return fmt.Errorf("JobID is required")
 	}
-	if strings.TrimSpace(tj.MediaID) == "" {
+	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(tj.MediaID)); err != nil {
 		return fmt.Errorf("MediaID is required")
 	}
-	if strings.TrimSpace(tj.UserID) == "" {
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(tj.UserID)); err != nil {
 		return fmt.Errorf("UserID is required")
 	}
 

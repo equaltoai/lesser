@@ -1,6 +1,9 @@
 package graph
 
 import (
+	"context"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/cost"
@@ -23,6 +26,8 @@ type Resolver struct {
 	// Legacy fields (to be phased out)
 	Storage             core.RepositoryStorage
 	CostTracker         *cost.Tracker
+	UnifiedTracker      *cost.UnifiedTracker // Centralized cost tracking
+	TableName           string               // DynamoDB table name
 	MastodonConv        mastodon.Converter
 	Logger              *zap.Logger
 	SubscriptionManager *SubscriptionManager // For GraphQL subscriptions
@@ -79,4 +84,61 @@ func (r *Resolver) TrustEdge() TrustEdgeResolver { return &trustEdgeResolver{r} 
 // ModerationFilter returns the ModerationFilterResolver implementation
 func (r *Resolver) ModerationFilter() ModerationFilterResolver {
 	return &moderationFilterResolver{r}
+}
+
+// Helper method for unified cost tracking
+func (r *Resolver) trackDynamoOperation(ctx context.Context, operation string, units int64) {
+	if r.UnifiedTracker == nil {
+		return
+	}
+	
+	tableName := r.TableName
+	if tableName == "" {
+		tableName = os.Getenv("DYNAMO_TABLE_NAME")
+		if tableName == "" {
+			tableName = "lesser-main"
+		}
+	}
+	
+	var err error
+	switch operation {
+	case "read":
+		err = r.UnifiedTracker.TrackDynamoRead(ctx, tableName, units)
+	case "write":
+		err = r.UnifiedTracker.TrackDynamoWrite(ctx, tableName, units)
+	case "query":
+		err = r.UnifiedTracker.TrackDynamoQuery(ctx, tableName, units)
+	case "scan":
+		err = r.UnifiedTracker.TrackDynamoScan(ctx, tableName, units)
+	}
+	
+	if err != nil {
+		r.Logger.Warn("Failed to track cost", zap.String("operation", operation), zap.Error(err))
+	}
+}
+
+// Helper method for S3 cost tracking
+func (r *Resolver) trackS3Operation(ctx context.Context, operation string, units int) {
+	if r.UnifiedTracker == nil {
+		return
+	}
+	
+	bucketName := os.Getenv("S3_BUCKET_NAME")
+	if bucketName == "" {
+		bucketName = "lesser-media"
+	}
+	
+	var err error
+	switch operation {
+	case "get":
+		err = r.UnifiedTracker.TrackS3Get(ctx, bucketName, int64(units))
+	case "put":
+		err = r.UnifiedTracker.TrackS3Put(ctx, bucketName, int64(units))
+	case "delete":
+		err = r.UnifiedTracker.TrackS3Delete(ctx, bucketName)
+	}
+	
+	if err != nil {
+		r.Logger.Warn("Failed to track S3 cost", zap.String("operation", operation), zap.Error(err))
+	}
 }

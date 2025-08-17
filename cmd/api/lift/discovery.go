@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -83,23 +82,21 @@ func (h *Handler) parseDirectoryParams(ctx *lift.Context) directoryParams {
 // parseDirectoryLimit parses the limit parameter
 func (h *Handler) parseDirectoryLimit(ctx *lift.Context) int {
 	limitStr := h.extractQueryParam(ctx, "limit")
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			return l
-		}
+	limit, err := common.ParseSearchLimit(limitStr)
+	if err != nil {
+		return 40
 	}
-	return 40
+	return limit
 }
 
 // parseDirectoryOffset parses the offset parameter
 func (h *Handler) parseDirectoryOffset(ctx *lift.Context) int {
 	offsetStr := h.extractQueryParam(ctx, "offset")
-	if offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			return o
-		}
+	offset, err := common.ParseSearchOffset(offsetStr)
+	if err != nil {
+		return 0
 	}
-	return 0
+	return offset
 }
 
 // parseDirectoryLocal parses the local filter parameter
@@ -113,7 +110,7 @@ func (h *Handler) extractQueryParam(ctx *lift.Context, param string) string {
 	value := ctx.Query(param)
 
 	// Test mode fallback - extract from path query string
-	if value == "" && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
+	if err := common.ValidateRequiredParam("value", value); err != nil && ctx.Request != nil && strings.Contains(ctx.Request.Path, "?") {
 		value = h.extractFromPathQuery(ctx.Request.Path, param)
 	}
 
@@ -202,7 +199,7 @@ func (h *Handler) getActorAvatarURL(actor *activitypub.Actor) string {
 func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
@@ -216,7 +213,7 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -236,12 +233,10 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 	}
 
 	// Get limit from query params
-	limit := 40
 	limitStr := ctx.Query("limit")
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limit, err := common.ParseSearchLimit(limitStr)
+	if err != nil {
+		limit = 40
 	}
 
 	// Get search service
@@ -304,7 +299,7 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
@@ -318,7 +313,7 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -338,12 +333,10 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 	}
 
 	// Get limit from query params
-	limit := 40
 	limitStr := ctx.Query("limit")
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limit, err := common.ParseSearchLimit(limitStr)
+	if err != nil {
+		limit = 40
 	}
 
 	// Get search service
@@ -407,7 +400,7 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
 	}
 
@@ -421,7 +414,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -444,7 +437,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 	accountID := ctx.Param("account_id")
 
 	// Test mode fallback - extract from path
-	if accountID == "" && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract account_id from path like /api/v1/suggestions/account123
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 4 && parts[3] == "suggestions" {
@@ -452,7 +445,7 @@ func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
 		}
 	}
 
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "account ID required",

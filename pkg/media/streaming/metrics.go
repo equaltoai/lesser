@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsTracker implements comprehensive streaming metrics tracking with CloudWatch integration
@@ -410,7 +411,7 @@ func (smt *MetricsTracker) updateQoEScore(metrics *SessionMetrics) {
 
 // calculateQualityScore computes quality score based on time spent in each quality
 func (smt *MetricsTracker) calculateQualityScore(metrics *SessionMetrics) float64 {
-	if len(metrics.TimeInEachQuality) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics.TimeInEachQuality", metrics.TimeInEachQuality); err != nil {
 		return 0.5 // Neutral score if no quality data
 	}
 
@@ -609,7 +610,7 @@ func (smt *MetricsTracker) batchPublisher() {
 // publishBatch publishes the current metrics batch to CloudWatch
 func (smt *MetricsTracker) publishBatch() {
 	smt.batchMutex.Lock()
-	if len(smt.metricsBatch) == 0 {
+	if err := common.ValidateSliceNotEmpty("smt.metricsBatch", smt.metricsBatch); err != nil {
 		smt.batchMutex.Unlock()
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -34,7 +35,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	log := r.logger.With(zap.String("conversation_id", conversation.ID))
 
 	// Generate ID if not provided (matching legacy behavior)
-	if conversation.ID == "" {
+	if err := common.ValidateRequiredParam("conversation_id", conversation.ID); err != nil {
 		conversation.ID = r.generateRandomString(12)
 	}
 
@@ -47,7 +48,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	}
 
 	// Set participants if provided
-	if len(participants) > 0 {
+	if err := common.ValidateSliceNotEmpty("participants", participants); err == nil {
 		conversation.Participants = participants
 	}
 
@@ -227,7 +228,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 	hasMore := len(conversations) > opts.Limit
 	if hasMore {
 		conversations = conversations[:opts.Limit]
-		if len(conversations) > 0 {
+		if err := common.ValidateSliceNotEmpty("conversations", conversations); err == nil {
 			lastConv := conversations[len(conversations)-1]
 			nextCursor = fmt.Sprintf("%s#%s", lastConv.UpdatedAt.Format(time.RFC3339), lastConv.ID)
 		}
@@ -338,9 +339,67 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 }
 
 // AddStatusToConversation adds a status/message to a conversation
-func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, _ string) error {
-	// Update the conversation's last status
-	return r.UpdateConversationLastStatus(ctx, conversationID, statusID)
+func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.String("status_id", statusID),
+		zap.String("sender_username", senderUsername),
+	)
+
+	// Create conversation message record
+	message := &models.ConversationMessage{
+		ConversationID: conversationID,
+		StatusID:       statusID,
+		SenderUsername: senderUsername,
+		CreatedAt:      time.Now(),
+	}
+
+	if err := message.BeforeCreate(); err != nil {
+		log.Error("failed to prepare conversation message", zap.Error(err))
+		return fmt.Errorf("failed to prepare conversation message: %w", err)
+	}
+
+	// Create the message record
+	if err := r.db.Model(message).WithContext(ctx).Create(); err != nil {
+		log.Error("failed to create conversation message", zap.Error(err))
+		return fmt.Errorf("failed to create conversation message: %w", err)
+	}
+
+	// Get conversation to update count and last message info
+	conv, err := r.GetConversation(ctx, conversationID)
+	if err != nil {
+		log.Error("failed to get conversation for count update", zap.Error(err))
+		// Don't fail the operation if we can't update the count
+	} else {
+		// Increment message count and update last message time
+		conv.TotalMessageCount++
+		conv.LastMessageTime = message.CreatedAt
+		conv.UpdatedAt = time.Now()
+
+		// Update the conversation's last status and counts
+		conv.LastStatusID = statusID
+		
+		if err := r.UpdateConversation(ctx, conv); err != nil {
+			log.Warn("failed to update conversation counts", zap.Error(err))
+			// Don't fail the operation if count update fails
+		}
+	}
+
+	// Mark conversation as unread for all participants except sender
+	if conv != nil {
+		for _, participantID := range conv.Participants {
+			if participantID != senderUsername {
+				if err := r.MarkConversationUnread(ctx, conversationID, participantID); err != nil {
+					log.Warn("failed to mark conversation as unread for participant",
+						zap.String("participant_id", participantID),
+						zap.Error(err))
+				}
+			}
+		}
+	}
+
+	log.Debug("successfully added status to conversation")
+	return nil
 }
 
 // GetConversationStatuses retrieves messages in a conversation with pagination
@@ -386,11 +445,13 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 
 	// Determine next cursor
 	var nextCursor string
-	if len(statuses) > limit {
+	if err := common.ValidateSliceLength("statuses", statuses, limit); err != nil {
 		statuses = statuses[:limit]
-		if len(messages) > limit && len(messages) > 0 {
-			lastMsg := messages[limit]
-			nextCursor = lastMsg.SK
+		if err := common.ValidateSliceLength("messages", messages, limit); err != nil {
+			if err := common.ValidateSliceNotEmpty("messages", messages); err == nil {
+				lastMsg := messages[limit]
+				nextCursor = lastMsg.SK
+			}
 		}
 	}
 
@@ -399,6 +460,11 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 
 // RemoveStatusFromConversation removes a status from a conversation
 func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.String("status_id", statusID),
+	)
+
 	// Find and delete the message record
 	var messages []models.ConversationMessage
 	err := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
@@ -406,18 +472,69 @@ func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Contex
 		Scan(&messages)
 
 	if err != nil {
+		log.Error("failed to query messages for deletion", zap.Error(err))
 		return fmt.Errorf("failed to query messages: %w", err)
 	}
 
+	var messageDeleted bool
 	for _, msg := range messages {
 		if msg.StatusID == statusID {
 			if err := r.db.Model(&msg).WithContext(ctx).Delete(); err != nil {
+				log.Error("failed to delete message", zap.Error(err))
 				return fmt.Errorf("failed to delete message: %w", err)
 			}
+			messageDeleted = true
+			log.Debug("deleted conversation message")
 			break
 		}
 	}
 
+	if !messageDeleted {
+		log.Debug("message not found in conversation, nothing to delete")
+		return nil
+	}
+
+	// Update conversation message count
+	conv, err := r.GetConversation(ctx, conversationID)
+	if err != nil {
+		log.Warn("failed to get conversation for count update", zap.Error(err))
+		// Don't fail the operation if we can't update the count
+		return nil
+	}
+
+	// Decrement message count (ensure it doesn't go below 0)
+	if conv.TotalMessageCount > 0 {
+		conv.TotalMessageCount--
+	}
+	conv.UpdatedAt = time.Now()
+
+	// If this was the last status, find the new last status
+	if conv.LastStatusID == statusID {
+		// Get remaining messages to find the most recent one
+		var remainingMessages []models.ConversationMessage
+		err = r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+			Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
+			Limit(1). // Get the most recent
+			Scan(&remainingMessages)
+
+		if err == nil && len(remainingMessages) > 0 {
+			// Update to the most recent remaining message
+			conv.LastStatusID = remainingMessages[0].StatusID
+			conv.LastMessageTime = remainingMessages[0].CreatedAt
+		} else {
+			// No messages remaining
+			conv.LastStatusID = ""
+			conv.LastMessageTime = time.Time{}
+		}
+	}
+
+	// Update the conversation with new counts
+	if err := r.UpdateConversation(ctx, conv); err != nil {
+		log.Warn("failed to update conversation after message removal", zap.Error(err))
+		// Don't fail the operation if count update fails
+	}
+
+	log.Debug("successfully removed status from conversation")
 	return nil
 }
 
@@ -429,20 +546,36 @@ func (r *ConversationRepository) MarkStatusRead(ctx context.Context, conversatio
 
 // GetUnreadStatusCount gets the count of unread statuses in a conversation for a user
 func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
-	// Check if the conversation is marked as read
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.String("username", username),
+	)
+
+	// Get the conversation status to find last read time
 	var status models.ConversationStatus
 	err := r.db.Model(&models.ConversationStatus{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conversationID)).
 		Where("SK", "=", fmt.Sprintf("USER#%s", username)).
 		First(&status)
 
-	if errors.IsNotFound(err) || status.Unread {
-		// If no status record or marked unread, count all messages after last read
-		// For simplicity, returning 1 if unread (can be enhanced to count actual messages)
-		return 1, nil
+	var lastReadTime time.Time
+	if errors.IsNotFound(err) {
+		// If no status record exists, user has never read this conversation
+		// Count all messages as unread
+		lastReadTime = time.Time{} // Zero time
+	} else if err != nil {
+		log.Error("failed to get conversation status", zap.Error(err))
+		return 0, fmt.Errorf("failed to get conversation status: %w", err)
+	} else {
+		if !status.Unread {
+			// Conversation is marked as read
+			return 0, nil
+		}
+		lastReadTime = status.LastReadAt
 	}
 
-	return 0, nil
+	// Count messages after the last read time
+	return r.countMessagesAfterTime(ctx, conversationID, lastReadTime)
 }
 
 // LeaveConversation removes a participant from a conversation
@@ -723,6 +856,143 @@ func (r *ConversationRepository) SearchConversations(ctx context.Context, userID
 		HasMore:    len(matchingConversations) >= opts.Limit,
 		Total:      int64(len(matchingConversations)),
 	}, nil
+}
+
+// GetConversationMessageCount gets the total number of messages in a conversation
+func (r *ConversationRepository) GetConversationMessageCount(ctx context.Context, conversationID string) (int64, error) {
+	log := r.logger.With(zap.String("conversation_id", conversationID))
+
+	// Try to get cached count from conversation record first
+	conv, err := r.GetConversation(ctx, conversationID)
+	if err == nil && conv.TotalMessageCount > 0 {
+		// Return cached count if available and non-zero
+		return conv.TotalMessageCount, nil
+	}
+
+	// If no cached count, count messages directly
+	var messages []models.ConversationMessage
+	err = r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
+		Scan(&messages)
+
+	if err != nil {
+		log.Error("failed to count conversation messages", zap.Error(err))
+		return 0, fmt.Errorf("failed to count conversation messages: %w", err)
+	}
+
+	count := int64(len(messages))
+	log.Debug("counted conversation messages", zap.Int64("count", count))
+
+	// Update the cached count in the conversation record
+	if conv != nil {
+		conv.TotalMessageCount = count
+		if err := r.UpdateConversation(ctx, conv); err != nil {
+			log.Warn("failed to update cached message count", zap.Error(err))
+			// Don't fail the operation if caching fails
+		}
+	}
+
+	return count, nil
+}
+
+// GetUnreadMessageCount gets the count of unread messages for a user across all conversations
+func (r *ConversationRepository) GetUnreadMessageCount(ctx context.Context, username string) (int64, error) {
+	log := r.logger.With(zap.String("username", username))
+
+	// Get all conversations for the user
+	opts := interfaces.PaginationOptions{Limit: 1000} // Large limit to get all
+	result, err := r.GetUserConversations(ctx, username, opts)
+	if err != nil {
+		return 0, err
+	}
+
+	var totalUnreadCount int64
+	for _, conv := range result.Items {
+		// Get unread count for each conversation
+		unreadCount, err := r.GetUnreadStatusCount(ctx, conv.ID, username)
+		if err != nil {
+			log.Warn("failed to get unread count for conversation",
+				zap.String("conversation_id", conv.ID),
+				zap.Error(err))
+			continue
+		}
+		totalUnreadCount += int64(unreadCount)
+	}
+
+	log.Debug("calculated total unread message count", zap.Int64("count", totalUnreadCount))
+	return totalUnreadCount, nil
+}
+
+// countMessagesAfterTime counts messages in a conversation after a specific time
+func (r *ConversationRepository) countMessagesAfterTime(ctx context.Context, conversationID string, afterTime time.Time) (int, error) {
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.Time("after_time", afterTime),
+	)
+
+	query := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
+
+	// If afterTime is not zero, filter for messages after that time
+	if !afterTime.IsZero() {
+		// SK format is STATUS#timestamp#statusID, so we need to filter by SK
+		timePrefix := fmt.Sprintf("STATUS#%s", afterTime.Format(time.RFC3339Nano))
+		query = query.Where("SK", ">", timePrefix)
+	}
+
+	var messages []models.ConversationMessage
+	err := query.Scan(&messages)
+	if err != nil {
+		log.Error("failed to count messages after time", zap.Error(err))
+		return 0, fmt.Errorf("failed to count messages after time: %w", err)
+	}
+
+	count := len(messages)
+	log.Debug("counted messages after time", zap.Int("count", count))
+	return count, nil
+}
+
+// GetConversationMessagesByTimeRange gets messages in a conversation within a time range
+func (r *ConversationRepository) GetConversationMessagesByTimeRange(ctx context.Context, conversationID string, startTime, endTime time.Time, limit int) ([]*models.ConversationMessage, error) {
+	log := r.logger.With(
+		zap.String("conversation_id", conversationID),
+		zap.Time("start_time", startTime),
+		zap.Time("end_time", endTime),
+		zap.Int("limit", limit),
+	)
+
+	query := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
+
+	// Add time range filters using SK (STATUS#timestamp#statusID format)
+	if !startTime.IsZero() {
+		startPrefix := fmt.Sprintf("STATUS#%s", startTime.Format(time.RFC3339Nano))
+		query = query.Where("SK", ">=", startPrefix)
+	}
+	if !endTime.IsZero() {
+		endPrefix := fmt.Sprintf("STATUS#%s", endTime.Format(time.RFC3339Nano))
+		query = query.Where("SK", "<=", endPrefix)
+	}
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	var messages []models.ConversationMessage
+	err := query.Scan(&messages)
+	if err != nil {
+		log.Error("failed to get messages by time range", zap.Error(err))
+		return nil, fmt.Errorf("failed to get messages by time range: %w", err)
+	}
+
+	// Convert to pointers
+	result := make([]*models.ConversationMessage, len(messages))
+	for i := range messages {
+		result[i] = &messages[i]
+	}
+
+	log.Debug("retrieved messages by time range", zap.Int("count", len(result)))
+	return result, nil
 }
 
 // generateRandomString generates a random string of specified length

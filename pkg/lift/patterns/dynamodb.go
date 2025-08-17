@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DynamoDBStreamHandler is the interface that services must implement to handle DynamoDB stream events
@@ -67,7 +68,7 @@ func RegisterDynamoDBStream(app *lift.App, processor *DynamoDBStreamProcessor) {
 func (dsp *DynamoDBStreamProcessor) ProcessEvent(ctx *lift.Context, event events.DynamoDBEvent) error {
 	start := time.Now()
 	requestID := ctx.GetRequestID()
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("%s-%d", dsp.name, time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}

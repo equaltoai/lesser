@@ -71,19 +71,19 @@ func (rc *RelayCost) UpdateKeys() {
 
 // BeforeCreate validates and sets up the model before creation
 func (rc *RelayCost) BeforeCreate() error {
-	if rc.RelayURL == "" {
-		return fmt.Errorf("relay_url is required")
+	if err := common.ValidateRequiredParam("relay_url", rc.RelayURL); err != nil {
+		return err
 	}
-	if rc.OperationType == "" {
-		return fmt.Errorf("operation_type is required")
+	if err := common.ValidateRequiredParam("operation_type", rc.OperationType); err != nil {
+		return err
 	}
-	if rc.Direction == "" {
-		return fmt.Errorf("direction is required")
+	if err := common.ValidateRequiredParam("direction", rc.Direction); err != nil {
+		return err
 	}
 	if rc.Timestamp.IsZero() {
 		rc.Timestamp = time.Now()
 	}
-	if rc.RequestID == "" {
+	if err := common.ValidateRequiredParam("rc.RequestID", rc.RequestID); err != nil {
 		rc.RequestID = fmt.Sprintf("relay-%d", rc.Timestamp.UnixNano())
 	}
 
@@ -183,11 +183,11 @@ func (rm *RelayMetrics) UpdateKeys() {
 
 // BeforeCreate validates and sets up the model before creation
 func (rm *RelayMetrics) BeforeCreate() error {
-	if rm.RelayURL == "" {
-		return fmt.Errorf("relay_url is required")
+	if err := common.ValidateRequiredParam("relay_url", rm.RelayURL); err != nil {
+		return err
 	}
-	if rm.Period == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", rm.Period); err != nil {
+		return err
 	}
 	if rm.WindowStart.IsZero() {
 		return fmt.Errorf("window_start is required")
@@ -314,11 +314,11 @@ func (rb *RelayBudget) UpdateKeys() {
 
 // BeforeCreate validates and sets up the model before creation
 func (rb *RelayBudget) BeforeCreate() error {
-	if rb.RelayURL == "" {
-		return fmt.Errorf("relay_url is required")
+	if err := common.ValidateRequiredParam("relay_url", rb.RelayURL); err != nil {
+		return err
 	}
-	if rb.Period == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", rb.Period); err != nil {
+		return err
 	}
 	if rb.LimitMicroCents <= 0 {
 		return fmt.Errorf("limit_micro_cents must be positive")

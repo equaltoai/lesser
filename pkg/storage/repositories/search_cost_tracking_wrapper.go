@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
@@ -11,23 +12,36 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchCostTrackingWrapper wraps a SearchRepository with comprehensive cost tracking
 type SearchCostTrackingWrapper struct {
-	searchRepo  *SearchRepository
-	costRepo    *SearchCostRepository
-	costTracker *cost.Tracker
-	logger      *zap.Logger
+	searchRepo      *SearchRepository
+	costRepo        *SearchCostRepository
+	costTracker     *cost.Tracker
+	unifiedTracker  *cost.UnifiedTracker
+	tableName       string
+	logger          *zap.Logger
 }
 
 // NewSearchCostTrackingWrapper creates a new cost tracking wrapper for search operations
 func NewSearchCostTrackingWrapper(searchRepo *SearchRepository, costRepo *SearchCostRepository, costTracker *cost.Tracker, logger *zap.Logger) *SearchCostTrackingWrapper {
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+	}
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "SearchCostTrackingWrapper", "", "")
+	
 	return &SearchCostTrackingWrapper{
-		searchRepo:  searchRepo,
-		costRepo:    costRepo,
-		costTracker: costTracker,
-		logger:      logger,
+		searchRepo:      searchRepo,
+		costRepo:        costRepo,
+		costTracker:     costTracker,
+		unifiedTracker:  unifiedTracker,
+		tableName:       tableName,
+		logger:          logger,
 	}
 }
 
@@ -361,7 +375,7 @@ func (w *SearchCostTrackingWrapper) initializeCostData(ctx context.Context, user
 	}
 }
 
-func (w *SearchCostTrackingWrapper) completeCostTracking(_ context.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, queryCount, dynamoReads int64, err error) {
+func (w *SearchCostTrackingWrapper) completeCostTracking(ctx context.Context, costData *models.SearchCostTracking, startTime time.Time, resultCount int, queryCount, dynamoReads int64, err error) {
 	// Calculate response time
 	responseTime := time.Since(startTime)
 	costData.ResponseTimeMs = responseTime.Milliseconds()
@@ -373,14 +387,12 @@ func (w *SearchCostTrackingWrapper) completeCostTracking(_ context.Context, cost
 	// Estimate GSI queries (assume 50% of queries use GSI)
 	costData.GSIQueries = int(queryCount / 2)
 
-	// Track costs in the cost tracker if available
-	if w.costTracker != nil {
-		if err := w.costTracker.TrackDynamoRead(int(dynamoReads)); err != nil {
-			w.logger.Warn("failed to track cost", zap.Error(err))
-		}
-		// Search operations don't typically write to DynamoDB
-		// Writes would be tracked if costData.DynamoWrites > 0
+	// Track costs using centralized tracker
+	if err := w.unifiedTracker.TrackDynamoRead(ctx, w.tableName, dynamoReads); err != nil {
+		w.logger.Warn("failed to track cost", zap.Error(err))
 	}
+	// Search operations don't typically write to DynamoDB
+	// Writes would be tracked if costData.DynamoWrites > 0
 
 	// Record the cost data (async to not impact response time)
 	go func() {

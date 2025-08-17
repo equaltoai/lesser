@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // RouteOptimizerRepository handles route optimizer data persistence
@@ -181,7 +182,7 @@ func (r *RouteOptimizerRepository) GetRouteMetricsForFederation(ctx context.Cont
 		return nil, err
 	}
 
-	if len(results) == 0 {
+	if err := common.ValidateSliceNotEmpty("results", results); err != nil {
 		return &types.RouteMetrics{
 			LastUpdated: time.Now(),
 		}, nil

@@ -182,7 +182,7 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 		return fmt.Errorf("failed to get tokens by family: %w", err)
 	}
 
-	if len(tokens) == 0 {
+	if err := common.ValidateSliceNotEmpty("tokens", tokens); err != nil {
 		r.logger.Debug("No tokens found for family", zap.String("family", family))
 		return nil
 	}
@@ -244,7 +244,7 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 		return fmt.Errorf("failed to get tokens by user: %w", err)
 	}
 
-	if len(tokens) == 0 {
+	if err := common.ValidateSliceNotEmpty("tokens", tokens); err != nil {
 		r.logger.Debug("No tokens found for user", zap.String("user_id", userID))
 		return nil
 	}

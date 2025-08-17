@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Conversation represents a direct message conversation between users
@@ -23,6 +24,10 @@ type Conversation struct {
 	Unread       bool      `json:"unread"` // Whether conversation has unread messages
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+
+	// Message counting fields
+	TotalMessageCount int64 `json:"total_message_count"` // Total messages in conversation
+	LastMessageTime   time.Time `json:"last_message_time,omitempty"` // Time of last message
 }
 
 // TableName returns the DynamoDB table name
@@ -32,7 +37,7 @@ func (Conversation) TableName() string {
 
 // BeforeCreate sets up the keys before creating a conversation
 func (c *Conversation) BeforeCreate() error {
-	if c.ID == "" {
+	if err := common.ValidateRequiredParam("c.ID", c.ID); err != nil {
 		return fmt.Errorf("conversation ID is required")
 	}
 

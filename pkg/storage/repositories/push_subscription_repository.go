@@ -11,28 +11,31 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // PushSubscriptionRepository handles push subscription operations
 type PushSubscriptionRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db         core.DB
+	tableName  string
+	logger     *zap.Logger
+	queryUtils *QueryUtils
 }
 
 // NewPushSubscriptionRepository creates a new push subscription repository
 func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger) *PushSubscriptionRepository {
 	return &PushSubscriptionRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		queryUtils: NewQueryUtils(db, logger),
 	}
 }
 
 // CreatePushSubscription creates a new push subscription
 func (r *PushSubscriptionRepository) CreatePushSubscription(ctx context.Context, username string, subscription *storage.PushSubscription) error {
 	// Generate ID if not provided
-	if subscription.ID == "" {
+	if err := common.ValidateRequiredParam("subscription.ID", subscription.ID); err != nil {
 		subscription.ID = uuid.New().String()
 	}
 
@@ -77,10 +80,10 @@ func (r *PushSubscriptionRepository) CreatePushSubscription(ctx context.Context,
 // GetPushSubscription retrieves a push subscription by ID
 func (r *PushSubscriptionRepository) GetPushSubscription(ctx context.Context, username, subscriptionID string) (*storage.PushSubscription, error) {
 	var record models.PushSubscription
-	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
-		Where("PK", "=", fmt.Sprintf("PUSH#%s", username)).
-		Where("SK", "=", fmt.Sprintf("SUB#%s", subscriptionID)).
-		First(&record)
+	err := r.queryUtils.GetItemByPK(ctx, 
+		fmt.Sprintf("PUSH#%s", username),
+		fmt.Sprintf("SUB#%s", subscriptionID),
+		&record)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -90,47 +93,27 @@ func (r *PushSubscriptionRepository) GetPushSubscription(ctx context.Context, us
 	}
 
 	// Convert model to storage type
-	subscription := &storage.PushSubscription{
-		ID:        record.ID,
-		Username:  record.Username,
-		Endpoint:  record.Endpoint,
-		P256dh:    record.P256dh,
-		Auth:      record.Auth,
-		Alerts:    convertModelAlerts(record.Alerts),
-		Policy:    record.Policy,
-		CreatedAt: record.CreatedAt,
-		UpdatedAt: record.UpdatedAt,
-	}
-
-	return subscription, nil
+	return r.convertModelToStorage(&record), nil
 }
 
 // GetUserPushSubscriptions retrieves all push subscriptions for a user
 func (r *PushSubscriptionRepository) GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
-	var records []models.PushSubscription
-	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
-		Where("PK", "=", fmt.Sprintf("PUSH#%s", username)).
-		All(&records)
+	result, err := r.queryUtils.QueryWithPrefix(ctx, 
+		fmt.Sprintf("PUSH#%s", username),
+		"SUB#",
+		&QueryOptions{
+			Limit: 100, // Reasonable limit for push subscriptions per user
+		})
 
 	if err != nil {
 		return nil, err
 	}
 
-	subscriptions := make([]*storage.PushSubscription, 0, len(records))
-	for _, record := range records {
-		// Convert model to storage type
-		subscription := &storage.PushSubscription{
-			ID:        record.ID,
-			Username:  record.Username,
-			Endpoint:  record.Endpoint,
-			P256dh:    record.P256dh,
-			Auth:      record.Auth,
-			Alerts:    convertModelAlerts(record.Alerts),
-			Policy:    record.Policy,
-			CreatedAt: record.CreatedAt,
-			UpdatedAt: record.UpdatedAt,
+	subscriptions := make([]*storage.PushSubscription, 0, len(result.Items))
+	for _, item := range result.Items {
+		if sub := r.mapItemToSubscription(item); sub != nil {
+			subscriptions = append(subscriptions, sub)
 		}
-		subscriptions = append(subscriptions, subscription)
 	}
 
 	return subscriptions, nil
@@ -138,64 +121,38 @@ func (r *PushSubscriptionRepository) GetUserPushSubscriptions(ctx context.Contex
 
 // UpdatePushSubscription updates the alerts for a push subscription
 func (r *PushSubscriptionRepository) UpdatePushSubscription(ctx context.Context, username, subscriptionID string, alerts storage.PushSubscriptionAlerts) error {
-	// First get the existing subscription
-	subscription, err := r.GetPushSubscription(ctx, username, subscriptionID)
+	// First get the existing record
+	var record models.PushSubscription
+	err := r.queryUtils.GetItemByPK(ctx,
+		fmt.Sprintf("PUSH#%s", username),
+		fmt.Sprintf("SUB#%s", subscriptionID),
+		&record)
+	
 	if err != nil {
 		return err
 	}
 
 	// Update alerts and timestamp
-	subscription.Alerts = alerts
-	subscription.UpdatedAt = time.Now()
-
-	// Create updated record
-	record := &models.PushSubscription{
-		ID:        subscription.ID,
-		Username:  username,
-		Endpoint:  subscription.Endpoint,
-		P256dh:    subscription.P256dh,
-		Auth:      subscription.Auth,
-		Alerts:    convertStorageAlerts(subscription.Alerts),
-		Policy:    subscription.Policy,
-		CreatedAt: subscription.CreatedAt,
-		UpdatedAt: subscription.UpdatedAt,
-	}
-
-	// Update keys will set PK, SK, and GSI values
+	record.Alerts = convertStorageAlerts(alerts)
+	record.UpdatedAt = time.Now()
 	record.UpdateKeys()
 
-	err = r.db.WithContext(ctx).Model(record).Update()
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+	// Use generic update
+	return r.queryUtils.UpdateItem(ctx, &record)
 }
 
 // DeletePushSubscription deletes a push subscription
 func (r *PushSubscriptionRepository) DeletePushSubscription(ctx context.Context, username, subscriptionID string) error {
-	// First get the record to delete
-	var record models.PushSubscription
-	err := r.db.WithContext(ctx).Model(&models.PushSubscription{}).
-		Where("PK", "=", fmt.Sprintf("PUSH#%s", username)).
-		Where("SK", "=", fmt.Sprintf("SUB#%s", subscriptionID)).
-		First(&record)
+	err := r.queryUtils.DeleteItem(ctx,
+		fmt.Sprintf("PUSH#%s", username),
+		fmt.Sprintf("SUB#%s", subscriptionID),
+		&models.PushSubscription{})
 
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // Already deleted
-		}
+	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
-	// Delete the record
-	err = r.db.WithContext(ctx).Model(&record).Delete()
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return nil // Idempotent - don't fail if already deleted
 }
 
 // DeleteAllPushSubscriptions deletes all push subscriptions for a user
@@ -310,4 +267,75 @@ func convertModelAlerts(alerts models.PushSubscriptionAlerts) storage.PushSubscr
 		AdminSignUp:   alerts.AdminSignUp,
 		AdminReport:   alerts.AdminReport,
 	}
+}
+
+// convertModelToStorage converts a model to storage type
+func (r *PushSubscriptionRepository) convertModelToStorage(record *models.PushSubscription) *storage.PushSubscription {
+	return &storage.PushSubscription{
+		ID:        record.ID,
+		Username:  record.Username,
+		Endpoint:  record.Endpoint,
+		P256dh:    record.P256dh,
+		Auth:      record.Auth,
+		Alerts:    convertModelAlerts(record.Alerts),
+		Policy:    record.Policy,
+		CreatedAt: record.CreatedAt,
+		UpdatedAt: record.UpdatedAt,
+	}
+}
+
+// mapItemToSubscription maps a generic item to PushSubscription
+func (r *PushSubscriptionRepository) mapItemToSubscription(item map[string]interface{}) *storage.PushSubscription {
+	sub := &storage.PushSubscription{}
+	
+	if id, ok := item["ID"].(string); ok {
+		sub.ID = id
+	}
+	if username, ok := item["Username"].(string); ok {
+		sub.Username = username
+	}
+	if endpoint, ok := item["Endpoint"].(string); ok {
+		sub.Endpoint = endpoint
+	}
+	if p256dh, ok := item["P256dh"].(string); ok {
+		sub.P256dh = p256dh
+	}
+	if auth, ok := item["Auth"].(string); ok {
+		sub.Auth = auth
+	}
+	if policy, ok := item["Policy"].(string); ok {
+		sub.Policy = policy
+	}
+	if createdAt, ok := item["CreatedAt"].(time.Time); ok {
+		sub.CreatedAt = createdAt
+	}
+	if updatedAt, ok := item["UpdatedAt"].(time.Time); ok {
+		sub.UpdatedAt = updatedAt
+	}
+	
+	// Handle alerts as a nested structure
+	if alertsMap, ok := item["Alerts"].(map[string]interface{}); ok {
+		sub.Alerts = storage.PushSubscriptionAlerts{
+			Follow:        getBoolFromMap(alertsMap, "Follow"),
+			Favourite:     getBoolFromMap(alertsMap, "Favourite"),
+			Reblog:        getBoolFromMap(alertsMap, "Reblog"),
+			Mention:       getBoolFromMap(alertsMap, "Mention"),
+			Poll:          getBoolFromMap(alertsMap, "Poll"),
+			FollowRequest: getBoolFromMap(alertsMap, "FollowRequest"),
+			Status:        getBoolFromMap(alertsMap, "Status"),
+			Update:        getBoolFromMap(alertsMap, "Update"),
+			AdminSignUp:   getBoolFromMap(alertsMap, "AdminSignUp"),
+			AdminReport:   getBoolFromMap(alertsMap, "AdminReport"),
+		}
+	}
+	
+	return sub
+}
+
+// getBoolFromMap safely gets a bool value from a map
+func getBoolFromMap(m map[string]interface{}, key string) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return false
 }

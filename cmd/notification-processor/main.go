@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
@@ -25,8 +24,8 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
+	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -116,14 +115,22 @@ func DefaultRetryPolicy() *RetryPolicy {
 }
 
 // NewNotificationProcessor creates a new notification processor instance
-func NewNotificationProcessor(db core.DB, tableName string, domain string) *NotificationProcessor {
+func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProcessor {
+	// Get logger and config
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
 	// Initialize repositories
-	logger := common.Logger()
-	notificationRepo := repositories.NewNotificationRepository(db, tableName, logger)
-	userRepo := repositories.NewUserRepository(db, tableName, logger)
-	costTrackingRepo := repositories.NewCostTrackingRepository(db, tableName, logger)
-	notificationCostRepo := repositories.NewNotificationCostRepository(db, tableName, logger)
-	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, tableName, logger)
+	notificationRepo := repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger)
+	userRepo := repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
+	notificationCostRepo := repositories.NewNotificationCostRepository(db, cfg.DynamoTableName, logger)
+	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
 
 	// Get configuration from environment
 	webSocketEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
@@ -132,50 +139,25 @@ func NewNotificationProcessor(db core.DB, tableName string, domain string) *Noti
 
 	return &NotificationProcessor{
 		db:                        db,
-		tableName:                 tableName,
-		logger:                    common.Logger(),
+		tableName:                 cfg.DynamoTableName,
+		logger:                    logger,
 		notificationRepo:          notificationRepo,
 		userRepo:                  userRepo,
 		costTrackingRepo:          costTrackingRepo,
 		notificationCostRepo:      notificationCostRepo,
 		webSocketSubscriptionRepo: webSocketSubscriptionRepo,
-		domain:                    domain,
+		domain:                    cfg.Domain,
 		webSocketEndpoint:         webSocketEndpoint,
 		retryQueueURL:             retryQueueURL,
 		deadLetterQueueURL:        deadLetterQueueURL,
 	}
 }
 
-func (np *NotificationProcessor) initializeAWSClients(ctx context.Context) error {
-	// Load AWS configuration
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Initialize SNS client for push notifications
-	np.snsClient = sns.NewFromConfig(cfg)
-
-	// Initialize SQS client for retries and DLQ
-	np.sqsClient = sqs.NewFromConfig(cfg)
-
-	// Initialize API Gateway Management API client for WebSocket
-	if np.webSocketEndpoint != "" {
-		np.apiGatewayClient = apigatewaymanagementapi.NewFromConfig(cfg, func(o *apigatewaymanagementapi.Options) {
-			o.BaseEndpoint = aws.String(np.webSocketEndpoint)
-		})
-	}
-
-	return nil
-}
+// initializeAWSClients is no longer needed as AWS clients are pre-initialized by Lambda framework
 
 // HandleSQS implements the SQS handler interface for Lift
 func (np *NotificationProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
-	// Initialize AWS clients using the underlying context
-	if err := np.initializeAWSClients(ctx.Request.Context()); err != nil {
-		np.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
-	}
+	// AWS clients are pre-initialized by Lambda framework
 
 	np.logger.Info("processing notification delivery batch",
 		zap.String("request_id", ctx.GetRequestID()),
@@ -557,7 +539,7 @@ func (np *NotificationProcessor) deliverWebSocket(ctx context.Context, notificat
 		return fmt.Errorf("failed to get websocket connections: %w", err)
 	}
 
-	if len(connections) == 0 {
+	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
 		np.logger.Info("no active websocket connections for user",
 			zap.String("user_id", notification.UserID),
 		)
@@ -676,7 +658,7 @@ func (np *NotificationProcessor) sendPushNotification(ctx context.Context, userI
 
 	// Get push notification topic from environment
 	pushTopicArn := os.Getenv("PUSH_NOTIFICATION_TOPIC_ARN")
-	if pushTopicArn == "" {
+	if err := common.ValidateRequiredParam("pushTopicArn", pushTopicArn); err != nil {
 		return fmt.Errorf("PUSH_NOTIFICATION_TOPIC_ARN not configured")
 	}
 
@@ -735,31 +717,31 @@ func (np *NotificationProcessor) updateDeliveryStatus(ctx context.Context, notif
 // This function extracted usernames from ActivityPub actor IDs
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *NotificationProcessor
-	db        core.DB
 )
 
-func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize processor
-	processor = NewNotificationProcessor(db, cfg.DynamoTableName, cfg.Domain)
-}
-
 func main() {
+	// Initialize Lambda with custom service configuration for notifications
+	config := common.LambdaConfig{
+		ServiceName: "notification-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+		CustomServiceConfig: &awsInit.ServiceConfig{
+			RequiresDynamoDB:   true,
+			RequiresCloudWatch: true,
+			RequiresSNS:        true,
+			RequiresSQS:        true,
+			ServiceName:        "notification-processor",
+		},
+	}
+	
+	lambdaCtx, err := common.InitializeLambda(config)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+	}
+	
+	// Initialize processor
+	processor = NewNotificationProcessor(lambdaCtx)
+
 	// Create Lift app
 	app := lift.New()
 
@@ -778,7 +760,7 @@ func main() {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
 
-			logger.Info("processing SQS batch",
+			processor.logger.Info("processing SQS batch",
 				zap.String("request_id", requestID),
 			)
 
@@ -786,13 +768,13 @@ func main() {
 
 			duration := time.Since(start)
 			if err != nil {
-				logger.Error("failed to process SQS batch",
+				processor.logger.Error("failed to process SQS batch",
 					zap.String("request_id", requestID),
 					zap.Error(err),
 					zap.Duration("duration", duration),
 				)
 			} else {
-				logger.Info("successfully processed SQS batch",
+				processor.logger.Info("successfully processed SQS batch",
 					zap.String("request_id", requestID),
 					zap.Duration("duration", duration),
 				)
@@ -975,8 +957,11 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 
 // requeueScheduledNotification requeues a notification for future delivery
 func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Context, request NotificationDeliveryRequest) error {
-	if np.sqsClient == nil || np.retryQueueURL == "" {
-		return fmt.Errorf("SQS client or retry queue URL not configured")
+	if np.sqsClient == nil {
+		return fmt.Errorf("SQS client not initialized")
+	}
+	if err := common.ValidateRequiredParam("retryQueueURL", np.retryQueueURL); err != nil {
+		return fmt.Errorf("retry queue URL not configured")
 	}
 
 	// Calculate delay until scheduled time
@@ -1029,7 +1014,7 @@ func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Contex
 
 // scheduleRetry schedules a retry for a failed notification with exponential backoff
 func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request NotificationDeliveryRequest, originalError error) error {
-	if np.sqsClient == nil || np.retryQueueURL == "" {
+	if np.sqsClient == nil || common.ValidateRequiredParam("retryQueueURL", np.retryQueueURL) != nil {
 		return fmt.Errorf("SQS client or retry queue URL not configured")
 	}
 
@@ -1095,7 +1080,7 @@ func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request Noti
 
 // sendToDeadLetterQueue sends a failed notification to the dead letter queue
 func (np *NotificationProcessor) sendToDeadLetterQueue(ctx context.Context, request NotificationDeliveryRequest, finalError error) error {
-	if np.sqsClient == nil || np.deadLetterQueueURL == "" {
+	if np.sqsClient == nil || common.ValidateRequiredParam("deadLetterQueueURL", np.deadLetterQueueURL) != nil {
 		np.logger.Error("SQS client or DLQ URL not configured, cannot send to DLQ",
 			zap.String("notification_id", request.NotificationID))
 		// Return the original error since we couldn't DLQ it

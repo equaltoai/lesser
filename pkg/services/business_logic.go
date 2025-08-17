@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -448,7 +449,7 @@ func (s *businessLogicService) handleScheduledPost(ctx context.Context, user *Us
 }
 
 func (s *businessLogicService) createNoteFromInput(input *CreatePostInput, actor *activitypub.Actor, now time.Time) (*activitypub.Note, []string) {
-	if input.Visibility == "" {
+	if err := common.ValidateRequiredParam("visibility", input.Visibility); err != nil {
 		input.Visibility = VisibilityPublic
 	}
 
@@ -470,7 +471,7 @@ func (s *businessLogicService) createNoteFromInput(input *CreatePostInput, actor
 
 	// Process hashtags
 	hashtags := mastodon.ExtractHashtagsWithCase(input.Content)
-	if len(hashtags) > 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err == nil {
 		note.Tag = s.createHashtagTags(hashtags)
 	}
 
@@ -551,7 +552,7 @@ func (s *businessLogicService) processContentAndEmojis(ctx context.Context, note
 
 	// Build emoji tags for found shortcodes with actual URLs
 	for _, match := range matches {
-		if len(match) > 1 {
+		if err := common.ValidateSliceLength("match", match, 100); err == nil && len(match) > 1 {
 			shortcode := match[1]
 			
 			// Try to get the custom emoji from storage
@@ -723,7 +724,7 @@ func (s *businessLogicService) UpdatePost(ctx context.Context, user *UserContext
 
 	// Process hashtags
 	hashtags := mastodon.ExtractHashtagsWithCase(input.Content)
-	if len(hashtags) > 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err == nil {
 		updatedNote.Tag = s.createHashtagTags(hashtags)
 	}
 
@@ -769,7 +770,7 @@ func (s *businessLogicService) UpdatePost(ctx context.Context, user *UserContext
 	}
 
 	// Record hashtag usage for analytics
-	if len(hashtags) > 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err == nil {
 		for _, hashtag := range hashtags {
 			err = s.storage.RecordHashtagUsage(ctx, hashtag, input.ObjectID, actor.ID)
 			if err != nil {

@@ -233,7 +233,7 @@ func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, stat
 
 // IndexStatusHashtags indexes a status with its hashtags for efficient search
 func (r *HashtagRepository) IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
-	if len(hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return nil // Nothing to index
 	}
 
@@ -623,7 +623,7 @@ func (r *HashtagRepository) getHashtagTimelineByVisibility(ctx context.Context, 
 
 // GetMultiHashtagTimeline retrieves timeline for multiple hashtags
 func (r *HashtagRepository) GetMultiHashtagTimeline(ctx context.Context, hashtags []string, maxID *string, limit int, userID string) ([]*storage.StatusSearchResult, error) {
-	if len(hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return []*storage.StatusSearchResult{}, nil
 	}
 
@@ -1150,7 +1150,7 @@ func (r *HashtagRepository) deleteOldHashtagTrendRecords(ctx context.Context, be
 	}
 
 	// Use batch delete for efficiency
-	if len(trends) > 0 {
+	if err := common.ValidateSliceNotEmpty("trends", trends); err == nil {
 		// Convert to []any for batch operations
 		items := make([]any, len(trends))
 		for i, trend := range trends {
@@ -1204,7 +1204,7 @@ func (r *HashtagRepository) deleteOldTrendingHashtagRecords(ctx context.Context,
 	}
 
 	// Batch delete trending hashtags
-	if len(trends) > 0 {
+	if err := common.ValidateSliceNotEmpty("trends", trends); err == nil {
 		items := make([]any, len(trends))
 		for i, trend := range trends {
 			items[i] = trend
@@ -1254,7 +1254,7 @@ func (r *HashtagRepository) deleteOldHashtagUsage(ctx context.Context, before ti
 	}
 
 	// Batch delete usage records
-	if len(usageRecords) > 0 {
+	if err := common.ValidateSliceNotEmpty("usage_records", usageRecords); err == nil {
 		items := make([]any, len(usageRecords))
 		for i, usage := range usageRecords {
 			items[i] = usage
@@ -1286,7 +1286,7 @@ func (r *HashtagRepository) deleteOldHashtagUsage(ctx context.Context, before ti
 
 // deleteTrendBatch performs batch delete using DynamORM
 func (r *HashtagRepository) deleteTrendBatch(ctx context.Context, items []any) error {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
@@ -1403,7 +1403,7 @@ func (r *HashtagRepository) GetHashtagTrendsByScore(ctx context.Context, date ti
 
 // BatchCreateHashtagTrends creates multiple hashtag trend records efficiently
 func (r *HashtagRepository) BatchCreateHashtagTrends(ctx context.Context, trends []*storage.TrendingHashtag) error {
-	if len(trends) == 0 {
+	if err := common.ValidateSliceNotEmpty("trends", trends); err != nil {
 		return nil
 	}
 

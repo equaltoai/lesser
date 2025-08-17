@@ -13,15 +13,12 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -73,25 +70,26 @@ type ActivityProcessor struct {
 }
 
 // NewActivityProcessor creates a new activity processor instance with the given
-// database connection, table name, and base URL for the instance.
-func NewActivityProcessor(db core.DB, tableName string, baseURL string) *ActivityProcessor {
+// lambda context
+func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 	// Get logger
-	logger := common.Logger()
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
 
-	// Load AWS config for repository factory
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background())
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Warn("failed to load AWS config, using empty config", zap.Error(err))
-		awsConfig = aws.Config{}
+		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, lambdaCtx.AWSServices.Config, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Extract domain from baseURL
+	baseURL := cfg.BaseURL()
 	domain := strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
 
 	// Initialize authorized fetch service with repository factory
@@ -99,7 +97,7 @@ func NewActivityProcessor(db core.DB, tableName string, baseURL string) *Activit
 
 	return &ActivityProcessor{
 		db:               db,
-		tableName:        tableName,
+		tableName:        cfg.DynamoTableName,
 		logger:           logger,
 		timelineRepo:     repos.Timeline(),
 		actorRepo:        repos.Actor(),
@@ -202,7 +200,7 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 	wg.Wait()
 
 	// Process dead letter records
-	if len(deadLetterRecords) > 0 {
+	if err := common.ValidateSliceNotEmpty("dead_letter_records", deadLetterRecords); err == nil {
 		ap.logger.Info("sending records to dead letter queue",
 			zap.Int("dlq_record_count", len(deadLetterRecords)),
 		)
@@ -773,7 +771,7 @@ func (ap *ActivityProcessor) createFallbackObject(objectID, content string) *Pro
 // createObjectFromContent creates a processed object from content
 func (ap *ActivityProcessor) createObjectFromContent(objectID, content string, activity *activitypub.Activity) *ProcessedObject {
 	to, cc := activity.To, activity.CC
-	if len(to) == 0 && len(cc) == 0 {
+	if common.ValidateSliceNotEmpty("to", to) != nil && common.ValidateSliceNotEmpty("cc", cc) != nil {
 		to = []string{"https://www.w3.org/ns/activitystreams#Public"}
 	}
 
@@ -795,7 +793,7 @@ func (ap *ActivityProcessor) createAndFanOutEntries(ctx context.Context, activit
 	entries := ap.createAllTimelineEntries(ctx, activity, username, baseEntry, obj.Visibility)
 
 	// Write entries to timelines
-	if len(entries) > 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
 		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
 			return fmt.Errorf("failed to write timeline entries: %w", err)
 		}
@@ -810,12 +808,12 @@ func (ap *ActivityProcessor) createAndFanOutEntries(ctx context.Context, activit
 // createBaseTimelineEntry creates the base timeline entry
 func (ap *ActivityProcessor) createBaseTimelineEntry(activity *activitypub.Activity, username string, obj *ProcessedObject, now time.Time) models.Timeline {
 	content := obj.Content
-	if len(content) > 500 {
+	if err := common.ValidateStringLength("content", content, 0, 500); err != nil {
 		content = content[:500]
 	}
 
 	objectID := obj.ObjectID
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		objectID = activity.ID
 	}
 
@@ -929,7 +927,7 @@ func (ap *ActivityProcessor) recordFanoutSuccess(ctx context.Context, obj *Proce
 func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, activity *activitypub.Activity, username string) error {
 	// Extract the announced object ID
 	announcedID := ap.extractAnnouncedID(activity)
-	if announcedID == "" {
+	if err := common.ValidateRequiredParam("announcedID", announcedID); err != nil {
 		return fmt.Errorf("no object ID in Announce activity")
 	}
 
@@ -941,7 +939,7 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 	entries := ap.createAnnounceTimelineEntries(ctx, activity, username, announcedContent)
 
 	// Write all entries
-	if len(entries) > 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
 		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
 			return fmt.Errorf("failed to write timeline entries: %w", err)
 		}
@@ -1271,7 +1269,7 @@ func (ap *ActivityProcessor) extractLanguage(note *activitypub.Note) string {
 
 // detectLanguageFromContent performs simple language detection on arbitrary content
 func (ap *ActivityProcessor) detectLanguageFromContent(content string) string {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return "en" // default
 	}
 
@@ -1381,7 +1379,7 @@ func (ap *ActivityProcessor) recordTimelineFanoutMetrics(ctx context.Context, ac
 
 // extractRemoteHost extracts the hostname from a URL for metrics
 func (ap *ActivityProcessor) extractRemoteHost(url string) string {
-	if url == "" {
+	if err := common.ValidateRequiredParam("url", url); err != nil {
 		return UnknownValue
 	}
 
@@ -1454,31 +1452,24 @@ func containsPublicAddress(slice []string) bool {
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *ActivityProcessor
-	db        core.DB
 )
 
-func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize processor
-	processor = NewActivityProcessor(db, cfg.DynamoTableName, cfg.BaseURL())
-}
-
 func main() {
+	// Initialize Lambda with processor services
+	config := common.LambdaConfig{
+		ServiceName: "activity-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+	}
+	
+	lambdaCtx, err := common.InitializeLambda(config)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+	}
+	
+	// Initialize processor
+	processor = NewActivityProcessor(lambdaCtx)
+
 	// DynamoDB Stream handler with Lift-style patterns but traditional Lambda execution
 	// This provides structured logging, error handling, and request tracking
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
@@ -1491,7 +1482,7 @@ func main() {
 				if requestID == nil {
 					requestID = UnknownValue
 				}
-				logger.Error("panic in DynamoDB stream handler",
+				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
 					zap.Any("request_id", requestID),
 					zap.Any("panic", r),
 					zap.Stack("stack"),
@@ -1510,14 +1501,14 @@ func main() {
 		}
 
 		if err != nil {
-			logger.Error("DynamoDB stream processing failed",
+			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.Any("request_id", requestID),
 				zap.Error(err),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),
 			)
 		} else {
-			logger.Info("DynamoDB stream processing completed",
+			lambdaCtx.Logger.Info("DynamoDB stream processing completed",
 				zap.Any("request_id", requestID),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),
@@ -1654,7 +1645,7 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 
 	// Validate basic ActivityPub object requirements
 	id, ok := objMap["id"].(string)
-	if !ok || id == "" {
+	if !ok || common.ValidateRequiredParam("id", id) != nil {
 		return nil, fmt.Errorf("object missing or invalid 'id' field")
 	}
 
@@ -1663,7 +1654,7 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 	}
 
 	objectType, ok := objMap["type"].(string)
-	if !ok || objectType == "" {
+	if !ok || common.ValidateRequiredParam("object_type", objectType) != nil {
 		return nil, fmt.Errorf("object missing or invalid 'type' field")
 	}
 
@@ -1798,7 +1789,7 @@ func (ap *ActivityProcessor) calculateBackoffDelay(attempt int) time.Duration {
 // storeGenericRemoteObject stores a generic remote object (non-Note types)
 func (ap *ActivityProcessor) storeGenericRemoteObject(ctx context.Context, objMap map[string]interface{}) {
 	id := ap.extractObjectID(objMap)
-	if id == "" {
+	if err := common.ValidateRequiredParam("id", id); err != nil {
 		ap.logger.Error("cannot store object without ID")
 		return
 	}
@@ -2152,7 +2143,7 @@ func (ap *ActivityProcessor) handleCreateActivityDeletion(ctx context.Context, a
 		return nil
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		ap.logger.Warn("no object ID found in Create activity for deletion")
 		return nil
 	}
@@ -2243,7 +2234,7 @@ func (ap *ActivityProcessor) removeFromAllTimelines(_ context.Context, objectID 
 		zap.String("object_id", objectID),
 		zap.Int("error_count", len(errors)))
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("failed to remove from %d timeline types", len(errors))
 	}
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -30,7 +31,7 @@ func NewAuthenticationService(jwtSecret string, repos interface{}) Authenticatio
 
 // AuthenticateUser validates a token and returns user context
 func (a *authenticationService) AuthenticateUser(_ context.Context, token string) (*UserContext, error) {
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, NewUnauthorizedError("Missing authentication token")
 	}
 
@@ -82,7 +83,7 @@ func (a *authenticationService) ValidateScope(user *UserContext, requiredScope s
 
 // AuthenticateUserFromHeader extracts and validates token from authorization header
 func AuthenticateUserFromHeader(authHeader string, authService AuthenticationService) (*UserContext, error) {
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return nil, NewUnauthorizedError("Missing authorization header")
 	}
 

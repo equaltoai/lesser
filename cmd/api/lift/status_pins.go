@@ -9,7 +9,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -18,12 +20,12 @@ import (
 func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
 	var claims *auth.Claims
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		// Test mode - create mock claims
 		claims = &auth.Claims{
 			Username: testUsername,
@@ -32,7 +34,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -63,7 +65,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if statusID == "" && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/pin
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "pin" {
@@ -71,10 +73,10 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 		}
 	}
 
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "status ID is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -151,7 +153,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 	}
 
 	// Return the status with pinned flag set to true
-	status := h.converter.ObjectToStatus(object, actor)
+	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Pinned = true
 
 	ctx.Status(http.StatusOK)
@@ -162,12 +164,12 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
 	var claims *auth.Claims
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		// Test mode - create mock claims
 		claims = &auth.Claims{
 			Username: testUsername,
@@ -176,7 +178,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -207,7 +209,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if statusID == "" && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/unpin
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "unpin" {
@@ -215,10 +217,10 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 		}
 	}
 
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "status ID is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -251,7 +253,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 
 	// Return the status with pinned flag set to false
-	status := h.converter.ObjectToStatus(object, actor)
+	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Pinned = false
 
 	ctx.Status(http.StatusOK)
@@ -292,7 +294,7 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 func (h *Handler) authenticateMuteRequest(ctx *lift.Context) (*auth.Claims, error) {
 	// Check for test mode
 	testUsername := h.getMuteTestUsername(ctx)
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		return h.createTestClaims(testUsername), nil
 	}
 
@@ -303,7 +305,7 @@ func (h *Handler) authenticateMuteRequest(ctx *lift.Context) (*auth.Claims, erro
 // getMuteTestUsername extracts test username from headers
 func (h *Handler) getMuteTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -321,7 +323,7 @@ func (h *Handler) createTestClaims(username string) *auth.Claims {
 func (h *Handler) authenticateWithWriteScope(ctx *lift.Context) (*auth.Claims, error) {
 	// Extract token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return nil, ctx.JSON(map[string]string{"error": "authentication required"})
 	}
@@ -348,11 +350,11 @@ func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil {
 		statusID = h.extractStatusIDFromPath(ctx, "mute")
 	}
 
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return "", ctx.JSON(map[string]string{"error": "status ID is required"})
 	}
@@ -362,7 +364,10 @@ func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
 
 // extractStatusIDFromPath extracts status ID from the request path
 func (h *Handler) extractStatusIDFromPath(ctx *lift.Context, action string) string {
-	if ctx.Request == nil || ctx.Request.Path == "" {
+	if ctx.Request == nil {
+		return ""
+	}
+	if err := common.ValidateRequiredParam("request_path", ctx.Request.Path); err != nil {
 		return ""
 	}
 
@@ -384,7 +389,10 @@ func (h *Handler) normalizeMuteObjectID(statusID string) string {
 
 // parseMuteDuration parses the mute duration from request body
 func (h *Handler) parseMuteDuration(ctx *lift.Context) int {
-	if ctx.Request == nil || ctx.Request.Body == nil || len(ctx.Request.Body) == 0 {
+	if ctx.Request == nil || ctx.Request.Body == nil {
+		return 0
+	}
+	if err := common.ValidateSliceNotEmpty("requestBody", ctx.Request.Body); err != nil {
 		return 0
 	}
 
@@ -470,7 +478,7 @@ func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username
 	actor, _ := h.repos.Actor().GetActor(ctx.Context, username)
 
 	// Return the status with muted flag set to true
-	status := h.converter.ObjectToStatus(object, actor)
+	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Muted = true
 
 	ctx.Status(http.StatusOK)
@@ -481,12 +489,12 @@ func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username
 func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
 	var claims *auth.Claims
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		// Test mode - create mock claims
 		claims = &auth.Claims{
 			Username: testUsername,
@@ -495,7 +503,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -526,7 +534,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 
 	// Test mode fallback - extract from path
-	if statusID == "" && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("status_id_initial", statusID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract id from path like /api/v1/statuses/test-status-123/unmute
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[3] == pathComponentStatuses && parts[5] == "unmute" {
@@ -534,10 +542,10 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 		}
 	}
 
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "status ID is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -573,7 +581,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 	actor, _ := h.repos.Actor().GetActor(ctx.Context, claims.Username)
 
 	// Return the status with muted flag set to false
-	status := h.converter.ObjectToStatus(object, actor)
+	status := transformations.ObjectToStatusAny(object, actor, h.cfg.BaseURL())
 	status.Muted = false
 
 	ctx.Status(http.StatusOK)

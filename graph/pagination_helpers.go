@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
@@ -82,7 +83,7 @@ func EncodeGraphQLCursor(data *CursorData) model.Cursor {
 
 // DecodeGraphQLCursor parses a cursor back to cursor data
 func DecodeGraphQLCursor(cursor model.Cursor) (*CursorData, error) {
-	if cursor == "" {
+	if err := common.ValidateRequiredParam("cursor", string(cursor)); err != nil {
 		return nil, nil
 	}
 
@@ -112,7 +113,7 @@ func BuildPageInfo(
 		HasNextPage:     hasNextPage,
 	}
 
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		startCursor := getCursor(edges[0])
 		endCursor := getCursor(edges[len(edges)-1])
 		pageInfo.StartCursor = &startCursor
@@ -189,7 +190,7 @@ func ApplyPaginationToResults[T any](
 		requestedLimit := *opts.First
 
 		// Check if we have more results than requested
-		if len(results) > requestedLimit {
+		if err := common.ValidateIntRange("results_length", len(results), requestedLimit+1, 1000); err == nil {
 			hasNextPage = true
 			results = results[:requestedLimit] // Take only requested amount
 		}
@@ -207,7 +208,7 @@ func ApplyPaginationToResults[T any](
 		requestedLimit := *opts.Last
 
 		// Check if we have more results than requested
-		if len(results) > requestedLimit {
+		if err := common.ValidateIntRange("results_length", len(results), requestedLimit+1, 1000); err == nil {
 			hasPreviousPage = true
 			results = results[len(results)-requestedLimit:] // Take last N items
 		}

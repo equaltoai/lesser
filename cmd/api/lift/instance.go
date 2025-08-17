@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -48,7 +49,7 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	if err != nil {
 		// Check if we're in production mode
 		env := os.Getenv("ENV")
-		if env == "" {
+		if err := common.ValidateRequiredParam("env", env); err != nil {
 			env = os.Getenv("ENVIRONMENT")
 		}
 		if env == EnvProduction || env == EnvProd {
@@ -420,7 +421,7 @@ func (h *Handler) processMarkdownLine(line, trimmed string, inParagraph bool) (s
 	}
 
 	// Handle empty lines
-	if trimmed == "" {
+	if err := common.ValidateRequiredParam("trimmed_line", trimmed); err != nil {
 		if inParagraph {
 			return "</p>", false
 		}

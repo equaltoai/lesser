@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -39,7 +40,7 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 
 	// Check for queue URL first - if not set, we can't function
 	queueURL := os.Getenv("IMPORT_EXPORT_QUEUE_URL")
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
 		return nil, fmt.Errorf("IMPORT_EXPORT_QUEUE_URL environment variable is required")
 	}
 
@@ -77,8 +78,8 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 
 // QueueExportJob queues an export job for asynchronous processing
 func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) error {
-	if exportID == "" {
-		return fmt.Errorf("export ID cannot be empty")
+	if err := common.ValidateRequiredParam("exportID", exportID); err != nil {
+		return err
 	}
 
 	message := QueueMessage{
@@ -138,8 +139,8 @@ func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) e
 
 // QueueImportJob queues an import job for asynchronous processing
 func (s *AWSQueueService) QueueImportJob(ctx context.Context, importID string) error {
-	if importID == "" {
-		return fmt.Errorf("import ID cannot be empty")
+	if err := common.ValidateRequiredParam("importID", importID); err != nil {
+		return err
 	}
 
 	message := QueueMessage{

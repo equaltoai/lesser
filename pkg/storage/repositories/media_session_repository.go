@@ -3,13 +3,16 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CostTracker interface for tracking DynamoDB operation costs
@@ -20,19 +23,31 @@ type CostTracker interface {
 
 // MediaSessionRepository implements session management using DynamORM
 type MediaSessionRepository struct {
-	db          core.DB
-	logger      *zap.Logger
-	costTracker CostTracker
-	sessionTTL  time.Duration
+	db               core.DB
+	logger           *zap.Logger
+	costTracker      CostTracker
+	unifiedTracker   *cost.UnifiedTracker
+	tableName        string
+	sessionTTL       time.Duration
 }
 
 // NewMediaSessionRepository creates a new MediaSessionRepository
 func NewMediaSessionRepository(db core.DB, logger *zap.Logger, costTracker CostTracker) *MediaSessionRepository {
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+	}
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "MediaSessionRepository", "", "")
+	
 	return &MediaSessionRepository{
-		db:          db,
-		logger:      logger,
-		costTracker: costTracker,
-		sessionTTL:  24 * time.Hour, // Default TTL for streaming sessions
+		db:               db,
+		logger:           logger,
+		costTracker:      costTracker,
+		unifiedTracker:   unifiedTracker,
+		tableName:        tableName,
+		sessionTTL:       24 * time.Hour, // Default TTL for streaming sessions
 	}
 }
 
@@ -70,9 +85,9 @@ func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *typ
 		return fmt.Errorf("create session: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return nil
@@ -97,9 +112,9 @@ func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID strin
 		return nil, fmt.Errorf("get session: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoRead(1)
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, 1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return r.modelToStreamingSession(&model), nil
@@ -140,9 +155,9 @@ func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *typ
 		return fmt.Errorf("update session: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	// Track quality change for analytics
@@ -187,9 +202,9 @@ func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID strin
 		return fmt.Errorf("end session: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return nil
@@ -215,9 +230,9 @@ func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID str
 		return nil, fmt.Errorf("query user sessions: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoRead(len(sessionModels))
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
@@ -254,9 +269,9 @@ func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID s
 		return nil, fmt.Errorf("scan media sessions: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoRead(len(sessionModels))
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
@@ -374,9 +389,9 @@ func (r *MediaSessionRepository) GetActiveSessionsCount(ctx context.Context) (in
 		return 0, fmt.Errorf("failed to count active sessions: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoRead(len(activeSessions))
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(activeSessions))); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return len(activeSessions), nil
@@ -402,9 +417,9 @@ func (r *MediaSessionRepository) GetSessionsByTimeRange(ctx context.Context, sta
 		return nil, fmt.Errorf("failed to query sessions by time range: %w", err)
 	}
 
-	// Track cost
-	if r.costTracker != nil {
-		r.costTracker.TrackDynamoRead(len(sessionModels))
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
+		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	sessions := make([]*types.StreamingSession, 0, len(sessionModels))

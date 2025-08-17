@@ -1,11 +1,10 @@
 package lift
 
 import (
-	"encoding/json"
 	"net/http"
-	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -18,89 +17,36 @@ func (h *Handler) HandleCreateChallengeLift(ctx *lift.Context) error {
 		Username string `json:"username,omitempty"` // Optional, for linking to existing account
 	}
 
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
-		}
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
 	// Validate inputs
-	if req.Address == "" {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "address is required",
-		})
+	if err := common.ValidateRequiredParam("address", req.Address); err != nil {
+		return h.respondBadRequest(ctx, "address is required")
 	}
 	if req.ChainID == 0 {
 		req.ChainID = 1 // Default to Ethereum mainnet
 	}
 
 	// If username is provided, verify the user is authenticated
-	if req.Username != "" {
-		token := h.getAuthTokenLift(ctx)
-		if token == "" {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required to link wallet",
-			})
-		}
-
-		// Initialize auth service
-		authService, err := auth.NewAuthService(h.repos)
+	if err := common.ValidateRequiredParam("username", req.Username); err == nil {
+		_, err := h.validateAuthenticatedUser(ctx, req.Username)
 		if err != nil {
-			h.logger.Error("failed to initialize auth service", zap.Error(err))
-			ctx.Status(http.StatusInternalServerError)
-			return ctx.JSON(map[string]string{
-				"error": "internal server error",
-			})
-		}
-
-		claims, err := authService.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
-
-		// Ensure the username matches the authenticated user
-		if claims.Username != req.Username {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{
-				"error": "cannot link wallet to another user",
-			})
+			return err // Error response already set
 		}
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Create challenge
 	challenge, err := authService.CreateWalletChallenge(ctx.Context, req.Address, req.ChainID, req.Username)
 	if err != nil {
-		h.logger.Error("failed to create wallet challenge", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "failed to create challenge",
-		})
+		return h.handleAuthServiceError(ctx, err, "create challenge")
 	}
 
 	ctx.Status(http.StatusOK)
@@ -110,69 +56,45 @@ func (h *Handler) HandleCreateChallengeLift(ctx *lift.Context) error {
 // HandleVerifySignatureLift handles POST /auth/wallet/verify
 func (h *Handler) HandleVerifySignatureLift(ctx *lift.Context) error {
 	var req auth.WalletVerifyRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
-		}
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
 	// Validate inputs
-	if req.ChallengeID == "" || req.Address == "" || req.Signature == "" || req.Message == "" {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "missing required fields",
-		})
+	if err := common.ValidateRequiredParam("challengeId", req.ChallengeID); err != nil {
+		return h.respondBadRequest(ctx, "challengeId is required")
+	}
+	if err := common.ValidateRequiredParam("address", req.Address); err != nil {
+		return h.respondBadRequest(ctx, "address is required")
+	}
+	if err := common.ValidateRequiredParam("signature", req.Signature); err != nil {
+		return h.respondBadRequest(ctx, "signature is required")
+	}
+	if err := common.ValidateRequiredParam("message", req.Message); err != nil {
+		return h.respondBadRequest(ctx, "message is required")
 	}
 
 	// Get device info
-	deviceName := ctx.Header("User-Agent")
-	if deviceName == "" {
+	userAgent, ipAddress := h.getDeviceInfo(ctx)
+	deviceName := userAgent
+	if err := common.ValidateRequiredParam("deviceName", deviceName); err != nil {
 		deviceName = "Unknown Device"
 	}
-	userAgent := ctx.Header("User-Agent")
-	ipAddress := ctx.Header("X-Forwarded-For")
-	if ipAddress == "" {
-		ipAddress = ctx.Header("X-Real-IP")
-	}
-	if ipAddress == "" {
-		ipAddress = "unknown"
-	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// Verify signature and create session
 	authResponse, err := authService.VerifyWalletSignature(ctx.Context, &req, deviceName, userAgent, ipAddress)
 	if err != nil {
-		h.logger.Error("wallet signature verification failed",
-			zap.String("address", req.Address),
-			zap.Error(err))
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "signature verification failed",
-		})
+		return h.handleAuthServiceError(ctx, err, "verify signature")
 	}
 
 	// If no access token, wallet is not linked to any account
-	if authResponse.AccessToken == "" {
+	if err := common.ValidateRequiredParam("accessToken", authResponse.AccessToken); err != nil {
 		ctx.Status(http.StatusOK)
 		return ctx.JSON(map[string]any{
 			"authenticated": false,
@@ -189,11 +111,8 @@ func (h *Handler) HandleVerifySignatureLift(ctx *lift.Context) error {
 func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 	// Check for test mode first
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
-		ctx.Status(http.StatusUnauthorized)
-		return ctx.JSON(map[string]string{
-			"error": "authentication required",
-		})
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return h.respondUnauthorized(ctx)
 	}
 
 	var req struct {
@@ -205,46 +124,35 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 		Message     string `json:"message"`
 	}
 
-	if err := ctx.ParseRequest(&req); err != nil {
-		// Fallback for test environments
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := json.Unmarshal(ctx.Request.Body, &req); err != nil {
-				ctx.Status(http.StatusBadRequest)
-				return ctx.JSON(map[string]string{
-					"error": "invalid request body",
-				})
-			}
-		} else {
-			ctx.Status(http.StatusBadRequest)
-			return ctx.JSON(map[string]string{
-				"error": "invalid request body",
-			})
-		}
+	if err := h.parseRequestBody(ctx, &req); err != nil {
+		return err // Error response already set by parseRequestBody
 	}
 
 	// Validate inputs
-	if req.Address == "" || req.ChallengeID == "" || req.Signature == "" || req.Message == "" {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "missing required fields",
-		})
+	if err := common.ValidateRequiredParam("address", req.Address); err != nil {
+		return h.respondBadRequest(ctx, "address is required")
+	}
+	if err := common.ValidateRequiredParam("challengeId", req.ChallengeID); err != nil {
+		return h.respondBadRequest(ctx, "challengeId is required")
+	}
+	if err := common.ValidateRequiredParam("signature", req.Signature); err != nil {
+		return h.respondBadRequest(ctx, "signature is required")
+	}
+	if err := common.ValidateRequiredParam("message", req.Message); err != nil {
+		return h.respondBadRequest(ctx, "message is required")
 	}
 
 	if req.ChainID == 0 {
 		req.ChainID = 1 // Default to Ethereum mainnet
 	}
-	if req.WalletType == "" {
+	if err := common.ValidateRequiredParam("wallet_type", req.WalletType); err != nil {
 		req.WalletType = "ethereum"
 	}
 
-	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	// Get auth service
+	authService, err := h.requireAuthService(ctx)
 	if err != nil {
-		h.logger.Error("failed to initialize auth service", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{
-			"error": "internal server error",
-		})
+		return err // Error response already set
 	}
 
 	// First verify the signature
@@ -299,7 +207,7 @@ func (h *Handler) HandleLinkWalletLift(ctx *lift.Context) error {
 func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 	// Check for test mode first
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -308,7 +216,7 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 
 	// Get address from path
 	address := ctx.Param("address")
-	if address == "" {
+	if err := common.ValidateRequiredParam("address", address); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "address is required",
@@ -349,7 +257,7 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 	// Check for test mode first
 	username := h.getAuthenticatedUserLift(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -385,17 +293,6 @@ func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 	})
 }
 
-// getAuthTokenLift extracts Bearer token from Authorization header
-func (h *Handler) getAuthTokenLift(ctx *lift.Context) string {
-	auth := ctx.Header("Authorization")
-	if auth == "" {
-		return ""
-	}
-	if strings.HasPrefix(auth, "Bearer ") {
-		return strings.TrimPrefix(auth, "Bearer ")
-	}
-	return ""
-}
 
 // getAuthenticatedUserLift gets the authenticated user from the context
 func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
@@ -410,8 +307,8 @@ func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
 	}
 
 	// Get bearer token
-	token := h.getAuthTokenLift(ctx)
-	if token == "" {
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ""
 	}
 

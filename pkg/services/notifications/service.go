@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -144,7 +145,7 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 	}
 
 	// Check if actor exists (optional validation)
-	if cmd.ActorID != "" && cmd.ActorID != "system" {
+	if err := common.ValidateRequiredParam("actor_id_check", cmd.ActorID); err == nil && cmd.ActorID != "system" {
 		_, err := s.accountRepo.GetAccount(ctx, cmd.ActorID)
 		if err != nil {
 			s.logger.Warn("actor not found for notification",
@@ -159,15 +160,15 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 		OfType(cmd.Type).
 		FromActor(cmd.ActorID, cmd.ActorType)
 
-	if cmd.TargetID != "" && cmd.TargetType != "" {
+	if common.ValidateRequiredParam("target_id", cmd.TargetID) == nil && common.ValidateRequiredParam("target_type", cmd.TargetType) == nil {
 		builder = builder.AboutTarget(cmd.TargetID, cmd.TargetType)
 	}
 
-	if cmd.Title != "" || cmd.Body != "" {
+	if common.ValidateRequiredParam("title", cmd.Title) == nil || common.ValidateRequiredParam("body", cmd.Body) == nil {
 		builder = builder.WithContent(cmd.Title, cmd.Body)
 	}
 
-	if cmd.GroupKey != "" {
+	if common.ValidateRequiredParam("group_key", cmd.GroupKey) == nil {
 		builder = builder.WithGroupKey(cmd.GroupKey)
 	}
 
@@ -179,10 +180,12 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 	notification := builder.Build()
 
 	// Check for notification preferences and consolidation
-	if err := s.handleNotificationConsolidation(ctx, notification); err != nil {
-		s.logger.Warn("failed to handle notification consolidation",
-			zap.String("notification_id", notification.ID),
-			zap.Error(err))
+	if common.ValidateRequiredParam("notification_id", notification.ID) == nil {
+		if err := s.handleNotificationConsolidation(ctx, notification); err != nil {
+			s.logger.Warn("failed to handle notification consolidation",
+				zap.String("notification_id", notification.ID),
+				zap.Error(err))
+		}
 	}
 
 	// Store the notification
@@ -373,16 +376,16 @@ func (s *Service) ListNotifications(ctx context.Context, query *ListNotification
 // Private helper methods
 
 func (s *Service) validateCreateCommand(_ context.Context, cmd *CreateNotificationCommand) error {
-	if strings.TrimSpace(cmd.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", cmd.UserID); err != nil {
+		return err
 	}
 
-	if strings.TrimSpace(cmd.Type) == "" {
-		return fmt.Errorf("type is required")
+	if err := common.ValidateRequiredParam("type", cmd.Type); err != nil {
+		return err
 	}
 
-	if strings.TrimSpace(cmd.ActorID) == "" {
-		return fmt.Errorf("actor_id is required")
+	if err := common.ValidateRequiredParam("actor_id", cmd.ActorID); err != nil {
+		return err
 	}
 
 	// Validate notification type
@@ -407,8 +410,8 @@ func (s *Service) validateCreateCommand(_ context.Context, cmd *CreateNotificati
 }
 
 func (s *Service) validateClearCommand(cmd *ClearCommand) error {
-	if strings.TrimSpace(cmd.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", cmd.UserID); err != nil {
+		return err
 	}
 
 	// At least one clear criteria must be specified
@@ -421,7 +424,7 @@ func (s *Service) validateClearCommand(cmd *ClearCommand) error {
 
 func (s *Service) handleNotificationConsolidation(_ context.Context, notification *models.Notification) error {
 	// Try to find existing notification in the same group for consolidation
-	if notification.GroupKey == "" {
+	if err := common.ValidateRequiredParam("group_key", notification.GroupKey); err != nil {
 		return nil // No grouping requested
 	}
 
@@ -533,12 +536,12 @@ func (s *Service) applyNotificationFilters(notifications []*models.Notification,
 		}
 
 		// Filter by actor ID
-		if query.ActorID != "" && notification.ActorID != query.ActorID {
+		if common.ValidateRequiredParam("actor_id", query.ActorID) == nil && notification.ActorID != query.ActorID {
 			continue
 		}
 
 		// Filter by target type
-		if query.TargetType != "" && notification.TargetType != query.TargetType {
+		if common.ValidateRequiredParam("target_type", query.TargetType) == nil && notification.TargetType != query.TargetType {
 			continue
 		}
 

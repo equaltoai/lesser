@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CloudWatchMetrics provides enhanced metrics collection with DynamORM integration
@@ -289,7 +290,7 @@ func (cwm *CloudWatchMetrics) getOperationName(ctx *lift.Context) string {
 
 // flushToCloudWatch sends metrics to CloudWatch
 func (cwm *CloudWatchMetrics) flushToCloudWatch(metrics []types.MetricDatum) error {
-	if len(metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		return nil
 	}
 
@@ -349,7 +350,7 @@ func (emb *EnhancedMetricBuffer) Flush() error {
 	emb.mu.Lock()
 	defer emb.mu.Unlock()
 
-	if len(emb.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("emb.metrics", emb.metrics); err != nil {
 		return nil
 	}
 
@@ -398,7 +399,7 @@ func sanitizePath(path string) string {
 		result = result[:len(result)-1]
 	}
 
-	if result == "" {
+	if err := common.ValidateRequiredParam("result", result); err != nil {
 		return "root"
 	}
 

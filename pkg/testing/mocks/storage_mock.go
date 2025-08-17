@@ -4475,5 +4475,23 @@ func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository {
 	return args.Get(0).(*repositories.AuditRepository)
 }
 
+// OAuth returns the OAuth repository mock
+func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.OAuthRepository)
+}
+
+// StreamingCloudWatch returns the StreamingCloudWatch repository mock
+func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
+}
+
 // Ensure MockRepositoryStorage implements RepositoryStorage interface
 var _ core.RepositoryStorage = (*MockRepositoryStorage)(nil)

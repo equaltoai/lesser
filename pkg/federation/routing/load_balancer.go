@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"go.uber.org/zap"
 )
@@ -59,7 +60,7 @@ func NewAdaptiveLoadBalancer(logger *zap.Logger) *AdaptiveLoadBalancer {
 
 // Balance distributes load across routes
 func (alb *AdaptiveLoadBalancer) Balance(routes []*types.Route, load int) map[string]int {
-	if len(routes) == 0 {
+	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
 		return make(map[string]int)
 	}
 

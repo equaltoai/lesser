@@ -12,6 +12,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CommunityNoteRepository implements the community note operations using DynamORM
@@ -75,7 +76,7 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 // CreateCommunityNote creates a new community note
 func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *storage.CommunityNote) error {
 	// Generate ID if not provided
-	if note.ID == "" {
+	if err := common.ValidateRequiredParam("note.ID", note.ID); err != nil {
 		note.ID = uuid.New().String()
 	}
 

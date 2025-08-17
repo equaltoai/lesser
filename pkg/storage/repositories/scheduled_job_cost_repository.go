@@ -213,7 +213,7 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 		return allRecords[i].Timestamp.After(allRecords[j].Timestamp)
 	})
 
-	if len(allRecords) > limit {
+	if err := common.ValidateSliceLength("allRecords", allRecords, limit); err == nil {
 		allRecords = allRecords[:limit]
 	}
 
@@ -393,7 +393,7 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 		DataPoints: make([]JobPerformanceDataPoint, 0),
 	}
 
-	if len(records) == 0 {
+	if err := common.ValidateSliceNotEmpty("records", records); err != nil {
 		return trend, nil
 	}
 
@@ -444,7 +444,7 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 	})
 
 	// Calculate overall trend statistics
-	if len(trend.DataPoints) > 0 {
+	if err := common.ValidateSliceNotEmpty("trend.DataPoints", trend.DataPoints); err == nil {
 		firstDay := &trend.DataPoints[0]
 		lastDay := &trend.DataPoints[len(trend.DataPoints)-1]
 
@@ -531,7 +531,7 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 		return fmt.Errorf("failed to list job costs for aggregation: %w", err)
 	}
 
-	if len(records) == 0 {
+	if err := common.ValidateSliceNotEmpty("records", records); err != nil {
 		return nil // Nothing to aggregate
 	}
 
@@ -654,7 +654,7 @@ func (r *ScheduledJobCostRepository) aggregateCosts(record *models.ScheduledJobC
 
 // updateCategoryBreakdown updates category breakdown statistics
 func (r *ScheduledJobCostRepository) updateCategoryBreakdown(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
-	if record.JobCategory == "" {
+	if err := common.ValidateRequiredParam("JobCategory", record.JobCategory); err != nil {
 		return
 	}
 
@@ -680,7 +680,7 @@ func (r *ScheduledJobCostRepository) getOrCreateCategoryStats(category string, a
 
 // updateEnvironmentBreakdown updates environment breakdown statistics
 func (r *ScheduledJobCostRepository) updateEnvironmentBreakdown(record *models.ScheduledJobCostRecord, aggregation *models.ScheduledJobCostAggregation) {
-	if record.Environment == "" {
+	if err := common.ValidateRequiredParam("Environment", record.Environment); err != nil {
 		return
 	}
 
@@ -741,14 +741,14 @@ func (r *ScheduledJobCostRepository) calculateAggregationStatistics(aggregation 
 
 // calculateAggregationPercentiles calculates execution time and cost percentiles
 func (r *ScheduledJobCostRepository) calculateAggregationPercentiles(aggregation *models.ScheduledJobCostAggregation, metrics *jobMetrics) {
-	if len(metrics.executionTimes) > 0 {
+	if err := common.ValidateSliceNotEmpty("metrics.executionTimes", metrics.executionTimes); err == nil {
 		sort.Float64s(metrics.executionTimes)
 		aggregation.MedianExecutionTime = getPercentileValue(metrics.executionTimes, 50)
 		aggregation.P95ExecutionTime = getPercentileValue(metrics.executionTimes, 95)
 		aggregation.ExecutionTimePercentiles = calculatePercentiles(metrics.executionTimes)
 	}
 
-	if len(metrics.costValues) > 0 {
+	if err := common.ValidateSliceNotEmpty("metrics.costValues", metrics.costValues); err == nil {
 		aggregation.CostPercentiles = calculatePercentiles(metrics.costValues)
 	}
 }
@@ -893,7 +893,7 @@ func (r *ScheduledJobCostRepository) getOrCreateJobStats(summary *ScheduledJobsS
 
 // updateCategorySummaryBreakdown updates category-specific breakdown statistics
 func (r *ScheduledJobCostRepository) updateCategorySummaryBreakdown(summary *ScheduledJobsSummary, record *models.ScheduledJobCostRecord) {
-	if record.JobCategory == "" {
+	if err := common.ValidateRequiredParam("JobCategory", record.JobCategory); err != nil {
 		return
 	}
 

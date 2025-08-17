@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -255,7 +256,7 @@ func (r *StatusRepository) applyLocalFiltering(query core.Query, filter *StatusF
 func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Query, _ *StatusFilter, limit int) ([]models.Status, error) {
 	var statuses []models.Status
 	domain := r.extractDomainFromEnv()
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		query = query.Limit(limit)
 		err := query.Scan(&statuses)
 		if err != nil {
@@ -287,7 +288,8 @@ func (r *StatusRepository) applyRemoteFiltering(_ context.Context, query core.Qu
 
 // GetStatusesByURL searches for statuses that contain a specific URL in their URLs field
 func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL string, limit int) ([]*models.Status, error) {
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(limit, 100, "status search"); err != nil {
 		limit = 20
 	}
 
@@ -506,7 +508,7 @@ func (r *StatusRepository) CountStatusesForAdmin(ctx context.Context, filter *St
 func (r *StatusRepository) extractDomainFromEnv() string {
 	// Get domain from environment variable
 	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = os.Getenv("INSTANCE_DOMAIN")
 	}
 	return domain
@@ -567,7 +569,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 	}
 
 	// If user follows no one, return empty timeline (not public timeline)
-	if len(followingUsernames) == 0 {
+	if err := common.ValidateSliceNotEmpty("following_usernames", followingUsernames); err != nil {
 		r.logger.Debug("user follows no accounts, returning empty home timeline",
 			zap.String("user_id", userID))
 		return &interfaces.PaginatedResult[*models.Status]{
@@ -613,7 +615,8 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 
 	// Apply pagination limits
 	limit := opts.Limit
-	if limit <= 0 || limit > 40 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(limit, 40, "timeline"); err != nil {
 		limit = 20
 	}
 
@@ -840,7 +843,7 @@ func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID st
 	}
 
 	// Delete the first matching record (there should only be one)
-	if len(engagements) > 0 {
+	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
 		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
 		if err != nil {
 			return fmt.Errorf("failed to delete like: %w", err)
@@ -912,7 +915,7 @@ func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID 
 	}
 
 	// Delete the first matching record (there should only be one)
-	if len(engagements) > 0 {
+	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
 		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
 		if err != nil {
 			return fmt.Errorf("failed to delete reblog: %w", err)
@@ -969,7 +972,7 @@ func (r *StatusRepository) UnbookmarkStatus(ctx context.Context, userID, statusI
 	}
 
 	// Delete the first matching record (there should only be one)
-	if len(bookmarks) > 0 {
+	if err := common.ValidateSliceNotEmpty("bookmarks", bookmarks); err == nil {
 		err = r.db.WithContext(ctx).Model(&bookmarks[0]).Delete()
 		if err != nil {
 			return fmt.Errorf("failed to delete bookmark: %w", err)

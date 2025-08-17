@@ -75,7 +75,7 @@ type NotificationCostTracking struct {
 
 // BeforeCreate sets up the notification cost tracking before creation
 func (n *NotificationCostTracking) BeforeCreate() error {
-	if n.ID == "" {
+	if err := common.ValidateRequiredParam("n.ID", n.ID); err != nil {
 		n.ID = uuid.New().String()
 	}
 
@@ -451,7 +451,7 @@ func (n *NotificationBudget) ShouldBlockDelivery() bool {
 
 // IsMethodAllowed checks if a delivery method is allowed
 func (n *NotificationBudget) IsMethodAllowed(method string) bool {
-	if len(n.AllowedDeliveryMethods) == 0 {
+	if err := common.ValidateSliceNotEmpty("n.AllowedDeliveryMethods", n.AllowedDeliveryMethods); err != nil {
 		return true // No restrictions
 	}
 

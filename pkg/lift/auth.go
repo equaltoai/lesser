@@ -34,7 +34,7 @@ func (las *LiftAuthService) RequireAuth() lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Extract Bearer token directly from Lift context
 			token := extractBearerToken(ctx)
-			if token == "" {
+			if err := common.ValidateRequiredParam("token", token); err != nil {
 				// Log authentication failure
 				common.LogAuthFailure("missing authorization token", "", getClientIP(ctx), ctx.Header("User-Agent"))
 				return ctx.Unauthorized("Authentication required", nil)
@@ -83,7 +83,7 @@ func (las *LiftAuthService) OptionalAuth() lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Extract Bearer token
 			token := extractBearerToken(ctx)
-			if token == "" {
+			if err := common.ValidateRequiredParam("token", token); err != nil {
 				// No token provided, continue without authentication
 				return next.Handle(ctx)
 			}
@@ -213,7 +213,7 @@ func extractTenantFromPath(path string) string {
 // extractBearerToken extracts Bearer token from Authorization header
 func extractBearerToken(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return ""
 	}
 
@@ -240,7 +240,7 @@ func GetClaims(ctx *lift.Context) (*auth.EnhancedClaims, error) {
 // GetUsername retrieves username from Lift context
 func GetUsername(ctx *lift.Context) (string, error) {
 	username, ok := ctx.Get("username").(string)
-	if !ok || username == "" {
+	if !ok || common.ValidateRequiredParam("username", username) != nil {
 		return "", ctx.Unauthorized("Authentication required", nil)
 	}
 	return username, nil
@@ -249,7 +249,7 @@ func GetUsername(ctx *lift.Context) (string, error) {
 // GetSessionID retrieves session ID from Lift context
 func GetSessionID(ctx *lift.Context) (string, error) {
 	sessionID, ok := ctx.Get("session_id").(string)
-	if !ok || sessionID == "" {
+	if !ok || common.ValidateRequiredParam("sessionID", sessionID) != nil {
 		return "", ctx.Unauthorized("Authentication required", nil)
 	}
 	return sessionID, nil
@@ -258,7 +258,7 @@ func GetSessionID(ctx *lift.Context) (string, error) {
 // GetTenantID retrieves tenant ID from Lift context
 func GetTenantID(ctx *lift.Context) (string, error) {
 	tenantID, ok := ctx.Get("tenant_id").(string)
-	if !ok || tenantID == "" {
+	if !ok || common.ValidateRequiredParam("tenantID", tenantID) != nil {
 		return "", errors.New("tenant context required")
 	}
 	return tenantID, nil

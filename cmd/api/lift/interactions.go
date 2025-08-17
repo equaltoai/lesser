@@ -7,8 +7,10 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -16,8 +18,8 @@ import (
 // HandleFollowLift handles POST /api/v1/accounts/:id/follow
 func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.FollowRequest
@@ -49,8 +51,8 @@ func (h *Handler) HandleFollowLift(ctx *lift.Context) error {
 // HandleUnfollowLift handles POST /api/v1/accounts/:id/unfollow
 func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -77,8 +79,8 @@ func (h *Handler) HandleUnfollowLift(ctx *lift.Context) error {
 // HandleBlockLift handles POST /api/v1/accounts/:id/block
 func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -105,8 +107,8 @@ func (h *Handler) HandleBlockLift(ctx *lift.Context) error {
 // HandleUnblockLift handles POST /api/v1/accounts/:id/unblock
 func (h *Handler) HandleUnblockLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -155,7 +157,7 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 	accounts := []models.Account{}
 	for _, blockedAccount := range result.BlockedUsers {
 		if blockedAccount.Actor != nil {
-			account := h.converter.ActorToAccount(blockedAccount.Actor)
+			account := transformations.ActorToAccountBase(blockedAccount.Actor, h.cfg.BaseURL())
 			accounts = append(accounts, account)
 		}
 	}
@@ -173,8 +175,8 @@ func (h *Handler) HandleGetBlocksLift(ctx *lift.Context) error {
 // HandleFavoriteLift handles POST /api/v1/statuses/:id/favourite
 func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -195,7 +197,7 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	mastodonStatus := h.converter.NotesToStatus(result.Status)
+	mastodonStatus := transformations.NotesToStatusAny(result.Status, h.cfg.BaseURL())
 	mastodonStatus.Favourited = true
 
 	return ctx.JSON(mastodonStatus)
@@ -204,8 +206,8 @@ func (h *Handler) HandleFavoriteLift(ctx *lift.Context) error {
 // HandleUnfavoriteLift handles POST /api/v1/statuses/:id/unfavourite
 func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -226,7 +228,7 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	mastodonStatus := h.converter.NotesToStatus(result.Status)
+	mastodonStatus := transformations.NotesToStatusAny(result.Status, h.cfg.BaseURL())
 	mastodonStatus.Favourited = false
 
 	return ctx.JSON(mastodonStatus)
@@ -235,8 +237,8 @@ func (h *Handler) HandleUnfavoriteLift(ctx *lift.Context) error {
 // HandleReblogLift handles POST /api/v1/statuses/:id/reblog
 func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -257,7 +259,7 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	mastodonStatus := h.converter.NotesToStatus(result.Status)
+	mastodonStatus := transformations.NotesToStatusAny(result.Status, h.cfg.BaseURL())
 	mastodonStatus.Reblogged = true
 
 	return ctx.JSON(mastodonStatus)
@@ -266,8 +268,8 @@ func (h *Handler) HandleReblogLift(ctx *lift.Context) error {
 // HandleUnreblogLift handles POST /api/v1/statuses/:id/unreblog
 func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -288,7 +290,7 @@ func (h *Handler) HandleUnreblogLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format
-	mastodonStatus := h.converter.NotesToStatus(result.Status)
+	mastodonStatus := transformations.NotesToStatusAny(result.Status, h.cfg.BaseURL())
 	mastodonStatus.Reblogged = false
 
 	return ctx.JSON(mastodonStatus)

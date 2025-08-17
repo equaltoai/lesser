@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -98,17 +99,17 @@ func (mj *MediaJob) BeforeCreate() error {
 	mj.UpdatedAt = now
 
 	// Generate job ID if not provided
-	if mj.JobID == "" {
+	if err := common.ValidateRequiredParam("mj.JobID", mj.JobID); err != nil {
 		mj.JobID = uuid.New().String()
 	}
 
 	// Generate idempotency key if not provided
-	if mj.IdempotencyKey == "" {
+	if err := common.ValidateRequiredParam("mj.IdempotencyKey", mj.IdempotencyKey); err != nil {
 		mj.IdempotencyKey = mj.GenerateIdempotencyKey()
 	}
 
 	// Set default status
-	if mj.Status == "" {
+	if err := common.ValidateRequiredParam("mj.Status", mj.Status); err != nil {
 		mj.Status = StatusPending
 	}
 
@@ -153,20 +154,20 @@ func (mj *MediaJob) BeforeUpdate() error {
 
 // Validate performs validation on the MediaJob
 func (mj *MediaJob) Validate() error {
-	if strings.TrimSpace(mj.JobID) == "" {
-		return fmt.Errorf("JobID is required")
+	if err := common.ValidateRequiredParam("JobID", mj.JobID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(mj.MediaID) == "" {
-		return fmt.Errorf("MediaID is required")
+	if err := common.ValidateRequiredParam("MediaID", mj.MediaID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(mj.Username) == "" {
-		return fmt.Errorf("username is required")
+	if err := common.ValidateRequiredParam("username", mj.Username); err != nil {
+		return err
 	}
-	if strings.TrimSpace(mj.S3Key) == "" {
-		return fmt.Errorf("S3Key is required")
+	if err := common.ValidateRequiredParam("S3Key", mj.S3Key); err != nil {
+		return err
 	}
-	if strings.TrimSpace(mj.MimeType) == "" {
-		return fmt.Errorf("MimeType is required")
+	if err := common.ValidateRequiredParam("MimeType", mj.MimeType); err != nil {
+		return err
 	}
 
 	// Validate status

@@ -42,7 +42,7 @@ func NewPushService() (*PushService, error) {
 	sqsClient := sqs.NewFromConfig(cfg)
 
 	queueURL := os.Getenv("PUSH_NOTIFICATION_QUEUE_URL")
-	if queueURL == "" {
+	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
 		// Queue might not be configured, return nil service
 		return nil, nil
 	}

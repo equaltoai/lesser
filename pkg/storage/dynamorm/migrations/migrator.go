@@ -9,6 +9,7 @@ import (
 
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Migration key constants
@@ -29,7 +30,7 @@ type Migrator struct {
 // NewMigrator creates a new migrator instance
 func NewMigrator(db core.DB, registry *Registry, logger *zap.Logger) *Migrator {
 	executor := os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
-	if executor == "" {
+	if err := common.ValidateRequiredParam("executor", executor); err != nil {
 		executor = "local"
 	}
 
@@ -188,7 +189,7 @@ func (m *Migrator) Run(ctx context.Context) error {
 
 	// Get pending migrations
 	pending := m.registry.GetPending(applied)
-	if len(pending) == 0 {
+	if err := common.ValidateSliceNotEmpty("pending", pending); err != nil {
 		m.logger.Info("No pending migrations")
 		return nil
 	}

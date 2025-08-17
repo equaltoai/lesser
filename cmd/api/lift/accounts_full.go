@@ -7,13 +7,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -25,7 +25,7 @@ import (
 // HandleGetAccountFull retrieves account information by ID
 func (h *Handler) HandleGetAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
 	}
 
@@ -97,16 +97,15 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
 // HandleGetAccountStatusesFull retrieves statuses for an account using Notes service
 func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
 	}
 
 	// Parse query parameters
-	limit := 20
-	if limitParam := ctx.Query("limit"); limitParam != "" {
-		if l, err := strconv.Atoi(limitParam); err == nil && l > 0 && l <= 40 {
-			limit = l
-		}
+	limitParam := ctx.Query("limit")
+	limit, err := common.ParseAccountStatusesLimit(limitParam)
+	if err != nil {
+		limit = 20
 	}
 
 	// Parse other query parameters
@@ -120,7 +119,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	// Optional viewer authentication for private posts
 	var viewerID string
 	token := h.getBearerTokenLift(ctx)
-	if token != "" {
+	if err := common.ValidateRequiredParam("token", token); err == nil {
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			viewerID = claims.Username
@@ -173,16 +172,15 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 // HandleGetAccountFollowersFull retrieves followers for an account
 func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
 	}
 
 	// Parse pagination parameters
-	limit := 40
-	if limitParam := ctx.Query("limit"); limitParam != "" {
-		if l, err := strconv.Atoi(limitParam); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limitParam := ctx.Query("limit")
+	limit, err := common.ParseFollowLimit(limitParam)
+	if err != nil {
+		limit = 40
 	}
 
 	maxID := ctx.Query("max_id")
@@ -229,16 +227,15 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 // HandleGetAccountFollowingFull retrieves accounts that this account follows
 func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
 	}
 
 	// Parse pagination parameters
-	limit := 40
-	if limitParam := ctx.Query("limit"); limitParam != "" {
-		if l, err := strconv.Atoi(limitParam); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limitParam := ctx.Query("limit")
+	limit, err := common.ParseFollowLimit(limitParam)
+	if err != nil {
+		limit = 40
 	}
 
 	maxID := ctx.Query("max_id")
@@ -302,7 +299,7 @@ func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*
 		parts := strings.Split(accountID, "@")
 		if len(parts) >= 2 {
 			username := parts[0]
-			if username == "" && len(parts) >= 3 {
+			if err := common.ValidateRequiredParam("username", username); err != nil && len(parts) >= 3 {
 				username = parts[1] // Handle @username@domain format
 			}
 			// For now, only handle local accounts
@@ -357,13 +354,13 @@ func (h *Handler) buildAccountResponseFull(ctx context.Context, actor *activityp
 	}
 
 	// Set avatar if available
-	if actor.Icon != nil && actor.Icon.URL != "" {
+	if actor.Icon != nil && common.ValidateRequiredParam("iconURL", actor.Icon.URL) == nil {
 		account["avatar"] = actor.Icon.URL
 		account["avatar_static"] = actor.Icon.URL
 	}
 
 	// Set header if available
-	if actor.Image != nil && actor.Image.URL != "" {
+	if actor.Image != nil && common.ValidateRequiredParam("imageURL", actor.Image.URL) == nil {
 		account["header"] = actor.Image.URL
 		account["header_static"] = actor.Image.URL
 	}
@@ -495,7 +492,7 @@ func (h *Handler) getStatusFavoritesCount(statusID string) int64 {
 
 // hasUserFavorited checks if the viewer has favorited a status
 func (h *Handler) hasUserFavorited(viewerID, statusID string) bool {
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false
 	}
 
@@ -512,7 +509,7 @@ func (h *Handler) hasUserFavorited(viewerID, statusID string) bool {
 
 // hasUserReblogged checks if the viewer has reblogged a status
 func (h *Handler) hasUserReblogged(viewerID, statusID string) bool {
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false
 	}
 
@@ -529,7 +526,7 @@ func (h *Handler) hasUserReblogged(viewerID, statusID string) bool {
 
 // getReplyToAccountID gets the account ID of the status being replied to
 func (h *Handler) getReplyToAccountID(ctx context.Context, status *storageModels.Status) *string {
-	if status.InReplyToID == "" {
+	if err := common.ValidateRequiredParam("inReplyToID", status.InReplyToID); err != nil {
 		return nil
 	}
 
@@ -557,7 +554,7 @@ func (h *Handler) getEditedAt(status *storageModels.Status) *string {
 
 // hasUserMutedStatus checks if the viewer has muted this status
 func (h *Handler) hasUserMutedStatus(ctx context.Context, viewerID, statusID string) bool {
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false
 	}
 
@@ -580,7 +577,7 @@ func (h *Handler) hasUserMutedStatus(ctx context.Context, viewerID, statusID str
 
 // hasUserBookmarked checks if the viewer has bookmarked this status
 func (h *Handler) hasUserBookmarked(ctx context.Context, viewerID, statusID string) bool {
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false
 	}
 
@@ -598,7 +595,7 @@ func (h *Handler) hasUserBookmarked(ctx context.Context, viewerID, statusID stri
 // hasUserPinned checks if the viewer has pinned this status
 // Note: This checks for account pins, not status pins. Status pinning is different.
 func (h *Handler) hasUserPinned(ctx context.Context, viewerID, statusID string) bool {
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false
 	}
 

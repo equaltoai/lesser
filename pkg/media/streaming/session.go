@@ -3,9 +3,12 @@ package streaming
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaSessionRepository interface for session persistence
@@ -23,19 +26,31 @@ type MediaSessionRepository interface {
 // SessionManager manages streaming sessions
 // Uses DynamoDB TTL for automatic session expiration in serverless environments
 type SessionManager struct {
-	repo        MediaSessionRepository
-	logger      *zap.Logger
-	costTracker CostTracker
-	sessionTTL  time.Duration // TTL for sessions (default: 24 hours)
+	repo           MediaSessionRepository
+	logger         *zap.Logger
+	costTracker    CostTracker
+	unifiedTracker *cost.UnifiedTracker
+	tableName      string
+	sessionTTL     time.Duration // TTL for sessions (default: 24 hours)
 }
 
 // NewSessionManager creates a new session manager
 func NewSessionManager(repo MediaSessionRepository, logger *zap.Logger, costTracker CostTracker) *SessionManager {
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+	}
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "SessionManager", "", "")
+	
 	return &SessionManager{
-		repo:        repo,
-		logger:      logger,
-		costTracker: costTracker,
-		sessionTTL:  24 * time.Hour, // Default TTL for streaming sessions
+		repo:           repo,
+		logger:         logger,
+		costTracker:    costTracker,
+		unifiedTracker: unifiedTracker,
+		tableName:      tableName,
+		sessionTTL:     24 * time.Hour, // Default TTL for streaming sessions
 	}
 }
 
@@ -65,9 +80,9 @@ func (sm *SessionManager) CreateSession(ctx context.Context, session *StreamingS
 		return fmt.Errorf("create session: %w", err)
 	}
 
-	// Track cost
-	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := sm.unifiedTracker.TrackDynamoWrite(ctx, sm.tableName, 1); err != nil {
+		sm.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return nil
@@ -83,9 +98,9 @@ func (sm *SessionManager) GetSession(ctx context.Context, sessionID string) (*St
 		return nil, fmt.Errorf("get session: %w", err)
 	}
 
-	// Track cost
-	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoRead(1)
+	// Track cost using centralized tracker
+	if err := sm.unifiedTracker.TrackDynamoRead(ctx, sm.tableName, 1); err != nil {
+		sm.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return session, nil
@@ -101,9 +116,9 @@ func (sm *SessionManager) UpdateSession(ctx context.Context, session *StreamingS
 		return fmt.Errorf("update session: %w", err)
 	}
 
-	// Track cost
-	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := sm.unifiedTracker.TrackDynamoWrite(ctx, sm.tableName, 1); err != nil {
+		sm.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return nil
@@ -119,9 +134,9 @@ func (sm *SessionManager) EndSession(ctx context.Context, sessionID string) erro
 		return fmt.Errorf("end session: %w", err)
 	}
 
-	// Track cost
-	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoWrite(1)
+	// Track cost using centralized tracker
+	if err := sm.unifiedTracker.TrackDynamoWrite(ctx, sm.tableName, 1); err != nil {
+		sm.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	return nil
@@ -139,7 +154,10 @@ func (sm *SessionManager) GetUserSessions(ctx context.Context, userID string) ([
 
 	// Track cost
 	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoRead(len(sessions))
+		// Track cost using centralized tracker
+		if err := sm.unifiedTracker.TrackDynamoRead(ctx, sm.tableName, int64(len(sessions))); err != nil {
+			sm.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	return sessions, nil
@@ -157,7 +175,10 @@ func (sm *SessionManager) GetMediaSessions(ctx context.Context, mediaID string, 
 
 	// Track cost
 	if sm.costTracker != nil {
-		sm.costTracker.TrackDynamoRead(len(sessions))
+		// Track cost using centralized tracker
+		if err := sm.unifiedTracker.TrackDynamoRead(ctx, sm.tableName, int64(len(sessions))); err != nil {
+			sm.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	return sessions, nil

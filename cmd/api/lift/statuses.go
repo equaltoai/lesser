@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storageMods "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -70,8 +71,8 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
 	}
 
-	// Convert to Mastodon API format using correct converter
-	mastodonStatus := h.converter.ObjectToStatus(result.Note, account.Actor)
+	// Convert to Mastodon API format using transformations
+	mastodonStatus := transformations.ObjectToStatusAny(result.Note, account.Actor, h.cfg.BaseURL())
 
 	h.logger.Info("created status",
 		zap.String("id", result.Note.StatusID),
@@ -83,8 +84,8 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 // HandleDeleteStatusLift deletes a status using the Notes service
 func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate with write scope
@@ -120,7 +121,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
 	if err != nil {
 		h.logger.Error("failed to get author account for deleted status", zap.Error(err))
 		// Return a basic response if we can't get the author
@@ -128,7 +129,7 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	}
 
 	// Return the deleted status in Mastodon format
-	mastodonStatus := h.converter.ObjectToStatus(status, account.Actor)
+	mastodonStatus := transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
 
 	h.logger.Info("deleted status", zap.String("id", statusID))
 
@@ -139,8 +140,8 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	// Validate status ID
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate and authorize user
@@ -189,7 +190,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *activitypub.Actor, error) {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
@@ -313,7 +314,7 @@ func (h *Handler) convertUnknownObjectToNote(ctx *lift.Context, object any, acto
 		}
 	}
 
-	if attributedTo == "" {
+	if err := common.ValidateRequiredParam("attributedTo", attributedTo); err != nil {
 		h.logger.Error("unexpected object type or missing AttributedTo",
 			zap.String("type", fmt.Sprintf("%T", object)),
 			zap.Any("object", object))
@@ -353,7 +354,7 @@ func (h *Handler) applyStatusUpdates(note *activitypub.Note, req *models.UpdateS
 func (h *Handler) saveUpdatedStatus(ctx *lift.Context, note *activitypub.Note) error {
 	// Extract the username from the authentication token
 	username := h.extractUsernameFromToken(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to extract username for edit tracking"})
 	}
 
@@ -409,7 +410,7 @@ func (h *Handler) createStatusUpdateActivity(ctx *lift.Context, note *activitypu
 
 // buildUpdateStatusResponse builds the response for the updated status
 func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub.Note, actor *activitypub.Actor, req *models.UpdateStatusRequest) error {
-	resp := h.converter.ObjectToStatus(note, actor)
+	resp := transformations.ObjectToStatusAny(note, actor, h.cfg.BaseURL())
 	if req.Visibility != "" {
 		resp.Visibility = req.Visibility
 	}
@@ -424,8 +425,8 @@ func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub
 // HandleGetStatusLift retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Optional authentication (public statuses can be viewed without auth)
@@ -449,7 +450,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Get the author actor for proper conversion
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+	account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
 	if err != nil {
 		h.logger.Error("failed to get author account", zap.Error(err))
 		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
@@ -475,7 +476,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format using correct converter with user context
-	mastodonStatus := h.converter.ObjectToStatusWithContext(ctx.Context, status, account.Actor, 0, 0, favorited, reblogged, bookmarked)
+	mastodonStatus := transformations.ObjectToStatusWithContextAndCounts(ctx.Context, status, account.Actor, 0, 0, favorited, reblogged, bookmarked, h.cfg.BaseURL())
 
 	return ctx.JSON(mastodonStatus)
 }
@@ -489,15 +490,7 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Parse pagination parameters
-	limit := 20
-	if limitStr := ctx.QueryParam("limit"); limitStr != "" {
-		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 {
-			limit = 20
-		}
-		if limit > 80 {
-			limit = 80
-		}
-	}
+	limit, _ := common.ParseStatusTimelineLimit(ctx.QueryParam("limit"))
 
 	cursor := ctx.QueryParam("max_id")
 
@@ -521,12 +514,12 @@ func (h *Handler) HandleGetHomeTimelineLift(ctx *lift.Context) error {
 	timeline := make([]interface{}, len(result.Notes))
 	for i, status := range result.Notes {
 		// Get author actor for conversion
-		account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
 		if err != nil {
 			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
 			continue
 		}
-		timeline[i] = h.converter.ObjectToStatus(status, account.Actor)
+		timeline[i] = transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
 	}
 
 	return ctx.JSON(timeline)
@@ -545,15 +538,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Parse pagination parameters
-	limit := 20
-	if limitStr := ctx.QueryParam("limit"); limitStr != "" {
-		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil || l != 1 {
-			limit = 20
-		}
-		if limit > 80 {
-			limit = 80
-		}
-	}
+	limit, _ := common.ParseStatusTimelineLimit(ctx.QueryParam("limit"))
 
 	cursor := ctx.QueryParam("max_id")
 	local := ctx.QueryParam("local") == "true"
@@ -583,12 +568,12 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	timeline := make([]interface{}, len(result.Notes))
 	for i, status := range result.Notes {
 		// Get author actor for conversion
-		account, err := h.registry.Accounts().GetAccount(ctx.Context, h.converter.ExtractUsernameFromActorID(status.AuthorID))
+		account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
 		if err != nil {
 			h.logger.Warn("failed to get author for timeline status", zap.Error(err))
 			continue
 		}
-		timeline[i] = h.converter.ObjectToStatus(status, account.Actor)
+		timeline[i] = transformations.ObjectToStatusAny(status, account.Actor, h.cfg.BaseURL())
 	}
 
 	return ctx.JSON(timeline)
@@ -619,8 +604,8 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 // validateStatusIDForContext validates the status ID and checks it exists
 func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return "", ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return "", ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Normalize and validate the status ID
@@ -663,7 +648,7 @@ func (h *Handler) getStatusAncestors(ctx context.Context, objectID string) []mod
 
 	for i := 0; i < 10; i++ { // Limit depth to prevent infinite loops
 		parentID := h.getParentStatusID(ctx, currentID)
-		if parentID == "" {
+		if err := common.ValidateRequiredParam("parentID", parentID); err != nil {
 			break
 		}
 
@@ -687,7 +672,7 @@ func (h *Handler) getParentStatusID(ctx context.Context, objectID string) string
 	}
 
 	inReplyTo := h.extractInReplyTo(obj)
-	if inReplyTo == "" {
+	if err := common.ValidateRequiredParam("in_reply_to", inReplyTo); err != nil {
 		return ""
 	}
 
@@ -751,19 +736,19 @@ func (h *Handler) loadStatusWithActor(ctx context.Context, objectID string) *mod
 	}
 
 	actor := h.getActorForObject(ctx, obj)
-	status := h.converter.ObjectToStatus(obj, actor)
+	status := transformations.ObjectToStatusAny(obj, actor, h.cfg.BaseURL())
 	return &status
 }
 
 // getActorForObject retrieves the actor associated with an object
 func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activitypub.Actor {
 	attributedTo := h.extractAttributedTo(obj)
-	if attributedTo == "" {
+	if err := common.ValidateRequiredParam("attributed_to", attributedTo); err != nil {
 		return nil
 	}
 
-	username := h.converter.ExtractUsernameFromActorID(attributedTo)
-	if username == "" {
+	username := transformations.ExtractUsernameFromActorID(attributedTo)
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil
 	}
 
@@ -804,7 +789,7 @@ func (h *Handler) getStatusDescendants(ctx context.Context, objectID string) []m
 // convertReplyToStatus converts a reply object to a status
 func (h *Handler) convertReplyToStatus(ctx context.Context, reply interface{}) *models.Status {
 	actor := h.getActorForObject(ctx, reply)
-	status := h.converter.ObjectToStatus(reply, actor)
+	status := transformations.ObjectToStatusAny(reply, actor, h.cfg.BaseURL())
 	return &status
 }
 
@@ -823,8 +808,8 @@ type accountStatusesParams struct {
 func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	// Validate and get account ID
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Resolve account ID to actor
@@ -868,20 +853,16 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 
 // parseAccountStatusesParams parses query parameters for account statuses
 func (h *Handler) parseAccountStatusesParams(ctx *lift.Context) accountStatusesParams {
+	// Parse limit parameter
+	limit, _ := common.ParseAccountStatusesLimit(ctx.Query("limit"))
+
 	params := accountStatusesParams{
-		limit:          20,
+		limit:          limit,
 		maxID:          ctx.Query("max_id"),
 		onlyMedia:      ctx.Query("only_media") == boolTrue,
 		excludeReplies: ctx.Query("exclude_replies") == boolTrue,
 		excludeReblogs: ctx.Query("exclude_reblogs") == boolTrue,
 		tagged:         ctx.Query("tagged"),
-	}
-
-	// Parse limit parameter
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
-			params.limit = parsedLimit
-		}
 	}
 
 	return params
@@ -901,7 +882,7 @@ func (h *Handler) convertAndFilterObjects(_ *lift.Context, objects []any, actor 
 			continue
 		}
 
-		status := h.converter.ObjectToStatus(obj, actor)
+		status := transformations.ObjectToStatusAny(obj, actor, h.cfg.BaseURL())
 		h.logStatusConversion(status, obj)
 		statuses = append(statuses, status)
 	}
@@ -986,7 +967,7 @@ func (h *Handler) objectIsReblog(obj any) bool {
 
 // objectHasHashtags checks if an object contains the specified hashtags
 func (h *Handler) objectHasHashtags(obj any, taggedParam string) bool {
-	if taggedParam == "" {
+	if err := common.ValidateRequiredParam("tagged_param", taggedParam); err != nil {
 		return true // No filter specified, so all objects match
 	}
 
@@ -1179,16 +1160,16 @@ func getStringFromMap(m map[string]any, key, defaultValue string) string {
 func (h *Handler) extractUsernameFromToken(ctx *lift.Context) string {
 	// Check for test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		return testUsername
 	}
 
 	// Get authorization header
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
@@ -1255,7 +1236,7 @@ func (h *Handler) deliverUpdateActivity(ctx context.Context, updateActivity *act
 		return fmt.Errorf("failed to determine delivery recipients: %w", err)
 	}
 
-	if len(recipients) == 0 {
+	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {
 		h.logger.Info("no recipients for update activity delivery", zap.String("activity_id", updateActivity.ID))
 		return nil
 	}

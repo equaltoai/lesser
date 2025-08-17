@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -80,8 +81,8 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 
 	// Extract media ID
 	mediaID := ctx.Param("id")
-	if mediaID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing media ID"})
+	if err := common.ValidateRequiredParam("media_id", mediaID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Call Media service
@@ -107,8 +108,8 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 
 	// Extract media ID
 	mediaID := ctx.Param("id")
-	if mediaID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing media ID"})
+	if err := common.ValidateRequiredParam("media_id", mediaID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Parse update request
@@ -141,7 +142,7 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 
 	// Get raw body from request
 	bodyBytes := ctx.Request.Body
-	if len(bodyBytes) == 0 {
+	if err := common.ValidateSliceNotEmpty("request_body", bodyBytes); err != nil {
 		return nil, fmt.Errorf("empty request body")
 	}
 
@@ -176,7 +177,7 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 	}
 
 	// Validate required file data
-	if len(mediaData.FileData) == 0 {
+	if err := common.ValidateSliceNotEmpty("mediaData.FileData", mediaData.FileData); err != nil {
 		return nil, fmt.Errorf("no file data found in request")
 	}
 

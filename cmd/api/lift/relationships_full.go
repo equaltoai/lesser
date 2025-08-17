@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 )
@@ -16,8 +17,8 @@ import (
 // HandleFollowAccountFull follows an account using Relationships service
 func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.FollowRequest
@@ -44,8 +45,8 @@ func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 // HandleUnfollowAccountFull unfollows an account using Relationships service
 func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -67,8 +68,8 @@ func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 // HandleBlockAccountFull blocks an account using Relationships service
 func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -90,8 +91,8 @@ func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 // HandleUnblockAccountFull unblocks an account using Relationships service
 func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -113,8 +114,8 @@ func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 // HandleMuteAccountFull mutes an account using Relationships service
 func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.MuteRequest
@@ -140,8 +141,8 @@ func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 // HandleUnmuteAccountFull unmutes an account using Relationships service
 func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -168,12 +169,12 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 	}
 
 	accountIDsParam := ctx.Query("id")
-	if accountIDsParam == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account ids"})
+	if err := common.ValidateRequiredParam("account_ids", accountIDsParam); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	accountIDs := strings.Split(accountIDsParam, ",")
-	if len(accountIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("accountIDs", accountIDs); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid account ids"})
 	}
 

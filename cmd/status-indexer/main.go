@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,15 +12,13 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -29,7 +28,7 @@ const requestIDKey contextKey = "request_id"
 
 // StatusIndexer handles DynamoDB stream events for search indexing
 type StatusIndexer struct {
-	db           core.DB
+	db           dynamormCore.DB
 	tableName    string
 	logger       *zap.Logger
 	aiService    *ai.AIService
@@ -39,10 +38,7 @@ type StatusIndexer struct {
 }
 
 // NewStatusIndexer creates a new status indexer
-func NewStatusIndexer(db core.DB, tableName, domain string, aiService *ai.AIService) *StatusIndexer {
-	// Get logger
-	logger := common.Logger()
-
+func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService *ai.AIService, logger *zap.Logger) *StatusIndexer {
 	return &StatusIndexer{
 		db:           db,
 		tableName:    tableName,
@@ -55,52 +51,8 @@ func NewStatusIndexer(db core.DB, tableName, domain string, aiService *ai.AIServ
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *StatusIndexer
-	db        core.DB
-	aiService *ai.AIService
 )
-
-func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize AWS config for AI service
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-
-	// Initialize AI service
-	aiConfig := &ai.AIConfig{
-		NSFWThreshold:       0.8,
-		ToxicityThreshold:   0.7,
-		SpamThreshold:       0.6,
-		AIContentThreshold:  0.8,
-		EnablePIIDetection:  true,
-		EnableAIDetection:   true,
-		EnableImageAnalysis: true,
-		BedrockModelID:      "anthropic.claude-3-haiku-20240307-v1:0",
-		S3Bucket:            cfg.S3BucketName,
-	}
-	aiService = ai.NewAIService(awsCfg, aiConfig)
-
-	// Initialize processor
-	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService)
-}
 
 // HandleStream processes DynamoDB stream events with Lift-style patterns
 func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -127,7 +79,7 @@ func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 		}
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(event.Records))
 	}
 
@@ -196,7 +148,7 @@ func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecor
 	if pk.DataType() == events.DataTypeString {
 		pkStr = pk.String()
 	}
-	if pkStr == "" || !strings.HasPrefix(pkStr, "OBJECT#") {
+	if err := common.ValidateRequiredParam("pkStr", pkStr); err != nil || !strings.HasPrefix(pkStr, "OBJECT#") {
 		return false
 	}
 
@@ -272,12 +224,12 @@ func (si *StatusIndexer) extractObjectDetails(objectMap map[string]events.Dynamo
 
 // extractUsernameFromAuthorID extracts username from author ID URL
 func (si *StatusIndexer) extractUsernameFromAuthorID(authorID string) string {
-	if authorID == "" {
+	if err := common.ValidateRequiredParam("authorID", authorID); err != nil {
 		return ""
 	}
 
 	parts := strings.Split(authorID, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 
@@ -313,7 +265,7 @@ func (si *StatusIndexer) processStatusEvent(ctx context.Context, statusID, conte
 	}
 
 	// 3. Store status embedding if generated
-	if len(embedding) > 0 {
+	if err := common.ValidateSliceNotEmpty("embedding", embedding); err == nil {
 		if err := si.storeEmbedding(ctx, statusID, embedding, engagementScore); err != nil {
 			si.logger.Warn("failed to store embedding",
 				zap.String("request_id", requestID),
@@ -690,9 +642,9 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 
 // getDomain returns the domain name for URL generation
 func (si *StatusIndexer) getDomain() string {
-	// Get domain from config or environment
-	if cfg != nil && cfg.Domain != "" {
-		return cfg.Domain
+	// Get domain from environment variable
+	if domain := os.Getenv("DOMAIN_NAME"); domain != "" {
+		return domain
 	}
 	return "localhost" // Fallback
 }
@@ -708,50 +660,52 @@ func getRequestID(ctx context.Context) string {
 }
 
 func main() {
-	// Start Lambda with traditional approach but Lift-style patterns
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
-		start := time.Now()
-		requestID := uuid.New().String()
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "status-indexer",
+		LambdaType:  common.LambdaTypeProcessor,
+	})
 
-		// Recovery handling (Lift pattern)
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("panic in DynamoDB stream handler",
-					zap.String("request_id", requestID),
-					zap.Any("panic", r),
-					zap.Stack("stack"),
-				)
-			}
-		}()
+	cfg := lambdaCtx.Config
+	logger := lambdaCtx.Logger
+	
+	// Initialize AWS config for AI service
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(cfg.Region),
+	)
+	if err != nil {
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
 
-		// Add request ID to context
-		ctx = context.WithValue(ctx, requestIDKey, requestID)
+	// Initialize AI service
+	aiConfig := &ai.AIConfig{
+		NSFWThreshold:       0.8,
+		ToxicityThreshold:   0.7,
+		SpamThreshold:       0.6,
+		AIContentThreshold:  0.8,
+		EnablePIIDetection:  true,
+		EnableAIDetection:   true,
+		EnableImageAnalysis: true,
+		BedrockModelID:      "anthropic.claude-3-haiku-20240307-v1:0",
+		S3Bucket:            cfg.S3BucketName,
+	}
+	aiService := ai.NewAIService(awsCfg, aiConfig)
 
-		logger.Info("processing status indexer stream batch",
-			zap.String("request_id", requestID),
-			zap.Int("record_count", len(event.Records)),
-		)
-
-		// Process the stream event
-		err := processor.HandleStream(ctx, event)
-
-		// Log completion (Lift pattern)
-		duration := time.Since(start)
-		if err != nil {
-			logger.Error("DynamoDB stream processing failed",
-				zap.String("request_id", requestID),
-				zap.Error(err),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
+	// Get DynamORM DB instance
+	var db dynamormCore.DB
+	if lambdaCtx.DynamoDB != nil {
+		if dynamoDB, ok := lambdaCtx.DynamoDB.(dynamormCore.DB); ok {
+			db = dynamoDB
 		} else {
-			logger.Info("DynamoDB stream processing completed",
-				zap.String("request_id", requestID),
-				zap.Duration("duration", duration),
-				zap.Int("record_count", len(event.Records)),
-			)
+			logger.Fatal("Failed to cast DynamoDB client to expected type")
 		}
+	} else {
+		logger.Fatal("DynamoDB client not initialized")
+	}
 
-		return err
+	// Initialize processor
+	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
+
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		return processor.HandleStream(ctx, event)
 	})
 }

@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Moderation action constants
@@ -92,7 +94,7 @@ func (m *Moderator) moderateWithPatterns(ctx context.Context, content *ContentSu
 	}
 
 	// Generate content hashes if not provided
-	if contentToModerate.TextHash == "" && content.Text != "" {
+	if err := common.ValidateRequiredParam("contentToModerate.TextHash", contentToModerate.TextHash); err != nil && content.Text != "" {
 		contentToModerate.TextHash = generateTextHash(content.Text)
 	}
 
@@ -142,7 +144,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 	var reasons []string
 
 	// Pattern matching contribution
-	if len(result.PatternMatches) > 0 {
+	if err := common.ValidateSliceNotEmpty("result.PatternMatches", result.PatternMatches); err == nil {
 		patternScore, patternAction := m.evaluatePatternMatches(result.PatternMatches)
 		scores = append(scores, patternScore)
 		actions = append(actions, patternAction)
@@ -172,7 +174,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 	}
 
 	// Calculate final score (weighted average)
-	if len(scores) > 0 {
+	if err := common.ValidateSliceNotEmpty("scores", scores); err == nil {
 		var totalWeight float64
 		var weightedSum float64
 
@@ -203,7 +205,7 @@ func (m *Moderator) calculateFinalDecision(result *ModerationResult) {
 
 // evaluatePatternMatches evaluates pattern match results
 func (m *Moderator) evaluatePatternMatches(matches []*PatternMatch) (float64, string) {
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return 0.0, actionAllow
 	}
 
@@ -260,7 +262,7 @@ func (m *Moderator) evaluateAIAnalysis(analysis *AIAnalysisResult) (float64, str
 
 // determineHighestSeverityAction determines the most restrictive action
 func (m *Moderator) determineHighestSeverityAction(actions []string) string {
-	if len(actions) == 0 {
+	if err := common.ValidateSliceNotEmpty("actions", actions); err != nil {
 		return actionAllow
 	}
 
@@ -293,7 +295,7 @@ func (m *Moderator) calculateConfidence(actions []string, scores []float64) floa
 
 	// Check action agreement
 	actionAgreement := true
-	if len(actions) > 1 {
+	if err := common.ValidateSliceNotEmpty("actions", actions); err == nil && len(actions) > 1 {
 		firstAction := actions[0]
 		for _, action := range actions[1:] {
 			if action != firstAction {
@@ -305,7 +307,7 @@ func (m *Moderator) calculateConfidence(actions []string, scores []float64) floa
 
 	// Check score similarity
 	scoreAgreement := true
-	if len(scores) > 1 {
+	if err := common.ValidateSliceNotEmpty("scores", scores); err == nil && len(scores) > 1 {
 		var scoreVariance float64
 		var scoreMean float64
 

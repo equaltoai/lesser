@@ -15,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/equaltoai/lesser/pkg/media/streaming"
+	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // StreamingService handles media streaming operations
@@ -101,12 +103,14 @@ type DASHTrack struct {
 
 // streamingService implements StreamingService
 type streamingService struct {
-	distributionDomain string
-	keyPairID          string
-	privateKey         []byte
-	cloudFront         *cloudfront.Client
-	cloudWatch         *cloudwatch.Client
-	mediaStorage       streaming.MediaStorage
+	distributionDomain      string
+	keyPairID               string
+	privateKey              []byte
+	cloudFront              *cloudfront.Client
+	cloudWatch              *cloudwatch.Client
+	mediaStorage            streaming.MediaStorage
+	cloudWatchEnhanced      *CloudWatchEnhancedStreamingService
+	storage                 core.RepositoryStorage
 }
 
 // NewStreamingService creates a new streaming service
@@ -123,11 +127,56 @@ func NewStreamingService(ctx context.Context, distributionDomain, keyPairID stri
 		cloudFront:         cloudfront.NewFromConfig(cfg),
 		cloudWatch:         cloudwatch.NewFromConfig(cfg),
 		mediaStorage:       mediaStorage,
+		cloudWatchEnhanced: nil, // Will be set later via SetStorage
+		storage:            nil, // Will be set later via SetStorage
 	}, nil
+}
+
+// NewStreamingServiceWithStorage creates a new streaming service with CloudWatch enhancement
+func NewStreamingServiceWithStorage(ctx context.Context, distributionDomain, keyPairID string, privateKey []byte, mediaStorage streaming.MediaStorage, storage core.RepositoryStorage) (StreamingService, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	// Create CloudWatch enhanced service with proper logger
+	logger := storage.GetLogger()
+	cloudWatchEnhanced := NewCloudWatchEnhancedStreamingService(cfg, storage, logger)
+
+	return &streamingService{
+		distributionDomain: distributionDomain,
+		keyPairID:          keyPairID,
+		privateKey:         privateKey,
+		cloudFront:         cloudfront.NewFromConfig(cfg),
+		cloudWatch:         cloudwatch.NewFromConfig(cfg),
+		mediaStorage:       mediaStorage,
+		cloudWatchEnhanced: cloudWatchEnhanced,
+		storage:            storage,
+	}, nil
+}
+
+// SetStorage sets the storage for existing streaming service instances
+func (s *streamingService) SetStorage(storage core.RepositoryStorage) {
+	s.storage = storage
+	if storage != nil {
+		cfg, _ := config.LoadDefaultConfig(context.Background())
+		s.cloudWatchEnhanced = NewCloudWatchEnhancedStreamingService(cfg, storage, storage.GetLogger())
+	}
 }
 
 // GenerateStreamingURL generates a signed CloudFront URL for streaming
 func (s *streamingService) GenerateStreamingURL(mediaID string, quality string) (*StreamingURL, error) {
+	// Optimize quality based on real CloudWatch data if available
+	if quality == "auto" && s.cloudWatchEnhanced != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if optimalQuality, err := s.cloudWatchEnhanced.GetOptimalQuality(ctx, mediaID, "US"); err == nil {
+			quality = optimalQuality
+		} else {
+			quality = "720p" // Safe default
+		}
+	}
+
 	// Determine the object path based on quality
 	var objectPath string
 	var protocol string
@@ -497,12 +546,24 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 		totalBandwidth = sumValues(bandwidthResult.values)
 	}
 
-	// Use default quality breakdown (could be enhanced with actual CloudWatch data)
-	qualityBreakdown := map[string]int64{
-		"480p":  totalViews * 30 / 100,
-		"720p":  totalViews * 40 / 100,
-		"1080p": totalViews * 25 / 100,
-		"4k":    totalViews * 5 / 100,
+	// Use real CloudWatch data for quality breakdown if available
+	var qualityBreakdown map[string]int64
+	if s.cloudWatchEnhanced != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if realBreakdown, err := s.cloudWatchEnhanced.GetRealQualityBreakdown(ctx, "", totalViews); err == nil {
+			qualityBreakdown = realBreakdown
+		}
+	}
+	
+	// Fallback to default quality breakdown if CloudWatch data unavailable
+	if qualityBreakdown == nil {
+		qualityBreakdown = map[string]int64{
+			"480p":  totalViews * 30 / 100,
+			"720p":  totalViews * 40 / 100,
+			"1080p": totalViews * 25 / 100,
+			"4k":    totalViews * 5 / 100,
+		}
 	}
 
 	return &StreamingAnalytics{
@@ -510,14 +571,10 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 		ViewCount:        totalViews,
 		BandwidthUsed:    totalBandwidth,
 		QualityBreakdown: qualityBreakdown,
-		GeographicData: map[string]int64{
-			"US": totalViews * 60 / 100, // Could be enhanced with actual geo data
-			"EU": totalViews * 25 / 100,
-			"AS": totalViews * 15 / 100,
-		},
+		GeographicData: s.getGeographicData(totalViews),
 		BufferingEvents:  totalRebufferEvents,
 		AverageWatchTime: averageWatchTime,
-		PeakConcurrent:   totalViews / 24, // Could be enhanced with actual concurrent metrics
+		PeakConcurrent:   s.getPeakConcurrentViewers(totalViews),
 		LastUpdated:      time.Now(),
 	}
 }
@@ -533,7 +590,7 @@ func sumValues(values []float64) int64 {
 
 // averageValues calculates the average of float64 values
 func averageValues(values []float64) float64 {
-	if len(values) == 0 {
+	if err := common.ValidateSliceNotEmpty("values", values); err != nil {
 		return 0
 	}
 	var sum float64
@@ -599,4 +656,36 @@ func (s *streamingService) RecordStreamingEvent(ctx context.Context, event *Stre
 	}
 
 	return nil
+}
+
+// getGeographicData retrieves real geographic data or fallback
+func (s *streamingService) getGeographicData(totalViews int64) map[string]int64 {
+	if s.cloudWatchEnhanced != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if realGeoData, err := s.cloudWatchEnhanced.GetRealGeographicData(ctx, "", totalViews); err == nil {
+			return realGeoData
+		}
+	}
+	
+	// Fallback to default geographic data
+	return map[string]int64{
+		"US": totalViews * 60 / 100,
+		"EU": totalViews * 25 / 100,
+		"AS": totalViews * 15 / 100,
+	}
+}
+
+// getPeakConcurrentViewers retrieves real concurrent metrics or fallback
+func (s *streamingService) getPeakConcurrentViewers(totalViews int64) int64 {
+	if s.cloudWatchEnhanced != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if peakViewers, err := s.cloudWatchEnhanced.GetRealConcurrentMetrics(ctx, "", totalViews); err == nil {
+			return peakViewers
+		}
+	}
+	
+	// Fallback to simple calculation
+	return totalViews / 24
 }

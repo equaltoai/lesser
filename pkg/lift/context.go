@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/lift/pkg/lift"
 )
@@ -34,21 +35,21 @@ func GetPaginationParams(ctx *lift.Context) Pagination {
 
 	// Extract limit
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 100 {
+		if parsedLimit, err := common.ParseAdminLimit(limitStr); err == nil {
 			limit = parsedLimit
 		}
 	}
 
 	// Extract offset
 	if offsetStr := ctx.Query("offset"); offsetStr != "" {
-		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+		if parsedOffset, err := common.ParseSearchOffset(offsetStr); err == nil {
 			offset = parsedOffset
 		}
 	}
 
 	// Extract page-based pagination (convert to offset)
 	if pageStr := ctx.Query("page"); pageStr != "" {
-		if page, err := strconv.Atoi(pageStr); err == nil && page > 0 {
+		if page, err := common.ParseAndValidateIntWithBounds("page", pageStr, 0, 1000, 0); err == nil && page > 0 {
 			offset = (page - 1) * limit
 		}
 	}
@@ -91,7 +92,7 @@ func RespondWithSuccess(ctx *lift.Context, data any, message ...string) error {
 		Data:    data,
 	}
 
-	if len(message) > 0 {
+	if err := common.ValidateSliceNotEmpty("message", message); err == nil {
 		response.Message = message[0]
 	}
 
@@ -105,7 +106,7 @@ func RespondWithError(ctx *lift.Context, statusCode int, message string, code ..
 		Error:   message,
 	}
 
-	if len(code) > 0 {
+	if err := common.ValidateSliceNotEmpty("code", code); err == nil {
 		response.Code = code[0]
 	}
 
@@ -169,8 +170,8 @@ func GetQueryParam(ctx *lift.Context, key string, defaultValue ...string) string
 // GetQueryParamInt retrieves a query parameter as integer with optional default
 func GetQueryParamInt(ctx *lift.Context, key string, defaultValue ...int) int {
 	value := ctx.Query(key)
-	if value == "" {
-		if len(defaultValue) > 0 {
+	if err := common.ValidateRequiredParam("query parameter", value); err != nil {
+		if err := common.ValidateSliceNotEmpty("defaultValue", defaultValue); err == nil {
 			return defaultValue[0]
 		}
 		return 0
@@ -180,7 +181,7 @@ func GetQueryParamInt(ctx *lift.Context, key string, defaultValue ...int) int {
 		return intValue
 	}
 
-	if len(defaultValue) > 0 {
+	if err := common.ValidateSliceNotEmpty("defaultValue", defaultValue); err == nil {
 		return defaultValue[0]
 	}
 	return 0
@@ -202,7 +203,7 @@ func GetPathParam(ctx *lift.Context, key string) string {
 // GetPathParamInt retrieves a path parameter as integer
 func GetPathParamInt(ctx *lift.Context, key string) (int, error) {
 	value := ctx.PathParam(key)
-	if value == "" {
+	if err := common.ValidateRequiredParam("path parameter", value); err != nil {
 		return 0, ctx.BadRequest("Missing path parameter: "+key, nil)
 	}
 
@@ -241,7 +242,7 @@ func SetSecurityHeaders(ctx *lift.Context) {
 // ValidateRequired checks if required fields are present
 func ValidateRequired(ctx *lift.Context, fields map[string]string) error {
 	for field, value := range fields {
-		if value == "" {
+		if err := common.ValidateRequiredParam(field, value); err != nil {
 			return ctx.BadRequest("Missing required field: "+field, nil)
 		}
 	}

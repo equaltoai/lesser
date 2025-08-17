@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AdaptiveQualitySelector implements intelligent quality selection
@@ -95,7 +96,7 @@ func (aqs *AdaptiveQualitySelector) SelectQualityWithSession(sessionID string, b
 	// Get qualities that can be supported by bandwidth
 	supportedQualities := aqs.getSupportedQualities(bandwidth, availableQualities)
 
-	if len(supportedQualities) == 0 {
+	if err := common.ValidateSliceNotEmpty("supportedQualities", supportedQualities); err != nil {
 		// No qualities match bandwidth, return lowest available
 		return aqs.getLowestQuality(availableQualities)
 	}
@@ -197,7 +198,7 @@ func (aqs *AdaptiveQualitySelector) selectPanicQuality(bandwidth int, availableQ
 
 func (aqs *AdaptiveQualitySelector) selectConservativeQuality(supportedQualities []Quality, bufferHealth float64) Quality {
 	// With low buffer, select a quality one step down from maximum
-	if len(supportedQualities) == 0 {
+	if err := common.ValidateSliceNotEmpty("supportedQualities", supportedQualities); err != nil {
 		return Quality480p // Default fallback
 	}
 

@@ -41,7 +41,7 @@ var (
 // NewAuthService creates a comprehensive auth service
 func NewAuthService(repos StorageProvider) (*AuthService, error) {
 	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
+	if err := common.ValidateRequiredParam("JWT_SECRET", jwtSecret); err != nil {
 		jwtSecret = "development-secret-change-me"
 		if os.Getenv("GO_ENV") != "test" {
 			common.Logger().Warn("using default JWT secret - not secure for production")
@@ -50,7 +50,7 @@ func NewAuthService(repos StorageProvider) (*AuthService, error) {
 
 	// Get domain for WebAuthn configuration
 	domain := os.Getenv("DOMAIN")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("DOMAIN", domain); err != nil {
 		domain = "lesser.app"
 	}
 
@@ -472,7 +472,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	}
 
 	// If no username returned, this is a new wallet
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return &AuthResponse{
 			AccessToken:  "", // No token for unlinked wallet
 			TokenType:    "Bearer",
@@ -542,7 +542,7 @@ func (as *AuthService) GetStore() StorageProvider {
 // GetConfig returns configuration (for handlers that need environment info)
 func (as *AuthService) GetConfig() *Config {
 	env := os.Getenv("GO_ENV")
-	if env == "" {
+	if err := common.ValidateRequiredParam("GO_ENV", env); err != nil {
 		env = "development"
 	}
 	return &Config{

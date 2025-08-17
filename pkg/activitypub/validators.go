@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 const (
@@ -28,7 +29,7 @@ var (
 
 // ValidateUsername validates an ActivityPub username format
 func ValidateUsername(username string) error {
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("username cannot be empty")
 	}
 
@@ -54,7 +55,7 @@ func ValidateUsername(username string) error {
 
 // ValidateDomain validates a domain name format
 func ValidateDomain(domain string) error {
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		return fmt.Errorf("domain cannot be empty")
 	}
 

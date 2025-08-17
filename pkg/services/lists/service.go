@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -167,7 +168,7 @@ func (s *Service) CreateList(ctx context.Context, cmd *CreateListCommand) (*List
 
 	// Set default replies policy if not specified
 	repliesPolicy := cmd.RepliesPolicy
-	if repliesPolicy == "" {
+	if err := common.ValidateRequiredParam("repliesPolicy", repliesPolicy); err != nil {
 		repliesPolicy = "list"
 	}
 
@@ -492,13 +493,13 @@ func (s *Service) generateListID() string {
 }
 
 func (s *Service) validateCreateListCommand(_ context.Context, cmd *CreateListCommand) error {
-	if cmd.Username == "" {
+	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
-	if cmd.CreatorID == "" {
+	if err := common.ValidateRequiredParam("creator_id", cmd.CreatorID); err != nil {
 		return fmt.Errorf("creator_id is required")
 	}
-	if strings.TrimSpace(cmd.Title) == "" {
+	if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
 		return fmt.Errorf("title is required")
 	}
 	if len(cmd.Title) > 100 {
@@ -518,14 +519,14 @@ func (s *Service) validateCreateListCommand(_ context.Context, cmd *CreateListCo
 }
 
 func (s *Service) validateUpdateListCommand(_ context.Context, cmd *UpdateListCommand) error {
-	if cmd.ListID == "" {
+	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
 		return fmt.Errorf("list_id is required")
 	}
-	if cmd.UpdaterID == "" {
+	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
 		return fmt.Errorf("updater_id is required")
 	}
 	if cmd.Title != "" {
-		if strings.TrimSpace(cmd.Title) == "" {
+		if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
 			return fmt.Errorf("title cannot be empty")
 		}
 		if len(cmd.Title) > 100 {
@@ -546,36 +547,36 @@ func (s *Service) validateUpdateListCommand(_ context.Context, cmd *UpdateListCo
 }
 
 func (s *Service) validateDeleteListCommand(_ context.Context, cmd *DeleteListCommand) error {
-	if cmd.ListID == "" {
+	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
 		return fmt.Errorf("list_id is required")
 	}
-	if cmd.DeleterID == "" {
+	if err := common.ValidateRequiredParam("deleter_id", cmd.DeleterID); err != nil {
 		return fmt.Errorf("deleter_id is required")
 	}
 	return nil
 }
 
 func (s *Service) validateAddToListCommand(_ context.Context, cmd *AddToListCommand) error {
-	if cmd.ListID == "" {
+	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
 		return fmt.Errorf("list_id is required")
 	}
-	if cmd.MemberUsername == "" {
+	if err := common.ValidateRequiredParam("member_username", cmd.MemberUsername); err != nil {
 		return fmt.Errorf("member_username is required")
 	}
-	if cmd.AdderID == "" {
+	if err := common.ValidateRequiredParam("adder_id", cmd.AdderID); err != nil {
 		return fmt.Errorf("adder_id is required")
 	}
 	return nil
 }
 
 func (s *Service) validateRemoveFromListCommand(_ context.Context, cmd *RemoveFromListCommand) error {
-	if cmd.ListID == "" {
+	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
 		return fmt.Errorf("list_id is required")
 	}
-	if cmd.MemberUsername == "" {
+	if err := common.ValidateRequiredParam("member_username", cmd.MemberUsername); err != nil {
 		return fmt.Errorf("member_username is required")
 	}
-	if cmd.RemoverID == "" {
+	if err := common.ValidateRequiredParam("remover_id", cmd.RemoverID); err != nil {
 		return fmt.Errorf("remover_id is required")
 	}
 	return nil

@@ -52,7 +52,7 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 		zap.String("domain", domain))
 
 	// Check if it's a local actor (no domain or our domain)
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		// Local actor lookup
 		actor, err := s.store.Actor().GetActorByUsername(ctx, username)
 		if err != nil {

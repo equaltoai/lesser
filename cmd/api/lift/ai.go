@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	originalai "github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 	ai "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/pay-theory/lift/pkg/lift"
 )
@@ -17,7 +18,7 @@ import (
 func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	// Auth - require read scope
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -38,7 +39,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 	objectID := ctx.Param("object_id")
 
 	// Test mode fallback - extract from path
-	if objectID == "" && ctx.Request != nil && ctx.Request.Path != "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil && ctx.Request != nil && ctx.Request.Path != "" {
 		// Extract object_id from path like /api/v1/ai/analysis/test-object-123
 		parts := strings.Split(ctx.Request.Path, "/")
 		if len(parts) > 5 && parts[4] == "analysis" {
@@ -46,10 +47,10 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "object_id is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -74,7 +75,7 @@ func (h *Handler) HandleGetAIAnalysisLift(ctx *lift.Context) error {
 func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 	// Auth - require moderation scope
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -122,10 +123,10 @@ func (h *Handler) HandleRequestAIAnalysisLift(ctx *lift.Context) error {
 		}
 	}
 
-	if req.ObjectID == "" {
+	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "object_id is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -187,7 +188,7 @@ func (h *Handler) HandleGetAIStatsLift(ctx *lift.Context) error {
 		}
 	}
 
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "day"
 	}
 

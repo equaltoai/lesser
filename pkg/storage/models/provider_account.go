@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ProviderAccount represents an OAuth provider account linked to a user
@@ -62,14 +64,14 @@ func (pa *ProviderAccount) BeforeCreate() error {
 	pa.UpdatedAt = now
 
 	// Validate required fields
-	if pa.UserID == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", pa.UserID); err != nil {
+		return err
 	}
-	if pa.Provider == "" {
-		return fmt.Errorf("provider is required")
+	if err := common.ValidateRequiredParam("provider", pa.Provider); err != nil {
+		return err
 	}
-	if pa.ProviderID == "" {
-		return fmt.Errorf("ProviderID is required")
+	if err := common.ValidateRequiredParam("ProviderID", pa.ProviderID); err != nil {
+		return err
 	}
 
 	// Set defaults
@@ -111,14 +113,14 @@ func (pa *ProviderAccount) setupGSIKeys() {
 // Validate performs validation on the ProviderAccount
 func (pa *ProviderAccount) Validate() error {
 	// Check required fields
-	if strings.TrimSpace(pa.UserID) == "" {
-		return fmt.Errorf("UserID cannot be empty")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(pa.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(pa.Provider) == "" {
-		return fmt.Errorf("provider cannot be empty")
+	if err := common.ValidateRequiredParam("provider", strings.TrimSpace(pa.Provider)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(pa.ProviderID) == "" {
-		return fmt.Errorf("ProviderID cannot be empty")
+	if err := common.ValidateRequiredParam("ProviderID", strings.TrimSpace(pa.ProviderID)); err != nil {
+		return err
 	}
 
 	// Validate provider type
@@ -127,7 +129,7 @@ func (pa *ProviderAccount) Validate() error {
 	}
 
 	// Check token expiry if access token is present
-	if pa.AccessToken != "" && !pa.TokenExpiry.IsZero() && pa.TokenExpiry.Before(time.Now()) {
+	if err := common.ValidateRequiredParam("AccessToken", ""); err == nil && pa.AccessToken != "" && !pa.TokenExpiry.IsZero() && pa.TokenExpiry.Before(time.Now()) {
 		return fmt.Errorf("access token has expired")
 	}
 
@@ -136,7 +138,7 @@ func (pa *ProviderAccount) Validate() error {
 
 // IsTokenExpired returns true if the access token has expired
 func (pa *ProviderAccount) IsTokenExpired() bool {
-	if pa.AccessToken == "" || pa.TokenExpiry.IsZero() {
+	if err := common.ValidateRequiredParam("AccessToken", pa.AccessToken); err != nil || pa.TokenExpiry.IsZero() {
 		return false // No token or no expiry means not expired
 	}
 	return pa.TokenExpiry.Before(time.Now())
@@ -144,7 +146,7 @@ func (pa *ProviderAccount) IsTokenExpired() bool {
 
 // NeedsRefresh returns true if the token expires soon and should be refreshed
 func (pa *ProviderAccount) NeedsRefresh() bool {
-	if pa.AccessToken == "" || pa.TokenExpiry.IsZero() {
+	if err := common.ValidateRequiredParam("AccessToken", pa.AccessToken); err != nil || pa.TokenExpiry.IsZero() {
 		return false
 	}
 	// Refresh if token expires in next 5 minutes
@@ -183,13 +185,13 @@ func isValidProvider(provider string) bool {
 
 // GetDisplayName returns the best available display name
 func (pa *ProviderAccount) GetDisplayName() string {
-	if pa.DisplayName != "" {
+	if err := common.ValidateRequiredParam("DisplayName", pa.DisplayName); err == nil {
 		return pa.DisplayName
 	}
-	if pa.ProviderName != "" {
+	if err := common.ValidateRequiredParam("ProviderName", pa.ProviderName); err == nil {
 		return pa.ProviderName
 	}
-	if pa.Username != "" {
+	if err := common.ValidateRequiredParam("Username", pa.Username); err == nil {
 		return pa.Username
 	}
 	return pa.Email
@@ -197,5 +199,5 @@ func (pa *ProviderAccount) GetDisplayName() string {
 
 // HasValidToken returns true if the account has a valid, non-expired access token
 func (pa *ProviderAccount) HasValidToken() bool {
-	return pa.AccessToken != "" && !pa.IsTokenExpired()
+	return common.ValidateRequiredParam("AccessToken", pa.AccessToken) == nil && !pa.IsTokenExpired()
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"go.uber.org/zap"
 )
@@ -71,16 +72,16 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 	}
 
 	// Set defaults
-	if cfg.Region == "" {
+	if err := common.ValidateRequiredParam("cfg.Region", cfg.Region); err != nil {
 		cfg.Region = "us-east-1" // Default region
 	}
-	if cfg.KeyPrefix == "" {
+	if err := common.ValidateRequiredParam("cfg.KeyPrefix", cfg.KeyPrefix); err != nil {
 		cfg.KeyPrefix = "lesser/actor-keys"
 	}
 	if cfg.CacheTTL == 0 {
 		cfg.CacheTTL = 5 * time.Minute // Default cache TTL
 	}
-	if cfg.Description == "" {
+	if err := common.ValidateRequiredParam("cfg.Description", cfg.Description); err != nil {
 		cfg.Description = "Lesser ActivityPub actor private keys"
 	}
 

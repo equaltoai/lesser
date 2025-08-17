@@ -3,66 +3,31 @@ package lift
 import (
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // HandleGetFiltersLift handles GET /api/v2/filters
 func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with read:filters scope
+	username, err := h.authenticateUser(ctx, []string{"read:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read:filters scope
-		if !claims.HasScope("read:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get all filters for the user
 	filters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get filters", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Convert to Mastodon API format
@@ -91,77 +56,41 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 // HandleGetFilterLift handles GET /api/v2/filters/:id
 func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	filterID := ctx.Param("id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with read:filters scope
+	username, err := h.authenticateUser(ctx, []string{"read:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read:filters scope
-		if !claims.HasScope("read:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get the filter
 	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Get keywords and statuses
 	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filter.ID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filter.ID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filter.ID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	mastodonFilter := h.converter.ConvertFilterToMastodon(filter, keywords, statuses)
@@ -170,10 +99,13 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 
 // HandleCreateFilterLift handles POST /api/v2/filters
 func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
-	// Authenticate user
-	username, err := h.authenticateFilterRequest(ctx, "write:filters")
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		return err
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse and validate request
@@ -203,74 +135,11 @@ type createFilterParams struct {
 	Title              string           `json:"title"`
 	Context            []string         `json:"context"`
 	FilterAction       string           `json:"filter_action"`
+	Severity           string           `json:"severity"`       // New: Filter severity
+	MatchMode          string           `json:"match_mode"`     // New: Matching mode
+	CaseSensitive      bool             `json:"case_sensitive"` // New: Case-sensitive matching
 	ExpiresIn          *int             `json:"expires_in"`
 	KeywordsAttributes []map[string]any `json:"keywords_attributes"`
-}
-
-// authenticateFilterRequest authenticates the user for filter operations
-func (h *Handler) authenticateFilterRequest(ctx *lift.Context, requiredScope string) (string, error) {
-	// Test hook - check for test username header
-	testUsername := h.extractTestUsernameForFilter(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
-	// Extract and validate token
-	token, err := h.extractFilterToken(ctx)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token and check scope
-	username, err := h.validateFilterToken(ctx, token, requiredScope)
-	if err != nil {
-		return "", err
-	}
-
-	return username, nil
-}
-
-// extractTestUsernameForFilter extracts test username from headers
-func (h *Handler) extractTestUsernameForFilter(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
-
-// extractFilterToken extracts the authentication token
-func (h *Handler) extractFilterToken(ctx *lift.Context) (string, error) {
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	return auth.ExtractBearerToken(authHeader)
-}
-
-// validateFilterToken validates the token and checks scope
-func (h *Handler) validateFilterToken(ctx *lift.Context, token, requiredScope string) (string, error) {
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check required scope
-	if !claims.HasScope(requiredScope) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	return claims.Username, nil
 }
 
 // parseCreateFilterRequest parses and validates the filter creation request
@@ -287,10 +156,7 @@ func (h *Handler) parseCreateFilterRequest(ctx *lift.Context) (*createFilterPara
 		return nil, err
 	}
 
-	// Validate context values
-	if err := h.validateFilterContext(ctx, params.Context); err != nil {
-		return nil, err
-	}
+	// Context validation is already handled in validateFilterRequiredFields
 
 	// Validate and set filter action
 	if err := h.validateFilterAction(ctx, &params); err != nil {
@@ -305,7 +171,7 @@ func (h *Handler) parseFilterRequestBody(ctx *lift.Context, params *createFilter
 	if err := ctx.ParseRequest(params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
 		bodyBytes := ctx.Request.Body
-		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, params); err2 != nil {
@@ -317,29 +183,11 @@ func (h *Handler) parseFilterRequestBody(ctx *lift.Context, params *createFilter
 
 // validateFilterRequiredFields validates required fields
 func (h *Handler) validateFilterRequiredFields(ctx *lift.Context, params *createFilterParams) error {
-	if params.Title == "" {
-		return ctx.Status(422).JSON(map[string]string{"error": "title can't be blank"})
+	if err := common.ValidateFilterTitle(params.Title); err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
-	if len(params.Context) == 0 {
-		return ctx.Status(422).JSON(map[string]string{"error": "context can't be blank"})
-	}
-	return nil
-}
-
-// validateFilterContext validates context values
-func (h *Handler) validateFilterContext(ctx *lift.Context, contexts []string) error {
-	validContexts := map[string]bool{
-		"home":          true,
-		"notifications": true,
-		"public":        true,
-		"thread":        true,
-		"account":       true,
-	}
-
-	for _, contextVal := range contexts {
-		if !validContexts[contextVal] {
-			return ctx.Status(422).JSON(map[string]string{"error": "invalid context supplied"})
-		}
+	if err := common.ValidateFilterContext(params.Context); err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 	return nil
 }
@@ -347,13 +195,13 @@ func (h *Handler) validateFilterContext(ctx *lift.Context, contexts []string) er
 // validateFilterAction validates and sets default filter action
 func (h *Handler) validateFilterAction(ctx *lift.Context, params *createFilterParams) error {
 	// Set default if not provided
-	if params.FilterAction == "" {
+	if err := common.ValidateRequiredParam("filterAction", params.FilterAction); err != nil {
 		params.FilterAction = "warn"
 	}
 
 	// Validate filter action
-	if params.FilterAction != "warn" && params.FilterAction != "hide" && params.FilterAction != "blur" {
-		return ctx.Status(422).JSON(map[string]string{"error": "invalid filter_action"})
+	if err := common.ValidateFilterAction(params.FilterAction); err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
 	return nil
@@ -362,10 +210,13 @@ func (h *Handler) validateFilterAction(ctx *lift.Context, params *createFilterPa
 // buildFilterFromParams builds a Filter object from request parameters
 func (h *Handler) buildFilterFromParams(username string, params *createFilterParams) *storage.Filter {
 	filter := &storage.Filter{
-		Username:     username,
-		Title:        params.Title,
-		Context:      params.Context,
-		FilterAction: params.FilterAction,
+		Username:      username,
+		Title:         params.Title,
+		Context:       params.Context,
+		FilterAction:  params.FilterAction,
+		Severity:      h.validateSeverity(params.Severity),
+		MatchMode:     h.validateMatchMode(params.MatchMode),
+		CaseSensitive: params.CaseSensitive,
 	}
 
 	// Set expiration if provided
@@ -377,11 +228,31 @@ func (h *Handler) buildFilterFromParams(username string, params *createFilterPar
 	return filter
 }
 
+// validateSeverity validates and normalizes filter severity
+func (h *Handler) validateSeverity(severity string) string {
+	switch severity {
+	case "low", "medium", "high":
+		return severity
+	default:
+		return "medium" // Default severity
+	}
+}
+
+// validateMatchMode validates and normalizes match mode
+func (h *Handler) validateMatchMode(matchMode string) string {
+	switch matchMode {
+	case "keyword", "regex", "semantic", "exact":
+		return matchMode
+	default:
+		return "keyword" // Default match mode
+	}
+}
+
 // saveFilter saves the filter to storage
 func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
 	if err := h.repos.Moderation().CreateFilter(ctx.Context, filter); err != nil {
 		h.logger.Error("failed to create filter", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 	return nil
 }
@@ -390,7 +261,7 @@ func (h *Handler) saveFilter(ctx *lift.Context, filter *storage.Filter) error {
 func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywordsAttributes []map[string]any) []*storage.FilterKeyword {
 	keywords := make([]*storage.FilterKeyword, 0)
 
-	if len(keywordsAttributes) == 0 {
+	if err := common.ValidateSliceNotEmpty("keywordsAttributes", keywordsAttributes); err != nil {
 		return keywords
 	}
 
@@ -414,7 +285,7 @@ func (h *Handler) addFilterKeywords(ctx *lift.Context, filterID string, keywords
 // extractFilterKeyword extracts a keyword from attributes map
 func (h *Handler) extractFilterKeyword(kwAttr map[string]any) *storage.FilterKeyword {
 	keyword, ok := kwAttr["keyword"].(string)
-	if !ok || keyword == "" {
+	if !ok || common.ValidateFilterKeyword(keyword) != nil {
 		return nil
 	}
 
@@ -423,29 +294,59 @@ func (h *Handler) extractFilterKeyword(kwAttr map[string]any) *storage.FilterKey
 		wholeWord = ww
 	}
 
+	isRegex := false
+	if ir, ok := kwAttr["is_regex"].(bool); ok {
+		isRegex = ir
+	}
+
+	matchWeight := 1.0 // Default weight
+	if mw, ok := kwAttr["match_weight"].(float64); ok && mw >= 0.0 && mw <= 1.0 {
+		matchWeight = mw
+	}
+
+	var contextTypes []string
+	if ct, ok := kwAttr["context_types"].([]interface{}); ok {
+		for _, c := range ct {
+			if contextStr, ok := c.(string); ok {
+				contextTypes = append(contextTypes, contextStr)
+			}
+		}
+	}
+
 	return &storage.FilterKeyword{
-		Keyword:   keyword,
-		WholeWord: wholeWord,
+		Keyword:      keyword,
+		WholeWord:    wholeWord,
+		IsRegex:      isRegex,
+		MatchWeight:  matchWeight,
+		ContextTypes: contextTypes,
 	}
 }
 
 // HandleUpdateFilterLift handles PUT /api/v2/filters/:id
 func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	filterID := ctx.Param("id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Authenticate user
-	username, err := h.authenticateFilterRequest(ctx, "write:filters")
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		return err
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
 	}
 
-	// Validate filter ownership
-	_, err = h.validateFilterOwnership(ctx, filterID, username)
+	// Get the filter to verify ownership
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
-		return err
+		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	if filter == nil || filter.Username != username {
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Parse request parameters
@@ -460,7 +361,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	// Update the filter
 	if err := h.repos.Moderation().UpdateFilter(ctx.Context, filterID, updates); err != nil {
 		h.logger.Error("failed to update filter", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Handle keyword updates
@@ -472,21 +373,6 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 
 // Helper functions for HandleUpdateFilterLift
 
-// validateFilterOwnership validates that the user owns the filter
-func (h *Handler) validateFilterOwnership(ctx *lift.Context, filterID, username string) (*storage.Filter, error) {
-	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
-	if err != nil {
-		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return nil, ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	if filter == nil || filter.Username != username {
-		return nil, ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
-	}
-
-	return filter, nil
-}
-
 // parseFilterUpdateParams parses request parameters for filter updates
 func (h *Handler) parseFilterUpdateParams(ctx *lift.Context) (map[string]any, error) {
 	var params map[string]any
@@ -494,7 +380,7 @@ func (h *Handler) parseFilterUpdateParams(ctx *lift.Context) (map[string]any, er
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
 		bodyBytes := ctx.Request.Body
-		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
@@ -591,7 +477,7 @@ func (h *Handler) updateFilterKeyword(ctx *lift.Context, keywordID string, kwMap
 // createFilterKeyword creates a new filter keyword
 func (h *Handler) createFilterKeyword(ctx *lift.Context, filterID string, kwMap map[string]any) {
 	keyword, ok := kwMap["keyword"].(string)
-	if !ok || keyword == "" {
+	if !ok || common.ValidateFilterKeyword(keyword) != nil {
 		return
 	}
 
@@ -623,70 +509,34 @@ func (h *Handler) returnUpdatedFilter(ctx *lift.Context, filterID string) error 
 // HandleDeleteFilterLift handles DELETE /api/v2/filters/:id
 func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	filterID := ctx.Param("id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write:filters scope
-		if !claims.HasScope("write:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get the filter to verify ownership
 	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Delete the filter (this should cascade delete keywords and statuses)
 	if err := h.repos.Moderation().DeleteFilter(ctx.Context, filterID); err != nil {
 		h.logger.Error("failed to delete filter", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	return ctx.Status(200).JSON(map[string]any{})
@@ -695,71 +545,35 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 // HandleGetFilterKeywordsLift handles GET /api/v2/filters/:filter_id/keywords
 func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	filterID := ctx.Param("filter_id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with read:filters scope
+	username, err := h.authenticateUser(ctx, []string{"read:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read:filters scope
-		if !claims.HasScope("read:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get the filter to verify ownership
 	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Get keywords
 	keywords, err := h.repos.Moderation().GetFilterKeywords(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter keywords", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Convert to Mastodon API format
@@ -778,71 +592,35 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 // HandleGetFilterStatusesLift handles GET /api/v2/filters/:filter_id/statuses
 func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	filterID := ctx.Param("filter_id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with read:filters scope
+	username, err := h.authenticateUser(ctx, []string{"read:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read:filters scope
-		if !claims.HasScope("read:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get the filter to verify ownership
 	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Get statuses
 	statuses, err := h.repos.Moderation().GetFilterStatuses(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter statuses", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Convert to Mastodon API format
@@ -860,64 +638,28 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 // HandleAddFilterKeywordLift handles POST /api/v2/filters/:filter_id/keywords
 func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	filterID := ctx.Param("filter_id")
-	if filterID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write:filters scope
-		if !claims.HasScope("write:filters") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Get the filter to verify ownership
 	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
 	if err != nil {
 		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	if filter == nil || filter.Username != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "filter not found"})
+		return h.respondNotFound(ctx, "filter")
 	}
 
 	// Parse request body
@@ -929,7 +671,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	if err := ctx.ParseRequest(&params); err != nil {
 		// Fallback to common.ParseRequestBody for test environments
 		bodyBytes := ctx.Request.Body
-		if len(bodyBytes) == 0 && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
@@ -937,8 +679,8 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 		}
 	}
 
-	if params.Keyword == "" {
-		return ctx.Status(422).JSON(map[string]string{"error": "keyword can't be blank"})
+	if err := common.ValidateFilterKeyword(params.Keyword); err != nil {
+		return h.respondUnprocessableEntity(ctx, err.Error())
 	}
 
 	// Create the keyword
@@ -949,7 +691,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 
 	if err := h.repos.Moderation().AddFilterKeyword(ctx.Context, filterID, keyword); err != nil {
 		h.logger.Error("failed to add filter keyword", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return h.respondInternalError(ctx, "internal server error")
 	}
 
 	// Return the created keyword
@@ -960,4 +702,237 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	}
 
 	return ctx.Status(200).JSON(result)
+}
+
+// HandleDeleteFilterKeywordLift handles DELETE /api/v2/filters/:filter_id/keywords/:keyword_id
+func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
+	filterID := ctx.Param("filter_id")
+	keywordID := ctx.Param("keyword_id")
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	}
+	if err := common.ValidateKeywordParamID(keywordID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	}
+
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	// Verify the filter belongs to the user
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	if err != nil {
+		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	if filter == nil || filter.Username != username {
+		return h.respondNotFound(ctx, "filter")
+	}
+
+	// Delete the keyword
+	if err := h.repos.Moderation().DeleteFilterKeyword(ctx.Context, keywordID); err != nil {
+		h.logger.Error("failed to delete filter keyword", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	return ctx.Status(200).JSON(map[string]string{})
+}
+
+// HandleAddFilterStatusLift handles POST /api/v2/filters/:filter_id/statuses
+func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
+	filterID := ctx.Param("filter_id")
+	if err := common.ValidateFilterParamID(filterID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
+	}
+
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	// Verify the filter belongs to the user
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	if err != nil {
+		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	if filter == nil || filter.Username != username {
+		return h.respondNotFound(ctx, "filter")
+	}
+
+	// Parse request body
+	var params struct {
+		StatusID string `json:"status_id"`
+	}
+
+	if err := ctx.ParseRequest(&params); err != nil {
+		// Fallback to common.ParseRequestBody for test environments
+		bodyBytes := ctx.Request.Body
+		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
+			bodyBytes = ctx.Request.Request.Body
+		}
+		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
+			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		}
+	}
+
+	if err := common.ValidateRequiredParam("statusID", params.StatusID); err != nil {
+		return h.respondUnprocessableEntity(ctx, "status_id can't be blank")
+	}
+
+	// Create the filter status
+	filterStatus := &storage.FilterStatus{
+		StatusID: params.StatusID,
+	}
+
+	if err := h.repos.Moderation().AddFilterStatus(ctx.Context, filterID, filterStatus); err != nil {
+		h.logger.Error("failed to add filter status", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	// Return the created filter status
+	result := mastodon.FilterStatus{
+		ID:       filterStatus.ID,
+		StatusID: filterStatus.StatusID,
+	}
+
+	return ctx.Status(200).JSON(result)
+}
+
+// HandleDeleteFilterStatusLift handles DELETE /api/v2/filters/:filter_id/statuses/:status_id
+func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
+	filterID := ctx.Param("filter_id")
+	statusID := ctx.Param("status_id")
+	if err := common.ValidateRequiredParam("filterID", filterID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+	}
+	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+	}
+
+	// Authenticate user with write:filters scope
+	username, err := h.authenticateUser(ctx, []string{"write:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	// Verify the filter belongs to the user
+	filter, err := h.repos.Moderation().GetFilter(ctx.Context, filterID)
+	if err != nil {
+		h.logger.Error("failed to get filter", zap.String("filter_id", filterID), zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	if filter == nil || filter.Username != username {
+		return h.respondNotFound(ctx, "filter")
+	}
+
+	// Delete the filter status
+	if err := h.repos.Moderation().DeleteFilterStatus(ctx.Context, statusID); err != nil {
+		h.logger.Error("failed to delete filter status", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	return ctx.Status(200).JSON(map[string]string{})
+}
+
+// HandleTestFilterLift handles POST /api/v2/filters/test
+// Tests filter rules against provided content
+func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
+	// Authenticate user with read:filters scope
+	username, err := h.authenticateUser(ctx, []string{"read:filters"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return h.respondInsufficientScope(ctx)
+		}
+		return h.respondUnauthorized(ctx)
+	}
+
+	// Parse request body
+	var params struct {
+		Content string   `json:"content"`
+		Context []string `json:"context"`
+	}
+
+	if err := ctx.ParseRequest(&params); err != nil {
+		// Fallback to common.ParseRequestBody for test environments
+		bodyBytes := ctx.Request.Body
+		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
+			bodyBytes = ctx.Request.Request.Body
+		}
+		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
+			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		}
+	}
+
+	if err := common.ValidateRequiredParam("content", params.Content); err != nil {
+		return h.respondUnprocessableEntity(ctx, "content can't be blank")
+	}
+
+	// Get user's filters
+	storageFilters, err := h.repos.Moderation().GetFiltersForUser(ctx.Context, username)
+	if err != nil {
+		h.logger.Error("failed to get user filters", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	// Convert storage.Filter to models.Filter for the filter engine
+	modelFilters := make([]*models.Filter, len(storageFilters))
+	for i, sf := range storageFilters {
+		modelFilters[i] = &models.Filter{
+			ID:            sf.ID,
+			Username:      sf.Username,
+			Title:         sf.Title,
+			Context:       sf.Context,
+			FilterAction:  sf.FilterAction,
+			Severity:      sf.Severity,
+			MatchMode:     sf.MatchMode,
+			CaseSensitive: sf.CaseSensitive,
+			ExpiresAt:     sf.ExpiresAt,
+			CreatedAt:     sf.CreatedAt,
+			UpdatedAt:     sf.UpdatedAt,
+		}
+	}
+
+	// Test content against filters using advanced filter engine
+	filterEngine := moderation.NewAdvancedFilterEngine(h.logger)
+
+	contentCtx := &moderation.ContentContext{
+		Type:       "test", // Special context for testing
+		Timestamp:  time.Now(),
+		IsReply:    false,
+		HasMedia:   false,
+		Language:   "en",
+		Visibility: "public",
+	}
+
+	results, err := filterEngine.EvaluateContent(ctx.Context, params.Content, modelFilters, contentCtx)
+	if err != nil {
+		h.logger.Error("failed to evaluate content", zap.Error(err))
+		return h.respondInternalError(ctx, "internal server error")
+	}
+
+	// Return filter test results
+	response := map[string]any{
+		"content":       params.Content,
+		"total_filters": len(storageFilters),
+		"matched_count": len(results),
+		"results":       results,
+	}
+
+	return ctx.Status(200).JSON(response)
 }

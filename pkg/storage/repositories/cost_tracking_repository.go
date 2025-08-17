@@ -58,7 +58,7 @@ func (r *CostTrackingRepository) Create(_ context.Context, tracking *models.Dyna
 
 // BatchCreate creates multiple cost tracking records efficiently using DynamORM BatchCreate
 func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
-	if len(trackingList) == 0 {
+	if err := common.ValidateSliceNotEmpty("tracking_list", trackingList); err != nil {
 		return nil
 	}
 
@@ -329,7 +329,7 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 		return fmt.Errorf("failed to list costs for aggregation: %w", err)
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return nil // Nothing to aggregate
 	}
 
@@ -409,7 +409,7 @@ func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, p
 	}
 
 	// Calculate percentiles from costValues
-	if len(costValues) > 0 {
+	if err := common.ValidateSliceNotEmpty("cost_values", costValues); err == nil {
 		aggregated.CostPercentiles = calculatePercentiles(costValues)
 	}
 
@@ -488,7 +488,7 @@ func (r *CostTrackingRepository) GetCostTrends(ctx context.Context, period strin
 		return nil, err
 	}
 
-	if len(aggregatedList) == 0 {
+	if err := common.ValidateSliceNotEmpty("aggregated_list", aggregatedList); err != nil {
 		return &CostTrend{
 			Period:        period,
 			OperationType: operationType,
@@ -534,17 +534,27 @@ func (r *CostTrackingRepository) GetCostTrends(ctx context.Context, period strin
 	trend.MinCost = minCost
 	trend.MaxCost = maxCost
 
-	// Calculate trend direction (simple linear regression would be better)
+	// Calculate enhanced trend analysis with linear regression
 	if len(trend.DataPoints) >= 2 {
+		// Simple percentage for backward compatibility
 		firstCost := trend.DataPoints[0].CostDollars
 		lastCost := trend.DataPoints[len(trend.DataPoints)-1].CostDollars
-		trend.TrendPercentage = ((lastCost - firstCost) / firstCost) * 100
+		if firstCost > 0 {
+			trend.TrendPercentage = ((lastCost - firstCost) / firstCost) * 100
+		}
+
+		// Enhanced statistical analysis
+		trend.LinearRegression = r.calculateLinearRegressionStats(trend.DataPoints)
+		trend.StatisticalTests = r.calculateStatisticalTests(trend.DataPoints, trend.LinearRegression)
+		trend.Anomalies = r.detectCostAnomalies(trend.DataPoints, trend.LinearRegression)
+		trend.Forecast = r.generateCostForecast(trend.DataPoints, trend.LinearRegression)
+		trend.Seasonality = r.analyzeSeasonality(trend.DataPoints)
 	}
 
 	return trend, nil
 }
 
-// CostTrend represents cost trend analysis
+// CostTrend represents cost trend analysis with statistical analysis
 type CostTrend struct {
 	Period          string
 	OperationType   string
@@ -555,7 +565,14 @@ type CostTrend struct {
 	AverageCost     float64
 	MinCost         float64
 	MaxCost         float64
-	TrendPercentage float64 // Positive = increasing, Negative = decreasing
+	TrendPercentage float64 // Positive = increasing, Negative = decreasing (simple)
+
+	// Enhanced statistical analysis
+	LinearRegression *LinearRegressionStats `json:"linear_regression,omitempty"`
+	StatisticalTests *StatisticalTests      `json:"statistical_tests,omitempty"`
+	Anomalies        []CostAnomaly          `json:"anomalies,omitempty"`
+	Forecast         *CostForecast          `json:"forecast,omitempty"`
+	Seasonality      *SeasonalityAnalysis   `json:"seasonality,omitempty"`
 }
 
 // CostDataPoint represents a single point in the cost trend
@@ -567,10 +584,91 @@ type CostDataPoint struct {
 	WriteCapacity float64
 }
 
+// Statistical analysis types for cost trends
+
+// LinearRegressionStats represents linear regression analysis results
+type LinearRegressionStats struct {
+	Slope           float64 `json:"slope"`            // Rate of change per time unit
+	Intercept       float64 `json:"intercept"`        // Y-intercept
+	RSquared        float64 `json:"r_squared"`        // Coefficient of determination (0-1)
+	Correlation     float64 `json:"correlation"`      // Correlation coefficient (-1 to 1)
+	SlopeStdError   float64 `json:"slope_std_error"`  // Standard error of slope
+	TStatistic      float64 `json:"t_statistic"`      // T-statistic for slope
+	PValue          float64 `json:"p_value"`          // P-value for slope significance
+	ConfidenceLevel float64 `json:"confidence_level"` // Confidence level (e.g., 0.95)
+	TrendDirection  string  `json:"trend_direction"`  // "increasing", "decreasing", "stable"
+	TrendStrength   string  `json:"trend_strength"`   // "weak", "moderate", "strong"
+	IsSignificant   bool    `json:"is_significant"`   // Whether trend is statistically significant
+}
+
+// StatisticalTests represents statistical significance tests
+type StatisticalTests struct {
+	MannKendallTau    float64        `json:"mann_kendall_tau"` // Mann-Kendall trend test statistic
+	MannKendallPValue float64        `json:"mann_kendall_p"`   // Mann-Kendall p-value
+	TheilSenSlope     float64        `json:"theil_sen_slope"`  // Theil-Sen robust slope estimator
+	DurbinWatson      float64        `json:"durbin_watson"`    // Durbin-Watson test for autocorrelation
+	JarqueBera        float64        `json:"jarque_bera"`      // Jarque-Bera test for normality
+	JarqueBeraP       float64        `json:"jarque_bera_p"`    // Jarque-Bera p-value
+	ResidualStats     *ResidualStats `json:"residual_stats"`
+}
+
+// ResidualStats represents analysis of regression residuals
+type ResidualStats struct {
+	Mean           float64 `json:"mean"`
+	StandardError  float64 `json:"standard_error"`
+	Skewness       float64 `json:"skewness"`
+	Kurtosis       float64 `json:"kurtosis"`
+	OutlierCount   int     `json:"outlier_count"`
+	NormalityScore float64 `json:"normality_score"` // 0-1, higher = more normal
+}
+
+// CostAnomaly represents a detected cost anomaly
+type CostAnomaly struct {
+	Timestamp      time.Time `json:"timestamp"`
+	ActualCost     float64   `json:"actual_cost"`
+	ExpectedCost   float64   `json:"expected_cost"`
+	DeviationScore float64   `json:"deviation_score"` // Standard deviations from expected
+	AnomalyType    string    `json:"anomaly_type"`    // "spike", "drop", "outlier"
+	Severity       string    `json:"severity"`        // "low", "medium", "high", "critical"
+	Confidence     float64   `json:"confidence"`      // 0-1
+}
+
+// CostForecast represents cost forecasting results
+type CostForecast struct {
+	ForecastHorizon     int                `json:"forecast_horizon"` // Number of periods ahead
+	Predictions         []CostPrediction   `json:"predictions"`
+	ConfidenceLevel     float64            `json:"confidence_level"` // e.g., 0.95
+	MeanAbsoluteError   float64            `json:"mean_absolute_error"`
+	RootMeanSquareError float64            `json:"root_mean_square_error"`
+	ModelType           string             `json:"model_type"` // "linear", "exponential", "seasonal"
+	SeasonalFactors     map[string]float64 `json:"seasonal_factors,omitempty"`
+}
+
+// CostPrediction represents a single cost prediction
+type CostPrediction struct {
+	Timestamp     time.Time `json:"timestamp"`
+	PredictedCost float64   `json:"predicted_cost"`
+	LowerBound    float64   `json:"lower_bound"` // Lower confidence interval
+	UpperBound    float64   `json:"upper_bound"` // Upper confidence interval
+	StandardError float64   `json:"standard_error"`
+}
+
+// SeasonalityAnalysis represents seasonal pattern analysis
+type SeasonalityAnalysis struct {
+	HasSeasonality    bool               `json:"has_seasonality"`
+	SeasonalStrength  float64            `json:"seasonal_strength"` // 0-1
+	SeasonalPeriod    int                `json:"seasonal_period"`   // Detected period (e.g., 7 for weekly)
+	SeasonalPatterns  map[string]float64 `json:"seasonal_patterns"` // Pattern coefficients
+	TrendComponent    []float64          `json:"trend_component"`
+	SeasonalComponent []float64          `json:"seasonal_component"`
+	ResidualComponent []float64          `json:"residual_component"`
+	DecompositionR2   float64            `json:"decomposition_r2"` // Quality of decomposition
+}
+
 // calculatePercentiles calculates percentiles for a slice of values
 // Returns a map with p50, p90, p95, and p99 percentiles
 func calculatePercentiles(values []float64) map[string]float64 {
-	if len(values) == 0 {
+	if err := common.ValidateSliceNotEmpty("values", values); err != nil {
 		return map[string]float64{
 			"p50": 0,
 			"p90": 0,
@@ -597,7 +695,7 @@ func calculatePercentiles(values []float64) map[string]float64 {
 
 // getPercentileValue calculates the value at a specific percentile
 func getPercentileValue(sorted []float64, percentile float64) float64 {
-	if len(sorted) == 0 {
+	if err := common.ValidateSliceNotEmpty("sorted", sorted); err != nil {
 		return 0
 	}
 
@@ -720,7 +818,7 @@ func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, st
 			continue
 		}
 
-		if len(costs) == 0 {
+		if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 			continue
 		}
 
@@ -761,7 +859,7 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 		}
 
 		serviceName := cost.ServiceName
-		if serviceName == "" {
+		if err := common.ValidateRequiredParam("service_name", serviceName); err != nil {
 			serviceName = StatusUnknown
 		}
 
@@ -851,7 +949,7 @@ func (r *CostTrackingRepository) GetMonthlyAggregate(ctx context.Context, year, 
 		return nil, err
 	}
 
-	if len(aggregations) == 0 {
+	if err := common.ValidateSliceNotEmpty("aggregations", aggregations); err != nil {
 		return nil, nil
 	}
 
@@ -896,7 +994,7 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 	}
 
 	// If no projection exists, return a default projection with zero values
-	if len(projections) == 0 {
+	if err := common.ValidateSliceNotEmpty("projections", projections); err != nil {
 		r.logger.Debug("no cost projections found, returning default",
 			zap.String("period", period))
 
@@ -1188,7 +1286,7 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 		return fmt.Errorf("failed to get relay costs for aggregation: %w", err)
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return nil // Nothing to aggregate
 	}
 
@@ -1202,7 +1300,7 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 	}
 
 	// Extract domain from first cost record
-	if len(costs) > 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err == nil {
 		metrics.Domain = costs[0].Domain
 	}
 
@@ -1527,7 +1625,7 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 	var totalCost float64
 	var minCost, maxCost float64
 
-	if len(trends.CombinedTrend.DataPoints) > 0 {
+	if err := common.ValidateSliceNotEmpty("data_points", trends.CombinedTrend.DataPoints); err == nil {
 		minCost = trends.CombinedTrend.DataPoints[0].CostDollars
 		maxCost = trends.CombinedTrend.DataPoints[0].CostDollars
 	}
@@ -1546,7 +1644,7 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 	trends.CombinedTrend.MinCost = minCost
 	trends.CombinedTrend.MaxCost = maxCost
 
-	if len(trends.CombinedTrend.DataPoints) > 0 {
+	if err := common.ValidateSliceNotEmpty("data_points", trends.CombinedTrend.DataPoints); err == nil {
 		trends.CombinedTrend.AverageCost = totalCost / float64(len(trends.CombinedTrend.DataPoints))
 
 		// Calculate trend percentage
@@ -1592,7 +1690,7 @@ func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDat
 		if username == "" && cost.Tags != nil {
 			username = cost.Tags["username"]
 		}
-		if username == "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
 			continue
 		}
 
@@ -1794,4 +1892,779 @@ type ImportExportMetrics struct {
 	OperationsPerDollar       float64   `json:"operations_per_dollar"`
 	ImportCostPercentage      float64   `json:"import_cost_percentage"`
 	ExportCostPercentage      float64   `json:"export_cost_percentage"`
+}
+
+// Statistical helper functions
+
+// mean calculates the arithmetic mean of a slice of float64 values
+func mean(values []float64) float64 {
+	if err := common.ValidateSliceNotEmpty("values", values); err != nil {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range values {
+		sum += v
+	}
+	return sum / float64(len(values))
+}
+
+// standardDeviation calculates the standard deviation
+func standardDeviation(values []float64, mean float64) float64 {
+	if len(values) <= 1 {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range values {
+		diff := v - mean
+		sum += diff * diff
+	}
+	return math.Sqrt(sum / float64(len(values)-1))
+}
+
+// approximateTTestPValue provides an approximate p-value for t-test
+func (r *CostTrackingRepository) approximateTTestPValue(tStat float64, df int) float64 {
+	// Simplified p-value approximation for t-distribution
+	// This is a rough approximation - in production, use a proper statistical library
+	absTStat := math.Abs(tStat)
+
+	if df >= 30 {
+		// Use normal approximation for large degrees of freedom
+		if absTStat > 2.576 {
+			return 0.01
+		} else if absTStat > 1.96 {
+			return 0.05
+		} else if absTStat > 1.645 {
+			return 0.10
+		}
+		return 0.20
+	}
+
+	// Conservative approximation for small samples
+	if absTStat > 3.0 {
+		return 0.01
+	} else if absTStat > 2.0 {
+		return 0.05
+	} else if absTStat > 1.5 {
+		return 0.10
+	}
+	return 0.20
+}
+
+// mannKendallTest performs Mann-Kendall trend test
+func (r *CostTrackingRepository) mannKendallTest(values []float64) (tau, pValue float64) {
+	n := len(values)
+	if n < 3 {
+		return 0, 1
+	}
+
+	// Calculate Mann-Kendall statistic
+	s := 0
+	for i := 0; i < n-1; i++ {
+		for j := i + 1; j < n; j++ {
+			if values[j] > values[i] {
+				s++
+			} else if values[j] < values[i] {
+				s--
+			}
+		}
+	}
+
+	// Calculate tau
+	tau = float64(s) / (float64(n) * float64(n-1) / 2.0)
+
+	// Approximate p-value (simplified)
+	varS := float64(n*(n-1)*(2*n+5)) / 18.0
+	z := float64(s) / math.Sqrt(varS)
+
+	// Rough p-value approximation
+	absZ := math.Abs(z)
+	if absZ > 2.576 {
+		pValue = 0.01
+	} else if absZ > 1.96 {
+		pValue = 0.05
+	} else if absZ > 1.645 {
+		pValue = 0.10
+	} else {
+		pValue = 0.20
+	}
+
+	return tau, pValue
+}
+
+// theilSenSlope calculates Theil-Sen slope estimator
+func (r *CostTrackingRepository) theilSenSlope(values []float64) float64 {
+	n := len(values)
+	if n < 2 {
+		return 0
+	}
+
+	var slopes []float64
+	for i := 0; i < n-1; i++ {
+		for j := i + 1; j < n; j++ {
+			if j != i {
+				slope := (values[j] - values[i]) / float64(j-i)
+				slopes = append(slopes, slope)
+			}
+		}
+	}
+
+	if err := common.ValidateSliceNotEmpty("slopes", slopes); err != nil {
+		return 0
+	}
+
+	// Return median slope
+	sort.Float64s(slopes)
+	n = len(slopes)
+	if n%2 == 0 {
+		return (slopes[n/2-1] + slopes[n/2]) / 2.0
+	}
+	return slopes[n/2]
+}
+
+// durbinWatsonTest calculates Durbin-Watson test statistic
+func (r *CostTrackingRepository) durbinWatsonTest(residuals []float64) float64 {
+	n := len(residuals)
+	if n < 2 {
+		return 2.0 // No autocorrelation
+	}
+
+	numerator := 0.0
+	denominator := 0.0
+
+	for i := 1; i < n; i++ {
+		diff := residuals[i] - residuals[i-1]
+		numerator += diff * diff
+	}
+
+	for _, r := range residuals {
+		denominator += r * r
+	}
+
+	if denominator == 0 {
+		return 2.0
+	}
+
+	return numerator / denominator
+}
+
+// jarqueBeraTest performs Jarque-Bera test for normality
+func (r *CostTrackingRepository) jarqueBeraTest(values []float64) (jb, pValue float64) {
+	n := float64(len(values))
+	if n < 4 {
+		return 0, 1
+	}
+
+	// Calculate mean and standard deviation
+	meanVal := mean(values)
+	stdDev := standardDeviation(values, meanVal)
+
+	if stdDev == 0 {
+		return 0, 1
+	}
+
+	// Calculate skewness and kurtosis
+	skewness := 0.0
+	kurtosis := 0.0
+
+	for _, v := range values {
+		standardized := (v - meanVal) / stdDev
+		skewness += standardized * standardized * standardized
+		kurtosis += standardized * standardized * standardized * standardized
+	}
+
+	skewness /= n
+	kurtosis = kurtosis/n - 3.0 // Excess kurtosis
+
+	// Calculate Jarque-Bera statistic
+	jb = (n / 6.0) * (skewness*skewness + kurtosis*kurtosis/4.0)
+
+	// Approximate p-value (chi-squared with 2 degrees of freedom)
+	if jb > 9.21 {
+		pValue = 0.01
+	} else if jb > 5.99 {
+		pValue = 0.05
+	} else if jb > 4.61 {
+		pValue = 0.10
+	} else {
+		pValue = 0.20
+	}
+
+	return jb, pValue
+}
+
+// analyzeResiduals analyzes regression residuals
+func (r *CostTrackingRepository) analyzeResiduals(residuals []float64) *ResidualStats {
+	if len(residuals) < 3 {
+		return nil
+	}
+
+	meanVal := mean(residuals)
+	stdError := standardDeviation(residuals, meanVal)
+
+	// Calculate skewness and kurtosis
+	skewness := 0.0
+	kurtosis := 0.0
+	outlierCount := 0
+
+	for _, r := range residuals {
+		if stdError > 0 {
+			standardized := (r - meanVal) / stdError
+			skewness += standardized * standardized * standardized
+			kurtosis += standardized * standardized * standardized * standardized
+
+			// Count outliers (beyond 2 standard deviations)
+			if math.Abs(standardized) > 2.0 {
+				outlierCount++
+			}
+		}
+	}
+
+	n := float64(len(residuals))
+	skewness /= n
+	kurtosis = kurtosis/n - 3.0 // Excess kurtosis
+
+	// Calculate normality score (0-1, higher = more normal)
+	normalityScore := 1.0
+	if math.Abs(skewness) > 0.5 {
+		normalityScore -= 0.3
+	}
+	if math.Abs(kurtosis) > 1.0 {
+		normalityScore -= 0.3
+	}
+	if float64(outlierCount)/n > 0.05 { // More than 5% outliers
+		normalityScore -= 0.4
+	}
+	normalityScore = math.Max(0, normalityScore)
+
+	return &ResidualStats{
+		Mean:           meanVal,
+		StandardError:  stdError,
+		Skewness:       skewness,
+		Kurtosis:       kurtosis,
+		OutlierCount:   outlierCount,
+		NormalityScore: normalityScore,
+	}
+}
+
+// calculateSeasonalStrength calculates seasonal strength for a given period
+func (r *CostTrackingRepository) calculateSeasonalStrength(values []float64, period int) float64 {
+	n := len(values)
+	if n < 2*period {
+		return 0
+	}
+
+	// Calculate seasonal means
+	seasonalSums := make([]float64, period)
+	seasonalCounts := make([]int, period)
+
+	for i, v := range values {
+		seasonIndex := i % period
+		seasonalSums[seasonIndex] += v
+		seasonalCounts[seasonIndex]++
+	}
+
+	seasonalMeans := make([]float64, period)
+	for i := 0; i < period; i++ {
+		if seasonalCounts[i] > 0 {
+			seasonalMeans[i] = seasonalSums[i] / float64(seasonalCounts[i])
+		}
+	}
+
+	// Calculate overall mean
+	overallMean := mean(values)
+
+	// Calculate seasonal variance and total variance
+	seasonalVariance := 0.0
+	totalVariance := 0.0
+
+	for i, v := range values {
+		seasonIndex := i % period
+		seasonalResidual := v - seasonalMeans[seasonIndex]
+		totalResidual := v - overallMean
+
+		seasonalVariance += seasonalResidual * seasonalResidual
+		totalVariance += totalResidual * totalResidual
+	}
+
+	if totalVariance == 0 {
+		return 0
+	}
+
+	// Seasonal strength = 1 - (seasonal variance / total variance)
+	seasonalStrength := 1.0 - (seasonalVariance / totalVariance)
+	return math.Max(0, seasonalStrength)
+}
+
+// simpleSeasonalDecomposition performs simple seasonal decomposition
+func (r *CostTrackingRepository) simpleSeasonalDecomposition(values []float64, period int) (trend, seasonal, residual []float64) {
+	n := len(values)
+	trend = make([]float64, n)
+	seasonal = make([]float64, n)
+	residual = make([]float64, n)
+
+	// Simple moving average for trend
+	halfPeriod := period / 2
+	for i := 0; i < n; i++ {
+		start := math.Max(0, float64(i-halfPeriod))
+		end := math.Min(float64(n-1), float64(i+halfPeriod))
+
+		sum := 0.0
+		count := 0
+		for j := int(start); j <= int(end); j++ {
+			sum += values[j]
+			count++
+		}
+		trend[i] = sum / float64(count)
+	}
+
+	// Calculate seasonal component
+	seasonalSums := make([]float64, period)
+	seasonalCounts := make([]int, period)
+
+	for i := 0; i < n; i++ {
+		seasonIndex := i % period
+		detrended := values[i] - trend[i]
+		seasonalSums[seasonIndex] += detrended
+		seasonalCounts[seasonIndex]++
+	}
+
+	seasonalMeans := make([]float64, period)
+	for i := 0; i < period; i++ {
+		if seasonalCounts[i] > 0 {
+			seasonalMeans[i] = seasonalSums[i] / float64(seasonalCounts[i])
+		}
+	}
+
+	// Assign seasonal components and calculate residuals
+	for i := 0; i < n; i++ {
+		seasonIndex := i % period
+		seasonal[i] = seasonalMeans[seasonIndex]
+		residual[i] = values[i] - trend[i] - seasonal[i]
+	}
+
+	return trend, seasonal, residual
+}
+
+// calculateDecompositionR2 calculates R-squared for seasonal decomposition
+func (r *CostTrackingRepository) calculateDecompositionR2(original, trend, seasonal []float64) float64 {
+	n := len(original)
+	if n == 0 {
+		return 0
+	}
+
+	originalMean := mean(original)
+	ssTotal := 0.0
+	ssResidual := 0.0
+
+	for i := 0; i < n; i++ {
+		predicted := trend[i] + seasonal[i]
+		ssTotal += (original[i] - originalMean) * (original[i] - originalMean)
+		ssResidual += (original[i] - predicted) * (original[i] - predicted)
+	}
+
+	if ssTotal == 0 {
+		return 0
+	}
+
+	return 1.0 - (ssResidual / ssTotal)
+}
+
+// extractSeasonalPatterns extracts seasonal patterns from decomposition
+func (r *CostTrackingRepository) extractSeasonalPatterns(seasonal []float64, period int) map[string]float64 {
+	patterns := make(map[string]float64)
+
+	seasonalSums := make([]float64, period)
+	seasonalCounts := make([]int, period)
+
+	for i, s := range seasonal {
+		seasonIndex := i % period
+		seasonalSums[seasonIndex] += s
+		seasonalCounts[seasonIndex]++
+	}
+
+	for i := 0; i < period; i++ {
+		if seasonalCounts[i] > 0 {
+			key := fmt.Sprintf("period_%d", i)
+			patterns[key] = seasonalSums[i] / float64(seasonalCounts[i])
+		}
+	}
+
+	return patterns
+}
+
+// analyzeSeasonality analyzes seasonal patterns in cost data
+func (r *CostTrackingRepository) analyzeSeasonality(dataPoints []CostDataPoint) *SeasonalityAnalysis {
+	n := len(dataPoints)
+	if n < 14 { // Need at least 2 weeks of data for seasonal analysis
+		return nil
+	}
+
+	y := make([]float64, n)
+	for i, point := range dataPoints {
+		y[i] = point.CostDollars
+	}
+
+	// Simple seasonal decomposition
+	// Test for weekly seasonality (period = 7)
+	weeklyStrength := r.calculateSeasonalStrength(y, 7)
+
+	// Test for monthly seasonality (period = 30)
+	monthlyStrength := 0.0
+	if n >= 60 {
+		monthlyStrength = r.calculateSeasonalStrength(y, 30)
+	}
+
+	// Determine strongest seasonality
+	hasSeasonality := false
+	seasonalPeriod := 7
+	seasonalStrength := weeklyStrength
+
+	if monthlyStrength > weeklyStrength {
+		seasonalPeriod = 30
+		seasonalStrength = monthlyStrength
+	}
+
+	hasSeasonality = seasonalStrength > 0.3 // Threshold for significant seasonality
+
+	// Perform decomposition if seasonality is detected
+	var trendComponent, seasonalComponent, residualComponent []float64
+	var decompositionR2 float64
+	var seasonalPatterns map[string]float64
+
+	if hasSeasonality {
+		trendComponent, seasonalComponent, residualComponent = r.simpleSeasonalDecomposition(y, seasonalPeriod)
+		decompositionR2 = r.calculateDecompositionR2(y, trendComponent, seasonalComponent)
+		seasonalPatterns = r.extractSeasonalPatterns(seasonalComponent, seasonalPeriod)
+	}
+
+	return &SeasonalityAnalysis{
+		HasSeasonality:    hasSeasonality,
+		SeasonalStrength:  seasonalStrength,
+		SeasonalPeriod:    seasonalPeriod,
+		SeasonalPatterns:  seasonalPatterns,
+		TrendComponent:    trendComponent,
+		SeasonalComponent: seasonalComponent,
+		ResidualComponent: residualComponent,
+		DecompositionR2:   decompositionR2,
+	}
+}
+
+// calculateLinearRegressionStats calculates comprehensive linear regression statistics
+func (r *CostTrackingRepository) calculateLinearRegressionStats(dataPoints []CostDataPoint) *LinearRegressionStats {
+	n := len(dataPoints)
+	if n < 2 {
+		return nil
+	}
+
+	// Prepare data for regression
+	x := make([]float64, n)
+	y := make([]float64, n)
+
+	for i, point := range dataPoints {
+		x[i] = float64(i) // Time index
+		y[i] = point.CostDollars
+	}
+
+	// Calculate means
+	xMean := mean(x)
+	yMean := mean(y)
+
+	// Calculate slope and intercept
+	numerator := 0.0
+	denominator := 0.0
+
+	for i := 0; i < n; i++ {
+		xDiff := x[i] - xMean
+		yDiff := y[i] - yMean
+		numerator += xDiff * yDiff
+		denominator += xDiff * xDiff
+	}
+
+	if denominator == 0 {
+		return &LinearRegressionStats{
+			TrendDirection: "stable",
+			TrendStrength:  "none",
+		}
+	}
+
+	slope := numerator / denominator
+	intercept := yMean - slope*xMean
+
+	// Calculate R-squared and correlation
+	ssRes := 0.0 // Sum of squares of residuals
+	ssTot := 0.0 // Total sum of squares
+
+	for i := 0; i < n; i++ {
+		predicted := slope*x[i] + intercept
+		residual := y[i] - predicted
+		ssRes += residual * residual
+		ssTot += (y[i] - yMean) * (y[i] - yMean)
+	}
+
+	rSquared := 0.0
+	if ssTot > 0 {
+		rSquared = 1.0 - (ssRes / ssTot)
+	}
+
+	correlation := math.Sqrt(math.Abs(rSquared))
+	if slope < 0 {
+		correlation = -correlation
+	}
+
+	// Calculate standard error and t-statistic
+	slopeStdError := 0.0
+	tStatistic := 0.0
+	pValue := 1.0
+
+	if n > 2 {
+		mse := ssRes / float64(n-2) // Mean squared error
+		slopeStdError = math.Sqrt(mse / denominator)
+
+		if slopeStdError > 0 {
+			tStatistic = slope / slopeStdError
+			// Approximate p-value using t-distribution (simplified)
+			pValue = r.approximateTTestPValue(tStatistic, n-2)
+		}
+	}
+
+	// Determine trend direction and strength
+	trendDirection := "stable"
+	trendStrength := RepliesPolicyNone
+	isSignificant := pValue < 0.05
+
+	if math.Abs(slope) > 0.001 { // Threshold for non-zero slope
+		if slope > 0 {
+			trendDirection = "increasing"
+		} else {
+			trendDirection = "decreasing"
+		}
+
+		// Classify strength based on R-squared and significance
+		if rSquared > 0.7 && isSignificant {
+			trendStrength = "strong"
+		} else if rSquared > 0.3 && isSignificant {
+			trendStrength = "moderate"
+		} else if rSquared > 0.1 {
+			trendStrength = "weak"
+		}
+	}
+
+	return &LinearRegressionStats{
+		Slope:           slope,
+		Intercept:       intercept,
+		RSquared:        rSquared,
+		Correlation:     correlation,
+		SlopeStdError:   slopeStdError,
+		TStatistic:      tStatistic,
+		PValue:          pValue,
+		ConfidenceLevel: 0.95,
+		TrendDirection:  trendDirection,
+		TrendStrength:   trendStrength,
+		IsSignificant:   isSignificant,
+	}
+}
+
+// calculateStatisticalTests performs additional statistical tests
+func (r *CostTrackingRepository) calculateStatisticalTests(dataPoints []CostDataPoint, regression *LinearRegressionStats) *StatisticalTests {
+	if regression == nil || len(dataPoints) < 3 {
+		return nil
+	}
+
+	n := len(dataPoints)
+	y := make([]float64, n)
+	residuals := make([]float64, n)
+
+	for i, point := range dataPoints {
+		y[i] = point.CostDollars
+		predicted := regression.Slope*float64(i) + regression.Intercept
+		residuals[i] = y[i] - predicted
+	}
+
+	// Mann-Kendall trend test (non-parametric)
+	mkTau, mkP := r.mannKendallTest(y)
+
+	// Theil-Sen slope estimator (robust)
+	theilSenSlope := r.theilSenSlope(y)
+
+	// Durbin-Watson test for autocorrelation
+	durbinWatson := r.durbinWatsonTest(residuals)
+
+	// Jarque-Bera test for normality of residuals
+	jarqueBera, jarqueBeraP := r.jarqueBeraTest(residuals)
+
+	// Residual analysis
+	residualStats := r.analyzeResiduals(residuals)
+
+	return &StatisticalTests{
+		MannKendallTau:    mkTau,
+		MannKendallPValue: mkP,
+		TheilSenSlope:     theilSenSlope,
+		DurbinWatson:      durbinWatson,
+		JarqueBera:        jarqueBera,
+		JarqueBeraP:       jarqueBeraP,
+		ResidualStats:     residualStats,
+	}
+}
+
+// detectCostAnomalies detects anomalies in cost data
+func (r *CostTrackingRepository) detectCostAnomalies(dataPoints []CostDataPoint, regression *LinearRegressionStats) []CostAnomaly {
+	if regression == nil || len(dataPoints) < 5 {
+		return nil
+	}
+
+	var anomalies []CostAnomaly
+	n := len(dataPoints)
+	residuals := make([]float64, n)
+
+	// Calculate residuals
+	for i, point := range dataPoints {
+		predicted := regression.Slope*float64(i) + regression.Intercept
+		residuals[i] = point.CostDollars - predicted
+	}
+
+	// Calculate threshold for anomaly detection (using IQR method)
+	residualsCopy := make([]float64, len(residuals))
+	copy(residualsCopy, residuals)
+	sort.Float64s(residualsCopy)
+
+	q1 := residualsCopy[n/4]
+	q3 := residualsCopy[3*n/4]
+	iqr := q3 - q1
+	lowerThreshold := q1 - 1.5*iqr
+	upperThreshold := q3 + 1.5*iqr
+
+	// Calculate standard deviation for z-score
+	residualMean := mean(residuals)
+	residualStdDev := standardDeviation(residuals, residualMean)
+
+	// Detect anomalies
+	for i, point := range dataPoints {
+		expected := regression.Slope*float64(i) + regression.Intercept
+		residual := residuals[i]
+
+		// Check if it is an outlier
+		isOutlier := residual < lowerThreshold || residual > upperThreshold
+
+		if isOutlier {
+			// Calculate deviation score (z-score)
+			deviationScore := 0.0
+			if residualStdDev > 0 {
+				deviationScore = math.Abs(residual-residualMean) / residualStdDev
+			}
+
+			// Determine anomaly type
+			anomalyType := "outlier"
+			if residual > upperThreshold {
+				anomalyType = "spike"
+			} else if residual < lowerThreshold {
+				anomalyType = "drop"
+			}
+
+			// Determine severity
+			severity := StatusLow
+			if deviationScore > 3.0 {
+				severity = StatusCritical
+			} else if deviationScore > 2.5 {
+				severity = StatusHigh
+			} else if deviationScore > 2.0 {
+				severity = StatusMedium
+			}
+
+			// Calculate confidence based on deviation
+			confidence := math.Min(deviationScore/3.0, 1.0)
+
+			anomalies = append(anomalies, CostAnomaly{
+				Timestamp:      point.Timestamp,
+				ActualCost:     point.CostDollars,
+				ExpectedCost:   expected,
+				DeviationScore: deviationScore,
+				AnomalyType:    anomalyType,
+				Severity:       severity,
+				Confidence:     confidence,
+			})
+		}
+	}
+
+	return anomalies
+}
+
+// generateCostForecast generates cost forecasts based on trend analysis
+func (r *CostTrackingRepository) generateCostForecast(dataPoints []CostDataPoint, regression *LinearRegressionStats) *CostForecast {
+	if regression == nil || len(dataPoints) < 3 {
+		return nil
+	}
+
+	// Forecast parameters
+	forecastHorizon := 7 // Forecast 7 periods ahead
+	confidenceLevel := 0.95
+	n := len(dataPoints)
+
+	// Calculate prediction intervals
+	residuals := make([]float64, n)
+	for i, point := range dataPoints {
+		predicted := regression.Slope*float64(i) + regression.Intercept
+		residuals[i] = point.CostDollars - predicted
+	}
+
+	residualMean := mean(residuals)
+	residualStdDev := standardDeviation(residuals, residualMean)
+
+	// T-value for confidence interval (approximation)
+	tValue := 1.96 // For 95% confidence, approximate
+	if n < 30 {
+		tValue = 2.0 // More conservative for small samples
+	}
+
+	// Generate predictions
+	var predictions []CostPrediction
+	lastTimestamp := dataPoints[n-1].Timestamp
+
+	for i := 1; i <= forecastHorizon; i++ {
+		// Predict next cost value
+		xNext := float64(n + i - 1)
+		predictedCost := regression.Slope*xNext + regression.Intercept
+
+		// Calculate prediction interval
+		// Standard error increases with distance from mean
+		xMean := float64(n-1) / 2.0
+		xDist := xNext - xMean
+		predictionError := residualStdDev * math.Sqrt(1.0+1.0/float64(n)+xDist*xDist/float64(n))
+
+		// Calculate bounds
+		marginOfError := tValue * predictionError
+		lowerBound := math.Max(0, predictedCost-marginOfError) // Cost cannot be negative
+		upperBound := predictedCost + marginOfError
+
+		// Determine next timestamp (assume daily data)
+		nextTimestamp := lastTimestamp.Add(time.Duration(i) * 24 * time.Hour)
+
+		predictions = append(predictions, CostPrediction{
+			Timestamp:     nextTimestamp,
+			PredictedCost: predictedCost,
+			LowerBound:    lowerBound,
+			UpperBound:    upperBound,
+			StandardError: predictionError,
+		})
+	}
+
+	// Calculate model accuracy metrics
+	meanAbsoluteError := 0.0
+	rootMeanSquareError := 0.0
+
+	for _, residual := range residuals {
+		meanAbsoluteError += math.Abs(residual)
+		rootMeanSquareError += residual * residual
+	}
+
+	meanAbsoluteError /= float64(n)
+	rootMeanSquareError = math.Sqrt(rootMeanSquareError / float64(n))
+
+	return &CostForecast{
+		ForecastHorizon:     forecastHorizon,
+		Predictions:         predictions,
+		ConfidenceLevel:     confidenceLevel,
+		MeanAbsoluteError:   meanAbsoluteError,
+		RootMeanSquareError: rootMeanSquareError,
+		ModelType:           "linear",
+	}
 }

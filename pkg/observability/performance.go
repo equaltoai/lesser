@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // PerformanceOptimization contains guidelines and utilities for minimal overhead observability
@@ -102,7 +103,7 @@ func (po *PerformanceOptimization) LogPerformanceSummary() {
 	po.mu.RLock()
 	defer po.mu.RUnlock()
 
-	if len(po.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("po.metrics", po.metrics); err != nil {
 		return
 	}
 

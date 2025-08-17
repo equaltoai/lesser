@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -31,7 +32,7 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
 			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
 		}
 
@@ -154,7 +155,7 @@ func (h *Handler) getMarkersTestUsername(ctx *lift.Context) string {
 func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope string) (string, error) {
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
 	}
 
@@ -218,7 +219,7 @@ func (h *Handler) validateMarkers(req map[string]struct {
 	LastReadID string `json:"last_read_id"`
 }) error {
 	// Check that at least one timeline is provided
-	if len(req) == 0 {
+	if err := common.ValidateSliceNotEmpty("req", req); err != nil {
 		return &markerValidationError{message: "no markers provided"}
 	}
 
@@ -264,7 +265,7 @@ func (h *Handler) saveMarkers(ctx *lift.Context, username string, req map[string
 
 // saveSingleMarker saves a single marker
 func (h *Handler) saveSingleMarker(ctx *lift.Context, username, timeline, lastReadID string, currentMarkers map[string]*storage.Marker) {
-	if lastReadID == "" {
+	if err := common.ValidateRequiredParam("last_read_id", lastReadID); err != nil {
 		return
 	}
 

@@ -153,7 +153,7 @@ func (s *WalletService) VerifySignature(ctx context.Context, req *WalletVerifyRe
 
 	// Check if wallet is linked to an account
 	username := challenge.Username
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		// Try to find existing link
 		wallet, err := s.repos.Account().GetWalletCredential(ctx, req.Address)
 		if err == nil && wallet != nil {

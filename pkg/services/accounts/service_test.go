@@ -330,6 +330,8 @@ func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository         { 
 func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository { return nil }
 func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository         { return nil }
 func (m *MockRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
+func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository         { return nil }
+func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -32,7 +33,7 @@ func NewListRepository(db core.DB, tableName string, logger *zap.Logger) *ListRe
 // CreateList creates a new list
 func (r *ListRepository) CreateList(ctx context.Context, list *models.List) error {
 	// Validate replies policy
-	if list.RepliesPolicy == "" {
+	if err := common.ValidateRequiredParam("list.RepliesPolicy", list.RepliesPolicy); err != nil {
 		list.RepliesPolicy = RepliesPolicyList // default
 	}
 	if list.RepliesPolicy != RepliesPolicyFollowed && list.RepliesPolicy != RepliesPolicyList && list.RepliesPolicy != RepliesPolicyNone {
@@ -40,7 +41,7 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 	}
 
 	// Generate ID if not provided
-	if list.ID == "" {
+	if err := common.ValidateRequiredParam("list.ID", list.ID); err != nil {
 		list.ID = uuid.New().String()
 	}
 
@@ -728,7 +729,7 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 		return nil, fmt.Errorf("failed to get list members: %w", err)
 	}
 
-	if len(membersResult.Items) == 0 {
+	if err := common.ValidateSliceNotEmpty("membersResult.Items", membersResult.Items); err != nil {
 		return &interfaces.PaginatedResult[*models.Status]{
 			Items: []*models.Status{},
 		}, nil

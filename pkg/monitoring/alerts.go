@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/observability"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AlertSeverity represents the severity level of an alert
@@ -164,7 +165,7 @@ func NewAlertManagerWithConfig(config *AlertManagerConfig) *AlertManager {
 	}
 
 	// Try to configure from environment if not provided
-	if am.snsTopicArn == "" {
+	if err := common.ValidateRequiredParam("am.snsTopicArn", am.snsTopicArn); err != nil {
 		am.snsTopicArn = os.Getenv("ALERT_SNS_TOPIC_ARN")
 	}
 	if am.webhookConfig == nil && os.Getenv("ALERT_WEBHOOK_URL") != "" {
@@ -202,7 +203,7 @@ func (am *AlertManager) SendAlert(ctx context.Context, alert *Alert) error {
 	}
 
 	// Set source if not provided
-	if alert.Source == "" {
+	if err := common.ValidateRequiredParam("alert.Source", alert.Source); err != nil {
 		alert.Source = "lesser-monitoring"
 	}
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -364,16 +365,16 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 // Private helper methods
 
 func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *SendDirectMessageCommand) error {
-	if cmd.SenderID == "" {
-		return fmt.Errorf("sender_id is required")
+	if err := common.ValidateRequiredParam("cmd.SenderID", cmd.SenderID); err != nil {
+		return common.ValidateRequiredParam("sender_id", cmd.SenderID)
 	}
 
-	if len(cmd.Recipients) == 0 {
-		return fmt.Errorf("at least one recipient is required")
+	if err := common.ValidateSliceNotEmpty("cmd.Recipients", cmd.Recipients); err != nil {
+		return fmt.Errorf("recipients is required")
 	}
 
-	if strings.TrimSpace(cmd.Content) == "" {
-		return fmt.Errorf("content cannot be empty")
+	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
+		return err
 	}
 
 	if len(cmd.Content) > 5000 {

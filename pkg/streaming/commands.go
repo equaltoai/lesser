@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Command represents a WebSocket command message
@@ -169,7 +170,7 @@ func (cr *CommandRouter) GetSupportedCommands() []string {
 // getSupportedCommandsList returns a formatted string of supported commands
 func (cr *CommandRouter) getSupportedCommandsList() string {
 	commands := cr.GetSupportedCommands()
-	if len(commands) == 0 {
+	if err := common.ValidateSliceNotEmpty("commands", commands); err != nil {
 		return "none"
 	}
 

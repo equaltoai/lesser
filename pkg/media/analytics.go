@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // BandwidthAnalytics handles bandwidth usage analytics
@@ -222,7 +223,7 @@ func (b *bandwidthAnalytics) processLogFile(ctx context.Context, bucket, key str
 
 		// Extract media ID from URI
 		mediaID := b.extractMediaID(entry.URI)
-		if mediaID == "" {
+		if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
 			continue
 		}
 
@@ -304,11 +305,11 @@ func (b *bandwidthAnalytics) extractQuality(uri string) string {
 	if strings.Contains(uri, "/4k/") {
 		return "4k"
 	} else if strings.Contains(uri, "/1080p/") {
-		return "1080p"
+		return Resolution1080p
 	} else if strings.Contains(uri, "/720p/") {
-		return "720p"
+		return Resolution720p
 	} else if strings.Contains(uri, "/480p/") {
-		return "480p"
+		return Resolution480p
 	} else if strings.Contains(uri, "master.m3u8") {
 		return "adaptive"
 	}
@@ -340,7 +341,7 @@ func (b *bandwidthAnalytics) extractRegion(edgeLocation string) string {
 
 // sendMetrics sends bandwidth metrics to CloudWatch
 func (b *bandwidthAnalytics) sendMetrics(ctx context.Context, usageRecords []*BandwidthUsage) error {
-	if len(usageRecords) == 0 {
+	if err := common.ValidateSliceNotEmpty("usageRecords", usageRecords); err != nil {
 		return nil
 	}
 

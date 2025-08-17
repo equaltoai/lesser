@@ -36,9 +36,9 @@ func NewEmailFreeRecoveryHandler(authService *auth.AuthService) *EmailFreeRecove
 // GET /auth/recovery/options
 func (h *EmailFreeRecoveryHandler) HandleGetRecoveryOptionsLift(ctx *lift.Context) error {
 	username := ctx.Query("username")
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]any{"error": "username required"})
+		return ctx.JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get user to check what recovery methods are available
@@ -203,7 +203,7 @@ func (h *EmailFreeRecoveryHandler) HandleGenerateRecoveryCodesLift(ctx *lift.Con
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]any{"error": "authentication required"})
 	}
@@ -291,7 +291,7 @@ func (h *EmailFreeRecoveryHandler) HandleAddTrusteeLift(ctx *lift.Context) error
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]any{"error": "authentication required"})
 	}
@@ -351,7 +351,7 @@ func (h *EmailFreeRecoveryHandler) HandleListTrusteesLift(ctx *lift.Context) err
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]any{"error": "authentication required"})
 	}
@@ -391,16 +391,16 @@ func (h *EmailFreeRecoveryHandler) HandleRemoveTrusteeLift(ctx *lift.Context) er
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]any{"error": "authentication required"})
 	}
 
 	// Extract trustee ID from path parameter
 	trusteeID := ctx.Param("trustee_id")
-	if trusteeID == "" {
+	if err := common.ValidateRequiredParam("trustee_id", trusteeID); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]any{"error": "trustee ID required"})
+		return ctx.JSON(map[string]any{"error": err.Error()})
 	}
 
 	if err := h.socialRecovery.RemoveTrustee(ctx.Context, username, trusteeID); err != nil {

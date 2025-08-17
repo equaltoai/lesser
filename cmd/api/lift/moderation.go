@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -51,7 +52,7 @@ func parseSeverity(severity string) int {
 func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -78,19 +79,19 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 	}
 
 	// Validate request
-	if req.ObjectID == "" {
+	if err := common.ValidateRequiredParam("object_id", req.ObjectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "object_id is required",
+			"error": err.Error(),
 		})
 	}
-	if req.Reason == "" {
+	if err := common.ValidateRequiredParam("reason", req.Reason); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "reason is required",
+			"error": err.Error(),
 		})
 	}
-	if req.Category == "" {
+	if common.ValidateRequiredParam("category", req.Category) != nil {
 		req.Category = moderationCategoryOther
 	}
 	if req.Severity < 1 || req.Severity > 4 {
@@ -176,7 +177,7 @@ func (h *Handler) HandleModerationFlagLift(ctx *lift.Context) error {
 func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -258,7 +259,7 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -294,16 +295,16 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 	}
 
 	// Validate request
-	if req.EventID == "" {
+	if err := common.ValidateRequiredParam("event_id", req.EventID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "event_id is required",
+			"error": err.Error(),
 		})
 	}
-	if req.Confidence < 0 || req.Confidence > 1 {
+	if err := common.ValidateFloatRange("confidence", req.Confidence, 0, 1); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "confidence must be between 0 and 1",
+			"error": err.Error(),
 		})
 	}
 
@@ -367,7 +368,7 @@ func (h *Handler) HandleModerationReviewLift(ctx *lift.Context) error {
 func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -395,10 +396,10 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 
 	// Get object ID from path parameter
 	objectID := ctx.Param("object_id")
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "object_id is required",
+			"error": err.Error(),
 		})
 	}
 
@@ -445,7 +446,7 @@ func (h *Handler) HandleModerationHistoryLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -473,7 +474,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 
 	// Get event ID from path parameter
 	eventID := ctx.Param("event_id")
-	if eventID == "" {
+	if err := common.ValidateRequiredParam("eventID", eventID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "event_id is required",
@@ -548,7 +549,7 @@ func (h *Handler) HandleGetConsensusLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -577,7 +578,7 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 
 	// Get direction parameter (default to outgoing)
 	direction := ctx.Query("direction")
-	if direction == "" {
+	if common.ValidateRequiredParam("direction", direction) != nil {
 		direction = "outgoing"
 	}
 
@@ -632,7 +633,7 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -659,25 +660,25 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Validate request
-	if req.TrusteeID == "" {
+	if err := common.ValidateRequiredParam("trusteeID", req.TrusteeID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "trustee_id is required",
 		})
 	}
-	if req.Score < -1 || req.Score > 1 {
+	if err := common.ValidateFloatRange("score", req.Score, -1, 1); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "score must be between -1 and 1",
+			"error": err.Error(),
 		})
 	}
-	if req.Confidence < 0 || req.Confidence > 1 {
+	if err := common.ValidateFloatRange("confidence", req.Confidence, 0, 1); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
-			"error": "confidence must be between 0 and 1",
+			"error": err.Error(),
 		})
 	}
-	if req.Category == "" {
+	if common.ValidateRequiredParam("category", req.Category) != nil {
 		req.Category = moderationCategoryGeneral
 	}
 
@@ -744,7 +745,7 @@ func (h *Handler) HandleUpdateTrustLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		ctx.Status(http.StatusUnauthorized)
 		return ctx.JSON(map[string]string{
 			"error": "authentication required",
@@ -772,7 +773,7 @@ func (h *Handler) HandleGetTrustScoreLift(ctx *lift.Context) error {
 
 	// Get actor ID from path parameter
 	actorID := ctx.Param("actor_id")
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": "actor_id is required",

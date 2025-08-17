@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -48,7 +49,7 @@ func NewDynamoStreamQueue(db core.DB, tableName string, logger *zap.Logger) Stre
 
 // QueueEventForUser queues an event for a specific user's streams
 func (q *dynamoStreamQueue) QueueEventForUser(ctx context.Context, userID string, eventType string, payload map[string]interface{}) error {
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		return fmt.Errorf("userID cannot be empty")
 	}
 
@@ -84,7 +85,7 @@ func (q *dynamoStreamQueue) QueueEventForUser(ctx context.Context, userID string
 
 // QueueEventForStream queues an event for all subscribers of a stream
 func (q *dynamoStreamQueue) QueueEventForStream(ctx context.Context, streamName string, eventType string, payload map[string]interface{}) error {
-	if streamName == "" {
+	if err := common.ValidateRequiredParam("streamName", streamName); err != nil {
 		return fmt.Errorf("streamName cannot be empty")
 	}
 
@@ -118,7 +119,7 @@ func (q *dynamoStreamQueue) QueueEventForStream(ctx context.Context, streamName 
 
 // QueueEventForConversation queues an event for all participants in a conversation
 func (q *dynamoStreamQueue) QueueEventForConversation(ctx context.Context, conversationID string, eventType string, payload map[string]interface{}) error {
-	if conversationID == "" {
+	if err := common.ValidateRequiredParam("conversationID", conversationID); err != nil {
 		return fmt.Errorf("conversationID cannot be empty")
 	}
 
@@ -152,7 +153,7 @@ func (q *dynamoStreamQueue) QueueEventForConversation(ctx context.Context, conve
 
 // QueueEventForFollowers queues an event for all followers of a user
 func (q *dynamoStreamQueue) QueueEventForFollowers(ctx context.Context, userID string, eventType string, payload map[string]interface{}) error {
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		return fmt.Errorf("userID cannot be empty")
 	}
 

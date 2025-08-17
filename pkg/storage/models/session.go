@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Session represents a user session with OAuth tokens
@@ -69,7 +71,7 @@ func (s *Session) BeforeCreate() error {
 	s.LastUsedAt = now
 
 	// Generate session ID if not provided
-	if s.SessionID == "" {
+	if err := common.ValidateRequiredParam("sessionID", s.SessionID); err != nil {
 		var err error
 		s.SessionID, err = generateSecureToken(32)
 		if err != nil {
@@ -78,7 +80,7 @@ func (s *Session) BeforeCreate() error {
 	}
 
 	// Generate access token if not provided
-	if s.AccessToken == "" {
+	if err := common.ValidateRequiredParam("accessToken", s.AccessToken); err != nil {
 		var err error
 		s.AccessToken, err = generateSecureToken(64)
 		if err != nil {
@@ -114,7 +116,7 @@ func (s *Session) BeforeUpdate() error {
 // setupGSIKeys configures all GSI partition and sort keys
 func (s *Session) setupGSIKeys() {
 	// GSI1 - User sessions lookup
-	if s.UserID != "" {
+	if err := common.ValidateRequiredParam("userID", s.UserID); err == nil {
 		s.GSI1PK = "USER_SESSIONS#" + s.UserID
 		s.GSI1SK = fmt.Sprintf("%s#%s", s.CreatedAt.Format(time.RFC3339), s.SessionID)
 	} else {
@@ -123,7 +125,7 @@ func (s *Session) setupGSIKeys() {
 	}
 
 	// GSI2 - Access token lookup (only if access token exists)
-	if s.AccessToken != "" {
+	if err := common.ValidateRequiredParam("accessToken", s.AccessToken); err == nil {
 		// Use a hash of the token for the GSI key to avoid storing the full token
 		tokenHash := hashToken(s.AccessToken)
 		s.GSI2PK = "TOKEN#" + tokenHash
@@ -133,14 +135,14 @@ func (s *Session) setupGSIKeys() {
 
 // Validate performs validation on the Session
 func (s *Session) Validate() error {
-	if strings.TrimSpace(s.SessionID) == "" {
-		return fmt.Errorf("SessionID is required")
+	if err := common.ValidateRequiredParam("SessionID", strings.TrimSpace(s.SessionID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(s.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(s.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(s.AccessToken) == "" {
-		return fmt.Errorf("AccessToken is required")
+	if err := common.ValidateRequiredParam("AccessToken", strings.TrimSpace(s.AccessToken)); err != nil {
+		return err
 	}
 	if s.ExpiresAt <= 0 {
 		return fmt.Errorf("ExpiresAt must be set")

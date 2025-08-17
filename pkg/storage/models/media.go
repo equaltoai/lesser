@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -102,17 +103,17 @@ func (m *Media) BeforeCreate() error {
 	m.UploadedAt = now
 
 	// Generate media ID if not provided
-	if m.MediaID == "" {
+	if err := common.ValidateRequiredParam("MediaID", m.MediaID); err != nil {
 		m.MediaID = uuid.New().String()
 	}
 
 	// Set default version if not provided
-	if m.Version == "" {
+	if err := common.ValidateRequiredParam("Version", m.Version); err != nil {
 		m.Version = "original"
 	}
 
 	// Set default status
-	if m.Status == "" {
+	if err := common.ValidateRequiredParam("Status", m.Status); err != nil {
 		m.Status = StatusPending
 	}
 
@@ -150,7 +151,7 @@ func (m *Media) setupGSIKeys() {
 	uploadedAtStr := m.UploadedAt.Format(time.RFC3339)
 
 	// GSI1 - User media lookup
-	if m.UserID != "" {
+	if err := common.ValidateRequiredParam("UserID", m.UserID); err == nil {
 		m.GSI1PK = "USER_MEDIA#" + m.UserID
 		m.GSI1SK = fmt.Sprintf("%s#%s", uploadedAtStr, m.MediaID)
 	} else {
@@ -163,7 +164,7 @@ func (m *Media) setupGSIKeys() {
 	m.GSI2SK = fmt.Sprintf("%s#%s", uploadedAtStr, m.MediaID)
 
 	// GSI3 - Content type queries
-	if m.ContentType != "" {
+	if err := common.ValidateRequiredParam("ContentType", m.ContentType); err == nil {
 		// Normalize content type for indexing
 		contentTypeKey := strings.Split(m.ContentType, "/")[0] // "image", "video", "audio"
 		m.GSI3PK = "CONTENT_TYPE#" + contentTypeKey
@@ -173,14 +174,14 @@ func (m *Media) setupGSIKeys() {
 
 // Validate performs validation on the Media
 func (m *Media) Validate() error {
-	if strings.TrimSpace(m.MediaID) == "" {
-		return fmt.Errorf("MediaID is required")
+	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(m.MediaID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(m.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(m.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(m.ContentType) == "" {
-		return fmt.Errorf("ContentType is required")
+	if err := common.ValidateRequiredParam("ContentType", strings.TrimSpace(m.ContentType)); err != nil {
+		return err
 	}
 	if m.FileSize <= 0 {
 		return fmt.Errorf("FileSize must be greater than 0")
@@ -270,7 +271,7 @@ func (m *Media) GetVariant(name string) (MediaVariant, bool) {
 
 // GetBestVariant returns the best variant for the requested dimensions
 func (m *Media) GetBestVariant(maxWidth, maxHeight int) MediaVariant {
-	if len(m.Variants) == 0 {
+	if err := common.ValidateSliceNotEmpty("m.Variants", m.Variants); err != nil {
 		// Return original as fallback
 		return MediaVariant{
 			S3Key:       m.S3Key,

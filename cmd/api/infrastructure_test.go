@@ -65,11 +65,11 @@ func TestInfrastructureIntegration(t *testing.T) {
 				tracker := liftPkg.GetCostTracker(ctx)
 				assert.NotNil(t, tracker)
 
-				// Track some operations
-				liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-					_ = t.TrackDynamoRead(5)
-					_ = t.TrackDynamoWrite(2)
-				})
+				// Track some operations using centralized tracking
+				if unifiedTracker, ok := ctx.Get("unified_tracker").(*cost.UnifiedTracker); ok {
+					_ = unifiedTracker.TrackDynamoRead(ctx.Request.Context(), "test-table", 5)
+					_ = unifiedTracker.TrackDynamoWrite(ctx.Request.Context(), "test-table", 2)
+				}
 
 				testComplete = true
 				return ctx.JSON(map[string]string{"status": "ok"})

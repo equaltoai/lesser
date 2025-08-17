@@ -5,6 +5,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/emoji"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -71,8 +72,11 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	}
 
 	// Validate required fields
-	if req.Shortcode == "" || req.URL == "" {
-		return ctx.Status(422).JSON(map[string]string{"error": "shortcode and url are required"})
+	if err := common.ValidateRequiredParam("shortcode", req.Shortcode); err != nil {
+		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+	}
+	if err := common.ValidateRequiredParam("url", req.URL); err != nil {
+		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Get emoji service
@@ -116,8 +120,8 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
-	if shortcode == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "shortcode parameter is required"})
+	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate and check admin role
@@ -183,8 +187,8 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
-	if shortcode == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "shortcode parameter is required"})
+	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate and check admin role
@@ -235,7 +239,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 func (h *Handler) authenticateAdminRequest(ctx *lift.Context) (string, error) {
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -247,14 +251,14 @@ func (h *Handler) authenticateAdminRequest(ctx *lift.Context) (string, error) {
 
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}

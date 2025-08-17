@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -67,7 +68,7 @@ func (r *StreamingRepository) GetStreamingPreferences(ctx context.Context, usern
 
 // UpdateStreamingPreferences updates streaming preferences for a user
 func (r *StreamingRepository) UpdateStreamingPreferences(ctx context.Context, prefs *storage.StreamingPreferences) error {
-	if prefs.Username == "" {
+	if err := common.ValidateRequiredParam("prefs.Username", prefs.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
 
@@ -149,7 +150,7 @@ func (r *StreamingRepository) GetStreamingPreferencesByDevice(ctx context.Contex
 
 // UpdateDeviceStreamingPreferences updates device-specific streaming preferences
 func (r *StreamingRepository) UpdateDeviceStreamingPreferences(ctx context.Context, prefs *storage.StreamingPreferences, deviceID string) error {
-	if prefs.Username == "" || deviceID == "" {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{"prefs.Username": prefs.Username, "deviceID": deviceID}); err != nil {
 		return fmt.Errorf("username and deviceID are required")
 	}
 
@@ -249,7 +250,7 @@ func (r *StreamingRepository) ResolvePreferenceConflict(ctx context.Context, use
 		return nil, fmt.Errorf("failed to query preferences: %w", err)
 	}
 
-	if len(streamingModels) == 0 {
+	if err := common.ValidateSliceNotEmpty("streamingModels", streamingModels); err != nil {
 		return nil, storage.ErrNotFound
 	}
 

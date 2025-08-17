@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -35,7 +36,7 @@ func NewAWSS3StorageClient(ctx context.Context, logger *zap.Logger) (*AWSS3Stora
 
 	// Check for bucket name first - if not set, we can't function
 	bucketName := os.Getenv("S3_MEDIA_BUCKET")
-	if bucketName == "" {
+	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
 		return nil, fmt.Errorf("S3_MEDIA_BUCKET environment variable is required")
 	}
 
@@ -112,10 +113,10 @@ func (s *AWSS3StorageClient) GeneratePresignedURL(ctx context.Context, key strin
 
 // UploadFile uploads a file to S3
 func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []byte) error {
-	if key == "" {
-		return fmt.Errorf("S3 key cannot be empty")
+	if err := common.ValidateRequiredParam("key", key); err != nil {
+		return err
 	}
-	if len(data) == 0 {
+	if err := common.ValidateSliceNotEmpty("data", data); err != nil {
 		return fmt.Errorf("cannot upload empty data")
 	}
 
@@ -171,8 +172,8 @@ func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []
 
 // GetFile downloads a file from S3
 func (s *AWSS3StorageClient) GetFile(ctx context.Context, key string) ([]byte, error) {
-	if key == "" {
-		return nil, fmt.Errorf("S3 key cannot be empty")
+	if err := common.ValidateRequiredParam("key", key); err != nil {
+		return nil, err
 	}
 
 	// Add timeout to the context if not already present

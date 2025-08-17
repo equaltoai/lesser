@@ -347,3 +347,43 @@ type SocialRepository interface {
 	CreateStatusPin(ctx context.Context, pin *storage.StatusPin) error
 	DeleteStatusPin(ctx context.Context, userID, statusID string) error
 }
+
+// QuoteRepository defines the interface for quote post operations
+type QuoteRepository interface {
+	// Core quote operations
+	CreateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error
+	GetQuoteRelationship(ctx context.Context, quoteStatusID, targetStatusID string) (*models.QuoteRelationship, error)
+	UpdateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error
+	DeleteQuoteRelationship(ctx context.Context, quoteStatusID, targetStatusID string) error
+
+	// Quote discovery
+	GetQuotesForStatus(ctx context.Context, statusID string, opts PaginationOptions) (*PaginatedResult[*models.QuoteRelationship], error)
+	GetQuotesByUser(ctx context.Context, userID string, opts PaginationOptions) (*PaginatedResult[*models.QuoteRelationship], error)
+
+	// Quote permissions
+	CreateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
+	GetQuotePermissions(ctx context.Context, username string) (*models.QuotePermissions, error)
+	UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error
+	DeleteQuotePermissions(ctx context.Context, username string) error
+
+	// Quote counts and statistics
+	GetQuoteCount(ctx context.Context, statusID string) (int64, error)
+	IncrementQuoteCount(ctx context.Context, statusID string) error
+	DecrementQuoteCount(ctx context.Context, statusID string) error
+}
+
+// RepositoryRegistry provides access to all repository interfaces
+// This allows services to access storage operations through a single interface
+type RepositoryRegistry interface {
+	Status() StatusRepository
+	Account() AccountRepository
+	Relationship() RelationshipRepository
+	Media() MediaRepository
+	Conversation() ConversationRepository
+	List() ListRepository
+	Filter() FilterRepository
+	Notification() NotificationRepository
+	Like() LikeRepository
+	Social() SocialRepository
+	Quote() QuoteRepository
+}

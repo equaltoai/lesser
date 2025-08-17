@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/shopspring/decimal"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Marshaler interface for custom DynamoDB marshaling
@@ -143,7 +144,7 @@ func NewMoneyFromString(amount, currency string) (Money, error) {
 
 // MarshalDynamoDB implements the Marshaler interface for Money
 func (m Money) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
-	if m.Currency == "" {
+	if err := common.ValidateRequiredParam("m.Currency", m.Currency); err != nil {
 		return nil, fmt.Errorf("currency is required")
 	}
 
@@ -238,7 +239,7 @@ type AESEncryptor struct {
 // NewAESEncryptor creates a new AES encryptor from environment variable
 func NewAESEncryptor() (*AESEncryptor, error) {
 	keyBase64 := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
-	if keyBase64 == "" {
+	if err := common.ValidateRequiredParam("keyBase64", keyBase64); err != nil {
 		return nil, fmt.Errorf("DYNAMODB_ENCRYPTION_KEY environment variable not set")
 	}
 
@@ -402,7 +403,7 @@ func (jf *JSONField) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) e
 	}
 
 	jsonStr := *av["S"].S
-	if jsonStr == "" {
+	if err := common.ValidateRequiredParam("jsonStr", jsonStr); err != nil {
 		jf.Data = nil
 		return nil
 	}
@@ -477,7 +478,7 @@ func NewStringSet(values ...string) StringSet {
 
 // MarshalDynamoDB implements the Marshaler interface for StringSet
 func (ss StringSet) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
-	if len(ss.Values) == 0 {
+	if err := common.ValidateSliceNotEmpty("ss.Values", ss.Values); err != nil {
 		return map[string]*dynamodb.AttributeValue{
 			"NULL": {NULL: aws.Bool(true)},
 		}, nil
@@ -576,7 +577,7 @@ func (ss StringSet) ToSlice() []string {
 
 // String returns a string representation of the set
 func (ss StringSet) String() string {
-	if len(ss.Values) == 0 {
+	if err := common.ValidateSliceNotEmpty("ss.Values", ss.Values); err != nil {
 		return "[]"
 	}
 

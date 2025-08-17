@@ -1,8 +1,12 @@
 package auth
 
+import (
+	"github.com/equaltoai/lesser/pkg/common"
+)
+
 // ValidateToken validates a token and returns the claims
 func (m *Middleware) ValidateToken(authHeader string) (*Claims, error) {
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return nil, ErrMissingAuthHeader
 	}
 

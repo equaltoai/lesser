@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // LinkMetadata represents metadata about a link
@@ -37,7 +39,7 @@ func (l *LinkMetadata) UpdateKeys() {
 	l.SK = SKMetadata
 
 	// Extract domain from URL if not set
-	if l.Domain == "" && l.URL != "" {
+	if err := common.ValidateRequiredParam("domain", l.Domain); err != nil && l.URL != "" {
 		if u, err := url.Parse(l.URL); err == nil {
 			l.Domain = strings.ToLower(u.Hostname())
 		}
@@ -116,13 +118,13 @@ func (l *LinkMetadata) SetFromOpenGraph(ogTitle, ogDescription, ogImage string) 
 // SetFromTwitterCard sets metadata from Twitter Card tags
 func (l *LinkMetadata) SetFromTwitterCard(twitterTitle, twitterDescription, twitterImage string) {
 	// Only override if OpenGraph didn't provide values
-	if l.Title == "" && twitterTitle != "" {
+	if err := common.ValidateRequiredParam("title", l.Title); err != nil && twitterTitle != "" {
 		l.Title = twitterTitle
 	}
-	if l.Description == "" && twitterDescription != "" {
+	if err := common.ValidateRequiredParam("description", l.Description); err != nil && twitterDescription != "" {
 		l.Description = twitterDescription
 	}
-	if l.Image == "" && twitterImage != "" {
+	if err := common.ValidateRequiredParam("image", l.Image); err != nil && twitterImage != "" {
 		l.Image = twitterImage
 	}
 }

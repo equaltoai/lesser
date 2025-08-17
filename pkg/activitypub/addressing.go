@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AddressingValidator provides validation for ActivityPub addressing fields
@@ -58,7 +59,7 @@ func (v *AddressingValidator) validateRecipientList(recipients []string, fieldNa
 
 // validateRecipient validates a single recipient address
 func (v *AddressingValidator) validateRecipient(recipient, fieldName string) error {
-	if recipient == "" {
+	if err := common.ValidateRequiredParam("recipient", recipient); err != nil {
 		return fmt.Errorf("empty recipient in %s field", fieldName)
 	}
 

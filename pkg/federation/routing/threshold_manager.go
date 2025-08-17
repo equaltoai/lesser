@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"go.uber.org/zap"
 )
@@ -224,7 +225,7 @@ func (rtm *RouteThresholdManager) AssessRouteHealth(_ context.Context, routeID s
 			assessment.CacheTTL = rtm.config.DegradedRouteTTL
 			assessment.RecommendedAction = "reduce traffic due to latency"
 		}
-		if assessment.DegradationReason == "" {
+		if err := common.ValidateRequiredParam("assessment.DegradationReason", assessment.DegradationReason); err != nil {
 			assessment.DegradationReason = latencyDegradation
 		} else {
 			assessment.DegradationReason += "; " + latencyDegradation

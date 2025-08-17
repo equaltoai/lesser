@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -27,7 +28,6 @@ import (
 
 // authenticateHomeTimeline authenticates the user for home timeline access
 
-// extractTestUsernameForTimeline extracts test username from headers
 
 // extractAuthorizationHeader extracts authorization header from request
 
@@ -90,8 +90,8 @@ type TagTimelineUser struct {
 // HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag
 func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	hashtag := ctx.Param("hashtag")
-	if hashtag == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing hashtag"})
+	if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Get authenticated user (if any)
@@ -107,7 +107,10 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	params := h.parseTagTimelineParams(ctx, hashtag)
+	params, err := h.parseTagTimelineParams(ctx, hashtag)
+	if err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	}
 
 	// Use the Notes service to get hashtag timeline
 	query := &notes.ListNotesQuery{
@@ -159,7 +162,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 // getTagTimelineUser extracts and authenticates user from request
 
 // parseTagTimelineParams extracts query parameters
-func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) *TagTimelineParams {
+func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*TagTimelineParams, error) {
 	params := &TagTimelineParams{
 		Hashtag: hashtag,
 		Limit:   20,
@@ -167,9 +170,11 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) *Tag
 
 	// Parse limit
 	if limitStr := h.getQueryParam(ctx, "limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
-			params.Limit = parsedLimit
+		parsedLimit, err := common.ParseTimelineLimit(limitStr)
+		if err != nil {
+			return nil, err
 		}
+		params.Limit = parsedLimit
 	}
 
 	// Parse other parameters
@@ -177,7 +182,7 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) *Tag
 	params.Local = h.getQueryParam(ctx, "local") == boolTrue
 	params.OnlyMedia = h.getQueryParam(ctx, "only_media") == boolTrue
 
-	return params
+	return params, nil
 }
 
 // processTagTimelineEntries converts timeline entries to statuses
@@ -190,7 +195,7 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) *Tag
 
 // addTagTimelinePaginationHeader adds Link header for pagination
 func (h *Handler) addTagTimelinePaginationHeader(ctx *lift.Context, params *TagTimelineParams, cursor string) {
-	if cursor == "" {
+	if common.ValidateRequiredParam(cursor, "cursor") != nil {
 		return
 	}
 
@@ -212,8 +217,8 @@ func (h *Handler) addTagTimelinePaginationHeader(ctx *lift.Context, params *TagT
 // HandleGetListTimelineLift handles GET /api/v1/timelines/list/:list_id
 func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	listID := ctx.Param("list_id")
-	if listID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("list_id", listID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate and get username
@@ -223,7 +228,10 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Parse timeline parameters
-	limit, cursor := h.parseTimelineParams(ctx)
+	limit, cursor, err := h.parseTimelineParams(ctx)
+	if err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	}
 
 	// Use the Lists service to get list timeline
 	listService := h.registry.Lists()
@@ -284,7 +292,7 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope string) (string, error) {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -294,14 +302,14 @@ func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope s
 
 	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -327,26 +335,28 @@ func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope s
 }
 
 // parseTimelineParams parses limit and cursor from query parameters
-func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string) {
+func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
 	// Parse limit parameter
 	limit := 20
 	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
-			limit = l
+		l, err := common.ParseTimelineLimit(limitStr)
+		if err != nil {
+			return 0, "", err
 		}
+		limit = l
 	}
 
 	// Parse cursor parameter
 	cursor := ctx.Query("max_id")
-	if cursor == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(cursor, "cursor") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		cursor = ctx.Request.Request.QueryParams["max_id"]
 	}
 
-	return limit, cursor
+	return limit, cursor, nil
 }
 
 // HandleGetDirectTimelineLift handles GET /api/v1/timelines/direct
@@ -409,7 +419,7 @@ type directTimelineParams struct {
 // authenticateDirectTimeline authenticates the user for direct timeline access
 func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) {
 	// Test hook - check for test username header
-	testUsername := h.extractTestUsernameForDirectTimeline(ctx)
+	testUsername := h.getTestUsername(ctx)
 	if testUsername != "" {
 		return testUsername, nil
 	}
@@ -436,26 +446,18 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 	return claims.Username, nil
 }
 
-// extractTestUsernameForDirectTimeline extracts test username from headers
-func (h *Handler) extractTestUsernameForDirectTimeline(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
 
 // extractDirectTimelineAuthHeader extracts authorization header from request
 func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -473,18 +475,18 @@ func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelinePar
 
 	// Parse limit
 	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 	if limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
+		if parsedLimit, err := common.ParseTimelineLimit(limitStr); err == nil {
 			params.limit = parsedLimit
 		}
 	}
 
 	// Parse max_id
 	params.maxID = ctx.Query("max_id")
-	if params.maxID == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(params.maxID, "params.maxID") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		params.maxID = ctx.Request.Request.QueryParams["max_id"]
 	}
 

@@ -134,7 +134,7 @@ func (s *DynamORMStorage) GetMonthlyCost(ctx context.Context, year int, month ti
 	}
 
 	// If no data found, return empty result
-	if len(aggregates) == 0 {
+	if err := common.ValidateSliceNotEmpty("aggregates", aggregates); err != nil {
 		return &cost.MonthlyCostAggregate{
 			Year:                    year,
 			Month:                   int(month),
@@ -288,7 +288,7 @@ func (s *DynamORMStorage) GetCurrentMonthProjection(ctx context.Context) (*cost.
 		return nil, err
 	}
 
-	if len(dailyCosts) == 0 {
+	if err := common.ValidateSliceNotEmpty("dailyCosts", dailyCosts); err != nil {
 		return &cost.MonthlyCostAggregate{
 			Year:                    now.Year(),
 			Month:                   int(now.Month()),

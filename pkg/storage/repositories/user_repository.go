@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -28,20 +29,34 @@ type UserRepositoryDeps interface {
 	RemoveFollow(ctx context.Context, followerUsername, username string) error
 }
 
-// UserRepository implements user operations using DynamORM
+// UserRepository implements user operations using DynamORM with cost tracking
 type UserRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
-	deps      UserRepositoryDeps
+	db           core.DB
+	tableName    string
+	logger       *zap.Logger
+	costService  *cost.TrackingService
+	deps         UserRepositoryDeps
+	urlValidator *URLValidator
 }
 
 // NewUserRepository creates a new user repository
 func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRepository {
 	return &UserRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:           db,
+		tableName:    tableName,
+		logger:       logger,
+		urlValidator: NewURLValidator(logger),
+	}
+}
+
+// NewUserRepositoryWithCostTracking creates a new user repository with cost tracking
+func NewUserRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *UserRepository {
+	return &UserRepository{
+		db:           db,
+		tableName:    tableName,
+		logger:       logger,
+		costService:  costService,
+		urlValidator: NewURLValidator(logger),
 	}
 }
 
@@ -52,8 +67,9 @@ func (r *UserRepository) SetDependencies(deps UserRepositoryDeps) {
 
 // CreateUser creates a new user in DynamoDB
 func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) error {
-	if user.Username == "" {
-		return common.ValidationError{Field: "Username", Message: "username is required"}
+	// Validate user entity using centralized validation
+	if err := common.ValidateUserEntity(user.Username, user.Email); err != nil {
+		return err
 	}
 
 	// Create the DynamORM model
@@ -109,8 +125,9 @@ func (r *UserRepository) GetUser(ctx context.Context, username string) (*storage
 
 // GetUserByEmail retrieves a user by email address
 func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
-	if email == "" {
-		return nil, common.ValidationError{Field: "Email", Message: "email is required"}
+	// Validate email parameter using centralized validation
+	if err := common.ValidateRequiredParam("email", email); err != nil {
+		return nil, err
 	}
 
 	var userModels []models.User
@@ -123,7 +140,7 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 		return nil, fmt.Errorf("failed to query user by email: %w", err)
 	}
 
-	if len(userModels) == 0 {
+	if err := common.ValidateSliceNotEmpty("user_models", userModels); err != nil {
 		return nil, fmt.Errorf("user not found with email: %s", email)
 	}
 
@@ -132,7 +149,13 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 
 // UpdateUser updates an existing user
 func (r *UserRepository) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
-	if len(updates) == 0 {
+	// Validate username parameter
+	if err := common.ValidateUsernameParamID(username); err != nil {
+		return err
+	}
+	
+	// Validate updates map
+	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
 		return common.ValidationError{Field: "Updates", Message: "no updates provided"}
 	}
 
@@ -180,7 +203,8 @@ func (r *UserRepository) DeleteUser(ctx context.Context, username string) error 
 
 // ListUsers retrieves a paginated list of users
 func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor string) ([]*storage.User, string, error) {
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(int(limit), 100, "user listing"); err != nil {
 		limit = 20
 	}
 
@@ -278,7 +302,7 @@ func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, prov
 		return nil, fmt.Errorf("failed to query provider account: %w", err)
 	}
 
-	if len(providerAccounts) == 0 {
+	if err := common.ValidateSliceNotEmpty("provider_accounts", providerAccounts); err != nil {
 		return nil, fmt.Errorf("user not found with provider %s:%s", provider, providerID)
 	}
 
@@ -338,7 +362,7 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 		}
 	}
 
-	if len(providerAccounts) == 0 {
+	if err := common.ValidateSliceNotEmpty("provider_accounts", providerAccounts); err != nil {
 		return fmt.Errorf("provider account not found for user %s and provider %s", username, provider)
 	}
 
@@ -758,9 +782,13 @@ func (r *UserRepository) StoreReputation(ctx context.Context, actorID string, re
 
 // GetReputation retrieves the latest reputation for an actor
 func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*storage.Reputation, error) {
-	// Extract username from actorID
+	// Validate and extract username from actorID
+	if err := common.ValidateEntityID(actorID, "actor"); err != nil {
+		return nil, nil // Return nil (not error) when invalid actorID for backward compatibility
+	}
+	
 	username := extractUsernameFromActorID(actorID)
-	if username == "" {
+	if err := common.ValidateEntityID(username, "user"); err != nil {
 		return nil, nil // Return nil (not error) when invalid actorID
 	}
 
@@ -784,7 +812,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 	}
 
 	// No reputation found
-	if len(reputations) == 0 {
+	if err := common.ValidateSliceNotEmpty("reputations", reputations); err != nil {
 		return nil, nil // Return nil (not error) when not found
 	}
 
@@ -809,7 +837,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 func (r *UserRepository) GetReputationHistory(ctx context.Context, actorID string, limit int) ([]*storage.Reputation, error) {
 	// Extract username from actorID
 	username := extractUsernameFromActorID(actorID)
-	if username == "" {
+	if err := common.ValidateEntityID(username, "user"); err != nil {
 		return []*storage.Reputation{}, nil // Return empty slice when invalid actorID
 	}
 
@@ -897,7 +925,7 @@ func generateRandomID(length int) string {
 // CreateVouch creates a new vouch
 func (r *UserRepository) CreateVouch(_ context.Context, vouch *storage.Vouch) error {
 	// Generate vouch ID if not set
-	if vouch.ID == "" {
+	if common.ValidateRequiredParam(vouch.ID, "vouch.ID") != nil {
 		vouch.ID = fmt.Sprintf("vouch-%d-%s", time.Now().Unix(), generateRandomID(8))
 	}
 
@@ -939,14 +967,14 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 	}
 
 	// Return nil if not found
-	if len(vouchModels) == 0 {
+	if err := common.ValidateSliceNotEmpty("vouch_models", vouchModels); err != nil {
 		return nil, nil
 	}
 
 	vouchModel := vouchModels[0]
 
 	// Unmarshal vouch data
-	if vouchModel.VouchData == "" {
+	if common.ValidateRequiredParam(vouchModel.VouchData, "vouchData") != nil {
 		return nil, nil
 	}
 
@@ -979,7 +1007,7 @@ func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, ac
 	// Convert to storage.Vouch slice
 	vouches := make([]*storage.Vouch, 0, len(vouchModels))
 	for _, model := range vouchModels {
-		if model.VouchData == "" {
+		if common.ValidateRequiredParam(model.VouchData, "vouchData") != nil {
 			continue
 		}
 
@@ -1015,7 +1043,7 @@ func (r *UserRepository) GetVouchesForActor(_ context.Context, actorID string, a
 	// Convert to storage.Vouch slice
 	vouches := make([]*storage.Vouch, 0, len(vouchModels))
 	for _, model := range vouchModels {
-		if model.VouchData == "" {
+		if common.ValidateRequiredParam(model.VouchData, "vouchData") != nil {
 			continue
 		}
 
@@ -1106,7 +1134,7 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 // CreateTrustRelationship creates or updates a trust relationship
 func (r *UserRepository) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
 	// Generate ID if not set
-	if relationship.ID == "" {
+	if common.ValidateRequiredParam(relationship.ID, "relationship.ID") != nil {
 		relationship.ID = fmt.Sprintf("trust_%s", generateRandomID(12))
 	}
 
@@ -1348,7 +1376,7 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	update.Timestamp = time.Now()
 
 	// Generate event ID if not set
-	if update.EventID == "" {
+	if common.ValidateRequiredParam(update.EventID, "update.EventID") != nil {
 		update.EventID = generateRandomID(12)
 	}
 
@@ -1437,7 +1465,7 @@ func (r *UserRepository) calculateTrustScore(ctx context.Context, actorID, categ
 		return nil, err
 	}
 
-	if len(relationships) == 0 {
+	if err := common.ValidateSliceNotEmpty("relationships", relationships); err != nil {
 		return score, nil // No trust relationships
 	}
 
@@ -2008,8 +2036,13 @@ func (r *UserRepository) updateSinglePreference(prefs *storage.UserPreferences, 
 	}
 }
 
-// setStringPreference sets a string preference with type checking
+// setStringPreference sets a string preference with type checking using centralized validation
 func (r *UserRepository) setStringPreference(field *string, value any, key string) error {
+	// Use centralized preference validation
+	if err := common.ValidatePreferenceValue(key, value); err != nil {
+		return err
+	}
+	
 	v, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("invalid type for %s preference: expected string", key)
@@ -2018,8 +2051,13 @@ func (r *UserRepository) setStringPreference(field *string, value any, key strin
 	return nil
 }
 
-// setBoolPreference sets a boolean preference with type checking
+// setBoolPreference sets a boolean preference with type checking using centralized validation
 func (r *UserRepository) setBoolPreference(field *bool, value any, key string) error {
+	// Use centralized preference validation
+	if err := common.ValidatePreferenceValue(key, value); err != nil {
+		return err
+	}
+	
 	v, ok := value.(bool)
 	if !ok {
 		return fmt.Errorf("invalid type for %s preference: expected bool", key)
@@ -2028,8 +2066,13 @@ func (r *UserRepository) setBoolPreference(field *bool, value any, key string) e
 	return nil
 }
 
-// setReblogFiltersPreference sets the reblog filters preference with type checking
+// setReblogFiltersPreference sets the reblog filters preference with type checking using centralized validation
 func (r *UserRepository) setReblogFiltersPreference(field *map[string]bool, value any, key string) error {
+	// Use centralized preference validation
+	if err := common.ValidatePreferenceValue(key, value); err != nil {
+		return err
+	}
+	
 	v, ok := value.(map[string]bool)
 	if !ok {
 		return fmt.Errorf("invalid type for %s preference: expected map[string]bool", key)
@@ -2531,7 +2574,8 @@ func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limi
 		zap.String("cursor", cursor))
 
 	// Validate limit
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(int(limit), 100, "user listing"); err != nil {
 		limit = 20
 	}
 
@@ -2680,7 +2724,7 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
 	}
 
-	if len(expiredEntries) == 0 {
+	if err := common.ValidateSliceNotEmpty("expired_entries", expiredEntries); err != nil {
 		r.logger.Debug("no expired timeline entries found",
 			zap.Time("before", before))
 		return nil // Nothing to delete
@@ -2695,7 +2739,19 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 	}
 
 	// Perform batch deletion using DynamORM batch operations
-	result, err := batch.BatchDeleteWithCostTracking(ctx, r.db, keys, &timelineCostTracker{logger: r.logger}, r.logger)
+	// Use centralized cost tracker if available, fallback to legacy tracker
+	var costTracker batch.CostTracker
+	if r.costService != nil {
+		costTracker = &centralizedCostTracker{
+			costService: r.costService,
+			tableName:   r.tableName,
+			logger:      r.logger,
+		}
+	} else {
+		costTracker = &timelineCostTracker{logger: r.logger}
+	}
+	
+	result, err := batch.BatchDeleteWithCostTracking(ctx, r.db, keys, costTracker, r.logger)
 	if err != nil {
 		r.logger.Error("failed to batch delete expired timeline entries",
 			zap.Time("before", before),
@@ -3043,14 +3099,14 @@ func (r *UserRepository) extractObjectMetadata(object map[string]interface{}, lo
 	}
 
 	// Validate required fields
-	if metadata.objectID == "" || metadata.attributedTo == "" {
+	if common.ValidateRequiredParam(metadata.objectID, "objectID") != nil || common.ValidateRequiredParam(metadata.attributedTo, "attributedTo") != nil {
 		log.Error("missing required fields in object", zap.Any("object", object))
 		return nil, fmt.Errorf("object missing required fields")
 	}
 
 	// Extract username from actor ID
 	metadata.username = extractUsernameFromActorID(metadata.attributedTo)
-	if metadata.username == "" {
+	if common.ValidateRequiredParam(metadata.username, "username") != nil {
 		log.Error("failed to extract username from actor", zap.String("actor", metadata.attributedTo))
 		return nil, fmt.Errorf("invalid actor ID")
 	}
@@ -3160,7 +3216,7 @@ func (r *UserRepository) addPublicTimelineEntries(attributedTo string, baseEntry
 // addHashtagTimelineEntries adds entries for hashtag timelines
 func (r *UserRepository) addHashtagTimelineEntries(baseEntry *models.Timeline, tags []activitypub.Tag, entries []*models.Timeline) []*models.Timeline {
 	for _, tag := range tags {
-		if tag.Type != "Hashtag" || tag.Name == "" {
+		if tag.Type != "Hashtag" || common.ValidateRequiredParam(tag.Name, "tag.Name") != nil {
 			continue
 		}
 
@@ -3206,7 +3262,7 @@ func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, user
 		for _, followerID := range followers {
 			// Extract follower username
 			followerUsername := extractUsernameFromActorID(followerID)
-			if followerUsername == "" {
+			if common.ValidateRequiredParam(followerUsername, "followerUsername") != nil {
 				log.Warn("invalid follower ID", zap.String("follower_id", followerID))
 				continue
 			}
@@ -3220,7 +3276,7 @@ func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, user
 		}
 
 		// Check if there are more followers
-		if nextCursor == "" {
+		if common.ValidateRequiredParam(nextCursor, "nextCursor") != nil {
 			break
 		}
 		cursor = nextCursor
@@ -3249,15 +3305,15 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 		switch list.RepliesPolicy {
 		case "none":
 			// No replies
-			shouldInclude = baseEntry.InReplyTo == ""
+			shouldInclude = common.ValidateRequiredParam(baseEntry.InReplyTo, "inReplyTo") != nil
 		case "followed":
 			// Replies to followed accounts only - check if replied-to account is followed
-			if baseEntry.InReplyTo == "" {
+			if common.ValidateRequiredParam(baseEntry.InReplyTo, "inReplyTo") != nil {
 				// Not a reply, include it
 				shouldInclude = true
 			} else {
 				// Check if the replied-to account is followed by list owner
-				repliedToAccount := extractAccountFromReply(baseEntry.InReplyTo)
+				repliedToAccount := r.extractAccountFromReply(ctx, baseEntry.InReplyTo)
 				if repliedToAccount != "" && r.deps != nil {
 					// Use GetFollowers to check if the list owner follows the replied-to account
 					followers, _, err := r.deps.GetFollowers(ctx, repliedToAccount, 1000, "")
@@ -3294,7 +3350,7 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 }
 
 // extractAccountFromReply extracts the account ID/username from an InReplyTo field
-func extractAccountFromReply(inReplyTo string) string {
+func (r *UserRepository) extractAccountFromReply(ctx context.Context, inReplyTo string) string {
 	// InReplyTo is typically a post ID like "POST#user#timestamp" or URL
 	// Extract the username/account part
 	if strings.HasPrefix(inReplyTo, "POST#") {
@@ -3303,9 +3359,191 @@ func extractAccountFromReply(inReplyTo string) string {
 			return parts[1] // Return the username part
 		}
 	}
-	// For URLs, extract from path (ActivityPub URLs typically contain username)
-	// This is a simplified extraction - could be enhanced for different URL patterns
+	
+	// Use enhanced URL extraction for ActivityPub URLs and other patterns
+	if r.urlValidator != nil {
+		if username, err := r.urlValidator.EnhancedExtractAccountFromReply(ctx, inReplyTo); err == nil && username != "" {
+			return username
+		}
+	}
+	
+	// Fallback to legacy path extraction
+	return r.extractUsernameFromURLPath(inReplyTo)
+}
+
+// extractUsernameFromURLPath provides fallback URL path parsing
+func (r *UserRepository) extractUsernameFromURLPath(inReplyTo string) string {
+	// Basic URL parsing for ActivityPub URLs
+	if !strings.HasPrefix(inReplyTo, "http") {
+		return ""
+	}
+	
+	// Try to extract username from common ActivityPub URL patterns
+	parts := strings.Split(inReplyTo, "/")
+	if len(parts) < 3 {
+		return ""
+	}
+	
+	// Look for patterns like /users/username, /@username, /actors/username
+	for i, part := range parts {
+		if (part == "users" || part == "actors" || part == "profile") && i+1 < len(parts) {
+			return parts[i+1]
+		}
+		if strings.HasPrefix(part, "@") && len(part) > 1 {
+			return strings.TrimPrefix(part, "@")
+		}
+	}
+	
+	// If no pattern matches, try the last path segment if it looks like a username
+	lastPart := parts[len(parts)-1]
+	if len(lastPart) > 0 && len(lastPart) <= 50 {
+		// Basic sanity check for username-like strings
+		if !strings.Contains(lastPart, ".") && !strings.Contains(lastPart, "=") {
+			return lastPart
+		}
+	}
+	
 	return ""
+}
+
+// ValidateAndNormalizeUserFields validates and normalizes URLs in user profile fields
+func (r *UserRepository) ValidateAndNormalizeUserFields(ctx context.Context, fields []map[string]string) ([]map[string]string, []string, error) {
+	if r.urlValidator == nil {
+		r.logger.Warn("URL validator not initialized, returning fields unchanged")
+		return fields, nil, nil
+	}
+	
+	return r.urlValidator.ValidateAndNormalizeProfileURLs(ctx, fields)
+}
+
+// ExtractProfileURLs extracts and validates all URLs from user profile fields
+func (r *UserRepository) ExtractProfileURLs(ctx context.Context, fields []map[string]string) ([]*URLExtractionResult, error) {
+	if r.urlValidator == nil {
+		r.logger.Warn("URL validator not initialized")
+		return nil, fmt.Errorf("URL validator not available")
+	}
+	
+	return r.urlValidator.ExtractProfileURLs(ctx, fields)
+}
+
+// ValidateUserURL validates and normalizes a single URL (for main profile URL field)
+func (r *UserRepository) ValidateUserURL(ctx context.Context, rawURL string) (*URLExtractionResult, error) {
+	if r.urlValidator == nil {
+		r.logger.Warn("URL validator not initialized")
+		return nil, fmt.Errorf("URL validator not available")
+	}
+	
+	return r.urlValidator.ExtractAndValidateURL(ctx, rawURL)
+}
+
+// generateURLWarnings converts validation tags to user-friendly warning messages
+func generateURLWarnings(validationTags []string) []string {
+	var warnings []string
+	for _, tag := range validationTags {
+		switch tag {
+		case "insecure_http":
+			warnings = append(warnings, "Profile URL uses insecure HTTP protocol")
+		case "suspicious_tld":
+			warnings = append(warnings, "Profile URL uses suspicious domain")
+		case "url_shortener":
+			warnings = append(warnings, "Profile URL is a shortened URL")
+		}
+	}
+	return warnings
+}
+
+// validateAndUpdateProfileURL validates and normalizes a profile URL
+func (r *UserRepository) validateAndUpdateProfileURL(ctx context.Context, updates map[string]any) ([]string, error) {
+	var warnings []string
+	
+	rawURL, exists := updates["url"]
+	if !exists {
+		return warnings, nil
+	}
+	
+	urlStr, ok := rawURL.(string)
+	if !ok || common.ValidateRequiredParam(urlStr, "urlStr") != nil {
+		return warnings, nil
+	}
+	
+	if r.urlValidator == nil {
+		return warnings, nil
+	}
+	
+	result, err := r.urlValidator.ExtractAndValidateURL(ctx, urlStr)
+	if err != nil {
+		return warnings, fmt.Errorf("failed to validate profile URL: %w", err)
+	}
+	
+	if !result.IsValid {
+		return warnings, fmt.Errorf("invalid profile URL format")
+	}
+	
+	updates["url"] = result.NormalizedURL
+	warnings = append(warnings, generateURLWarnings(result.ValidationTags)...)
+	
+	return warnings, nil
+}
+
+// validateAndUpdateProfileFields validates and normalizes profile fields containing URLs
+func (r *UserRepository) validateAndUpdateProfileFields(ctx context.Context, updates map[string]any) ([]string, error) {
+	var warnings []string
+	
+	rawFields, exists := updates["fields"]
+	if !exists {
+		return warnings, nil
+	}
+	
+	fields, ok := rawFields.([]map[string]string)
+	if !ok {
+		return warnings, nil
+	}
+	if err := common.ValidateSliceNotEmpty("fields", fields); err != nil {
+		return warnings, nil
+	}
+	
+	if r.urlValidator == nil {
+		return warnings, nil
+	}
+	
+	normalizedFields, fieldWarnings, err := r.urlValidator.ValidateAndNormalizeProfileURLs(ctx, fields)
+	if err != nil {
+		r.logger.Error("failed to validate profile fields", zap.Error(err))
+		// Continue with original fields rather than failing
+		return warnings, nil
+	}
+	
+	updates["fields"] = normalizedFields
+	warnings = append(warnings, fieldWarnings...)
+	
+	return warnings, nil
+}
+
+// UpdateUserWithURLValidation updates user profile with URL validation and normalization
+func (r *UserRepository) UpdateUserWithURLValidation(ctx context.Context, username string, updates map[string]any) ([]string, error) {
+	var allWarnings []string
+	
+	// Validate and normalize profile URL if present
+	urlWarnings, err := r.validateAndUpdateProfileURL(ctx, updates)
+	if err != nil {
+		return allWarnings, err
+	}
+	allWarnings = append(allWarnings, urlWarnings...)
+	
+	// Validate and normalize fields if present
+	fieldWarnings, err := r.validateAndUpdateProfileFields(ctx, updates)
+	if err != nil {
+		return allWarnings, err
+	}
+	allWarnings = append(allWarnings, fieldWarnings...)
+	
+	// Perform the actual update
+	err = r.UpdateUser(ctx, username, updates)
+	if err != nil {
+		return allWarnings, fmt.Errorf("failed to update user: %w", err)
+	}
+	
+	return allWarnings, nil
 }
 
 // determineVisibility determines the visibility of a post based on addressing
@@ -3414,7 +3652,88 @@ func getStringFromMap(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// timelineCostTracker implements the CostTracker interface for timeline deletion operations
+// centralizedCostTracker implements the CostTracker interface using the centralized cost tracking framework
+type centralizedCostTracker struct {
+	costService *cost.TrackingService
+	tableName   string
+	logger      *zap.Logger
+	reads       int64
+	writes      int64
+}
+
+// CalculateCost returns the current cost metrics
+func (c *centralizedCostTracker) CalculateCost() batch.CostMetrics {
+	return batch.CostMetrics{
+		DynamoDBReads:  c.reads,
+		DynamoDBWrites: c.writes,
+	}
+}
+
+// TrackDynamoWrite tracks DynamoDB write operations through centralized service
+func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
+	c.writes += int64(items)
+	
+	if c.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "BatchWriteItem",
+			TableName:          c.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: int64(items),
+			ItemCount:          int64(items),
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("user_batch_delete_%d", time.Now().UnixNano()),
+		}
+		
+		// Track through centralized service (async to not block operation)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			
+			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
+				c.logger.Warn("failed to track batch delete cost through centralized service",
+					zap.Int("items", items),
+					zap.Error(err))
+			}
+		}()
+	}
+	
+	if c.logger != nil {
+		c.logger.Debug("tracked timeline delete operations via centralized framework",
+			zap.Int("deleted_items", items),
+			zap.Int64("total_writes", c.writes))
+	}
+}
+
+// TrackDynamoRead tracks DynamoDB read operations through centralized service
+func (c *centralizedCostTracker) TrackDynamoRead(items int) {
+	c.reads += int64(items)
+	
+	if c.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "BatchGetItem",
+			TableName:          c.tableName,
+			ConsumedReadUnits:  int64(items),
+			ConsumedWriteUnits: 0,
+			ItemCount:          int64(items),
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("user_batch_read_%d", time.Now().UnixNano()),
+		}
+		
+		// Track through centralized service (async to not block operation)
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			
+			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
+				c.logger.Warn("failed to track batch read cost through centralized service",
+					zap.Int("items", items),
+					zap.Error(err))
+			}
+		}()
+	}
+}
+
+// timelineCostTracker implements the CostTracker interface for timeline deletion operations (LEGACY)
 type timelineCostTracker struct {
 	logger *zap.Logger
 	reads  int64
@@ -3442,4 +3761,49 @@ func (t *timelineCostTracker) TrackDynamoWrite(items int) {
 // TrackDynamoRead tracks DynamoDB read operations
 func (t *timelineCostTracker) TrackDynamoRead(items int) {
 	t.reads += int64(items)
+}
+
+// === COST TRACKING UTILITY METHODS ===
+
+// SetCostService allows setting or updating the cost service
+func (r *UserRepository) SetCostService(costService *cost.TrackingService) {
+	r.costService = costService
+}
+
+// TrackRead provides a simple way to track read operations
+func (r *UserRepository) TrackRead(ctx context.Context, operationType string, readUnits int64) error {
+	if r.costService == nil {
+		return nil // Silently skip if no cost service
+	}
+	
+	operation := cost.DynamoOperation{
+		Type:               operationType,
+		TableName:          r.tableName,
+		ConsumedReadUnits:  readUnits,
+		ConsumedWriteUnits: 0,
+		ItemCount:          1,
+		Timestamp:          time.Now(),
+		OperationID:        fmt.Sprintf("user_%s_%d", operationType, time.Now().UnixNano()),
+	}
+	
+	return r.costService.TrackDynamoOperation(ctx, operation)
+}
+
+// TrackWrite provides a simple way to track write operations
+func (r *UserRepository) TrackWrite(ctx context.Context, operationType string, writeUnits int64) error {
+	if r.costService == nil {
+		return nil // Silently skip if no cost service
+	}
+	
+	operation := cost.DynamoOperation{
+		Type:               operationType,
+		TableName:          r.tableName,
+		ConsumedReadUnits:  0,
+		ConsumedWriteUnits: writeUnits,
+		ItemCount:          1,
+		Timestamp:          time.Now(),
+		OperationID:        fmt.Sprintf("user_%s_%d", operationType, time.Now().UnixNano()),
+	}
+	
+	return r.costService.TrackDynamoOperation(ctx, operation)
 }

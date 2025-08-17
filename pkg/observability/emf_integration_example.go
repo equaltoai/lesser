@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Example showing how to replace polling-based metrics with EMF in Lambda handlers
@@ -218,7 +219,7 @@ func sanitizePathForMetrics(path string) string {
 		result = result[:len(result)-1]
 	}
 
-	if result == "" {
+	if err := common.ValidateRequiredParam("result", result); err != nil {
 		return "root"
 	}
 

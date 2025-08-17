@@ -135,7 +135,7 @@ func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, error) {
 // getExportTestUsername extracts test username from headers
 func (h *Handler) getExportTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -144,13 +144,13 @@ func (h *Handler) getExportTestUsername(ctx *lift.Context) string {
 // extractExportAuthHeader extracts authorization header
 func (h *Handler) extractExportAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -158,8 +158,12 @@ func (h *Handler) extractExportAuthHeader(ctx *lift.Context) string {
 	return authHeader
 }
 
-// validateExportToken validates the token and checks scope
+// validateExportToken validates the token and checks scope using centralized validation
 func (h *Handler) validateExportToken(ctx *lift.Context, token string) (string, error) {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		return "", ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+	}
+
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
@@ -188,18 +192,26 @@ func (h *Handler) parseExportRequest(ctx *lift.Context) (*ExportRequest, error) 
 	}
 
 	// Set defaults
-	if req.Type == "" {
+	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
 		req.Type = ExportTypeArchive
 	}
-	if req.Format == "" {
+	if err := common.ValidateRequiredParam("format", req.Format); err != nil {
 		req.Format = "activitypub"
 	}
 
 	return &req, nil
 }
 
-// validateExportParams validates export type and format
+// validateExportParams validates export type and format using centralized validation
 func (h *Handler) validateExportParams(ctx *lift.Context, req *ExportRequest) error {
+	// Validate required parameters first
+	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
+	}
+	if err := common.ValidateRequiredParam("format", req.Format); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
+	}
+
 	// Validate export type
 	if !h.isValidExportType(req.Type) {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": fmt.Sprintf("invalid export type: %s", req.Type)})
@@ -349,7 +361,7 @@ func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string
 func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -360,14 +372,14 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -389,8 +401,8 @@ func (h *Handler) HandleGetExportStatusLift(ctx *lift.Context) error {
 
 	// Get export ID from path parameter
 	exportID := ctx.Param("id")
-	if exportID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing export ID"})
+	if err := common.ValidateRequiredParam("id", exportID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get export job
@@ -476,7 +488,7 @@ func (h *Handler) authenticateListExportsRequest(ctx *lift.Context) (string, err
 // getListExportsTestUsername extracts test username from headers
 func (h *Handler) getListExportsTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -506,14 +518,14 @@ func (h *Handler) authenticateListExportsWithToken(ctx *lift.Context) (string, e
 // extractListExportsAuthHeader extracts authorization header
 func (h *Handler) extractListExportsAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -596,7 +608,7 @@ func (h *Handler) addFailedExportFields(job *ExportJob, export *models.Export) {
 func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 	// Authenticate user (using existing pattern from status handler)
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -607,13 +619,13 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -635,8 +647,8 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 
 	// Get export ID from path parameter
 	exportID := ctx.Param("id")
-	if exportID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing export ID"})
+	if err := common.ValidateRequiredParam("id", exportID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get export job
@@ -656,7 +668,7 @@ func (h *Handler) HandleDownloadExportLift(ctx *lift.Context) error {
 	}
 
 	// Check if download URL is available and not expired
-	if export.DownloadURL == "" {
+	if err := common.ValidateRequiredParam("downloadURL", export.DownloadURL); err != nil {
 		return ctx.Status(http.StatusGone).JSON(map[string]any{"error": "download URL not available"})
 	}
 

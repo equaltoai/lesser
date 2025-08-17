@@ -15,13 +15,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -29,16 +27,18 @@ import (
 // OutboxProcessor handles ActivityPub federation delivery via SQS
 type OutboxProcessor struct {
 	federationService            *federation.DeliveryService
-	db                           core.DB
+	db                           interface{} // DynamORM client interface
 	actorRepository              *repositories.ActorRepository
 	activityRepository           *repositories.ActivityRepository
 	federationActivityRepository *repositories.FederationActivityRepository
 	federationCostRepository     *repositories.FederationCostRepository
 	logger                       *zap.Logger
-	cfg                          *config.Config
+	cfg                          interface{} // config.Config interface
 	httpClient                   *http.Client
 	retryConfig                  RetryConfig
 	costCalculator               *federation.CostCalculator
+	repos                        core.RepositoryStorage
+	lambdaCtx                    *common.LambdaContext
 }
 
 // RetryConfig defines retry behavior for federation delivery
@@ -68,41 +68,59 @@ type DeliveryResult struct {
 	Attempt     int
 }
 
-// NewOutboxProcessor creates a new outbox processor
+// NewOutboxProcessor creates a new outbox processor using standardized Lambda initialization
 func NewOutboxProcessor() (*OutboxProcessor, error) {
-	logger := common.Logger()
-	cfg := config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Initialize Lambda with federation-specific configuration
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName: "outbox",
+		LambdaType:  common.LambdaTypeFederation,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
 	}
 
-	// Initialize repositories
-	actorRepo := repositories.NewActorRepository(db, cfg.DynamoTableName, logger)
-	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
-	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
-	federationCostRepo := repositories.NewFederationCostRepository(db, cfg.DynamoTableName, logger)
+	// Initialize federation-specific services
+	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
+	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
+		return nil, fmt.Errorf("failed to initialize Lambda services: %w", err)
+	}
 
-	// Create federation storage using DynamORM repositories
-	federationStorage := federation.NewDynamORMFederationStorage(db, cfg.DynamoTableName)
+	// Extract initialized services with type safety
+	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok {
+		return nil, fmt.Errorf("failed to get repository storage from Lambda context")
+	}
 
-	// Create federation service with federation storage
-	federationService := federation.NewDeliveryService(federationStorage)
+	// Get individual repositories from the repository storage
+	actorRepo := repos.Actor()
+	activityRepo := repos.Activity()
+	
+	// Create federation-specific repositories manually until they're added to core interface
+	federationActivityRepo := repositories.NewFederationActivityRepository(
+		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
+	federationCostRepo := repositories.NewFederationCostRepository(
+		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
 
-	// Initialize cost calculator
-	costCalculator := federation.NewCostCalculator()
+	// Extract federation services from Lambda context
+	federationService, ok := lambdaCtx.DeliveryService.(*federation.DeliveryService)
+	if !ok {
+		return nil, fmt.Errorf("failed to get federation delivery service from Lambda context")
+	}
+
+	costCalculator, ok := lambdaCtx.CostCalculator.(*federation.CostCalculator)
+	if !ok {
+		return nil, fmt.Errorf("failed to get cost calculator from Lambda context")
+	}
 
 	return &OutboxProcessor{
 		federationService:            federationService,
-		db:                           db,
+		db:                           lambdaCtx.DynamoDB,
 		actorRepository:              actorRepo,
 		activityRepository:           activityRepo,
 		federationActivityRepository: federationActivityRepo,
 		federationCostRepository:     federationCostRepo,
-		logger:                       logger,
-		cfg:                          cfg,
+		logger:                       lambdaCtx.Logger,
+		cfg:                          lambdaCtx.Config,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -121,13 +139,15 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 			},
 		},
 		costCalculator: costCalculator,
+		repos:          repos,
+		lambdaCtx:      lambdaCtx,
 	}, nil
 }
 
 // HandleSQS processes ActivityPub federation messages from SQS
 func (op *OutboxProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
 	requestID, _ := ctx.Get("requestID").(string)
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("outbox-%d", time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}
@@ -222,7 +242,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 	if deliveryMsg.Actor == nil {
 		return fmt.Errorf("missing actor in message")
 	}
-	if deliveryMsg.TargetInbox == "" {
+	if err := common.ValidateRequiredParam("targetInbox", deliveryMsg.TargetInbox); err != nil {
 		return fmt.Errorf("missing target inbox in message")
 	}
 
@@ -493,7 +513,7 @@ func (op *OutboxProcessor) recordComprehensiveCostTracking(msg ActivityDeliveryM
 
 // extractDomainFromURL extracts the domain from a URL
 func extractDomainFromURL(urlStr string) string {
-	if urlStr == "" {
+	if err := common.ValidateRequiredParam("url", urlStr); err != nil {
 		return ""
 	}
 
@@ -528,13 +548,13 @@ func extractDomainFromURL(urlStr string) string {
 // HandleOutboxPost handles POST requests to the ActivityPub outbox endpoint
 func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 	requestID, _ := ctx.Get("requestID").(string)
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("outbox-post-%d", time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}
 
 	username := ctx.Param("username")
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		op.logger.Warn("missing username parameter", zap.String("request_id", requestID))
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 			"error": "missing username parameter",
@@ -578,7 +598,7 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 	}
 
 	// Generate activity ID if not provided
-	if activity.ID == "" {
+	if err := common.ValidateRequiredParam("activity.ID", activity.ID); err != nil {
 		activity.ID = fmt.Sprintf("%s/activities/%s-%d-%s", 
 			actor.ID, 
 			strings.ToLower(activity.Type), 
@@ -623,7 +643,7 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username string) (*auth.Claims, *activitypub.Actor, error) {
 	// Extract Bearer token
 	token := op.getBearerToken(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		op.logger.Warn("missing authentication token")
 		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{
 			"error": "authentication required",
@@ -673,11 +693,11 @@ func (op *OutboxProcessor) authenticateOutboxRequest(ctx *lift.Context, username
 // getBearerToken extracts Bearer token from Authorization header
 func (op *OutboxProcessor) getBearerToken(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return ""
 	}
 
@@ -702,7 +722,7 @@ func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activit
 	}
 
 	// Validate required fields
-	if activity.Type == "" {
+	if err := common.ValidateRequiredParam("activityType", activity.Type); err != nil {
 		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
 			"error": "activity type is required",
 		})
@@ -810,11 +830,15 @@ func generateRandomStringOutbox() string {
 
 // validateJWTToken validates a JWT token and returns claims
 func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, error) {
+	// Extract config with reflection or direct import for now
+	// This will be improved when config interface is standardized
+	cfg := op.lambdaCtx.Config
+
 	token, err := jwt.ParseWithClaims(tokenString, &auth.Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
-		return []byte(op.cfg.JWTSecret), nil
+		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse token: %w", err)
@@ -835,6 +859,9 @@ func main() {
 	}
 
 	app := lift.New()
+
+	// Use standardized Lambda handler wrapper for observability
+	standardHandler := processor.lambdaCtx.CreateStandardizedLambdaHandler
 
 	// Add request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
@@ -920,5 +947,8 @@ func main() {
 		return processor.HandleOutboxPost(ctx)
 	})
 
-	lambda.Start(app.HandleRequest)
+	// Wrap the main Lambda handler with standardized observability
+	lambda.Start(standardHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	}))
 }

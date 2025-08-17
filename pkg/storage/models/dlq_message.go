@@ -102,15 +102,15 @@ func (d *DLQMessage) BeforeCreate() error {
 	d.FirstSeenAt = now
 
 	// Generate ID if not provided
-	if d.ID == "" {
+	if err := common.ValidateRequiredParam("ID", d.ID); err != nil {
 		d.ID = uuid.New().String()
 	}
 
 	// Set defaults
-	if d.Status == "" {
+	if err := common.ValidateRequiredParam("Status", d.Status); err != nil {
 		d.Status = "new"
 	}
-	if d.Priority == "" {
+	if err := common.ValidateRequiredParam("Priority", d.Priority); err != nil {
 		d.Priority = string(AdvancedSeverityMedium)
 	}
 	if d.MaxReprocessAttempts == 0 {
@@ -121,7 +121,7 @@ func (d *DLQMessage) BeforeCreate() error {
 	d.ExpiresAt = now.Add(90 * 24 * time.Hour).Unix()
 
 	// Generate similarity hash for error grouping
-	if d.SimilarityHash == "" {
+	if err := common.ValidateRequiredParam("SimilarityHash", d.SimilarityHash); err != nil {
 		d.SimilarityHash = d.generateSimilarityHash()
 	}
 
@@ -164,24 +164,24 @@ func (d *DLQMessage) setupGSIKeys() {
 	d.GSI3SK = fmt.Sprintf("%s#%s#%s", timestampStr, d.ErrorType, d.ID)
 }
 
-// Validate performs validation on the DLQMessage
+// Validate performs validation on the DLQMessage using centralized validation
 func (d *DLQMessage) Validate() error {
-	if strings.TrimSpace(d.ID) == "" {
+	if err := common.ValidateRequiredParam("ID", strings.TrimSpace(d.ID)); err != nil {
 		return fmt.Errorf("ID is required")
 	}
-	if strings.TrimSpace(d.OriginalMessageID) == "" {
+	if err := common.ValidateRequiredParam("OriginalMessageID", strings.TrimSpace(d.OriginalMessageID)); err != nil {
 		return fmt.Errorf("OriginalMessageID is required")
 	}
-	if strings.TrimSpace(d.Service) == "" {
+	if err := common.ValidateRequiredParam("Service", strings.TrimSpace(d.Service)); err != nil {
 		return fmt.Errorf("service is required")
 	}
-	if strings.TrimSpace(d.MessageBody) == "" {
+	if err := common.ValidateRequiredParam("MessageBody", strings.TrimSpace(d.MessageBody)); err != nil {
 		return fmt.Errorf("MessageBody is required")
 	}
-	if strings.TrimSpace(d.ErrorType) == "" {
+	if err := common.ValidateRequiredParam("ErrorType", strings.TrimSpace(d.ErrorType)); err != nil {
 		return fmt.Errorf("ErrorType is required")
 	}
-	if strings.TrimSpace(d.ErrorMessage) == "" {
+	if err := common.ValidateRequiredParam("ErrorMessage", strings.TrimSpace(d.ErrorMessage)); err != nil {
 		return fmt.Errorf("ErrorMessage is required")
 	}
 	if !isValidDLQStatus(d.Status) {

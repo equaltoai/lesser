@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WebSocketCostTracker handles cost tracking for WebSocket operations
@@ -227,7 +228,7 @@ func (t *WebSocketCostTracker) CreateOperationContext(ctx *lift.Context, event e
 
 // CheckBudgetLimits checks if a user can perform WebSocket operations within budget limits
 func (t *WebSocketCostTracker) CheckBudgetLimits(ctx context.Context, userID string) (*BudgetStatus, error) {
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		// Allow anonymous connections with default limits
 		return &BudgetStatus{
 			UserID:          "",

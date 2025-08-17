@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -170,7 +171,7 @@ func (fv *FileValidationService) detectContentType(data []byte, result *FileVali
 
 	// Enhanced detection for common import formats
 	const applicationJSON = "application/json"
-	if len(data) > 0 {
+	if err := common.ValidateSliceNotEmpty("file data", data); err == nil {
 		switch {
 		case bytes.HasPrefix(data, []byte("{")):
 			result.ContentType = applicationJSON
@@ -193,7 +194,7 @@ func (fv *FileValidationService) detectContentType(data []byte, result *FileVali
 
 // validateContentType validates that content type is allowed
 func (fv *FileValidationService) validateContentType(config FileValidationConfig, result *FileValidationResult) error {
-	if len(config.AllowedTypes) == 0 {
+	if err := common.ValidateSliceNotEmpty("allowed types", config.AllowedTypes); err != nil {
 		return nil // No restrictions
 	}
 
@@ -215,7 +216,7 @@ func (fv *FileValidationService) validateContentType(config FileValidationConfig
 
 // validateFormat validates the detected format
 func (fv *FileValidationService) validateFormat(data []byte, config FileValidationConfig, result *FileValidationResult) error {
-	if len(config.RequiredFormats) == 0 {
+	if err := common.ValidateSliceNotEmpty("required formats", config.RequiredFormats); err != nil {
 		return nil // No format requirements
 	}
 
@@ -290,7 +291,7 @@ func (fv *FileValidationService) validateCSVFormat(data []byte, result *FileVali
 
 	inconsistentRows := 0
 	for i, line := range lines[1:] {
-		if strings.TrimSpace(line) == "" {
+		if err := common.ValidateRequiredParam("CSV line", strings.TrimSpace(line)); err != nil {
 			continue // Skip empty lines
 		}
 		cols := len(strings.Split(line, ","))
@@ -374,12 +375,12 @@ func (fv *FileValidationService) validateJSONImportStructure(data []byte, result
 	switch v := jsonData.(type) {
 	case map[string]interface{}:
 		// Single object - validate it has expected fields
-		if len(v) == 0 {
+		if err := common.ValidateSliceNotEmpty("JSON object keys", make([]interface{}, len(v))); err != nil {
 			result.Warnings = append(result.Warnings, "JSON object is empty")
 		}
 	case []interface{}:
 		// Array of objects
-		if len(v) == 0 {
+		if err := common.ValidateSliceNotEmpty("JSON array items", v); err != nil {
 			result.Warnings = append(result.Warnings, "JSON array is empty")
 		} else {
 			// Sample first few items to validate structure
@@ -432,7 +433,7 @@ func (fv *FileValidationService) checkSuspiciousContent(data []byte, result *Fil
 	// Check for excessively long lines (potential DoS)
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		if len(line) > 100000 { // 100KB per line
+		if err := common.ValidateStringLength("line content", line, 0, 100000); err != nil {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("line %d is excessively long (%d characters)", i+1, len(line)))
 		}
 	}

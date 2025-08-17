@@ -3,14 +3,17 @@ package streaming
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CostTracker interface for tracking AWS costs
@@ -21,10 +24,12 @@ type CostTracker interface {
 
 // BandwidthTracker tracks bandwidth usage for users
 type BandwidthTracker struct {
-	storage     core.RepositoryStorage
-	logger      *zap.Logger
-	costTracker CostTracker
-	cloudWatch  *cloudwatch.Client
+	storage        core.RepositoryStorage
+	logger         *zap.Logger
+	costTracker    CostTracker
+	unifiedTracker *cost.UnifiedTracker
+	tableName      string
+	cloudWatch     *cloudwatch.Client
 
 	// In-memory cache for active sessions
 	sessionCache sync.Map
@@ -34,13 +39,23 @@ type BandwidthTracker struct {
 
 // NewBandwidthTracker creates a new bandwidth tracker
 func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, costTracker CostTracker, cloudWatch *cloudwatch.Client) *BandwidthTracker {
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+	}
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(cloudWatch, logger, "BandwidthTracker", "", "")
+	
 	return &BandwidthTracker{
-		storage:     storage,
-		logger:      logger,
-		costTracker: costTracker,
-		cloudWatch:  cloudWatch,
-		cacheTTL:    5 * time.Minute,
-		namespace:   "Lesser/Streaming/Bandwidth",
+		storage:        storage,
+		logger:         logger,
+		costTracker:    costTracker,
+		unifiedTracker: unifiedTracker,
+		tableName:      tableName,
+		cloudWatch:     cloudWatch,
+		cacheTTL:       5 * time.Minute,
+		namespace:      "Lesser/Streaming/Bandwidth",
 	}
 }
 
@@ -64,9 +79,9 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 	// Also publish to CloudWatch for real-time bandwidth tracking
 	bt.publishBandwidthMetric(ctx, userID, bytesTransferred, now)
 
-	// Track analytics operation cost
-	if bt.costTracker != nil {
-		bt.costTracker.TrackDynamoWrite(1)
+	// Track analytics operation cost using centralized tracker
+	if err := bt.unifiedTracker.TrackDynamoWrite(ctx, bt.tableName, 1); err != nil {
+		bt.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
 	// Log significant bandwidth usage
@@ -81,7 +96,7 @@ func (bt *BandwidthTracker) TrackBandwidth(ctx context.Context, userID string, b
 }
 
 // GetBandwidthStats retrieves bandwidth statistics for a user
-func (bt *BandwidthTracker) GetBandwidthStats(_ context.Context, userID string) (*BandwidthStats, error) {
+func (bt *BandwidthTracker) GetBandwidthStats(ctx context.Context, userID string) (*BandwidthStats, error) {
 	// Check cache first
 	if cached, ok := bt.sessionCache.Load(userID); ok {
 		if stats, ok := cached.(*cachedBandwidthStats); ok && time.Since(stats.lastUpdate) < bt.cacheTTL {
@@ -103,7 +118,10 @@ func (bt *BandwidthTracker) GetBandwidthStats(_ context.Context, userID string) 
 
 	// Track operation cost
 	if bt.costTracker != nil {
-		bt.costTracker.TrackDynamoRead(1)
+		// Track cost using centralized tracker
+		if err := bt.unifiedTracker.TrackDynamoRead(ctx, bt.tableName, 1); err != nil {
+			bt.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	return stats, nil
@@ -143,7 +161,10 @@ func (bt *BandwidthTracker) RecordBandwidthMeasurement(ctx context.Context, user
 
 	// Track operation cost
 	if bt.costTracker != nil {
-		bt.costTracker.TrackDynamoWrite(1)
+		// Track cost using centralized tracker
+		if err := bt.unifiedTracker.TrackDynamoWrite(ctx, bt.tableName, 1); err != nil {
+			bt.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -207,7 +228,10 @@ func (bt *BandwidthTracker) GetBandwidthHistory(ctx context.Context, userID stri
 
 	// Track cost (CloudWatch query)
 	if bt.costTracker != nil {
-		bt.costTracker.TrackDynamoRead(1)
+		// Track cost using centralized tracker
+		if err := bt.unifiedTracker.TrackDynamoRead(ctx, bt.tableName, 1); err != nil {
+			bt.logger.Warn("failed to track cost", zap.Error(err))
+		}
 	}
 
 	return measurements, nil

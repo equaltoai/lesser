@@ -15,6 +15,7 @@ import (
 
 	// Removed unused import
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ActivityRepository implements activity operations using DynamORM
@@ -35,13 +36,13 @@ func NewActivityRepository(db core.DB, tableName string, logger *zap.Logger) *Ac
 
 // CreateActivity stores an activity in the database - matches legacy implementation
 func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
-	if activity.ID == "" {
+	if err := common.ValidateRequiredParam("activity.ID", activity.ID); err != nil {
 		return fmt.Errorf("activity ID is required")
 	}
 
 	// Extract username from actor ID (e.g., "https://example.com/users/alice" -> "alice")
 	username := activityExtractUsernameFromActorID(activity.Actor)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("invalid actor ID format")
 	}
 

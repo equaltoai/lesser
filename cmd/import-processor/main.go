@@ -135,41 +135,51 @@ func (t *ImportTransaction) rollback(lastExecutedIndex int) error {
 }
 
 func init() {
-	logger := common.Logger()
-	cfg := config.Get()
+	// Initialize Lambda with processor configuration for import processing
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "import-processor",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     2 * time.Minute, // Import processing can take longer
+		RetryMaxAttempts:   3,
+	})
 
 	// Load AWS config
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
+		awsconfig.WithRegion(lambdaCtx.Config.Region),
 	)
 	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to load AWS config", zap.Error(err))
 	}
 
 	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
 	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize repositories
-	importRepo := repositories.NewImportRepository(db, cfg.DynamoTableName, logger)
-	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
+	importRepo := repositories.NewImportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Get configuration from environment
 	bucketName := os.Getenv("S3_BUCKET_NAME")
-	if bucketName == "" {
-		logger.Fatal("S3_BUCKET_NAME environment variable not set")
+	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
+		lambdaCtx.Logger.Fatal("S3_BUCKET_NAME environment variable not set")
 	}
 
 	baseURL := os.Getenv("BASE_URL")
-	if baseURL == "" {
+	if err := common.ValidateRequiredParam("baseURL", baseURL); err != nil {
 		baseURL = "https://example.com" // Default
 	}
 
@@ -179,8 +189,8 @@ func init() {
 		importRepo:       importRepo,
 		costTrackingRepo: costTrackingRepo,
 		repos:            repos,
-		cfg:              cfg,
-		logger:           logger,
+		cfg:              lambdaCtx.Config,
+		logger:           lambdaCtx.Logger,
 		bucketName:       bucketName,
 		baseURL:          baseURL,
 	}
@@ -742,7 +752,7 @@ func (p *ImportProcessor) processFollowingCSV(ctx context.Context, event ImportP
 		}
 
 		accountAddress := record[0]
-		if accountAddress == "" {
+		if err := common.ValidateRequiredParam("accountAddress", accountAddress); err != nil {
 			continue
 		}
 
@@ -780,7 +790,7 @@ func (p *ImportProcessor) processBlocksCSV(ctx context.Context, event ImportProc
 		}
 
 		accountAddress := record[0]
-		if accountAddress == "" {
+		if err := common.ValidateRequiredParam("accountAddress", accountAddress); err != nil {
 			continue
 		}
 
@@ -821,7 +831,7 @@ func (p *ImportProcessor) processMutesCSV(ctx context.Context, event ImportProce
 		}
 
 		accountAddress := record[0]
-		if accountAddress == "" {
+		if err := common.ValidateRequiredParam("accountAddress", accountAddress); err != nil {
 			continue
 		}
 
@@ -860,7 +870,7 @@ func (p *ImportProcessor) processBookmarksCSV(ctx context.Context, event ImportP
 		}
 
 		statusURL := record[0]
-		if statusURL == "" {
+		if err := common.ValidateRequiredParam("statusURL", statusURL); err != nil {
 			continue
 		}
 

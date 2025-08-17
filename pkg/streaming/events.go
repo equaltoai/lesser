@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Event type constants following Mastodon streaming API conventions
@@ -386,7 +387,7 @@ func IsValidEventType(eventType string) bool {
 
 // IsValidStreamName checks if a stream name follows valid patterns
 func IsValidStreamName(streamName string) bool {
-	if streamName == "" {
+	if err := common.ValidateRequiredParam("streamName", streamName); err != nil {
 		return false
 	}
 

@@ -75,7 +75,7 @@ func NewTrendingLink(date string, link *TrendingLink) *TrendingLink {
 	}
 
 	// Default type if not specified
-	if trending.Type == "" {
+	if err := common.ValidateRequiredParam("trending.Type", trending.Type); err != nil {
 		trending.Type = "link"
 	}
 

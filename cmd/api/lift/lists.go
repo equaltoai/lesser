@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -66,8 +67,8 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 // HandleGetListLift handles GET /api/v1/lists/:id
 func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
@@ -89,8 +90,8 @@ func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 // HandleUpdateListLift handles PUT /api/v1/lists/:id
 func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.UpdateListRequest
@@ -126,8 +127,8 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 // HandleDeleteListLift handles DELETE /api/v1/lists/:id
 func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -149,8 +150,8 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 // HandleGetListAccountsLift handles GET /api/v1/lists/:id/accounts
 func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
@@ -183,7 +184,7 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	for _, member := range membersResult.Members {
 		// Get the actor from the storage account
 		if member.Actor != nil {
-			account := h.converter.ActorToAccount(member.Actor)
+			account := transformations.ActorToAccountBase(member.Actor, h.cfg.BaseURL())
 			accounts = append(accounts, &account)
 		} else {
 			h.logger.Warn("list member has no actor data", zap.String("username", member.User.Username))
@@ -196,8 +197,8 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 // HandleAddAccountsToListLift handles POST /api/v1/lists/:id/accounts
 func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.AddAccountsRequest
@@ -211,7 +212,7 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 		}
 	}
 
-	if len(req.AccountIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("req.AccountIDs", req.AccountIDs); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "account_ids is required"})
 	}
 
@@ -239,8 +240,8 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 // HandleRemoveAccountsFromListLift handles DELETE /api/v1/lists/:id/accounts
 func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
-	if listID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing list id"})
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	var req models.RemoveAccountsRequest
@@ -254,7 +255,7 @@ func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 		}
 	}
 
-	if len(req.AccountIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("req.AccountIDs", req.AccountIDs); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "account_ids is required"})
 	}
 

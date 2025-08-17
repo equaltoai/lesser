@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationAnalyticsTimeSeries represents time series federation metrics with 5-minute primary aggregation
@@ -273,7 +274,7 @@ func (f *FederationAnalyticsTimeSeries) ShouldTriggerAlert() (bool, string) {
 
 // Aggregate aggregates raw metrics into this time series record
 func (f *FederationAnalyticsTimeSeries) Aggregate(rawMetrics []*FederationAnalyticsTimeSeries) {
-	if len(rawMetrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("rawMetrics", rawMetrics); err != nil {
 		return
 	}
 

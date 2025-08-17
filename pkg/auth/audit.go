@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/privacy"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -295,13 +296,13 @@ func (al *AuditLogger) LogEvent(ctx context.Context, event *AuditEvent) error {
 	}
 
 	// Set default values
-	if event.ID == "" {
+	if err := common.ValidateRequiredParam("event.ID", event.ID); err != nil {
 		event.ID = generateEventID()
 	}
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now().UTC()
 	}
-	if event.Severity == "" {
+	if err := common.ValidateRequiredParam("event.Severity", string(event.Severity)); err != nil {
 		event.Severity = al.determineSeverity(event.EventType, event.Success)
 	}
 
@@ -545,7 +546,7 @@ func (al *AuditLogger) storeToFile(event *AuditEvent) error {
 
 // sendToSIEM sends the event to a SIEM system
 func (al *AuditLogger) sendToSIEM(event *AuditEvent) error {
-	if al.config.SIEMEndpoint == "" {
+	if err := common.ValidateRequiredParam("al.config.SIEMEndpoint", al.config.SIEMEndpoint); err != nil {
 		return nil
 	}
 

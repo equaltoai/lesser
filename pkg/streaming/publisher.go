@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -102,7 +103,7 @@ func (p *apiGatewayPublisher) PublishToUser(ctx context.Context, userID string, 
 	}
 	p.mu.RUnlock()
 
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		return fmt.Errorf("userID cannot be empty")
 	}
 
@@ -119,7 +120,7 @@ func (p *apiGatewayPublisher) PublishToUser(ctx context.Context, userID string, 
 		return fmt.Errorf("failed to get user connections: %w", err)
 	}
 
-	if len(connections) == 0 {
+	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
 		p.logger.Debug("no active connections for user",
 			zap.String("user_id", userID))
 		return nil
@@ -155,7 +156,7 @@ func (p *apiGatewayPublisher) PublishToUser(ctx context.Context, userID string, 
 		zap.Int("failed", len(publishErrors)))
 
 	// Return error only if all deliveries failed
-	if len(publishErrors) > 0 && successCount == 0 {
+	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
 		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
 	}
 
@@ -171,7 +172,7 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 	}
 	p.mu.RUnlock()
 
-	if streamName == "" {
+	if err := common.ValidateRequiredParam("streamName", streamName); err != nil {
 		return fmt.Errorf("streamName cannot be empty")
 	}
 
@@ -188,7 +189,7 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 		return fmt.Errorf("failed to get stream connections: %w", err)
 	}
 
-	if len(connections) == 0 {
+	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
 		p.logger.Debug("no active connections for stream",
 			zap.String("stream", streamName))
 		return nil
@@ -200,7 +201,7 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 	}
 
 	// Set stream in event if not provided
-	if event.Stream == "" {
+	if err := common.ValidateRequiredParam("event.Stream", event.Stream); err != nil {
 		event.Stream = streamName
 	}
 
@@ -228,7 +229,7 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 		zap.Int("failed", len(publishErrors)))
 
 	// Return error only if all deliveries failed
-	if len(publishErrors) > 0 && successCount == 0 {
+	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
 		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
 	}
 
@@ -244,7 +245,7 @@ func (p *apiGatewayPublisher) PublishToConversation(ctx context.Context, convers
 	}
 	p.mu.RUnlock()
 
-	if conversationID == "" {
+	if err := common.ValidateRequiredParam("conversationID", conversationID); err != nil {
 		return fmt.Errorf("conversationID cannot be empty")
 	}
 
@@ -261,7 +262,7 @@ func (p *apiGatewayPublisher) PublishToConversation(ctx context.Context, convers
 		return fmt.Errorf("failed to get conversation connections: %w", err)
 	}
 
-	if len(connections) == 0 {
+	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
 		p.logger.Debug("no active connections for conversation",
 			zap.String("conversation_id", conversationID))
 		return nil
@@ -296,7 +297,7 @@ func (p *apiGatewayPublisher) PublishToConversation(ctx context.Context, convers
 		zap.Int("failed", len(publishErrors)))
 
 	// Return error only if all deliveries failed
-	if len(publishErrors) > 0 && successCount == 0 {
+	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
 		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
 	}
 
@@ -354,7 +355,7 @@ func (p *apiGatewayPublisher) GetMetrics() map[string]interface{} {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if len(p.deliveryTime) == 0 {
+	if err := common.ValidateSliceNotEmpty("p.deliveryTime", p.deliveryTime); err != nil {
 		return map[string]interface{}{
 			"total_deliveries":      0,
 			"average_delivery_time": "0s",
@@ -503,7 +504,7 @@ func (m *mockPublisher) PublishToStream(_ context.Context, streamName string, ev
 	}
 
 	// Set stream if not provided
-	if eventCopy.Stream == "" {
+	if err := common.ValidateRequiredParam("eventCopy.Stream", eventCopy.Stream); err != nil {
 		eventCopy.Stream = streamName
 	}
 

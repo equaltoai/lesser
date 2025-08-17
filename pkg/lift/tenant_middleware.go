@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TenantMiddleware creates middleware for multi-tenant support following Lift patterns
@@ -106,7 +107,7 @@ func GetTenantIDOrDefault(ctx *lift.Context, defaultTenantID string) string {
 
 // TenantPrefix creates a tenant-prefixed key for DynamoDB isolation
 func TenantPrefix(tenantID, key string) string {
-	if tenantID == "" {
+	if err := common.ValidateRequiredParam("tenantID", tenantID); err != nil {
 		return key
 	}
 	return fmt.Sprintf("tenant#%s", tenantID)

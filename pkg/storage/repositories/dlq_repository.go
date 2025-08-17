@@ -101,7 +101,7 @@ func (r *DLQRepository) GetDLQMessagesByService(ctx context.Context, service str
 
 	// Generate next cursor
 	var nextCursor string
-	if len(messages) > limit {
+	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = messages[limit-1].SK
 		messages = messages[:limit] // Trim to requested limit
@@ -140,7 +140,7 @@ func (r *DLQRepository) GetDLQMessagesByServiceDateRange(ctx context.Context, se
 		return allMessages[i].FirstSeenAt.After(allMessages[j].FirstSeenAt)
 	})
 
-	if len(allMessages) > limit {
+	if err := common.ValidateSliceLength("allMessages", allMessages, limit); err == nil {
 		allMessages = allMessages[:limit]
 	}
 
@@ -169,7 +169,7 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 
 	// Generate next cursor
 	var nextCursor string
-	if len(messages) > limit {
+	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = messages[limit-1].GSI1SK
 		messages = messages[:limit] // Trim to requested limit
@@ -224,7 +224,7 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 
 	// Generate next cursor
 	var nextCursor string
-	if len(messages) > limit {
+	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
 		nextCursor = messages[limit-1].GSI2SK
 		messages = messages[:limit]
 	}
@@ -269,7 +269,7 @@ func (r *DLQRepository) DeleteDLQMessage(ctx context.Context, message *models.DL
 
 // BatchUpdateDLQMessages updates multiple DLQ messages
 func (r *DLQRepository) BatchUpdateDLQMessages(ctx context.Context, messages []*models.DLQMessage) error {
-	if len(messages) == 0 {
+	if err := common.ValidateSliceNotEmpty("messages", messages); err != nil {
 		return nil
 	}
 
@@ -285,7 +285,7 @@ func (r *DLQRepository) BatchUpdateDLQMessages(ctx context.Context, messages []*
 		}
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("batch update failed: %d of %d messages failed", len(errors), len(messages))
 	}
 
@@ -440,7 +440,7 @@ func (r *DLQRepository) GetDLQTrends(ctx context.Context, service string, days i
 
 // SearchDLQMessages searches DLQ messages with various filters
 func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearchFilter) ([]*models.DLQMessage, string, error) {
-	if filter.Service == "" {
+	if err := common.ValidateRequiredParam("filter.Service", filter.Service); err != nil {
 		return nil, "", fmt.Errorf("service is required for DLQ search")
 	}
 
@@ -495,7 +495,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 
 	// Generate next cursor
 	var nextCursor string
-	if len(messages) > limit {
+	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
 		nextCursor = messages[limit-1].GSI3SK
 		messages = messages[:limit]
 	}
@@ -553,7 +553,7 @@ func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.
 		return 0, fmt.Errorf("failed to find expired DLQ messages: %w", err)
 	}
 
-	if len(expiredMessages) == 0 {
+	if err := common.ValidateSliceNotEmpty("expiredMessages", expiredMessages); err != nil {
 		return 0, nil
 	}
 

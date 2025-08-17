@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // NotificationDelivery tracks delivery attempts for notifications
@@ -50,7 +51,7 @@ func (n *NotificationDelivery) BeforeCreate() error {
 	n.TTL = now.Add(7 * 24 * time.Hour).Unix()
 
 	// Set initial status
-	if n.Status == "" {
+	if err := common.ValidateRequiredParam("n.Status", n.Status); err != nil {
 		n.Status = StatusPending
 	}
 
@@ -72,10 +73,10 @@ func (n *NotificationDelivery) BeforeUpdate() error {
 
 // Validate performs validation on the NotificationDelivery
 func (n *NotificationDelivery) Validate() error {
-	if n.NotificationID == "" {
+	if err := common.ValidateRequiredParam("n.NotificationID", n.NotificationID); err != nil {
 		return fmt.Errorf("notification ID is required")
 	}
-	if n.DeliveryMethod == "" {
+	if err := common.ValidateRequiredParam("n.DeliveryMethod", n.DeliveryMethod); err != nil {
 		return fmt.Errorf("delivery method is required")
 	}
 	if !isValidDeliveryMethod(n.DeliveryMethod) {

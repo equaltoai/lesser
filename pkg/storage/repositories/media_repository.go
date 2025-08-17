@@ -11,16 +11,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// MediaRepository handles media and media job operations using DynamORM
+// MediaRepository handles media and media job operations using DynamORM with cost tracking
 type MediaRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
-	deps      map[string]interface{} // Dependencies for cross-repository operations
+	db          core.DB
+	tableName   string
+	logger      *zap.Logger
+	costService *cost.TrackingService
+	deps        map[string]interface{} // Dependencies for cross-repository operations
 }
 
 // NewMediaRepository creates a new MediaRepository
@@ -33,6 +35,17 @@ func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger) *Media
 	}
 }
 
+// NewMediaRepositoryWithCostTracking creates a new MediaRepository with cost tracking
+func NewMediaRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaRepository {
+	return &MediaRepository{
+		db:          db,
+		tableName:   tableName,
+		logger:      logger,
+		costService: costService,
+		deps:        make(map[string]interface{}),
+	}
+}
+
 // SetDependencies sets repository dependencies for cross-repo operations
 func (r *MediaRepository) SetDependencies(deps map[string]interface{}) {
 	r.deps = deps
@@ -40,6 +53,17 @@ func (r *MediaRepository) SetDependencies(deps map[string]interface{}) {
 
 // CreateMediaJob creates a new media processing job
 func (r *MediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJob) error {
+	// Validate job entity using centralized validation
+	if err := common.ValidateEntityID(job.JobID, "job"); err != nil {
+		return err
+	}
+	if err := common.ValidateEntityID(job.MediaID, "media"); err != nil {
+		return err
+	}
+	if err := common.ValidateUsernameParamID(job.Username); err != nil {
+		return err
+	}
+
 	r.logger.Debug("creating media job",
 		zap.String("job_id", job.JobID),
 		zap.String("media_id", job.MediaID),
@@ -54,6 +78,11 @@ func (r *MediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJ
 
 // GetMediaJob retrieves a media job by ID
 func (r *MediaRepository) GetMediaJob(ctx context.Context, jobID string) (*models.MediaJob, error) {
+	// Validate job ID using centralized validation
+	if err := common.ValidateEntityID(jobID, "job"); err != nil {
+		return nil, err
+	}
+
 	r.logger.Debug("getting media job", zap.String("job_id", jobID))
 
 	var job models.MediaJob
@@ -87,6 +116,14 @@ func (r *MediaRepository) UpdateMediaJob(ctx context.Context, job *models.MediaJ
 
 // GetJobsByStatus retrieves jobs by status
 func (r *MediaRepository) GetJobsByStatus(ctx context.Context, status string, limit int) ([]*models.MediaJob, error) {
+	// Validate parameters using centralized validation
+	if err := common.ValidateRequiredParam("status", status); err != nil {
+		return nil, err
+	}
+	if err := common.ValidateQueryLimit(limit, 1000, "media job queries"); err != nil {
+		return nil, err
+	}
+
 	r.logger.Debug("getting jobs by status",
 		zap.String("status", status),
 		zap.Int("limit", limit))
@@ -140,12 +177,54 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, media *models.Media) 
 		return fmt.Errorf("failed to prepare media for creation: %w", err)
 	}
 
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1, // Estimated 1 WU for media creation
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("media_create_%s", media.MediaID),
+		}
+		
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create media operation cost",
+					zap.String("media_id", media.MediaID),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
 	return r.db.WithContext(ctx).Model(media).Create()
 }
 
 // GetMedia retrieves a media record by ID
 func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models.Media, error) {
 	r.logger.Debug("getting media", zap.String("media_id", mediaID))
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "GetItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  1, // Estimated 1 RU for media retrieval
+			ConsumedWriteUnits: 0,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("media_get_%s", mediaID),
+		}
+		
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB get media operation cost",
+					zap.String("media_id", mediaID),
+					zap.Error(trackErr))
+			}
+		}()
+	}
 
 	var media models.Media
 	err := r.db.WithContext(ctx).Model(&models.Media{}).
@@ -602,7 +681,7 @@ func (r *MediaRepository) AddSpendingTransaction(ctx context.Context, transactio
 
 	// Determine the period based on the transaction timestamp
 	period := transaction.CreatedAt.Format(common.MonthFormat) // Monthly period
-	periodType := PeriodMonthly
+	periodType := models.PeriodMonthly
 
 	// Get or create the spending record
 	spending, err := r.GetOrCreateMediaSpending(ctx, transaction.UserID, period, periodType)
@@ -803,7 +882,7 @@ func (r *MediaRepository) isWithinTimeRange(timestamp time.Time, timeRange strin
 	}
 }
 
-// === MISSING INTERFACE METHODS IMPLEMENTATION ===
+// === INTERFACE METHODS IMPLEMENTATION ===
 
 // MarkMediaProcessing marks a media item as currently being processed
 func (r *MediaRepository) MarkMediaProcessing(ctx context.Context, mediaID string) error {
@@ -1128,7 +1207,7 @@ func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID st
 func (r *MediaRepository) parseCursor(cursor string) int {
 	// Simple implementation for demonstration
 	// In production, use proper cursor encoding/decoding
-	if cursor == "" {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
 		return 0
 	}
 	// This is a simplified implementation - in production you'd want proper cursor handling
@@ -1188,7 +1267,7 @@ func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts in
 func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) ([]*models.Media, error) {
 	r.logger.Debug("getting media by IDs", zap.Int("count", len(mediaIDs)))
 
-	if len(mediaIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("mediaIDs", mediaIDs); err != nil {
 		return []*models.Media{}, nil
 	}
 
@@ -1281,4 +1360,69 @@ func (r *MediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, erro
 
 	r.logger.Info("calculated total storage usage", zap.Int64("total_bytes", totalSize))
 	return totalSize, nil
+}
+
+// === COST TRACKING UTILITY METHODS ===
+
+// SetCostService allows setting or updating the cost service
+func (r *MediaRepository) SetCostService(costService *cost.TrackingService) {
+	r.costService = costService
+}
+
+// TrackRead provides a simple way to track read operations
+func (r *MediaRepository) TrackRead(ctx context.Context, operationType string, readUnits int64) error {
+	if r.costService == nil {
+		return nil // Silently skip if no cost service
+	}
+	
+	operation := cost.DynamoOperation{
+		Type:               operationType,
+		TableName:          r.tableName,
+		ConsumedReadUnits:  readUnits,
+		ConsumedWriteUnits: 0,
+		ItemCount:          1,
+		Timestamp:          time.Now(),
+		OperationID:        fmt.Sprintf("media_%s_%d", operationType, time.Now().UnixNano()),
+	}
+	
+	return r.costService.TrackDynamoOperation(ctx, operation)
+}
+
+// TrackWrite provides a simple way to track write operations
+func (r *MediaRepository) TrackWrite(ctx context.Context, operationType string, writeUnits int64) error {
+	if r.costService == nil {
+		return nil // Silently skip if no cost service
+	}
+	
+	operation := cost.DynamoOperation{
+		Type:               operationType,
+		TableName:          r.tableName,
+		ConsumedReadUnits:  0,
+		ConsumedWriteUnits: writeUnits,
+		ItemCount:          1,
+		Timestamp:          time.Now(),
+		OperationID:        fmt.Sprintf("media_%s_%d", operationType, time.Now().UnixNano()),
+	}
+	
+	return r.costService.TrackDynamoOperation(ctx, operation)
+}
+
+// TrackQuery tracks query operations with item count and potential GSI usage
+func (r *MediaRepository) TrackQuery(ctx context.Context, indexName string, readUnits int64, itemCount int64) error {
+	if r.costService == nil {
+		return nil // Silently skip if no cost service
+	}
+	
+	operation := cost.DynamoOperation{
+		Type:               "Query",
+		TableName:          r.tableName,
+		ConsumedReadUnits:  readUnits,
+		ConsumedWriteUnits: 0,
+		ItemCount:          itemCount,
+		IndexName:          indexName,
+		Timestamp:          time.Now(),
+		OperationID:        fmt.Sprintf("media_query_%d", time.Now().UnixNano()),
+	}
+	
+	return r.costService.TrackDynamoOperation(ctx, operation)
 }

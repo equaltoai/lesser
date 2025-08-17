@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -34,7 +35,10 @@ func GetTenantContextOrDefault(ctx *lift.Context, defaultTenantID string) *Tenan
 // getTenantIDFromContextLocal is a local helper to get tenant ID
 func getTenantIDFromContextLocal(ctx *lift.Context) (string, error) {
 	tenantID, ok := ctx.Get("tenant_id").(string)
-	if !ok || tenantID == "" {
+	if !ok {
+		return "", errors.New("tenant context required")
+	}
+	if err := common.ValidateRequiredParam("tenantID", tenantID); err != nil {
 		return "", errors.New("tenant context required")
 	}
 	return tenantID, nil
@@ -42,7 +46,7 @@ func getTenantIDFromContextLocal(ctx *lift.Context) (string, error) {
 
 // PrefixKey adds tenant prefix to DynamoDB keys for isolation
 func (tc *TenantContext) PrefixKey(key string) string {
-	if tc.TenantID == "" {
+	if err := common.ValidateRequiredParam("tenantID", tc.TenantID); err != nil {
 		return key
 	}
 	return fmt.Sprintf("tenant#%s#%s", tc.TenantID, key)
@@ -50,7 +54,7 @@ func (tc *TenantContext) PrefixKey(key string) string {
 
 // PrefixPK adds tenant prefix to DynamoDB partition key
 func (tc *TenantContext) PrefixPK(pk string) string {
-	if tc.TenantID == "" {
+	if err := common.ValidateRequiredParam("tenantID", tc.TenantID); err != nil {
 		return pk
 	}
 	// Check if already prefixed to avoid double prefixing
@@ -63,7 +67,7 @@ func (tc *TenantContext) PrefixPK(pk string) string {
 
 // StripPrefix removes tenant prefix from keys for client responses
 func (tc *TenantContext) StripPrefix(key string) string {
-	if tc.TenantID == "" {
+	if err := common.ValidateRequiredParam("tenantID", tc.TenantID); err != nil {
 		return key
 	}
 	prefix := fmt.Sprintf("tenant#%s#", tc.TenantID)
@@ -72,7 +76,7 @@ func (tc *TenantContext) StripPrefix(key string) string {
 
 // ValidateAccess checks if a key belongs to the current tenant
 func (tc *TenantContext) ValidateAccess(key string) error {
-	if tc.TenantID == "" {
+	if err := common.ValidateRequiredParam("tenantID", tc.TenantID); err != nil {
 		return nil // No tenant context means no validation
 	}
 	prefix := fmt.Sprintf("tenant#%s#", tc.TenantID)

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -542,7 +543,7 @@ func (s *AnalyticsService) calculateMovingAverages(data []float64) MovingAverage
 	}
 
 	// Determine crossover signals
-	if len(ma.MA7) > 0 && len(ma.MA15) > 0 {
+	if err := common.ValidateSliceNotEmpty("ma.MA7", ma.MA7); err == nil && common.ValidateSliceNotEmpty("ma.MA15", ma.MA15) == nil {
 		recent7 := ma.MA7[len(ma.MA7)-1]
 		recent15 := ma.MA15[len(ma.MA15)-1]
 		
@@ -701,7 +702,7 @@ func (s *AnalyticsService) analyzeSeasonalPatterns(data []float64, timestamps []
 	
 	// Calculate average for each day of week
 	for dow, values := range dowData {
-		if len(values) > 0 {
+		if common.ValidateSliceNotEmpty("values", values) == nil {
 			sum := float64(0)
 			for _, v := range values {
 				sum += v
@@ -842,7 +843,7 @@ func (s *AnalyticsService) performStatisticalTests(data []float64, _ []time.Time
 	
 	// Autocorrelation test
 	correlations := s.calculateAutocorrelation(data, 3)
-	if len(correlations) > 0 && math.Abs(correlations[0]) > 0.3 {
+	if common.ValidateSliceNotEmpty("correlations", correlations) == nil && math.Abs(correlations[0]) > 0.3 {
 		tests.AutocorrelationTest = "correlated"
 	} else {
 		tests.AutocorrelationTest = "white_noise"
@@ -897,7 +898,7 @@ func (s *AnalyticsService) detectSeasonalComponent(data []float64) bool {
 }
 
 func (s *AnalyticsService) forecastNextPeriod(data []float64, analysis *TrendAnalysis) float64 {
-	if len(data) == 0 {
+	if err := common.ValidateSliceNotEmpty("data", data); err != nil {
 		return 0
 	}
 	
@@ -1054,7 +1055,7 @@ func (s *AnalyticsService) seasonalForecast(data []float64, periods int) []Predi
 }
 
 func (s *AnalyticsService) ensembleForecast(linear, exponential, seasonal []PredictionPoint) []PredictionPoint {
-	if len(linear) == 0 {
+	if err := common.ValidateSliceNotEmpty("linear", linear); err != nil {
 		return nil
 	}
 	
@@ -1137,7 +1138,7 @@ func (s *AnalyticsService) decomposeTimeSeries(data []float64) *SeasonalDecompos
 	decomp.Seasonal = make([]float64, len(data))
 	for i := 0; i < len(data); i++ {
 		weekIndex := i % 7
-		if len(decomp.Trend) > weekIndex {
+		if common.ValidateSliceNotEmpty("decomp.Trend", decomp.Trend) == nil && len(decomp.Trend) > weekIndex {
 			decomp.Seasonal[i] = data[i] - decomp.Trend[weekIndex]
 		}
 	}
@@ -1181,7 +1182,7 @@ func (s *AnalyticsService) calculateVariance(data []float64) float64 {
 }
 
 func (s *AnalyticsService) assessModelAccuracy(historical, predicted []float64) ModelAccuracy {
-	if len(historical) != len(predicted) || len(historical) == 0 {
+	if len(historical) != len(predicted) || common.ValidateSliceNotEmpty("historical", historical) != nil {
 		return ModelAccuracy{}
 	}
 	
@@ -1239,7 +1240,7 @@ func (s *AnalyticsService) assessModelAccuracy(historical, predicted []float64) 
 }
 
 func (s *AnalyticsService) performScenarioAnalysis(predictions []PredictionPoint) ScenarioAnalysis {
-	if len(predictions) == 0 {
+	if err := common.ValidateSliceNotEmpty("predictions", predictions); err != nil {
 		return ScenarioAnalysis{}
 	}
 	
@@ -1389,7 +1390,7 @@ func (s *AnalyticsService) detectTrendAnomalies(data []float64, timestamps []tim
 }
 
 func (s *AnalyticsService) deduplicateAndRankAnomalies(anomalies []AnomalyPoint) []AnomalyPoint {
-	if len(anomalies) == 0 {
+	if err := common.ValidateSliceNotEmpty("anomalies", anomalies); err != nil {
 		return anomalies
 	}
 	
@@ -1423,7 +1424,7 @@ func (s *AnalyticsService) deduplicateAndRankAnomalies(anomalies []AnomalyPoint)
 }
 
 func (s *AnalyticsService) generateAnomalyRecommendations(anomalies []AnomalyPoint) []Recommendation {
-	if len(anomalies) == 0 {
+	if err := common.ValidateSliceNotEmpty("anomalies", anomalies); err != nil {
 		return nil
 	}
 	

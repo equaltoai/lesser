@@ -24,13 +24,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -92,7 +90,7 @@ type MediaProcessor struct {
 	mediaMetadataRepo    *repositories.MediaMetadataRepository
 	s3Client             *s3.Client
 	mediaConvertClient   *mediaconvert.Client
-	costTracker          *cost.Tracker
+	unifiedTracker      *cost.UnifiedTracker
 	tableName            string
 	bucketName           string
 	cdnDomain            string
@@ -125,8 +123,8 @@ type MediaJobCostTracker struct {
 }
 
 var (
-	processor         *MediaProcessor
-	cfg *config.Config
+	processor *MediaProcessor
+
 	// Global transcoding cost tracker with current AWS pricing
 	transcodingCosts = TranscodingCostTracker{
 		SDCostPerMinute:    15000, // $0.015 per minute
@@ -247,10 +245,6 @@ const (
 )
 
 func init() {
-	var err error
-	logger := common.Logger()
-	cfg = config.Get()
-
 	// Initialize default budget limits by MIME type (in micros)
 	DefaultBudgetLimits = map[string]int64{
 		"image/jpeg": 50000,   // $0.05 per image
@@ -263,11 +257,29 @@ func init() {
 		"audio/wav":  100000,  // $0.10 per audio
 		"audio/ogg":  100000,  // $0.10 per audio
 	}
+}
 
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+func main() {
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		LambdaType: common.LambdaTypeMedia,
+	})
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
+	}
+
+	cfg := lambdaCtx.Config
+	logger := lambdaCtx.Logger
+
+	// Get DynamORM DB instance
+	var db core.DB
+	if lambdaCtx.DynamoDB != nil {
+		if dynamoDB, ok := lambdaCtx.DynamoDB.(core.DB); ok {
+			db = dynamoDB
+		} else {
+			logger.Fatal("Failed to cast DynamoDB client to expected type")
+		}
+	} else {
+		logger.Fatal("DynamoDB client not initialized")
 	}
 
 	// Load AWS config for CloudWatch
@@ -298,19 +310,19 @@ func init() {
 
 	// Get configuration from environment
 	bucketName := os.Getenv("S3_BUCKET_NAME")
-	if bucketName == "" {
+	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
 		bucketName = cfg.S3BucketName
 	}
 
 	cdnDomain := os.Getenv("CDN_DOMAIN")
-	if cdnDomain == "" {
+	if err := common.ValidateRequiredParam("cdnDomain", cdnDomain); err != nil {
 		cdnDomain = cfg.Domain // Use domain instead of CDNDomain
 	}
 
 	mediaConvertEndpoint := os.Getenv("MEDIACONVERT_ENDPOINT")
 	mediaConvertRole := os.Getenv("MEDIACONVERT_ROLE_ARN")
 	mediaConvertQueue := os.Getenv("MEDIACONVERT_QUEUE")
-	if mediaConvertQueue == "" {
+	if err := common.ValidateRequiredParam("mediaConvertQueue", mediaConvertQueue); err != nil {
 		mediaConvertQueue = "Default"
 	}
 
@@ -345,7 +357,7 @@ func init() {
 		mediaRepo:            mediaRepo,
 		mediaAnalyticsRepo:   mediaAnalyticsRepo,
 		mediaMetadataRepo:    mediaMetadataRepo,
-		costTracker:          cost.New(),
+		unifiedTracker:      cost.NewLambdaUnifiedTracker(cloudwatch.NewFromConfig(awsConfig), logger, "media-processor", "", ""),
 		tableName:            cfg.DynamoTableName,
 		bucketName:           bucketName,
 		cdnDomain:            cdnDomain,
@@ -357,16 +369,7 @@ func init() {
 		startTime:            time.Now(),
 		logger:               logger,
 	}
-}
 
-// main initializes the media processor Lambda function
-// Note: High complexity (gocognit: 38) is due to comprehensive initialization:
-// AWS SDK setup, DynamoDB connections, S3 clients, cost tracking, multiple repositories,
-// and various media processing configurations. This ensures all dependencies are properly
-// initialized before processing begins.
-//
-//nolint:gocognit // Initialization requires extensive setup logic
-func main() {
 	// Create Lift app
 	app := lift.New()
 
@@ -1371,9 +1374,10 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 		S3Key: s3Key,
 	}
 
-	// Track minimal cost (just S3 storage)
-	mp.costTracker.TrackS3Put(1)
-	mp.costTracker.TrackS3Storage(int64(len(data)))
+	// Track minimal cost (just S3 storage) using centralized tracking
+	if err := mp.unifiedTracker.TrackS3Put(ctx, mp.bucketName, int64(len(data))); err != nil {
+		mp.logger.Warn("failed to track S3 put cost", zap.Error(err))
+	}
 
 	return result, nil
 }
@@ -1497,7 +1501,7 @@ func (mp *MediaProcessor) estimateTranscodingCosts(metrics *TranscodingJobMetric
 // validateFileType checks if the file type is allowed and matches content
 func validateFileType(data []byte, claimedMimeType string) error {
 	// Check size first to avoid processing huge files
-	if len(data) == 0 {
+	if err := common.ValidateSliceNotEmpty("file_data", data); err != nil {
 		return fmt.Errorf("empty file")
 	}
 

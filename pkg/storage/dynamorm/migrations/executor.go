@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MigrateOptions contains options for running migrations
@@ -42,7 +43,7 @@ func (m *Migrator) Migrate(ctx context.Context, opts MigrateOptions) error {
 
 	// Get pending migrations
 	pending := m.registry.GetPending(applied)
-	if len(pending) == 0 {
+	if err := common.ValidateSliceNotEmpty("pending", pending); err != nil {
 		m.logger.Info("No pending migrations")
 		return nil
 	}
@@ -121,7 +122,7 @@ func (m *Migrator) MigrateDown(ctx context.Context, target string) error {
 		return err
 	}
 
-	if len(history) == 0 {
+	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		return fmt.Errorf("no migrations to rollback")
 	}
 
@@ -139,7 +140,7 @@ func (m *Migrator) MigrateDown(ctx context.Context, target string) error {
 		}
 	}
 
-	if len(toRollback) == 0 {
+	if err := common.ValidateSliceNotEmpty("toRollback", toRollback); err != nil {
 		return fmt.Errorf("no migrations found to rollback to %s", target)
 	}
 

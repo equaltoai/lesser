@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConfigLoader handles loading privacy configuration from environment variables
@@ -17,7 +19,7 @@ type ConfigLoader struct {
 
 // NewConfigLoader creates a new configuration loader with optional environment prefix
 func NewConfigLoader(envPrefix string) *ConfigLoader {
-	if envPrefix == "" {
+	if err := common.ValidateRequiredParam("envPrefix", envPrefix); err != nil {
 		envPrefix = "PRIVACY"
 	}
 	return &ConfigLoader{
@@ -32,7 +34,7 @@ func (cl *ConfigLoader) LoadFromEnvironment() (*HashingConfig, error) {
 	// Load master key (required)
 	masterKeyEnv := cl.getEnvKey("MASTER_KEY")
 	masterKeyStr := os.Getenv(masterKeyEnv)
-	if masterKeyStr == "" {
+	if err := common.ValidateRequiredParam(masterKeyEnv, masterKeyStr); err != nil {
 		return nil, fmt.Errorf("required environment variable %s is not set", masterKeyEnv)
 	}
 
@@ -149,7 +151,7 @@ func (cl *ConfigLoader) loadDuration(key string, defaultValue time.Duration) tim
 	envKey := cl.getEnvKey(key)
 	value := strings.TrimSpace(os.Getenv(envKey))
 	
-	if value == "" {
+	if err := common.ValidateRequiredParam("value", value); err != nil {
 		return defaultValue
 	}
 	
@@ -166,7 +168,7 @@ func (cl *ConfigLoader) loadUint32(key string, defaultValue uint32) uint32 {
 	envKey := cl.getEnvKey(key)
 	value := strings.TrimSpace(os.Getenv(envKey))
 	
-	if value == "" {
+	if err := common.ValidateRequiredParam("value", value); err != nil {
 		return defaultValue
 	}
 	
@@ -183,7 +185,7 @@ func (cl *ConfigLoader) loadUint8(key string, defaultValue uint8) uint8 {
 	envKey := cl.getEnvKey(key)
 	value := strings.TrimSpace(os.Getenv(envKey))
 	
-	if value == "" {
+	if err := common.ValidateRequiredParam("value", value); err != nil {
 		return defaultValue
 	}
 	
@@ -240,7 +242,7 @@ EXAMPLES:
 // ValidateEnvironmentVariables validates that required environment variables are set
 func (cl *ConfigLoader) ValidateEnvironmentVariables() error {
 	masterKeyEnv := cl.getEnvKey("MASTER_KEY")
-	if os.Getenv(masterKeyEnv) == "" {
+	if err := common.ValidateRequiredParam(masterKeyEnv, os.Getenv(masterKeyEnv)); err != nil {
 		return fmt.Errorf("required environment variable %s is not set", masterKeyEnv)
 	}
 	
@@ -257,7 +259,7 @@ func (cl *ConfigLoader) SetupFromEnvironmentOrGenerate() (*Hasher, error) {
 	
 	// If master key is missing, generate a new one and provide instructions
 	masterKeyEnv := cl.getEnvKey("MASTER_KEY")
-	if os.Getenv(masterKeyEnv) == "" {
+	if err := common.ValidateRequiredParam(masterKeyEnv, os.Getenv(masterKeyEnv)); err != nil {
 		masterKey, genErr := GenerateMasterKeyBase64()
 		if genErr != nil {
 			return nil, fmt.Errorf("failed to generate master key: %w", genErr)

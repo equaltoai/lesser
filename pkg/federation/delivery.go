@@ -293,7 +293,7 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 		}
 	}
 
-	if len(deliveryErrors) > 0 {
+	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
 		return fmt.Errorf("failed to deliver to %d inboxes", len(deliveryErrors))
 	}
 
@@ -335,7 +335,7 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 			zap.Int("recipient_count", len(recipients)))
 
 		// Try shared inbox first if multiple recipients on same domain
-		if len(recipients) > 1 {
+		if err := common.ValidateIntRange("recipient_count", len(recipients), 2, 1000); err == nil {
 			sharedInbox, err := d.getSharedInboxForDomain(ctx, domain, recipients[0])
 			if err == nil && sharedInbox != "" {
 				// Use shared inbox with privacy sanitization
@@ -357,7 +357,7 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 		}
 	}
 
-	if len(deliveryErrors) > 0 {
+	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
 		return fmt.Errorf("failed to deliver to %d domains: %v", len(deliveryErrors), deliveryErrors)
 	}
 
@@ -409,7 +409,7 @@ func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, act
 		}
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("failed to deliver to %d recipients", len(errors))
 	}
 
@@ -497,7 +497,7 @@ func isLocalActor(actorID, localActorID string) bool {
 // extractDomain extracts the domain from an actor ID
 func extractDomain(actorID string) string {
 	// Simple extraction - in production, use proper URL parsing
-	if len(actorID) > 8 && actorID[:8] == "https://" {
+	if err := common.ValidateIntRange("actor_id_length", len(actorID), 9, 2000); err == nil && actorID[:8] == "https://" {
 		parts := actorID[8:]
 		if idx := bytes.IndexByte([]byte(parts), '/'); idx > 0 {
 			return parts[:idx]
@@ -510,7 +510,7 @@ func extractDomain(actorID string) string {
 func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error {
 	// Check delivery mode configuration
 	deliveryMode := os.Getenv("FEDERATION_DELIVERY_MODE")
-	if deliveryMode == "" {
+	if err := common.ValidateRequiredParam("delivery_mode", deliveryMode); err != nil {
 		deliveryMode = "sync" // Default to sync for backwards compatibility
 	}
 
@@ -519,7 +519,7 @@ func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activityp
 	queueURL := d.getQueueURL()
 
 	// Force sync delivery if explicitly configured or SQS not available
-	if deliveryMode == "sync" || sqsClient == nil || queueURL == "" {
+	if deliveryMode == "sync" || sqsClient == nil || common.ValidateRequiredParam("queue_url", queueURL) != nil {
 		d.logger.Debug("using synchronous delivery",
 			zap.String("reason", fmt.Sprintf("mode=%s, sqs_available=%t, queue_url_set=%t",
 				deliveryMode, sqsClient != nil, queueURL != "")),
@@ -635,7 +635,10 @@ func extractHandleFromActorID(actorID, preferredUsername string) string {
 	// Extract domain from actor ID
 	// Format: https://domain.com/users/username
 	domain := extractDomain(actorID)
-	if domain == "" || preferredUsername == "" {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"domain":             domain,
+		"preferred_username": preferredUsername,
+	}); err != nil {
 		return ""
 	}
 	return fmt.Sprintf("@%s@%s", preferredUsername, domain)
@@ -663,7 +666,7 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 	addressingValidator := activitypub.NewAddressingValidator()
 	targets := addressingValidator.DetermineDeliveryRecipients(activity)
 
-	if len(targets.DirectRecipients) == 0 {
+	if err := common.ValidateSliceNotEmpty("direct_recipients", targets.DirectRecipients); err != nil {
 		log.Info("no remote recipients for direct message")
 		return nil
 	}
@@ -713,7 +716,7 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 		}
 	}
 
-	if len(deliveryErrors) > 0 {
+	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
 		return fmt.Errorf("failed to deliver direct message to %d inboxes", len(deliveryErrors))
 	}
 

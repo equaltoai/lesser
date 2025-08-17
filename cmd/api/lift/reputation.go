@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -16,13 +17,13 @@ import (
 func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
-	if actorID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing actor_id parameter"})
+	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -35,7 +36,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
@@ -88,7 +89,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -102,7 +103,7 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
@@ -148,7 +149,7 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -161,7 +162,7 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
@@ -214,7 +215,7 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -228,7 +229,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
@@ -265,11 +266,11 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	}
 
 	// Validate input
-	if vouchReq.To == "" {
+	if err := common.ValidateRequiredParam("vouchTo", vouchReq.To); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing 'to' field"})
 	}
-	if vouchReq.Confidence < 0 || vouchReq.Confidence > 1 {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "confidence must be between 0 and 1"})
+	if err := common.ValidateFloatRange("confidence", vouchReq.Confidence, 0, 1); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Get the actor ID for the authenticated user
@@ -305,13 +306,13 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
-	if actorID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing actor_id parameter"})
+	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -324,7 +325,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
@@ -380,13 +381,13 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	// Get vouchID from path parameter
 	vouchID := ctx.Param("vouch_id")
-	if vouchID == "" {
+	if err := common.ValidateRequiredParam("vouchID", vouchID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing vouch_id parameter"})
 	}
 
 	// Check for test mode
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -400,7 +401,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
 			authHeader = ctx.Header("authorization")
 		}
 

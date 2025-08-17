@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIServiceWithCostTracking wraps AIService with comprehensive cost tracking
@@ -237,7 +238,7 @@ func (s *AIServiceWithCostTracking) AnalyzeContentWithCostTracking(ctx context.C
 func (s *AIServiceWithCostTracking) estimateTokenCount(text string) int {
 	// Simple token estimation: roughly 4 characters per token
 	// This is a rough approximation - in practice, you'd use a proper tokenizer
-	if len(text) == 0 {
+	if err := common.ValidateSliceNotEmpty("text", text); err != nil {
 		return 0
 	}
 	return (len(text) / 4) + 1

@@ -299,3 +299,24 @@ func (m *MockFederationInstanceRepository) UpdateInstanceUsage(_ context.Context
 func (m *MockFederationInstanceRepository) GetHealthHistory(_ context.Context, _ string, _ time.Duration) ([]*types.HealthStatus, error) {
 	return nil, nil
 }
+
+// BatchCreateInstances creates multiple instances efficiently (mock implementation)
+func (m *MockFederationInstanceRepository) BatchCreateInstances(_ context.Context, instances []*types.Instance) error {
+	if m.instances == nil {
+		m.instances = make(map[string]*types.Instance)
+	}
+	for _, instance := range instances {
+		m.instances[instance.ID] = instance
+	}
+	return nil
+}
+
+// BatchUpdateInstancesHealth updates health status for multiple instances (mock implementation)
+func (m *MockFederationInstanceRepository) BatchUpdateInstancesHealth(_ context.Context, _ map[string]*types.HealthStatus) error {
+	return nil
+}
+
+// BatchUpdateInstancesUsage updates usage counters for multiple instances (mock implementation)  
+func (m *MockFederationInstanceRepository) BatchUpdateInstancesUsage(_ context.Context, _ map[string]int64) error {
+	return nil
+}

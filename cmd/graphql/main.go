@@ -31,20 +31,16 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
@@ -66,54 +62,51 @@ const (
 )
 
 var (
-	cfg               *config.Config
+	lambdaCtx         *common.LambdaContext
+	cfg               interface{} // config.Config interface
 	repos             core.RepositoryStorage
 	logger            *zap.Logger
 	graphQLHandler    *handler.Server
-	emfMetricsService *observability.EMFMetricsService
+	emfMetricsService interface{} // *observability.EMFMetricsService interface
 	costTracker       *cost.Tracker
 	initTime          time.Time
 )
 
 func init() {
 	initTime = time.Now()
-	cfg = config.Get()
-	logger = common.Logger()
 
-	// Initialize DynamORM
-	tableName := os.Getenv("DYNAMODB_TABLE")
-	if tableName == "" {
-		tableName = cfg.DynamoTableName
-	}
-	if tableName == "" {
-		logger.Fatal("DYNAMODB_TABLE environment variable is required")
+	// Initialize Lambda with GraphQL API-specific configuration
+	lambdaConfig := common.LambdaConfig{
+		ServiceName:        "graphql",
+		LambdaType:         common.LambdaTypeAPI,
+		EnableMetrics:      os.Getenv("DISABLE_METRICS") != envTrue,
+		EnableTracing:      true,
+		EnableHealthCheck:  true,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
 	}
 
-	// Load AWS configuration
-	awsCfg, err := awsConfig.LoadDefaultConfig(context.Background(),
-		awsConfig.WithRegion(cfg.Region),
-	)
+	var err error
+	lambdaCtx, err = common.InitializeLambda(lambdaConfig)
 	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
+		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
 	}
 
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+	// Initialize all services using default API options
+	options := common.DefaultLambdaInitOptions(common.LambdaTypeAPI)
+	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
+		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
 	}
 
-	// Create repository storage using factory pattern
-	repos, err = factory.NewRepositoryFactory(db, tableName, awsCfg, logger)
-	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
-	}
+	// Get initialized components
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	emfMetricsService = lambdaCtx.EMFMetrics
 
-	// Initialize auth service (locally scoped as it's not used globally)
-	_, err = auth.NewAuthService(repos)
-	if err != nil {
-		logger.Fatal("failed to initialize auth service", zap.Error(err))
-	}
+	// Repositories and storage already initialized by Lambda framework
+
+	// Auth service available from Lambda context as lambdaCtx.AuthService
 
 	// Initialize cost tracker
 	costTracker = cost.New()
@@ -130,19 +123,19 @@ func init() {
 			EnableAIDetection:   false,
 			EnableImageAnalysis: false,
 			BedrockModelID:      "anthropic.claude-v2",
-			S3Bucket:            cfg.S3BucketName,
+			S3Bucket:            lambdaCtx.Config.S3BucketName,
 		}
-		aiService = ai.NewAIService(awsCfg, aiConfig)
+		aiService = ai.NewAIService(lambdaCtx.AWSServices.Config, aiConfig)
 		logger.Info("AI service initialized")
 	} else {
 		logger.Info("AI service disabled")
 	}
 
-	// Initialize EMF metrics service
-	if os.Getenv("DISABLE_METRICS") != envTrue {
-		emfMetricsService = observability.NewEMFMetricsService(logger)
-		logger.Info("initialized EMF metrics service for GraphQL")
-	}
+	// EMF metrics service already initialized by Lambda framework
+
+	// Initialize GraphQL-specific components
+	// Use the config directly from Lambda context - it's already the right type
+	configTyped := lambdaCtx.Config
 
 	// Initialize event publisher for real-time updates
 	// For GraphQL, we'll use a mock publisher as real events go through WebSocket
@@ -150,8 +143,8 @@ func init() {
 	
 	// Create service registry with all dependencies
 	serviceConfig := &services.ServiceConfig{
-		BaseURL:   cfg.BaseURL(),
-		JWTSecret: cfg.JWTSecret,
+		BaseURL:   configTyped.BaseURL(),
+		JWTSecret: configTyped.JWTSecret,
 	}
 	
 	registry, err := services.NewRegistry(
@@ -164,14 +157,19 @@ func init() {
 		logger.Fatal("Failed to create service registry", zap.Error(err))
 	}
 
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "GraphQLResolver", "", "")
+	
 	// Initialize GraphQL resolver with service registry
 	resolver := &graph.Resolver{
-		Registry:     registry,
-		Storage:      repos,      // Keep for legacy resolvers
-		CostTracker:  costTracker,
-		MastodonConv: mastodon.NewConverter(cfg.BaseURL()),
-		Logger:       logger,
-		AIService:    aiService,
+		Registry:       registry,
+		Storage:        repos,      // Keep for legacy resolvers
+		CostTracker:    costTracker,
+		UnifiedTracker: unifiedTracker,
+		TableName:      configTyped.DynamoTableName,
+		MastodonConv:   mastodon.NewConverter(configTyped.BaseURL()),
+		Logger:         logger,
+		AIService:      aiService,
 	}
 
 	// Create GraphQL schema
@@ -332,7 +330,7 @@ func (r *bytesReader) Close() error {
 // extractBearerToken extracts Bearer token from Authorization header
 func extractBearerToken(ctx *lift.Context) string {
 	authHeader := ctx.Request.Headers["Authorization"]
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 		return ""
 	}
 
@@ -387,14 +385,14 @@ func createAuthMiddleware() lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Extract authorization header
 			authHeader := ctx.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 				// No authentication - continue with anonymous access
 				return next.Handle(ctx)
 			}
 
 			// Extract Bearer token
 			token := extractBearerToken(ctx)
-			if token == "" {
+			if err := common.ValidateRequiredParam("token", token); err != nil {
 				logger.Debug("Invalid authorization format - expected Bearer token")
 				// Continue without authentication for GraphQL introspection queries
 				return next.Handle(ctx)
@@ -536,7 +534,9 @@ func main() {
 
 	// 10. EMF performance monitoring middleware
 	if emfMetricsService != nil {
-		app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfMetricsService))
+		if emfService, ok := emfMetricsService.(*observability.EMFMetricsService); ok {
+			app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfService))
+		}
 	}
 
 	// Configure GraphQL routes
@@ -583,20 +583,10 @@ func main() {
 		zap.Bool("playground", os.Getenv("ENABLE_PLAYGROUND") == envTrue),
 		zap.Bool("debug", os.Getenv("DEBUG") == envTrue))
 
-	// Start the Lambda handler with EMF metrics flushing
-	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
-		// Process the request
-		result, err := app.HandleRequest(ctx, event)
+	// Use standardized Lambda handler with observability
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	})
 
-		// CRITICAL: Flush EMF metrics before Lambda terminates
-		if emfMetricsService != nil {
-			if flushErr := emfMetricsService.FlushMetrics(); flushErr != nil {
-				logger.Error("failed to flush EMF metrics", zap.Error(flushErr))
-			}
-		}
-
-		return result, err
-	}
-
-	lambda.Start(lambdaHandler)
+	lambda.Start(standardHandler)
 }

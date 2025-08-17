@@ -45,7 +45,7 @@ func ValidateActor(actor *Actor) error {
 	}
 
 	// Validate required fields
-	if actor.ID == "" {
+	if err := common.ValidateRequiredParam("id", actor.ID); err != nil {
 		return common.ValidationError{
 			Field:   "id",
 			Message: "required field missing",
@@ -56,7 +56,7 @@ func ValidateActor(actor *Actor) error {
 		return err
 	}
 
-	if actor.Type == "" {
+	if err := common.ValidateRequiredParam("type", actor.Type); err != nil {
 		return common.ValidationError{
 			Field:   "type",
 			Message: "required field missing",
@@ -127,7 +127,7 @@ func ValidateActivity(activity *Activity) error {
 	}
 
 	// Validate required fields
-	if activity.ID == "" {
+	if err := common.ValidateRequiredParam("id", activity.ID); err != nil {
 		return common.ValidationError{
 			Field:   "id",
 			Message: "required field missing",
@@ -138,7 +138,7 @@ func ValidateActivity(activity *Activity) error {
 		return err
 	}
 
-	if activity.Type == "" {
+	if err := common.ValidateRequiredParam("type", activity.Type); err != nil {
 		return common.ValidationError{
 			Field:   "type",
 			Message: "required field missing",
@@ -157,7 +157,7 @@ func ValidateActivity(activity *Activity) error {
 		}
 	}
 
-	if activity.Actor == "" {
+	if err := common.ValidateRequiredParam("actor", activity.Actor); err != nil {
 		return common.ValidationError{
 			Field:   "actor",
 			Message: "required field missing",
@@ -196,7 +196,7 @@ func ValidateNote(note *Note) error {
 		}
 	}
 
-	if note.Content == "" {
+	if err := common.ValidateRequiredParam("content", note.Content); err != nil {
 		return common.ValidationError{
 			Field:   "content",
 			Message: "cannot be empty",
@@ -210,7 +210,7 @@ func ValidateNote(note *Note) error {
 		}
 	}
 
-	if note.AttributedTo == "" {
+	if err := common.ValidateRequiredParam("attributedTo", note.AttributedTo); err != nil {
 		return common.ValidationError{
 			Field:   "attributedTo",
 			Message: "required field missing",
@@ -226,7 +226,7 @@ func ValidateNote(note *Note) error {
 
 // ValidateURL validates that a string is a valid URL
 func ValidateURL(urlStr string, fieldName string) error {
-	if urlStr == "" {
+	if err := common.ValidateRequiredParam(fieldName, urlStr); err != nil {
 		return common.ValidationError{
 			Field:   fieldName,
 			Message: "required field missing",
@@ -248,7 +248,7 @@ func ValidateURL(urlStr string, fieldName string) error {
 		}
 	}
 
-	if u.Host == "" {
+	if err := common.ValidateRequiredParam("host", u.Host); err != nil {
 		return common.ValidationError{
 			Field:   fieldName,
 			Message: "URL must have a host",
@@ -281,7 +281,7 @@ func ValidateAddressing(addresses []string, fieldName string) error {
 // SanitizeHTML removes potentially dangerous HTML from content
 // Uses bluemonday for robust XSS prevention
 func SanitizeHTML(content string) string {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return ""
 	}
 	// Use strict sanitizer for all user-generated content
@@ -291,7 +291,7 @@ func SanitizeHTML(content string) string {
 // SanitizeHTMLRelaxed applies a more relaxed sanitization policy
 // Only use this for content from trusted sources
 func SanitizeHTMLRelaxed(content string) string {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return ""
 	}
 	return relaxedSanitizer.Sanitize(content)

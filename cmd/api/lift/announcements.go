@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/emoji"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -23,7 +24,7 @@ func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 
 	// Check for test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -173,7 +174,7 @@ func (h *Handler) buildAnnouncementReactions(ctx *lift.Context, announcementID s
 // mergeReactions merges actual reactions with available reactions
 func (h *Handler) mergeReactions(availableReactions []storage.Reaction, actualReactions []models.AnnouncementReaction) []storage.Reaction {
 	// Set up default reactions if none are specified
-	if len(availableReactions) == 0 {
+	if err := common.ValidateSliceNotEmpty("available_reactions", availableReactions); err != nil {
 		availableReactions = []storage.Reaction{
 			{Name: "👍", Count: 0, Me: false},
 			{Name: "👎", Count: 0, Me: false},
@@ -203,7 +204,7 @@ func (h *Handler) mergeReactions(availableReactions []storage.Reaction, actualRe
 // HandleDismissAnnouncementLift handles POST /api/v1/announcements/:id/dismiss
 func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
-	if announcementID == "" {
+	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
 	}
 
@@ -245,8 +246,11 @@ func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
 
-	if announcementID == "" || reactionName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID and reaction name are required"})
+	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
+	}
+	if err := common.ValidateRequiredParam("reaction_name", reactionName); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
 	}
 
 	// Extract and validate token
@@ -289,8 +293,11 @@ func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error 
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
 
-	if announcementID == "" || reactionName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID and reaction name are required"})
+	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
+	}
+	if err := common.ValidateRequiredParam("reaction_name", reactionName); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
 	}
 
 	// Extract and validate token
@@ -338,7 +345,7 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Validate required fields
-	if req.Text == "" {
+	if err := common.ValidateRequiredParam("text", req.Text); err != nil {
 		return ctx.Status(422).JSON(map[string]string{"error": "Text is required"})
 	}
 

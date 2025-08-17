@@ -10,13 +10,11 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awslambda "github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -34,7 +32,7 @@ type FederationAggregatorProcessor struct {
 	federationActivityRepository *repositories.FederationActivityRepository
 	lambdaClient                 *awslambda.Client
 	sqsClient                    *sqs.Client
-	cfg                          *config.Config
+	lambdaCtx                    *common.LambdaContext
 }
 
 // AggregationEvent represents the input for federation aggregation
@@ -83,16 +81,15 @@ type DomainStat struct {
 }
 
 // NewFederationAggregatorProcessor creates a new federation aggregator processor
-func NewFederationAggregatorProcessor(db core.DB, tableName string, cfg *config.Config) *FederationAggregatorProcessor {
-	logger := common.Logger()
-	federationActivityRepository := repositories.NewFederationActivityRepository(db, tableName, logger)
+func NewFederationAggregatorProcessor(db core.DB, tableName string, lambdaCtx *common.LambdaContext) *FederationAggregatorProcessor {
+	federationActivityRepository := repositories.NewFederationActivityRepository(db, tableName, lambdaCtx.Logger)
 
 	return &FederationAggregatorProcessor{
 		db:                           db,
 		tableName:                    tableName,
-		logger:                       logger,
+		logger:                       lambdaCtx.Logger,
 		federationActivityRepository: federationActivityRepository,
-		cfg:                          cfg,
+		lambdaCtx:                    lambdaCtx,
 	}
 }
 
@@ -109,10 +106,8 @@ func (p *FederationAggregatorProcessor) HandleEvent(ctx *lift.Context, event eve
 
 // initializeAWSClients initializes AWS service clients
 func (p *FederationAggregatorProcessor) initializeAWSClients(ctx context.Context) error {
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
-	}
+	// Use the AWS config from lambdaCtx
+	awsCfg := p.lambdaCtx.AWSServices.Config
 
 	p.lambdaClient = awslambda.NewFromConfig(awsCfg)
 	p.sqsClient = sqs.NewFromConfig(awsCfg)
@@ -161,28 +156,34 @@ func (p *FederationAggregatorProcessor) processSQSMessage(ctx context.Context, r
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
+	lambdaCtx *common.LambdaContext
 	processor *FederationAggregatorProcessor
 	db        core.DB
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
+	// Initialize Lambda with federation configuration for aggregation processing
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "federation-aggregator",
+		LambdaType:         common.LambdaTypeFederation,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     120 * time.Second, // Longer timeout for aggregation processing
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewFederationAggregatorProcessor(db, cfg.DynamoTableName, cfg)
+	processor = NewFederationAggregatorProcessor(db, lambdaCtx.Config.DynamoTableName, lambdaCtx)
 }
 
 func main() {
@@ -191,8 +192,8 @@ func main() {
 
 	// Add standard middleware
 	app.Use(patterns.RequestIDMiddleware("federation-aggregator"))
-	app.Use(patterns.LoggingMiddleware(logger))
-	app.Use(patterns.RecoveryMiddleware(logger))
+	app.Use(patterns.LoggingMiddleware(lambdaCtx.Logger))
+	app.Use(patterns.RecoveryMiddleware(lambdaCtx.Logger))
 
 	// Handle SQS events for custom aggregation requests
 	_ = app.SQS("federation-aggregator", func(ctx *lift.Context) error {
@@ -222,7 +223,7 @@ func main() {
 
 	// Use the EventBridge pattern for CloudWatch scheduled events
 	// Register as an EventBridge processor for scheduled aggregation
-	eventBridgeProcessor := patterns.NewEventBridgeProcessor("federation-aggregator-schedule", processor, logger)
+	eventBridgeProcessor := patterns.NewEventBridgeProcessor("federation-aggregator-schedule", processor, lambdaCtx.Logger)
 	patterns.RegisterEventBridge(app, eventBridgeProcessor)
 
 	lambda.Start(app.HandleRequest)
@@ -269,7 +270,7 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 		return err
 	}
 
-	if len(filteredActivities) == 0 {
+	if err := common.ValidateSliceNotEmpty("filteredActivities", filteredActivities); err != nil {
 		p.logger.Info("No activities to aggregate",
 			zap.String("period", event.Type),
 			zap.Time("start", event.StartTime),
@@ -338,7 +339,7 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 
 	// Option 1: Use SQS for async processing (preferred for resilience)
 	queueURL := fmt.Sprintf("https://sqs.%s.amazonaws.com/%s/federation-aggregator-queue",
-		p.cfg.Region, p.cfg.AWSAccountID)
+		p.lambdaCtx.Config.Region, p.lambdaCtx.Config.AWSAccountID)
 
 	sqsInput := &sqs.SendMessageInput{
 		QueueUrl:    &queueURL,

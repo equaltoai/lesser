@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConversationMute represents a muted conversation thread in DynamoDB
@@ -28,10 +29,10 @@ func (ConversationMute) TableName() string {
 
 // BeforeCreate sets up the keys before creating a mute
 func (c *ConversationMute) BeforeCreate() error {
-	if c.Username == "" {
+	if err := common.ValidateRequiredParam("c.Username", c.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
-	if c.ConversationID == "" {
+	if err := common.ValidateRequiredParam("c.ConversationID", c.ConversationID); err != nil {
 		return fmt.Errorf("conversation ID is required")
 	}
 

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Signal type constants
@@ -216,7 +217,7 @@ func (de *DecisionEngine) collectSignals(analysis *ModerationAnalysis) []Signal 
 
 // calculateWeightedScore calculates a weighted score from all signals
 func (de *DecisionEngine) calculateWeightedScore(signals []Signal) (float64, float64) {
-	if len(signals) == 0 {
+	if err := common.ValidateSliceNotEmpty("signals", signals); err != nil {
 		return 0.0, 1.0
 	}
 

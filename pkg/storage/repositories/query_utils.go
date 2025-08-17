@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // QueryUtils provides common query patterns used across repositories
@@ -21,6 +23,38 @@ func NewQueryUtils(db core.DB, logger *zap.Logger) *QueryUtils {
 		db:     db,
 		logger: logger,
 	}
+}
+
+// paginateResults is a generic helper to handle pagination logic for any result type
+func paginateResults[T any](results []T, opts *QueryOptions, extractKeys func(T) (pk, sk string)) (items []T, nextCursor string, hasMore bool) {
+	if opts == nil || opts.Limit <= 0 {
+		return results, "", false
+	}
+	
+	hasMore = len(results) > opts.Limit
+	if hasMore {
+		results = results[:opts.Limit]
+	}
+	
+	nextCursor = ""
+	if hasMore && len(results) > 0 && extractKeys != nil {
+		if pk, sk := extractKeys(results[len(results)-1]); pk != "" && sk != "" {
+			nextCursor = Utils.Pagination.EncodeCursor(pk, sk)
+		}
+	}
+	
+	return results, nextCursor, hasMore
+}
+
+// mapExtractKeys extracts PK and SK from a map[string]interface{}
+func mapExtractKeys(item map[string]interface{}) (pk, sk string) {
+	if p, ok := item["PK"].(string); ok {
+		pk = p
+	}
+	if s, ok := item["SK"].(string); ok {
+		sk = s
+	}
+	return pk, sk
 }
 
 // QueryResult represents a generic query result with pagination
@@ -66,24 +100,11 @@ func (q *QueryUtils) UserRelationshipQuery(ctx context.Context, username, relati
 		return nil, ErrorHandler.HandleQueryError(err, "user relationship", relationshipType)
 	}
 
-	// Handle pagination
-	hasMore := len(results) > opts.Limit
-	if hasMore {
-		results = results[:opts.Limit]
-	}
-
-	nextCursor := ""
-	if hasMore && len(results) > 0 {
-		lastItem := results[len(results)-1]
-		if pk, ok := lastItem["PK"].(string); ok {
-			if sk, ok := lastItem["SK"].(string); ok {
-				nextCursor = Utils.Pagination.EncodeCursor(pk, sk)
-			}
-		}
-	}
+	// Use generic pagination helper
+	items, nextCursor, hasMore := paginateResults(results, opts, mapExtractKeys)
 
 	return &QueryResult[map[string]interface{}]{
-		Items:      results,
+		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
@@ -120,24 +141,11 @@ func (q *QueryUtils) TimeRangeQuery(ctx context.Context, pk string, startTime, e
 		return nil, ErrorHandler.HandleQueryError(err, "time range", pk)
 	}
 
-	// Handle pagination
-	hasMore := len(results) > opts.Limit
-	if hasMore {
-		results = results[:opts.Limit]
-	}
-
-	nextCursor := ""
-	if hasMore && len(results) > 0 {
-		lastItem := results[len(results)-1]
-		if pk, ok := lastItem["PK"].(string); ok {
-			if sk, ok := lastItem["SK"].(string); ok {
-				nextCursor = Utils.Pagination.EncodeCursor(pk, sk)
-			}
-		}
-	}
+	// Use generic pagination helper
+	items, nextCursor, hasMore := paginateResults(results, opts, mapExtractKeys)
 
 	return &QueryResult[map[string]interface{}]{
-		Items:      results,
+		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
@@ -165,24 +173,11 @@ func (q *QueryUtils) GSIStatusQuery(ctx context.Context, indexName, status strin
 		return nil, ErrorHandler.HandleQueryError(err, "GSI status", status)
 	}
 
-	// Handle pagination
-	hasMore := len(results) > opts.Limit
-	if hasMore {
-		results = results[:opts.Limit]
-	}
-
-	nextCursor := ""
-	if hasMore && len(results) > 0 {
-		lastItem := results[len(results)-1]
-		if pk, ok := lastItem["PK"].(string); ok {
-			if sk, ok := lastItem["SK"].(string); ok {
-				nextCursor = Utils.Pagination.EncodeCursor(pk, sk)
-			}
-		}
-	}
+	// Use generic pagination helper
+	items, nextCursor, hasMore := paginateResults(results, opts, mapExtractKeys)
 
 	return &QueryResult[map[string]interface{}]{
-		Items:      results,
+		Items:      items,
 		NextCursor: nextCursor,
 		HasMore:    hasMore,
 	}, nil
@@ -222,7 +217,7 @@ func (q *QueryUtils) ExistsQuery(ctx context.Context, pk, sk string) (bool, erro
 
 // BatchDeleteQuery performs batch delete operations
 func (q *QueryUtils) BatchDeleteQuery(ctx context.Context, keys []struct{ PK, SK string }) error {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return nil
 	}
 
@@ -276,6 +271,308 @@ func (q *QueryUtils) FilterActiveItems(items []map[string]interface{}, currentTi
 	}
 
 	return activeItems
+}
+
+// GetItemByPK retrieves a single item by its primary key and sort key
+func (q *QueryUtils) GetItemByPK(ctx context.Context, pk, sk string, result interface{}) error {
+	err := q.db.WithContext(ctx).Model(result).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(result)
+	
+	if err != nil {
+		return ErrorHandler.HandleQueryError(err, "get item", fmt.Sprintf("%s#%s", pk, sk))
+	}
+	
+	return nil
+}
+
+// UpdateItem performs a generic update operation with error handling
+func (q *QueryUtils) UpdateItem(ctx context.Context, model interface{}) error {
+	err := q.db.WithContext(ctx).Model(model).Update()
+	if err != nil {
+		return ErrorHandler.HandleUpdateError(err, "update item", "")
+	}
+	return nil
+}
+
+// DeleteItem performs a generic delete operation with error handling
+func (q *QueryUtils) DeleteItem(ctx context.Context, pk, sk string, model interface{}) error {
+	err := q.db.WithContext(ctx).Model(model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+	
+	if err != nil {
+		return ErrorHandler.HandleDeleteError(err, "delete item", fmt.Sprintf("%s#%s", pk, sk))
+	}
+	
+	return nil
+}
+
+// QueryByGSI performs a generic GSI query with pagination
+func (q *QueryUtils) QueryByGSI(ctx context.Context, indexName, gsiPK, gsiSK string, opts *QueryOptions) (*QueryResult[map[string]interface{}], error) {
+	if opts == nil {
+		opts = &QueryOptions{Limit: 50}
+	}
+
+	var results []map[string]interface{}
+	query := q.db.WithContext(ctx).Model(&results).
+		Index(indexName).
+		Where(fmt.Sprintf("%sPK", indexName), "=", gsiPK)
+	
+	if gsiSK != "" {
+		query = query.Where(fmt.Sprintf("%sSK", indexName), "=", gsiSK)
+	}
+
+	if opts.Limit > 0 {
+		query = query.Limit(opts.Limit + 1)
+	}
+
+	err := query.All(&results)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "GSI query", gsiPK)
+	}
+
+	// Use generic pagination helper
+	items, nextCursor, hasMore := paginateResults(results, opts, mapExtractKeys)
+
+	return &QueryResult[map[string]interface{}]{
+		Items:      items,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// QueryWithPrefix performs a query with SK prefix matching
+func (q *QueryUtils) QueryWithPrefix(ctx context.Context, pk, skPrefix string, opts *QueryOptions) (*QueryResult[map[string]interface{}], error) {
+	if opts == nil {
+		opts = &QueryOptions{Limit: 50}
+	}
+
+	var results []map[string]interface{}
+	query := q.db.WithContext(ctx).Model(&results).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix)
+
+	if opts.Limit > 0 {
+		query = query.Limit(opts.Limit + 1)
+	}
+
+	if opts.IndexName != "" {
+		query = query.Index(opts.IndexName)
+	}
+
+	err := query.All(&results)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "prefix query", pk)
+	}
+
+	// Use generic pagination helper
+	items, nextCursor, hasMore := paginateResults(results, opts, mapExtractKeys)
+
+	return &QueryResult[map[string]interface{}]{
+		Items:      items,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// CreateWithCondition creates an item with condition checking (for idempotency)
+func (q *QueryUtils) CreateWithCondition(ctx context.Context, model interface{}) error {
+	err := q.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		// Check if it's a duplicate key error
+		if errors.IsConditionFailed(err) {
+			q.logger.Debug("item already exists", zap.Any("model", model))
+			return nil // Idempotent - don't fail if already exists
+		}
+		return ErrorHandler.HandleCreateError(err, "create item", "")
+	}
+	return nil
+}
+
+// GenericQuery performs a type-safe query with automatic struct mapping
+func GenericQuery[T any](q *QueryUtils, ctx context.Context, pk, sk string) (*T, error) {
+	var result T
+	err := q.db.WithContext(ctx).Model(&result).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&result)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil // Return nil without error for not found
+		}
+		return nil, ErrorHandler.HandleQueryError(err, "generic query", fmt.Sprintf("%s#%s", pk, sk))
+	}
+	
+	return &result, nil
+}
+
+// GenericList performs a type-safe list query with pagination
+func GenericList[T any](q *QueryUtils, ctx context.Context, pk, skPrefix string, opts *QueryOptions) (*QueryResult[T], error) {
+	if opts == nil {
+		opts = &QueryOptions{Limit: 50}
+	}
+
+	var results []T
+	query := q.db.WithContext(ctx).Model(&results).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix)
+
+	if opts.Limit > 0 {
+		query = query.Limit(opts.Limit + 1)
+	}
+
+	if opts.IndexName != "" {
+		query = query.Index(opts.IndexName)
+	}
+
+	err := query.All(&results)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "generic list", pk)
+	}
+
+	// Handle pagination
+	hasMore := len(results) > opts.Limit
+	if hasMore {
+		results = results[:opts.Limit]
+	}
+
+	// For typed results, we need a way to extract cursor from the struct
+	// This is a simplified version - in practice you'd want a Keyer interface
+	nextCursor := ""
+	if hasMore && len(results) > 0 {
+		// This would need proper implementation based on your model structure
+		nextCursor = fmt.Sprintf("next_%d", opts.Limit)
+	}
+
+	return &QueryResult[T]{
+		Items:      results,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// BatchGet performs a batch get operation for multiple items
+func BatchGet[T any](q *QueryUtils, ctx context.Context, keys []struct{ PK, SK string }) ([]T, error) {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
+		return nil, nil
+	}
+
+	results := make([]T, 0, len(keys))
+	for _, key := range keys {
+		var item T
+		err := q.db.WithContext(ctx).Model(&item).
+			Where("PK", "=", key.PK).
+			Where("SK", "=", key.SK).
+			First(&item)
+		
+		if err != nil {
+			if !errors.IsNotFound(err) {
+				return nil, ErrorHandler.HandleQueryError(err, "batch get", fmt.Sprintf("%s#%s", key.PK, key.SK))
+			}
+			// Skip not found items
+			continue
+		}
+		
+		results = append(results, item)
+	}
+
+	return results, nil
+}
+
+// QueryBuilder provides a fluent interface for building queries with less duplication
+type QueryBuilder[T any] struct {
+	q         *QueryUtils
+	ctx       context.Context
+	model     T
+	pk        string
+	sk        string
+	skPrefix  string
+	indexName string
+	limit     int
+	cursor    string
+}
+
+// NewQueryBuilder creates a new query builder
+func NewQueryBuilder[T any](q *QueryUtils, ctx context.Context) *QueryBuilder[T] {
+	return &QueryBuilder[T]{
+		q:     q,
+		ctx:   ctx,
+		limit: 50,
+	}
+}
+
+// WithPK sets the partition key
+func (qb *QueryBuilder[T]) WithPK(pk string) *QueryBuilder[T] {
+	qb.pk = pk
+	return qb
+}
+
+// WithSK sets the sort key
+func (qb *QueryBuilder[T]) WithSK(sk string) *QueryBuilder[T] {
+	qb.sk = sk
+	return qb
+}
+
+// WithSKPrefix sets the sort key prefix for BEGINS_WITH queries
+func (qb *QueryBuilder[T]) WithSKPrefix(prefix string) *QueryBuilder[T] {
+	qb.skPrefix = prefix
+	return qb
+}
+
+// WithIndex sets the GSI index name
+func (qb *QueryBuilder[T]) WithIndex(indexName string) *QueryBuilder[T] {
+	qb.indexName = indexName
+	return qb
+}
+
+// WithLimit sets the query limit
+func (qb *QueryBuilder[T]) WithLimit(limit int) *QueryBuilder[T] {
+	qb.limit = limit
+	return qb
+}
+
+// Execute runs the query and returns paginated results
+func (qb *QueryBuilder[T]) Execute() (*QueryResult[T], error) {
+	var results []T
+	query := qb.q.db.WithContext(qb.ctx).Model(&results)
+	
+	if qb.indexName != "" {
+		query = query.Index(qb.indexName)
+	}
+	
+	if qb.pk != "" {
+		query = query.Where("PK", "=", qb.pk)
+	}
+	
+	if qb.sk != "" {
+		query = query.Where("SK", "=", qb.sk)
+	} else if qb.skPrefix != "" {
+		query = query.Where("SK", "BEGINS_WITH", qb.skPrefix)
+	}
+	
+	if qb.limit > 0 {
+		query = query.Limit(qb.limit + 1)
+	}
+	
+	err := query.All(&results)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "query builder", qb.pk)
+	}
+	
+	// For generic types, we need a type-specific key extractor
+	// This is a simplified version - could be improved with interfaces
+	opts := &QueryOptions{Limit: qb.limit}
+	items, nextCursor, hasMore := paginateResults(results, opts, nil)
+	
+	return &QueryResult[T]{
+		Items:      items,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
 }
 
 // CommonQueries contains common query patterns used across repositories

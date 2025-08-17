@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -274,11 +275,11 @@ func (c *BedrockClient) parseReputationResponse(completion string) (*ReputationA
 	}
 
 	// Validate the response
-	if result.ReputationScore < 0 || result.ReputationScore > 1000 {
+	if err := common.ValidateFloatRange("reputation_score", result.ReputationScore, 0, 1000); err != nil {
 		result.ReputationScore = 500 // Default to neutral
 	}
 	
-	if result.ConfidenceLevel < 0 || result.ConfidenceLevel > 1 {
+	if err := common.ValidateFloatRange("confidence_level", result.ConfidenceLevel, 0, 1); err != nil {
 		result.ConfidenceLevel = 0.5 // Default confidence
 	}
 
@@ -298,7 +299,7 @@ func (c *BedrockClient) fallbackAnalysis(req ReputationAnalysisRequest) *Reputat
 	}
 
 	// Source quality (basic heuristic)
-	if len(req.Sources) > 0 {
+	if err := common.ValidateSliceNotEmpty("sources", req.Sources); err == nil {
 		score += 25 // Has sources
 		for _, source := range req.Sources {
 			if len(source) > 20 { // Reasonable URL length
@@ -308,10 +309,10 @@ func (c *BedrockClient) fallbackAnalysis(req ReputationAnalysisRequest) *Reputat
 	}
 
 	// Content length and complexity
-	if len(req.Content) > 100 {
+	if err := common.ValidateStringLength("content", req.Content, 101, 10000); err == nil {
 		score += 15 // Detailed content
 	}
-	if len(req.ComplexityFactors) > 2 {
+	if err := common.ValidateSliceLength("complexity_factors", req.ComplexityFactors, 1000); err == nil && len(req.ComplexityFactors) > 2 {
 		score += 10 // Complex analysis
 	}
 

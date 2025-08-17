@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TransactionManager provides enhanced transaction management with retry logic and cost tracking
@@ -104,7 +105,7 @@ func (tm *TransactionManager) ExecuteWrite(ctx context.Context, operations ...Tr
 
 // ExecuteWriteWithConfig executes a transaction with custom configuration
 func (tm *TransactionManager) ExecuteWriteWithConfig(ctx context.Context, config TransactionConfig, operations ...TransactionOperation) error {
-	if len(operations) == 0 {
+	if err := common.ValidateSliceNotEmpty("operations", operations); err != nil {
 		return fmt.Errorf("no operations provided for transaction")
 	}
 

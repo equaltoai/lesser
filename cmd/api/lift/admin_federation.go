@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -73,7 +72,7 @@ type EmailDomainBlockResponse struct {
 // requireAdminLift validates admin authentication for Lift handlers
 func (h *Handler) requireAdminLift(ctx *lift.Context) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, errors.New("missing authentication")
 	}
 
@@ -102,11 +101,10 @@ func (h *Handler) HandleGetAdminDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 100
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFederationLimit(limitStr)
+	if err != nil {
+		limit = 100
 	}
 
 	cursor := ctx.Query("max_id")
@@ -159,7 +157,7 @@ func (h *Handler) HandleGetAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
-	if blockID == "" {
+	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "block ID required"})
 	}
@@ -211,8 +209,8 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": "invalid request"})
 	}
 
-	// Validate domain
-	if req.Domain == "" {
+	// Validate domain using centralized validation
+	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "domain is required"})
 	}
@@ -227,7 +225,7 @@ func (h *Handler) HandleCreateAdminDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Validate severity
-	if req.Severity == "" {
+	if err := common.ValidateRequiredParam("severity", req.Severity); err != nil {
 		req.Severity = actionSuspend // Default to suspend
 	}
 	if req.Severity != actionSilence && req.Severity != actionSuspend {
@@ -295,7 +293,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
-	if blockID == "" {
+	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "block ID required"})
 	}
@@ -310,7 +308,7 @@ func (h *Handler) HandleUpdateAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Build updates map
 	updates := make(map[string]any)
-	if req.Severity != "" {
+	if err := common.ValidateRequiredParam("severity", req.Severity); err == nil {
 		if req.Severity != actionSilence && req.Severity != actionSuspend {
 			ctx.Status(http.StatusBadRequest)
 			return ctx.JSON(map[string]string{"error": "severity must be 'silence' or 'suspend'"})
@@ -379,7 +377,7 @@ func (h *Handler) HandleDeleteAdminDomainBlockLift(ctx *lift.Context) error {
 
 	// Get domain block ID from path
 	blockID := ctx.Param("id")
-	if blockID == "" {
+	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "block ID required"})
 	}
@@ -426,11 +424,10 @@ func (h *Handler) HandleGetAdminDomainAllowsLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 100
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFederationLimit(limitStr)
+	if err != nil {
+		limit = 100
 	}
 
 	cursor := ctx.Query("max_id")
@@ -484,8 +481,8 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": "invalid request"})
 	}
 
-	// Validate domain
-	if req.Domain == "" {
+	// Validate domain using centralized validation
+	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "domain is required"})
 	}
@@ -545,7 +542,7 @@ func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *lift.Context) error {
 
 	// Get domain allow ID from path
 	allowID := ctx.Param("id")
-	if allowID == "" {
+	if err := common.ValidateRequiredParam("allowID", allowID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "allow ID required"})
 	}
@@ -584,11 +581,10 @@ func (h *Handler) HandleGetFederationInstancesLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 100
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFederationLimit(limitStr)
+	if err != nil {
+		limit = 100
 	}
 
 	cursor := ctx.Query("cursor")
@@ -654,7 +650,7 @@ func (h *Handler) HandleGetFederationInstanceLift(ctx *lift.Context) error {
 
 	// Get domain from path
 	domain := ctx.Param("domain")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "domain required"})
 	}
@@ -768,11 +764,10 @@ func (h *Handler) HandleGetEmailDomainBlocksLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 100
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFederationLimit(limitStr)
+	if err != nil {
+		limit = 100
 	}
 
 	cursor := ctx.Query("cursor")
@@ -827,8 +822,8 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": "invalid request"})
 	}
 
-	// Validate domain
-	if req.Domain == "" {
+	// Validate domain using centralized validation
+	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "domain is required"})
 	}
@@ -883,7 +878,7 @@ func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *lift.Context) error {
 
 	// Get email domain block ID from path
 	blockID := ctx.Param("id")
-	if blockID == "" {
+	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "block ID required"})
 	}

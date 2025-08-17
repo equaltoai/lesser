@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Domain constants
@@ -95,7 +96,7 @@ func (e *EmojiModel) UpdateKeys() {
 
 	// GSI4 - for usage statistics and popularity
 	domainKey := e.Domain
-	if domainKey == "" {
+	if err := common.ValidateRequiredParam("domainKey", domainKey); err != nil {
 		domainKey = domainLocal
 	}
 	e.GSI4PK = fmt.Sprintf("USAGE#%s", domainKey)

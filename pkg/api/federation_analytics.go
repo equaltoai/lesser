@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -44,17 +44,15 @@ func (fah *FederationAnalyticsHandler) RegisterRoutes(r *mux.Router) {
 // GetFederationNodes returns federation graph nodes
 func (fah *FederationAnalyticsHandler) GetFederationNodes(w http.ResponseWriter, r *http.Request) {
 	depthStr := r.URL.Query().Get("depth")
-	depth := 1
-	if depthStr != "" {
-		if d, err := strconv.Atoi(depthStr); err == nil {
-			depth = d
-		}
+	depth, err := common.ParseAndValidateIntWithBounds("depth", depthStr, 0, 10, 1)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Invalid depth parameter: %v", err), http.StatusBadRequest)
+		return
 	}
 
 	healthFilter := r.URL.Query().Get("health")
 
 	var nodes []*storage.FederationNode
-	var err error
 
 	if healthFilter != "" {
 		// Use the dedicated method for health-filtered queries
@@ -88,8 +86,11 @@ func (fah *FederationAnalyticsHandler) GetFederationEdges(w http.ResponseWriter,
 	var err error
 
 	if connectionType != "" && limitStr != "" {
-		if limit, parseErr := strconv.Atoi(limitStr); parseErr == nil {
+		if limit, parseErr := common.ParseFederationLimit(limitStr); parseErr == nil {
 			edges, err = fah.storage.Federation().GetStrongestConnectionsByType(r.Context(), connectionType, limit)
+		} else {
+			http.Error(w, fmt.Sprintf("Invalid limit parameter: %v", parseErr), http.StatusBadRequest)
+			return
 		}
 	} else if len(domains) > 0 {
 		edges, err = fah.storage.Federation().GetFederationEdges(r.Context(), domains)
@@ -137,8 +138,12 @@ func (fah *FederationAnalyticsHandler) GetRelationshipAnalysis(w http.ResponseWr
 	source := vars["source"]
 	target := vars["target"]
 
-	if source == "" || target == "" {
-		http.Error(w, "Source and target domains are required", http.StatusBadRequest)
+	if err := common.ValidateRequiredParam("source", source); err != nil {
+		http.Error(w, "Source domain is required", http.StatusBadRequest)
+		return
+	}
+	if err := common.ValidateRequiredParam("target", target); err != nil {
+		http.Error(w, "Target domain is required", http.StatusBadRequest)
 		return
 	}
 
@@ -157,7 +162,7 @@ func (fah *FederationAnalyticsHandler) GetRecommendations(w http.ResponseWriter,
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
@@ -182,7 +187,7 @@ func (fah *FederationAnalyticsHandler) GetInstanceMetadata(w http.ResponseWriter
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
@@ -217,13 +222,13 @@ func (fah *FederationAnalyticsHandler) GetTimeSeries(w http.ResponseWriter, r *h
 	vars := mux.Vars(r)
 	domain := vars["domain"]
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		http.Error(w, "Domain is required", http.StatusBadRequest)
 		return
 	}
 
 	period := r.URL.Query().Get("period")
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "daily"
 	}
 

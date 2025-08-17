@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ThreadContext represents the context of a status thread stored in DynamoDB
@@ -81,7 +82,7 @@ func (t *ThreadContext) IsRoot() bool {
 
 // GetPathElements returns the path split into elements
 func (t *ThreadContext) GetPathElements() []string {
-	if t.Path == "" {
+	if err := common.ValidateRequiredParam("t.Path", t.Path); err != nil {
 		return []string{}
 	}
 	return []string{} // Would implement proper path parsing

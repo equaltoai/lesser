@@ -4,6 +4,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DASHGenerator handles DASH manifest generation
@@ -360,21 +362,21 @@ func (g *DASHGenerator) ValidateMPD(content string) error {
 	}
 
 	// Basic validation
-	if mpd.Type == "" {
+	if err := common.ValidateRequiredParam("mpd_type", mpd.Type); err != nil {
 		return fmt.Errorf("missing type attribute")
 	}
 
-	if len(mpd.Periods) == 0 {
+	if err := common.ValidateSliceNotEmpty("periods", mpd.Periods); err != nil {
 		return fmt.Errorf("no periods defined")
 	}
 
 	for _, period := range mpd.Periods {
-		if len(period.AdaptationSets) == 0 {
+		if err := common.ValidateSliceNotEmpty("adaptation_sets", period.AdaptationSets); err != nil {
 			return fmt.Errorf("period %s has no adaptation sets", period.ID)
 		}
 
 		for _, adaptationSet := range period.AdaptationSets {
-			if len(adaptationSet.Representations) == 0 {
+			if err := common.ValidateSliceNotEmpty("representations", adaptationSet.Representations); err != nil {
 				return fmt.Errorf("adaptation set %s has no representations", adaptationSet.ID)
 			}
 		}
@@ -739,26 +741,26 @@ func (g *DASHGenerator) ValidateLiveManifest(content string) error {
 		return fmt.Errorf("live MPD must have type='dynamic'")
 	}
 
-	if mpd.AvailabilityStartTime == "" {
+	if err := common.ValidateRequiredParam("availability_start_time", mpd.AvailabilityStartTime); err != nil {
 		return fmt.Errorf("live MPD must have availabilityStartTime")
 	}
 
-	if mpd.PublishTime == "" {
+	if err := common.ValidateRequiredParam("publish_time", mpd.PublishTime); err != nil {
 		return fmt.Errorf("live MPD should have publishTime")
 	}
 
 	// Validate periods
-	if len(mpd.Periods) == 0 {
+	if err := common.ValidateSliceNotEmpty("periods", mpd.Periods); err != nil {
 		return fmt.Errorf("no periods defined in live MPD")
 	}
 
 	for _, period := range mpd.Periods {
-		if len(period.AdaptationSets) == 0 {
+		if err := common.ValidateSliceNotEmpty("adaptation_sets", period.AdaptationSets); err != nil {
 			return fmt.Errorf("period %s has no adaptation sets", period.ID)
 		}
 
 		for _, adaptationSet := range period.AdaptationSets {
-			if len(adaptationSet.Representations) == 0 {
+			if err := common.ValidateSliceNotEmpty("representations", adaptationSet.Representations); err != nil {
 				return fmt.Errorf("adaptation set %s has no representations", adaptationSet.ID)
 			}
 		}

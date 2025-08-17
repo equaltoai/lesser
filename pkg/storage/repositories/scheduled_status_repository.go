@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -102,7 +103,7 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 		zap.Time("scheduled_at", scheduled.ScheduledAt))
 
 	// Generate ID if not provided
-	if scheduled.ID == "" {
+	if err := common.ValidateRequiredParam("scheduled_id", scheduled.ID); err != nil {
 		scheduled.ID = uuid.New().String()
 	}
 
@@ -144,7 +145,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatus(ctx context.Context, id s
 		return nil, fmt.Errorf("failed to scan for scheduled status: %w", err)
 	}
 
-	if len(scheduledModels) == 0 {
+	if err := common.ValidateSliceNotEmpty("scheduled_models", scheduledModels); err != nil {
 		return nil, fmt.Errorf("scheduled status not found")
 	}
 
@@ -182,7 +183,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatuses(ctx context.Context, us
 
 	// Generate next cursor
 	var nextCursor string
-	if len(statuses) > limit {
+	if err := common.ValidateSliceLength("statuses", statuses, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = scheduledModels[limit-1].SK
 		statuses = statuses[:limit] // Trim to requested limit
@@ -200,7 +201,7 @@ func (r *ScheduledStatusRepository) UpdateScheduledStatus(ctx context.Context, s
 	}
 
 	// Preserve username if not set
-	if scheduled.Username == "" {
+	if err := common.ValidateRequiredParam("scheduled_username", scheduled.Username); err != nil {
 		scheduled.Username = existing.Username
 	}
 
@@ -303,7 +304,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatusMedia(ctx context.Context,
 	}
 
 	// If no media IDs, return empty slice
-	if len(scheduled.MediaIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("media_ids", scheduled.MediaIDs); err != nil {
 		return []*models.Media{}, nil
 	}
 

@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services"
@@ -74,7 +75,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 // getBearerTokenLift extracts Bearer token from Authorization header
 func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
@@ -89,7 +90,7 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 // authenticateWithScope handles authentication and scope validation
 func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
 	}
 
@@ -110,7 +111,7 @@ func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string)
 // Returns empty string if not authenticated or token is invalid (for public content access)
 func (h *Handler) getOptionalAuthenticatedUser(ctx *lift.Context) string {
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ""
 	}
 

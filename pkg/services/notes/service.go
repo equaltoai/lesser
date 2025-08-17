@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -234,9 +235,9 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	}
 
 	// Handle conversation ID - create new conversation if not provided and it's a top-level post
-	if status.ConversationID == "" && status.InReplyToID == "" {
+	if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) != nil {
 		status.ConversationID = statusID
-	} else if status.ConversationID == "" && status.InReplyToID != "" {
+	} else if common.ValidateRequiredParam("status.ConversationID", status.ConversationID) != nil && common.ValidateRequiredParam("status.InReplyToID", status.InReplyToID) == nil {
 		// Get parent status to inherit conversation ID
 		parent, err := s.noteRepo.GetStatus(ctx, status.InReplyToID)
 		if err == nil && parent.ConversationID != "" {
@@ -252,7 +253,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 	}
 
 	// Create poll if poll options are provided
-	if len(cmd.PollOptions) > 0 {
+	if common.ValidateSliceNotEmpty("cmd.PollOptions", cmd.PollOptions) == nil {
 		if err := s.createPollForStatus(ctx, cmd, statusID); err != nil {
 			// Log error but don't fail status creation
 			s.logger.Error("failed to create poll for status",
@@ -420,7 +421,7 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 
 // GetNoteWithViewer retrieves a note with viewer context for privacy checking
 func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*models.Status, error) {
-	if query.StatusID == "" {
+	if err := common.ValidateRequiredParam("status_id", query.StatusID); err != nil {
 		return nil, fmt.Errorf("status_id is required")
 	}
 
@@ -460,7 +461,7 @@ func (s *Service) checkViewPermissions(ctx context.Context, status *models.Statu
 	}
 
 	// Unauthenticated users can only see public/unlisted posts
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewerID", viewerID); err != nil {
 		return false, nil
 	}
 
@@ -533,33 +534,33 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 	case VisibilityPublic:
 		result, err = s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
 	case "home":
-		if query.ViewerID == "" {
+		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
 			return nil, fmt.Errorf("home timeline requires viewer_id")
 		}
 		result, err = s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
 	case "user":
-		if query.AuthorID == "" {
+		if err := common.ValidateRequiredParam("author_id", query.AuthorID); err != nil {
 			return nil, fmt.Errorf("user timeline requires author_id")
 		}
 		result, err = s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
 	case "conversations":
-		if query.ConversationID == "" {
+		if err := common.ValidateRequiredParam("conversation_id", query.ConversationID); err != nil {
 			return nil, fmt.Errorf("conversations timeline requires conversation_id")
 		}
 		result, err = s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
 	case "direct":
-		if query.ViewerID == "" {
+		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
 			return nil, fmt.Errorf("direct timeline requires viewer_id")
 		}
 		// Direct messages are handled differently - we get conversations first, then statuses
 		return s.getDirectTimeline(ctx, query)
 	case "hashtag":
-		if query.Hashtag == "" {
+		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
 			return nil, fmt.Errorf("hashtag timeline requires hashtag")
 		}
 		result, err = s.noteRepo.GetStatusesByHashtag(ctx, query.Hashtag, query.Pagination)
 	case "list":
-		if query.ListID == "" {
+		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
 			return nil, fmt.Errorf("list timeline requires list_id")
 		}
 		// Get list timeline - statuses from members of the list
@@ -621,15 +622,15 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 // Private helper methods
 
 func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteCommand) error {
-	if cmd.AuthorID == "" {
+	if err := common.ValidateRequiredParam("author_id", cmd.AuthorID); err != nil {
 		return fmt.Errorf("author_id is required")
 	}
 
-	if strings.TrimSpace(cmd.Content) == "" {
+	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
 		return fmt.Errorf("content cannot be empty")
 	}
 
-	if len(cmd.Content) > 5000 {
+	if err := common.ValidateStringLength("cmd.Content", cmd.Content, 0, 5000); err != nil {
 		return fmt.Errorf("content too long (max 5000 characters)")
 	}
 
@@ -656,11 +657,11 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 }
 
 func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateNoteCommand) error {
-	if strings.TrimSpace(cmd.Content) == "" {
+	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
 		return fmt.Errorf("content cannot be empty")
 	}
 
-	if len(cmd.Content) > 5000 {
+	if err := common.ValidateStringLength("cmd.Content", cmd.Content, 0, 5000); err != nil {
 		return fmt.Errorf("content too long (max 5000 characters)")
 	}
 
@@ -945,7 +946,7 @@ type GetUpdateHistoryResult struct {
 
 // GetUpdateHistory retrieves the edit history for a status
 func (s *Service) GetUpdateHistory(ctx context.Context, query *GetUpdateHistoryQuery) (*GetUpdateHistoryResult, error) {
-	if query.StatusID == "" {
+	if err := common.ValidateRequiredParam("status_id", query.StatusID); err != nil {
 		return nil, fmt.Errorf("status ID is required")
 	}
 
@@ -1848,7 +1849,7 @@ func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Re
 	// Create paginated result
 	var nextCursor string
 	hasMore := false
-	if len(allStatuses) == limit && len(allStatuses) > 0 {
+	if len(allStatuses) == limit && common.ValidateSliceNotEmpty("allStatuses", allStatuses) == nil {
 		nextCursor = allStatuses[len(allStatuses)-1].StatusID
 		hasMore = true
 	}
@@ -1948,7 +1949,7 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 
 // GetFavoritedNotes returns the favorited/liked statuses for a user
 func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) (*Result, error) {
-	if query.ViewerID == "" {
+	if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
 		return nil, fmt.Errorf("viewer_id is required for favorited timeline")
 	}
 
@@ -1977,7 +1978,7 @@ func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) 
 		statusID := like.Object
 		if strings.Contains(statusID, "/statuses/") {
 			parts := strings.Split(statusID, "/statuses/")
-			if len(parts) > 1 {
+			if common.ValidateSliceLength("parts", parts, 2) == nil {
 				statusID = parts[1]
 			}
 		}
@@ -2082,7 +2083,7 @@ func (s *Service) CreateScheduledNote(ctx context.Context, cmd *CreateScheduledN
 
 // validateCreateScheduledNoteCommand validates the create scheduled note command
 func (s *Service) validateCreateScheduledNoteCommand(_ context.Context, cmd *CreateScheduledNoteCommand) error {
-	if strings.TrimSpace(cmd.Content) == "" {
+	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
 		return fmt.Errorf("content is required")
 	}
 	if len(cmd.Content) > 500 {

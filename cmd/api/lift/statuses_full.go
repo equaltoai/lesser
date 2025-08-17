@@ -11,9 +11,11 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -73,7 +75,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format using converter
-	mastodonStatus := h.converter.NotesToStatus(result.Note)
+	mastodonStatus := transformations.NotesToStatusAny(result.Note, h.cfg.BaseURL())
 
 	// Enrich with poll data if poll exists
 	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, result.Note.StatusID, claims.Username); err != nil {
@@ -87,7 +89,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 // HandleGetStatusFull retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
 	}
 
@@ -121,7 +123,7 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon API format using converter
-	mastodonStatus := h.converter.NotesToStatus(note)
+	mastodonStatus := transformations.NotesToStatusAny(note, h.cfg.BaseURL())
 
 	// Enrich with poll data if poll exists
 	if err := h.enrichStatusWithPoll(ctx.Context, &mastodonStatus, note.StatusID, viewerID); err != nil {
@@ -134,7 +136,7 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 // HandleDeleteStatusFull deletes a status using the Notes service
 func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
 	}
 
@@ -181,7 +183,7 @@ func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storage
 	}
 
 	// Unauthenticated users can only see public/unlisted posts
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewer_id", viewerID); err != nil {
 		return false, nil
 	}
 

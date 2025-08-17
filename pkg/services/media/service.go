@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	mediaprocessor "github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -294,19 +295,19 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 // Private helper methods
 
 func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaCommand) error {
-	if strings.TrimSpace(cmd.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", strings.TrimSpace(cmd.UserID)); err != nil {
+		return err
 	}
 
-	if strings.TrimSpace(cmd.FileName) == "" {
-		return fmt.Errorf("file_name is required")
+	if err := common.ValidateRequiredParam("file_name", strings.TrimSpace(cmd.FileName)); err != nil {
+		return err
 	}
 
-	if strings.TrimSpace(cmd.ContentType) == "" {
-		return fmt.Errorf("content_type is required")
+	if err := common.ValidateRequiredParam("content_type", strings.TrimSpace(cmd.ContentType)); err != nil {
+		return err
 	}
 
-	if len(cmd.FileData) == 0 {
+	if err := common.ValidateSliceNotEmpty("file_data", cmd.FileData); err != nil {
 		return fmt.Errorf("file_data is required")
 	}
 
@@ -326,7 +327,7 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 	}
 
 	// Validate description length
-	if len(cmd.Description) > 1500 {
+	if err := common.ValidateStringLength("description", cmd.Description, 0, 1500); err != nil {
 		return fmt.Errorf("description too long (max 1500 characters)")
 	}
 
@@ -339,16 +340,16 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 }
 
 func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateMediaCommand) error {
-	if strings.TrimSpace(cmd.MediaID) == "" {
-		return fmt.Errorf("media_id is required")
+	if err := common.ValidateRequiredParam("media_id", strings.TrimSpace(cmd.MediaID)); err != nil {
+		return err
 	}
 
-	if strings.TrimSpace(cmd.UserID) == "" {
-		return fmt.Errorf("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", strings.TrimSpace(cmd.UserID)); err != nil {
+		return err
 	}
 
 	// Validate description length
-	if len(cmd.Description) > 1500 {
+	if err := common.ValidateStringLength("description", cmd.Description, 0, 1500); err != nil {
 		return fmt.Errorf("description too long (max 1500 characters)")
 	}
 
@@ -400,7 +401,7 @@ func (s *Service) validateFileExtension(fileName, contentType string) bool {
 
 	// Get expected MIME type from extension
 	expectedType := mime.TypeByExtension(ext)
-	if expectedType == "" {
+	if err := common.ValidateRequiredParam("expected_type", expectedType); err != nil {
 		return false // Unknown extension
 	}
 
@@ -688,7 +689,7 @@ func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.M
 
 	// Get the media URL (use CDN if available, otherwise construct S3 URL)
 	mediaURL := media.CDNUrl
-	if mediaURL == "" {
+	if err := common.ValidateRequiredParam("media_url", mediaURL); err != nil {
 		// Construct S3 URL as fallback
 		mediaURL = fmt.Sprintf("https://%s.s3.amazonaws.com/%s", media.S3Bucket, media.S3Key)
 	}
@@ -754,7 +755,7 @@ func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.M
 // Returns (allowAccess, requireWarning, error)
 func (s *Service) checkNSFWPermissions(ctx context.Context, viewerID string) (bool, bool, error) {
 	// Handle unauthenticated users with safe defaults
-	if viewerID == "" {
+	if err := common.ValidateRequiredParam("viewer_id", viewerID); err != nil {
 		s.logger.Debug("unauthenticated user accessing NSFW content - blocking")
 		return false, true, nil // Block NSFW for unauthenticated users
 	}

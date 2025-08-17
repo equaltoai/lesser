@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -93,7 +94,7 @@ func NewOAuthService(jwtSecret string, repos StorageProvider, auditLogger *Audit
 
 // ValidateClient validates client credentials according to Mastodon OAuth rules
 func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecret string) error {
-	if clientID == "" {
+	if err := common.ValidateRequiredParam("clientID", clientID); err != nil {
 		return ErrInvalidRequest
 	}
 
@@ -104,7 +105,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 	}
 
 	// For client authentication, secret is required and must match exactly
-	if clientSecret == "" || client.ClientSecret != clientSecret {
+	if err := common.ValidateRequiredParam("clientSecret", clientSecret); err != nil || client.ClientSecret != clientSecret {
 		return ErrInvalidClient
 	}
 
@@ -114,7 +115,7 @@ func (s *OAuthService) ValidateClient(ctx context.Context, clientID, clientSecre
 // ValidateRedirectURI validates redirect URI according to Mastodon OAuth rules
 // Mastodon requires EXACT matching of redirect URIs with no exceptions
 func (s *OAuthService) ValidateRedirectURI(ctx context.Context, clientID, redirectURI string) error {
-	if clientID == "" || redirectURI == "" {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{"clientID": clientID, "redirectURI": redirectURI}); err != nil {
 		return ErrInvalidRequest
 	}
 
@@ -159,12 +160,12 @@ func (s *OAuthService) GenerateAuthorizationCode() (string, error) {
 // Mastodon only supports S256 method for PKCE
 func (s *OAuthService) VerifyCodeChallenge(codeChallenge, codeVerifier, challengeMethod string) error {
 	// If PKCE is not used, skip verification
-	if codeChallenge == "" && codeVerifier == "" && challengeMethod == "" {
+	if common.ValidateRequiredParam("codeChallenge", codeChallenge) != nil && common.ValidateRequiredParam("codeVerifier", codeVerifier) != nil && common.ValidateRequiredParam("challengeMethod", challengeMethod) != nil {
 		return nil
 	}
 
 	// If any PKCE parameter is provided, all must be provided
-	if codeChallenge == "" || codeVerifier == "" {
+	if err := common.ValidateMultipleRequiredParams(map[string]string{"codeChallenge": codeChallenge, "codeVerifier": codeVerifier}); err != nil {
 		return ErrInvalidRequest
 	}
 
@@ -318,7 +319,7 @@ func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID,
 
 // ExtractBearerToken extracts the token from the Authorization header
 func ExtractBearerToken(authHeader string) (string, error) {
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return "", ErrInvalidToken
 	}
 
@@ -339,7 +340,7 @@ func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requ
 	}
 
 	// If no scopes requested, default to "read" per Mastodon spec
-	if len(requestedScopes) == 0 {
+	if err := common.ValidateSliceNotEmpty("requestedScopes", requestedScopes); err != nil {
 		requestedScopes = []string{ScopeRead}
 	}
 
@@ -350,7 +351,7 @@ func (s *OAuthService) ValidateScopes(ctx context.Context, clientID string, requ
 	}
 
 	// If client has no registered scopes, allow default Mastodon scopes
-	if len(client.Scopes) == 0 {
+	if err := common.ValidateSliceNotEmpty("client.Scopes", client.Scopes); err != nil {
 		registeredScopes = map[string]bool{
 			ScopeRead:  true,
 			ScopeWrite: true,

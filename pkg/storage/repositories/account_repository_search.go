@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ===== Search and Discovery =====
@@ -20,7 +21,7 @@ import (
 func (r *AccountRepository) SearchActors(ctx context.Context, query string, limit int, offset int, following bool, username string) ([]*activitypub.Actor, error) {
 	// Normalize query for search
 	query = strings.ToLower(strings.TrimSpace(query))
-	if query == "" {
+	if err := common.ValidateRequiredParam("query", query); err != nil {
 		return []*activitypub.Actor{}, nil
 	}
 
@@ -218,7 +219,7 @@ func (r *AccountRepository) getFriendOfFriendSuggestions(ctx context.Context, us
 
 	// Get people the user follows
 	following := r.getFollowingUsernames(ctx, username)
-	if len(following) == 0 {
+	if err := common.ValidateSliceNotEmpty("following", following); err != nil {
 		return suggestions
 	}
 

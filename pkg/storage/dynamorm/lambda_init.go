@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -141,7 +142,7 @@ func optimizeRuntime() {
 
 	// Set GC percentage higher to reduce GC overhead during initialization
 	oldGCPercent := os.Getenv("GOGC")
-	if oldGCPercent == "" {
+	if err := common.ValidateRequiredParam("oldGCPercent", oldGCPercent); err != nil {
 		debug.SetGCPercent(500) // Reduce GC frequency during init
 
 		// Reset after initialization using a goroutine
@@ -154,7 +155,7 @@ func optimizeRuntime() {
 
 // preRegisterModelsParallel registers models in parallel for faster initialization
 func preRegisterModelsParallel(lambdaDB *dynamorm.LambdaDB, models []any) error {
-	if len(models) == 0 {
+	if err := common.ValidateSliceNotEmpty("models", models); err != nil {
 		return nil
 	}
 

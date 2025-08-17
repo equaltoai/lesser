@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EventBridgeHandler is the interface that services must implement to handle EventBridge/CloudWatch events
@@ -65,7 +66,7 @@ func RegisterEventBridge(app *lift.App, processor *EventBridgeProcessor) {
 func (ep *EventBridgeProcessor) ProcessEvent(ctx *lift.Context, event events.CloudWatchEvent) error {
 	start := time.Now()
 	requestID := ctx.GetRequestID()
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("%s-%d", ep.eventName, time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}

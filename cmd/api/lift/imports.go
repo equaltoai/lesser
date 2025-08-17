@@ -139,7 +139,7 @@ func (h *Handler) authenticateImportRequest(ctx *lift.Context) (string, error) {
 // getImportTestUsername extracts test username from headers
 func (h *Handler) getImportTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -148,13 +148,13 @@ func (h *Handler) getImportTestUsername(ctx *lift.Context) string {
 // extractImportAuthHeader extracts authorization header
 func (h *Handler) extractImportAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -162,8 +162,12 @@ func (h *Handler) extractImportAuthHeader(ctx *lift.Context) string {
 	return authHeader
 }
 
-// validateImportToken validates the token and checks scope
+// validateImportToken validates the token and checks scope using centralized validation
 func (h *Handler) validateImportToken(ctx *lift.Context, token string) (string, error) {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		return "", ctx.Status(http.StatusUnauthorized).JSON(map[string]any{"error": "Unauthorized"})
+	}
+
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
@@ -192,15 +196,23 @@ func (h *Handler) parseImportRequest(ctx *lift.Context) (*ImportRequest, error) 
 	}
 
 	// Set defaults
-	if req.Mode == "" {
+	if err := common.ValidateRequiredParam("mode", req.Mode); err != nil {
 		req.Mode = "merge"
 	}
 
 	return &req, nil
 }
 
-// validateImportParams validates import type and mode
+// validateImportParams validates import type and mode using centralized validation
 func (h *Handler) validateImportParams(req *ImportRequest) error {
+	// Validate required parameters first
+	if err := common.ValidateRequiredParam("type", req.Type); err != nil {
+		return err
+	}
+	if err := common.ValidateRequiredParam("mode", req.Mode); err != nil {
+		return err
+	}
+
 	// Validate import type
 	validTypes := map[string]bool{
 		"followers": true,
@@ -222,8 +234,13 @@ func (h *Handler) validateImportParams(req *ImportRequest) error {
 	return nil
 }
 
-// processImportFileData decodes and validates the file data
+// processImportFileData decodes and validates the file data using centralized validation
 func (h *Handler) processImportFileData(ctx *lift.Context, data string) ([]byte, error) {
+	// Validate required data parameter
+	if err := common.ValidateRequiredParam("data", data); err != nil {
+		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
+	}
+
 	// Decode file data
 	fileData, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
@@ -231,7 +248,7 @@ func (h *Handler) processImportFileData(ctx *lift.Context, data string) ([]byte,
 	}
 
 	// Validate file size (max 10MB)
-	if len(fileData) > 10*1024*1024 {
+	if err := common.ValidateIntRange("file_size", len(fileData), 1, 10*1024*1024); err != nil {
 		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "file too large (max 10MB)"})
 	}
 
@@ -274,7 +291,7 @@ func (h *Handler) storeImportFile(ctx *lift.Context, username, importID, importT
 
 	// Validate bucket configuration
 	bucketName := h.cfg.S3BucketName
-	if bucketName == "" {
+	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
 		return "", ctx.Status(http.StatusInternalServerError).JSON(map[string]any{"error": "S3 bucket not configured"})
 	}
 
@@ -354,7 +371,7 @@ func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string
 func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -363,16 +380,16 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 		// Test mode - skip auth
 		username = testUsername
 	} else {
-		// Extract and validate token
+		// Extract and validate token using centralized validation
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -394,8 +411,8 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 
 	// Get import ID from path parameter
 	importID := ctx.Param("id")
-	if importID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing import ID"})
+	if err := common.ValidateRequiredParam("id", importID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get import job
@@ -424,7 +441,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 	}
 
 	// Add errors if any
-	if len(importRec.Errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", importRec.Errors); err == nil {
 		job.Errors = importRec.Errors
 	}
 
@@ -444,7 +461,7 @@ func (h *Handler) HandleGetImportStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -453,16 +470,16 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 		// Test mode - skip auth
 		username = testUsername
 	} else {
-		// Extract and validate token
+		// Extract and validate token using centralized validation
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -506,7 +523,7 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 		}
 
 		// Add errors if any
-		if len(importRec.Errors) > 0 {
+		if err := common.ValidateSliceNotEmpty("errors", importRec.Errors); err == nil {
 			job.Errors = importRec.Errors
 		}
 
@@ -529,7 +546,7 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -538,16 +555,16 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 		// Test mode - skip auth
 		username = testUsername
 	} else {
-		// Extract and validate token
+		// Extract and validate token using centralized validation
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -573,8 +590,8 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 
 	// Get import ID from path parameter
 	importID := ctx.Param("id")
-	if importID == "" {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": "missing import ID"})
+	if err := common.ValidateRequiredParam("id", importID); err != nil {
+		return ctx.Status(http.StatusBadRequest).JSON(map[string]any{"error": err.Error()})
 	}
 
 	// Get import job
@@ -632,7 +649,7 @@ func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 
 func (h *Handler) detectContentType(data []byte) string {
 	// Simple content type detection
-	if len(data) == 0 {
+	if err := common.ValidateSliceNotEmpty("data", data); err != nil {
 		return "application/octet-stream"
 	}
 
@@ -803,7 +820,7 @@ func (h *Handler) validateImportFile(ctx *lift.Context, data []byte, importType 
 	}
 
 	// Log warnings if any
-	if len(result.Warnings) > 0 {
+	if err := common.ValidateSliceNotEmpty("warnings", result.Warnings); err == nil {
 		h.logger.Warn("file validation warnings",
 			zap.String("import_type", importType),
 			zap.Strings("warnings", result.Warnings))

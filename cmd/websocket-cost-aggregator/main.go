@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -33,7 +32,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	lessercfg "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -45,55 +43,61 @@ type WebSocketCostAggregatorHandler struct {
 	connectionRepo *repositories.StreamingConnectionRepository
 	costTracker    *repositories.WebSocketCostTracker
 	logger         *zap.Logger
-	cfg            *lessercfg.Config
+	cfg            *common.LambdaContext
 	snsClient      *sns.Client
 	webhookURL     string
 	snsTopicArn    string
 }
 
 var (
-	logger  *zap.Logger
-	cfg     *lessercfg.Config
-	handler *WebSocketCostAggregatorHandler
+	lambdaCtx *common.LambdaContext
+	handler   *WebSocketCostAggregatorHandler
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = lessercfg.Get()
+	// Initialize Lambda with basic configuration for WebSocket cost aggregation
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "websocket-cost-aggregator",
+		LambdaType:         common.LambdaTypeBasic,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM database connection
 	db, err := dynamorm.GetLambdaClient(context.Background())
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize repositories
-	tableName := cfg.DynamoTableName
-	if tableName == "" {
+	tableName := lambdaCtx.Config.DynamoTableName
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
 
 	connectionsTable := os.Getenv("CONNECTIONS_TABLE")
-	if connectionsTable == "" {
+	if err := common.ValidateRequiredParam("connectionsTable", connectionsTable); err != nil {
 		connectionsTable = "lesser-streaming-connections"
 	}
 
 	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
-	if subscriptionsTable == "" {
+	if err := common.ValidateRequiredParam("subscriptionsTable", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
-	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, lambdaCtx.Logger)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, lambdaCtx.Logger)
+	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
 
 	// Initialize AWS SDK config for SNS
 	awsCfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		logger.Error("failed to load AWS config for SNS", zap.Error(err))
+		lambdaCtx.Logger.Error("failed to load AWS config for SNS", zap.Error(err))
 	}
 
 	var snsClient *sns.Client
@@ -105,8 +109,10 @@ func init() {
 	webhookURL := os.Getenv("BUDGET_ALERT_WEBHOOK_URL")
 	snsTopicArn := os.Getenv("BUDGET_ALERT_SNS_TOPIC_ARN")
 
-	if webhookURL == "" && snsTopicArn == "" {
-		logger.Warn("No alerting configuration found. Set BUDGET_ALERT_WEBHOOK_URL or BUDGET_ALERT_SNS_TOPIC_ARN to enable budget alerts")
+	if err := common.ValidateRequiredParam("webhookURL", webhookURL); err != nil {
+		if err2 := common.ValidateRequiredParam("snsTopicArn", snsTopicArn); err2 != nil {
+			lambdaCtx.Logger.Warn("No alerting configuration found. Set BUDGET_ALERT_WEBHOOK_URL or BUDGET_ALERT_SNS_TOPIC_ARN to enable budget alerts")
+		}
 	}
 
 	// Create handler instance
@@ -114,8 +120,8 @@ func init() {
 		costRepo:       costRepo,
 		connectionRepo: connectionRepo,
 		costTracker:    costTracker,
-		logger:         logger,
-		cfg:            cfg,
+		logger:         lambdaCtx.Logger,
+		cfg:            lambdaCtx,
 		snsClient:      snsClient,
 		webhookURL:     webhookURL,
 		snsTopicArn:    snsTopicArn,
@@ -206,7 +212,7 @@ func (h *WebSocketCostAggregatorHandler) trackIdleConnections(ctx context.Contex
 		return fmt.Errorf("failed to get idle connections: %w", err)
 	}
 
-	if len(idleConnections) == 0 {
+	if err := common.ValidateSliceNotEmpty("idleConnections", idleConnections); err != nil {
 		h.logger.Debug("no idle connections found",
 			zap.Duration("idle_threshold", time.Since(idleThreshold)))
 		return nil
@@ -380,7 +386,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 	}
 
 	// Return error if all alert methods failed
-	if len(alertErrors) > 0 && len(alertErrors) == countConfiguredAlertMethods(h) {
+	if err := common.ValidateSliceNotEmpty("alertErrors", alertErrors); err == nil && len(alertErrors) == countConfiguredAlertMethods(h) {
 		return fmt.Errorf("all alert methods failed: %v", alertErrors)
 	}
 
@@ -498,21 +504,21 @@ func severityToLevel(severity string) int {
 // Helper functions
 
 func determineSeverity(budgetStatus *repositories.BudgetStatus) string {
-	if len(budgetStatus.ExceededBudgets) > 0 {
+	if err := common.ValidateSliceNotEmpty("ExceededBudgets", budgetStatus.ExceededBudgets); err == nil {
 		return "CRITICAL"
 	}
-	if len(budgetStatus.WarningBudgets) > 0 {
+	if err := common.ValidateSliceNotEmpty("WarningBudgets", budgetStatus.WarningBudgets); err == nil {
 		return "WARNING"
 	}
 	return "INFO"
 }
 
 func formatAlertMessage(user *repositories.WebSocketUserCostRanking, budgetStatus *repositories.BudgetStatus) string {
-	if len(budgetStatus.ExceededBudgets) > 0 {
+	if err := common.ValidateSliceNotEmpty("ExceededBudgets", budgetStatus.ExceededBudgets); err == nil {
 		return fmt.Sprintf("User %s has exceeded budget limits: %v. Total cost: $%.2f",
 			user.Username, budgetStatus.ExceededBudgets, user.TotalCostDollars)
 	}
-	if len(budgetStatus.WarningBudgets) > 0 {
+	if err := common.ValidateSliceNotEmpty("WarningBudgets", budgetStatus.WarningBudgets); err == nil {
 		return fmt.Sprintf("User %s is approaching budget limits: %v. Total cost: $%.2f",
 			user.Username, budgetStatus.WarningBudgets, user.TotalCostDollars)
 	}
@@ -545,7 +551,7 @@ func (h *WebSocketCostAggregatorHandler) cleanupStaleConnections(ctx context.Con
 		return fmt.Errorf("failed to get stale connections: %w", err)
 	}
 
-	if len(staleConnections) == 0 {
+	if err := common.ValidateSliceNotEmpty("staleConnections", staleConnections); err != nil {
 		h.logger.Debug("no stale connections found to clean up",
 			zap.Duration("stale_threshold", time.Since(staleThreshold)))
 		return nil
@@ -769,7 +775,7 @@ type CleanupAlertMessage struct {
 // getIdleTimeoutMinutes returns the idle timeout in minutes from environment or default
 func getIdleTimeoutMinutes() int {
 	if timeoutStr := os.Getenv("IDLE_TIMEOUT_MINUTES"); timeoutStr != "" {
-		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
+		if timeout, err := common.ParseAndValidateIntWithBounds("timeout", timeoutStr, 0, 1440, 30); err == nil {
 			return timeout
 		}
 	}
@@ -779,7 +785,7 @@ func getIdleTimeoutMinutes() int {
 // getStaleTimeoutHours returns the stale timeout in hours from environment or default
 func getStaleTimeoutHours() int {
 	if timeoutStr := os.Getenv("STALE_TIMEOUT_HOURS"); timeoutStr != "" {
-		if timeout, err := strconv.Atoi(timeoutStr); err == nil && timeout > 0 {
+		if timeout, err := common.ParseAndValidateIntWithBounds("timeout", timeoutStr, 0, 168, 24); err == nil {
 			return timeout
 		}
 	}
@@ -804,19 +810,19 @@ func main() {
 			start := time.Now()
 			requestID := ctx.Get("requestID")
 
-			logger.Info("processing WebSocket cost aggregation",
+			lambdaCtx.Logger.Info("processing WebSocket cost aggregation",
 				zap.Any("request_id", requestID))
 
 			err := next.Handle(ctx)
 			duration := time.Since(start)
 
 			if err != nil {
-				logger.Error("failed to process WebSocket cost aggregation",
+				lambdaCtx.Logger.Error("failed to process WebSocket cost aggregation",
 					zap.Any("request_id", requestID),
 					zap.Error(err),
 					zap.Duration("duration", duration))
 			} else {
-				logger.Info("successfully processed WebSocket cost aggregation",
+				lambdaCtx.Logger.Info("successfully processed WebSocket cost aggregation",
 					zap.Any("request_id", requestID),
 					zap.Duration("duration", duration))
 			}
@@ -831,7 +837,7 @@ func main() {
 			defer func() {
 				if r := recover(); r != nil {
 					requestID := ctx.Get("requestID")
-					logger.Error("panic recovered in WebSocket cost aggregator",
+					lambdaCtx.Logger.Error("panic recovered in WebSocket cost aggregator",
 						zap.Any("request_id", requestID),
 						zap.Any("panic", r))
 				}
@@ -853,7 +859,7 @@ func main() {
 				event = cwEvent
 			} else {
 				// Try to parse from request body
-				if len(ctx.Request.Body) > 0 {
+				if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err == nil {
 					if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
 						return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse CloudWatch event", 500)
 					}

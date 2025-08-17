@@ -279,7 +279,7 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 		return err
 	}
 
-	if len(relays) == 0 {
+	if err := common.ValidateSliceNotEmpty("relays", relays); err != nil {
 		r.logger.Debug("no active relays to forward to")
 		return nil
 	}
@@ -633,7 +633,7 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 
 // extractDomainFromRelayURL extracts domain from relay URL
 func extractDomainFromRelayURL(relayURL string) string {
-	if relayURL == "" {
+	if err := common.ValidateRequiredParam("relayURL", relayURL); err != nil {
 		return "unknown"
 	}
 

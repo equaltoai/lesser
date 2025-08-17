@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchSortOrder represents sorting options for search
@@ -64,7 +66,7 @@ func (p *PaginationOptions) Validate() error {
 	}
 
 	// Set default sort order
-	if p.SortOrder == "" {
+	if err := common.ValidateRequiredParam("string(p.SortOrder)", string(p.SortOrder)); err != nil {
 		p.SortOrder = SearchSortRelevance
 	}
 
@@ -100,7 +102,7 @@ func EncodeCursor(data *CursorData) string {
 
 // DecodeCursor parses a cursor string back to cursor data
 func DecodeCursor(cursor string) (*CursorData, error) {
-	if cursor == "" {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
 		return &CursorData{}, nil
 	}
 

@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -101,7 +102,7 @@ type BatchError struct {
 
 // WriteItems writes items in batches, processing them sequentially
 func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
 
@@ -152,7 +153,7 @@ func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWrite
 
 // WriteItemsParallel writes items in parallel using worker pools
 func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
 
@@ -284,7 +285,7 @@ func (bw *BatchWriter) worker(ctx context.Context, workChan <-chan batchWork, re
 
 // writeBatch writes a single batch of items
 func (bw *BatchWriter) writeBatch(_ context.Context, items []any, startIndex int, result *BatchWriteResult) error {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
@@ -377,7 +378,7 @@ type BatchReadResult struct {
 
 // ReadItems reads items in batches using their keys
 func (br *BatchReader) ReadItems(ctx context.Context, keys []any, dest any) (*BatchReadResult, error) {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return &BatchReadResult{}, nil
 	}
 
@@ -452,7 +453,7 @@ func (br *BatchReader) ReadItems(ctx context.Context, keys []any, dest any) (*Ba
 
 // readBatch reads a single batch of items
 func (br *BatchReader) readBatch(_ context.Context, keys []any, dest any, startIndex int, result *BatchReadResult) error {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return nil
 	}
 
@@ -685,7 +686,7 @@ type BatchDeleteResult struct {
 
 // DeleteItems deletes items in batches, processing them sequentially
 func (bd *BatchDeleter) DeleteItems(ctx context.Context, keys []any) (*BatchDeleteResult, error) {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return &BatchDeleteResult{}, nil
 	}
 
@@ -736,7 +737,7 @@ func (bd *BatchDeleter) DeleteItems(ctx context.Context, keys []any) (*BatchDele
 
 // DeleteItemsParallel deletes items in parallel using worker pools
 func (bd *BatchDeleter) DeleteItemsParallel(ctx context.Context, keys []any, workers int) (*BatchDeleteResult, error) {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return &BatchDeleteResult{}, nil
 	}
 
@@ -819,7 +820,7 @@ func (bd *BatchDeleter) DeleteItemsParallel(ctx context.Context, keys []any, wor
 
 // DeleteItemsWithRetry deletes items with exponential backoff retry logic
 func (bd *BatchDeleter) DeleteItemsWithRetry(ctx context.Context, keys []any, maxRetries int) (*BatchDeleteResult, error) {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return &BatchDeleteResult{}, nil
 	}
 
@@ -839,7 +840,7 @@ func (bd *BatchDeleter) DeleteItemsWithRetry(ctx context.Context, keys []any, ma
 		}
 
 		retryableKeys := bd.extractRetryableKeys(result)
-		if len(retryableKeys) == 0 {
+		if err := common.ValidateSliceNotEmpty("retryable_keys", retryableKeys); err != nil {
 			break
 		}
 
@@ -988,7 +989,7 @@ func (bd *BatchDeleter) deleteWorker(ctx context.Context, workChan <-chan batchW
 
 // deleteBatch deletes a single batch of items
 func (bd *BatchDeleter) deleteBatch(_ context.Context, keys []any, startIndex int, result *BatchDeleteResult) error {
-	if len(keys) == 0 {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return nil
 	}
 

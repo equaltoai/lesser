@@ -223,7 +223,11 @@ func TestTimeline_IsExpired(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			timeline := &Timeline{ExpiresAt: tt.expiresAt}
+			var ttlValue int64
+			if !tt.expiresAt.IsZero() {
+				ttlValue = tt.expiresAt.Unix()
+			}
+			timeline := &Timeline{TTL: ttlValue}
 			assert.Equal(t, tt.want, timeline.IsExpired())
 		})
 	}

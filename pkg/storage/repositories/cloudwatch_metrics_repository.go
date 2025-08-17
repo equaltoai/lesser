@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CloudWatchMetricsRepository handles querying CloudWatch metrics
@@ -240,7 +241,7 @@ func (r *CloudWatchMetricsRepository) getMetricPercentile(ctx context.Context, n
 		return 0, fmt.Errorf("failed to get metric percentile %s:%s: %w", namespace, metricName, err)
 	}
 
-	if len(result.Datapoints) == 0 {
+	if err := common.ValidateSliceNotEmpty("result.Datapoints", result.Datapoints); err != nil {
 		return 0, nil // Return zero if no data available
 	}
 
@@ -286,7 +287,7 @@ func (r *CloudWatchMetricsRepository) getMetricStatistic(ctx context.Context, na
 		return 0, fmt.Errorf("failed to get metric statistic %s:%s: %w", namespace, metricName, err)
 	}
 
-	if len(result.Datapoints) == 0 {
+	if err := common.ValidateSliceNotEmpty("result.Datapoints", result.Datapoints); err != nil {
 		return 0, nil // Return zero if no data available
 	}
 

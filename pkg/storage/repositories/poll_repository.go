@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -48,7 +49,7 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 	}
 
 	// Generate poll ID if not provided
-	if poll.ID == "" {
+	if err := common.ValidateRequiredParam("poll_id", poll.ID); err != nil {
 		poll.ID = r.generatePollID()
 	}
 
@@ -174,7 +175,7 @@ func (r *PollRepository) GetPollByStatusID(ctx context.Context, statusID string)
 		return nil, fmt.Errorf("failed to query poll: %w", err)
 	}
 
-	if len(pollModels) == 0 {
+	if err := common.ValidateSliceNotEmpty("poll_models", pollModels); err != nil {
 		return nil, fmt.Errorf("poll not found for status: %s", statusID)
 	}
 

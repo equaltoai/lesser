@@ -251,11 +251,11 @@ func (ms *MediaSpending) setPeriodTimes() error {
 
 // Validate performs validation on the MediaSpending
 func (ms *MediaSpending) Validate() error {
-	if strings.TrimSpace(ms.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(ms.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(ms.Period) == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", strings.TrimSpace(ms.Period)); err != nil {
+		return err
 	}
 	if ms.PeriodType != PeriodMonthly && ms.PeriodType != PeriodDaily {
 		return fmt.Errorf("PeriodType must be 'monthly' or 'daily'")
@@ -284,7 +284,7 @@ func (mst *MediaSpendingTransaction) BeforeCreate() error {
 	mst.CreatedAt = now
 
 	// Generate transaction ID if not provided
-	if mst.TransactionID == "" {
+	if err := common.ValidateRequiredParam("TransactionID", mst.TransactionID); err != nil {
 		mst.TransactionID = fmt.Sprintf("txn_%d_%s", now.UnixNano(), mst.UserID[:8])
 	}
 
@@ -306,17 +306,17 @@ func (mst *MediaSpendingTransaction) BeforeCreate() error {
 
 // Validate performs validation on the MediaSpendingTransaction
 func (mst *MediaSpendingTransaction) Validate() error {
-	if strings.TrimSpace(mst.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(mst.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(mst.TransactionID) == "" {
-		return fmt.Errorf("TransactionID is required")
+	if err := common.ValidateRequiredParam("TransactionID", strings.TrimSpace(mst.TransactionID)); err != nil {
+		return err
 	}
 	if mst.CostMicros < 0 {
 		return fmt.Errorf("CostMicros cannot be negative")
 	}
-	if strings.TrimSpace(mst.Category) == "" {
-		return fmt.Errorf("category is required")
+	if err := common.ValidateRequiredParam("category", strings.TrimSpace(mst.Category)); err != nil {
+		return err
 	}
 
 	// Validate category

@@ -9,6 +9,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SocialRecoveryService handles account recovery through trusted contacts
@@ -37,7 +38,7 @@ func (s *SocialRecoveryService) SetFederationService(fedService *RecoveryFederat
 // AddTrustee adds a trusted contact for social recovery
 func (s *SocialRecoveryService) AddTrustee(ctx context.Context, username, trusteeActorID string) error {
 	// Validate trustee exists (could be remote actor)
-	if trusteeActorID == "" {
+	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
 		return fmt.Errorf("trustee actor ID required")
 	}
 

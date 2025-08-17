@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SoftDeletable interface defines methods for soft delete functionality
@@ -546,7 +547,7 @@ func (r *SoftDeleteRepository) addOnlyDeletedFilterToScan(input *dynamodb.ScanIn
 }
 
 func (r *SoftDeleteRepository) hardDeleteBatch(_ context.Context, items []map[string]*dynamodb.AttributeValue) (int, error) {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return 0, nil
 	}
 

@@ -211,7 +211,7 @@ func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey cryp
 	if algorithm != "" && algorithm != "rsa-sha256" {
 		// Create a synthetic signature object for enhanced verification
 		sigHeader := req.Header.Get(SignatureHeader)
-		if sigHeader == "" {
+		if err := common.ValidateRequiredParam("sigHeader", sigHeader); err != nil {
 			return common.AuthenticationError{Message: "missing signature header"}
 		}
 
@@ -230,7 +230,7 @@ func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey cryp
 // VerifyDigestWithCompatibility verifies digest with both SHA-256 and sha-256 prefixes for compatibility
 func (s *SignatureService) VerifyDigestWithCompatibility(req *http.Request, body []byte) error {
 	digestHeader := req.Header.Get(DigestHeader)
-	if digestHeader == "" {
+	if err := common.ValidateRequiredParam("digestHeader", digestHeader); err != nil {
 		// No digest header is okay for some implementations
 		return nil
 	}

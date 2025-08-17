@@ -170,7 +170,7 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	log := common.Logger()
 
 	// Set date header if not present
-	if req.Header.Get(DateHeader) == "" {
+	if err := common.ValidateRequiredParam("req.Header.Get(DateHeader)", req.Header.Get(DateHeader)); err != nil {
 		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
 	}
 
@@ -347,7 +347,7 @@ func parseStructuredSignature(signatureInput, signature string) (*HTTPSignature,
 	// Extract keyid, algorithm, and other parameters
 	keyID := extractParameter(params, "keyid")
 	algorithm := extractParameter(params, "alg")
-	if algorithm == "" {
+	if err := common.ValidateRequiredParam("algorithm", algorithm); err != nil {
 		algorithm = AlgorithmHS2019 // Default
 	}
 

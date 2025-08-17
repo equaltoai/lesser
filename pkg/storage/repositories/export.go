@@ -349,7 +349,7 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 		TypeBreakdown: make(map[string]*models.ExportTypeCostStats),
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return summary, nil
 	}
 
