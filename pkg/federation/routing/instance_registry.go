@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"go.uber.org/zap"
 )
@@ -26,6 +27,11 @@ type FederationInstanceRepository interface {
 	BatchGetInstances(ctx context.Context, instanceIDs []string) ([]*types.Instance, error)
 	SearchInstances(ctx context.Context, domainPattern string, limit int) ([]*types.Instance, error)
 	ListAllInstances(ctx context.Context, limit int, startKey map[string]interface{}) ([]*types.Instance, map[string]interface{}, error)
+
+	// Batch operations for efficiency
+	BatchCreateInstances(ctx context.Context, instances []*types.Instance) error
+	BatchUpdateInstancesHealth(ctx context.Context, healthUpdates map[string]*types.HealthStatus) error
+	BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error
 
 	// Instance health and metrics
 	UpdateInstanceHealth(ctx context.Context, instanceID string, health *types.HealthStatus) error
@@ -59,7 +65,7 @@ func NewInstanceRegistry(repo FederationInstanceRepository, logger *zap.Logger) 
 
 // RegisterInstance registers a new federated instance
 func (ir *InstanceRegistry) RegisterInstance(ctx context.Context, instance *types.Instance) error {
-	if instance.ID == "" {
+	if err := common.ValidateRequiredParam("instance.ID", instance.ID); err != nil {
 		instance.ID = generateInstanceID(instance.Domain)
 	}
 
@@ -178,7 +184,7 @@ func (ir *InstanceRegistry) GetInstancesByTier(ctx context.Context, tier types.T
 
 // BatchGetInstances retrieves multiple instances efficiently
 func (ir *InstanceRegistry) BatchGetInstances(ctx context.Context, instanceIDs []string) ([]*types.Instance, error) {
-	if len(instanceIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("instanceIDs", instanceIDs); err != nil {
 		return []*types.Instance{}, nil
 	}
 
@@ -238,6 +244,54 @@ func (ir *InstanceRegistry) SearchInstances(ctx context.Context, domainPattern s
 // GetHealthHistory retrieves health history for an instance
 func (ir *InstanceRegistry) GetHealthHistory(ctx context.Context, instanceID string, duration time.Duration) ([]*types.HealthStatus, error) {
 	return ir.repo.GetHealthHistory(ctx, instanceID, duration)
+}
+
+// BatchCreateInstances creates multiple instances efficiently for federation discovery
+func (ir *InstanceRegistry) BatchCreateInstances(ctx context.Context, instances []*types.Instance) error {
+	err := ir.repo.BatchCreateInstances(ctx, instances)
+	if err != nil {
+		return fmt.Errorf("batch create instances: %w", err)
+	}
+
+	// Update cache for created instances
+	for _, instance := range instances {
+		ir.cache.Store(instance.ID, &cachedInstance{
+			instance: instance,
+			cachedAt: time.Now(),
+		})
+	}
+
+	return nil
+}
+
+// BatchUpdateInstancesHealth updates health status for multiple instances efficiently
+func (ir *InstanceRegistry) BatchUpdateInstancesHealth(ctx context.Context, healthUpdates map[string]*types.HealthStatus) error {
+	err := ir.repo.BatchUpdateInstancesHealth(ctx, healthUpdates)
+	if err != nil {
+		return fmt.Errorf("batch update instances health: %w", err)
+	}
+
+	// Invalidate cache for updated instances
+	for instanceID := range healthUpdates {
+		ir.cache.Delete(instanceID)
+	}
+
+	return nil
+}
+
+// BatchUpdateInstancesUsage updates usage counters for multiple instances efficiently  
+func (ir *InstanceRegistry) BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error {
+	err := ir.repo.BatchUpdateInstancesUsage(ctx, usageUpdates)
+	if err != nil {
+		return fmt.Errorf("batch update instances usage: %w", err)
+	}
+
+	// Invalidate cache for updated instances
+	for instanceID := range usageUpdates {
+		ir.cache.Delete(instanceID)
+	}
+
+	return nil
 }
 
 // Helper functions

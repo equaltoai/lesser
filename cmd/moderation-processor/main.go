@@ -10,14 +10,12 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	lconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/moderation/advanced"
@@ -46,11 +44,10 @@ const (
 )
 
 var (
+	lambdaCtx        *common.LambdaContext
 	db               core.DB
 	consensusEngine  *moderation.ConsensusEngine
 	advancedEngine   *advanced.Engine
-	logger           *zap.Logger
-	cfg              *lconfig.Config
 	moderationRepo   *repositories.ModerationRepository
 	userRepo         *repositories.UserRepository
 	notificationRepo *repositories.NotificationRepository
@@ -83,7 +80,7 @@ func NewModerationProcessor() *ModerationProcessor {
 		userRepo:         userRepo,
 		notificationRepo: notificationRepo,
 		objectRepo:       objectRepo,
-		logger:           logger,
+		logger:           lambdaCtx.Logger,
 		consensusEngine:  consensusEngine,
 		advancedEngine:   advancedEngine,
 	}
@@ -394,25 +391,32 @@ func parseCategoryFromString(s string) moderation.Category {
 }
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = lconfig.Get()
+	// Initialize Lambda with processor configuration for moderation processing
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "moderation-processor",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     60 * time.Second, // Longer timeout for complex moderation processing
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repositories
-	moderationRepo = repositories.NewModerationRepository(db, cfg.DynamoTableName, logger)
-	userRepo = repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
-	notificationRepo = repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger)
-	objectRepo = repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
-	patternRepo = repositories.NewPatternRepository(db, cfg.DynamoTableName, logger)
+	moderationRepo = repositories.NewModerationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	userRepo = repositories.NewUserRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	notificationRepo = repositories.NewNotificationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	objectRepo = repositories.NewObjectRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
+	patternRepo = repositories.NewPatternRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize consensus engine with repository adapter
 	adapter := &repositoryStorageAdapter{
@@ -429,9 +433,9 @@ func init() {
 func initAdvancedModerationEngine() {
 	// Determine moderation mode based on configuration
 	mode := advanced.ModeHybrid // Default to hybrid mode
-	if cfg.DisableAWSModeration {
+	if lambdaCtx.Config.DisableAWSModeration {
 		mode = advanced.ModeBasic
-		logger.Info("AWS moderation disabled, using basic mode")
+		lambdaCtx.Logger.Info("AWS moderation disabled, using basic mode")
 	} else if os.Getenv("MODERATION_MODE") == "aws" {
 		mode = advanced.ModeAWS
 	} else if os.Getenv("MODERATION_MODE") == "basic" {
@@ -442,28 +446,24 @@ func initAdvancedModerationEngine() {
 	var comprehendClient *comprehend.Client
 	var rekognitionClient *rekognition.Client
 	
-	if !cfg.DisableAWSModeration {
-		ctx := context.Background()
-		awsCfg, err := config.LoadDefaultConfig(ctx)
-		if err != nil {
-			logger.Warn("Failed to load AWS config, will use basic moderation", zap.Error(err))
-			mode = advanced.ModeBasic
+	if !lambdaCtx.Config.DisableAWSModeration {
+		// Use the AWS config from lambdaCtx
+		awsCfg := lambdaCtx.AWSServices.Config
+		
+		// Initialize Comprehend client if not disabled
+		if !lambdaCtx.Config.DisableComprehend {
+			comprehendClient = comprehend.NewFromConfig(awsCfg)
+			lambdaCtx.Logger.Info("AWS Comprehend initialized for text analysis")
 		} else {
-			// Initialize Comprehend client if not disabled
-			if !cfg.DisableComprehend {
-				comprehendClient = comprehend.NewFromConfig(awsCfg)
-				logger.Info("AWS Comprehend initialized for text analysis")
-			} else {
-				logger.Info("AWS Comprehend disabled by configuration")
-			}
-			
-			// Initialize Rekognition client if not disabled
-			if !cfg.DisableRekognition {
-				rekognitionClient = rekognition.NewFromConfig(awsCfg)
-				logger.Info("AWS Rekognition initialized for image/video analysis")
-			} else {
-				logger.Info("AWS Rekognition disabled by configuration")
-			}
+			lambdaCtx.Logger.Info("AWS Comprehend disabled by configuration")
+		}
+		
+		// Initialize Rekognition client if not disabled
+		if !lambdaCtx.Config.DisableRekognition {
+			rekognitionClient = rekognition.NewFromConfig(awsCfg)
+			lambdaCtx.Logger.Info("AWS Rekognition initialized for image/video analysis")
+		} else {
+			lambdaCtx.Logger.Info("AWS Rekognition disabled by configuration")
 		}
 	}
 
@@ -480,7 +480,7 @@ func initAdvancedModerationEngine() {
 	}
 
 	// Create cost tracker
-	costTracker := cost.NewDynamORMCostTracker(db, logger)
+	costTracker := cost.NewDynamORMCostTracker(db, lambdaCtx.Logger)
 
 	// Create a pattern repository adapter for the advanced moderation engine
 	patternRepoAdapter := &patternRepositoryAdapter{
@@ -493,14 +493,14 @@ func initAdvancedModerationEngine() {
 		Config:            modConfig,
 		ComprehendClient:  comprehendClient,
 		RekognitionClient: rekognitionClient,
-		TableName:         cfg.DynamoTableName,
+		TableName:         lambdaCtx.Config.DynamoTableName,
 		PatternRepo:       patternRepoAdapter,
-		Logger:            logger,
+		Logger:            lambdaCtx.Logger,
 		CostTracker:       costTracker,
 		DynamoRM:          db,
 	})
 
-	logger.Info("Advanced moderation engine initialized",
+	lambdaCtx.Logger.Info("Advanced moderation engine initialized",
 		zap.String("mode", string(mode)),
 		zap.Bool("text_analysis", modConfig.EnableTextAnalysis),
 		zap.Bool("image_analysis", modConfig.EnableImageAnalysis),
@@ -521,11 +521,14 @@ func (mp *ModerationProcessor) processRecord(ctx context.Context, record events.
 	pk := getStringAttribute(record.Change.Keys["PK"])
 	sk := getStringAttribute(record.Change.Keys["SK"])
 
-	if pk == "" || sk == "" {
+	if err := common.ValidateRequiredParam("pk", pk); err != nil {
+		return nil
+	}
+	if err := common.ValidateRequiredParam("sk", sk); err != nil {
 		return nil
 	}
 
-	logger.Debug("Processing record",
+	lambdaCtx.Logger.Debug("Processing record",
 		zap.String("pk", pk),
 		zap.String("sk", sk),
 		zap.String("event_name", record.EventName),
@@ -567,7 +570,7 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 	}
 	reviewerID := reviewerParts[1]
 
-	logger.Info("Processing new review",
+	lambdaCtx.Logger.Info("Processing new review",
 		zap.String("event_id", eventID),
 		zap.String("reviewer_id", reviewerID),
 	)
@@ -915,7 +918,7 @@ func (ms *ModeratorSelector) SelectModerators(ctx context.Context, event *modera
 		return nil, fmt.Errorf("failed to get available moderators: %w", err)
 	}
 
-	if len(moderators) == 0 {
+	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 		ms.logger.Warn("no moderators available for assignment",
 			zap.String("event_id", event.ID))
 		return []*storage.User{}, nil
@@ -958,8 +961,12 @@ func (ms *ModeratorSelector) getAvailableModerators(ctx context.Context) ([]*sto
 	}
 
 	// If both queries failed, return an error
-	if len(moderatorErrs) == 2 && len(moderators) == 0 && len(admins) == 0 {
-		return nil, fmt.Errorf("failed to retrieve both moderators and admins from storage")
+	if len(moderatorErrs) == 2 {
+		if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
+			if err := common.ValidateSliceNotEmpty("admins", admins); err != nil {
+				return nil, fmt.Errorf("failed to retrieve both moderators and admins from storage")
+			}
+		}
 	}
 
 	// Combine all users with moderation permissions
@@ -1001,7 +1008,7 @@ func (ms *ModeratorSelector) isModeratorAvailable(moderator *storage.User) bool 
 
 // selectRoundRobin selects moderators using round-robin strategy
 func (ms *ModeratorSelector) selectRoundRobin(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
-	if len(moderators) == 0 {
+	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 		return []*storage.User{}
 	}
 
@@ -1027,7 +1034,7 @@ func (ms *ModeratorSelector) selectRoundRobin(moderators []*storage.User, event 
 
 // selectByWorkload selects moderators based on current workload
 func (ms *ModeratorSelector) selectByWorkload(ctx context.Context, moderators []*storage.User, event *moderation.ModerationEvent) ([]*storage.User, error) {
-	if len(moderators) == 0 {
+	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 		return []*storage.User{}, nil
 	}
 
@@ -1084,7 +1091,7 @@ func (ms *ModeratorSelector) selectByWorkload(ctx context.Context, moderators []
 
 // selectByExpertise selects moderators based on category expertise and weighted scoring
 func (ms *ModeratorSelector) selectByExpertise(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
-	if len(moderators) == 0 {
+	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 		return []*storage.User{}
 	}
 
@@ -1141,7 +1148,7 @@ func (ms *ModeratorSelector) selectByExpertise(moderators []*storage.User, event
 
 // selectRandom selects moderators randomly
 func (ms *ModeratorSelector) selectRandom(moderators []*storage.User, event *moderation.ModerationEvent) []*storage.User {
-	if len(moderators) == 0 {
+	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 		return []*storage.User{}
 	}
 
@@ -1206,7 +1213,7 @@ func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, ev
 		return err
 	}
 
-	if len(selectedModerators) == 0 {
+	if err := common.ValidateSliceNotEmpty("selectedModerators", selectedModerators); err != nil {
 		mp.logger.Warn("no moderators available for assignment",
 			zap.String("event_id", event.ID),
 			zap.String("category", string(event.Category)),
@@ -1270,7 +1277,7 @@ func (mp *ModerationProcessor) notifyFallbackAdmins(ctx context.Context, event *
 		return fmt.Errorf("failed to get admin list for fallback notification: %w", err)
 	}
 
-	if len(admins) == 0 {
+	if err := common.ValidateSliceNotEmpty("admins", admins); err != nil {
 		mp.logger.Error("no admins available for fallback notification",
 			zap.String("event_id", event.ID))
 		return fmt.Errorf("no admins available for fallback")
@@ -1444,7 +1451,7 @@ func (mp *ModerationProcessor) enforceAccountSilencing(ctx context.Context, user
 		errors = append(errors, fmt.Errorf("federation constraints: %w", err))
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("silencing enforcement failed: %v", errors)
 	}
 
@@ -1489,7 +1496,7 @@ func (mp *ModerationProcessor) enforceAccountSuspension(ctx context.Context, use
 		errors = append(errors, fmt.Errorf("federation blocking: %w", err))
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("suspension enforcement failed: %v", errors)
 	}
 
@@ -1527,7 +1534,7 @@ func (mp *ModerationProcessor) enforceContentRemoval(ctx context.Context, object
 		errors = append(errors, fmt.Errorf("federation deletion: %w", err))
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("content removal enforcement failed: %v", errors)
 	}
 
@@ -1570,7 +1577,7 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 		errors = append(errors, err)
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("timeline filtering had errors: %v", errors)
 	}
 
@@ -1667,7 +1674,7 @@ func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objec
 	deleteActivity := map[string]interface{}{
 		"@context": "https://www.w3.org/ns/activitystreams",
 		"type":     "Delete",
-		"actor":    cfg.BaseURL() + "/actor/system", // System actor for moderation
+		"actor":    lambdaCtx.Config.BaseURL() + "/actor/system", // System actor for moderation
 		"object":   objectID,
 		"published": time.Now().UTC().Format(time.RFC3339),
 		"to":       []string{"https://www.w3.org/ns/activitystreams#Public"},
@@ -2025,7 +2032,7 @@ func main() {
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Error("panic in DynamoDB stream handler",
+				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
 					zap.String("request_id", requestID),
 					zap.Any("panic", r),
 					zap.Stack("stack"),
@@ -2036,7 +2043,7 @@ func main() {
 		// Add request ID to context
 		ctx = context.WithValue(ctx, requestIDKey, requestID)
 
-		logger.Info("processing moderation stream batch",
+		lambdaCtx.Logger.Info("processing moderation stream batch",
 			zap.String("request_id", requestID),
 			zap.Int("record_count", len(event.Records)),
 		)
@@ -2045,7 +2052,7 @@ func main() {
 		var errors []error
 		for _, record := range event.Records {
 			if err := processor.processRecord(ctx, record); err != nil {
-				logger.Error("Failed to process record",
+				lambdaCtx.Logger.Error("Failed to process record",
 					zap.String("request_id", requestID),
 					zap.String("event_id", record.EventID),
 					zap.Error(err),
@@ -2056,9 +2063,9 @@ func main() {
 
 		// Log completion (Lift pattern)
 		duration := time.Since(start)
-		if len(errors) > 0 {
+		if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 			err := fmt.Errorf("failed to process %d of %d records", len(errors), len(event.Records))
-			logger.Error("DynamoDB stream processing failed",
+			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.String("request_id", requestID),
 				zap.Error(err),
 				zap.Duration("duration", duration),
@@ -2066,7 +2073,7 @@ func main() {
 			)
 			return err
 		}
-		logger.Info("DynamoDB stream processing completed",
+		lambdaCtx.Logger.Info("DynamoDB stream processing completed",
 			zap.String("request_id", requestID),
 			zap.Duration("duration", duration),
 			zap.Int("record_count", len(event.Records)),

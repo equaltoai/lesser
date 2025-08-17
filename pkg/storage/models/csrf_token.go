@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CSRFToken represents a CSRF token stored in DynamoDB
@@ -84,10 +85,10 @@ func (c *CSRFToken) UpdateKeys() {
 
 // Validate performs validation on the CSRFToken
 func (c *CSRFToken) Validate() error {
-	if strings.TrimSpace(c.Token) == "" {
+	if err := common.ValidateRequiredParam("strings.TrimSpace(c.Token)", strings.TrimSpace(c.Token)); err != nil {
 		return fmt.Errorf("token is required")
 	}
-	if strings.TrimSpace(c.UserID) == "" {
+	if err := common.ValidateRequiredParam("strings.TrimSpace(c.UserID)", strings.TrimSpace(c.UserID)); err != nil {
 		return fmt.Errorf("UserID is required")
 	}
 	if c.ExpiresAt <= 0 {

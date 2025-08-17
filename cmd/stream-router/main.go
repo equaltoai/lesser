@@ -11,7 +11,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -128,7 +127,7 @@ func (a *connectionRepositoryAdapter) GetStreamConnections(ctx context.Context, 
 		return nil, fmt.Errorf("failed to get subscriptions for stream %s: %w", streamName, err)
 	}
 
-	if len(subscriptions) == 0 {
+	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
 		return []*streaming.StreamConnection{}, nil
 	}
 
@@ -176,7 +175,7 @@ func (a *connectionRepositoryAdapter) getConnectionByID(ctx context.Context, con
 		return nil, fmt.Errorf("failed to query connection %s: %w", connectionID, err)
 	}
 	
-	if len(connections) == 0 {
+	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
 		return nil, fmt.Errorf("connection %s not found", connectionID)
 	}
 	
@@ -205,23 +204,30 @@ func (a *connectionRepositoryAdapter) GetConversationConnections(ctx context.Con
 }
 
 var (
-	globalCfg aws.Config
-	logger    *zap.Logger
+	lambdaCtx *common.LambdaContext
 	handler   *StreamRouterHandler
+	logger    *zap.Logger
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Initialize AWS config
-	var err error
-	globalCfg, err = config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
-	}
+	// Initialize Lambda with basic configuration for stream routing
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "stream-router",
+		LambdaType:         common.LambdaTypeBasic,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
+	
+	// Set global logger
+	logger = lambdaCtx.Logger
 
 	// Initialize the handler
+	var err error
 	handler, err = NewStreamRouterHandler()
 	if err != nil {
 		logger.Fatal("failed to create stream router handler", zap.Error(err))
@@ -230,6 +236,9 @@ func init() {
 
 // NewStreamRouterHandler creates a new stream router handler with DynamORM
 func NewStreamRouterHandler() (*StreamRouterHandler, error) {
+	// Get config from the initialized lambda context
+	globalCfg := lambdaCtx.AWSServices.Config
+
 	// Initialize DynamORM database connection
 	lambdaDB, err := dynamorm.GetLambdaClient(context.Background())
 	if err != nil {
@@ -238,12 +247,12 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	// Get environment variables
 	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
-	if subscriptionsTable == "" {
+	if err := common.ValidateRequiredParam("subscriptionsTable", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
 	wsEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
-	if wsEndpoint == "" {
+	if err := common.ValidateRequiredParam("wsEndpoint", wsEndpoint); err != nil {
 		return nil, fmt.Errorf("WEBSOCKET_ENDPOINT environment variable not set")
 	}
 
@@ -253,7 +262,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 
 	// Get domain from environment
 	domain := os.Getenv("DOMAIN_NAME")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "localhost"
 		logger.Warn("DOMAIN_NAME not set, using localhost as default")
 	}
@@ -336,12 +345,14 @@ func (h *StreamRouterHandler) HandleStream(ctx *lift.Context, event events.Dynam
 	}
 
 	// Return error only if all records failed
-	if len(errors) == len(event.Records) && len(errors) > 0 {
-		return fmt.Errorf("all %d records failed processing", len(errors))
+	if len(errors) == len(event.Records) {
+		if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
+			return fmt.Errorf("all %d records failed processing", len(errors))
+		}
 	}
 
 	// Log partial failures but don't return error
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		h.logger.Warn("partial batch failure",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Int("failed_count", len(errors)),
@@ -402,7 +413,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Validate that we have a proper status
-	if status.StatusID == "" || status.Note == nil {
+	if err := common.ValidateRequiredParam("statusID", status.StatusID); err != nil || status.Note == nil {
 		h.logger.Debug("invalid status record, missing required fields",
 			zap.String("request_id", ctx.GetRequestID()))
 		return nil
@@ -460,7 +471,7 @@ func (h *StreamRouterHandler) processStatusEvent(ctx *lift.Context, record event
 	}
 
 	// Process attachments from Note
-	if len(note.Attachment) > 0 {
+	if err := common.ValidateSliceNotEmpty("note.Attachment", note.Attachment); err == nil {
 		attachments := []any{}
 		for _, att := range note.Attachment {
 			// Convert ActivityPub attachment to Mastodon API format
@@ -620,7 +631,7 @@ func (h *StreamRouterHandler) processNotificationEvent(ctx *lift.Context, record
 
 	// Use the username from the notification (recipient)
 	username := notification.Username
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("notification missing recipient username")
 	}
 
@@ -667,7 +678,7 @@ func (h *StreamRouterHandler) processAccountEvent(ctx *lift.Context, record even
 		}
 	}
 
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return fmt.Errorf("account missing ID")
 	}
 
@@ -773,7 +784,7 @@ func createAccountPayload(accountID, eventType string) (map[string]any, error) {
 func broadcastToFollowers(accountID string, payload []byte) error {
 	// Extract username from account ID for follower lookup
 	username := extractUsernameFromActorID(accountID)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("could not extract username from account ID: %s", accountID)
 	}
 
@@ -797,7 +808,7 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 		return fmt.Errorf("failed to get followers: %w", err)
 	}
 
-	if len(followers) == 0 {
+	if err := common.ValidateSliceNotEmpty("followers", followers); err != nil {
 		logger.Debug("no followers found for account",
 			zap.String("account_id", accountID),
 			zap.String("username", username))
@@ -843,8 +854,10 @@ func broadcastToFollowers(accountID string, payload []byte) error {
 		zap.Int("failed", len(errors)))
 
 	// Return error only if all broadcasts failed
-	if len(errors) == len(followers) && len(errors) > 0 {
-		return fmt.Errorf("failed to broadcast to all %d followers", len(errors))
+	if len(errors) == len(followers) {
+		if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
+			return fmt.Errorf("failed to broadcast to all %d followers", len(errors))
+		}
 	}
 
 	return nil
@@ -907,7 +920,7 @@ func (h *StreamRouterHandler) publishStatusEventToInternalBus(ctx *lift.Context,
 	}
 
 	// Add hashtags to metadata for filtering
-	if len(status.Hashtags) > 0 {
+	if err := common.ValidateSliceNotEmpty("status.Hashtags", status.Hashtags); err == nil {
 		for i, hashtag := range status.Hashtags {
 			event.WithMetadata(fmt.Sprintf("hashtag_%d", i), hashtag)
 		}
@@ -1051,7 +1064,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 		return fmt.Errorf("failed to get subscriptions for stream %s: %w", streamName, err)
 	}
 
-	if len(subscriptions) == 0 {
+	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
 		h.logger.Debug("no active subscriptions for stream",
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.String("stream", streamName))
@@ -1106,7 +1119,7 @@ func (h *StreamRouterHandler) broadcastToStream(ctx *lift.Context, streamName, e
 		zap.Int("successful", successCount),
 		zap.Int("failed", len(errors)))
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("failed to send to %d connections", len(errors))
 	}
 
@@ -1126,7 +1139,7 @@ func GetGlobalEventBus() *streaming.EventBus {
 func generateAttachmentID(url string) string {
 	// Use last part of URL as ID, or hash if needed
 	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		lastPart := parts[len(parts)-1]
 		// Remove file extension if present
 		if idx := strings.LastIndex(lastPart, "."); idx > 0 {
@@ -1424,7 +1437,7 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 		hashtags = mastodon.ExtractHashtags(status.Content)
 	}
 	
-	if len(hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		logger.Debug("no hashtags found in deleted object")
 		return nil
 	}
@@ -1458,7 +1471,7 @@ func (h *StreamRouterHandler) removeFromHashtagStreams(ctx *lift.Context, object
 	}
 
 	// Return combined errors if any occurred, but don't fail the entire operation
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		logger.Warn("some hashtag stream removals failed",
 			zap.Int("failed_count", len(errors)),
 			zap.Int("total_hashtags", len(hashtags)))
@@ -1480,7 +1493,7 @@ func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username st
 		zap.Int("limit", limit))
 	
 	// Validate inputs
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, "", fmt.Errorf("username cannot be empty")
 	}
 	
@@ -1495,7 +1508,7 @@ func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username st
 		return nil, "", fmt.Errorf("failed to get followers: %w", err)
 	}
 
-	if len(actors) == 0 {
+	if err := common.ValidateSliceNotEmpty("actors", actors); err != nil {
 		logger.Debug("no followers found for user")
 		return []string{}, "", nil
 	}
@@ -1510,7 +1523,7 @@ func (h *StreamRouterHandler) getFollowersForUser(ctx *lift.Context, username st
 		
 		// Extract username from actor ID or preferredUsername
 		username := h.extractUsernameFromActorID(actor.ID)
-		if username == "" && actor.PreferredUsername != "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil && actor.PreferredUsername != "" {
 			username = actor.PreferredUsername
 		}
 		

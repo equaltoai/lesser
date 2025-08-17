@@ -2,6 +2,8 @@ package services
 
 import (
 	"strings"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // validationService implements ValidationService
@@ -18,7 +20,7 @@ func NewValidationService(config *ServiceConfig) ValidationService {
 
 // ValidateCreatePost validates post creation input
 func (v *validationService) ValidateCreatePost(input *CreatePostInput) error {
-	if input.Content == "" {
+	if err := common.ValidateRequiredParam("content", input.Content); err != nil {
 		return NewValidationError("Post content is required")
 	}
 
@@ -39,11 +41,11 @@ func (v *validationService) ValidateCreatePost(input *CreatePostInput) error {
 
 // ValidateFollowInput validates follow operation input
 func (v *validationService) ValidateFollowInput(input *FollowInput) error {
-	if input.TargetActorID == "" {
+	if err := common.ValidateRequiredParam("target_actor_id", input.TargetActorID); err != nil {
 		return NewValidationError("Target actor ID is required")
 	}
 
-	if strings.TrimSpace(input.TargetActorID) == "" {
+	if err := common.ValidateRequiredParam("target_actor_id_trimmed", strings.TrimSpace(input.TargetActorID)); err != nil {
 		return NewValidationError("Target actor ID cannot be empty")
 	}
 
@@ -52,11 +54,11 @@ func (v *validationService) ValidateFollowInput(input *FollowInput) error {
 
 // ValidateLikeInput validates like operation input
 func (v *validationService) ValidateLikeInput(input *LikeInput) error {
-	if input.ObjectID == "" {
+	if err := common.ValidateRequiredParam("object_id", input.ObjectID); err != nil {
 		return NewValidationError("Object ID is required")
 	}
 
-	if strings.TrimSpace(input.ObjectID) == "" {
+	if err := common.ValidateRequiredParam("object_id_trimmed", strings.TrimSpace(input.ObjectID)); err != nil {
 		return NewValidationError("Object ID cannot be empty")
 	}
 
@@ -65,11 +67,11 @@ func (v *validationService) ValidateLikeInput(input *LikeInput) error {
 
 // ValidateDeletePost validates post deletion input
 func (v *validationService) ValidateDeletePost(input *DeletePostInput) error {
-	if input.ObjectID == "" {
+	if err := common.ValidateRequiredParam("object_id", input.ObjectID); err != nil {
 		return NewValidationError("Object ID is required")
 	}
 
-	if strings.TrimSpace(input.ObjectID) == "" {
+	if err := common.ValidateRequiredParam("object_id_trimmed", strings.TrimSpace(input.ObjectID)); err != nil {
 		return NewValidationError("Object ID cannot be empty")
 	}
 
@@ -78,7 +80,7 @@ func (v *validationService) ValidateDeletePost(input *DeletePostInput) error {
 
 // ValidateUpdatePost validates post update input
 func (v *validationService) ValidateUpdatePost(input *UpdatePostInput) error {
-	if input.ObjectID == "" {
+	if err := common.ValidateRequiredParam("object_id", input.ObjectID); err != nil {
 		return NewValidationError("Object ID is required")
 	}
 

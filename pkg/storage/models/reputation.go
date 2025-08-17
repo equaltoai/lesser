@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Reputation represents reputation data for an actor
@@ -27,7 +28,7 @@ type Reputation struct {
 func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 	// Extract username from actorID using the same logic as legacy
 	username := extractUsernameFromActorID(actorID)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return fmt.Errorf("invalid actorID format: %s", actorID)
 	}
 

@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -214,7 +216,7 @@ func (sm *ShutdownManager) drainConnections(ctx context.Context) error {
 		return fmt.Errorf("failed to get active connections: %w", err)
 	}
 
-	if len(activeConnections) == 0 {
+	if err := common.ValidateSliceNotEmpty("activeConnections", activeConnections); err != nil {
 		sm.logger.Info("no active connections to drain")
 		return nil
 	}
@@ -316,7 +318,7 @@ func (sm *ShutdownManager) waitForConnectionDrain(ctx context.Context, initialCo
 
 			drainedCount := initialCount - len(remaining)
 			
-			if len(remaining) == 0 {
+			if err := common.ValidateSliceNotEmpty("remaining", remaining); err != nil {
 				sm.logger.Info("all connections drained successfully",
 					zap.Int("total_drained", drainedCount))
 				return nil
@@ -339,7 +341,7 @@ func (sm *ShutdownManager) forceCloseConnections(ctx context.Context) error {
 		return fmt.Errorf("failed to get remaining connections: %w", err)
 	}
 
-	if len(remaining) == 0 {
+	if err := common.ValidateSliceNotEmpty("remaining", remaining); err != nil {
 		sm.logger.Info("no connections require force closure")
 		return nil
 	}

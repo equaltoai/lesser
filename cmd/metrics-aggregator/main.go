@@ -8,9 +8,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -29,8 +28,7 @@ type MetricsAggregator struct {
 }
 
 // NewMetricsAggregator creates a new metrics aggregator instance
-func NewMetricsAggregator(db core.DB, tableName string) *MetricsAggregator {
-	logger := common.Logger()
+func NewMetricsAggregator(db core.DB, tableName string, logger *zap.Logger) *MetricsAggregator {
 	metricsRepository := repositories.NewMetricsRepository(db, tableName, logger)
 
 	return &MetricsAggregator{
@@ -42,9 +40,9 @@ func NewMetricsAggregator(db core.DB, tableName string) *MetricsAggregator {
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface for Lift
-func (ma *MetricsAggregator) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
+func (ma *MetricsAggregator) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
 	ma.logger.Info("processing metrics stream batch",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", liftCtx.GetRequestID()),
 		zap.Int("record_count", len(event.Records)),
 	)
 
@@ -72,7 +70,7 @@ func (ma *MetricsAggregator) HandleStream(ctx *lift.Context, event events.Dynamo
 		metric, err := ma.extractMetricFromRecord(record)
 		if err != nil {
 			ma.logger.Warn("failed to extract metric from record",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.String("event_id", record.EventID),
 				zap.Error(err))
 			continue
@@ -82,18 +80,15 @@ func (ma *MetricsAggregator) HandleStream(ctx *lift.Context, event events.Dynamo
 	}
 
 	// Process real-time metrics if any found
-	if len(metrics) > 0 {
-		return ma.processRealtimeMetrics(ctx, metrics)
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err == nil {
+		return ma.processRealtimeMetricsWithContext(ctx, liftCtx, metrics)
 	}
 
 	return nil
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *MetricsAggregator
-	db        core.DB
 )
 
 // AggregationEvent represents the input for the aggregation job
@@ -105,27 +100,30 @@ type AggregationEvent struct {
 	Metrics   []string  `json:"metrics,omitempty"`  // Optional: specific metrics to aggregate
 }
 
-func init() {
-	// Initialize logger
-	logger = common.Logger()
 
-	// Load configuration
-	cfg = config.Get()
+func main() {
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "metrics-aggregator",
+		LambdaType:  common.LambdaTypeProcessor,
+		Version:     "1.0.0",
+	})
 
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewMetricsAggregator(db, cfg.DynamoTableName)
-}
+	processor = NewMetricsAggregator(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
-func main() {
-	// Use Lift DynamoDB stream pattern for primary stream processing
-	patterns.StartDynamoDBStreamLambda("metrics-aggregator", processor, logger)
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		liftCtx := &lift.Context{
+			Request: &lift.Request{},
+			RequestID: fmt.Sprintf("metrics-%d", time.Now().UnixNano()),
+		}
+		return processor.HandleStreamWithContext(ctx, liftCtx, event)
+	})
 }
 
 // Additional methods for handling scheduled aggregation events
@@ -162,13 +160,13 @@ func (ma *MetricsAggregator) handleAggregationEvent(ctx context.Context, event A
 
 	// Determine what to aggregate
 	services := event.Services
-	if len(services) == 0 {
+	if err := common.ValidateSliceNotEmpty("services", services); err != nil {
 		// Default to all known services
 		services = []string{"api", "auth", "federation", "graphql", "websocket", "processor"}
 	}
 
 	metricTypes := event.Metrics
-	if len(metricTypes) == 0 {
+	if err := common.ValidateSliceNotEmpty("metricTypes", metricTypes); err != nil {
 		// Default to key metrics
 		metricTypes = []string{"request", "error", "latency", "throughput"}
 	}
@@ -231,7 +229,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 	return nil
 }
 
-func (ma *MetricsAggregator) processRealtimeMetrics(ctx *lift.Context, metrics []*models.Metrics) error {
+func (ma *MetricsAggregator) processRealtimeMetricsWithContext(ctx context.Context, liftCtx *lift.Context, metrics []*models.Metrics) error {
 	// Group metrics by service and type for efficient aggregation
 	grouped := make(map[string][]*models.Metrics)
 
@@ -246,7 +244,7 @@ func (ma *MetricsAggregator) processRealtimeMetrics(ctx *lift.Context, metrics [
 	windowEnd := windowStart.Add(time.Minute)
 
 	for _, groupMetrics := range grouped {
-		if len(groupMetrics) == 0 {
+		if err := common.ValidateSliceNotEmpty("groupMetrics", groupMetrics); err != nil {
 			continue
 		}
 
@@ -285,9 +283,9 @@ func (ma *MetricsAggregator) processRealtimeMetrics(ctx *lift.Context, metrics [
 		}
 
 		// Store or update the aggregation
-		if err := ma.metricsRepository.CreateAggregated(ctx.Request.Context(), aggregated); err != nil {
+		if err := ma.metricsRepository.CreateAggregated(ctx, aggregated); err != nil {
 			ma.logger.Error("failed to create real-time aggregation",
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.String("service", service),
 				zap.String("type", metricType),
 				zap.Error(err))
@@ -311,7 +309,10 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 	}
 
 	// Basic validation
-	if metric.Type == "" || metric.Service == "" {
+	if err := common.ValidateRequiredParam("metric.Type", metric.Type); err != nil {
+		return nil, fmt.Errorf("missing required fields: type=%s, service=%s", metric.Type, metric.Service)
+	}
+	if err := common.ValidateRequiredParam("metric.Service", metric.Service); err != nil {
 		return nil, fmt.Errorf("missing required fields: type=%s, service=%s", metric.Type, metric.Service)
 	}
 

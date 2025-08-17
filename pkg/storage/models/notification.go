@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -87,7 +88,7 @@ func (n *Notification) BeforeCreate() error {
 	n.UpdatedAt = now
 
 	// Generate ID if not provided
-	if n.ID == "" {
+	if err := common.ValidateRequiredParam("ID", n.ID); err != nil {
 		n.ID = uuid.New().String()
 	}
 
@@ -100,7 +101,7 @@ func (n *Notification) BeforeCreate() error {
 	n.ExpiresAt = now.Add(30 * 24 * time.Hour).Unix()
 
 	// Generate group key for similar notifications
-	if n.GroupKey == "" {
+	if err := common.ValidateRequiredParam("GroupKey", n.GroupKey); err != nil {
 		n.GroupKey = n.generateGroupKey()
 	}
 
@@ -134,7 +135,7 @@ func (n *Notification) setupGSIKeys() {
 	n.GSI1SK = fmt.Sprintf("%s#%s#%s", createdAtStr, n.UserID, n.ID)
 
 	// GSI2 - Actor notifications
-	if n.ActorID != "" {
+	if err := common.ValidateRequiredParam("ActorID", n.ActorID); err == nil {
 		n.GSI2PK = "NOTIF_ACTOR#" + n.ActorID
 		n.GSI2SK = fmt.Sprintf("%s#%s#%s", createdAtStr, n.UserID, n.ID)
 	} else {
@@ -149,20 +150,20 @@ func (n *Notification) setupGSIKeys() {
 
 // Validate performs validation on the Notification
 func (n *Notification) Validate() error {
-	if strings.TrimSpace(n.ID) == "" {
-		return fmt.Errorf("ID is required")
+	if err := common.ValidateRequiredParam("ID", strings.TrimSpace(n.ID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(n.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(n.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(n.Type) == "" {
-		return fmt.Errorf("type is required")
+	if err := common.ValidateRequiredParam("Type", strings.TrimSpace(n.Type)); err != nil {
+		return err
 	}
 	if !isValidNotificationType(n.Type) {
 		return fmt.Errorf("invalid notification type: %s", n.Type)
 	}
-	if strings.TrimSpace(n.ActorID) == "" {
-		return fmt.Errorf("ActorID is required")
+	if err := common.ValidateRequiredParam("ActorID", strings.TrimSpace(n.ActorID)); err != nil {
+		return err
 	}
 
 	return nil
@@ -206,7 +207,7 @@ func (n *Notification) MarkPushFailed(errorMsg string) {
 
 // ShouldSendPush determines if a push notification should be sent
 func (n *Notification) ShouldSendPush() bool {
-	return !n.PushSent && n.PushError == ""
+	return !n.PushSent && common.ValidateRequiredParam("PushError", n.PushError) != nil
 }
 
 // SetData sets a data field

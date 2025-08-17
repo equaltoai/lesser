@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
@@ -59,7 +60,7 @@ func (n *notificationService) CreateLikeNotification(ctx context.Context, likeAc
 
 	// Extract author actor ID
 	authorActorID := n.extractAttributedTo(object)
-	if authorActorID == "" {
+	if err := common.ValidateRequiredParam("authorActorID", authorActorID); err != nil {
 		n.logger.Warn("no attributed author found for liked object")
 		return nil
 	}
@@ -86,7 +87,7 @@ func (n *notificationService) CreateReplyNotification(ctx context.Context, reply
 	}
 
 	// Check if it's actually a reply
-	if note.InReplyTo == "" {
+	if err := common.ValidateRequiredParam("note.InReplyTo", note.InReplyTo); err != nil {
 		return nil
 	}
 
@@ -99,7 +100,7 @@ func (n *notificationService) CreateReplyNotification(ctx context.Context, reply
 
 	// Extract parent author actor ID
 	parentAuthorActorID := n.extractAttributedTo(parentObject)
-	if parentAuthorActorID == "" {
+	if err := common.ValidateRequiredParam("parentAuthorActorID", parentAuthorActorID); err != nil {
 		n.logger.Warn("no attributed author found for parent object")
 		return nil
 	}
@@ -144,7 +145,7 @@ func (n *notificationService) createNotification(ctx context.Context, recipientA
 	recipientUsername := n.extractUsernameFromActorID(recipientActorID)
 	fromUsername := n.extractUsernameFromActorID(fromActorID)
 
-	if recipientUsername == "" || fromUsername == "" {
+	if common.ValidateRequiredParam("recipientUsername", recipientUsername) != nil || common.ValidateRequiredParam("fromUsername", fromUsername) != nil {
 		n.logger.Warn("invalid actor ID format for notification",
 			zap.String("recipient", recipientActorID),
 			zap.String("from", fromActorID))

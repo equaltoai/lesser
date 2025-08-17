@@ -158,7 +158,7 @@ func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operat
 
 // GetTopCostlyOperations retrieves the most expensive AI operations
 func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier string, startTime, endTime time.Time, limit int) ([]*models.AICost, error) {
-	if costTier == "" {
+	if err := common.ValidateRequiredParam("cost_tier", costTier); err != nil {
 		costTier = models.CostTierHigh // Default to high-cost operations
 	}
 
@@ -214,7 +214,7 @@ func (r *AICostRepository) GetAICostSummary(ctx context.Context, startTime, endT
 		OperationType: operationType,
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return summary, nil
 	}
 
@@ -247,7 +247,7 @@ func (r *AICostRepository) GetAICostSummary(ctx context.Context, startTime, endT
 	summary.TotalOutputTokens = totalOutputTokens
 
 	// Calculate averages
-	if len(costs) > 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err == nil {
 		summary.AvgCostMicroCents = totalCost / int64(len(costs))
 		summary.AvgLatencyMs = totalLatency / float64(len(costs))
 		summary.AvgComplexityScore = totalComplexity / float64(len(costs))
@@ -284,7 +284,7 @@ func (r *AICostRepository) GetAICostTrends(ctx context.Context, startTime, endTi
 		DataPoints: []AICostDataPoint{},
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return trends, nil
 	}
 
@@ -343,7 +343,7 @@ func (r *AICostRepository) GetAICostTrends(ctx context.Context, startTime, endTi
 			SuccessRate:   0,
 		}
 
-		if len(bucketCosts) > 0 {
+		if err := common.ValidateSliceNotEmpty("bucket_costs", bucketCosts); err == nil {
 			var totalCost int64
 			var totalLatency float64
 			var successCount int
@@ -545,7 +545,7 @@ func (r *AICostRepository) calculateDayAverages(costsByDay map[time.Weekday][]fl
 	var totalPoints int
 	
 	for dow, costs := range costsByDay {
-		if len(costs) == 0 {
+		if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 			continue
 		}
 		
@@ -570,7 +570,7 @@ func (r *AICostRepository) calculateDayAverages(costsByDay map[time.Weekday][]fl
 func (r *AICostRepository) calculateHourAverages(costsByHour map[int][]float64) map[interface{}]float64 {
 	hourAverages := make(map[interface{}]float64)
 	for hour, costs := range costsByHour {
-		if len(costs) > 0 {
+		if err := common.ValidateSliceNotEmpty("costs", costs); err == nil {
 			sum := r.sumCosts(costs)
 			hourAverages[hour] = sum / float64(len(costs))
 		}
@@ -580,7 +580,7 @@ func (r *AICostRepository) calculateHourAverages(costsByHour map[int][]float64) 
 
 // calculateOverallAverage calculates the overall average cost
 func (r *AICostRepository) calculateOverallAverage(dataPoints []AICostDataPoint) float64 {
-	if len(dataPoints) == 0 {
+	if err := common.ValidateSliceNotEmpty("data_points", dataPoints); err != nil {
 		return 0
 	}
 	

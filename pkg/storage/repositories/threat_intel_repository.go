@@ -13,17 +13,19 @@ import (
 
 // ThreatIntelRepository implements threat intelligence operations using DynamORM
 type ThreatIntelRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db         core.DB
+	tableName  string
+	logger     *zap.Logger
+	queryUtils *QueryUtils
 }
 
 // NewThreatIntelRepository creates a new threat intelligence repository
 func NewThreatIntelRepository(db core.DB, tableName string, logger *zap.Logger) *ThreatIntelRepository {
 	return &ThreatIntelRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		queryUtils: NewQueryUtils(db, logger),
 	}
 }
 
@@ -97,150 +99,119 @@ func (r *ThreatIntelRepository) ShareThreat(ctx context.Context, threat *ThreatI
 	return nil
 }
 
+// convertResultToThreats converts query results to threat intel objects
+func (r *ThreatIntelRepository) convertResultToThreats(result *QueryResult[map[string]interface{}]) []*ThreatIntel {
+	threats := make([]*ThreatIntel, 0, len(result.Items))
+	for _, item := range result.Items {
+		threat := r.mapItemToThreatIntel(item)
+		if threat != nil {
+			threats = append(threats, threat)
+		}
+	}
+	return threats
+}
+
 // GetSharedThreats retrieves threats shared since a given time
 func (r *ThreatIntelRepository) GetSharedThreats(ctx context.Context, since time.Time) ([]*ThreatIntel, error) {
-	var models []models.ThreatIntel
-
-	// Query using GSI2 for time-based queries
-	err := r.db.WithContext(ctx).Model(&models).
-		Index("gsi2").
-		Where("GSI2PK", "=", "THREATS").
-		Where("GSI2SK", ">", fmt.Sprintf("%d", since.Unix())).
-		Limit(100). // Match legacy limit
-		All(&models)
-
+	// Use TimeRangeQuery for time-based filtering
+	result, err := r.queryUtils.TimeRangeQuery(ctx, "THREATS", since.Unix(), 0, &QueryOptions{
+		Limit:     100,
+		IndexName: "gsi2",
+	})
+	
 	if err != nil {
 		return nil, fmt.Errorf("failed to query shared threats: %w", err)
 	}
 
-	threats := make([]*ThreatIntel, 0, len(models))
-	for _, model := range models {
-		threat := &ThreatIntel{
-			ID:           model.ID,
-			ThreatType:   model.ThreatType,
-			Severity:     model.Severity,
-			Description:  model.Description,
-			Indicators:   model.Indicators,
-			FirstSeen:    model.FirstSeen,
-			LastSeen:     model.LastSeen,
-			HitCount:     model.HitCount,
-			Confidence:   model.Confidence,
-			SourceDomain: model.SourceDomain,
-		}
-
-		// Calculate TTL duration from Unix timestamp
-		if model.TTL > 0 {
-			threat.TTL = time.Until(time.Unix(model.TTL, 0))
-		}
-
-		threats = append(threats, threat)
-	}
-
-	return threats, nil
+	return r.convertResultToThreats(result), nil
 }
 
 // GetThreatsByType retrieves threats of a specific type
 func (r *ThreatIntelRepository) GetThreatsByType(ctx context.Context, threatType string, limit int) ([]*ThreatIntel, error) {
-	var models []models.ThreatIntel
-
-	// Query using GSI1 for type-based queries
-	err := r.db.WithContext(ctx).Model(&models).
-		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("TYPE#%s", threatType)).
-		Limit(limit).
-		All(&models)
-
+	// Use QueryByGSI for type-based queries
+	result, err := r.queryUtils.QueryByGSI(ctx, "gsi1", fmt.Sprintf("TYPE#%s", threatType), "", &QueryOptions{
+		Limit: limit,
+	})
+	
 	if err != nil {
 		return nil, fmt.Errorf("failed to query threats by type: %w", err)
 	}
 
-	threats := make([]*ThreatIntel, 0, len(models))
-	for _, model := range models {
-		threat := &ThreatIntel{
-			ID:           model.ID,
-			ThreatType:   model.ThreatType,
-			Severity:     model.Severity,
-			Description:  model.Description,
-			Indicators:   model.Indicators,
-			FirstSeen:    model.FirstSeen,
-			LastSeen:     model.LastSeen,
-			HitCount:     model.HitCount,
-			Confidence:   model.Confidence,
-			SourceDomain: model.SourceDomain,
-		}
+	return r.convertResultToThreats(result), nil
+}
 
-		// Calculate TTL duration from Unix timestamp
-		if model.TTL > 0 {
-			threat.TTL = time.Until(time.Unix(model.TTL, 0))
+// updateThreat is a generic helper for updating threat fields
+func (r *ThreatIntelRepository) updateThreat(ctx context.Context, threatID string, updateFunc func(*models.ThreatIntel), ignoreMissing bool) error {
+	// Get the existing threat first
+	var model models.ThreatIntel
+	err := r.queryUtils.GetItemByPK(ctx, fmt.Sprintf("THREAT#%s", threatID), "METADATA", &model)
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			if ignoreMissing {
+				r.logger.Warn("Threat not found for update",
+					zap.String("threat_id", threatID))
+				return nil // Don't fail on missing threats
+			}
+			return fmt.Errorf("threat not found: %s", threatID)
 		}
-
-		threats = append(threats, threat)
+		return fmt.Errorf("failed to get threat for update: %w", err)
 	}
 
-	return threats, nil
+	// Apply the update function
+	updateFunc(&model)
+	model.LastSeen = time.Now()
+	model.UpdateKeys() // Refresh GSI keys
+
+	// Update the threat using generic update
+	if err := r.queryUtils.UpdateItem(ctx, &model); err != nil {
+		if ignoreMissing {
+			r.logger.Warn("Failed to update threat",
+				zap.String("threat_id", threatID),
+				zap.Error(err))
+			return nil // Don't fail the main operation
+		}
+		return fmt.Errorf("failed to update threat: %w", err)
+	}
+
+	return nil
 }
 
 // UpdateThreatConfidence updates the confidence score of a threat
 func (r *ThreatIntelRepository) UpdateThreatConfidence(ctx context.Context, threatID string, newConfidence float64) error {
-	// Get the existing threat first
-	var model models.ThreatIntel
-	err := r.db.WithContext(ctx).Model(&model).
-		Where("PK", "=", fmt.Sprintf("THREAT#%s", threatID)).
-		Where("SK", "=", "METADATA").
-		First(&model)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("threat not found: %s", threatID)
-		}
-		return fmt.Errorf("failed to get threat for confidence update: %w", err)
-	}
-
-	// Update fields
-	model.Confidence = newConfidence
-	model.LastSeen = time.Now()
-	model.UpdateKeys() // Refresh GSI keys
-
-	// Update the threat
-	if err := r.db.WithContext(ctx).Model(&model).Update(); err != nil {
-		return fmt.Errorf("failed to update threat confidence: %w", err)
-	}
-
-	return nil
+	return r.updateThreat(ctx, threatID, func(model *models.ThreatIntel) {
+		model.Confidence = newConfidence
+	}, false)
 }
 
 // IncrementHitCount increments the hit count for a threat
 func (r *ThreatIntelRepository) IncrementHitCount(ctx context.Context, threatID string) error {
-	// Get the existing threat first
-	var model models.ThreatIntel
-	err := r.db.WithContext(ctx).Model(&model).
-		Where("PK", "=", fmt.Sprintf("THREAT#%s", threatID)).
-		Where("SK", "=", "METADATA").
-		First(&model)
+	return r.updateThreat(ctx, threatID, func(model *models.ThreatIntel) {
+		model.HitCount++
+	}, true)
+}
 
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Warn("Threat not found for hit count increment",
-				zap.String("threat_id", threatID))
-			return nil // Don't fail on missing threats
-		}
-		return fmt.Errorf("failed to get threat for hit count update: %w", err)
+// convertModelToThreat converts a ThreatIntel model to domain object
+func (r *ThreatIntelRepository) convertModelToThreat(model *models.ThreatIntel) *ThreatIntel {
+	threat := &ThreatIntel{
+		ID:           model.ID,
+		ThreatType:   model.ThreatType,
+		Severity:     model.Severity,
+		Description:  model.Description,
+		Indicators:   model.Indicators,
+		FirstSeen:    model.FirstSeen,
+		LastSeen:     model.LastSeen,
+		HitCount:     model.HitCount,
+		Confidence:   model.Confidence,
+		SourceDomain: model.SourceDomain,
 	}
 
-	// Update fields
-	model.HitCount++
-	model.LastSeen = time.Now()
-	model.UpdateKeys() // Refresh GSI keys with new LastSeen
-
-	// Update the threat
-	if err := r.db.WithContext(ctx).Model(&model).Update(); err != nil {
-		r.logger.Warn("Failed to increment hit count",
-			zap.String("threat_id", threatID),
-			zap.Error(err))
-		return nil // Don't fail the main operation
+	// Calculate TTL duration from Unix timestamp
+	if model.TTL > 0 {
+		threat.TTL = time.Until(time.Unix(model.TTL, 0))
 	}
 
-	return nil
+	return threat
 }
 
 // LoadActiveThreats loads all active (non-expired) threats
@@ -271,25 +242,7 @@ func (r *ThreatIntelRepository) LoadActiveThreats(ctx context.Context) ([]*Threa
 			continue
 		}
 
-		threat := &ThreatIntel{
-			ID:           model.ID,
-			ThreatType:   model.ThreatType,
-			Severity:     model.Severity,
-			Description:  model.Description,
-			Indicators:   model.Indicators,
-			FirstSeen:    model.FirstSeen,
-			LastSeen:     model.LastSeen,
-			HitCount:     model.HitCount,
-			Confidence:   model.Confidence,
-			SourceDomain: model.SourceDomain,
-		}
-
-		// Calculate TTL duration from Unix timestamp
-		if model.TTL > 0 {
-			threat.TTL = time.Until(time.Unix(model.TTL, 0))
-		}
-
-		threats = append(threats, threat)
+		threats = append(threats, r.convertModelToThreat(&model))
 	}
 
 	r.logger.Info("Loaded active threats", zap.Int("count", len(threats)))
@@ -313,25 +266,7 @@ func (r *ThreatIntelRepository) GetThreatByID(ctx context.Context, threatID stri
 		return nil, fmt.Errorf("failed to get threat: %w", err)
 	}
 
-	threat := &ThreatIntel{
-		ID:           model.ID,
-		ThreatType:   model.ThreatType,
-		Severity:     model.Severity,
-		Description:  model.Description,
-		Indicators:   model.Indicators,
-		FirstSeen:    model.FirstSeen,
-		LastSeen:     model.LastSeen,
-		HitCount:     model.HitCount,
-		Confidence:   model.Confidence,
-		SourceDomain: model.SourceDomain,
-	}
-
-	// Calculate TTL duration from Unix timestamp
-	if model.TTL > 0 {
-		threat.TTL = time.Until(time.Unix(model.TTL, 0))
-	}
-
-	return threat, nil
+	return r.convertModelToThreat(&model), nil
 }
 
 // GetIndicatorThreat looks up threat ID by indicator
@@ -350,4 +285,48 @@ func (r *ThreatIntelRepository) GetIndicatorThreat(ctx context.Context, indicato
 	}
 
 	return model.ThreatID, nil
+}
+
+// mapItemToThreatIntel converts a map[string]interface{} to ThreatIntel
+func (r *ThreatIntelRepository) mapItemToThreatIntel(item map[string]interface{}) *ThreatIntel {
+	threat := &ThreatIntel{}
+	
+	// Map fields from the item
+	if id, ok := item["ID"].(string); ok {
+		threat.ID = id
+	}
+	if threatType, ok := item["ThreatType"].(string); ok {
+		threat.ThreatType = threatType
+	}
+	if severity, ok := item["Severity"].(string); ok {
+		threat.Severity = severity
+	}
+	if description, ok := item["Description"].(string); ok {
+		threat.Description = description
+	}
+	if indicators, ok := item["Indicators"].([]string); ok {
+		threat.Indicators = indicators
+	}
+	if firstSeen, ok := item["FirstSeen"].(time.Time); ok {
+		threat.FirstSeen = firstSeen
+	}
+	if lastSeen, ok := item["LastSeen"].(time.Time); ok {
+		threat.LastSeen = lastSeen
+	}
+	if hitCount, ok := item["HitCount"].(int64); ok {
+		threat.HitCount = hitCount
+	}
+	if confidence, ok := item["Confidence"].(float64); ok {
+		threat.Confidence = confidence
+	}
+	if sourceDomain, ok := item["SourceDomain"].(string); ok {
+		threat.SourceDomain = sourceDomain
+	}
+	
+	// Calculate TTL duration from Unix timestamp
+	if ttl, ok := item["TTL"].(int64); ok && ttl > 0 {
+		threat.TTL = time.Until(time.Unix(ttl, 0))
+	}
+	
+	return threat
 }

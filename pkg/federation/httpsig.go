@@ -91,16 +91,16 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 	}
 
 	// Validate required fields
-	if sig.KeyID == "" {
+	if err := common.ValidateRequiredParam("keyId", sig.KeyID); err != nil {
 		return nil, fmt.Errorf("missing keyId in signature")
 	}
-	if len(sig.Signature) == 0 {
+	if err := common.ValidateSliceNotEmpty("signature", sig.Signature); err != nil {
 		return nil, fmt.Errorf("missing signature value")
 	}
-	if sig.Algorithm == "" {
+	if err := common.ValidateRequiredParam("algorithm", sig.Algorithm); err != nil {
 		sig.Algorithm = DefaultAlgorithm
 	}
-	if len(sig.Headers) == 0 {
+	if err := common.ValidateSliceNotEmpty("headers", sig.Headers); err != nil {
 		sig.Headers = []string{"date"}
 	}
 
@@ -122,13 +122,13 @@ func buildSignatureString(req *http.Request, headers []string) (string, error) {
 			}
 		case "host":
 			value = req.Host
-			if value == "" {
+			if err := common.ValidateRequiredParam("host", value); err != nil {
 				value = req.URL.Host
 			}
 		default:
 			// Get header value (case-insensitive)
 			value = req.Header.Get(header)
-			if value == "" {
+			if err := common.ValidateRequiredParam(fmt.Sprintf("header_%s", header), value); err != nil {
 				return "", fmt.Errorf("required header '%s' not found", header)
 			}
 		}
@@ -141,7 +141,7 @@ func buildSignatureString(req *http.Request, headers []string) (string, error) {
 
 // verifyTimestamp checks if the request date is within acceptable range
 func verifyTimestamp(dateStr string) error {
-	if dateStr == "" {
+	if err := common.ValidateRequiredParam("date_header", dateStr); err != nil {
 		return common.AuthenticationError{Message: "missing date header"}
 	}
 
@@ -166,7 +166,7 @@ func verifyTimestamp(dateStr string) error {
 	// Check if timestamp is within acceptable range
 	now := time.Now()
 	diff := now.Sub(requestTime)
-	if diff < -MaxClockSkew || diff > MaxClockSkew {
+	if err := common.ValidateFloatRange("clock_skew", diff.Seconds(), -MaxClockSkew.Seconds(), MaxClockSkew.Seconds()); err != nil {
 		return common.AuthenticationError{Message: fmt.Sprintf("request timestamp out of range: %v", diff)}
 	}
 
@@ -219,7 +219,7 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 
 	// Parse signature header
 	sigHeader := req.Header.Get(SignatureHeader)
-	if sigHeader == "" {
+	if err := common.ValidateRequiredParam("signature_header", sigHeader); err != nil {
 		return common.AuthenticationError{Message: "missing signature header"}
 	}
 
@@ -255,7 +255,7 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 // SignHTTPRequest signs an outgoing HTTP request
 func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID string) error {
 	// Set date header if not present
-	if req.Header.Get(DateHeader) == "" {
+	if err := common.ValidateRequiredParam("date_header", req.Header.Get(DateHeader)); err != nil {
 		req.Header.Set(DateHeader, time.Now().UTC().Format(time.RFC1123))
 	}
 
@@ -328,7 +328,7 @@ func EncodePrivateKeyPEM(privateKey *rsa.PrivateKey) ([]byte, error) {
 // VerifyDigest verifies the digest header against the request body
 func VerifyDigest(req *http.Request, body []byte) error {
 	digestHeader := req.Header.Get(DigestHeader)
-	if digestHeader == "" {
+	if err := common.ValidateRequiredParam("digest_header", digestHeader); err != nil {
 		return common.AuthenticationError{Message: "missing digest header"}
 	}
 

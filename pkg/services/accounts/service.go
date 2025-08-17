@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -455,7 +456,7 @@ func (s *Service) SearchAccounts(ctx context.Context, query *SearchAccountsQuery
 		zap.Bool("resolve", query.Resolve))
 
 	// Validate search query
-	if strings.TrimSpace(query.Query) == "" {
+	if err := common.ValidateRequiredParam("query", strings.TrimSpace(query.Query)); err != nil {
 		return nil, fmt.Errorf("search query cannot be empty")
 	}
 
@@ -496,34 +497,34 @@ func (s *Service) SearchAccounts(ctx context.Context, query *SearchAccountsQuery
 // Private helper methods
 
 func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdateProfileCommand) error {
-	if cmd.Username == "" {
+	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
 
-	if cmd.UpdaterID == "" {
+	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
 		return fmt.Errorf("updater_id is required")
 	}
 
-	if len(cmd.DisplayName) > 100 {
-		return fmt.Errorf("display name too long (max 100 characters)")
+	if err := common.ValidateStringLength("display_name", cmd.DisplayName, 0, 100); err != nil {
+		return err
 	}
 
-	if len(cmd.Bio) > 5000 {
-		return fmt.Errorf("bio too long (max 5000 characters)")
+	if err := common.ValidateStringLength("bio", cmd.Bio, 0, 5000); err != nil {
+		return err
 	}
 
-	if len(cmd.Fields) > 4 {
-		return fmt.Errorf("too many profile fields (max 4)")
+	if err := common.ValidateSliceLength("fields", cmd.Fields, 4); err != nil {
+		return err
 	}
 
 	for i, field := range cmd.Fields {
-		if strings.TrimSpace(field.Name) == "" {
+		if err := common.ValidateRequiredParam("field_name", strings.TrimSpace(field.Name)); err != nil {
 			return fmt.Errorf("profile field %d name cannot be empty", i+1)
 		}
-		if len(field.Name) > 255 {
+		if err := common.ValidateStringLength("field_name", field.Name, 0, 255); err != nil {
 			return fmt.Errorf("profile field %d name too long (max 255 characters)", i+1)
 		}
-		if len(field.Value) > 255 {
+		if err := common.ValidateStringLength("field_value", field.Value, 0, 255); err != nil {
 			return fmt.Errorf("profile field %d value too long (max 255 characters)", i+1)
 		}
 	}
@@ -532,11 +533,11 @@ func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdatePro
 }
 
 func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *UpdatePreferencesCommand) error {
-	if cmd.Username == "" {
+	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
 
-	if cmd.UpdaterID == "" {
+	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
 		return fmt.Errorf("updater_id is required")
 	}
 
@@ -826,7 +827,7 @@ func (s *Service) GetFollowers(ctx context.Context, query *GetFollowersQuery) (*
 	for _, followerID := range followerIDs {
 		// Extract username from actor ID (format: https://domain/users/username)
 		parts := strings.Split(followerID, "/")
-		if len(parts) > 0 {
+		if err := common.ValidateSliceNotEmpty("follower_id_parts", parts); err == nil {
 			username := parts[len(parts)-1]
 			account, err := accountRepo.GetAccount(ctx, username)
 			if err != nil {
@@ -972,7 +973,7 @@ func (s *Service) GetFamiliarFollowers(ctx context.Context, query *GetFamiliarFo
 				// This follower follows the target AND is followed by the viewer
 				// Extract username from actor ID
 				parts := strings.Split(followerID, "/")
-				if len(parts) > 0 {
+				if err := common.ValidateSliceNotEmpty("follower_id_parts", parts); err == nil {
 					username := parts[len(parts)-1]
 					account, err := accountRepo.GetAccount(ctx, username)
 					if err != nil {
@@ -1120,7 +1121,7 @@ func (s *Service) GetAccountPins(ctx context.Context, query *GetAccountPinsQuery
 		if len(parts) >= 2 && parts[len(parts)-2] == "users" {
 			username = parts[len(parts)-1]
 		}
-		if username == "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
 			s.logger.Warn("could not extract username from actor ID",
 				zap.String("actor_id", pin.PinnedActorID))
 			continue
@@ -1470,7 +1471,7 @@ func (s *Service) convertUsernamesToActorIDs(ctx context.Context, usernames []st
 
 // buildNextPageID constructs the next page URL if cursor is available
 func (s *Service) buildNextPageID(collectionID, nextCursor string) string {
-	if nextCursor == "" {
+	if err := common.ValidateRequiredParam("next_cursor", nextCursor); err != nil {
 		return ""
 	}
 	return fmt.Sprintf("%s?page=1&cursor=%s", collectionID, nextCursor)
@@ -1578,13 +1579,13 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 
 // validateRegisterAccountCommand validates the registration command
 func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *RegisterAccountCommand) error {
-	if cmd.Username == "" {
+	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
-	if len(cmd.Username) < 3 || len(cmd.Username) > 30 {
-		return fmt.Errorf("username must be between 3 and 30 characters")
+	if err := common.ValidateStringLength("username", cmd.Username, 3, 30); err != nil {
+		return err
 	}
-	if cmd.Email == "" {
+	if err := common.ValidateRequiredParam("email", cmd.Email); err != nil {
 		return fmt.Errorf("email is required")
 	}
 	if !cmd.Agreement {
@@ -1656,7 +1657,7 @@ type GetMarkersResult struct {
 
 // GetMarkers retrieves timeline markers for a user
 func (s *Service) GetMarkers(ctx context.Context, query *GetMarkersQuery) (*GetMarkersResult, error) {
-	if query.Username == "" {
+	if err := common.ValidateRequiredParam("username", query.Username); err != nil {
 		return nil, &ValidationError{Field: "username", Message: "required"}
 	}
 
@@ -1689,13 +1690,13 @@ type SaveMarkerResult struct {
 
 // SaveMarker saves a timeline marker for a user
 func (s *Service) SaveMarker(ctx context.Context, cmd *SaveMarkerCommand) (*SaveMarkerResult, error) {
-	if cmd.Username == "" {
+	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return nil, &ValidationError{Field: "username", Message: "required"}
 	}
-	if cmd.Timeline == "" {
+	if err := common.ValidateRequiredParam("timeline", cmd.Timeline); err != nil {
 		return nil, &ValidationError{Field: "timeline", Message: "required"}
 	}
-	if cmd.LastReadID == "" {
+	if err := common.ValidateRequiredParam("last_read_id", cmd.LastReadID); err != nil {
 		return nil, &ValidationError{Field: "last_read_id", Message: "required"}
 	}
 
@@ -1749,7 +1750,7 @@ type StoreOAuthStateResult struct {
 
 // StoreOAuthState stores OAuth authorization state
 func (s *Service) StoreOAuthState(ctx context.Context, cmd *StoreOAuthStateCommand) (*StoreOAuthStateResult, error) {
-	if cmd.State == "" {
+	if err := common.ValidateRequiredParam("state", cmd.State); err != nil {
 		return nil, &ValidationError{Field: "state", Message: "required"}
 	}
 	if cmd.OAuthState == nil {
@@ -1811,7 +1812,7 @@ type GetOAuthAppResult struct {
 
 // GetOAuthApp retrieves an OAuth application by client ID
 func (s *Service) GetOAuthApp(ctx context.Context, query *GetOAuthAppQuery) (*GetOAuthAppResult, error) {
-	if query.ClientID == "" {
+	if err := common.ValidateRequiredParam("client_id", query.ClientID); err != nil {
 		return nil, &ValidationError{Field: "client_id", Message: "required"}
 	}
 
@@ -1843,10 +1844,10 @@ type GetUserAppConsentResult struct {
 
 // GetUserAppConsent retrieves user's consent for an OAuth app
 func (s *Service) GetUserAppConsent(ctx context.Context, query *GetUserAppConsentQuery) (*GetUserAppConsentResult, error) {
-	if query.Username == "" {
+	if err := common.ValidateRequiredParam("username", query.Username); err != nil {
 		return nil, &ValidationError{Field: "username", Message: "required"}
 	}
-	if query.ClientID == "" {
+	if err := common.ValidateRequiredParam("client_id", query.ClientID); err != nil {
 		return nil, &ValidationError{Field: "client_id", Message: "required"}
 	}
 
@@ -2344,7 +2345,7 @@ func (s *Service) checkFollowRequest(ctx context.Context, repo *repositories.Rel
 // checkDomainBlocking checks if the user has blocked the target's domain
 func (s *Service) checkDomainBlocking(ctx context.Context, username, targetAccount string) bool {
 	domain := s.extractDomainFromAccount(targetAccount)
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		return false
 	}
 	

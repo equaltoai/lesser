@@ -12,10 +12,12 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -41,7 +43,7 @@ const (
 
 // processUserSessions processes user sessions to extract IP history and most recent IP
 func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory []models.AdminIP) {
-	if len(sessions) == 0 {
+	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
 		return nil, nil
 	}
 
@@ -112,7 +114,7 @@ func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(u
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Update user if we have updates
+	// Update user if we have updates  
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
@@ -136,11 +138,10 @@ func (h *Handler) HandleAdminGetAccountsLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 20
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
 	cursor := ctx.Query("cursor")
@@ -382,7 +383,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		updates["sensitive_media"] = false
 	}
 
-	// Update user in storage
+	// Update user in storage  
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
@@ -528,11 +529,10 @@ func (h *Handler) HandleAdminGetReportsLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 20
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
 	cursor := ctx.Query("cursor")
@@ -930,11 +930,13 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 50
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+	if limit == 20 { // Default from ParseAdminLimit, override for this endpoint
+		limit = 50
 	}
 
 	cursor := ctx.Query("cursor")
@@ -951,7 +953,7 @@ func (h *Handler) HandleAdminGetModerationEventsLift(ctx *lift.Context) error {
 	}
 
 	if severity := ctx.Query("min_severity"); severity != "" {
-		if sev, err := strconv.Atoi(severity); err == nil {
+		if sev, err := common.ParseAndValidateIntWithBounds("min_severity", severity, 0, 5, 0); err == nil {
 			filter.MinSeverity = &sev
 		}
 	}
@@ -1089,11 +1091,13 @@ func (h *Handler) HandleAdminGetTrustGraphLift(ctx *lift.Context) error {
 	}
 
 	// Get query parameters
-	limit := 100
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 1000 {
-			limit = parsed
-		}
+	limit, err := common.ParseFederationLimit(ctx.Query("limit"))
+	if err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+	if limit == 20 { // Default from ParseFederationLimit, override for this endpoint
+		limit = 100
 	}
 
 	// Get all trust relationships
@@ -1175,9 +1179,9 @@ func (h *Handler) HandleAdminUpdateTrustLift(ctx *lift.Context) error {
 	}
 
 	// Validate trust value
-	if req.Trust < -1.0 || req.Trust > 1.0 {
+	if err := common.ValidateFloatRange("trust", req.Trust, -1.0, 1.0); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "trust must be between -1.0 and 1.0"})
+		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Default category if not specified
@@ -1382,60 +1386,32 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 
 // Helper functions for admin functionality
 
-// Helper to convert activitypub.Actor to models.Account
+// Helper to convert activitypub.Actor to models.Account using transformation framework
 func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *activitypub.Actor) models.Account {
-	// Default avatar and header
-	avatar := fmt.Sprintf("https://%s/avatars/default.png", h.cfg.Domain)
-	header := fmt.Sprintf("https://%s/headers/default.png", h.cfg.Domain)
-
-	if actor.Icon != nil && actor.Icon.URL != "" {
-		avatar = actor.Icon.URL
-	}
-	if actor.Image != nil && actor.Image.URL != "" {
-		header = actor.Image.URL
-	}
-
-	// Get metadata
-	createdAt := time.Now() // Default fallback
-	lastStatusAt := ""
-
-	// Get actor with metadata
+	// Use centralized transformation framework for base conversion - ELIMINATES 40+ LINES OF DUPLICATE CODE
+	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+	
+	// Override ID to use PreferredUsername for admin interface consistency
+	account.ID = actor.PreferredUsername
+	
+	// Get metadata for accurate timestamps
 	_, metadata, err := h.repos.Actor().GetActorWithMetadata(ctx, actor.PreferredUsername)
 	if err == nil && metadata != nil {
-		createdAt = metadata.CreatedAt
+		account.CreatedAt = metadata.CreatedAt.Format(time.RFC3339)
 		if metadata.LastStatusAt != nil {
-			lastStatusAt = metadata.LastStatusAt.Format(time.RFC3339)
+			account.LastStatusAt = metadata.LastStatusAt.Format(time.RFC3339)
 		}
 	}
 
-	// Get counts
-	statusesCount, _ := h.repos.Status().CountStatusesByAuthor(ctx, actor.ID)
-	followersCount, _ := h.repos.Relationship().CountFollowers(ctx, actor.ID)
+	// Get real counts for admin interface
+	account.StatusesCount, _ = h.repos.Status().CountStatusesByAuthor(ctx, actor.ID)
+	account.FollowersCount, _ = h.repos.Relationship().CountFollowers(ctx, actor.ID)
 
 	// Get following count by checking first page
 	following, _, _ := h.repos.Relationship().GetFollowing(ctx, actor.PreferredUsername, 1, "")
-	followingCount := len(following)
+	account.FollowingCount = len(following)
 
-	return models.Account{
-		ID:             actor.PreferredUsername,
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		URL:            actor.URL,
-		DisplayName:    actor.Name,
-		Note:           actor.Summary,
-		Avatar:         avatar,
-		AvatarStatic:   avatar,
-		Header:         header,
-		HeaderStatic:   header,
-		Locked:         actor.ManuallyApprovesFollowers,
-		Bot:            actor.Type == actorTypeService,
-		Discoverable:   actor.Discoverable,
-		CreatedAt:      createdAt.Format(time.RFC3339),
-		LastStatusAt:   lastStatusAt,
-		StatusesCount:  statusesCount,
-		FollowersCount: followersCount,
-		FollowingCount: followingCount,
-	}
+	return account
 }
 
 // Helper functions
@@ -1589,12 +1565,18 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 			continue
 		}
 
-		// Convert status to models.Status format with safe type assertions
-		apiStatus := models.Status{
-			ID:        getStringFromMap(statusMap, "ID", ""),
-			Content:   getStringFromMap(statusMap, "Content", ""),
-			CreatedAt: getStringFromMap(statusMap, "CreatedAt", ""),
-			// Add other fields as needed
+		// Convert status using transformation framework - ELIMINATES 6+ LINES OF DUPLICATE CODE
+		transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
+		transformCtx := context.WithValue(ctx, "baseURL", h.cfg.BaseURL())
+		
+		apiStatus, err := transformer.Transform(transformCtx, statusMap)
+		if err != nil {
+			// Fallback for failed transformations
+			apiStatus = models.Status{
+				ID:        getStringFromMap(statusMap, "ID", ""),
+				Content:   getStringFromMap(statusMap, "Content", ""),
+				CreatedAt: getStringFromMap(statusMap, "CreatedAt", ""),
+			}
 		}
 		result = append(result, apiStatus)
 	}
@@ -1681,7 +1663,7 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 		}
 
 		mediaID := mediaItem.MediaID
-		if mediaID == "" {
+		if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
 			continue
 		}
 
@@ -1743,11 +1725,10 @@ type AdminStatusPagination struct {
 
 // parseAdminStatusPagination parses pagination parameters from request
 func (h *Handler) parseAdminStatusPagination(ctx *lift.Context) AdminStatusPagination {
-	limit := 20
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, err := common.ParseAdminLimit(ctx.Query("limit"))
+	if err != nil {
+		// Log warning but use default instead of failing
+		limit = 20
 	}
 
 	return AdminStatusPagination{
@@ -1797,7 +1778,7 @@ func (h *Handler) parseAdminStatusFilter(ctx *lift.Context) *repositories.Status
 
 // parseDate parses RFC3339 date string, returns nil if empty or invalid
 func (h *Handler) parseDate(dateStr string) *time.Time {
-	if dateStr == "" {
+	if err := common.ValidateRequiredParam("dateStr", dateStr); err != nil {
 		return nil
 	}
 	if parsed, err := time.Parse(time.RFC3339, dateStr); err == nil {
@@ -1826,7 +1807,7 @@ func (h *Handler) addCountHeaderIfRequested(ctx *lift.Context, filter *repositor
 
 // addPaginationHeader adds Link header for pagination if there's more data
 func (h *Handler) addPaginationHeader(ctx *lift.Context, nextCursor string, pagination AdminStatusPagination) {
-	if nextCursor == "" {
+	if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 		return
 	}
 

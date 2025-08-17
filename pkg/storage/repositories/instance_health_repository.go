@@ -10,6 +10,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // InstanceHealthRepository handles health check data using DynamORM
@@ -51,7 +52,7 @@ func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *
 
 // SaveHealthChecks saves multiple health checks in batch
 func (r *InstanceHealthRepository) SaveHealthChecks(ctx context.Context, healthChecks []*models.InstanceHealth) error {
-	if len(healthChecks) == 0 {
+	if err := common.ValidateSliceNotEmpty("healthChecks", healthChecks); err != nil {
 		return nil
 	}
 
@@ -95,7 +96,7 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 		return nil, fmt.Errorf("failed to get latest health check for %s: %w", domain, err)
 	}
 
-	if len(healthChecks) == 0 {
+	if err := common.ValidateSliceNotEmpty("healthChecks", healthChecks); err != nil {
 		return nil, fmt.Errorf("no health checks found for domain %s", domain)
 	}
 
@@ -169,7 +170,7 @@ func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context,
 
 	// If no summaries found, we could fallback to querying known remote actors
 	// For now, return what we have
-	if len(domains) == 0 {
+	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
 		r.logger.Info("No domains found for health checking via summaries")
 	}
 
@@ -236,7 +237,7 @@ func (r *InstanceHealthRepository) CalculateHealthSummary(ctx context.Context, d
 		return nil, err
 	}
 
-	if len(history) == 0 {
+	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		return nil, fmt.Errorf("no health data available for domain %s in the last %v", domain, window)
 	}
 

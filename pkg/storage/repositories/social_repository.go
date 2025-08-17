@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -153,7 +154,7 @@ func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, li
 
 	// Generate next cursor
 	var nextCursor string
-	if len(blocks) > limit {
+	if err := common.ValidateSliceLength("blocks", blocks, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = blocks[limit-1].SK
 		blocks = blocks[:limit] // Trim to requested limit
@@ -200,7 +201,7 @@ func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, 
 
 	// Generate next cursor
 	var nextCursor string
-	if len(blocks) > limit {
+	if err := common.ValidateSliceLength("blocks", blocks, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = blocks[limit-1].GSI5SK
 		blocks = blocks[:limit] // Trim to requested limit
@@ -340,7 +341,7 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 
 	// Generate next cursor
 	var nextCursor string
-	if len(mutes) > limit {
+	if err := common.ValidateSliceLength("mutes", mutes, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = mutes[limit-1].SK
 		mutes = mutes[:limit] // Trim to requested limit
@@ -366,7 +367,10 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 
 // CreateAnnounce creates a new Announce activity
 func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
-	if announce.Actor == "" || announce.Object == "" {
+	if err := common.ValidateRequiredParam("actor", announce.Actor); err != nil {
+		return fmt.Errorf("actor and object are required")
+	}
+	if err := common.ValidateRequiredParam("object", announce.Object); err != nil {
 		return fmt.Errorf("actor and object are required")
 	}
 
@@ -467,7 +471,7 @@ func (r *SocialRepository) GetStatusAnnounces(ctx context.Context, objectID stri
 
 	// Generate next cursor
 	var nextCursor string
-	if len(announces) > limit {
+	if err := common.ValidateSliceLength("announces", announces, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = announces[limit-1].SK
 		announces = announces[:limit] // Trim to requested limit
@@ -532,7 +536,7 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 
 	// Generate next cursor
 	var nextCursor string
-	if len(announces) > limit {
+	if err := common.ValidateSliceLength("announces", announces, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = announces[limit-1].GSI4SK
 		announces = announces[:limit] // Trim to requested limit
@@ -1049,7 +1053,7 @@ func (r *SocialRepository) CountUserPinnedStatuses(ctx context.Context, username
 // e.g., "https://example.com/users/alice" -> "alice"
 func extractUsername(actorID string) string {
 	parts := strings.Split(actorID, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return actorID

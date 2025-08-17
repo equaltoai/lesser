@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ServerlessHealthChecker performs stateless health checks triggered by EventBridge
@@ -167,7 +168,7 @@ func (c *ServerlessHealthChecker) ProcessHealthCheckEvent(ctx context.Context, e
 
 // checkInstanceHealth performs health checks on the specified domains
 func (c *ServerlessHealthChecker) checkInstanceHealth(ctx context.Context, domains []string) (*HealthCheckResult, error) {
-	if len(domains) == 0 {
+	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
 		return nil, fmt.Errorf("no domains specified for health check")
 	}
 

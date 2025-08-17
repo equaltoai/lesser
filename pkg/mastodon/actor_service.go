@@ -8,6 +8,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // actorServiceImpl implements the ActorService interface
@@ -76,7 +77,7 @@ func (s *actorServiceImpl) GetAccountsByIDs(ctx context.Context, actorIDs []stri
 
 	for _, actorID := range actorIDs {
 		username := s.converter.ExtractUsernameFromActorID(actorID)
-		if username == "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
 			s.logger.Warn("could not extract username from actor ID", zap.String("actorID", actorID))
 			continue
 		}

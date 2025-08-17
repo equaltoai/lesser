@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FederationTier represents the tier level for federation
@@ -122,7 +123,7 @@ func (f *FederationInstanceConfigTracking) BeforeCreate() error {
 	f.LastModified = now
 
 	// Set defaults if not specified
-	if f.Tier == "" {
+	if err := common.ValidateRequiredParam("f.Tier", string(f.Tier)); err != nil {
 		f.Tier = FederationTierFree
 	}
 	if f.TrustScore == 0 {

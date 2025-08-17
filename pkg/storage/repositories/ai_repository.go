@@ -82,7 +82,7 @@ func (r *AIRepository) GetAnalysis(_ context.Context, objectID string) (*ai.AIAn
 		return nil, fmt.Errorf("failed to get AI analysis: %w", err)
 	}
 
-	if len(analyses) == 0 {
+	if err := common.ValidateSliceNotEmpty("analyses", analyses); err != nil {
 		return nil, fmt.Errorf("no analysis found for object %s", objectID)
 	}
 

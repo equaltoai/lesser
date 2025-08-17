@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -47,7 +48,7 @@ func NewTextAnalyzer(client *comprehend.Client, logger *zap.Logger, config *Mode
 func (ta *TextAnalyzer) AnalyzeText(ctx context.Context, text string, metadata ContentMetadata) (*ContentAnalysis, error) {
 	startTime := time.Now()
 
-	if text == "" {
+	if err := common.ValidateRequiredParam("text", text); err != nil {
 		return &ContentAnalysis{
 			ContentID:      metadata.ContentID,
 			AnalyzedAt:     time.Now(),
@@ -67,7 +68,7 @@ func (ta *TextAnalyzer) AnalyzeText(ctx context.Context, text string, metadata C
 
 	// Detect language if not provided
 	language := metadata.Language
-	if language == "" {
+	if err := common.ValidateRequiredParam("language", language); err != nil {
 		detectedLang, err := ta.detectLanguage(ctx, text)
 		if err != nil {
 			ta.logger.Warn("language detection failed", zap.Error(err))
@@ -165,7 +166,7 @@ func (ta *TextAnalyzer) AnalyzeText(ctx context.Context, text string, metadata C
 	wg.Wait()
 
 	// Check for critical errors
-	if len(errors) > 0 && len(errors) == 5 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil && len(errors) == 5 {
 		// All analyses failed
 		return nil, fmt.Errorf("all analyses failed: %v", errors)
 	}
@@ -206,7 +207,7 @@ func (ta *TextAnalyzer) detectLanguage(ctx context.Context, text string) (string
 		ta.costTracker.TrackComprehendRequest("DetectDominantLanguage", len(text))
 	}
 
-	if len(result.Languages) == 0 {
+	if err := common.ValidateSliceNotEmpty("result.Languages", result.Languages); err != nil {
 		return "en", nil // Default to English
 	}
 
@@ -280,7 +281,7 @@ func (ta *TextAnalyzer) detectToxicity(ctx context.Context, text, language strin
 	keyPhrases, err := ta.detectKeyPhrases(ctx, text, language)
 	if err == nil {
 		toxicPhrases := ta.checkToxicPhrases(keyPhrases)
-		if len(toxicPhrases) > 0 {
+		if err := common.ValidateSliceNotEmpty("toxicPhrases", toxicPhrases); err == nil {
 			toxicity.IsToxic = true
 			toxicity.ToxicityScore = maxFloat64(toxicity.ToxicityScore, 0.7)
 
@@ -298,7 +299,7 @@ func (ta *TextAnalyzer) detectToxicity(ctx context.Context, text, language strin
 	entities, err := ta.detectEntities(ctx, text, language)
 	if err == nil {
 		targeted := ta.checkTargetedHarassment(text, entities)
-		if len(targeted) > 0 {
+		if err := common.ValidateSliceNotEmpty("targeted", targeted); err == nil {
 			toxicity.TargetedGroups = targeted
 			toxicity.IsToxic = true
 			toxicity.ToxicityScore = maxFloat64(toxicity.ToxicityScore, 0.8)

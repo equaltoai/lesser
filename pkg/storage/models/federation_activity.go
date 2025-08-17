@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -80,7 +81,7 @@ func (fa *FederationActivity) BeforeCreate() error {
 	fa.UpdatedAt = now
 
 	// Generate ID if not provided
-	if fa.ID == "" {
+	if err := common.ValidateRequiredParam("id", fa.ID); err != nil {
 		fa.ID = uuid.New().String()
 	}
 
@@ -133,17 +134,17 @@ func (fa *FederationActivity) setupGSIKeys() {
 
 // Validate performs validation on the FederationActivity
 func (fa *FederationActivity) Validate() error {
-	if strings.TrimSpace(fa.ID) == "" {
-		return fmt.Errorf("ID is required")
+	if err := common.ValidateRequiredParam("ID", strings.TrimSpace(fa.ID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(fa.Domain) == "" {
-		return fmt.Errorf("domain is required")
+	if err := common.ValidateRequiredParam("domain", strings.TrimSpace(fa.Domain)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(fa.ActivityType) == "" {
-		return fmt.Errorf("ActivityType is required")
+	if err := common.ValidateRequiredParam("ActivityType", strings.TrimSpace(fa.ActivityType)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(fa.ActorID) == "" {
-		return fmt.Errorf("ActorID is required")
+	if err := common.ValidateRequiredParam("ActorID", strings.TrimSpace(fa.ActorID)); err != nil {
+		return err
 	}
 
 	return nil

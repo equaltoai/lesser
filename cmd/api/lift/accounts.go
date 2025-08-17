@@ -6,16 +6,16 @@ import (
 	"fmt"
 	"mime"
 	"net/mail"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -182,7 +182,7 @@ func (h *Handler) extractBoundary(contentType string) (string, error) {
 	}
 
 	boundary := params["boundary"]
-	if boundary == "" {
+	if err := common.ValidateRequiredParam("boundary", boundary); err != nil {
 		return "", fmt.Errorf("missing boundary in content type")
 	}
 
@@ -206,8 +206,8 @@ func (h *Handler) extractBoundary(contentType string) (string, error) {
 // HandleGetAccountLift retrieves account information by ID (username or URL)
 func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Call Accounts service
@@ -227,8 +227,8 @@ func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	// Get acct parameter
 	acct := ctx.Query("acct")
-	if acct == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "acct parameter is required"})
+	if err := common.ValidateAcctParameter(acct); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Call Accounts service
@@ -245,8 +245,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	}
 
 	// Convert to Mastodon account format
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
-	mastodonAccount := converter.ActorToAccountWithCounts(account.Actor, 0, 0, 0)
+	mastodonAccount := transformations.ActorToAccountWithCounts(account.Actor, h.cfg.BaseURL(), 0, 0, 0)
 
 	return ctx.JSON(mastodonAccount)
 }
@@ -262,8 +261,8 @@ const (
 // handleAccountRelationshipsList is a generic handler for followers and following lists
 func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType relationshipType) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Extract username from accountID
@@ -306,7 +305,6 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 	}
 
 	// Convert relationships to Mastodon account format
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
 	accounts := make([]models.Account, 0, len(relationshipAccounts))
 	for _, relatedAccount := range relationshipAccounts {
 		if relatedAccount == nil || relatedAccount.Actor == nil {
@@ -314,7 +312,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 		}
 
 		// Convert to account using the Actor from the account we already have
-		account := converter.ActorToAccount(relatedAccount.Actor)
+		account := transformations.ActorToAccountBase(relatedAccount.Actor, h.cfg.BaseURL())
 		accounts = append(accounts, account)
 	}
 
@@ -356,14 +354,9 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 
 	// Get account IDs from query parameter
 	accountIDs := ctx.Query("id[]")
-	if accountIDs == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "id[] parameter is required"})
-	}
-
-	// Split account IDs
-	ids := strings.Split(accountIDs, ",")
-	if len(ids) == 0 {
-		return ctx.Status(400).JSON(map[string]string{"error": "At least one account ID is required"})
+	ids, err := common.ValidateAccountIDsParameter(accountIDs)
+	if err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Use Accounts service to get familiar followers
@@ -383,13 +376,12 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	}
 
 	results := make([]FamiliarFollowersResponse, 0, len(result.Results))
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
 
 	for _, familiarResult := range result.Results {
 		apiAccounts := make([]models.Account, 0, len(familiarResult.Accounts))
 		for _, storageAccount := range familiarResult.Accounts {
 			if storageAccount.Actor != nil {
-				apiAccount := converter.ActorToAccount(storageAccount.Actor)
+				apiAccount := transformations.ActorToAccountBase(storageAccount.Actor, h.cfg.BaseURL())
 				apiAccounts = append(apiAccounts, apiAccount)
 			}
 		}
@@ -406,8 +398,8 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 // HandlePinAccountLift pins an account to the user's profile
 func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate user
@@ -442,8 +434,8 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 // HandleUnpinAccountLift unpins an account from the user's profile
 func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate user
@@ -475,8 +467,8 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 // HandleSetAccountNoteLift sets a private note on an account
 func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate user
@@ -517,8 +509,8 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 // HandleRemoveFromFollowersLift removes a follower from the current user's followers list
 func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "Account ID is required"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate user
@@ -637,8 +629,8 @@ func (h *Handler) HandleActivityPubFollowingLift(ctx *lift.Context) error {
 func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType string) error {
 	// Extract username from path parameters
 	username := ctx.Param("username")
-	if username == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing username"})
+	if err := common.ValidateUsernameParamID(username); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Check if actor exists
@@ -667,11 +659,9 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	// Parse query parameters for pagination
 	isPage := ctx.Query("page") != ""
 	cursor := ctx.Query("cursor")
-	limit := 20 // default limit
-	if l := ctx.Query("limit"); l != "" {
-		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
-			limit = parsed
-		}
+	limit, err := common.ParseAndValidateActivityPubLimit(ctx.Query("limit"))
+	if err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// If not requesting a page, return the collection metadata
@@ -783,7 +773,7 @@ func (h *Handler) checkCollectionAccess(ctx *lift.Context, actor *activitypub.Ac
 	}
 
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 		return h.returnEmptyCollection(ctx, actor, collectionType)
 	}
 

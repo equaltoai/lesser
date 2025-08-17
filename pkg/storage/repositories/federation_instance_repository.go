@@ -2,9 +2,12 @@ package repositories
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -105,20 +108,53 @@ func (r *FederationInstanceRepository) DeleteInstance(ctx context.Context, insta
 	return nil
 }
 
-// ListInstancesByStatus retrieves instances by status using GSI1
+// ListInstancesByStatus retrieves instances by status using GSI1 (backward compatible)
 func (r *FederationInstanceRepository) ListInstancesByStatus(ctx context.Context, status types.InstanceStatus, limit int) ([]*types.Instance, error) {
+	instances, _, err := r.ListInstancesByStatusWithCursor(ctx, status, limit, "")
+	return instances, err
+}
+
+// ListInstancesByStatusWithCursor retrieves instances by status using GSI1 with cursor pagination
+func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx context.Context, status types.InstanceStatus, limit int, cursor string) ([]*types.Instance, string, error) {
 	var instances []models.FederationInstanceRegistry
+	// Validate pagination parameters
+	if err := r.validatePaginationParams(limit, cursor); err != nil {
+		return nil, "", fmt.Errorf("invalid pagination params: %w", err)
+	}
+
+	// Log pagination query for debugging
+	r.logPaginationQuery("ListInstancesByStatus", map[string]interface{}{
+		"status": string(status),
+		"limit":  limit,
+		"cursor": cursor,
+	})
+
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
+	// Add cursor for pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one extra item to determine if there are more results
+	actualLimit := limit
 	if limit > 0 {
-		query = query.Limit(limit)
+		query = query.Limit(limit + 1)
 	}
 
 	err := query.All(&instances)
 	if err != nil {
-		return nil, fmt.Errorf("list instances by status: %w", err)
+		return nil, "", fmt.Errorf("list instances by status: %w", err)
+	}
+
+	// Determine next cursor and trim results if needed
+	var nextCursor string
+	if limit > 0 && len(instances) > actualLimit {
+		// We got more results than requested, so there are more pages
+		nextCursor = instances[actualLimit-1].GSI1SK // Use the last item's sort key as cursor
+		instances = instances[:actualLimit] // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -126,29 +162,70 @@ func (r *FederationInstanceRepository) ListInstancesByStatus(ctx context.Context
 		result[i] = r.fromModel(&model)
 	}
 
-	return result, nil
+	r.logger.Debug("listed instances by status with pagination",
+		zap.String("status", string(status)),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+		zap.Int("result_count", len(result)))
+
+	return result, nextCursor, nil
 }
 
 // ListHealthyInstances returns all healthy instances
 func (r *FederationInstanceRepository) ListHealthyInstances(ctx context.Context) ([]*types.Instance, error) {
-	return r.ListInstancesByStatus(ctx, types.InstanceStatusActive, 100)
+	instances, err := r.ListInstancesByStatus(ctx, types.InstanceStatusActive, 100)
+	return instances, err
 }
 
-// GetInstancesByTier retrieves instances by tier level using GSI2
+// GetInstancesByTier retrieves instances by tier level using GSI2 (backward compatible)
 func (r *FederationInstanceRepository) GetInstancesByTier(ctx context.Context, tier types.TierLevel, limit int) ([]*types.Instance, error) {
+	instances, _, err := r.GetInstancesByTierWithCursor(ctx, tier, limit, "")
+	return instances, err
+}
+
+// GetInstancesByTierWithCursor retrieves instances by tier level using GSI2 with cursor pagination
+func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.Context, tier types.TierLevel, limit int, cursor string) ([]*types.Instance, string, error) {
 	var instances []models.FederationInstanceRegistry
+	// Validate pagination parameters
+	if err := r.validatePaginationParams(limit, cursor); err != nil {
+		return nil, "", fmt.Errorf("invalid pagination params: %w", err)
+	}
+
+	// Log pagination query for debugging
+	r.logPaginationQuery("GetInstancesByTier", map[string]interface{}{
+		"tier":   string(tier),
+		"limit":  limit,
+		"cursor": cursor,
+	})
+
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Index("GSI2").
 		Where("GSI2PK", "=", fmt.Sprintf("TIER#%s", tier)).
 		OrderBy("GSI2SK", "ASC") // Sort by usage ascending (least used first)
 
+	// Add cursor for pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one extra item to determine if there are more results
+	actualLimit := limit
 	if limit > 0 {
-		query = query.Limit(limit)
+		query = query.Limit(limit + 1)
 	}
 
 	err := query.All(&instances)
 	if err != nil {
-		return nil, fmt.Errorf("get instances by tier: %w", err)
+		return nil, "", fmt.Errorf("get instances by tier: %w", err)
+	}
+
+	// Determine next cursor and trim results if needed
+	var nextCursor string
+	if limit > 0 && len(instances) > actualLimit {
+		// We got more results than requested, so there are more pages
+		nextCursor = instances[actualLimit-1].GSI2SK // Use the last item's sort key as cursor
+		instances = instances[:actualLimit] // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -156,29 +233,55 @@ func (r *FederationInstanceRepository) GetInstancesByTier(ctx context.Context, t
 		result[i] = r.fromModel(&model)
 	}
 
-	return result, nil
+	r.logger.Debug("get instances by tier with pagination",
+		zap.String("tier", string(tier)),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+		zap.Int("result_count", len(result)))
+
+	return result, nextCursor, nil
 }
 
-// BatchGetInstances retrieves multiple instances efficiently
+// BatchGetInstances retrieves multiple instances efficiently using DynamORM batch operations
 func (r *FederationInstanceRepository) BatchGetInstances(ctx context.Context, instanceIDs []string) ([]*types.Instance, error) {
-	if len(instanceIDs) == 0 {
+	if common.ValidateSliceNotEmpty("instanceIDs", instanceIDs) != nil {
 		return []*types.Instance{}, nil
 	}
 
-	instances := make([]*types.Instance, 0, len(instanceIDs))
+	// Handle batch size limits (DynamoDB limit is 100 items per batch)
+	const maxBatchSize = 100
+	if len(instanceIDs) > maxBatchSize {
+		return r.batchGetInstancesInChunks(ctx, instanceIDs, maxBatchSize)
+	}
 
-	// For now, do individual queries (can optimize later with proper batch API)
+	// Create batch keys for DynamORM
+	batchKeys := make([]interface{}, 0, len(instanceIDs))
 	for _, instanceID := range instanceIDs {
-		instance, err := r.GetInstance(ctx, instanceID)
-		if err != nil {
-			// Skip not found errors, continue with others
-			if !errors.IsNotFound(err) {
-				return nil, fmt.Errorf("batch get instances: %w", err)
-			}
-			continue
+		key := &models.FederationInstanceRegistry{
+			PK: fmt.Sprintf("INSTANCE#%s", instanceID),
+			SK: "METADATA",
 		}
+		batchKeys = append(batchKeys, key)
+	}
+
+	// Use DynamORM native batch get
+	var instanceModels []models.FederationInstanceRegistry
+	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchGet(batchKeys, &instanceModels)
+	if err != nil {
+		return nil, fmt.Errorf("batch get instances: %w", err)
+	}
+
+	// Convert models to types.Instance
+	instances := make([]*types.Instance, 0, len(instanceModels))
+	for _, model := range instanceModels {
+		instance := r.fromModel(&model)
 		instances = append(instances, instance)
 	}
+
+	r.logger.Debug("batch get instances completed",
+		zap.Int("requested", len(instanceIDs)),
+		zap.Int("found", len(instances)))
 
 	return instances, nil
 }
@@ -273,20 +376,53 @@ func (r *FederationInstanceRepository) UpdateInstanceUsage(ctx context.Context, 
 	return nil
 }
 
-// SearchInstances searches for instances by domain pattern
+// SearchInstances searches for instances by domain pattern (backward compatible)
 func (r *FederationInstanceRepository) SearchInstances(ctx context.Context, domainPattern string, limit int) ([]*types.Instance, error) {
+	instances, _, err := r.SearchInstancesWithCursor(ctx, domainPattern, limit, "")
+	return instances, err
+}
+
+// SearchInstancesWithCursor searches for instances by domain pattern with cursor pagination
+func (r *FederationInstanceRepository) SearchInstancesWithCursor(ctx context.Context, domainPattern string, limit int, cursor string) ([]*types.Instance, string, error) {
 	var instances []models.FederationInstanceRegistry
+	// Validate pagination parameters
+	if err := r.validatePaginationParams(limit, cursor); err != nil {
+		return nil, "", fmt.Errorf("invalid pagination params: %w", err)
+	}
+
+	// Log pagination query for debugging
+	r.logPaginationQuery("SearchInstances", map[string]interface{}{
+		"domain_pattern": domainPattern,
+		"limit":          limit,
+		"cursor":         cursor,
+	})
+
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("SK", "=", "METADATA").
 		Filter("Domain", "contains", domainPattern)
 
+	// Add cursor for pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
+	}
+
+	// Get one extra item to determine if there are more results
+	actualLimit := limit
 	if limit > 0 {
-		query = query.Limit(limit)
+		query = query.Limit(limit + 1)
 	}
 
 	err := query.All(&instances)
 	if err != nil {
-		return nil, fmt.Errorf("search instances: %w", err)
+		return nil, "", fmt.Errorf("search instances: %w", err)
+	}
+
+	// Determine next cursor and trim results if needed
+	var nextCursor string
+	if limit > 0 && len(instances) > actualLimit {
+		// We got more results than requested, so there are more pages
+		nextCursor = instances[actualLimit-1].PK // Use the last item's primary key as cursor
+		instances = instances[:actualLimit] // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -294,7 +430,14 @@ func (r *FederationInstanceRepository) SearchInstances(ctx context.Context, doma
 		result[i] = r.fromModel(&model)
 	}
 
-	return result, nil
+	r.logger.Debug("search instances with pagination",
+		zap.String("domain_pattern", domainPattern),
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+		zap.Int("result_count", len(result)))
+
+	return result, nextCursor, nil
 }
 
 // storeHealthHistory stores health status in history table
@@ -331,22 +474,345 @@ func (r *FederationInstanceRepository) GetHealthHistory(ctx context.Context, ins
 	return history, nil
 }
 
-// ListAllInstances returns all instances with pagination
-func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, limit int, _ map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
+// batchGetInstancesInChunks handles large batch requests by splitting them into chunks
+func (r *FederationInstanceRepository) batchGetInstancesInChunks(ctx context.Context, instanceIDs []string, chunkSize int) ([]*types.Instance, error) {
+	allInstances := make([]*types.Instance, 0, len(instanceIDs))
+
+	for i := 0; i < len(instanceIDs); i += chunkSize {
+		end := i + chunkSize
+		if end > len(instanceIDs) {
+			end = len(instanceIDs)
+		}
+
+		chunk := instanceIDs[i:end]
+		chunkInstances, err := r.BatchGetInstances(ctx, chunk)
+		if err != nil {
+			return nil, fmt.Errorf("batch get chunk failed at index %d: %w", i, err)
+		}
+
+		allInstances = append(allInstances, chunkInstances...)
+
+		// Check for context cancellation between chunks
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+	}
+
+	return allInstances, nil
+}
+
+// BatchCreateInstances creates multiple instances efficiently for federation discovery
+func (r *FederationInstanceRepository) BatchCreateInstances(ctx context.Context, instances []*types.Instance) error {
+	if common.ValidateSliceNotEmpty("instances", instances) != nil {
+		return nil
+	}
+
+	// Handle batch size limits (DynamoDB limit is 25 items per batch for writes)
+	const maxBatchSize = 25
+	if len(instances) > maxBatchSize {
+		return r.batchCreateInstancesInChunks(ctx, instances, maxBatchSize)
+	}
+
+	// Convert to models
+	instanceModels := make([]interface{}, 0, len(instances))
+	for _, instance := range instances {
+		model := r.toModel(instance)
+		instanceModels = append(instanceModels, model)
+	}
+
+	// Use DynamORM native batch create
+	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(instanceModels)
+	if err != nil {
+		return fmt.Errorf("batch create instances: %w", err)
+	}
+
+	r.logger.Info("batch created federation instances",
+		zap.Int("count", len(instances)))
+
+	return nil
+}
+
+// batchCreateInstancesInChunks handles large batch create requests by splitting them into chunks
+func (r *FederationInstanceRepository) batchCreateInstancesInChunks(ctx context.Context, instances []*types.Instance, chunkSize int) error {
+	for i := 0; i < len(instances); i += chunkSize {
+		end := i + chunkSize
+		if end > len(instances) {
+			end = len(instances)
+		}
+
+		chunk := instances[i:end]
+		if err := r.BatchCreateInstances(ctx, chunk); err != nil {
+			return fmt.Errorf("batch create chunk failed at index %d: %w", i, err)
+		}
+
+		// Check for context cancellation between chunks
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+
+	return nil
+}
+
+// BatchUpdateInstancesHealth updates health status for multiple instances efficiently
+func (r *FederationInstanceRepository) BatchUpdateInstancesHealth(ctx context.Context, healthUpdates map[string]*types.HealthStatus) error {
+	if common.ValidateSliceNotEmpty("healthUpdates", healthUpdates) != nil {
+		return nil
+	}
+
+	// Handle batch size limits
+	const maxBatchSize = 25
+	if len(healthUpdates) > maxBatchSize {
+		return r.batchUpdateHealthInChunks(ctx, healthUpdates, maxBatchSize)
+	}
+
+	// Convert to update models
+	updateModels := make([]interface{}, 0, len(healthUpdates))
+	for instanceID, health := range healthUpdates {
+		// Calculate new status based on health
+		status := types.InstanceStatusActive
+		if !health.Reachable {
+			status = types.InstanceStatusUnreachable
+		} else if health.ErrorRate > 0.1 {
+			status = types.InstanceStatusDegraded
+		}
+
+		updateModel := &models.FederationInstanceRegistry{
+			PK:              fmt.Sprintf("INSTANCE#%s", instanceID),
+			SK:              "METADATA",
+			Status:          string(status),
+			LastSeen:        time.Now(),
+			AvgResponseTime: health.ResponseTime.Milliseconds(),
+			ErrorRate:       health.ErrorRate,
+			GSI1PK:          fmt.Sprintf("STATUS#%s", status),
+		}
+		updateModels = append(updateModels, updateModel)
+	}
+
+	// Use DynamORM batch update (implemented as batch put)
+	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
+	if err != nil {
+		return fmt.Errorf("batch update instances health: %w", err)
+	}
+
+	// Store health history for each instance
+	for instanceID, health := range healthUpdates {
+		if err := r.storeHealthHistory(ctx, instanceID, health); err != nil {
+			r.logger.Warn("failed to store health history",
+				zap.String("instanceID", instanceID),
+				zap.Error(err))
+		}
+	}
+
+	r.logger.Info("batch updated instance health",
+		zap.Int("count", len(healthUpdates)))
+
+	return nil
+}
+
+// batchUpdateHealthInChunks handles large batch health update requests
+func (r *FederationInstanceRepository) batchUpdateHealthInChunks(ctx context.Context, healthUpdates map[string]*types.HealthStatus, chunkSize int) error {
+	updateSlice := make([]struct {
+		instanceID string
+		health     *types.HealthStatus
+	}, 0, len(healthUpdates))
+
+	// Convert map to slice for chunking
+	for instanceID, health := range healthUpdates {
+		updateSlice = append(updateSlice, struct {
+			instanceID string
+			health     *types.HealthStatus
+		}{instanceID, health})
+	}
+
+	for i := 0; i < len(updateSlice); i += chunkSize {
+		end := i + chunkSize
+		if end > len(updateSlice) {
+			end = len(updateSlice)
+		}
+
+		// Create chunk map
+		chunkMap := make(map[string]*types.HealthStatus)
+		for j := i; j < end; j++ {
+			update := updateSlice[j]
+			chunkMap[update.instanceID] = update.health
+		}
+
+		if err := r.BatchUpdateInstancesHealth(ctx, chunkMap); err != nil {
+			return fmt.Errorf("batch update health chunk failed at index %d: %w", i, err)
+		}
+
+		// Check for context cancellation between chunks
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+
+	return nil
+}
+
+// BatchUpdateInstancesUsage updates usage counters for multiple instances efficiently
+func (r *FederationInstanceRepository) BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error {
+	if common.ValidateSliceNotEmpty("usageUpdates", usageUpdates) != nil {
+		return nil
+	}
+
+	// For usage updates, we need to read current values first to calculate new GSI2SK
+	// This is more complex than health updates, so we process them individually but efficiently
+	instanceIDs := make([]string, 0, len(usageUpdates))
+	for instanceID := range usageUpdates {
+		instanceIDs = append(instanceIDs, instanceID)
+	}
+
+	// Batch get current instances
+	currentInstances, err := r.BatchGetInstances(ctx, instanceIDs)
+	if err != nil {
+		return fmt.Errorf("failed to get current instances for usage update: %w", err)
+	}
+
+	// Create update models with new usage
+	updateModels := make([]interface{}, 0, len(currentInstances))
+	for _, instance := range currentInstances {
+		if bytesUsed, exists := usageUpdates[instance.ID]; exists {
+			newUsage := instance.CurrentUsage + bytesUsed
+			status := instance.Status
+
+			// Check if quota exceeded
+			if newUsage > instance.MonthlyQuota {
+				status = types.InstanceStatusBlocked
+			}
+
+			updateModel := &models.FederationInstanceRegistry{
+				PK:           fmt.Sprintf("INSTANCE#%s", instance.ID),
+				SK:           "METADATA",
+				CurrentUsage: newUsage,
+				Status:       string(status),
+				GSI1PK:       fmt.Sprintf("STATUS#%s", status),
+				GSI2SK:       fmt.Sprintf("USAGE#%010d", newUsage),
+			}
+			updateModels = append(updateModels, updateModel)
+		}
+	}
+
+	if common.ValidateSliceNotEmpty("updateModels", updateModels) != nil {
+		return nil
+	}
+
+	// Handle batch size limits
+	const maxBatchSize = 25
+	if len(updateModels) > maxBatchSize {
+		return r.batchUpdateUsageInChunks(ctx, updateModels, maxBatchSize)
+	}
+
+	// Use DynamORM batch update
+	err = r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
+	if err != nil {
+		return fmt.Errorf("batch update instances usage: %w", err)
+	}
+
+	r.logger.Info("batch updated instance usage",
+		zap.Int("count", len(updateModels)))
+
+	return nil
+}
+
+// batchUpdateUsageInChunks handles large batch usage update requests
+func (r *FederationInstanceRepository) batchUpdateUsageInChunks(ctx context.Context, updateModels []interface{}, chunkSize int) error {
+	for i := 0; i < len(updateModels); i += chunkSize {
+		end := i + chunkSize
+		if end > len(updateModels) {
+			end = len(updateModels)
+		}
+
+		chunk := updateModels[i:end]
+		err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(chunk)
+		if err != nil {
+			return fmt.Errorf("batch update usage chunk failed at index %d: %w", i, err)
+		}
+
+		// Check for context cancellation between chunks
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+	}
+
+	return nil
+}
+
+// ListAllInstances returns all instances with backward compatible pagination
+func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, limit int, startKey map[string]interface{}) ([]*types.Instance, map[string]interface{}, error) {
+	// Convert old startKey format to cursor if needed
+	cursor := ""
+	if startKey != nil {
+		if pk, ok := startKey["PK"].(string); ok {
+			cursor = pk // Simple conversion for backward compatibility
+		}
+	}
+
+	instances, nextCursor, err := r.ListAllInstancesWithCursor(ctx, limit, cursor)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Convert cursor back to startKey format for backward compatibility
+	var lastKey map[string]interface{}
+	if nextCursor != "" {
+		lastKey = map[string]interface{}{
+			"PK": nextCursor,
+			"SK": "METADATA",
+		}
+	}
+
+	return instances, lastKey, nil
+}
+
+// ListAllInstancesWithCursor returns all instances with proper cursor-based pagination
+func (r *FederationInstanceRepository) ListAllInstancesWithCursor(ctx context.Context, limit int, cursor string) ([]*types.Instance, string, error) {
 	var instances []models.FederationInstanceRegistry
+	// Validate pagination parameters
+	if err := r.validatePaginationParams(limit, cursor); err != nil {
+		return nil, "", fmt.Errorf("invalid pagination params: %w", err)
+	}
+
+	// Log pagination query for debugging
+	r.logPaginationQuery("ListAllInstances", map[string]interface{}{
+		"limit":  limit,
+		"cursor": cursor,
+	})
+
 	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("SK", "=", "METADATA")
 
-	if limit > 0 {
-		query = query.Limit(limit)
+	// Add cursor for pagination
+	if cursor != "" {
+		query = query.Cursor(cursor)
 	}
 
-	// Note: DynamORM doesn't support StartKey - would need to implement with LastEvaluatedKey pattern
-	// For now, we'll skip the startKey functionality and implement basic pagination
+	// Get one extra item to determine if there are more results
+	actualLimit := limit
+	if limit > 0 {
+		query = query.Limit(limit + 1)
+	}
 
 	err := query.All(&instances)
 	if err != nil {
-		return nil, nil, fmt.Errorf("list all instances: %w", err)
+		return nil, "", fmt.Errorf("list all instances: %w", err)
+	}
+
+	// Determine next cursor and trim results if needed
+	var nextCursor string
+	if limit > 0 && len(instances) > actualLimit {
+		// We got more results than requested, so there are more pages
+		nextCursor = instances[actualLimit-1].PK // Use the last item's primary key as cursor
+		instances = instances[:actualLimit] // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -354,17 +820,63 @@ func (r *FederationInstanceRepository) ListAllInstances(ctx context.Context, lim
 		result[i] = r.fromModel(&model)
 	}
 
-	// Get the last evaluated key for pagination
-	var lastKey map[string]interface{}
-	if len(instances) == limit {
-		lastModel := instances[len(instances)-1]
-		lastKey = map[string]interface{}{
-			"PK": lastModel.PK,
-			"SK": lastModel.SK,
+	r.logger.Debug("listed all instances with pagination",
+		zap.Int("limit", limit),
+		zap.String("cursor", cursor),
+		zap.String("next_cursor", nextCursor),
+		zap.Int("result_count", len(result)))
+
+	return result, nextCursor, nil
+}
+
+// Helper methods for pagination
+
+// validateCursor validates and sanitizes a pagination cursor
+func (r *FederationInstanceRepository) validateCursor(cursor string) error {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
+		return nil
+	}
+
+	// Check for reasonable length (base64 encoded cursors should be reasonable size)
+	if err := common.ValidateStringLength("cursor", cursor, 1, 1024); err != nil {
+		return fmt.Errorf("cursor too long: maximum 1024 characters")
+	}
+
+	// Validate base64 format if it appears to be encoded
+	if strings.Contains(cursor, "#") || strings.Contains(cursor, "=") {
+		// Try to decode as base64 to validate format
+		if _, err := base64.URLEncoding.DecodeString(cursor); err == nil {
+			return nil // Valid base64
 		}
 	}
 
-	return result, lastKey, nil
+	// For simple cursors (like primary keys), check for basic safety
+	if !strings.Contains(cursor, "<script") && !strings.Contains(cursor, "javascript:") {
+		return nil
+	}
+
+	return fmt.Errorf("invalid cursor format")
+}
+
+// validatePaginationParams validates pagination parameters
+func (r *FederationInstanceRepository) validatePaginationParams(limit int, cursor string) error {
+	// Validate limit
+	if limit < 0 {
+		return fmt.Errorf("limit cannot be negative")
+	}
+	if limit > 1000 {
+		return fmt.Errorf("limit too large: maximum 1000 items per page")
+	}
+
+	// Validate cursor
+	return r.validateCursor(cursor)
+}
+
+// logPaginationQuery logs pagination query details for debugging
+func (r *FederationInstanceRepository) logPaginationQuery(operation string, params map[string]interface{}) {
+	r.logger.Debug("pagination query",
+		zap.String("operation", operation),
+		zap.Any("params", params))
 }
 
 // Conversion methods
@@ -390,7 +902,7 @@ func (r *FederationInstanceRepository) toModel(instance *types.Instance) *models
 	}
 
 	// Convert supported types
-	if len(instance.SupportedTypes) > 0 {
+	if common.ValidateSliceNotEmpty("instance.SupportedTypes", instance.SupportedTypes) == nil {
 		model.SupportedTypes = make([]string, len(instance.SupportedTypes))
 		for i, t := range instance.SupportedTypes {
 			model.SupportedTypes[i] = string(t)
@@ -433,7 +945,7 @@ func (r *FederationInstanceRepository) fromModel(model *models.FederationInstanc
 	}
 
 	// Convert supported types
-	if len(model.SupportedTypes) > 0 {
+	if common.ValidateSliceNotEmpty("model.SupportedTypes", model.SupportedTypes) == nil {
 		instance.SupportedTypes = make([]types.MessageType, len(model.SupportedTypes))
 		for i, t := range model.SupportedTypes {
 			instance.SupportedTypes[i] = types.MessageType(t)

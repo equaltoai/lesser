@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqs_types "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -124,7 +125,7 @@ func (s *AIService) AnalyzeContent(ctx context.Context, content *Content) (*AIAn
 	}
 
 	// Image analysis
-	if len(content.MediaURLs) > 0 && s.config.EnableImageAnalysis {
+	if common.ValidateSliceNotEmpty("content.MediaURLs", content.MediaURLs) == nil && s.config.EnableImageAnalysis {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -339,7 +340,7 @@ func (s *AIService) analyzeImages(ctx context.Context, imageURLs []string) (*Ima
 	}
 
 	// Analyze text found in images for toxicity
-	if len(analysis.DetectedText) > 0 {
+	if common.ValidateSliceNotEmpty("analysis.DetectedText", analysis.DetectedText) == nil {
 		combinedText := strings.Join(analysis.DetectedText, " ")
 		textAnalysis, _ := s.analyzeText(ctx, combinedText)
 		if textAnalysis != nil {
@@ -605,7 +606,7 @@ func (s *AIService) analyzeSpam(_ context.Context, content *Content) (*SpamAnaly
 	}
 
 	// Calculate overall spam score
-	if len(analysis.SpamIndicators) > 0 {
+	if common.ValidateSliceNotEmpty("analysis.SpamIndicators", analysis.SpamIndicators) == nil {
 		totalSeverity := 0.0
 		for _, indicator := range analysis.SpamIndicators {
 			totalSeverity += indicator.Severity
@@ -770,7 +771,7 @@ func (s *AIService) analyzeTopicConsistency(content *Content) float64 {
 	// Simple heuristic for topic consistency
 	// In production, this would use more sophisticated NLP
 	sentences := strings.Split(content.Text, ".")
-	if len(sentences) < 2 {
+	if err := common.ValidateSliceLength("sentences", sentences, 2); err != nil {
 		return 1.0
 	}
 
@@ -783,7 +784,7 @@ func (s *AIService) analyzeTopicConsistency(content *Content) float64 {
 		sentenceWords := strings.Fields(strings.ToLower(sentence))
 		for _, word := range sentenceWords {
 			// Filter out common words that don't indicate topic
-			if len(word) > 3 && !isCommonWord(word) {
+			if common.ValidateStringLength("word", word, 4, 1000) == nil && !isCommonWord(word) {
 				words[word]++
 				totalWords++
 			}
@@ -803,7 +804,7 @@ func (s *AIService) analyzeTopicConsistency(content *Content) float64 {
 		// Count overlapping meaningful words
 		overlap := 0
 		for _, word := range curr {
-			if len(word) > 3 && !isCommonWord(word) {
+			if common.ValidateStringLength("word", word, 4, 1000) == nil && !isCommonWord(word) {
 				for _, prevWord := range prev {
 					if word == prevWord {
 						overlap++
@@ -821,7 +822,7 @@ func (s *AIService) analyzeTopicConsistency(content *Content) float64 {
 	}
 
 	// Average consistency across sentence pairs
-	if len(sentences) > 1 {
+	if common.ValidateSliceLength("sentences", sentences, 2) == nil {
 		avgConsistency := consistencySum / float64(len(sentences)-1)
 		// Scale to 0.5-1.0 range (lower values indicate topic jumps)
 		return 0.5 + (avgConsistency * 0.5)
@@ -833,7 +834,7 @@ func (s *AIService) analyzeTopicConsistency(content *Content) float64 {
 func (s *AIService) calculateRepetition(text string) float64 {
 	// Simple repetition detection
 	words := strings.Fields(strings.ToLower(text))
-	if len(words) == 0 {
+	if common.ValidateSliceNotEmpty("words", words) != nil {
 		return 0
 	}
 
@@ -891,7 +892,7 @@ func generateID(prefix string) string {
 
 func extractS3Key(url string) string {
 	// Extract S3 key from media URL using proper URL parsing
-	if url == "" {
+	if err := common.ValidateRequiredParam("url", url); err != nil {
 		return ""
 	}
 
@@ -915,7 +916,7 @@ func extractS3Key(url string) string {
 
 	// Fallback to filename
 	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
+	if common.ValidateSliceNotEmpty("parts", parts) == nil {
 		return parts[len(parts)-1]
 	}
 	return ""
@@ -1098,7 +1099,7 @@ func (s *AIService) QueueAnalysisRequest(ctx context.Context, objectID string, o
 
 // sendToSQSQueue sends the analysis request to the SQS queue for processing
 func (s *AIService) sendToSQSQueue(ctx context.Context, request *AnalysisRequest) error {
-	if s.config.AIQueueURL == "" {
+	if err := common.ValidateRequiredParam("s.config.AIQueueURL", s.config.AIQueueURL); err != nil {
 		s.logger.Warn("AI queue URL not configured, skipping SQS message")
 		return nil
 	}

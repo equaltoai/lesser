@@ -3,10 +3,10 @@ package lift
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/notes"
 	"github.com/equaltoai/lesser/pkg/reputation"
 	servicenotes "github.com/equaltoai/lesser/pkg/services/notes"
@@ -19,7 +19,7 @@ import (
 func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -30,14 +30,14 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	} else {
 		// Production mode - extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -158,8 +158,8 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 // HandleGetNotesLift handles GET /api/v1/notes/:object_id
 func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	objectID := ctx.Param("object_id")
-	if objectID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "object ID required"})
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Optional auth - for personalized scoring
@@ -167,7 +167,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -177,14 +177,14 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	} else {
 		// Optional auth for personalized scoring
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -315,13 +315,13 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 // HandleVoteNoteLift handles POST /api/v1/notes/:id/vote
 func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	noteID := ctx.Param("id")
-	if noteID == "" {
+	if err := common.ValidateRequiredParam("id", noteID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "note ID required"})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -332,14 +332,14 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	} else {
 		// Production mode - extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -434,7 +434,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 // HandleGetUserNotesLift handles GET /api/v1/accounts/:id/notes
 func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	username := ctx.Param("id")
-	if username == "" {
+	if err := common.ValidateRequiredParam("id", username); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "username required"})
 	}
 
@@ -444,13 +444,15 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	// Parse limit with fallback
 	limit := 20
 	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 	if limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
-			limit = parsed
+		parsed, err := common.ParseAdminLimit(limitStr)
+		if err != nil {
+			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 		}
+		limit = parsed
 	}
 
 	// Get notes from storage using Notes service
@@ -525,7 +527,7 @@ func (h *Handler) getNoteReputationService() (*reputation.Service, error) {
 }
 
 func calculateNotesStats(notes []*storage.CommunityNote) map[string]any {
-	if len(notes) == 0 {
+	if err := common.ValidateSliceNotEmpty("notes", notes); err != nil {
 		return map[string]any{
 			"total":           0,
 			"visible":         0,

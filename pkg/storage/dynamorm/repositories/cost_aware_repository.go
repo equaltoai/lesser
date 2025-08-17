@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CostAwareRepository wraps repository operations with comprehensive cost tracking
@@ -269,7 +270,7 @@ func (r *CostAwareRepository) QueryWithCostTracking(ctx context.Context, query c
 // BatchWriteWithCostTracking performs batch write with cost tracking
 func (r *CostAwareRepository) BatchWriteWithCostTracking(ctx context.Context, items []any) error {
 	return r.trackOperation(ctx, fmt.Sprintf("batch_write_%d", len(items)), func() error {
-		if len(items) == 0 {
+		if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 			return nil
 		}
 		// Use first item to determine model type

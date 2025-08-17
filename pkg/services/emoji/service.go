@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -299,7 +300,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 
 	// Determine new shortcode
 	newShortcode := cmd.NewShortcode
-	if newShortcode == "" {
+	if err := common.ValidateRequiredParam("newShortcode", newShortcode); err != nil {
 		newShortcode = cmd.Shortcode
 	}
 
@@ -450,8 +451,8 @@ func (s *Service) filterEmojis(emojis []*storage.CustomEmoji, query *ListEmojisQ
 
 // validateShortcode validates emoji shortcode format
 func (s *Service) validateShortcode(shortcode string) error {
-	if len(shortcode) < 2 || len(shortcode) > 30 {
-		return fmt.Errorf("shortcode must be between 2 and 30 characters")
+	if err := common.ValidateIntRange("shortcode_length", len(shortcode), 2, 30); err != nil {
+		return fmt.Errorf("shortcode %s", err.Error())
 	}
 
 	// Check for valid characters (alphanumeric and underscore)

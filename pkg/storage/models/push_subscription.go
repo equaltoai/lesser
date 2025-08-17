@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -69,7 +70,7 @@ func (p *PushSubscription) UpdateKeys() {
 
 // BeforeCreate is called before creating a new push subscription
 func (p *PushSubscription) BeforeCreate() error {
-	if p.ID == "" {
+	if err := common.ValidateRequiredParam("id", p.ID); err != nil {
 		p.ID = uuid.New().String()
 	}
 
@@ -90,16 +91,16 @@ func (p *PushSubscription) BeforeUpdate() error {
 
 // Validate performs validation on the PushSubscription
 func (p *PushSubscription) Validate() error {
-	if p.Username == "" {
-		return fmt.Errorf("username is required")
+	if err := common.ValidateRequiredParam("username", p.Username); err != nil {
+		return err
 	}
-	if p.Endpoint == "" {
-		return fmt.Errorf("endpoint is required")
+	if err := common.ValidateRequiredParam("endpoint", p.Endpoint); err != nil {
+		return err
 	}
-	if p.P256dh == "" {
+	if err := common.ValidateRequiredParam("p256dh", p.P256dh); err != nil {
 		return fmt.Errorf("p256dh public key is required")
 	}
-	if p.Auth == "" {
+	if err := common.ValidateRequiredParam("auth", p.Auth); err != nil {
 		return fmt.Errorf("auth secret is required")
 	}
 	return nil

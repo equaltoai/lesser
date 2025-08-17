@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -20,13 +21,13 @@ import (
 // HandleUnifiedBoostLift handles both traditional boosts and quote boosts
 func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("id", statusID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -37,14 +38,14 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -118,7 +119,7 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 		Actor:  actor.ID,
 		Object: objectID,
 	}
-	if actor.Followers != "" {
+	if err := common.ValidateRequiredParam("followers", actor.Followers); err == nil {
 		announceActivity.CC = []string{actor.Followers}
 	}
 	now := time.Now()
@@ -203,7 +204,7 @@ func (h *Handler) extractContentFromObject(obj any) string {
 // createQuoteBoostLift creates a new status with a quote relationship
 func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) error {
 	// Default visibility if not specified
-	if visibility == "" {
+	if err := common.ValidateRequiredParam("visibility", visibility); err != nil {
 		visibility = storageModels.VisibilityPublic
 	}
 
@@ -312,7 +313,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		// Properly convert quotedObj to models.Status
 		quotedActor, err := h.repos.Actor().GetActor(ctx.Context, h.extractActorIDFromObject(quotedObj))
 		if err == nil {
-			status := h.converter.ObjectToStatus(quotedObj, quotedActor)
+			status := transformations.ObjectToStatusAny(quotedObj, quotedActor, h.cfg.BaseURL())
 			quotedStatus = &status
 		} else {
 			// Fallback if actor lookup fails
@@ -351,34 +352,24 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 		Mentions:         []any{},
 		Tags:             []any{},
 		Emojis:           []any{},
-		Account: models.Account{
-			ID:             actor.ID,
-			Username:       actor.PreferredUsername,
-			Acct:           actor.PreferredUsername,
-			DisplayName:    actor.Name,
-			URL:            actor.URL,
-			CreatedAt:      now.Format("2006-01-02T15:04:05.000Z"),
-			Note:           actor.Summary,
-			Avatar:         "",
-			AvatarStatic:   "",
-			Header:         "",
-			HeaderStatic:   "",
-			FollowersCount: 0,
-			FollowingCount: 0,
-			StatusesCount:  0,
-			Emojis:         []any{},
-			Fields:         []any{},
-		},
+		Account: func() models.Account {
+			// Use centralized transformation framework - ELIMINATES 15+ LINES OF DUPLICATE CODE
+			account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+			// Override ID to use Actor.ID instead of username for this specific use case
+			account.ID = actor.ID
+			account.CreatedAt = now.Format("2006-01-02T15:04:05.000Z")
+			return account
+		}(),
 	}
 
 	// Populate avatar from actor Icon
-	if actor.Icon != nil && actor.Icon.URL != "" {
+	if actor.Icon != nil && common.ValidateRequiredParam("iconURL", actor.Icon.URL) == nil {
 		resp.Account.Avatar = actor.Icon.URL
 		resp.Account.AvatarStatic = actor.Icon.URL
 	}
 
 	// Populate header from actor Image
-	if actor.Image != nil && actor.Image.URL != "" {
+	if actor.Image != nil && common.ValidateRequiredParam("imageURL", actor.Image.URL) == nil {
 		resp.Account.Header = actor.Image.URL
 		resp.Account.HeaderStatic = actor.Image.URL
 	}
@@ -389,7 +380,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 // HandleUndoUnifiedBoostLift handles undoing both traditional boosts and quote boosts
 func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("id", statusID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
 	}
 
@@ -461,7 +452,7 @@ func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error
 // getTestUsernameForBoost extracts test username from headers
 func (h *Handler) getTestUsernameForBoost(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -470,14 +461,14 @@ func (h *Handler) getTestUsernameForBoost(ctx *lift.Context) string {
 // extractAuthHeaderForBoost extracts authorization header from various sources
 func (h *Handler) extractAuthHeaderForBoost(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}

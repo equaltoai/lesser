@@ -3,10 +3,10 @@ package lift
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -19,85 +19,37 @@ type CreateDomainBlockRequest struct {
 
 // HandleGetDomainBlocksLift handles GET /api/v1/domain_blocks
 func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Authenticate user with read:blocks scope or general read scope
+	username, err := h.authenticateUser(ctx, []string{"read:blocks", auth.ScopeRead})
+	if err != nil {
+		return h.respondUnauthorized(ctx)
 	}
 
-	var username string
-
-	if testUsername != "" {
-		// Use test username directly (test mode)
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read scope for blocks
-		if !claims.HasScope(auth.ScopeRead) && !claims.HasScope("read:blocks") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Parse pagination parameters
+	params := h.parsePaginationParams(ctx)
+	if err := common.ValidateIntRange("limit", params.Limit, 1, 200); err != nil {
+		params.Limit = 200 // Cap at 200 for domain blocks
 	}
-
-	// Parse query parameters
-	limit := 100
-	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
-	}
-
-	cursor := ctx.Query("max_id")
-	if cursor == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		cursor = ctx.Request.Request.QueryParams["max_id"]
+	if params.Limit == 0 {
+		params.Limit = 100 // Default
 	}
 
 	// Use Relationships service
 	result, err := h.registry.Relationships().GetDomainBlocks(ctx.Context, &relationshipsvc.GetDomainBlocksQuery{
 		UserID: username,
-		Limit:  limit,
-		Cursor: cursor,
+		Limit:  params.Limit,
+		Cursor: params.MaxID,
 	})
 	if err != nil {
 		h.logger.Error("failed to get domain blocks", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get domain blocks"})
+		return h.respondWithError(ctx, 500, "failed to get domain blocks")
 	}
 
-	// Set Link header for pagination if there's a cursor
+	// Set pagination headers
 	if result.NextCursor != "" && len(result.Domains) > 0 {
-		linkHeader := fmt.Sprintf(`<%s/api/v1/domain_blocks?max_id=%s&limit=%d>; rel="next"`,
-			h.cfg.BaseURL(), result.NextCursor, limit)
-		ctx.Response.Header("Link", linkHeader)
+		params.MaxID = result.NextCursor
+		h.withPaginationHeaders(ctx, fmt.Sprintf("%s/api/v1/domain_blocks", h.cfg.BaseURL()),
+			params, true, false)
 	}
 
 	return ctx.JSON(result.Domains)
@@ -105,50 +57,10 @@ func (h *Handler) HandleGetDomainBlocksLift(ctx *lift.Context) error {
 
 // HandleCreateDomainBlockLift handles POST /api/v1/domain_blocks
 func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-
-	if testUsername != "" {
-		// Use test username directly (test mode)
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope for blocks
-		if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	// Authenticate user with write:blocks scope or general write scope
+	username, err := h.authenticateUser(ctx, []string{"write:blocks", auth.ScopeWrite})
+	if err != nil {
+		return h.respondUnauthorized(ctx)
 	}
 
 	// Parse request body
@@ -172,23 +84,25 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Validate domain
-	if req.Domain == "" {
+	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "domain is required"})
 	}
 
 	// Validate domain format - basic check
-	if strings.Contains(req.Domain, " ") || req.Domain == "" ||
+	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
+	}
+	if strings.Contains(req.Domain, " ") ||
 		strings.Contains(req.Domain, "..") || strings.HasPrefix(req.Domain, ".") ||
 		strings.HasSuffix(req.Domain, ".") {
 		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
 	}
 
 	// Use Relationships service
-	err := h.registry.Relationships().AddDomainBlock(ctx.Context, &relationshipsvc.AddDomainBlockCommand{
+	if err = h.registry.Relationships().AddDomainBlock(ctx.Context, &relationshipsvc.AddDomainBlockCommand{
 		UserID: username,
 		Domain: req.Domain,
-	})
-	if err != nil {
+	}); err != nil {
 		h.logger.Error("failed to add domain block",
 			zap.String("username", username),
 			zap.String("domain", req.Domain),
@@ -204,26 +118,26 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
 	var username string
 
-	if testUsername != "" {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
 		// Use test username directly (test mode)
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -250,11 +164,11 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 
 	// Get domain from query parameter
 	domain := ctx.Query("domain")
-	if domain == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		domain = ctx.Request.Request.QueryParams["domain"]
 	}
 
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "domain parameter is required"})
 	}
 

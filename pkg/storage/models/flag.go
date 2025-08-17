@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Flag represents a content moderation flag with DynamORM tags
@@ -62,7 +63,7 @@ func (f *Flag) BeforeCreate() error {
 	if f.Published.IsZero() {
 		f.Published = time.Now()
 	}
-	if f.Status == "" {
+	if err := common.ValidateRequiredParam("f.Status", f.Status); err != nil {
 		f.Status = StatusPending
 	}
 	f.UpdateKeys()

@@ -3,12 +3,12 @@ package lift
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
-	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -16,13 +16,13 @@ import (
 // HandleMuteAccountLift handles POST /api/v1/accounts/:id/mute
 func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -33,14 +33,14 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -126,13 +126,13 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 // HandleUnmuteAccountLift handles POST /api/v1/accounts/:id/unmute
 func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing account id"})
+	if err := common.ValidateAccountParamID(accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -143,14 +143,14 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -213,7 +213,7 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -224,14 +224,14 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate token
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Header("authorization")
 		}
 
 		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
+			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 				authHeader = ctx.Request.Request.Headers["authorization"]
 			}
 		}
@@ -259,7 +259,7 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	// Parse pagination parameters
 	limit := 40
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 80 {
+		if parsed, err := common.ParseFollowLimit(limitStr); err == nil {
 			limit = parsed
 		}
 	}
@@ -281,9 +281,8 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 			accounts := make([]models.Account, 0, len(result.MutedUsers))
 			for _, mutedUser := range result.MutedUsers {
 				if mutedUser.Actor != nil {
-					converter := mastodon.NewConverter(h.cfg.BaseURL())
 					// Get follower/following counts (simplified for service response)
-					account := converter.ActorToAccountWithCounts(mutedUser.Actor, 0, 0, 0)
+					account := transformations.ActorToAccountWithCounts(mutedUser.Actor, h.cfg.BaseURL(), 0, 0, 0)
 					accounts = append(accounts, account)
 				}
 			}

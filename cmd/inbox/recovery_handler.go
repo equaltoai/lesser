@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
@@ -60,7 +61,7 @@ func (h *RecoveryActivityHandler) handleTrusteeConfirmation(ctx context.Context,
 
 	// Verify the activity is signed by the trustee
 	trusteeActorID := activity.Actor
-	if trusteeActorID == "" {
+	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
 		return fmt.Errorf("missing actor in recovery confirmation")
 	}
 
@@ -76,7 +77,7 @@ func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, a
 	}
 
 	trusteeActorID := activity.Actor
-	if trusteeActorID == "" {
+	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
 		return fmt.Errorf("missing actor in trustee acceptance")
 	}
 

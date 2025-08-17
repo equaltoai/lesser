@@ -14,7 +14,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/comprehend/types"
@@ -24,8 +23,8 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/ai"
+	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -101,22 +100,25 @@ type NoteProcessor struct {
 }
 
 // NewNoteProcessor creates a new note processor with AI cost tracking
-func NewNoteProcessor(db core.DB, tableName string, baseURL string) *NoteProcessor {
-	// Get logger
-	logger := common.Logger()
+func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
+	// Get logger and config
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
 
 	// Initialize repositories
-	communityNoteRepo := repositories.NewCommunityNoteRepository(db, tableName, logger)
-	activityRepo := repositories.NewActivityRepository(db, tableName, logger)
+	communityNoteRepo := repositories.NewCommunityNoteRepository(db, cfg.DynamoTableName, logger)
+	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
 	aiCostRepo := repositories.NewAICostRepository(db, logger)
-	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, tableName, logger)
+	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
 
-	// Initialize AWS clients for external services
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
-	}
-	comprehendClient := comprehend.NewFromConfig(awsCfg)
+	// Use pre-initialized AWS clients
+	comprehendClient := lambdaCtx.AWSServices.Comprehend
 	
 	// Initialize Bedrock client with proper error handling
 	bedrockClient, err := ai.NewBedrockClient(context.Background(), logger)
@@ -129,14 +131,16 @@ func NewNoteProcessor(db core.DB, tableName string, baseURL string) *NoteProcess
 	wsEndpoint := getEnv("WEBSOCKET_ENDPOINT", "")
 	var apiGatewayClient *apigatewaymanagementapi.Client
 	if wsEndpoint != "" {
-		apiGatewayClient = apigatewaymanagementapi.NewFromConfig(awsCfg, func(o *apigatewaymanagementapi.Options) {
+		apiGatewayClient = apigatewaymanagementapi.NewFromConfig(lambdaCtx.AWSServices.Config, func(o *apigatewaymanagementapi.Options) {
 			o.BaseEndpoint = &wsEndpoint
 		})
 	}
+	
+	baseURL := cfg.BaseURL()
 
 	return &NoteProcessor{
 		db:                db,
-		tableName:         tableName,
+		tableName:         cfg.DynamoTableName,
 		logger:            logger,
 		communityNoteRepo: communityNoteRepo,
 		activityRepo:      activityRepo,
@@ -151,29 +155,8 @@ func NewNoteProcessor(db core.DB, tableName string, baseURL string) *NoteProcess
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *NoteProcessor
-	db        core.DB
 )
-
-func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize processor
-	processor = NewNoteProcessor(db, cfg.DynamoTableName, cfg.BaseURL())
-}
 
 // HandleStream processes DynamoDB stream events with Lift-style patterns
 func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
@@ -184,7 +167,7 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 		if record.EventName == "INSERT" {
 			// Check if this is a note record
 			pk, ok := record.Change.NewImage["PK"]
-			if !ok || getStringAttribute(pk) == "" || !strings.HasPrefix(getStringAttribute(pk), "NOTE#") {
+			if !ok || (func() error { return common.ValidateRequiredParam("pk", getStringAttribute(pk)) }() != nil) || !strings.HasPrefix(getStringAttribute(pk), "NOTE#") {
 				continue
 			}
 
@@ -230,7 +213,7 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 		}
 	}
 
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(event.Records))
 	}
 
@@ -589,7 +572,7 @@ func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, usernam
 func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, authorID string, note *storage.CommunityNote) float64 {
 	// Extract username from actor ID for queries
 	username := np.extractUsernameFromActorID(authorID)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		np.logger.Warn("Could not extract username from actor ID", zap.String("actor_id", authorID))
 		return ReputationBaseValue // Default middle reputation
 	}
@@ -727,7 +710,7 @@ func (np *NoteProcessor) calculateObjectivity(sentiment *comprehend.DetectSentim
 }
 
 func (np *NoteProcessor) verifySources(_ context.Context, sources []string) float64 {
-	if len(sources) == 0 {
+	if err := common.ValidateSliceNotEmpty("sources", sources); err != nil {
 		return 0.3 // Low quality without sources
 	}
 
@@ -1059,7 +1042,7 @@ func (np *NoteProcessor) determineVisibilityStatus(score float64) string {
 }
 
 func (np *NoteProcessor) calculateNoteScore(note *storage.CommunityNote, votes []*storage.CommunityNoteVote) float64 {
-	if len(votes) == 0 {
+	if err := common.ValidateSliceNotEmpty("votes", votes); err != nil {
 		return note.Score // Return existing score if no votes
 	}
 
@@ -1150,7 +1133,7 @@ func (np *NoteProcessor) analyzeContentComplexity(content string, sources []stri
 	}
 
 	// Source analysis
-	if len(sources) == 0 {
+	if err := common.ValidateSliceNotEmpty("sources", sources); err != nil {
 		factors = append(factors, "no_sources")
 	} else if len(sources) > 3 {
 		factors = append(factors, "multiple_sources")
@@ -1345,6 +1328,26 @@ func minInt(a, b int) int {
 }
 
 func main() {
+	// Initialize Lambda with custom service configuration for Comprehend
+	config := common.LambdaConfig{
+		ServiceName: "note-processor",
+		LambdaType:  common.LambdaTypeAI,
+		CustomServiceConfig: &awsInit.ServiceConfig{
+			RequiresDynamoDB:   true,
+			RequiresCloudWatch: true,
+			RequiresComprehend: true,
+			ServiceName:        "note-processor",
+		},
+	}
+	
+	lambdaCtx, err := common.InitializeLambda(config)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+	}
+	
+	// Initialize processor
+	processor = NewNoteProcessor(lambdaCtx)
+
 	// Start Lambda with traditional approach but Lift-style patterns
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		start := time.Now()
@@ -1353,7 +1356,7 @@ func main() {
 		// Recovery handling (Lift pattern)
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Error("panic in DynamoDB stream handler",
+				lambdaCtx.Logger.Error("panic in DynamoDB stream handler",
 					zap.String("request_id", requestID),
 					zap.Any("panic", r),
 					zap.Stack("stack"),
@@ -1364,7 +1367,7 @@ func main() {
 		// Add request ID to context
 		ctx = context.WithValue(ctx, requestIDKey, requestID)
 
-		logger.Info("processing note stream batch",
+		lambdaCtx.Logger.Info("processing note stream batch",
 			zap.String("request_id", requestID),
 			zap.Int("record_count", len(event.Records)),
 		)
@@ -1375,14 +1378,14 @@ func main() {
 		// Log completion (Lift pattern)
 		duration := time.Since(start)
 		if err != nil {
-			logger.Error("DynamoDB stream processing failed",
+			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.String("request_id", requestID),
 				zap.Error(err),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),
 			)
 		} else {
-			logger.Info("DynamoDB stream processing completed",
+			lambdaCtx.Logger.Info("DynamoDB stream processing completed",
 				zap.String("request_id", requestID),
 				zap.Duration("duration", duration),
 				zap.Int("record_count", len(event.Records)),

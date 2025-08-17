@@ -2,7 +2,6 @@ package models
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -221,7 +220,7 @@ func (sjcr *ScheduledJobCostRecord) BeforeCreate() error {
 	sjcr.UpdatedAt = now
 
 	// Generate ID if not provided
-	if sjcr.ID == "" {
+	if err := common.ValidateRequiredParam("sjcr.ID", sjcr.ID); err != nil {
 		sjcr.ID = uuid.New().String()
 	}
 
@@ -307,17 +306,17 @@ func (sjcr *ScheduledJobCostRecord) setupGSIKeys() {
 
 // Validate performs validation on the ScheduledJobCostRecord
 func (sjcr *ScheduledJobCostRecord) Validate() error {
-	if strings.TrimSpace(sjcr.ID) == "" {
-		return fmt.Errorf("ID is required")
+	if err := common.ValidateRequiredParam("ID", sjcr.ID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(sjcr.JobName) == "" {
-		return fmt.Errorf("JobName is required")
+	if err := common.ValidateRequiredParam("JobName", sjcr.JobName); err != nil {
+		return err
 	}
-	if strings.TrimSpace(sjcr.Schedule) == "" {
-		return fmt.Errorf("schedule is required")
+	if err := common.ValidateRequiredParam("schedule", sjcr.Schedule); err != nil {
+		return err
 	}
-	if strings.TrimSpace(sjcr.Status) == "" {
-		return fmt.Errorf("Status is required")
+	if err := common.ValidateRequiredParam("Status", sjcr.Status); err != nil {
+		return err
 	}
 	if !isValidScheduledJobStatus(sjcr.Status) {
 		return fmt.Errorf("invalid status: %s", sjcr.Status)
@@ -387,11 +386,11 @@ func (sjca *ScheduledJobCostAggregation) BeforeUpdate() error {
 
 // Validate for ScheduledJobCostAggregation
 func (sjca *ScheduledJobCostAggregation) Validate() error {
-	if strings.TrimSpace(sjca.JobName) == "" {
-		return fmt.Errorf("JobName is required")
+	if err := common.ValidateRequiredParam("JobName", sjca.JobName); err != nil {
+		return err
 	}
-	if strings.TrimSpace(sjca.Period) == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", sjca.Period); err != nil {
+		return err
 	}
 	if sjca.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")

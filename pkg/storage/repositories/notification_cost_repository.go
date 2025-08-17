@@ -293,7 +293,7 @@ func (r *NotificationCostRepository) GetUserBudgets(ctx context.Context, usernam
 func (r *NotificationCostRepository) AggregateNotificationCosts(ctx context.Context, period, deliveryMethod string, windowStart, windowEnd time.Time) error {
 	// Collect all cost records in the window
 	allCosts := r.collectCostRecords(ctx, deliveryMethod, windowStart, windowEnd)
-	if len(allCosts) == 0 {
+	if err := common.ValidateSliceNotEmpty("allCosts", allCosts); err != nil {
 		return nil // Nothing to aggregate
 	}
 

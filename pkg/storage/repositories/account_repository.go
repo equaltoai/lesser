@@ -70,7 +70,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	actor := account.Actor
 
 	// Validate inputs
-	if user.Username == "" {
+	if err := common.ValidateRequiredParam("username", user.Username); err != nil {
 		return common.ValidationError{Field: "username", Message: "username is required"}
 	}
 
@@ -91,7 +91,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	}
 
 	// Set defaults
-	if userModel.Role == "" {
+	if err := common.ValidateRequiredParam("role", userModel.Role); err != nil {
 		userModel.Role = "user"
 	}
 	if userModel.CreatedAt.IsZero() {
@@ -280,7 +280,7 @@ func (r *AccountRepository) GetActorByUsername(ctx context.Context, username str
 
 // createActor creates an actor (internal helper)
 func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	if actor.PreferredUsername == "" {
+	if err := common.ValidateRequiredParam("preferred_username", actor.PreferredUsername); err != nil {
 		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
 	}
 
@@ -438,7 +438,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	// For now, use the JWT secret as encryption key
 	// In production, you'd want a dedicated encryption key
 	jwtSecret := config.Get().JWTSecret
-	if jwtSecret == "" {
+	if err := common.ValidateRequiredParam("jwt_secret", jwtSecret); err != nil {
 		return nil, fmt.Errorf("no JWT secret available for encryption")
 	}
 
@@ -1122,7 +1122,7 @@ func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, p
 	}
 
 	// Check if user has a password hash
-	if user.PasswordHash == "" {
+	if err := common.ValidateRequiredParam("password_hash", user.PasswordHash); err != nil {
 		return nil, fmt.Errorf("password authentication not available for user")
 	}
 
@@ -1327,7 +1327,7 @@ func (r *AccountRepository) UpdateLastActivity(ctx context.Context, username str
 
 // GetAccountsByUsernames retrieves multiple accounts by their usernames
 func (r *AccountRepository) GetAccountsByUsernames(ctx context.Context, usernames []string) ([]*storage.Account, error) {
-	if len(usernames) == 0 {
+	if err := common.ValidateSliceNotEmpty("usernames", usernames); err != nil {
 		return []*storage.Account{}, nil
 	}
 

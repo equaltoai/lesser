@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Timeline represents an entry in a user's timeline stored in DynamoDB using DynamORM
@@ -82,7 +83,7 @@ func (t *Timeline) BeforeCreate() error {
 	}
 
 	// Generate entry ID if not set
-	if t.EntryID == "" {
+	if err := common.ValidateRequiredParam("t.EntryID", t.EntryID); err != nil {
 		t.EntryID = fmt.Sprintf("%d_%s", t.TimelineAt.Unix(), t.PostID)
 	}
 

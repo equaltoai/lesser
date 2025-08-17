@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EventType represents the type of internal event
@@ -213,7 +214,7 @@ func (f *EventFilter) Matches(event *InternalEvent) bool {
 
 // matchesTypes checks if event type matches filter
 func (f *EventFilter) matchesTypes(eventType EventType) bool {
-	if len(f.Types) == 0 {
+	if err := common.ValidateSliceNotEmpty("f.Types", f.Types); err != nil {
 		return true
 	}
 	return f.containsType(eventType)
@@ -231,7 +232,7 @@ func (f *EventFilter) containsType(eventType EventType) bool {
 
 // matchesActions checks if event action matches filter
 func (f *EventFilter) matchesActions(eventAction EventAction) bool {
-	if len(f.Actions) == 0 {
+	if err := common.ValidateSliceNotEmpty("f.Actions", f.Actions); err != nil {
 		return true
 	}
 	return f.containsAction(eventAction)
@@ -254,7 +255,7 @@ func (f *EventFilter) matchesStringField(filterValue, eventValue string) bool {
 
 // matchesStreams checks if event streams match filter
 func (f *EventFilter) matchesStreams(eventStreams []string) bool {
-	if len(f.Streams) == 0 {
+	if err := common.ValidateSliceNotEmpty("f.Streams", f.Streams); err != nil {
 		return true
 	}
 	return f.hasCommonStream(eventStreams)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AuthRepository handles authentication-related storage operations
@@ -83,7 +84,7 @@ func (r *AuthRepository) GetWebAuthnCredential(ctx context.Context, credentialID
 		return nil, fmt.Errorf("failed to get WebAuthn credential: %w", err)
 	}
 
-	if len(modelList) == 0 {
+	if err := common.ValidateSliceNotEmpty("modelList", modelList); err != nil {
 		return nil, fmt.Errorf("WebAuthn credential not found")
 	}
 
@@ -442,7 +443,7 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 	// Get username from index
 	username := indexRecords[0].Username
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, fmt.Errorf("invalid wallet index record")
 	}
 

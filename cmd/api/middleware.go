@@ -137,16 +137,22 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 			// Store the tracker in the Lift context for easy access
 			ctx.Set("cost_tracker", tracker)
 
+			// Initialize unified tracker for centralized cost tracking
+			unifiedTracker := cost.NewRequestTracker(nil, logger, "api", ctx.GetRequestID(), ctx.GetRequestID())
+			ctx.Set("unified_tracker", unifiedTracker)
+
 			// Track Lambda invocation
 			start := time.Now()
 
 			// Process request
 			err := next.Handle(ctx)
 
-			// Calculate Lambda execution cost
+			// Calculate Lambda execution cost using centralized tracking
 			duration := time.Since(start)
 			memoryMB := int64(128) // Default Lambda memory, could be configurable
-			tracker.TrackLambdaInvocation(duration.Milliseconds(), memoryMB)
+			if trackErr := unifiedTracker.TrackLambdaInvocation(ctx.Request.Context(), "api", duration, memoryMB); trackErr != nil {
+				logger.Warn("failed to track lambda cost", zap.Error(trackErr))
+			}
 
 			// Calculate and log costs
 			operationCost := tracker.CalculateCost()

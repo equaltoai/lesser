@@ -2,10 +2,10 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -16,305 +16,186 @@ import (
 
 // createEventBusSubscription creates a timeline subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createEventBusSubscription(ctx context.Context, subscriptionID, subType, username string, filter *streaming.EventFilter, ch chan *model.Object) (<-chan *model.Object, error) {
-	// Subscribe to the event bus
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 100)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	// Create subscription context with cancellation
-	subCtx, cancel := context.WithCancel(ctx)
-
-	// Create and store subscription
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          subType,
 		UserID:        username,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    100,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processTimelineEvents(sub, out.(chan *model.Object))
+	})
 
-	// Start the event processing goroutine
-	go sm.processTimelineEvents(subscription, ch)
-
-	sm.logger.Info("created event bus timeline subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username),
-		zap.String("type", subType))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createNotificationEventBusSubscription creates a notification subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createNotificationEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.Notification) (<-chan *model.Notification, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 50)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "notification",
 		UserID:        username,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    50,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processNotificationEvents(sub, out.(chan *model.Notification))
+	})
 
-	go sm.processNotificationEvents(subscription, ch)
-
-	sm.logger.Info("created event bus notification subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createCostEventBusSubscription creates a cost update subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createCostEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.CostUpdate, threshold *int) (<-chan *model.CostUpdate, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 20)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
 	params := make(map[string]interface{})
 	if threshold != nil {
 		params["threshold"] = *threshold
 	}
 
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "cost",
 		UserID:        username,
-		Params:        params,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    20,
+		Params:        params,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processCostEvents(sub, out.(chan *model.CostUpdate), threshold)
+	})
 
-	go sm.processCostEvents(subscription, ch, threshold)
-
-	sm.logger.Info("created event bus cost subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createModerationEventBusSubscription creates a moderation subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createModerationEventBusSubscription(ctx context.Context, subscriptionID string, actorID *string, filter *streaming.EventFilter, ch chan *moderation.ModerationDecision) (<-chan *moderation.ModerationDecision, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 50)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "moderation",
 		UserID:        getStringValue(actorID),
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    50,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processModerationEvents(sub, out.(chan *moderation.ModerationDecision))
+	})
 
-	go sm.processModerationEvents(subscription, ch)
-
-	sm.logger.Info("created event bus moderation subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("actor_id", getStringValue(actorID)))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createTrustEventBusSubscription creates a trust update subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createTrustEventBusSubscription(ctx context.Context, subscriptionID, actorID string, filter *streaming.EventFilter, ch chan *trust.TrustEdge) (<-chan *trust.TrustEdge, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 20)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "trust",
 		UserID:        actorID,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    20,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processTrustEvents(sub, out.(chan *trust.TrustEdge))
+	})
 
-	go sm.processTrustEvents(subscription, ch)
-
-	sm.logger.Info("created event bus trust subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("actor_id", actorID))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createAIEventBusSubscription creates an AI analysis subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createAIEventBusSubscription(ctx context.Context, subscriptionID string, objectID *string, filter *streaming.EventFilter, ch chan *model.AIAnalysis) (<-chan *model.AIAnalysis, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 20)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "ai",
 		UserID:        getStringValue(objectID),
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    20,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processAIEvents(sub, out.(chan *model.AIAnalysis))
+	})
 
-	go sm.processAIEvents(subscription, ch)
-
-	sm.logger.Info("created event bus AI subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("object_id", getStringValue(objectID)))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createHashtagEventBusSubscription creates a hashtag activity subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createHashtagEventBusSubscription(ctx context.Context, subscriptionID, username string, hashtags []string, filter *streaming.EventFilter, ch chan *model.HashtagActivityUpdate) (<-chan *model.HashtagActivityUpdate, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 100)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
 	params := map[string]interface{}{
 		"hashtags": hashtags,
 	}
 
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "hashtag",
 		UserID:        username,
-		Params:        params,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    100,
+		Params:        params,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processHashtagEvents(sub, out.(chan *model.HashtagActivityUpdate), hashtags)
+	})
 
-	go sm.processHashtagEvents(subscription, ch, hashtags)
-
-	sm.logger.Info("created event bus hashtag subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username),
-		zap.Strings("hashtags", hashtags))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
 // createQuoteEventBusSubscription creates a quote activity subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createQuoteEventBusSubscription(ctx context.Context, subscriptionID, username, noteID string, noteObj any, filter *streaming.EventFilter, ch chan *model.QuoteActivityUpdate) (<-chan *model.QuoteActivityUpdate, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 50)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
 	params := map[string]interface{}{
 		"note_id":  noteID,
 		"note_obj": noteObj,
 	}
 
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "quote",
 		UserID:        username,
-		Params:        params,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    50,
+		Params:        params,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processQuoteEvents(sub, out.(chan *model.QuoteActivityUpdate), noteID, noteObj)
+	})
 
-	go sm.processQuoteEvents(subscription, ch, noteID, noteObj)
-
-	sm.logger.Info("created event bus quote subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username),
-		zap.String("note_id", noteID))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
@@ -664,13 +545,6 @@ func (sm *GraphQLSubscriptionManager) processQuoteEvents(subscription *GraphQLSu
 
 // createMetricsEventBusSubscription creates a metrics subscription using the event bus
 func (sm *GraphQLSubscriptionManager) createMetricsEventBusSubscription(ctx context.Context, subscriptionID, username string, categories, services []string, threshold *float64, filter *streaming.EventFilter, ch chan *model.MetricsUpdate) (<-chan *model.MetricsUpdate, error) {
-	subscriber, err := sm.eventBus.Subscribe(subscriptionID, filter, 100)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
-	}
-
-	subCtx, cancel := context.WithCancel(ctx)
-
 	params := make(map[string]interface{})
 	if len(categories) > 0 {
 		params["categories"] = categories
@@ -682,32 +556,23 @@ func (sm *GraphQLSubscriptionManager) createMetricsEventBusSubscription(ctx cont
 		params["threshold"] = *threshold
 	}
 
-	subscription := &GraphQLSubscription{
+	config := &SubscriptionConfig{
 		ID:            subscriptionID,
 		Type:          "metrics",
 		UserID:        username,
-		Params:        params,
 		Filter:        filter,
-		Subscriber:    subscriber,
 		OutputChannel: ch,
-		Context:       subCtx,
-		Cancel:        cancel,
-		Created:       time.Now(),
-		LastActivity:  time.Now(),
+		BufferSize:    100,
+		Params:        params,
 	}
 
-	sm.subscriptionsMux.Lock()
-	sm.subscriptions[subscriptionID] = subscription
-	sm.subscriptionsMux.Unlock()
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processMetricsEvents(sub, out.(chan *model.MetricsUpdate), categories, services, threshold)
+	})
 
-	go sm.processMetricsEvents(subscription, ch, categories, services, threshold)
-
-	sm.logger.Info("created event bus metrics subscription",
-		zap.String("subscription_id", subscriptionID),
-		zap.String("username", username),
-		zap.Strings("categories", categories),
-		zap.Strings("services", services))
-
+	if err != nil {
+		return nil, err
+	}
 	return ch, nil
 }
 
@@ -774,7 +639,7 @@ func (sm *GraphQLSubscriptionManager) shouldSendMetricsUpdate(update *model.Metr
 
 // matchesCategories checks if the update matches the category filter
 func (sm *GraphQLSubscriptionManager) matchesCategories(update *model.MetricsUpdate, categories []string) bool {
-	if len(categories) == 0 {
+	if err := common.ValidateSliceNotEmpty("categories", categories); err != nil {
 		return true
 	}
 
@@ -788,7 +653,7 @@ func (sm *GraphQLSubscriptionManager) matchesCategories(update *model.MetricsUpd
 
 // matchesServices checks if the update matches the service filter
 func (sm *GraphQLSubscriptionManager) matchesServices(update *model.MetricsUpdate, services []string) bool {
-	if len(services) == 0 {
+	if err := common.ValidateSliceNotEmpty("services", services); err != nil {
 		return true
 	}
 

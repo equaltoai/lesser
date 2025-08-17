@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // PerformanceMonitor handles performance metrics collection
@@ -284,7 +285,7 @@ func (bm *BatchMetrics) Add(metric MetricData) {
 
 // Flush sends all batched metrics to CloudWatch
 func (bm *BatchMetrics) Flush(ctx context.Context) error {
-	if len(bm.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("bm.metrics", bm.metrics); err != nil {
 		return nil
 	}
 

@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CompressionPipeline implements the progressive compression strategy
@@ -65,7 +66,7 @@ func (c *CompressionPipeline) compressTimeSeriesData(ctx context.Context, period
 		return fmt.Errorf("failed to get old metrics: %w", err)
 	}
 
-	if len(oldMetrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("oldMetrics", oldMetrics); err != nil {
 		return nil // Nothing to compress
 	}
 

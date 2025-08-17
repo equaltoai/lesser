@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Service provides AI analysis operations following the service-first architecture
@@ -244,7 +245,7 @@ type GetAnalysisResult struct {
 
 // GetAnalysis retrieves AI analysis for an object
 func (s *Service) GetAnalysis(ctx context.Context, query *GetAnalysisQuery) (*GetAnalysisResult, error) {
-	if query.ObjectID == "" {
+	if err := common.ValidateRequiredParam("query.ObjectID", query.ObjectID); err != nil {
 		return nil, &ValidationError{Field: "object_id", Message: "required"}
 	}
 
@@ -277,7 +278,7 @@ type QueueAnalysisResult struct {
 
 // QueueForAnalysis queues an object for AI analysis
 func (s *Service) QueueForAnalysis(ctx context.Context, cmd *QueueAnalysisCommand) (*QueueAnalysisResult, error) {
-	if cmd.ObjectID == "" {
+	if err := common.ValidateRequiredParam("cmd.ObjectID", cmd.ObjectID); err != nil {
 		return nil, &ValidationError{Field: "object_id", Message: "required"}
 	}
 
@@ -324,7 +325,7 @@ type GetStatsResult struct {
 // GetStats retrieves AI analysis statistics
 func (s *Service) GetStats(ctx context.Context, query *GetStatsQuery) (*GetStatsResult, error) {
 	period := query.Period
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "day"
 	}
 

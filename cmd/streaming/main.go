@@ -7,7 +7,7 @@ Streaming Service - WebSocket Handler
 This Lambda function handles WebSocket connections for real-time streaming.
 It manages WebSocket connection lifecycle and stream subscriptions.
 
-Migrated to use Lift framework and DynamORM patterns.
+Migrated to use standardized Lambda initialization and Lift framework.
 */
 
 import (
@@ -21,7 +21,6 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -61,99 +60,95 @@ type StreamingHandler struct {
 	costTracker       *repositories.WebSocketCostTracker
 	logger            *zap.Logger
 	cfg               *config.Config
+	awsConfig         aws.Config
 	apiClient         *apigatewaymanagementapi.Client
 	commandRouter   *streaming.CommandRouter
 	serviceRegistry *services.Registry
 	storageFactory  core.RepositoryStorage
 }
 
-var (
-	globalCfg       aws.Config
-	logger          *zap.Logger
-	cfg             *config.Config
-	handler         *StreamingHandler
-	serviceRegistry *services.Registry
-)
+// Global handler instance initialized at startup
+var handler *StreamingHandler
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize AWS config
-	var err error
-	globalCfg, err = awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
-	}
+	// Initialize Lambda with streaming-specific configuration
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "streaming",
+		LambdaType:         common.LambdaTypeBasic,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM database connection
 	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
-	// Initialize repositories
-	tableName := cfg.DynamoTableName
-	if tableName == "" {
+	// Initialize repositories with streaming-specific configuration
+	tableName := lambdaCtx.Config.DynamoTableName
+	if err := common.ValidateRequiredParam("table_name", tableName); err != nil {
 		tableName = "lesser-main"
 	}
 
 	connectionsTable := os.Getenv("CONNECTIONS_TABLE")
-	if connectionsTable == "" {
+	if err := common.ValidateRequiredParam("connections_table", connectionsTable); err != nil {
 		connectionsTable = "lesser-streaming-connections"
 	}
 
 	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
-	if subscriptionsTable == "" {
+	if err := common.ValidateRequiredParam("subscriptions_table", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
-	userRepo := repositories.NewUserRepository(db, tableName, logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
+	userRepo := repositories.NewUserRepository(db, tableName, lambdaCtx.Logger)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, lambdaCtx.Logger)
 
 	// Initialize WebSocket cost tracking
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
-	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, lambdaCtx.Logger)
+	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
 
 	// Initialize service registry
-	storageFactory, err := factory.NewRepositoryFactory(db, tableName, globalCfg, logger)
+	storageFactory, err := factory.NewRepositoryFactory(db, tableName, lambdaCtx.AWSServices.Config, lambdaCtx.Logger)
 	if err != nil {
-		logger.Fatal("failed to create repository factory", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to create repository factory", zap.Error(err))
 	}
 	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
 	
 	// Convert config to ServiceConfig
 	serviceConfig := &services.ServiceConfig{
-		BaseURL:   cfg.Domain,
-		JWTSecret: cfg.JWTSecret,
+		BaseURL:   lambdaCtx.Config.Domain,
+		JWTSecret: lambdaCtx.Config.JWTSecret,
 	}
 	
-	serviceRegistry, err = services.NewRegistry(
+	serviceRegistry, err := services.NewRegistry(
 		services.WithStorage(storageFactory),
 		services.WithPublisher(publisher),
-		services.WithLogger(logger),
+		services.WithLogger(lambdaCtx.Logger),
 		services.WithConfig(serviceConfig),
 	)
 	if err != nil {
-		logger.Fatal("failed to create service registry", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to create service registry", zap.Error(err))
 	}
 
 	// Initialize command router and register handlers
-	commandRouter := streaming.NewCommandRouter(logger)
+	commandRouter := streaming.NewCommandRouter(lambdaCtx.Logger)
 	
 	// Register command handlers
-	statusHandler := handlers.NewStatusCommandHandler(serviceRegistry.Notes(), logger)
-	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
-	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), logger)
+	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), lambdaCtx.Logger)
+	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), lambdaCtx.Logger)
+	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), lambdaCtx.Logger)
 	systemHandler := handlers.NewSystemCommandHandler(
 		serviceRegistry.Notes(),
 		serviceRegistry.Lists(),
 		serviceRegistry.Media(),
 		serviceRegistry.Notifications(),
-		logger,
+		lambdaCtx.Logger,
 	)
 	
 	commandRouter.RegisterHandler(statusHandler)
@@ -166,8 +161,9 @@ func init() {
 		userRepo:        userRepo,
 		connectionRepo:  connectionRepo,
 		costTracker:     costTracker,
-		logger:          logger,
-		cfg:             cfg,
+		logger:          lambdaCtx.Logger,
+		cfg:             lambdaCtx.Config,
+		awsConfig:       lambdaCtx.AWSServices.Config,
 		commandRouter:   commandRouter,
 		serviceRegistry: serviceRegistry,
 		storageFactory:  storageFactory,
@@ -206,12 +202,12 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 	// Construct the API Gateway Management Endpoint
 	managementAPIEndpoint := fmt.Sprintf("https://%s.execute-api.%s.amazonaws.com/%s",
 		event.RequestContext.APIID,
-		globalCfg.Region,
+		sh.awsConfig.Region,
 		event.RequestContext.Stage,
 	)
 
 	// Initialize API Gateway Management API client for this connection
-	currentAPIClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
+	currentAPIClient := apigatewaymanagementapi.NewFromConfig(sh.awsConfig, func(o *apigatewaymanagementapi.Options) {
 		o.BaseEndpoint = aws.String(managementAPIEndpoint)
 	})
 
@@ -256,40 +252,40 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	var userID, username string
 	authSuccess := false
 
-	if token != "" {
+	if err := common.ValidateRequiredParam("token", token); err == nil {
 		// Validate OAuth token with auth middleware
 		// Since we can't use RequireAuth (it expects APIGatewayV2HTTPRequest),
 		// we'll extract the token and validate directly
 		// Create minimal audit logger for OAuth service
 		// Use storageFactory from the handler
-		auditLogger := auth.NewAuditLogger(sh.storageFactory, logger, auth.DefaultAuditConfig())
+		auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
 		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), sh.storageFactory, auditLogger)
 		claims, err := authService.ValidateAccessToken(token)
 		if err != nil {
-			logger.Warn("invalid token", zap.Error(err))
+			sh.logger.Warn("invalid token", zap.Error(err))
 			// Don't reject connection, allow anonymous access for public streams
 		} else {
 			userID = claims.Subject
 			username = claims.Username
 			authSuccess = true
-			logger.Info("user authenticated",
+			sh.logger.Info("user authenticated",
 				zap.String("userID", userID),
 				zap.String("username", username),
 				zap.Strings("scopes", claims.Scopes))
 		}
 	} else {
-		logger.Info("anonymous connection allowed")
+		sh.logger.Info("anonymous connection allowed")
 	}
 
 	// Create connection record using DynamORM repository
 	if err := sh.connectionRepo.WriteConnection(ctx, event.RequestContext.ConnectionID, userID, username, []string{}); err != nil {
-		logger.Error("failed to write connection", zap.Error(err))
+		sh.logger.Error("failed to write connection", zap.Error(err))
 		return fmt.Errorf("failed to write connection: %w", err)
 	}
 
 	// IMPORTANT: Do not send any messages during $connect
 	// API Gateway doesn't allow this and it causes errors
-	logger.Info("connection established",
+	sh.logger.Info("connection established",
 		zap.String("userID", userID),
 		zap.Bool("authSuccess", authSuccess),
 	)
@@ -449,7 +445,7 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 	if message.Stream == "user" || strings.HasPrefix(message.Stream, "user:") ||
 		message.Stream == "direct" || strings.HasPrefix(message.Stream, "list:") {
 		// These streams require authentication
-		if connection.UserID == "" {
+		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
 			return sh.sendError(connection.ConnectionID, "Authentication required for stream: "+message.Stream)
 		}
 	}
@@ -541,7 +537,7 @@ func (sh *StreamingHandler) handlePing(connectionID string) error {
 	}
 
 	if err := sh.sendMessageToConnection(connectionID, pongMessage); err != nil {
-		logger.Error("failed to send pong", zap.Error(err))
+		sh.logger.Error("failed to send pong", zap.Error(err))
 		return fmt.Errorf("failed to send pong: %w", err)
 	}
 
@@ -709,7 +705,7 @@ func contains(slice []string, item string) bool {
 
 // getAuthMethodFromEvent determines the authentication method used
 func getAuthMethodFromEvent(event events.APIGatewayWebsocketProxyRequest, token string) string {
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return "anonymous"
 	}
 
@@ -759,7 +755,7 @@ func main() {
 			start := time.Now()
 			requestID := ctx.Get("requestID")
 
-			logger.Info("processing WebSocket event",
+			handler.logger.Info("processing WebSocket event",
 				zap.Any("request_id", requestID),
 			)
 
@@ -767,13 +763,13 @@ func main() {
 			duration := time.Since(start)
 
 			if err != nil {
-				logger.Error("failed to process WebSocket event",
+				handler.logger.Error("failed to process WebSocket event",
 					zap.Any("request_id", requestID),
 					zap.Error(err),
 					zap.Duration("duration", duration),
 				)
 			} else {
-				logger.Info("successfully processed WebSocket event",
+				handler.logger.Info("successfully processed WebSocket event",
 					zap.Any("request_id", requestID),
 					zap.Duration("duration", duration),
 				)
@@ -789,7 +785,7 @@ func main() {
 			defer func() {
 				if r := recover(); r != nil {
 					requestID := ctx.Get("requestID")
-					logger.Error("panic recovered in WebSocket handler",
+					handler.logger.Error("panic recovered in WebSocket handler",
 						zap.Any("request_id", requestID),
 						zap.Any("panic", r),
 					)

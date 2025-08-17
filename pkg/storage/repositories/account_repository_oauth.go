@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -336,12 +337,15 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	// Validate required fields
-	if client.Name == "" || len(client.RedirectURIs) == 0 {
-		return fmt.Errorf("client name and redirect_uris are required")
+	if err := common.ValidateRequiredParam("client.Name", client.Name); err != nil {
+		return fmt.Errorf("client name is required")
+	}
+	if err := common.ValidateSliceNotEmpty("client.RedirectURIs", client.RedirectURIs); err != nil {
+		return fmt.Errorf("redirect_uris are required")
 	}
 
 	// Generate client ID if not provided
-	if client.ClientID == "" {
+	if err := common.ValidateRequiredParam("client.ClientID", client.ClientID); err != nil {
 		clientID, err := generateClientID()
 		if err != nil {
 			return fmt.Errorf("failed to generate client ID: %w", err)
@@ -350,7 +354,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	}
 
 	// Generate client secret if not provided
-	if client.ClientSecret == "" {
+	if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
 		clientSecret, err := generateClientSecret()
 		if err != nil {
 			return fmt.Errorf("failed to generate client secret: %w", err)
@@ -441,7 +445,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 //
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
-	if len(updates) == 0 {
+	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
 		return fmt.Errorf("no updates provided")
 	}
 

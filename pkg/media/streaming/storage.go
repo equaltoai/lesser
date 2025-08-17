@@ -58,7 +58,7 @@ func NewS3MediaStorage(client *s3.Client, bucket, region string, db core.DB) *S3
 func (s *S3MediaStorage) GetManifestPath(mediaID string, format MediaFormat, quality Quality) string {
 	switch format {
 	case FormatHLS:
-		if quality == "" {
+		if err := common.ValidateRequiredParam("quality", string(quality)); err != nil {
 			return fmt.Sprintf("media/%s/master.m3u8", mediaID)
 		}
 		return fmt.Sprintf("media/%s/%s/playlist.m3u8", mediaID, quality)

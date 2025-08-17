@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -189,7 +190,7 @@ func (hc *InstanceHealthChecker) GetAggregatedHealth(instanceID string, window t
 		return nil, err
 	}
 
-	if len(history) == 0 {
+	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		return nil, fmt.Errorf("no health data available")
 	}
 

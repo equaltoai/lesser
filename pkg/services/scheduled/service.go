@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -136,7 +138,7 @@ func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledSta
 
 	// Get media attachments if any
 	var mediaAttachments []*models.Media
-	if len(scheduled.MediaIDs) > 0 {
+	if err := common.ValidateSliceNotEmpty("scheduled.MediaIDs", scheduled.MediaIDs); err == nil {
 		mediaAttachments, err = s.getMediaAttachments(ctx, scheduled.MediaIDs)
 		if err != nil {
 			s.logger.Warn("failed to get media attachments",
@@ -212,7 +214,7 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 	}
 
 	// Validate media attachments if provided
-	if len(cmd.MediaIDs) > 0 {
+	if err := common.ValidateSliceNotEmpty("cmd.MediaIDs", cmd.MediaIDs); err == nil {
 		if err := s.validateMediaAttachments(ctx, cmd.MediaIDs); err != nil {
 			return nil, err
 		}
@@ -237,7 +239,7 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 	}
 
 	// Set default visibility if not provided
-	if scheduled.Visibility == "" {
+	if err := common.ValidateRequiredParam("scheduled.Visibility", scheduled.Visibility); err != nil {
 		scheduled.Visibility = "public"
 	}
 
@@ -248,7 +250,7 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 
 	// Get media attachments for response
 	var mediaAttachments []*models.Media
-	if len(scheduled.MediaIDs) > 0 {
+	if err := common.ValidateSliceNotEmpty("scheduled.MediaIDs", scheduled.MediaIDs); err == nil {
 		mediaAttachments, _ = s.getMediaAttachments(ctx, scheduled.MediaIDs)
 	}
 
@@ -311,7 +313,7 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 
 	// Get media attachments for response
 	var mediaAttachments []*models.Media
-	if len(existing.MediaIDs) > 0 {
+	if err := common.ValidateSliceNotEmpty("existing.MediaIDs", existing.MediaIDs); err == nil {
 		mediaAttachments, _ = s.getMediaAttachments(ctx, existing.MediaIDs)
 	}
 
@@ -428,13 +430,13 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 
 // validateMediaAttachments validates that media attachments exist
 func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
-	if len(mediaIDs) > 4 {
+	if err := common.ValidateSliceLength("mediaIDs", mediaIDs, 4); err == nil {
 		return fmt.Errorf("cannot attach more than 4 media items")
 	}
 
 	for _, mediaID := range mediaIDs {
 		// Validate media ID format
-		if mediaID == "" {
+		if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
 			return fmt.Errorf("empty media ID provided")
 		}
 

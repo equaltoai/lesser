@@ -4,6 +4,7 @@ package dlq
 import (
 	"encoding/json"
 	"strings"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Processor name constants
@@ -204,7 +205,7 @@ func (ec *ErrorClassifier) ClassifyError(messageBody, service string) *ErrorInfo
 	if pattern, exists := ec.patterns[errorInfo.ErrorType]; exists {
 		errorInfo.IsPermanent = pattern.IsPermanent
 		errorInfo.Priority = pattern.Priority
-		if errorInfo.FailureReason == "" {
+		if err := common.ValidateRequiredParam("errorInfo.FailureReason", errorInfo.FailureReason); err != nil {
 			errorInfo.FailureReason = pattern.FailureReason
 		}
 	}
@@ -284,7 +285,7 @@ func (ec *ErrorClassifier) extractFromText(messageBody string) *ErrorInfo {
 		inStack := false
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			if line == "" {
+			if err := common.ValidateRequiredParam("line", line); err != nil {
 				continue
 			}
 

@@ -3,7 +3,9 @@ package notes
 
 import (
 	"math"
+	"sort"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CalculateNoteScore computes visibility score based on multiple factors
@@ -150,22 +152,18 @@ func RankNotesByTrust(notes []CommunityNote, _ string, trustScores map[string]fl
 	return rankedNotes
 }
 
-// sortNotesByScore sorts notes by score in descending order
+// sortNotesByScore sorts notes by score in descending order using Go's optimized sort
 func sortNotesByScore(notes []CommunityNote) {
-	// Simple bubble sort for now (can optimize later)
-	n := len(notes)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if notes[j].Score < notes[j+1].Score {
-				notes[j], notes[j+1] = notes[j+1], notes[j]
-			}
-		}
-	}
+	// Use Go's optimized sort.Slice for O(n log n) performance
+	// This is a stable sort that maintains relative order for equal scores
+	sort.Slice(notes, func(i, j int) bool {
+		return notes[i].Score > notes[j].Score // Descending order
+	})
 }
 
 // CalculateStats generates statistics for a set of notes
 func CalculateStats(notes []CommunityNote) map[string]any {
-	if len(notes) == 0 {
+	if err := common.ValidateSliceNotEmpty("notes", notes); err != nil {
 		return map[string]any{
 			"total":         0,
 			"visible":       0,

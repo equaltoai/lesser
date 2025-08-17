@@ -3,6 +3,7 @@ package monitoring
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks
@@ -114,19 +115,19 @@ var (
 
 // ValidateHealthCheckEvent validates that a health check event is properly formatted
 func ValidateHealthCheckEvent(event HealthCheckEvent) error {
-	if event.Action == "" {
+	if err := common.ValidateRequiredParam("event.Action", event.Action); err != nil {
 		return ErrInvalidHealthCheckEvent("action is required")
 	}
 
-	if len(event.Components) == 0 {
+	if err := common.ValidateSliceNotEmpty("event.Components", event.Components); err != nil {
 		return ErrInvalidHealthCheckEvent("at least one component must be specified")
 	}
 
 	for i, component := range event.Components {
-		if component.Type == "" {
+		if err := common.ValidateRequiredParam("component.Type", component.Type); err != nil {
 			return ErrInvalidHealthCheckEvent(fmt.Sprintf("component type is required for component %d", i))
 		}
-		if component.Identifier == "" {
+		if err := common.ValidateRequiredParam("component.Identifier", component.Identifier); err != nil {
 			return ErrInvalidHealthCheckEvent(fmt.Sprintf("component identifier is required for component %d", i))
 		}
 		if !isValidComponentType(component.Type) {

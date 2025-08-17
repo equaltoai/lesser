@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -18,8 +19,6 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
-	lesserConfig "github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -43,20 +42,20 @@ type AIProcessor struct {
 // NewAIProcessor creates a new AI processor instance configured with the specified
 // database connection, DynamoDB table name, and AI service. The processor will
 // analyze content from stream events and store results for moderation workflows.
-func NewAIProcessor(db core.DB, tableName string, aiAnalyzer *ai.AIService, serviceRegistry *services.Registry) *AIProcessor {
+func NewAIProcessor(db core.DB, tableName string, aiAnalyzer *ai.AIService, serviceRegistry *services.Registry, logger *zap.Logger) *AIProcessor {
 	return &AIProcessor{
 		db:            db,
 		tableName:     tableName,
 		aiAnalyzer:    aiAnalyzer,
 		aiService:     serviceRegistry.AI(),
 		serviceRegistry: serviceRegistry,
-		logger:        common.Logger(),
+		logger:        logger,
 	}
 }
 
-// HandleStream processes DynamoDB stream events with Lift-style patterns
-func (ap *AIProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEvent) error {
-	requestID := ctx.GetRequestID()
+// HandleStreamWithContext processes DynamoDB stream events with explicit context
+func (ap *AIProcessor) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
+	requestID := liftCtx.GetRequestID()
 
 	ap.logger.Info("processing AI analysis stream batch",
 		zap.String("request_id", requestID),
@@ -64,7 +63,7 @@ func (ap *AIProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEven
 	)
 
 	for _, record := range event.Records {
-		if err := ap.processRecord(ctx, record); err != nil {
+		if err := ap.processRecord(ctx, liftCtx, record); err != nil {
 			ap.logger.Error("error processing record",
 				zap.String("request_id", requestID),
 				zap.String("event_id", record.EventID),
@@ -76,7 +75,7 @@ func (ap *AIProcessor) HandleStream(ctx *lift.Context, event events.DynamoDBEven
 	return nil
 }
 
-func (ap *AIProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEventRecord) error {
+func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context, record events.DynamoDBEventRecord) error {
 	if record.EventName != "INSERT" && record.EventName != "MODIFY" {
 		return nil
 	}
@@ -93,7 +92,7 @@ func (ap *AIProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEv
 	}
 
 	// Perform AI analysis using the analyzer (AWS services)
-	analysis, err := ap.aiAnalyzer.AnalyzeContent(ctx.Request.Context(), content)
+	analysis, err := ap.aiAnalyzer.AnalyzeContent(ctx, content)
 	if err != nil {
 		return fmt.Errorf("failed to analyze content: %w", err)
 	}
@@ -103,15 +102,15 @@ func (ap *AIProcessor) processRecord(ctx *lift.Context, record events.DynamoDBEv
 		Analysis: analysis,
 		UserID:   content.AuthorID, // Use author as context for events
 	}
-	_, err = ap.aiService.SaveAnalysis(ctx.Request.Context(), saveCmd)
+	_, err = ap.aiService.SaveAnalysis(ctx, saveCmd)
 	if err != nil {
 		return fmt.Errorf("failed to save analysis: %w", err)
 	}
 
 	// Handle moderation action if needed
 	if analysis.ModerationAction != ai.ActionNone {
-		if err := ap.handleModerationAction(ctx, analysis); err != nil {
-			requestID := ctx.GetRequestID()
+		if err := ap.handleModerationAction(ctx, liftCtx, analysis); err != nil {
+			requestID := liftCtx.GetRequestID()
 			ap.logger.Error("failed to handle moderation action",
 				zap.String("request_id", requestID),
 				zap.String("analysis_id", analysis.ID),
@@ -207,7 +206,7 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 
 // storeAnalysis is no longer needed - the service layer handles storage
 
-func (ap *AIProcessor) handleModerationAction(ctx *lift.Context, analysis *ai.AIAnalysis) error {
+func (ap *AIProcessor) handleModerationAction(ctx context.Context, liftCtx *lift.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
 	moderationEvent := struct {
 		PK              string  `dynamorm:"pk"`
@@ -240,7 +239,7 @@ func (ap *AIProcessor) handleModerationAction(ctx *lift.Context, analysis *ai.AI
 	}
 
 	// Store moderation event using DynamORM Model Create (use underlying context)
-	return ap.db.WithContext(ctx.Request.Context()).Model(&moderationEvent).Create()
+	return ap.db.WithContext(ctx).Model(&moderationEvent).Create()
 }
 
 func (ap *AIProcessor) determineCategory(analysis *ai.AIAnalysis) string {
@@ -273,25 +272,22 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *lesserConfig.Config
 	processor *AIProcessor
-	db        core.DB
 )
 
-func init() {
-	// Initialize logger
-	logger = common.Logger()
 
-	// Load configuration
-	cfg = lesserConfig.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
+func main() {
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "ai-processor",
+		LambdaType:         common.LambdaTypeAI,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     2 * time.Minute,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize AI service
 	aiConfig := &ai.AIConfig{
@@ -303,22 +299,28 @@ func init() {
 		EnableAIDetection:   true,
 		EnableImageAnalysis: true,
 		BedrockModelID:      "anthropic.claude-v2",
-		S3Bucket:            cfg.S3BucketName,
+		S3Bucket:            lambdaCtx.Config.S3BucketName,
 	}
 
 	// Load AWS config for AI service
 	awsConfig, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
 
 	// Create AI analyzer (for AWS AI services)
 	aiAnalyzer := ai.NewAIService(awsConfig, aiConfig)
 
-	// Create repository factory for storage
-	repoFactory, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Create repository factory for storage
+	repoFactory, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Create service registry
@@ -326,21 +328,27 @@ func init() {
 	serviceRegistry, err := services.NewRegistry(
 		services.WithStorage(repoFactory),
 		services.WithPublisher(publisher),
-		services.WithLogger(logger),
+		services.WithLogger(lambdaCtx.Logger),
 		services.WithConfig(&services.ServiceConfig{
-			BaseURL:   fmt.Sprintf("https://%s", cfg.Domain),
-			JWTSecret: cfg.JWTSecret,
+			BaseURL:   fmt.Sprintf("https://%s", lambdaCtx.Config.Domain),
+			JWTSecret: lambdaCtx.Config.JWTSecret,
 		}),
 	)
 	if err != nil {
-		logger.Fatal("Failed to create service registry", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to create service registry", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewAIProcessor(db, cfg.DynamoTableName, aiAnalyzer, serviceRegistry)
-}
+	processor = NewAIProcessor(db, lambdaCtx.Config.DynamoTableName, aiAnalyzer, serviceRegistry, lambdaCtx.Logger)
 
-func main() {
-	// Use Lift DynamoDB stream pattern with proper middleware and error handling
-	patterns.StartDynamoDBStreamLambda("ai-processor", processor, logger)
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+		// Create a simple lift context with minimal setup
+		liftCtx := &lift.Context{
+			RequestID: fmt.Sprintf("ai-processor-%d", time.Now().UnixNano()),
+		}
+		// Add a method to get context
+		liftCtx.Request = &lift.Request{}
+		// Use direct context access in the handler methods
+		return processor.HandleStreamWithContext(ctx, liftCtx, event)
+	})
 }

@@ -299,12 +299,15 @@ type OAuthClient struct {
 	ClientID     string    `json:"client_id"`
 	ClientSecret string    `json:"client_secret"`
 	Name         string    `json:"name"`
+	Description  string    `json:"description,omitempty"`
 	Website      string    `json:"website,omitempty"`
 	RedirectURIs []string  `json:"redirect_uris"`
+	GrantTypes   []string  `json:"grant_types,omitempty"`
 	Scopes       []string  `json:"scopes"`
+	OwnerID      string    `json:"owner_id,omitempty"`
+	Confidential bool      `json:"confidential"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-	Confidential bool      `json:"confidential"`
 }
 
 // OAuthApp represents a registered OAuth application
@@ -1709,7 +1712,10 @@ type Filter struct {
 	Username     string          `json:"username"`
 	Title        string          `json:"title"`
 	Context      []string        `json:"context"`       // "home", "notifications", "public", "thread"
-	FilterAction string          `json:"filter_action"` // "warn", "hide"
+	FilterAction string          `json:"filter_action"` // "warn", "hide", "blur", "silence", "limit_reach"
+	Severity     string          `json:"severity"`      // "low", "medium", "high"
+	MatchMode    string          `json:"match_mode"`    // "keyword", "regex", "semantic", "exact"
+	CaseSensitive bool           `json:"case_sensitive"` // Case-sensitive matching
 	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
 	Irreversible bool            `json:"irreversible"`
 	WholeWord    bool            `json:"whole_word"`
@@ -1721,12 +1727,15 @@ type Filter struct {
 
 // FilterKeyword represents a keyword in a filter
 type FilterKeyword struct {
-	ID        string    `json:"id"`
-	FilterID  string    `json:"filter_id"`
-	Keyword   string    `json:"keyword"`
-	WholeWord bool      `json:"whole_word"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID           string    `json:"id"`
+	FilterID     string    `json:"filter_id"`
+	Keyword      string    `json:"keyword"`
+	WholeWord    bool      `json:"whole_word"`
+	IsRegex      bool      `json:"is_regex"`       // Whether keyword is a regex pattern
+	MatchWeight  float64   `json:"match_weight"`   // Weight for scoring matches (0.0-1.0)
+	ContextTypes []string  `json:"context_types"`  // Specific contexts where this keyword applies
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // FilterStatus represents a status in a filter

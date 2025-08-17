@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Visibility constants
@@ -626,7 +627,7 @@ func (s *Status) CreateHashtagIndexRecords() []*StatusHashtagIndex {
 	
 	for i := 1; i < len(s.Hashtags); i++ {
 		hashtag := s.Hashtags[i]
-		if hashtag == "" {
+		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
 		
@@ -647,14 +648,14 @@ func (s *Status) CreateHashtagIndexRecords() []*StatusHashtagIndex {
 // GetAllHashtagIndexRecords creates index records for ALL hashtags (including the first one)
 // This is useful when you need separate records for all hashtags regardless of the primary record
 func (s *Status) GetAllHashtagIndexRecords() []*StatusHashtagIndex {
-	if len(s.Hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("s.Hashtags", s.Hashtags); err != nil {
 		return nil
 	}
 	
 	records := make([]*StatusHashtagIndex, 0, len(s.Hashtags))
 	
 	for _, hashtag := range s.Hashtags {
-		if hashtag == "" {
+		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
 		
@@ -674,7 +675,7 @@ func (s *Status) GetAllHashtagIndexRecords() []*StatusHashtagIndex {
 
 // DeleteHashtagIndexRecords creates delete operations for all hashtag index records
 func (s *Status) DeleteHashtagIndexRecords() []map[string]interface{} {
-	if len(s.Hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("s.Hashtags", s.Hashtags); err != nil {
 		return nil
 	}
 	
@@ -682,7 +683,7 @@ func (s *Status) DeleteHashtagIndexRecords() []map[string]interface{} {
 	timestampStr := s.PublishedAt.Format("2006-01-02T15:04:05.000Z")
 	
 	for _, hashtag := range s.Hashtags {
-		if hashtag == "" {
+		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
 		

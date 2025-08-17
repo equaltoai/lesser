@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HashtagSearchResult represents a hashtag search result
@@ -44,7 +45,7 @@ func (h *HashtagSearchResult) IsFollowing() bool {
 
 // GetLatestUsage returns the most recent usage count, or 0 if no history
 func (h *HashtagSearchResult) GetLatestUsage() int64 {
-	if len(h.History) == 0 {
+	if err := common.ValidateSliceNotEmpty("h.History", h.History); err != nil {
 		return 0
 	}
 

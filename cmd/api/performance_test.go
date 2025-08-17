@@ -194,10 +194,10 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 		app := liftPkg.NewHTTPApp(config, logger)
 
 		_ = app.GET("/test", func(ctx *lift.Context) error {
-			// Track some operations
-			liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-				_ = t.TrackDynamoRead(1)
-			})
+			// Track some operations using centralized tracking
+			if unifiedTracker, ok := ctx.Get("unified_tracker").(*cost.UnifiedTracker); ok {
+				_ = unifiedTracker.TrackDynamoRead(ctx.Request.Context(), "test-table", 1)
+			}
 			return ctx.Status(200).Text("OK")
 		})
 
@@ -207,15 +207,15 @@ func BenchmarkMiddlewareChain(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			// Create a test context manually
 			ctx := &lift.Context{}
-			// Set up cost tracker for the benchmark
-			tracker := cost.NewWithRequest("bench-req", "bench-op")
-			ctx.Set("cost_tracker", tracker)
+			// Set up unified tracker for the benchmark
+			unifiedTracker := cost.NewRequestTracker(nil, logger, "bench", "bench-req", "bench-op")
+			ctx.Set("unified_tracker", unifiedTracker)
 
 			// Call the handler directly since we don't have test utilities
 			handler := func(ctx *lift.Context) {
-				liftPkg.TrackCost(ctx, func(t *cost.Tracker) {
-					_ = t.TrackDynamoRead(1)
-				})
+				if tracker, ok := ctx.Get("unified_tracker").(*cost.UnifiedTracker); ok {
+					_ = tracker.TrackDynamoRead(context.Background(), "test-table", 1)
+				}
 			}
 			handler(ctx)
 		}

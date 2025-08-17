@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -212,7 +211,7 @@ func (rtu *ReportTrustUpdater) processRecord(ctx context.Context, record events.
 	decision := rtu.extractModerationDecision(record)
 
 	// Check if this decision is related to a report
-	if decision.EventID == "" {
+	if err := common.ValidateRequiredParam("eventID", decision.EventID); err != nil {
 		return nil
 	}
 
@@ -302,7 +301,7 @@ func (rtu *ReportTrustUpdater) processModerationEvent(ctx context.Context, decis
 
 	// Extract report ID from event evidence
 	reportID := rtu.extractReportIDFromEvent(event)
-	if reportID == "" {
+	if err := common.ValidateRequiredParam("reportID", reportID); err != nil {
 		// Not a report-based moderation event
 		return nil
 	}
@@ -385,27 +384,38 @@ func (rtu *ReportTrustUpdater) logTrustUpdateSuccess(reportID, actorID string, d
 }
 
 func main() {
-	// Initialize logger using common patterns
-	logger := common.Logger()
-
-	// Get configuration
-	cfg := config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Use standardized Lambda initialization
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName:        "report-trust-updater",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableHealthCheck:  false,
+		EnableTracing:      true,
+		EnableCostTracking: true,
+	})
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
 	}
 
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Set storage in lambdaCtx for reference
+	lambdaCtx.DynamoDB = db
+
 	// Create report trust updater with minimal storage implementation
-	updater := NewReportTrustUpdater(db, cfg.DynamoTableName, logger)
+	updater := NewReportTrustUpdater(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Log initialization
-	logger.Info("report trust updater initialized",
-		zap.String("region", cfg.Region),
-		zap.String("table", cfg.DynamoTableName))
+	lambdaCtx.Logger.Info("report trust updater initialized",
+		zap.String("region", lambdaCtx.Config.Region),
+		zap.String("table", lambdaCtx.Config.DynamoTableName))
 
 	// Start DynamoDB stream Lambda using Lift patterns
 	// This provides structured logging, request IDs, recovery, and error handling
-	patterns.StartDynamoDBStreamLambda("report-trust-updater", updater, logger)
+	patterns.StartDynamoDBStreamLambda("report-trust-updater", updater, lambdaCtx.Logger)
 }

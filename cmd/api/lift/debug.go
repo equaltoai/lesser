@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -86,7 +87,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate JWT token
 		token = h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{"error": "unauthorized"})
 		}
@@ -108,7 +109,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	}
 
 	activityID := ctx.Param("activity_id")
-	if activityID == "" {
+	if err := common.ValidateRequiredParam("activity_id", activityID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "activity id required"})
 	}
@@ -204,7 +205,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate JWT token
 		token = h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{"error": "unauthorized"})
 		}
@@ -226,7 +227,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 	}
 
 	objectID := ctx.Param("object_id")
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "object id required"})
 	}
@@ -303,7 +304,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate JWT token
 		token = h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{"error": "unauthorized"})
 		}
@@ -325,7 +326,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 	}
 
 	activityID := ctx.Param("activity_id")
-	if activityID == "" {
+	if err := common.ValidateRequiredParam("activity_id", activityID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "activity id required"})
 	}
@@ -386,7 +387,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate JWT token
 		token = h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{"error": "unauthorized"})
 		}
@@ -408,7 +409,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 	}
 
 	domain := ctx.Param("domain")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "domain required"})
 	}
@@ -459,7 +460,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	} else {
 		// Extract and validate JWT token
 		token = h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{"error": "unauthorized"})
 		}
@@ -481,7 +482,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 	}
 
 	objectID := ctx.Param("object_id")
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{"error": "object id required"})
 	}

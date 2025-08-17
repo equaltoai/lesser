@@ -2,10 +2,10 @@ package lift
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -50,18 +50,17 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 
 // parseConversationLimit parses the limit query parameter
 func (h *Handler) parseConversationLimit(ctx *lift.Context) int {
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 40 {
-			limit = parsedLimit
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseTimelineLimit(limitStr)
+	if err != nil {
+		limit = 20
 	}
 	return limit
 }
 
 // setConversationPaginationHeader sets the Link header for pagination
 func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
-	if cursor == "" {
+	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
 		return
 	}
 
@@ -75,7 +74,7 @@ func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor stri
 // HandleDeleteConversationLift removes a conversation from the user's list
 func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 	conversationID := ctx.Param("id")
-	if conversationID == "" {
+	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing conversation id"})
 	}
 
@@ -107,7 +106,7 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 // HandleMarkConversationReadLift marks a conversation as read
 func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 	conversationID := ctx.Param("id")
-	if conversationID == "" {
+	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "missing conversation id"})
 	}
 

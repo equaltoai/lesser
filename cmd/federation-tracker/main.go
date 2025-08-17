@@ -9,7 +9,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -20,8 +19,7 @@ import (
 )
 
 var (
-	logger                       *zap.Logger
-	cfg                          *config.Config
+	lambdaCtx                    *common.LambdaContext
 	federationActivityRepository *repositories.FederationActivityRepository
 	db                           core.DB
 )
@@ -29,38 +27,45 @@ var (
 // FederationTracker implements the DynamoDBStreamHandler interface
 type FederationTracker struct {
 	logger                       *zap.Logger
-	cfg                          *config.Config
+	cfg                          *common.LambdaContext
 	federationActivityRepository *repositories.FederationActivityRepository
 }
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
+	// Initialize Lambda with federation-specific configuration
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "federation-tracker",
+		LambdaType:         common.LambdaTypeFederation,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     30 * time.Second,
+		RetryMaxAttempts:   3,
+	})
 
 	// Initialize DynamORM with Lambda optimizations
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository
-	federationActivityRepository = repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
+	federationActivityRepository = repositories.NewFederationActivityRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 }
 
 func main() {
 	// Create the handler
 	handler := &FederationTracker{
-		logger:                       logger,
-		cfg:                          cfg,
+		logger:                       lambdaCtx.Logger,
+		cfg:                          lambdaCtx,
 		federationActivityRepository: federationActivityRepository,
 	}
 
 	// Start the Lambda using Lift DynamoDB stream pattern
-	patterns.StartDynamoDBStreamLambda("federation-tracker", handler, logger)
+	patterns.StartDynamoDBStreamLambda("federation-tracker", handler, lambdaCtx.Logger)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface
@@ -102,7 +107,7 @@ func (ft *FederationTracker) processRecord(ctx *lift.Context, record events.Dyna
 		pkStr = pk.String()
 	}
 
-	if pkStr == "" {
+	if err := common.ValidateRequiredParam("publicKey", pkStr); err != nil {
 		return nil
 	}
 
@@ -149,13 +154,13 @@ func (ft *FederationTracker) trackActivityFromInstance(ctx *lift.Context, record
 		actorID = actor.String()
 	}
 
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil
 	}
 
 	// Parse the domain from the actor ID
 	domain := extractDomain(actorID)
-	if domain == "" || domain == ft.cfg.Domain {
+	if common.ValidateRequiredParam("domain", domain) != nil || domain == ft.cfg.Config.Domain {
 		// Local activity, not from a remote instance
 		return nil
 	}
@@ -249,13 +254,13 @@ func (ft *FederationTracker) trackActorFromInstance(ctx *lift.Context, record ev
 		actorID = id.String()
 	}
 
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil
 	}
 
 	// Parse the domain from the actor ID
 	domain := extractDomain(actorID)
-	if domain == "" || domain == ft.cfg.Domain {
+	if common.ValidateRequiredParam("domain", domain) != nil || domain == ft.cfg.Config.Domain {
 		// Local actor, not from a remote instance
 		return nil
 	}

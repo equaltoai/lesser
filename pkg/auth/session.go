@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Session errors
@@ -28,6 +29,10 @@ const (
 	MaxSessionsPerUser            = 10                 // Limit concurrent sessions
 	SessionInactivityTimeout      = 24 * time.Hour     // Auto-logout after inactivity
 	DeviceTrustPromotionThreshold = 7 * 24 * time.Hour // Days until device can be trusted
+	
+	// Device trust levels
+	TrustLevelTrusted   = "trusted"
+	TrustLevelUntrusted = "untrusted"
 )
 
 // Session is a type alias for storage.Session
@@ -221,7 +226,7 @@ func (sm *SessionManager) TrustDevice(ctx context.Context, deviceID string) erro
 		return err
 	}
 
-	device.TrustLevel = "trusted"
+	device.TrustLevel = TrustLevelTrusted
 	return sm.repos.Account().UpdateDevice(ctx, device)
 }
 
@@ -287,7 +292,7 @@ func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username str
 
 // removeOldestSession removes the oldest session for a user
 func (sm *SessionManager) removeOldestSession(ctx context.Context, _ string, sessions []*Session) error {
-	if len(sessions) == 0 {
+	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
 		return nil
 	}
 
@@ -384,7 +389,7 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 			LastUserAgent: userAgent,
 			CreatedAt:     now,
 			LastSeenAt:    now,
-			TrustLevel:    "untrusted",
+			TrustLevel:    TrustLevelUntrusted,
 		}
 		return sm.repos.Account().CreateDevice(ctx, device)
 	}
@@ -395,8 +400,8 @@ func (sm *SessionManager) updateDeviceRecord(ctx context.Context, deviceID, user
 	existingDevice.LastSeenAt = now
 
 	// Promote to trusted if device has been used long enough
-	if existingDevice.TrustLevel == "untrusted" && time.Since(existingDevice.CreatedAt) > DeviceTrustPromotionThreshold {
-		existingDevice.TrustLevel = "trusted"
+	if existingDevice.TrustLevel == TrustLevelUntrusted && time.Since(existingDevice.CreatedAt) > DeviceTrustPromotionThreshold {
+		existingDevice.TrustLevel = TrustLevelTrusted
 	}
 
 	return sm.repos.Account().UpdateDevice(ctx, existingDevice)
@@ -413,7 +418,7 @@ func (sm *SessionManager) CleanupInactiveSessions(_ context.Context) error {
 func (sm *SessionManager) DetectAnomalousSession(_ context.Context, session *Session, currentIP string) (bool, string) {
 	// Check for IP address changes
 	if session.IPAddress != currentIP && !sm.isTrustedNetwork(currentIP) {
-		return true, "IP address changed from untrusted network"
+		return true, "IP address changed from " + TrustLevelUntrusted + " network"
 	}
 
 	// Check for session age

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HLSGenerator handles HLS manifest generation
@@ -164,7 +166,7 @@ func (g *HLSGenerator) GenerateIFramePlaylist(mediaID string, quality Quality, m
 	// Get keyframe positions from metadata or calculate them
 	keyframes := g.getKeyframePositions(mediaID, quality, metadata)
 
-	if len(keyframes) == 0 {
+	if err := common.ValidateSliceNotEmpty("keyframes", keyframes); err != nil {
 		// Fallback to estimated keyframes if none provided
 		keyframes = g.estimateKeyframePositions(metadata)
 	}
@@ -461,7 +463,7 @@ func (g *HLSGenerator) estimateKeyframePositions(metadata *MediaMetadata) []Keyf
 // parseKeyframeData parses keyframe data from storage format
 // Supports multiple formats: JSON metadata, I-frame playlists, and binary stream analysis
 func (g *HLSGenerator) parseKeyframeData(data []byte, mediaID string, quality Quality) []Keyframe {
-	if len(data) == 0 {
+	if err := common.ValidateSliceNotEmpty("data", data); err != nil {
 		return []Keyframe{}
 	}
 
@@ -575,7 +577,7 @@ type KeyframeEntry struct {
 func (g *HLSGenerator) parseJSONKeyframeData(data []byte, mediaID string, quality Quality) []Keyframe {
 	// Check if data looks like JSON
 	trimmed := bytes.TrimSpace(data)
-	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
+	if err := common.ValidateSliceNotEmpty("trimmed_data", trimmed); err != nil || (trimmed[0] != '{' && trimmed[0] != '[') {
 		return []Keyframe{}
 	}
 

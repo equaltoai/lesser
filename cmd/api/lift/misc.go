@@ -18,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -81,7 +82,7 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 	}
 
 	token := h.getBearerTokenLift(ctx)
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return
 	}
 
@@ -94,21 +95,18 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 // parseSearchParams extracts and validates search parameters
 func (h *Handler) parseSearchParams(ctx *lift.Context) (*SearchParams, error) {
 	query := ctx.Query("q")
-	if query == "" {
-		if err := ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"}); err != nil {
+	if err := common.ValidateSearchQuery(query); err != nil {
+		if err := ctx.Status(400).JSON(map[string]string{"error": err.Error()}); err != nil {
 			h.logger.Error("failed to send error response", zap.Error(err))
 		}
-		return nil, fmt.Errorf("missing query parameter")
+		return nil, err
 	}
 
 	// Parse limit
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && l == 1 {
-			if limit > 40 {
-				limit = 40
-			}
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseTimelineLimit(limitStr)
+	if err != nil {
+		limit = 20 // Use default on error
 	}
 
 	return &SearchParams{
@@ -175,31 +173,14 @@ func (h *Handler) executeHashtagSearch(ctx *lift.Context, params *SearchParams, 
 	h.addPlaceholderHashtag(params.Query, result)
 }
 
-// convertActorToAccount converts an ActivityPub actor to API account
+// convertActorToAccount converts an ActivityPub actor to API account using transformation framework
 func (h *Handler) convertActorToAccount(actor *activitypub.Actor) models.Account {
-	account := models.Account{
-		ID:             actor.PreferredUsername,
-		Username:       actor.PreferredUsername,
-		Acct:           actor.PreferredUsername,
-		DisplayName:    actor.Name,
-		URL:            actor.URL,
-		Note:           actor.Summary,
-		Avatar:         "",
-		AvatarStatic:   "",
-		Header:         "",
-		HeaderStatic:   "",
-		FollowersCount: 0,
-		FollowingCount: 0,
-		StatusesCount:  0,
-		Emojis:         []any{},
-		Fields:         []any{},
-	}
-
-	if actor.Icon != nil {
-		account.Avatar = actor.Icon.URL
-		account.AvatarStatic = actor.Icon.URL
-	}
-
+	// Use centralized transformation framework - ELIMINATES 25+ LINES OF DUPLICATE CODE
+	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
+	
+	// Override ID to use PreferredUsername instead of numeric ID for this specific use case
+	account.ID = actor.PreferredUsername
+	
 	return account
 }
 
@@ -275,17 +256,33 @@ func (h *Handler) convertObjectToStatusResult(obj interface{}) *storage.StatusSe
 
 // convertStatusResultToAPI converts status result to API format
 func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.StatusSearchResult) models.Status {
-	status := models.Status{
-		ID:        sr.StatusID,
-		Content:   sr.Content,
-		URL:       sr.URL,
-		CreatedAt: sr.Published.Format(time.RFC3339),
+	// Convert search result to object map for transformation framework
+	statusMap := map[string]interface{}{
+		"id":        sr.StatusID,
+		"content":   sr.Content,
+		"url":       sr.URL,
+		"published": sr.Published.Format(time.RFC3339),
+	}
+	
+	// Use centralized transformation framework - ELIMINATES 8+ LINES OF DUPLICATE CODE
+	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
+	transformCtx := context.WithValue(ctx.Context, "baseURL", h.cfg.BaseURL())
+	
+	status, err := transformer.Transform(transformCtx, statusMap)
+	if err != nil {
+		// Fallback to minimal status if transformation fails
+		status = models.Status{
+			ID:        sr.StatusID,
+			Content:   sr.Content,
+			URL:       sr.URL,
+			CreatedAt: sr.Published.Format(time.RFC3339),
+		}
 	}
 
 	// Add account info if we can get the actor
 	if sr.AuthorID != "" {
 		if statusActor := h.getActorFromAuthorID(ctx, sr.AuthorID); statusActor != nil {
-			account := h.converter.ActorToAccount(statusActor)
+			account := transformations.ActorToAccountBase(statusActor, h.cfg.BaseURL())
 			status.Account = account
 		}
 	}
@@ -296,7 +293,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 // getActorFromAuthorID extracts actor from author ID
 func (h *Handler) getActorFromAuthorID(ctx *lift.Context, authorID string) *activitypub.Actor {
 	parts := strings.Split(authorID, "/")
-	if len(parts) == 0 {
+	if err := common.ValidateSliceNotEmpty("author_id_parts", parts); err != nil {
 		return nil
 	}
 
@@ -373,15 +370,13 @@ func (h *Handler) HandleSearchV2Lift(ctx *lift.Context) error {
 
 // HandleGetNotificationsLift retrieves notifications for the authenticated user
 func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
-	// Authenticate request
-	claims, err := h.authenticateNotificationRequest(ctx)
+	// Authenticate user with read:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		return err
-	}
-
-	// Check required scope
-	if !h.hasNotificationScope(claims) {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+		}
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 	}
 
 	// Build notification filter from query parameters
@@ -397,7 +392,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	}
 
 	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
-		UserID:       claims.Username,
+		UserID:       username,
 		Types:        notificationFilter.Types,
 		ExcludeTypes: notificationFilter.ExcludeTypes,
 		IncludeRead:  includeRead,
@@ -408,7 +403,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get notifications",
-			zap.String("username", claims.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
 	}
@@ -445,33 +440,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	return ctx.JSON(apiNotifications)
 }
 
-// authenticateNotificationRequest handles authentication for notification requests
-func (h *Handler) authenticateNotificationRequest(ctx *lift.Context) (*auth.Claims, error) {
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		return &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeRead}}, nil
-	}
 
-	// Extract and validate token
-	token := h.getBearerTokenLift(ctx)
-	if token == "" {
-		return nil, ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
-	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return nil, ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
-	}
-
-	return claims, nil
-}
-
-// hasNotificationScope checks if claims have the required notification scope
-func (h *Handler) hasNotificationScope(claims *auth.Claims) bool {
-	return claims.HasScope("read:notifications") || claims.HasScope(auth.ScopeRead)
-}
 
 // buildNotificationFilter builds a notification filter from query parameters
 func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.NotificationFilter {
@@ -558,7 +527,7 @@ func (h *Handler) convertSingleNotification(ctx *lift.Context, notif *storage.No
 		return nil
 	}
 
-	account := h.converter.ActorToAccount(actor)
+	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
 	apiNotif := &models.Notification{
 		ID:        notif.ID,
 		Type:      notif.Type,
@@ -576,7 +545,7 @@ func (h *Handler) convertSingleNotification(ctx *lift.Context, notif *storage.No
 
 // shouldIncludeStatus checks if a status should be included in the notification
 func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
-	if notif.StatusID == "" {
+	if err := common.ValidateRequiredParam("status_id", notif.StatusID); err != nil {
 		return false
 	}
 	return notif.Type == models.NotificationTypeMention ||
@@ -599,19 +568,29 @@ func (h *Handler) attachStatusToNotification(ctx *lift.Context, notif *storage.N
 	// Get status author
 	statusActor := h.extractStatusAuthor(ctx, obj)
 
-	status := h.converter.ObjectToStatus(obj, statusActor)
-	apiNotif.Status = &status
+	// Convert obj to map for transformation
+	if objMap, ok := obj.(map[string]interface{}); ok {
+		status := transformations.ObjectToStatusBase(objMap, statusActor, h.cfg.BaseURL())
+		apiNotif.Status = &status
+	} else {
+		// Fallback for non-map objects
+		status := transformations.ObjectToStatusAny(obj, statusActor, h.cfg.BaseURL())
+		apiNotif.Status = &status
+	}
 }
 
 // extractStatusAuthor extracts the author actor from a status object
 func (h *Handler) extractStatusAuthor(ctx *lift.Context, obj any) *activitypub.Actor {
 	note, ok := obj.(*activitypub.Note)
-	if !ok || note.AttributedTo == "" {
+	if !ok {
+		return nil
+	}
+	if err := common.ValidateRequiredParam("attributed_to", note.AttributedTo); err != nil {
 		return nil
 	}
 
 	parts := strings.Split(note.AttributedTo, "/")
-	if len(parts) == 0 {
+	if err := common.ValidateSliceNotEmpty("attributed_to_parts", parts); err != nil {
 		return nil
 	}
 
@@ -623,7 +602,7 @@ func (h *Handler) extractStatusAuthor(ctx *lift.Context, obj any) *activitypub.A
 // setNotificationPaginationHeader sets the pagination Link header for notifications
 func (h *Handler) setNotificationPaginationHeader(ctx *lift.Context, cursor string, limit int) {
 	host := ctx.Header("host")
-	if host == "" {
+	if err := common.ValidateRequiredParam("host", host); err != nil {
 		host = ctx.Header("Host")
 	}
 
@@ -661,7 +640,7 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	if err != nil {
 		// Check if we're in production mode
 		env := os.Getenv("ENV")
-		if env == "" {
+		if err := common.ValidateRequiredParam("ENV", env); err != nil {
 			env = os.Getenv("ENVIRONMENT")
 		}
 		if env == "production" || env == "prod" {
@@ -788,34 +767,17 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 // HandleGetNotificationLift handles GET /api/v1/notifications/:id
 func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	notificationID := ctx.Param("id")
-	if notificationID == "" {
+	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "notification ID required"})
 	}
 
-	var claims *auth.Claims
-	var err error
-
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		claims = &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeRead}}
-	} else {
-		// Extract and validate token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	// Authenticate user with read:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
-
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
-		}
-	}
-
-	// Check read scope
-	if !claims.HasScope("read:notifications") && !claims.HasScope(auth.ScopeRead) {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 	}
 
 	// Get notification
@@ -825,7 +787,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	}
 
 	// Verify ownership
-	if notification.UserID != claims.Username {
+	if notification.UserID != username {
 		return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
 	}
 
@@ -839,7 +801,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notification details"})
 	}
 
-	account := h.converter.ActorToAccount(actor)
+	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
 	apiNotif := &models.Notification{
 		ID:        notification.ID,
 		Type:      notification.Type,
@@ -862,7 +824,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 				}
 			}
 			// Use the embedded Note from the status model
-			status := h.converter.ObjectToStatus(statusModel.Note, statusActor)
+			status := transformations.ObjectToStatusAny(statusModel.Note, statusActor, h.cfg.BaseURL())
 			apiNotif.Status = &status
 		}
 	}
@@ -872,30 +834,13 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 
 // HandleClearNotificationsLift handles POST /api/v1/notifications/clear
 func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
-	var claims *auth.Claims
-	var err error
-
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		claims = &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeWrite}}
-	} else {
-		// Extract and validate token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	// Authenticate user with write:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
-
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
-		}
-	}
-
-	// Check write scope
-	if !claims.HasScope("write:notifications") && !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 	}
 
 	// Use the Notifications service to clear all notifications
@@ -905,17 +850,17 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 	}
 
 	clearResult, err := notificationService.ClearNotifications(ctx.Context, &notifications.ClearCommand{
-		UserID:   claims.Username,
+		UserID:   username,
 		ClearAll: true,
 	})
 	if err != nil {
 		h.logger.Error("failed to clear notifications",
-			zap.String("username", claims.Username),
+			zap.String("username", username),
 			zap.Error(err))
 		return ctx.Status(500).JSON(map[string]string{"error": "failed to clear notifications"})
 	}
 
-	h.logger.Info("cleared notifications", zap.String("username", claims.Username), zap.Int64("deleted", clearResult.ClearedCount))
+	h.logger.Info("cleared notifications", zap.String("username", username), zap.Int64("deleted", clearResult.ClearedCount))
 
 	ctx.Status(204)
 	return nil
@@ -924,34 +869,17 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 // HandleDismissNotificationLift handles POST /api/v1/notifications/:id/dismiss
 func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	notificationID := ctx.Param("id")
-	if notificationID == "" {
+	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "notification ID required"})
 	}
 
-	var claims *auth.Claims
-	var err error
-
-	// Try test mode first
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		claims = &auth.Claims{Username: testUsername, Scopes: []string{auth.ScopeWrite}}
-	} else {
-		// Extract and validate token
-		token := h.getBearerTokenLift(ctx)
-		if token == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	// Authenticate user with write:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
 		}
-
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "invalid token"})
-		}
-	}
-
-	// Check write scope
-	if !claims.HasScope("write:notifications") && !claims.HasScope(auth.ScopeWrite) {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
 	}
 
 	// Use the Notifications service to mark as read (dismiss)
@@ -963,7 +891,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	// Mark notification as read (which is effectively dismissing it in Mastodon API)
 	_, err = notificationService.MarkAsRead(ctx.Context, &notifications.MarkAsReadCommand{
 		NotificationID: notificationID,
-		UserID:         claims.Username,
+		UserID:         username,
 	})
 	if err != nil {
 		h.logger.Error("failed to dismiss notification",
@@ -986,7 +914,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 
 	// Initialize cost storage if not already done
 	costTableName := os.Getenv("COST_HISTORY_TABLE_NAME")
-	if costTableName == "" {
+	if err := common.ValidateRequiredParam("COST_HISTORY_TABLE_NAME", costTableName); err != nil {
 		// Return placeholder data if cost tracking is not configured
 		response := map[string]any{
 			"error": "Cost tracking not configured",
@@ -1196,7 +1124,7 @@ func (h *Handler) getActiveMonthlyUsers(ctx *lift.Context) int {
 func (h *Handler) getAdminAccount(ctx *lift.Context) any {
 	// Get admin username from config
 	adminUsername := os.Getenv("ADMIN_USERNAME")
-	if adminUsername == "" {
+	if err := common.ValidateRequiredParam("ADMIN_USERNAME", adminUsername); err != nil {
 		return nil
 	}
 
@@ -1290,10 +1218,10 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 
 	// Determine the subject (domain)
 	domain := h.cfg.Domain
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = os.Getenv("DOMAIN_NAME")
 	}
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "localhost" // fallback for development
 	}
 
@@ -1317,4 +1245,245 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 		zap.String("subject", vapidKeys.Subject))
 
 	return vapidKeys, nil
+}
+
+// HandleGetGroupedNotificationsLift handles GET /api/v2/notifications/grouped
+// Returns notifications grouped by type and target with enhanced metadata
+func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
+	// Authenticate user with read:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+		}
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	}
+
+	// Parse grouping options from query parameters
+	groupingOptions := h.parseGroupingOptions(ctx)
+
+	// Build notification filter from query parameters
+	notificationFilter := h.buildNotificationFilter(ctx)
+
+	// Get notifications using the existing service
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+	}
+
+	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
+		UserID:       username,
+		Types:        notificationFilter.Types,
+		ExcludeTypes: notificationFilter.ExcludeTypes,
+		IncludeRead:  true, // Include all for grouping
+		Pagination: interfaces.PaginationOptions{
+			Limit:  notificationFilter.Limit * 2, // Get more for better grouping
+			Cursor: notificationFilter.MaxID,
+		},
+	})
+	if err != nil {
+		h.logger.Error("failed to get notifications for grouping",
+			zap.String("username", username),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
+	}
+
+	// Group notifications using the grouping service
+	groupingService := notifications.NewGroupedNotificationsService(h.logger)
+	groupedNotifications, err := groupingService.GroupNotifications(
+		ctx.Context,
+		listResult.Notifications, // Use storage notifications directly
+		groupingOptions,
+	)
+	if err != nil {
+		h.logger.Error("failed to group notifications", zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "failed to group notifications"})
+	}
+
+	// Convert to API format with enhanced metadata
+	apiResponse := h.convertGroupedNotificationsToAPI(ctx, groupedNotifications)
+
+	// Set pagination header if available
+	if listResult.Pagination != nil && listResult.Pagination.NextCursor != "" {
+		h.setNotificationPaginationHeader(ctx, listResult.Pagination.NextCursor, notificationFilter.Limit)
+	}
+
+	return ctx.JSON(apiResponse)
+}
+
+// parseGroupingOptions parses grouping options from query parameters
+func (h *Handler) parseGroupingOptions(ctx *lift.Context) *notifications.GroupingStrategy {
+	strategy := notifications.DefaultGroupingStrategy()
+
+	// Parse time window (in hours)
+	if timeWindowStr := ctx.Query("time_window"); timeWindowStr != "" {
+		if hours, err := common.ParseAndValidateIntWithBounds("time_window", timeWindowStr, 0, 168, 0); err == nil { // Max 1 week
+			strategy.TimeWindow = time.Duration(hours) * time.Hour
+		}
+	}
+
+	// Parse max group size
+	if maxSizeStr := ctx.Query("max_group_size"); maxSizeStr != "" {
+		if maxSize, err := common.ParseAndValidateIntWithBounds("max_group_size", maxSizeStr, 0, 100, 0); err == nil {
+			strategy.MaxGroupSize = maxSize
+		}
+	}
+
+	// Parse min group size
+	if minSizeStr := ctx.Query("min_group_size"); minSizeStr != "" {
+		if minSize, err := common.ParseAndValidateIntWithBounds("min_group_size", minSizeStr, 0, 10, 0); err == nil && minSize >= 1 {
+			strategy.MinGroupSize = minSize
+		}
+	}
+
+	// Parse sample size
+	if sampleSizeStr := ctx.Query("sample_size"); sampleSizeStr != "" {
+		if sampleSize, err := common.ParseAndValidateIntWithBounds("sample_size", sampleSizeStr, 0, 10, 0); err == nil {
+			strategy.SampleSize = sampleSize
+		}
+	}
+
+	// Parse grouping flags
+	if groupByType := ctx.Query("group_by_type"); groupByType == "false" {
+		strategy.GroupByType = false
+	}
+
+	if groupByTarget := ctx.Query("group_by_target"); groupByTarget == "false" {
+		strategy.GroupByTarget = false
+	}
+
+	return strategy
+}
+
+// convertGroupedNotificationsToAPI converts grouped notifications to API format
+func (h *Handler) convertGroupedNotificationsToAPI(
+	ctx *lift.Context,
+	groupedNotifications []*notifications.GroupedNotification,
+) []map[string]interface{} {
+	apiResponse := make([]map[string]interface{}, 0, len(groupedNotifications))
+
+	for _, group := range groupedNotifications {
+		groupResponse := map[string]interface{}{
+			"id":                 group.ID,
+			"type":               group.Type,
+			"group_key":          group.GroupKey,
+			"count":              group.Count,
+			"latest_created_at":  group.LatestCreatedAt.Format(time.RFC3339),
+			"earliest_created_at": group.EarliestCreatedAt.Format(time.RFC3339),
+			"read":               group.IsRead,
+			"sample_accounts":    h.convertNotificationAccountsToAPI(group.SampleAccounts),
+			"summary":            h.generateGroupSummary(group),
+		}
+
+		// Add target status if available
+		if group.TargetStatus != nil {
+			groupResponse["status"] = map[string]interface{}{
+				"id":         group.TargetStatus.ID,
+				"content":    group.TargetStatus.Content,
+				"created_at": group.TargetStatus.CreatedAt.Format(time.RFC3339),
+				"url":        group.TargetStatus.URL,
+				"visibility": group.TargetStatus.Visibility,
+			}
+		}
+
+		// Add most recent notification details
+		if group.MostRecentNotif != nil {
+			groupResponse["most_recent"] = map[string]interface{}{
+				"id":         group.MostRecentNotif.ID,
+				"created_at": group.MostRecentNotif.CreatedAt.Format(time.RFC3339),
+				"actor_id":   group.MostRecentNotif.ActorID,
+			}
+		}
+
+		// Optionally include all notifications if requested
+		if ctx.Query("include_all") == "true" && len(group.AllNotifications) > 0 {
+			allNotifs := make([]map[string]interface{}, 0, len(group.AllNotifications))
+			for _, notif := range group.AllNotifications {
+				allNotifs = append(allNotifs, map[string]interface{}{
+					"id":         notif.ID,
+					"created_at": notif.CreatedAt.Format(time.RFC3339),
+					"actor_id":   notif.ActorID,
+					"target_id":  notif.TargetID,
+					"read":       notif.IsRead,
+				})
+			}
+			groupResponse["all_notifications"] = allNotifs
+		}
+
+		apiResponse = append(apiResponse, groupResponse)
+	}
+
+	return apiResponse
+}
+
+// convertNotificationAccountsToAPI converts notification accounts to API format
+func (h *Handler) convertNotificationAccountsToAPI(
+	accounts []notifications.NotificationAccount,
+) []map[string]interface{} {
+	apiAccounts := make([]map[string]interface{}, 0, len(accounts))
+
+	for _, account := range accounts {
+		apiAccount := map[string]interface{}{
+			"id":           account.ID,
+			"username":     account.Username,
+			"display_name": account.DisplayName,
+			"avatar":       account.Avatar,
+			"bot":          account.IsBot,
+			"created_at":   account.CreatedAt.Format(time.RFC3339),
+		}
+		apiAccounts = append(apiAccounts, apiAccount)
+	}
+
+	return apiAccounts
+}
+
+// generateGroupSummary generates a summary for a notification group
+func (h *Handler) generateGroupSummary(group *notifications.GroupedNotification) string {
+	groupingService := notifications.NewGroupedNotificationsService(h.logger)
+	return groupingService.GenerateGroupSummary(group)
+}
+
+// HandleMarkGroupAsReadLift handles POST /api/v2/notifications/groups/:group_id/read
+// Marks all notifications in a group as read
+func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
+	groupID := ctx.Param("group_id")
+	if err := common.ValidateRequiredParam("group_id", groupID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": "group ID required"})
+	}
+
+	// Authenticate user with write:notifications scope
+	username, err := h.authenticateUser(ctx, []string{"write:notifications"})
+	if err != nil {
+		if err.Error() == "insufficient scope" {
+			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+		}
+		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+	}
+
+	// Get notification service
+	notificationService := h.registry.Notifications()
+	if notificationService == nil {
+		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+	}
+
+	// Mark notifications as read based on group ID
+	// For now, this is a simplified implementation
+	// In a full implementation, you would:
+	// 1. Parse the group_id to extract grouping criteria
+	// 2. Find all notifications matching that criteria
+	// 3. Mark them all as read
+
+	_, err = notificationService.MarkAsRead(ctx.Context, &notifications.MarkAsReadCommand{
+		NotificationID: groupID,
+		UserID:         username,
+	})
+	if err != nil {
+		h.logger.Error("failed to mark group as read",
+			zap.String("group_id", groupID),
+			zap.String("username", username),
+			zap.Error(err))
+		return ctx.Status(500).JSON(map[string]string{"error": "failed to mark group as read"})
+	}
+
+	return ctx.Status(200).JSON(map[string]string{"message": "group marked as read"})
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Service provides reputation management functionality
@@ -305,7 +306,7 @@ func (s *Service) getLastStatusTime(ctx context.Context, username string) time.T
 	}
 	statuses := result.Items
 
-	if len(statuses) == 0 {
+	if err := common.ValidateSliceNotEmpty("statuses", statuses); err != nil {
 		return time.Time{}
 	}
 
@@ -328,7 +329,7 @@ func (s *Service) getLastOutboxActivityTime(ctx context.Context, username string
 		return time.Time{}
 	}
 
-	if len(activities) == 0 {
+	if err := common.ValidateSliceNotEmpty("activities", activities); err != nil {
 		return time.Time{}
 	}
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ActorFactory creates actors for testing
@@ -40,17 +41,17 @@ type ActorOptions struct {
 // CreateActor creates a basic actor with default values
 func (f *ActorFactory) CreateActor(opts ActorOptions) *activitypub.Actor {
 	username := opts.Username
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		username = fmt.Sprintf("testuser%d", f.sequence)
 	}
 
 	displayName := opts.DisplayName
-	if displayName == "" {
+	if err := common.ValidateRequiredParam("display_name", displayName); err != nil {
 		displayName = fmt.Sprintf("Test User %d", f.sequence)
 	}
 
 	publicKey := opts.PublicKey
-	if publicKey == "" {
+	if err := common.ValidateRequiredParam("public_key", publicKey); err != nil {
 		publicKey = f.generateTestPublicKey()
 	}
 
@@ -104,12 +105,12 @@ func (f *ActorFactory) CreateActor(opts ActorOptions) *activitypub.Actor {
 // CreateUserData creates user data for testing (returns a map to avoid type issues)
 func (f *ActorFactory) CreateUserData(opts ActorOptions) map[string]interface{} {
 	username := opts.Username
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		username = fmt.Sprintf("testuser%d", f.sequence)
 	}
 
 	displayName := opts.DisplayName
-	if displayName == "" {
+	if err := common.ValidateRequiredParam("display_name", displayName); err != nil {
 		displayName = fmt.Sprintf("Test User %d", f.sequence)
 	}
 

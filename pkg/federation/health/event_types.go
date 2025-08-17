@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks
@@ -191,7 +192,7 @@ func (e *AggregationEvent) FromJSON(data []byte) error {
 
 // Validate checks if the health check event is valid
 func (e *HealthCheckEvent) Validate() error {
-	if e.Detail.Action == "" {
+	if err := common.ValidateRequiredParam("e.Detail.Action", e.Detail.Action); err != nil {
 		return fmt.Errorf("action is required")
 	}
 
@@ -212,15 +213,15 @@ func (e *HealthCheckEvent) Validate() error {
 
 // Validate checks if the aggregation event is valid
 func (e *AggregationEvent) Validate() error {
-	if e.Detail.Action == "" {
+	if err := common.ValidateRequiredParam("e.Detail.Action", e.Detail.Action); err != nil {
 		return fmt.Errorf("action is required")
 	}
 
-	if len(e.Detail.Domains) == 0 {
+	if err := common.ValidateSliceNotEmpty("e.Detail.Domains", e.Detail.Domains); err != nil {
 		return fmt.Errorf("domains required for aggregation")
 	}
 
-	if len(e.Detail.Windows) == 0 {
+	if err := common.ValidateSliceNotEmpty("e.Detail.Windows", e.Detail.Windows); err != nil {
 		return fmt.Errorf("windows required for aggregation")
 	}
 
@@ -247,7 +248,7 @@ func (e *HealthCheckEvent) GetBatchedDomains() [][]string {
 		batchSize = 10 // Default batch size
 	}
 
-	if len(domains) == 0 {
+	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
 		return [][]string{}
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EmojiRegex matches emoji shortcodes in text
@@ -35,7 +36,7 @@ type ParsedEmoji struct {
 // ParseEmojis extracts emoji shortcodes from content and looks them up
 func (p *EmojiParser) ParseEmojis(ctx context.Context, content string) ([]ParsedEmoji, error) {
 	matches := EmojiRegex.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return nil, nil
 	}
 
@@ -126,7 +127,7 @@ func (p *EmojiParser) ProcessContent(ctx context.Context, content string) (strin
 // Useful for validation or when you just need the shortcode list
 func ExtractShortcodes(content string) []string {
 	matches := EmojiRegex.FindAllStringSubmatch(content, -1)
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return nil
 	}
 

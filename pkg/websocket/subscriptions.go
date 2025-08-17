@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SubscriptionManager manages WebSocket subscriptions
@@ -564,7 +565,7 @@ func (h *WebSocketHandler) handleConnect(connectionID string, event events.APIGa
 // extractUserID extracts user ID from query parameters or returns anonymous
 func (h *WebSocketHandler) extractUserID(event events.APIGatewayWebsocketProxyRequest) string {
 	userID := event.QueryStringParameters["user_id"]
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		userID = "anonymous"
 	}
 	return userID

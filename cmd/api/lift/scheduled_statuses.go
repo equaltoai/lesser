@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	apimodels "github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
@@ -68,7 +68,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if id == "" {
+	if common.ValidateRequiredParam(id, "id") != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
 	}
 
@@ -107,7 +107,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if id == "" {
+	if common.ValidateRequiredParam(id, "id") != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
 	}
 
@@ -173,7 +173,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
-	if id == "" {
+	if common.ValidateRequiredParam(id, "id") != nil {
 		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
 	}
 
@@ -218,13 +218,13 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	// This is called from the main status creation handler when scheduled_at is present
 	// Authenticate request and extract client ID for application tracking
 	username, clientID := h.getAuthenticatedUsernameAndClientID(ctx)
-	if username == "" {
+	if common.ValidateRequiredParam(username, "username") != nil {
 		ctx.Status(401)
 		return nil, fmt.Errorf("unauthorized")
 	}
 
 	// Parse scheduled time
-	if statusReq.ScheduledAt == nil || *statusReq.ScheduledAt == "" {
+	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam(*statusReq.ScheduledAt, "scheduledAt") != nil {
 		ctx.Status(422)
 		return nil, fmt.Errorf("scheduled_at is required")
 	}
@@ -307,7 +307,7 @@ func (h *Handler) authenticateScheduledStatusRequest(ctx *lift.Context) (string,
 // getScheduledStatusTestUsername extracts test username from headers
 func (h *Handler) getScheduledStatusTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -316,13 +316,13 @@ func (h *Handler) getScheduledStatusTestUsername(ctx *lift.Context) string {
 // extractScheduledStatusAuthHeader extracts authorization header
 func (h *Handler) extractScheduledStatusAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -358,18 +358,16 @@ func (h *Handler) parseScheduledStatusPagination(ctx *lift.Context) (int, string
 
 // parseScheduledStatusLimit parses the limit parameter
 func (h *Handler) parseScheduledStatusLimit(ctx *lift.Context) int {
-	limit := 20
 	limitStr := ctx.Query("limit")
 
 	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if limitStr == "" {
+	if common.ValidateRequiredParam(limitStr, "limitStr") != nil {
 		limitStr = h.extractScheduledQueryParam(ctx, "limit")
 	}
 
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
-			limit = l
-		}
+	limit, err := common.ParseTimelineLimit(limitStr)
+	if err != nil {
+		limit = 20
 	}
 
 	return limit
@@ -381,7 +379,7 @@ func (h *Handler) parseScheduledStatusCursor(ctx *lift.Context) string {
 	minID := ctx.Query("min_id")
 
 	// Fallback to direct query param access if ctx.Query doesn't work (test mode)
-	if maxID == "" && minID == "" {
+	if common.ValidateRequiredParam(maxID, "maxID") != nil && common.ValidateRequiredParam(minID, "minID") != nil {
 		maxID = h.extractScheduledQueryParam(ctx, "max_id")
 		minID = h.extractScheduledQueryParam(ctx, "min_id")
 	}
@@ -424,7 +422,7 @@ func (h *Handler) extractScheduledQueryParam(ctx *lift.Context, param string) st
 
 // setScheduledStatusPaginationHeader sets the Link header for pagination
 func (h *Handler) setScheduledStatusPaginationHeader(ctx *lift.Context, nextCursor string, limit int) {
-	if nextCursor == "" {
+	if common.ValidateRequiredParam(nextCursor, "nextCursor") != nil {
 		return
 	}
 

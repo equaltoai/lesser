@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -61,7 +62,7 @@ type BatchMessage struct {
 
 // ProcessBatch processes an SQS event batch and returns response with failures
 func (p *SQSBatchProcessor) ProcessBatch(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	if len(event.Records) == 0 {
+	if err := common.ValidateSliceNotEmpty("eventRecords", event.Records); err != nil {
 		return events.SQSEventResponse{}, nil
 	}
 
@@ -120,7 +121,7 @@ func (p *SQSBatchProcessor) processMessage(ctx context.Context, record events.SQ
 		return fmt.Errorf("failed to unmarshal batch message: %w", err)
 	}
 
-	if len(batchMsg.Items) == 0 {
+	if err := common.ValidateSliceNotEmpty("batchItems", batchMsg.Items); err != nil {
 		return nil // Nothing to process
 	}
 
@@ -242,7 +243,7 @@ func (p *SQSBatchProcessor) processBatchDelete(_ context.Context, items []any, m
 
 // ProcessTimelineEntries processes timeline entries from SQS messages
 func (p *SQSBatchProcessor) ProcessTimelineEntries(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	if len(event.Records) == 0 {
+	if err := common.ValidateSliceNotEmpty("eventRecords", event.Records); err != nil {
 		return events.SQSEventResponse{}, nil
 	}
 
@@ -300,7 +301,7 @@ func (p *SQSBatchProcessor) ProcessTimelineEntries(ctx context.Context, event ev
 
 // ProcessNotifications processes notification batches from SQS messages
 func (p *SQSBatchProcessor) ProcessNotifications(ctx context.Context, event events.SQSEvent) (events.SQSEventResponse, error) {
-	if len(event.Records) == 0 {
+	if err := common.ValidateSliceNotEmpty("eventRecords", event.Records); err != nil {
 		return events.SQSEventResponse{}, nil
 	}
 

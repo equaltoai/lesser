@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -148,7 +150,7 @@ func newSmartRouteOptimizer(repo RepositoryInterface, logger *zap.Logger, config
 
 // OptimizeRoutes optimizes route selection based on historical performance
 func (sro *SmartRouteOptimizer) OptimizeRoutes(ctx context.Context, routes []*types.Route, messageSize int64) ([]*types.Route, error) {
-	if len(routes) == 0 {
+	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
 		return routes, nil
 	}
 
@@ -439,7 +441,7 @@ func (sro *SmartRouteOptimizer) updatePredictions(result *types.DeliveryResult) 
 }
 
 func (sro *SmartRouteOptimizer) updateAggregates(perf *routePerformance) {
-	if len(perf.Samples) == 0 {
+	if err := common.ValidateSliceNotEmpty("perf.Samples", perf.Samples); err != nil {
 		return
 	}
 

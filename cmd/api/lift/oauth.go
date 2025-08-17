@@ -35,12 +35,12 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 		return h.oauthErrorLift(ctx, "unsupported_response_type", "Only 'code' response type is supported", redirectURI, state)
 	}
 
-	if clientID == "" {
-		return errors.New("client_id is required")
-	}
-
-	if redirectURI == "" {
-		return errors.New("redirect_uri is required")
+	// Validate required parameters using centralized validation
+	if err := common.ValidateMultipleRequiredParams(map[string]string{
+		"client_id":    clientID,
+		"redirect_uri": redirectURI,
+	}); err != nil {
+		return err
 	}
 
 	// Initialize OAuth service
@@ -57,7 +57,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 
 	// Additional validation to prevent open redirects
 	host := ctx.Header("Host")
-	if host == "" {
+	if err := common.ValidateRequiredParam("host_header", host); err != nil {
 		// Fallback to config domain
 		host = h.cfg.Domain
 	}
@@ -73,7 +73,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 	// Check if user is authenticated (from cookie or header)
 	username := h.getUserFromSessionLift(ctx)
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		// User needs to login first
 		// Store authorization request in session for after login
 		authRequest := map[string]string{
@@ -176,7 +176,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 // oauthErrorLift handles OAuth errors in Lift style
 func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription, redirectURI, state string) error {
 	// If no redirect URI, return JSON error
-	if redirectURI == "" {
+	if err := common.ValidateRequiredParam("redirect_uri", redirectURI); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 			"error":             errorCode,
 			"error_description": errorDescription,
@@ -223,12 +223,12 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 	}
 
 	// Check for session cookie
-	// In Lift, cookies come through headers
 	cookieHeader := ctx.Header("Cookie")
 	if cookieHeader != "" {
-		// Parse cookies to find session
-		// For now, we'll return empty - session handling needs proper implementation
-		return ""
+		username := h.extractUsernameFromSessionCookie(ctx.Context, cookieHeader)
+		if username != "" {
+			return username
+		}
 	}
 
 	return ""
@@ -314,6 +314,62 @@ func (h *Handler) getScopeDescription(scope string) string {
 	return "Unknown permission"
 }
 
+// extractUsernameFromSessionCookie extracts username from session cookie
+func (h *Handler) extractUsernameFromSessionCookie(ctx context.Context, cookieHeader string) string {
+	// Parse cookies from header
+	cookies := common.ParseCookies(cookieHeader)
+	
+	// Look for session cookie
+	sessionToken := cookies["session_token"]
+	if err := common.ValidateRequiredParam("session_token", sessionToken); err != nil {
+		// Try alternate cookie names
+		sessionToken = cookies["user_session"]
+	}
+	
+	if err := common.ValidateRequiredParam("session_token", sessionToken); err != nil {
+		return ""
+	}
+	
+	// Validate session token and get user
+	session, err := h.repos.Account().GetSessionByRefreshToken(ctx, sessionToken)
+	if err != nil {
+		h.logger.Debug("failed to get session by token",
+			zap.String("error", err.Error()))
+		return ""
+	}
+	
+	// Check if session is valid (not expired)
+	if time.Now().After(session.ExpiresAt) {
+		h.logger.Debug("session expired",
+			zap.String("sessionID", session.SessionID))
+		return ""
+	}
+	
+	// Update session activity
+	ipAddress := h.getClientIP(cookieHeader) // Extract from context
+	if err := h.updateSessionActivity(ctx, session.SessionID, ipAddress); err != nil {
+		h.logger.Warn("failed to update session activity",
+			zap.String("sessionID", session.SessionID),
+			zap.Error(err))
+	}
+	
+	return session.Username
+}
+
+// getClientIP extracts client IP from request context
+func (h *Handler) getClientIP(_ string) string {
+	// In Lambda/API Gateway, the client IP should come from the event context
+	// For now, return empty - this would be enhanced based on your Lambda setup
+	return ""
+}
+
+// updateSessionActivity updates the last activity for a session
+func (h *Handler) updateSessionActivity(ctx context.Context, sessionID, ipAddress string) error {
+	// Get the session manager service
+	sessionManager := auth.NewSessionManager(h.repos)
+	return sessionManager.UpdateSessionActivity(ctx, sessionID, ipAddress)
+}
+
 // hasUserConsentedToApp checks if user has consented to the app with required scopes
 func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID string, scopes []string) bool {
 	result, err := h.registry.Accounts().GetUserAppConsent(ctx, &accounts.GetUserAppConsentQuery{
@@ -344,7 +400,7 @@ func (h *Handler) hasUserConsentedToApp(ctx context.Context, username, clientID 
 // POST /oauth/token
 func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 	// Parse form data from request body
-	if len(ctx.Request.Body) == 0 {
+	if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 			"error":             "invalid_request", 
 			"error_description": "Empty request body",
@@ -373,11 +429,15 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 
 	switch grantType {
 	case "authorization_code":
-		// Validate required parameters
-		if code == "" || clientID == "" || redirectURI == "" {
+		// Validate required parameters using centralized validation
+		if err := common.ValidateMultipleRequiredParams(map[string]string{
+			"code":         code,
+			"client_id":    clientID,
+			"redirect_uri": redirectURI,
+		}); err != nil {
 			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 				"error":             "invalid_request",
-				"error_description": "Missing required parameters",
+				"error_description": err.Error(),
 			})
 		}
 
@@ -422,11 +482,14 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 		})
 
 	case "refresh_token":
-		// Validate required parameters
-		if refreshToken == "" || clientID == "" {
+		// Validate required parameters using centralized validation
+		if err := common.ValidateMultipleRequiredParams(map[string]string{
+			"refresh_token": refreshToken,
+			"client_id":     clientID,
+		}); err != nil {
 			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 				"error":             "invalid_request",
-				"error_description": "Missing required parameters",
+				"error_description": err.Error(),
 			})
 		}
 

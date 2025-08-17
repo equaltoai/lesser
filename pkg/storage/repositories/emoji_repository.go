@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -130,7 +131,7 @@ func (r *EmojiRepository) GetCustomEmojis(ctx context.Context) ([]*storage.Custo
 	emojis := make([]*storage.CustomEmoji, 0, len(emojiModels))
 	for _, model := range emojiModels {
 		// Skip disabled emojis unless they're remote emojis
-		if model.Disabled && model.Domain == "" {
+		if model.Disabled && (common.ValidateRequiredParam("domain", model.Domain) != nil) {
 			continue
 		}
 
@@ -276,7 +277,7 @@ func (r *EmojiRepository) GetCustomEmojisByCategory(ctx context.Context, categor
 	emojis := make([]*storage.CustomEmoji, 0, len(emojiModels))
 	for _, model := range emojiModels {
 		// Skip disabled emojis unless they're remote emojis
-		if model.Disabled && model.Domain == "" {
+		if model.Disabled && (common.ValidateRequiredParam("domain", model.Domain) != nil) {
 			continue
 		}
 
@@ -288,7 +289,7 @@ func (r *EmojiRepository) GetCustomEmojisByCategory(ctx context.Context, categor
 
 // SearchEmojis performs sophisticated emoji searches with relevance scoring
 func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit int) ([]*storage.CustomEmoji, error) {
-	if query == "" || limit <= 0 {
+	if err := common.ValidateRequiredParam("query", query); err != nil || limit <= 0 {
 		return []*storage.CustomEmoji{}, nil
 	}
 
@@ -373,7 +374,7 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 	
 	// Determine domain key
 	domainKey := domain
-	if domainKey == "" {
+	if err := common.ValidateRequiredParam("domain", domainKey); err != nil {
 		domainKey = "local"
 	}
 	
@@ -393,7 +394,7 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 	emojis := make([]*storage.CustomEmoji, 0, limit)
 	for _, model := range emojiModels {
 		// Skip disabled emojis unless they're remote emojis
-		if model.Disabled && model.Domain == "" {
+		if model.Disabled && (common.ValidateRequiredParam("domain", model.Domain) != nil) {
 			continue
 		}
 		
@@ -475,7 +476,7 @@ func (r *EmojiRepository) matchesSearchQuery(model *models.EmojiModel, query str
 	}
 	
 	// Check category
-	if model.Category != "" && strings.Contains(strings.ToLower(model.Category), query) {
+	if common.ValidateRequiredParam("category", model.Category) == nil && strings.Contains(strings.ToLower(model.Category), query) {
 		return true
 	}
 	

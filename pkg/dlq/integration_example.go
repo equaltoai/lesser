@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ProcessorWithDLQ demonstrates how to integrate DLQ support into existing processors
@@ -161,7 +162,7 @@ func (p *ProcessorDLQIntegration) SendFailure(ctx context.Context, message event
 
 // SendBatchFailures sends multiple failures to DLQ
 func (p *ProcessorDLQIntegration) SendBatchFailures(ctx context.Context, failures []ProcessingFailure) {
-	if len(failures) == 0 {
+	if err := common.ValidateSliceNotEmpty("failures", failures); err != nil {
 		return
 	}
 

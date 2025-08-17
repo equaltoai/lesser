@@ -59,8 +59,9 @@ func (r *ActorRepository) SetDependencies(deps ActorRepositoryDeps) {
 
 // CreateActor creates a new actor in DynamoDB
 func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Actor, privateKey string) error {
-	if actor.PreferredUsername == "" {
-		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
+	// Validate actor entity using centralized validation
+	if err := common.ValidateActorEntity(actor.ID, actor.PreferredUsername); err != nil {
+		return err
 	}
 
 	username := actor.PreferredUsername
@@ -206,10 +207,12 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 
 // UpdateActor updates an existing actor
 func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Actor) error {
-	username := actor.PreferredUsername
-	if username == "" {
-		return common.ValidationError{Field: "PreferredUsername", Message: "username is required"}
+	// Validate actor entity using centralized validation
+	if err := common.ValidateActorEntity(actor.ID, actor.PreferredUsername); err != nil {
+		return err
 	}
+	
+	username := actor.PreferredUsername
 
 	// Get existing actor first
 	var actorModel models.Actor
@@ -310,7 +313,7 @@ func (r *ActorRepository) DeleteActor(ctx context.Context, username string) erro
 
 // SearchAccounts searches for actors by username or display name
 func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limit int, _ bool, _ int) ([]*activitypub.Actor, error) {
-	if query == "" {
+	if err := common.ValidateRequiredParam("query", query); err != nil {
 		// For empty query, return recent active discoverable actors
 		return r.getRecentActiveActors(ctx, limit)
 	}
@@ -733,7 +736,7 @@ func getEncryptor() (marshalers.Encryptor, error) {
 
 	// Fallback to AES encryption
 	encryptionKey := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
-	if encryptionKey == "" {
+	if err := common.ValidateRequiredParam("encryption_key", encryptionKey); err != nil {
 		// Try alternative env var
 		encryptionKey = os.Getenv("ACTOR_PRIVATE_KEY_ENCRYPTION")
 	}
@@ -867,7 +870,7 @@ func (r *ActorRepository) collectSuggestionCandidates(ctx context.Context, userI
 // processMutualConnections processes mutual connections for a single followed user
 func (r *ActorRepository) processMutualConnections(ctx context.Context, userID, followedUserID string, userFollows, processedActors map[string]bool, candidates map[string]int) {
 	followedUsername := r.extractUsernameFromActorID(followedUserID)
-	if followedUsername == "" {
+	if err := common.ValidateRequiredParam("followed_username", followedUsername); err != nil {
 		return
 	}
 
@@ -946,8 +949,13 @@ func (r *ActorRepository) buildSuggestions(ctx context.Context, scored []suggest
 
 // loadActorIfDiscoverable loads an actor if it's discoverable
 func (r *ActorRepository) loadActorIfDiscoverable(ctx context.Context, actorID string) *activitypub.Actor {
+	// Validate actor ID using centralized validation (returns nil for backward compatibility)
+	if err := common.ValidateEntityID(actorID, "actor"); err != nil {
+		return nil
+	}
+	
 	username := r.extractUsernameFromActorID(actorID)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil
 	}
 
@@ -1246,7 +1254,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 	}
 
 	// If no recent activity found, fall back to popularity index
-	if len(allActors) == 0 {
+	if err := common.ValidateSliceNotEmpty("all_actors", allActors); err != nil {
 		log.Debug("no recent activity found, falling back to popularity index")
 		return r.getPopularActors(ctx, limit)
 	}
@@ -1323,7 +1331,7 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 	// Handle local actor IDs like "https://example.com/users/username"
 	parts := strings.Split(actorID, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		username := parts[len(parts)-1]
 		// Remove any @ prefix if present
 		username = strings.TrimPrefix(username, "@")

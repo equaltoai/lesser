@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -44,7 +45,7 @@ func (r *TimelineRepository) CreateTimelineEntry(_ context.Context, entry *model
 
 // CreateTimelineEntries creates multiple timeline entries in batch
 func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries []*models.Timeline) error {
-	if len(entries) == 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
 		return nil
 	}
 
@@ -122,7 +123,7 @@ func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, li
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].GSI1SK
 		entries = entries[:limit] // Trim to requested limit
@@ -174,7 +175,7 @@ func (r *TimelineRepository) getTimelineEntries(_ context.Context, timelineType,
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].SK
 		entries = entries[:limit] // Trim to requested limit
@@ -205,7 +206,7 @@ func (r *TimelineRepository) GetTimelineEntriesByPost(_ context.Context, postID 
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].GSI1SK
 		entries = entries[:limit] // Trim to requested limit
@@ -236,7 +237,7 @@ func (r *TimelineRepository) GetTimelineEntriesByActor(_ context.Context, actorI
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].GSI2SK
 		entries = entries[:limit] // Trim to requested limit
@@ -267,7 +268,7 @@ func (r *TimelineRepository) GetTimelineEntriesByVisibility(_ context.Context, v
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].GSI3SK
 		entries = entries[:limit] // Trim to requested limit
@@ -298,7 +299,7 @@ func (r *TimelineRepository) GetTimelineEntriesByLanguage(_ context.Context, lan
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].GSI4SK
 		entries = entries[:limit] // Trim to requested limit
@@ -368,7 +369,7 @@ func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, po
 		return fmt.Errorf("failed to get timeline entries for deletion: %w", err)
 	}
 
-	if len(entries) == 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
 		return nil // Nothing to delete
 	}
 
@@ -498,7 +499,7 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(_ context.Context, ti
 
 	// Generate next cursor
 	var nextCursor string
-	if len(entries) > limit {
+	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = entries[limit-1].SK
 		entries = entries[:limit] // Trim to requested limit
@@ -542,7 +543,7 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 
 	// Generate next cursor
 	var nextCursor string
-	if len(conversations) > limit {
+	if err := common.ValidateSliceLength("conversations", conversations, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = participantRecords[limit-1].SK
 		conversations = conversations[:limit] // Trim to requested limit

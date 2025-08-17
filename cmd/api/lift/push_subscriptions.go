@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ import (
 func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -29,7 +30,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 	} else {
 		// Extract token
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -69,7 +70,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 	}
 
 	// If no subscriptions, return empty response
-	if len(subscriptions) == 0 {
+	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
 		ctx.Status(http.StatusOK)
 		return ctx.JSON(map[string]any{
 			"id":       "",
@@ -133,7 +134,7 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -147,7 +148,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 	} else {
 		// Extract token
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -193,20 +194,20 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Validate request
-	if req.Subscription.Endpoint == "" {
+	// Validate request using centralized validation
+	if err := common.ValidateRequiredParam("endpoint", req.Subscription.Endpoint); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
 		return ctx.JSON(map[string]string{
 			"error": "endpoint is required",
 		})
 	}
-	if req.Subscription.Keys.P256dh == "" {
+	if err := common.ValidateRequiredParam("p256dh", req.Subscription.Keys.P256dh); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
 		return ctx.JSON(map[string]string{
 			"error": "keys.p256dh is required",
 		})
 	}
-	if req.Subscription.Keys.Auth == "" {
+	if err := common.ValidateRequiredParam("auth", req.Subscription.Keys.Auth); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
 		return ctx.JSON(map[string]string{
 			"error": "keys.auth is required",
@@ -282,7 +283,7 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -296,7 +297,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 	} else {
 		// Extract token
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",
@@ -411,7 +412,7 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -425,7 +426,7 @@ func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
 	} else {
 		// Extract token
 		token := h.getBearerTokenLift(ctx)
-		if token == "" {
+		if err := common.ValidateRequiredParam("token", token); err != nil {
 			ctx.Status(http.StatusUnauthorized)
 			return ctx.JSON(map[string]string{
 				"error": "authentication required",

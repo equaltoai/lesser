@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // RollbackOptions contains options for rolling back migrations
@@ -40,7 +41,7 @@ func (m *Migrator) RollbackWithOptions(ctx context.Context, opts RollbackOptions
 		return err
 	}
 
-	if len(appliedMigrations) == 0 {
+	if err := common.ValidateSliceNotEmpty("appliedMigrations", appliedMigrations); err != nil {
 		m.logger.Info("No migrations to rollback")
 		return nil
 	}
@@ -52,7 +53,7 @@ func (m *Migrator) RollbackWithOptions(ctx context.Context, opts RollbackOptions
 		return err
 	}
 
-	if len(toRollback) == 0 {
+	if err := common.ValidateSliceNotEmpty("toRollback", toRollback); err != nil {
 		m.logger.Info("No migrations selected for rollback")
 		return nil
 	}
@@ -288,7 +289,7 @@ func (m *Migrator) GetRollbackPlan(ctx context.Context, opts RollbackOptions) ([
 		}
 	}
 
-	if len(appliedMigrations) == 0 {
+	if err := common.ValidateSliceNotEmpty("appliedMigrations", appliedMigrations); err != nil {
 		return nil, nil
 	}
 

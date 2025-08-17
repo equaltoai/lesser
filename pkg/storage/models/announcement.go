@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Reaction represents an available reaction for announcements
@@ -119,7 +120,7 @@ func (a *Announcement) IsActive() bool {
 
 // BeforeCreate prepares the announcement for creation
 func (a *Announcement) BeforeCreate() error {
-	if a.ID == "" {
+	if err := common.ValidateRequiredParam("a.ID", a.ID); err != nil {
 		a.ID = uuid.New().String()
 	}
 	now := time.Now()

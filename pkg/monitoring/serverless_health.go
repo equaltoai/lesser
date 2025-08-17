@@ -218,7 +218,7 @@ func (s *ServerlessHealthMonitor) updateSummary(summary *HealthCheckSummary, sta
 
 // determineOverallStatus determines the overall system health status
 func (s *ServerlessHealthMonitor) determineOverallStatus(results []ComponentHealthResult) HealthStatus {
-	if len(results) == 0 {
+	if err := common.ValidateSliceNotEmpty("results", results); err != nil {
 		return HealthStatusUnknown
 	}
 

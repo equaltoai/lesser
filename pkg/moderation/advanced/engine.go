@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -594,7 +595,7 @@ func (e *Engine) storeAnalysisResult(ctx context.Context, analysis *ModerationAn
 	analysisData["results"] = results
 
 	// Store pattern matches
-	if len(analysis.PatternMatches) > 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.PatternMatches", analysis.PatternMatches); err == nil {
 		patternMatches := make([]interface{}, len(analysis.PatternMatches))
 		for i, match := range analysis.PatternMatches {
 			patternMatches[i] = map[string]interface{}{
@@ -609,7 +610,7 @@ func (e *Engine) storeAnalysisResult(ctx context.Context, analysis *ModerationAn
 	}
 
 	// Store threat matches
-	if len(analysis.ThreatMatches) > 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.ThreatMatches", analysis.ThreatMatches); err == nil {
 		threatMatches := make([]interface{}, len(analysis.ThreatMatches))
 		for i, match := range analysis.ThreatMatches {
 			threatMatches[i] = map[string]interface{}{
@@ -669,7 +670,7 @@ func (e *Engine) storeDecision(ctx context.Context, decision *ModerationDecision
 	}
 
 	// Convert reasons to storable format
-	if len(decision.Reasons) > 0 {
+	if err := common.ValidateSliceNotEmpty("decision.Reasons", decision.Reasons); err == nil {
 		reasons := make([]interface{}, len(decision.Reasons))
 		for i, reason := range decision.Reasons {
 			reasonMap := map[string]interface{}{
@@ -698,13 +699,13 @@ func (e *Engine) storeDecision(ctx context.Context, decision *ModerationDecision
 	}
 
 	// Add mentions, hashtags, URLs if present
-	if len(metadata.Mentions) > 0 {
+	if err := common.ValidateSliceNotEmpty("metadata.Mentions", metadata.Mentions); err == nil {
 		decisionMetadata["mentions"] = metadata.Mentions
 	}
-	if len(metadata.Hashtags) > 0 {
+	if err := common.ValidateSliceNotEmpty("metadata.Hashtags", metadata.Hashtags); err == nil {
 		decisionMetadata["hashtags"] = metadata.Hashtags
 	}
-	if len(metadata.URLs) > 0 {
+	if err := common.ValidateSliceNotEmpty("metadata.URLs", metadata.URLs); err == nil {
 		decisionMetadata["urls"] = metadata.URLs
 	}
 
@@ -778,7 +779,7 @@ func (e *Engine) sendToReviewQueue(ctx context.Context, decision *ModerationDeci
 	}
 
 	// Set evidence from decision reasons
-	if len(decision.Reasons) > 0 {
+	if err := common.ValidateSliceNotEmpty("decision.Reasons", decision.Reasons); err == nil {
 		evidence := map[string]interface{}{
 			"reasons":         decision.Reasons,
 			"recommendations": decision.Recommendations,
@@ -897,7 +898,7 @@ func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 	
 	// Get bucket name from environment or default
 	bucketName := os.Getenv("MEDIA_BUCKET_NAME")
-	if bucketName == "" {
+	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
 		bucketName = "lesser-media" // default bucket name
 	}
 	
@@ -1308,7 +1309,7 @@ func (va *VideoAnalyzer) AnalyzeVideo(ctx context.Context, videoURL string, _ Co
 	wg.Wait()
 
 	// Check for critical errors
-	if len(errors) > 0 {
+	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
 		va.logger.Error("video analysis completed with errors",
 			zap.String("videoURL", videoURL),
 			zap.Errors("errors", errors))
@@ -1667,7 +1668,7 @@ func (va *VideoAnalyzer) storeThumbnails(_ context.Context, analysis *VideoAnaly
 	// Store frame thumbnails in S3 for manual review
 	// This would be useful for human reviewers to quickly assess flagged content
 
-	if len(analysis.Frames) == 0 {
+	if err := common.ValidateSliceNotEmpty("analysis.Frames", analysis.Frames); err != nil {
 		return nil // No frames to store
 	}
 
@@ -2148,7 +2149,7 @@ func (va *VideoAnalyzer) processTextResults(results []rekognition.GetTextDetecti
 	}
 
 	// Store detected text in audio transcription if empty
-	if analysis.Audio.Transcription == "" && len(detectedTexts) > 0 {
+	if err := common.ValidateRequiredParam("analysis.Audio.Transcription", analysis.Audio.Transcription); err != nil && len(detectedTexts) > 0 {
 		analysis.Audio.Transcription = strings.Join(detectedTexts, " ")
 	}
 
@@ -2364,7 +2365,7 @@ func (c *configChecker) GetDisableRekognition() bool {
 // getEnvBool gets a boolean environment variable with a default
 func getEnvBool(key string, defaultValue bool) bool {
 	value := os.Getenv(key)
-	if value == "" {
+	if err := common.ValidateRequiredParam("value", value); err != nil {
 		return defaultValue
 	}
 	return value == "true" || value == "1" || value == "yes"

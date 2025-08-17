@@ -189,7 +189,7 @@ func validateFieldWithTag(fieldName string, value any, tag string) error {
 
 	for _, ruleStr := range rules {
 		ruleStr = strings.TrimSpace(ruleStr)
-		if ruleStr == "" {
+		if err := common.ValidateRequiredParam("ruleStr", ruleStr); err != nil {
 			continue
 		}
 

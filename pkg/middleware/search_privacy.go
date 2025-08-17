@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchAnalytics represents search analytics data
@@ -83,8 +84,10 @@ func handleSearchAuthentication(ctx *lift.Context, config SearchPrivacyConfig) (
 	}
 
 	// Status searches always require authentication
-	if isStatusSearch && userID == "" {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+	if isStatusSearch {
+		if err := common.ValidateRequiredParam("userID", userID); err != nil {
+			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+		}
 	}
 
 	return userID, nil
@@ -128,7 +131,7 @@ func applyStatusSearchFilters(ctx *lift.Context, userID string) {
 
 // applyAccountSearchFilters applies privacy filters for account searches
 func applyAccountSearchFilters(ctx *lift.Context, userID string) {
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		ctx.Set("public_search", true)
 		ctx.Set("limit_results", 20) // Limit results for unauthenticated users
 	}
@@ -139,7 +142,7 @@ func applyHashtagSearchFilters(ctx *lift.Context, userID string) {
 	ctx.Set("public_search", true)
 	
 	// Filter NSFW content for unauthenticated users
-	if userID == "" {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		ctx.Set("filter_nsfw", true)
 	}
 }
@@ -152,7 +155,7 @@ func extractAndValidateAuth(ctx *lift.Context, config SearchPrivacyConfig) (stri
 	if authHeaders, ok := headers["Authorization"]; ok && len(authHeaders) > 0 {
 		authHeader = authHeaders
 	}
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return "", nil
 	}
 
@@ -232,7 +235,7 @@ func recordSearchAnalytics(ctx *lift.Context, userID string, config SearchPrivac
 	// Extract search parameters
 	query := ctx.Query("q")
 	searchType := ctx.Query("type")
-	if searchType == "" {
+	if err := common.ValidateRequiredParam("searchType", searchType); err != nil {
 		searchType = detectSearchType(ctx.Request.URL().Path)
 	}
 
@@ -319,7 +322,7 @@ func NewSearchRateLimitMiddleware(repos interface {
 
 			// Get user ID or IP for rate limiting
 			userID, _ := ctx.Get("user_id").(string)
-			if userID == "" {
+			if err := common.ValidateRequiredParam("userID", userID); err != nil {
 				userID = ctx.Request.RemoteAddr()
 			}
 

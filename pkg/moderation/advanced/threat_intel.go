@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
@@ -59,7 +60,7 @@ func (ti *ThreatIntelligence) ShareThreat(ctx context.Context, threat *ThreatInt
 	}
 
 	// Generate ID if not provided
-	if threat.ID == "" {
+	if err := common.ValidateRequiredParam("threat.ID", threat.ID); err != nil {
 		threat.ID = ti.generateThreatID(threat)
 	}
 
@@ -224,15 +225,15 @@ func (ti *ThreatIntelligence) UpdateThreatConfidence(ctx context.Context, threat
 // Helper methods
 
 func (ti *ThreatIntelligence) validateThreat(threat *ThreatIntel) error {
-	if threat.ThreatType == "" {
+	if err := common.ValidateRequiredParam("threat.ThreatType", threat.ThreatType); err != nil {
 		return fmt.Errorf("threat type required")
 	}
 
-	if len(threat.Indicators) == 0 {
+	if err := common.ValidateSliceNotEmpty("threat.Indicators", threat.Indicators); err != nil {
 		return fmt.Errorf("at least one indicator required")
 	}
 
-	if threat.Severity == "" {
+	if err := common.ValidateRequiredParam("threat.Severity", string(threat.Severity)); err != nil {
 		threat.Severity = SeverityMedium
 	}
 

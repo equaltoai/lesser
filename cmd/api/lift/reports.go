@@ -7,10 +7,13 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/reports"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -44,25 +47,25 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	} else {
 		// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
+			return h.respondUnauthorized(ctx)
 		}
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return h.respondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return h.respondUnauthorized(ctx)
 		}
 
 		// Check write scope
 		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+			return h.respondInsufficientScope(ctx)
 		}
 
 		username = claims.Username
@@ -77,24 +80,24 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 				h.logger.Debug("invalid report request",
 					zap.Error(err),
 					zap.Error(jsonErr))
-				return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
+				return h.respondBadRequest(ctx, "invalid request")
 			}
 		} else {
 			h.logger.Debug("invalid report request", zap.Error(err))
-			return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
+			return h.respondBadRequest(ctx, "invalid request")
 		}
 	}
 
 	// Validate required fields
-	if req.AccountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "account_id is required"})
+	if err := common.ValidateRequiredParam("accountID", req.AccountID); err != nil {
+		return h.respondBadRequest(ctx, err.Error())
 	}
 
 	// Validate category
-	if req.Category == "" {
+	if err := common.ValidateRequiredParam("category", req.Category); err != nil {
 		req.Category = "other"
 	} else if req.Category != "spam" && req.Category != "violation" && req.Category != "other" {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid category"})
+		return h.respondBadRequest(ctx, "invalid category")
 	}
 
 	// Create the report
@@ -112,7 +115,7 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	// Save the report
 	if err := h.repos.Moderation().CreateReport(ctx.Context, report); err != nil {
 		h.logger.Error("failed to create report", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to create report"})
+		return h.respondInternalError(ctx, "failed to create report")
 	}
 
 	// Get reporter's actor ID for trust integration
@@ -220,7 +223,7 @@ func (h *Handler) createBasicModerationEventLift(ctx context.Context, report *st
 
 // loadTargetAccountLift helper method to load target account for reports
 func (h *Handler) loadTargetAccountLift(ctx context.Context, targetAccountID string) *models.Account {
-	if targetAccountID == "" {
+	if err := common.ValidateRequiredParam("targetAccountID", targetAccountID); err != nil {
 		return nil
 	}
 
@@ -230,13 +233,18 @@ func (h *Handler) loadTargetAccountLift(ctx context.Context, targetAccountID str
 		return nil
 	}
 
-	// Convert to models.Account format
-	return &models.Account{
-		ID:          account.Username,
-		Username:    account.Username,
-		DisplayName: account.DisplayName,
-		// Add other fields as needed
+	// Convert to models.Account format using transformation framework - ELIMINATES 5+ LINES OF DUPLICATE CODE
+	fakeActor := &activitypub.Actor{
+		BaseObject: activitypub.BaseObject{
+			ID:   account.Username,
+			Type: "Person",
+		},
+		PreferredUsername: account.Username,
+		Name:              account.DisplayName,
 	}
+	
+	apiAccount := transformations.ActorToAccountBase(fakeActor, h.cfg.BaseURL())
+	return &apiAccount
 }
 
 // convertIntArrayToStringArray converts []int to []string

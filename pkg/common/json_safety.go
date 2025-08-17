@@ -78,12 +78,13 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 
 	switch val := v.(type) {
 	case map[string]any:
+		// Use len check directly for JSON object keys count
 		if len(val) > MaxJSONKeys {
 			return fmt.Errorf("JSON object has %d keys, maximum is %d", len(val), MaxJSONKeys)
 		}
 
 		for key, value := range val {
-			if len(key) > MaxJSONStringLength {
+			if err := ValidateStringLength("JSON key", key, 0, MaxJSONStringLength); err != nil {
 				return fmt.Errorf("JSON key too long: %d bytes", len(key))
 			}
 			if err := d.validateJSON(value, depth+1); err != nil {
@@ -92,7 +93,7 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 		}
 
 	case []any:
-		if len(val) > MaxJSONArrayLength {
+		if err := ValidateSliceLength("JSON array", val, MaxJSONArrayLength); err != nil {
 			return fmt.Errorf("JSON array has %d elements, maximum is %d", len(val), MaxJSONArrayLength)
 		}
 
@@ -103,7 +104,7 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 		}
 
 	case string:
-		if len(val) > MaxJSONStringLength {
+		if err := ValidateStringLength("JSON string", val, 0, MaxJSONStringLength); err != nil {
 			return fmt.Errorf("JSON string too long: %d bytes", len(val))
 		}
 
@@ -119,7 +120,7 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 
 // SafeUnmarshalJSON is a convenience function for safe JSON unmarshaling
 func SafeUnmarshalJSON(data []byte, v any) error {
-	if len(data) > MaxJSONSize {
+	if err := ValidateSliceLength("JSON data", data, MaxJSONSize); err != nil {
 		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
 	}
 
@@ -130,7 +131,7 @@ func SafeUnmarshalJSON(data []byte, v any) error {
 // SafeUnmarshalJSONWithoutUnknownFields unmarshals JSON without DisallowUnknownFields
 // Use this for ActivityPub objects which may have extensions
 func SafeUnmarshalJSONWithoutUnknownFields(data []byte, v any) error {
-	if len(data) > MaxJSONSize {
+	if err := ValidateSliceLength("JSON data", data, MaxJSONSize); err != nil {
 		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
 	}
 
@@ -212,8 +213,8 @@ func ParseHTTPResponse(r io.Reader, v any) error {
 
 // ParseFormValues parses URL-encoded form data
 func ParseFormValues(body string) (url.Values, error) {
-	if body == "" {
-		return url.Values{}, fmt.Errorf("empty form body")
+	if err := ValidateRequiredParam("form body", body); err != nil {
+		return url.Values{}, err
 	}
 	return url.ParseQuery(body)
 }

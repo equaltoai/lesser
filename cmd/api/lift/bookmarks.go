@@ -3,10 +3,10 @@ package lift
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -48,12 +48,12 @@ func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
 // HandleUnbookmarkLift handles POST /api/v1/statuses/:id/unbookmark
 func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Authenticate user
-	username, err := h.authenticateUser(ctx, auth.ScopeWrite)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 	if err != nil {
 		if err.Error() == ErrInsufficientScope {
 			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
@@ -94,7 +94,7 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 // HandleGetBookmarksLift handles GET /api/v1/bookmarks
 func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	// Authenticate user
-	username, err := h.authenticateUser(ctx, auth.ScopeRead)
+	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
 		if err.Error() == ErrInsufficientScope {
 			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
@@ -109,7 +109,7 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 40 {
+		if l, err := common.ParseTimelineLimit(limitStr); err == nil {
 			limit = l
 		}
 	}

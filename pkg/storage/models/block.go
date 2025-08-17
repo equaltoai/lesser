@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Block represents a block relationship between actors
@@ -43,7 +44,7 @@ func (b *Block) BeforeCreate() error {
 	}
 
 	// Generate ID if not provided
-	if b.ID == "" {
+	if err := common.ValidateRequiredParam("b.ID", b.ID); err != nil {
 		b.ID = fmt.Sprintf("%s/activities/block-%d", b.Actor, time.Now().Unix())
 	}
 

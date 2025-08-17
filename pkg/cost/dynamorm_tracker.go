@@ -11,6 +11,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// DynamoDB operation type constants
+const (
+	OperationTypeScan = "Scan"
+)
+
 // DynamORMCostTracker wraps a DynamORM client with cost tracking capabilities
 type DynamORMCostTracker struct {
 	*Tracker // Embed existing cost tracker
@@ -187,31 +192,55 @@ func NewTrackingDB(db core.DB, tracker *Tracker, logger *zap.Logger) *TrackingDB
 	}
 }
 
-// Model wraps the Model method with cost tracking context
+// Model wraps the Model method with enhanced cost tracking context
 func (ctdb *TrackingDB) Model(model any) core.Query {
-	// Return a cost tracking query wrapper
+	// Initialize enhanced tracking
+	enhancedTracker := NewEnhancedOperationTracker(ctdb.logger)
+	
+	// Initialize operation metadata
+	metadata := &OperationMetadata{
+		OperationType:     "unknown", // Will be set when operation executes
+		TableName:         extractTableName(model),
+		ItemCount:         0,
+		FilterExpressions: make([]string, 0),
+		ProjectionFields:  make([]string, 0),
+		Conditions:        make([]QueryCondition, 0),
+	}
+	
+	// Return enhanced cost tracking query wrapper
 	return &TrackingQuery{
-		query:   ctdb.DB.Model(model),
-		tracker: ctdb.tracker,
-		logger:  ctdb.logger,
+		query:             ctdb.DB.Model(model),
+		tracker:           ctdb.tracker,
+		logger:            ctdb.logger,
+		enhancedTracker:   enhancedTracker,
+		operationMetadata: metadata,
 	}
 }
 
-// Transaction wraps the Transaction method with cost tracking
+// Transaction wraps the Transaction method with enhanced operation estimation
 func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
-	operationCount := 1 // Estimate - could be enhanced to count actual operations
-
 	err := ctdb.DB.Transaction(fn)
+	
+	// For transactions, we'll use a conservative estimate since precise counting
+	// would require implementing the full core.Tx interface wrapper
+	// Most transactions contain 2-5 operations on average
+	estimatedOperations := 3 // Conservative baseline
+	
 	if err == nil && ctdb.tracker != nil {
-		if trackErr := ctdb.tracker.TrackDynamoWrite(operationCount * 2); trackErr != nil {
-			// Log tracking failure but don't fail the transaction
+		// Track estimated transaction cost
+		// Transactions typically have both read and write operations
+		if trackErr := ctdb.tracker.TrackDynamoRead(1); trackErr != nil {
+			ctdb.logger.Warn("failed to track transaction read cost", zap.Error(trackErr))
+		}
+		if trackErr := ctdb.tracker.TrackDynamoWrite(estimatedOperations); trackErr != nil {
 			ctdb.logger.Warn("failed to track transaction write cost", zap.Error(trackErr))
 		}
 	}
 
 	if ctdb.logger != nil {
 		ctdb.logger.Debug("dynamodb_transaction_tracked",
-			zap.Int("operation_count", operationCount),
+			zap.Int("estimated_operations", estimatedOperations),
+			zap.String("note", "Enhanced precision planned for future implementation"),
 			zap.Error(err),
 		)
 	}
@@ -245,30 +274,56 @@ func (ct *DynamORMCostTracker) TrackComprehendRequest(operation string, units in
 	// and $0.001 per unit for entity recognition
 }
 
-// TrackingQuery wraps core.Query with cost tracking
+// TrackingQuery wraps core.Query with enhanced cost tracking
 type TrackingQuery struct {
-	query   core.Query
-	tracker *Tracker
-	logger  *zap.Logger
+	query             core.Query
+	tracker           *Tracker
+	logger            *zap.Logger
+	enhancedTracker   *EnhancedOperationTracker
+	operationMetadata *OperationMetadata
 }
 
 // Implement all Query interface methods for proper chaining
 
-// Where wraps the Where method
+// Where wraps the Where method with condition tracking
 func (ctq *TrackingQuery) Where(field string, op string, value any) core.Query {
 	ctq.query = ctq.query.Where(field, op, value)
+	
+	// Track query conditions for cost analysis
+	if ctq.operationMetadata != nil {
+		condition := QueryCondition{
+			Field:    field,
+			Operator: op,
+			Value:    fmt.Sprintf("%v", value), // Simplified for logging
+		}
+		ctq.operationMetadata.Conditions = append(ctq.operationMetadata.Conditions, condition)
+	}
+	
 	return ctq
 }
 
-// Index wraps the Index method
+// Index wraps the Index method with GSI tracking
 func (ctq *TrackingQuery) Index(indexName string) core.Query {
 	ctq.query = ctq.query.Index(indexName)
+	
+	// Track GSI usage for cost analysis
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.IndexName = indexName
+	}
+	
 	return ctq
 }
 
-// Filter wraps the Filter method
+// Filter wraps the Filter method with filter expression tracking
 func (ctq *TrackingQuery) Filter(field string, op string, value any) core.Query {
 	ctq.query = ctq.query.Filter(field, op, value)
+	
+	// Track filter expressions for cost impact analysis
+	if ctq.operationMetadata != nil {
+		filterExpr := fmt.Sprintf("%s %s %v", field, op, value)
+		ctq.operationMetadata.FilterExpressions = append(ctq.operationMetadata.FilterExpressions, filterExpr)
+	}
+	
 	return ctq
 }
 
@@ -308,15 +363,27 @@ func (ctq *TrackingQuery) Offset(offset int) core.Query {
 	return ctq
 }
 
-// Select wraps the Select method
+// Select wraps the Select method with projection tracking
 func (ctq *TrackingQuery) Select(fields ...string) core.Query {
 	ctq.query = ctq.query.Select(fields...)
+	
+	// Track projection fields for cost optimization analysis
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.ProjectionFields = append(ctq.operationMetadata.ProjectionFields, fields...)
+	}
+	
 	return ctq
 }
 
-// ConsistentRead wraps the ConsistentRead method
+// ConsistentRead wraps the ConsistentRead method with read type tracking
 func (ctq *TrackingQuery) ConsistentRead() core.Query {
 	ctq.query = ctq.query.ConsistentRead()
+	
+	// Track consistent read usage (affects cost - 2x read capacity units)
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.ConsistentRead = true
+	}
+	
 	return ctq
 }
 
@@ -328,37 +395,141 @@ func (ctq *TrackingQuery) WithRetry(maxRetries int, initialDelay time.Duration) 
 
 // Terminal methods with cost tracking
 
-// First wraps the First method with cost tracking
+// First wraps the First method with enhanced tracking
 func (ctq *TrackingQuery) First(dest any) error {
+	// Set operation type
+	if ctq.operationMetadata != nil {
+		ctq.operationMetadata.OperationType = "GetItem"
+	}
+	
 	err := ctq.query.First(dest)
-	if err == nil && ctq.tracker != nil {
-		_ = ctq.tracker.TrackDynamoRead(1) // One read unit for first
+	
+	readUnits := 1 // Base cost for First operation
+	itemCount := 0
+	
+	if err == nil {
+		itemCount = 1 // First always returns at most 1 item
+		
+		// Adjust read units based on operation details
+		if ctq.operationMetadata != nil {
+			// Consistent read costs 2x
+			if ctq.operationMetadata.ConsistentRead {
+				readUnits = 2
+			}
+			
+			// Update metadata
+			ctq.operationMetadata.ItemCount = itemCount
+			
+			// Track the operation with enhanced metadata
+			if ctq.enhancedTracker != nil {
+				operationID := fmt.Sprintf("first_%d", time.Now().UnixNano())
+				ctq.enhancedTracker.TrackOperation(operationID, ctq.operationMetadata)
+			}
+		}
+		
+		if ctq.tracker != nil {
+			_ = ctq.tracker.TrackDynamoRead(readUnits)
+		}
 	}
 
 	if ctq.logger != nil {
-		ctq.logger.Debug("dynamodb_first_tracked",
-			zap.Int("read_units", 1),
+		logFields := []zap.Field{
+			zap.Int("read_units", readUnits),
+			zap.Int("item_count", itemCount),
 			zap.Error(err),
-		)
+		}
+		
+		if ctq.operationMetadata != nil {
+			logFields = append(logFields,
+				zap.String("table_name", ctq.operationMetadata.TableName),
+				zap.String("index_name", ctq.operationMetadata.IndexName),
+				zap.Bool("consistent_read", ctq.operationMetadata.ConsistentRead),
+				zap.Int("condition_count", len(ctq.operationMetadata.Conditions)),
+				zap.Int("filter_count", len(ctq.operationMetadata.FilterExpressions)),
+				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
+			)
+		}
+		
+		ctq.logger.Debug("dynamodb_first_tracked", logFields...)
 	}
 
 	return err
 }
 
-// All wraps the All method with cost tracking
+// All wraps the All method with enhanced result counting
 func (ctq *TrackingQuery) All(dest any) error {
+	// Set operation type
+	if ctq.operationMetadata != nil {
+		if ctq.operationMetadata.IndexName != "" {
+			ctq.operationMetadata.OperationType = "Query" // Using GSI
+		} else {
+			ctq.operationMetadata.OperationType = OperationTypeScan // Table scan
+		}
+	}
+	
 	err := ctq.query.All(dest)
-	if err == nil && ctq.tracker != nil {
-		// Estimate read units - in practice, this could be enhanced
-		// by counting items in the result or using query metadata
-		_ = ctq.tracker.TrackDynamoRead(10) // Conservative estimate
+	
+	readUnits := 1 // Default minimum
+	itemCount := 0
+	
+	if err == nil {
+		// Count actual items returned using reflection
+		itemCount = countResultItems(dest)
+		
+		// Calculate more accurate read units based on item count and operation details
+		if itemCount > 0 {
+			readUnits = itemCount
+		}
+		
+		// Adjust for operation specifics
+		if ctq.operationMetadata != nil {
+			// Consistent read costs 2x
+			if ctq.operationMetadata.ConsistentRead {
+				readUnits *= 2
+			}
+			
+			// Scan operations are typically more expensive than query
+			if ctq.operationMetadata.OperationType == OperationTypeScan && len(ctq.operationMetadata.FilterExpressions) > 0 {
+				// Filter expressions can cause scanning of more items than returned
+				// Estimate higher cost for filtered scans
+				readUnits = int(float64(readUnits) * 1.5)
+			}
+			
+			// Update metadata
+			ctq.operationMetadata.ItemCount = itemCount
+			
+			// Track the operation with enhanced metadata
+			if ctq.enhancedTracker != nil {
+				operationID := fmt.Sprintf("all_%d", time.Now().UnixNano())
+				ctq.enhancedTracker.TrackOperation(operationID, ctq.operationMetadata)
+			}
+		}
+		
+		if ctq.tracker != nil {
+			_ = ctq.tracker.TrackDynamoRead(readUnits)
+		}
 	}
 
 	if ctq.logger != nil {
-		ctq.logger.Debug("dynamodb_all_tracked",
-			zap.Int("read_units", 10),
+		logFields := []zap.Field{
+			zap.Int("read_units", readUnits),
+			zap.Int("item_count", itemCount),
 			zap.Error(err),
-		)
+		}
+		
+		if ctq.operationMetadata != nil {
+			logFields = append(logFields,
+				zap.String("operation_type", ctq.operationMetadata.OperationType),
+				zap.String("table_name", ctq.operationMetadata.TableName),
+				zap.String("index_name", ctq.operationMetadata.IndexName),
+				zap.Bool("consistent_read", ctq.operationMetadata.ConsistentRead),
+				zap.Int("condition_count", len(ctq.operationMetadata.Conditions)),
+				zap.Int("filter_count", len(ctq.operationMetadata.FilterExpressions)),
+				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
+			)
+		}
+		
+		ctq.logger.Debug("dynamodb_all_tracked", logFields...)
 	}
 
 	return err
@@ -516,6 +687,219 @@ func WithDynamORMCostTracking(ctx context.Context, requestID, operationType stri
 	return WithTracker(ctx, tracker)
 }
 
+// Note: Complex transaction operation tracking has been simplified for maintainability.
+// Future enhancement: Implement full core.Tx interface wrapper for precise transaction tracking.
+
+// countResultItems counts the number of items in a query result using reflection
+func countResultItems(dest any) int {
+	if dest == nil {
+		return 0
+	}
+
+	// Get the value and handle pointers
+	value := reflect.ValueOf(dest)
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return 0
+		}
+		value = value.Elem()
+	}
+
+	// Count items based on type
+	switch value.Kind() {
+	case reflect.Slice, reflect.Array:
+		return value.Len()
+	case reflect.Map:
+		return value.Len()
+	case reflect.Struct:
+		// Single item
+		return 1
+	case reflect.Interface:
+		// Check if it's a slice or array interface
+		if value.IsNil() {
+			return 0
+		}
+		return countResultItems(value.Interface())
+	default:
+		// For basic types, assume single item if not nil/zero
+		if value.IsZero() {
+			return 0
+		}
+		return 1
+	}
+}
+
+// OperationMetadata contains detailed information about a DynamoDB operation
+type OperationMetadata struct {
+	OperationType     string            `json:"operation_type"`
+	TableName         string            `json:"table_name"`
+	IndexName         string            `json:"index_name,omitempty"`
+	ItemCount         int               `json:"item_count"`
+	FilterExpressions []string          `json:"filter_expressions,omitempty"`
+	ProjectionFields  []string          `json:"projection_fields,omitempty"`
+	ConsistentRead    bool              `json:"consistent_read"`
+	BatchSize         int               `json:"batch_size,omitempty"`
+	PaginationTokens  map[string]string `json:"pagination_tokens,omitempty"`
+	Conditions        []QueryCondition  `json:"conditions,omitempty"`
+}
+
+// QueryCondition represents a query condition for cost analysis
+type QueryCondition struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"` // Simplified for logging
+}
+
+// EnhancedOperationTracker provides detailed operation tracking with metadata
+type EnhancedOperationTracker struct {
+	mu         sync.RWMutex
+	operations map[string]*OperationMetadata
+	logger     *zap.Logger
+}
+
+// NewEnhancedOperationTracker creates a new enhanced operation tracker
+func NewEnhancedOperationTracker(logger *zap.Logger) *EnhancedOperationTracker {
+	return &EnhancedOperationTracker{
+		operations: make(map[string]*OperationMetadata),
+		logger:     logger,
+	}
+}
+
+// TrackOperation records detailed operation metadata
+func (eot *EnhancedOperationTracker) TrackOperation(operationID string, metadata *OperationMetadata) {
+	eot.mu.Lock()
+	defer eot.mu.Unlock()
+	
+	eot.operations[operationID] = metadata
+	
+	if eot.logger != nil {
+		eot.logger.Debug("enhanced_operation_tracked",
+			zap.String("operation_id", operationID),
+			zap.String("operation_type", metadata.OperationType),
+			zap.String("table_name", metadata.TableName),
+			zap.String("index_name", metadata.IndexName),
+			zap.Int("item_count", metadata.ItemCount),
+			zap.Int("filter_count", len(metadata.FilterExpressions)),
+			zap.Int("projection_count", len(metadata.ProjectionFields)),
+			zap.Bool("consistent_read", metadata.ConsistentRead),
+		)
+	}
+}
+
+// GetOperationMetadata retrieves metadata for an operation
+func (eot *EnhancedOperationTracker) GetOperationMetadata(operationID string) (*OperationMetadata, bool) {
+	eot.mu.RLock()
+	defer eot.mu.RUnlock()
+	
+	metadata, exists := eot.operations[operationID]
+	return metadata, exists
+}
+
+// GetAllOperations returns all tracked operations
+func (eot *EnhancedOperationTracker) GetAllOperations() map[string]*OperationMetadata {
+	eot.mu.RLock()
+	defer eot.mu.RUnlock()
+	
+	// Return a copy to avoid race conditions
+	result := make(map[string]*OperationMetadata)
+	for id, metadata := range eot.operations {
+		result[id] = metadata
+	}
+	return result
+}
+
+// ClearOperations clears all tracked operations
+func (eot *EnhancedOperationTracker) ClearOperations() {
+	eot.mu.Lock()
+	defer eot.mu.Unlock()
+	eot.operations = make(map[string]*OperationMetadata)
+}
+
+// countBatchItems counts items in a batch operation more accurately
+func countBatchItems(items any) int {
+	if items == nil {
+		return 0
+	}
+
+	// Handle various input types
+	value := reflect.ValueOf(items)
+	
+	// Handle pointers
+	if value.Kind() == reflect.Ptr {
+		if value.IsNil() {
+			return 0
+		}
+		value = value.Elem()
+	}
+
+	// Count based on the actual type
+	switch value.Kind() {
+	case reflect.Slice, reflect.Array:
+		return value.Len()
+	case reflect.Map:
+		return value.Len()
+	case reflect.Struct:
+		// Single item
+		return 1
+	case reflect.Interface:
+		if value.IsNil() {
+			return 0
+		}
+		return countBatchItems(value.Interface())
+	default:
+		// For other types, assume single item
+		return 1
+	}
+}
+
+// extractTableName extracts the table name from a model using reflection
+func extractTableName(model any) string {
+	if model == nil {
+		return "unknown"
+	}
+
+	// Get the type, handling pointers
+	modelType := reflect.TypeOf(model)
+	if modelType.Kind() == reflect.Ptr {
+		modelType = modelType.Elem()
+	}
+
+	// Try to call TableName() method if it exists
+	modelValue := reflect.ValueOf(model)
+	if modelValue.Kind() == reflect.Ptr && !modelValue.IsNil() {
+		modelValue = modelValue.Elem()
+	}
+
+	// Check if model has TableName method
+	if modelValue.IsValid() && modelValue.CanAddr() {
+		tableNameMethod := modelValue.Addr().MethodByName("TableName")
+		if tableNameMethod.IsValid() {
+			result := tableNameMethod.Call(nil)
+			if len(result) > 0 && result[0].Kind() == reflect.String {
+				return result[0].String()
+			}
+		}
+	}
+
+	// Fallback to struct name
+	if modelType.Kind() == reflect.Struct {
+		return modelType.Name()
+	}
+
+	// If slice or array, try to get element type
+	if modelType.Kind() == reflect.Slice || modelType.Kind() == reflect.Array {
+		elemType := modelType.Elem()
+		if elemType.Kind() == reflect.Ptr {
+			elemType = elemType.Elem()
+		}
+		if elemType.Kind() == reflect.Struct {
+			return elemType.Name()
+		}
+	}
+
+	return "unknown"
+}
+
 // Pagination methods
 
 // Cursor wraps the Cursor method
@@ -604,24 +988,30 @@ func (ctq *TrackingQuery) BatchGet(keys []any, dest any) error {
 	return err
 }
 
-// BatchCreate wraps the BatchCreate method with cost tracking
+// BatchCreate wraps the BatchCreate method with enhanced batch tracking
 func (ctq *TrackingQuery) BatchCreate(items any) error {
-	// Count items for cost tracking
-	itemCount := 1 // Default
-	// Use reflection to count if items is a slice
-	if reflect.TypeOf(items).Kind() == reflect.Slice {
-		itemCount = reflect.ValueOf(items).Len()
-	}
-
+	// Count items for precise cost tracking
+	itemCount := countBatchItems(items)
+	
+	// Calculate write units more accurately
+	// DynamoDB batch operations consume WCUs based on item size
+	// For now, use item count as baseline (1 WCU per item for baseline)
+	writeUnits := itemCount
+	
+	// Large batches may be split by DynamoDB - account for this
+	// DynamoDB supports max 25 items per batch write
+	batchCount := (itemCount + 24) / 25 // Round up division
+	
 	err := ctq.query.BatchCreate(items)
 	if err == nil && ctq.tracker != nil {
-		_ = ctq.tracker.TrackDynamoWrite(itemCount)
+		_ = ctq.tracker.TrackDynamoWrite(writeUnits)
 	}
 
 	if ctq.logger != nil {
 		ctq.logger.Debug("dynamodb_batch_create_tracked",
-			zap.Int("write_units", itemCount),
+			zap.Int("write_units", writeUnits),
 			zap.Int("item_count", itemCount),
+			zap.Int("batch_count", batchCount),
 			zap.Error(err),
 		)
 	}
@@ -629,17 +1019,24 @@ func (ctq *TrackingQuery) BatchCreate(items any) error {
 	return err
 }
 
-// BatchDelete wraps the BatchDelete method with cost tracking
+// BatchDelete wraps the BatchDelete method with enhanced batch tracking
 func (ctq *TrackingQuery) BatchDelete(keys []any) error {
+	keyCount := len(keys)
+	
+	// Calculate write units and batch count for deletes
+	writeUnits := keyCount // 1 WCU per delete operation
+	batchCount := (keyCount + 24) / 25 // Max 25 items per batch
+	
 	err := ctq.query.BatchDelete(keys)
 	if err == nil && ctq.tracker != nil {
-		_ = ctq.tracker.TrackDynamoWrite(len(keys)) // One write unit per key
+		_ = ctq.tracker.TrackDynamoWrite(writeUnits)
 	}
 
 	if ctq.logger != nil {
 		ctq.logger.Debug("dynamodb_batch_delete_tracked",
-			zap.Int("write_units", len(keys)),
-			zap.Int("key_count", len(keys)),
+			zap.Int("write_units", writeUnits),
+			zap.Int("key_count", keyCount),
+			zap.Int("batch_count", batchCount),
 			zap.Error(err),
 		)
 	}
@@ -647,20 +1044,26 @@ func (ctq *TrackingQuery) BatchDelete(keys []any) error {
 	return err
 }
 
-// BatchWrite wraps the BatchWrite method with cost tracking
+// BatchWrite wraps the BatchWrite method with enhanced batch tracking
 func (ctq *TrackingQuery) BatchWrite(putItems []any, deleteKeys []any) error {
+	putCount := len(putItems)
+	deleteCount := len(deleteKeys)
+	totalWrites := putCount + deleteCount
+	
+	// Calculate batch count for combined operations
+	batchCount := (totalWrites + 24) / 25 // Max 25 items per batch
+	
 	err := ctq.query.BatchWrite(putItems, deleteKeys)
 	if err == nil && ctq.tracker != nil {
-		totalWrites := len(putItems) + len(deleteKeys)
 		_ = ctq.tracker.TrackDynamoWrite(totalWrites)
 	}
 
 	if ctq.logger != nil {
-		totalWrites := len(putItems) + len(deleteKeys)
 		ctq.logger.Debug("dynamodb_batch_write_tracked",
 			zap.Int("write_units", totalWrites),
-			zap.Int("put_items", len(putItems)),
-			zap.Int("delete_keys", len(deleteKeys)),
+			zap.Int("put_items", putCount),
+			zap.Int("delete_keys", deleteCount),
+			zap.Int("batch_count", batchCount),
 			zap.Error(err),
 		)
 	}

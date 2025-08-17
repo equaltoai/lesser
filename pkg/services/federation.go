@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -79,7 +80,7 @@ func (f *federationService) DetermineRecipients(ctx context.Context, activity *a
 
 	// Extract actor from activity
 	actorID := activity.Actor
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
 		return nil, fmt.Errorf("activity has no actor")
 	}
 
@@ -172,7 +173,7 @@ func (f *federationService) getActorByID(ctx context.Context, actorID string) (*
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, fmt.Errorf("invalid actor ID format: %s", actorID)
 	}
 

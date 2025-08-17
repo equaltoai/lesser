@@ -11,13 +11,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -33,14 +30,14 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // InboxHandler handles ActivityPub inbox requests using Lift
 type InboxHandler struct {
-	db                           core.DB
+	db                           dynamormCore.DB
 	actorRepository              *repositories.ActorRepository
 	activityRepository           *repositories.ActivityRepository
 	relationshipRepository       *repositories.RelationshipRepository
@@ -67,91 +64,150 @@ type InboxHandler struct {
 	startTime                    time.Time
 }
 
-// NewInboxHandler creates a new inbox handler
-func NewInboxHandler() (*InboxHandler, error) {
-	logger := common.Logger()
-	cfg := config.Get()
+// NewInboxHandler creates a new inbox handler using standardized initialization
+func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
 
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	// Try to extract services from standardized initialization
+	var repoFactory storageCore.RepositoryStorage
+	var db interface{}
+	var signatureService *federation.SignatureService
+	var deliveryService *federation.DeliveryService
+	var costCalculator *federation.CostCalculator
+	var rateLimiter *auth.RateLimiter
+	var authMiddleware *auth.Middleware
+	var emfMetrics *observability.EMFMetrics
+	var alertManager *monitoring.AlertManager
+	
+	// Extract from standardized services if available
+	if lambdaCtx.Repos != nil {
+		repoFactory = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	}
+	if lambdaCtx.DynamoDB != nil {
+		db = lambdaCtx.DynamoDB
+	}
+	if lambdaCtx.SignatureService != nil {
+		signatureService = lambdaCtx.SignatureService.(*federation.SignatureService)
+	}
+	if lambdaCtx.DeliveryService != nil {
+		deliveryService = lambdaCtx.DeliveryService.(*federation.DeliveryService)
+	}
+	if lambdaCtx.CostCalculator != nil {
+		costCalculator = lambdaCtx.CostCalculator.(*federation.CostCalculator)
+	}
+	if lambdaCtx.RateLimiter != nil {
+		rateLimiter = lambdaCtx.RateLimiter.(*auth.RateLimiter)
+	}
+	if lambdaCtx.AuthMiddleware != nil {
+		authMiddleware = lambdaCtx.AuthMiddleware.(*auth.Middleware)
+	}
+	if lambdaCtx.EMFMetrics != nil {
+		emfMetrics = lambdaCtx.EMFMetrics.(*observability.EMFMetrics)
+	}
+	if lambdaCtx.AlertManager != nil {
+		alertManager = lambdaCtx.AlertManager.(*monitoring.AlertManager)
 	}
 
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
+	// Fallback to manual initialization for missing services
+	if repoFactory == nil || db == nil {
+		logger.Info("falling back to manual storage initialization")
+		
+		// Initialize storage manually
+		manualDB, err := dynamorm.GetClient(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+		}
+		db = manualDB
 
-	// Initialize repository factory
-	repoFactory, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
+		// Initialize repository factory
+		manualRepoFactory, err := factory.NewRepositoryFactory(manualDB, cfg.DynamoTableName, lambdaCtx.AWSServices.Config, logger)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
+		}
+		repoFactory = manualRepoFactory
 	}
-
-	// Get repositories from factory
+	
+	// Initialize missing federation services
+	if signatureService == nil {
+		// Access PublicKeyCache directly from factory if not in RepositoryStorage interface yet
+		var publicKeyCacheRepo *repositories.PublicKeyCacheRepository
+		if factory, ok := repoFactory.(*factory.RepositoryFactory); ok {
+			publicKeyCacheRepo = factory.PublicKeyCache()
+		} else {
+			// Fallback: create repository directly
+			coreDB, _ := db.(dynamormCore.DB)
+			publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
+		}
+		signatureService = federation.NewSignatureService(publicKeyCacheRepo, logger)
+	}
+	if costCalculator == nil {
+		costCalculator = federation.NewCostCalculator()
+	}
+	if authMiddleware == nil {
+		var err error
+		authMiddleware, err = auth.GetMiddleware()
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize auth middleware: %w", err)
+		}
+	}
+	if rateLimiter == nil {
+		rateLimiter = auth.NewRateLimiter(repoFactory)
+	}
+	if deliveryService == nil {
+		deliveryService = federation.NewDeliveryService(
+			federation.NewRepositoryStorageAdapter(repoFactory),
+		)
+	}
+	
+	// Initialize missing observability services
+	if emfMetrics == nil && os.Getenv("DISABLE_METRICS") != "true" {
+		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Federation", "inbox")
+		emfMetrics.AddDimension(observability.DimensionService, "inbox")
+		emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
+		emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
+	}
+	if alertManager == nil && os.Getenv("DISABLE_METRICS") != "true" {
+		alertManager = monitoring.NewAlertManagerWithConfig(&monitoring.AlertManagerConfig{
+			Logger:    logger,
+			Enabled:   true,
+		})
+	}
+	
+	// Get core DB for legacy repositories and direct access
+	coreDB, ok := db.(dynamormCore.DB)
+	if !ok {
+		return nil, fmt.Errorf("DynamoDB client does not implement core.DB interface")
+	}
+	
+	// Get individual repositories
 	actorRepo := repoFactory.Actor()
 	activityRepo := repoFactory.Activity()
 	followRepo := repoFactory.Relationship()
 	objectRepo := repoFactory.Object()
 	likeRepo := repoFactory.Like()
-	socialRepo := repositories.NewSocialRepository(db, logger)
-	federationActivityRepo := repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
-	federationCostRepo := repositories.NewFederationCostRepository(db, cfg.DynamoTableName, logger)
 	domainBlockRepo := repoFactory.DomainBlock()
 	userRepo := repoFactory.User()
-	publicKeyCacheRepo := repoFactory.PublicKeyCache()
 	notificationRepo := repoFactory.Notification()
-
-	// Initialize signature service for enhanced HTTP signature verification
-	signatureService := federation.NewSignatureService(publicKeyCacheRepo, logger)
-
-	// Initialize cost calculator
-	costCalculator := federation.NewCostCalculator()
-
-	// Initialize auth middleware
-	authMiddleware, err := auth.GetMiddleware()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize auth middleware: %w", err)
-	}
-
-	// Initialize rate limiter with repository storage
-	rateLimiter := auth.NewRateLimiter(repoFactory)
-
-	// Initialize delivery service for federation
-	deliveryService := federation.NewDeliveryService(
-		federation.NewRepositoryStorageAdapter(repoFactory),
-	)
-
-	// Initialize observability services
-	var emfMetrics *observability.EMFMetrics
-	var alertManager *monitoring.AlertManager
 	
-	if os.Getenv("DISABLE_METRICS") != "true" {
-		// EMF Metrics for CloudWatch integration
-		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Federation", "inbox")
-		emfMetrics.AddDimension(observability.DimensionService, "inbox")
-		emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
-		emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
-		
-		// Alert manager for federation-specific alerts
-		_ = cloudwatch.NewFromConfig(awsConfig) // CloudWatch client reserved for future use
-		alertManager = monitoring.NewAlertManagerWithConfig(&monitoring.AlertManagerConfig{
-			Logger:    logger,
-			Enabled:   true,
-		})
-		
-		logger.Info("initialized federation observability services",
-			zap.String("emf_enabled", "true"),
-			zap.String("alerts_enabled", "true"),
-			zap.String("metrics_namespace", "Lesser/Federation"))
+	// Get PublicKeyCache repository directly from factory
+	var publicKeyCacheRepo *repositories.PublicKeyCacheRepository
+	if factory, ok := repoFactory.(*factory.RepositoryFactory); ok {
+		publicKeyCacheRepo = factory.PublicKeyCache()
+	} else {
+		// Fallback: create repository directly
+		publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
 	}
+	
+	// Initialize legacy repositories that don't use factory pattern yet
+	socialRepo := repositories.NewSocialRepository(coreDB, logger)
+	federationActivityRepo := repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger)
+	federationCostRepo := repositories.NewFederationCostRepository(coreDB, cfg.DynamoTableName, logger)
+	
+	logger.Info("initialized inbox handler with standardized services")
 
 	return &InboxHandler{
-		db:                           db,
+		db:                           coreDB,
 		actorRepository:              actorRepo,
 		activityRepository:           activityRepo,
 		relationshipRepository:       followRepo,
@@ -189,7 +245,7 @@ func (ih *InboxHandler) RegisterRoutes(app *lift.App) {
 // handleGetInbox handles GET requests to retrieve inbox activities
 func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	username := ctx.Param("username")
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
 	}
 
@@ -208,7 +264,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 	limit, cursor, page := ih.parsePaginationParams(ctx)
 
 	// Handle collection metadata request (no page parameter)
-	if page == "" && cursor == "" {
+	if common.ValidateRequiredParam("page", page) != nil && common.ValidateRequiredParam("cursor", cursor) != nil {
 		return ih.returnInboxCollection(ctx, actor, username)
 	}
 
@@ -220,7 +276,7 @@ func (ih *InboxHandler) handleGetInbox(ctx *lift.Context) error {
 func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username string) (*activitypub.Actor, error) {
 	// Validate authentication header
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication required", 401)
 	}
 
@@ -266,12 +322,8 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username str
 // parsePaginationParams extracts and validates pagination parameters from the request
 func (ih *InboxHandler) parsePaginationParams(ctx *lift.Context) (int, string, string) {
 	limitStr := ctx.Query("limit")
-	if limitStr == "" {
-		limitStr = "20"
-	}
-	
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil || limit < 1 || limit > 100 {
+	limit, err := common.ParseAndValidateActivityPubLimit(limitStr)
+	if err != nil {
 		limit = 20
 	}
 
@@ -430,7 +482,7 @@ func (ih *InboxHandler) handlePostInbox(ctx *lift.Context) error {
 // initializeInboxRequest creates and validates the basic request structure
 func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest, error) {
 	username := ctx.Param("username")
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, lift.NewLiftError("VALIDATION_ERROR", "missing username parameter", 400)
 	}
 
@@ -496,7 +548,7 @@ func (ih *InboxHandler) initializeInboxRequest(ctx *lift.Context) (*InboxRequest
 
 // validateRequestBody validates the request body size and content
 func (ih *InboxHandler) validateRequestBody(body []byte) error {
-	if len(body) == 0 {
+	if err := common.ValidateSliceNotEmpty("body", body); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", "request body is required", 400)
 	}
 
@@ -532,13 +584,13 @@ func (ih *InboxHandler) parseActivity(body []byte) (*activitypub.Activity, error
 
 // validateActivity validates required activity fields and addressing
 func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *activitypub.Actor) error {
-	if activity.ID == "" {
+	if err := common.ValidateRequiredParam("activityID", activity.ID); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", "activity ID is required", 400)
 	}
-	if activity.Actor == "" {
+	if err := common.ValidateRequiredParam("activityActor", activity.Actor); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", "actor is required", 400)
 	}
-	if activity.Type == "" {
+	if err := common.ValidateRequiredParam("activityType", activity.Type); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", "activity type is required", 400)
 	}
 
@@ -562,7 +614,7 @@ func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *
 
 // performSecurityChecks handles rate limiting and domain blocking
 func (ih *InboxHandler) performSecurityChecks(ctx *lift.Context, req *InboxRequest) error {
-	if req.ActorDomain == "" {
+	if err := common.ValidateRequiredParam("actorDomain", req.ActorDomain); err != nil {
 		return nil
 	}
 
@@ -793,7 +845,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 //
 //nolint:unused // Kept as alternative implementation
 func (ih *InboxHandler) verifyDigest(ctx *lift.Context, req *InboxRequest) error {
-	if ctx.Header("Digest") == "" {
+	if err := common.ValidateRequiredParam("digest", ctx.Header("Digest")); err != nil {
 		return nil
 	}
 
@@ -815,7 +867,7 @@ func (ih *InboxHandler) verifyDigest(ctx *lift.Context, req *InboxRequest) error
 // verifyDigestEnhanced verifies the digest header with enhanced compatibility support
 func (ih *InboxHandler) verifyDigestEnhanced(ctx *lift.Context, req *InboxRequest) error {
 	digestHeader := ctx.Header("Digest")
-	if digestHeader == "" {
+	if err := common.ValidateRequiredParam("digestHeader", digestHeader); err != nil {
 		// No digest header is acceptable for some implementations
 		ih.logger.Debug("no digest header present", zap.String("actor", req.Activity.Actor))
 		return nil
@@ -1127,7 +1179,7 @@ func (ih *InboxHandler) convertLiftRequest(ctx *lift.Context, body []byte) (*htt
 	}
 
 	// Set host header if not present
-	if req.Header.Get("Host") == "" && ctx.Header("Host") != "" {
+	if common.ValidateRequiredParam("reqHost", req.Header.Get("Host")) != nil && common.ValidateRequiredParam("ctxHost", ctx.Header("Host")) == nil {
 		req.Host = ctx.Header("Host")
 	}
 
@@ -1199,7 +1251,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	}
 
 	// Extract public key
-	if actor.PublicKey == nil || actor.PublicKey.PublicKeyPem == "" {
+	if actor.PublicKey == nil || common.ValidateRequiredParam("publicKeyPem", actor.PublicKey.PublicKeyPem) != nil {
 		return nil, fmt.Errorf("actor has no public key")
 	}
 
@@ -1537,7 +1589,7 @@ func (ih *InboxHandler) processRejectLike(ctx context.Context, rejectActivity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("like activity has no object ID to reject")
 		return nil
 	}
@@ -1577,7 +1629,7 @@ func (ih *InboxHandler) processRejectAnnounce(ctx context.Context, rejectActivit
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("announce activity has no object ID to reject")
 		return nil
 	}
@@ -1617,7 +1669,7 @@ func (ih *InboxHandler) processRejectCreate(ctx context.Context, rejectActivity 
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("create activity has no object ID to reject")
 		return nil
 	}
@@ -1651,7 +1703,7 @@ func (ih *InboxHandler) processRejectUpdate(ctx context.Context, rejectActivity 
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("update activity has no object ID to reject")
 		return nil
 	}
@@ -1685,7 +1737,7 @@ func (ih *InboxHandler) processRejectDelete(ctx context.Context, rejectActivity 
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("delete activity has no object ID to reject")
 		return nil
 	}
@@ -1719,7 +1771,7 @@ func (ih *InboxHandler) processRejectAccept(ctx context.Context, rejectActivity 
 		}
 	}
 
-	if originalActivityID == "" {
+	if err := common.ValidateRequiredParam("originalActivityID", originalActivityID); err != nil {
 		log.Warn("accept activity has no original activity ID to reject")
 		return nil
 	}
@@ -1753,7 +1805,7 @@ func (ih *InboxHandler) processRejectAdd(ctx context.Context, rejectActivity *ac
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("add activity has no object ID to reject")
 		return nil
 	}
@@ -1794,7 +1846,7 @@ func (ih *InboxHandler) processRejectRemove(ctx context.Context, rejectActivity 
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("remove activity has no object ID to reject")
 		return nil
 	}
@@ -1835,7 +1887,7 @@ func (ih *InboxHandler) processRejectFlag(ctx context.Context, rejectActivity *a
 		}
 	}
 
-	if flaggedObjectID == "" {
+	if err := common.ValidateRequiredParam("flaggedObjectID", flaggedObjectID); err != nil {
 		log.Warn("flag activity has no object ID to reject")
 		return nil
 	}
@@ -1868,7 +1920,7 @@ func (ih *InboxHandler) processRejectMove(ctx context.Context, rejectActivity *a
 		}
 	}
 
-	if movedObjectID == "" {
+	if err := common.ValidateRequiredParam("movedObjectID", movedObjectID); err != nil {
 		log.Warn("move activity has no object ID to reject")
 		return nil
 	}
@@ -1957,7 +2009,7 @@ func (ih *InboxHandler) processRemoteUpdateActivity(ctx context.Context, activit
 
 	// Get object ID for authorization and history tracking
 	objectID, ok := objMap["id"].(string)
-	if !ok || objectID == "" {
+	if !ok || common.ValidateRequiredParam("objectID", objectID) != nil {
 		log.Warn("update activity object has no ID")
 		return nil
 	}
@@ -2041,7 +2093,7 @@ func (ih *InboxHandler) processRemoteDeleteActivity(ctx context.Context, activit
 		return nil // Don't fail on malformed activities
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("delete activity has no object ID")
 		return nil
 	}
@@ -2112,7 +2164,7 @@ func (ih *InboxHandler) processLikeActivity(ctx context.Context, activity *activ
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("like activity has no object ID")
 		return nil // Don't fail, just ignore malformed likes
 	}
@@ -2195,7 +2247,7 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("announce activity has no object ID")
 		return nil // Don't fail, just ignore malformed announces
 	}
@@ -2361,7 +2413,7 @@ func (ih *InboxHandler) processUndoBlock(ctx context.Context, undoActivity *acti
 		}
 	}
 
-	if blockedActorID == "" {
+	if err := common.ValidateRequiredParam("blockedActorID", blockedActorID); err != nil {
 		log.Warn("undo block activity has no object ID")
 		return nil
 	}
@@ -2414,7 +2466,7 @@ func (ih *InboxHandler) processBlockActivity(ctx context.Context, activity *acti
 		}
 	}
 
-	if blockedActorID == "" {
+	if err := common.ValidateRequiredParam("blockedActorID", blockedActorID); err != nil {
 		log.Warn("block activity has no object ID")
 		return nil // Don't fail on malformed blocks
 	}
@@ -2518,7 +2570,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 		zap.String("target", activity.Target))
 
 	// Validate required fields
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("add activity missing target collection")
 		return fmt.Errorf("add activity must specify a target collection")
 	}
@@ -2539,7 +2591,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("add activity object has no ID")
 		return fmt.Errorf("add activity object must have an ID")
 	}
@@ -2614,7 +2666,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 		zap.String("target", activity.Target))
 
 	// Validate required fields
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("remove activity missing target collection")
 		return fmt.Errorf("remove activity must specify a target collection")
 	}
@@ -2635,7 +2687,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 		}
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("remove activity object has no ID")
 		return fmt.Errorf("remove activity object must have an ID")
 	}
@@ -2702,7 +2754,7 @@ func (ih *InboxHandler) extractCollectionType(targetURL string) (string, error) 
 	// - https://example.com/users/alice/collections/pinned -> "pinned"
 	// - https://example.com/users/alice/likes -> "likes"
 
-	if targetURL == "" {
+	if err := common.ValidateRequiredParam("targetURL", targetURL); err != nil {
 		return "", fmt.Errorf("target URL is empty")
 	}
 
@@ -2751,7 +2803,7 @@ func (ih *InboxHandler) processFlagActivity(ctx context.Context, activity *activ
 		return fmt.Errorf("invalid flag activity: %w", err)
 	}
 
-	if len(flaggedObjects) == 0 {
+	if err := common.ValidateSliceNotEmpty("flaggedObjects", flaggedObjects); err != nil {
 		log.Warn("flag activity contains no flagged objects")
 		return fmt.Errorf("flag activity must specify objects to flag")
 	}
@@ -2798,7 +2850,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 		zap.String("target", activity.Target))
 
 	// Validate required fields for Move activity
-	if activity.Target == "" {
+	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("move activity missing target")
 		return fmt.Errorf("move activity must specify a target account")
 	}
@@ -2936,7 +2988,7 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 
 	// Extract username from the new account ID to check alsoKnownAs
 	newUsername := ih.extractHandleFromActorID(newAccountID)
-	if newUsername == "" {
+	if err := common.ValidateRequiredParam("newUsername", newUsername); err != nil {
 		log.Error("failed to extract username from new account ID", zap.String("new_account_id", newAccountID))
 		return fmt.Errorf("cannot extract username from new account ID: %s", newAccountID)
 	}
@@ -3072,7 +3124,7 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 		}
 	}
 
-	if collectionOwnerUsername == "" {
+	if err := common.ValidateRequiredParam("collectionOwnerUsername", collectionOwnerUsername); err != nil {
 		return fmt.Errorf("cannot extract collection owner from target URL")
 	}
 
@@ -3163,7 +3215,7 @@ func (ih *InboxHandler) verifyUpdateAuthorization(_ context.Context, activity *a
 		objectOwner = note.AttributedTo
 	}
 
-	if objectOwner == "" {
+	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
 		return fmt.Errorf("cannot determine object owner for authorization")
 	}
 
@@ -3264,7 +3316,7 @@ func (ih *InboxHandler) verifyDeleteAuthorization(_ context.Context, activity *a
 		objectOwner = note.AttributedTo
 	}
 
-	if objectOwner == "" {
+	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
 		return fmt.Errorf("cannot determine object owner for authorization")
 	}
 
@@ -3421,7 +3473,7 @@ func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID stri
 			formerType = objType
 		}
 	}
-	if formerType == "" {
+	if common.ValidateRequiredParam("formerType", formerType) != nil {
 		formerType = activitypub.NoteType // Default assumption
 	}
 
@@ -3512,7 +3564,23 @@ func (ih *InboxHandler) extractDomainFromURL(actorURL string) string {
 }
 
 func main() {
-	handler, err := NewInboxHandler()
+	// Initialize Lambda with standardized federation configuration
+	config := common.LambdaConfig{
+		ServiceName: "inbox",
+		LambdaType:  common.LambdaTypeFederation, // Changed from API to Federation
+	}
+	
+	lambdaCtx := common.MustInitializeLambda(config)
+	
+	// Use standardized initialization with federation-specific options
+	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
+	err := lambdaCtx.InitializeWithOptions(options)
+	if err != nil {
+		// Fallback to manual initialization if needed
+		lambdaCtx.Logger.Warn("falling back to manual service initialization", zap.Error(err))
+	}
+	
+	handler, err := NewInboxHandler(lambdaCtx)
 	if err != nil {
 		panic(fmt.Sprintf("failed to initialize inbox handler: %v", err))
 	}

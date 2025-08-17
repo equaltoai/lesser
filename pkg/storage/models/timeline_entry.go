@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TimelineEntry represents an entry in a user's timeline stored in DynamoDB
@@ -64,7 +65,7 @@ func (e *TimelineEntry) UpdateKeys() {
 
 // SetEntryID generates a unique entry ID if not already set
 func (e *TimelineEntry) SetEntryID() {
-	if e.EntryID == "" {
+	if err := common.ValidateRequiredParam("e.EntryID", e.EntryID); err != nil {
 		e.EntryID = fmt.Sprintf("%d#%s", e.TimelineAt.UnixNano(), e.PostID)
 	}
 }

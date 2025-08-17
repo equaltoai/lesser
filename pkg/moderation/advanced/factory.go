@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ModerationMode defines the operation mode for the moderation engine
@@ -51,7 +52,7 @@ func NewEngineWithMode(opts EngineOptions) *Engine {
 	}
 
 	// Determine mode from environment if not specified
-	if opts.Mode == "" {
+	if err := common.ValidateRequiredParam("opts.Mode", string(opts.Mode)); err != nil {
 		modeStr := os.Getenv("MODERATION_MODE")
 		switch modeStr {
 		case "aws":

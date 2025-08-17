@@ -10,6 +10,7 @@ import (
 	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/session"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 var (
@@ -29,7 +30,7 @@ var (
 func GetClient(_ context.Context) (core.DB, error) {
 	clientOnce.Do(func() {
 		region := os.Getenv("AWS_REGION")
-		if region == "" {
+		if err := common.ValidateRequiredParam("region", region); err != nil {
 			region = "us-east-1" // Default region
 		}
 
@@ -42,7 +43,7 @@ func GetClient(_ context.Context) (core.DB, error) {
 		if endpoint != "" {
 			config.Endpoint = endpoint
 			// Use fake credentials for local development
-			if os.Getenv("AWS_ACCESS_KEY_ID") == "" {
+			if err := common.ValidateRequiredParam("AWS_ACCESS_KEY_ID", os.Getenv("AWS_ACCESS_KEY_ID")); err != nil {
 				// Set credentials using environment variables instead
 				_ = os.Setenv("AWS_ACCESS_KEY_ID", "fakeMyKeyId")
 				_ = os.Setenv("AWS_SECRET_ACCESS_KEY", "fakeSecretAccessKey")

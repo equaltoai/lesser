@@ -10,6 +10,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MarkerRepository implements marker operations using DynamORM
@@ -75,7 +76,7 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 // GetMarkers retrieves timeline position markers for specified timelines
 func (r *MarkerRepository) GetMarkers(ctx context.Context, username string, timelines []string) (map[string]*storage.Marker, error) {
 	// Default to home and notifications if no timelines specified (matches legacy exactly)
-	if len(timelines) == 0 {
+	if err := common.ValidateSliceNotEmpty("timelines", timelines); err != nil {
 		timelines = []string{"home", "notifications"}
 	}
 

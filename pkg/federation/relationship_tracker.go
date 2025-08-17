@@ -13,6 +13,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
@@ -251,7 +252,7 @@ func (rt *RelationshipTracker) GenerateRecommendations(ctx context.Context, doma
 
 // trackUserRelationship tracks a user-level federation relationship
 func (rt *RelationshipTracker) trackUserRelationship(ctx context.Context, attempt *DeliveryAttempt) error {
-	if attempt.UserID == "" {
+	if err := common.ValidateRequiredParam("user_id", attempt.UserID); err != nil {
 		// Can't track user-level without user ID
 		return nil
 	}
@@ -768,7 +769,7 @@ func (rt *RelationshipTracker) GetUserRelationships(ctx context.Context, userID 
 
 // GetInstanceAggregate retrieves the current aggregate metrics for an instance
 func (rt *RelationshipTracker) GetInstanceAggregate(ctx context.Context, instanceDomain string, period string) (*models.FederationRelationshipAggregate, error) {
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = "15min"
 	}
 
@@ -1047,7 +1048,12 @@ type ArchiveMetadata struct {
 
 // archiveToS3 archives a relationship to S3 in compressed JSON format
 func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.FederationRelationship) error {
-	if rt.s3Client == nil || rt.archiveBucket == "" {
+	if rt.s3Client == nil {
+		rt.logger.Debug("S3 archival not configured, skipping archival",
+			zap.String("rel_id", rel.ID))
+		return nil
+	}
+	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
 		rt.logger.Debug("S3 archival not configured, skipping archival",
 			zap.String("rel_id", rel.ID))
 		return nil
@@ -1267,7 +1273,10 @@ func (rt *RelationshipTracker) archiveInstanceGroup(ctx context.Context, targetI
 
 // restoreFromS3 restores a relationship from S3 archive
 func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocation string) (*models.FederationRelationship, error) {
-	if rt.s3Client == nil || rt.archiveBucket == "" {
+	if rt.s3Client == nil {
+		return nil, fmt.Errorf("S3 client not configured for restore operation")
+	}
+	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
 		return nil, fmt.Errorf("S3 client not configured for restore operation")
 	}
 
@@ -1350,7 +1359,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 		}
 
 		// Success - validate data integrity
-		if len(archiveData.Relationships) == 0 {
+		if err := common.ValidateSliceNotEmpty("archive_relationships", archiveData.Relationships); err != nil {
 			return nil, fmt.Errorf("archive contains no relationships")
 		}
 
@@ -1374,7 +1383,10 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 
 // restoreMultipleFromS3 restores multiple relationships from a batch S3 archive
 func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiveLocation string) ([]models.FederationRelationship, error) {
-	if rt.s3Client == nil || rt.archiveBucket == "" {
+	if rt.s3Client == nil {
+		return nil, fmt.Errorf("S3 client not configured for restore operation")
+	}
+	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
 		return nil, fmt.Errorf("S3 client not configured for restore operation")
 	}
 
@@ -1416,7 +1428,7 @@ func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiv
 	}
 
 	// Validate data integrity
-	if len(archiveData.Relationships) == 0 {
+	if err := common.ValidateSliceNotEmpty("archive_relationships", archiveData.Relationships); err != nil {
 		return nil, fmt.Errorf("archive contains no relationships")
 	}
 
@@ -1430,7 +1442,10 @@ func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiv
 
 // cleanupS3Archive removes the S3 archive after successful restore
 func (rt *RelationshipTracker) cleanupS3Archive(ctx context.Context, archiveLocation string) error {
-	if rt.s3Client == nil || rt.archiveBucket == "" {
+	if rt.s3Client == nil {
+		return nil
+	}
+	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
 		return nil
 	}
 
@@ -1451,7 +1466,7 @@ func (rt *RelationshipTracker) cleanupS3Archive(ctx context.Context, archiveLoca
 
 // BatchRestoreRelationships restores multiple relationships from archives using batch operations
 func (rt *RelationshipTracker) BatchRestoreRelationships(ctx context.Context, archiveLocations []string) error {
-	if len(archiveLocations) == 0 {
+	if err := common.ValidateSliceNotEmpty("archive_locations", archiveLocations); err != nil {
 		return nil
 	}
 
@@ -1497,7 +1512,7 @@ func (rt *RelationshipTracker) BatchRestoreRelationships(ctx context.Context, ar
 	}
 
 	// Batch write all restored relationships to DynamoDB
-	if len(allRelationships) > 0 {
+	if err := common.ValidateSliceNotEmpty("restored_relationships", allRelationships); err == nil {
 		result, err := batchWriter.WriteItems(ctx, allRelationships)
 		if err != nil {
 			return fmt.Errorf("failed to batch write restored relationships: %w", err)

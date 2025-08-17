@@ -15,7 +15,6 @@ import (
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -39,15 +38,38 @@ type appContext struct {
 
 func main() {
 	flags := parseFlags()
+	
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName: "configure-instance",
+		LambdaType:  common.LambdaTypeBasic,
+		Version:     "1.0.0",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
+	}
 
-	logger := initializeLogger()
-	defer syncLogger(logger)
+	// Load AWS config
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
+		awsconfig.WithRegion(lambdaCtx.Config.Region),
+	)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
 
-	repos := initializeRepositories(logger)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
 
 	appCtx := &appContext{
 		ctx:    context.Background(),
-		logger: logger,
+		logger: lambdaCtx.Logger,
 		repos:  repos,
 	}
 
@@ -87,55 +109,6 @@ func parseFlags() *configFlags {
 	return flags
 }
 
-// initializeLogger creates and returns a zap logger
-func initializeLogger() *zap.Logger {
-	logger, _ := zap.NewProduction()
-	return logger
-}
-
-// syncLogger ensures the logger is properly synced
-func syncLogger(logger *zap.Logger) {
-	if err := logger.Sync(); err != nil {
-		log.Printf("Failed to sync logger: %v", err)
-	}
-}
-
-// initializeRepositories sets up DynamORM and repository factory
-func initializeRepositories(logger *zap.Logger) *factory.RepositoryFactory {
-	// Get configuration for AWS region
-	cfg := config.Get()
-
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		log.Fatalf("Failed to load AWS config: %v", err)
-	}
-
-	db, err := dynamorm.GetClient(context.Background())
-	if err != nil {
-		log.Fatalf("Failed to initialize DynamORM: %v", err)
-	}
-
-	tableName := getTableName()
-
-	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
-	if err != nil {
-		log.Fatalf("Failed to create repository factory: %v", err)
-	}
-
-	return repos
-}
-
-// getTableName returns the DynamoDB table name from environment or default
-func getTableName() string {
-	tableName := os.Getenv("DYNAMODB_TABLE")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-	return tableName
-}
 
 // showCurrentConfiguration displays the current instance configuration
 func showCurrentConfiguration(appCtx *appContext) {
@@ -153,7 +126,7 @@ func showInstanceRules(appCtx *appContext) {
 	}
 
 	fmt.Println("Current Rules:")
-	if len(rules) == 0 {
+	if err := common.ValidateSliceNotEmpty("rules", rules); err != nil {
 		fmt.Println("  (no rules set)")
 	}
 	for _, rule := range rules {
@@ -236,7 +209,7 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
 // getDomain gets the domain from environment or prompts the user
 func getDomain() string {
 	domain := os.Getenv("DOMAIN")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		fmt.Print("Enter your instance domain (e.g., example.com): ")
 		if _, err := fmt.Scanln(&domain); err != nil {
 			log.Fatalf("Failed to read domain input: %v", err)

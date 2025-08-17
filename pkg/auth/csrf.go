@@ -135,7 +135,7 @@ func (m *CSRFManager) GenerateToken(userID string) (string, error) {
 
 // ValidateToken checks if a CSRF token is valid for a user
 func (m *CSRFManager) ValidateToken(token string, userID string) error {
-	if token == "" {
+	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return ErrMissingCSRF
 	}
 
@@ -173,11 +173,11 @@ func CSRFMiddleware(manager *CSRFManager) func(http.HandlerFunc) http.HandlerFun
 
 			// Extract CSRF token from header or form
 			csrfToken := r.Header.Get("X-CSRF-Token")
-			if csrfToken == "" {
+			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
 				csrfToken = r.FormValue("csrf_token")
 			}
 
-			if csrfToken == "" {
+			if err := common.ValidateRequiredParam("csrfToken", csrfToken); err != nil {
 				// Log CSRF failure
 				claims, _ := GetClaims(r.Context())
 				userID := ""

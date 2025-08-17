@@ -39,7 +39,7 @@ type TrendingRepository struct {
 func NewTrendingRepository(db core.DB, logger *zap.Logger) *TrendingRepository {
 	// Get domain from environment, default to localhost for development
 	domain := os.Getenv("DOMAIN")
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultDomain
 	}
 
@@ -470,7 +470,8 @@ func extractDomainFromURL(rawURL string) string {
 
 // GetRecentHashtags returns recent hashtags since the given time (no trending calculation)
 func (r *TrendingRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
 		limit = 20
 	}
 
@@ -568,7 +569,7 @@ func (r *TrendingRepository) GetRecentStatusesWithEngagement(ctx context.Context
 		}
 	}
 
-	if len(statuses) > limit {
+	if err := common.ValidateSliceLength("statuses", statuses, limit); err == nil {
 		statuses = statuses[:limit]
 	}
 
@@ -647,7 +648,7 @@ func (r *TrendingRepository) GetRecentLinks(ctx context.Context, since time.Time
 		}
 	}
 
-	if len(links) > limit {
+	if err := common.ValidateSliceLength("links", links, limit); err == nil {
 		links = links[:limit]
 	}
 
@@ -943,7 +944,7 @@ func (r *TrendingRepository) DeleteOldStatusTrends(ctx context.Context, before t
 func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error {
 	// Normalize query
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
-	if normalizedQuery == "" {
+	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
 		return nil
 	}
 
@@ -1037,7 +1038,7 @@ func (r *TrendingRepository) GetPopularSearchQueries(ctx context.Context, limit 
 	}
 
 	// Apply limit
-	if len(results) > limit {
+	if err := common.ValidateSliceLength("results", results, limit); err == nil {
 		results = results[:limit]
 	}
 
@@ -1091,7 +1092,8 @@ func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query str
 
 // GetStatusesByLink retrieves statuses that contain a specific link
 func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
 		limit = 20
 	}
 
@@ -1159,7 +1161,7 @@ func (r *TrendingRepository) IndexByEngagement(ctx context.Context, statusID str
 // GenerateSearchSuggestions generates search suggestions based on user history and popular queries
 func (r *TrendingRepository) GenerateSearchSuggestions(ctx context.Context, userID, partialQuery string, limit int) ([]string, error) {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(partialQuery))
-	if normalizedQuery == "" {
+	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
 		return []string{}, nil
 	}
 
@@ -1453,7 +1455,7 @@ func (r *TrendingRepository) GetTopEngagedContent(ctx context.Context, metricTyp
 	}
 
 	// Apply limit
-	if len(rankings) > limit {
+	if err := common.ValidateSliceLength("rankings", rankings, limit); err == nil {
 		rankings = rankings[:limit]
 	}
 
@@ -2541,7 +2543,8 @@ func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (i
 
 // GetTopQueries retrieves the most popular queries within a time range
 func (r *TrendingRepository) GetTopQueries(ctx context.Context, limit int, timeRange time.Duration) ([]storage.SearchQueryStats, error) {
-	if limit <= 0 || limit > 100 {
+	// Validate limit using centralized validation
+	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
 		limit = 20
 	}
 
@@ -2712,7 +2715,7 @@ func (r *TrendingRepository) GetActorInteraction(ctx context.Context, actor1, ac
 	// Combine and find the most recent interaction
 	allEngagements := append(engagements, reverseEngagements...)
 
-	if len(allEngagements) == 0 {
+	if err := common.ValidateSliceNotEmpty("allEngagements", allEngagements); err != nil {
 		return nil, nil // No interactions found
 	}
 

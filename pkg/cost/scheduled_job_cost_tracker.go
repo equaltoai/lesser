@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ScheduledJobCostRepository defines the interface for scheduled job cost persistence
@@ -437,7 +438,7 @@ func (msje *MultiStepJobExecution) FinishStep(stepName, status string, err error
 
 // GetCurrentStep returns the currently executing step
 func (msje *MultiStepJobExecution) GetCurrentStep() *JobStepExecution {
-	if msje.currentStep == "" {
+	if err := common.ValidateRequiredParam("msje.currentStep", msje.currentStep); err != nil {
 		return nil
 	}
 	return msje.steps[msje.currentStep]

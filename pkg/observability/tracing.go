@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TracingConfig contains configuration for distributed tracing
@@ -332,7 +333,7 @@ func (tm *TracingManager) InjectTraceHeaders(ctx context.Context, headers map[st
 // ExtractTraceHeaders extracts trace information from headers
 func (tm *TracingManager) ExtractTraceHeaders(headers map[string]string) *TraceContext {
 	traceHeader := headers["X-Amzn-Trace-Id"]
-	if traceHeader == "" {
+	if err := common.ValidateRequiredParam("traceHeader", traceHeader); err != nil {
 		return nil
 	}
 

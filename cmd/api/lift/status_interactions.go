@@ -2,12 +2,13 @@ package lift
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -19,11 +20,10 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 	}
 
 	// Parse pagination parameters
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFollowLimit(limitStr)
+	if err != nil {
+		limit = 20
 	}
 	cursor := ctx.Query("max_id")
 
@@ -47,7 +47,7 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 	for _, user := range result.Users {
 		// Convert storage.Account to activitypub.Actor first
 		if user.Actor != nil {
-			account := h.converter.ActorToAccount(user.Actor)
+			account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
 			accounts = append(accounts, account)
 		}
 	}
@@ -70,11 +70,10 @@ func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
 	}
 
 	// Parse pagination parameters
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 80 {
-			limit = l
-		}
+	limitStr := ctx.Query("limit")
+	limit, err := common.ParseFollowLimit(limitStr)
+	if err != nil {
+		limit = 20
 	}
 	cursor := ctx.Query("max_id")
 
@@ -98,7 +97,7 @@ func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
 	for _, user := range result.Users {
 		// Convert storage.Account to activitypub.Actor first
 		if user.Actor != nil {
-			account := h.converter.ActorToAccount(user.Actor)
+			account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
 			accounts = append(accounts, account)
 		}
 	}

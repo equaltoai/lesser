@@ -12,6 +12,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DomainBlockRepository implements domain block operations using DynamORM
@@ -143,7 +144,7 @@ func (r *DomainBlockRepository) IsBlockedDomain(ctx context.Context, username, d
 // CreateInstanceDomainBlock creates an instance-level domain block
 func (r *DomainBlockRepository) CreateInstanceDomainBlock(ctx context.Context, block *storage.InstanceDomainBlock) error {
 	// Generate ID if not provided
-	if block.ID == "" {
+	if err := common.ValidateRequiredParam("block.ID", block.ID); err != nil {
 		block.ID = uuid.New().String()
 	}
 
@@ -461,7 +462,7 @@ func (r *DomainBlockRepository) IsDomainBlocked(ctx context.Context, domain stri
 // CreateEmailDomainBlock creates an email domain block
 func (r *DomainBlockRepository) CreateEmailDomainBlock(ctx context.Context, block *storage.EmailDomainBlock) error {
 	// Generate ID if not provided
-	if block.ID == "" {
+	if err := common.ValidateRequiredParam("block.ID", block.ID); err != nil {
 		block.ID = uuid.New().String()
 	}
 	block.CreatedAt = time.Now()
@@ -627,7 +628,7 @@ func (r *DomainBlockRepository) GetDomainAllows(ctx context.Context, limit int, 
 // CreateDomainAllow adds a domain to the allowlist
 func (r *DomainBlockRepository) CreateDomainAllow(ctx context.Context, allow *storage.DomainAllow) error {
 	// Generate ID if not provided
-	if allow.ID == "" {
+	if err := common.ValidateRequiredParam("allow.ID", allow.ID); err != nil {
 		allow.ID = uuid.New().String()
 	}
 	allow.CreatedAt = time.Now()

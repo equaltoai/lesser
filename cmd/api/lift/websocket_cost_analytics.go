@@ -123,7 +123,7 @@ func (h *Handler) GetWebSocketCostAnalytics(ctx *lift.Context, req WebSocketCost
 	}
 
 	limit := req.Limit
-	if limit == 0 || limit > 100 {
+	if err := common.ValidateIntRange("limit", limit, 1, 100); err != nil {
 		limit = 50 // Default limit
 	}
 
@@ -221,7 +221,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 		filteredCosts = append(filteredCosts, cost)
 	}
 
-	if len(filteredCosts) == 0 {
+	if err := common.ValidateSliceNotEmpty("filteredCosts", filteredCosts); err != nil {
 		return &WebSocketOverallSummary{
 			DateRange: fmt.Sprintf("%s to %s", startTime.Format(common.DateFormat), endTime.Format(common.DateFormat)),
 		}, nil
@@ -241,7 +241,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 	for _, cost := range filteredCosts {
 		summary.TotalCostDollars += cost.EstimatedCostDollars
 
-		if cost.UserID != "" {
+		if err := common.ValidateRequiredParam("user_id", cost.UserID); err == nil {
 			uniqueUsers[cost.UserID] = true
 		}
 		uniqueConnections[cost.ConnectionID] = true
@@ -292,7 +292,7 @@ func (h *Handler) buildWebSocketOverallSummary(costRepo *repositories.WebSocketC
 
 // buildWebSocketCostTrends builds cost trends analysis
 func (h *Handler) buildWebSocketCostTrends(costRepo *repositories.WebSocketCostRepository, startTime, endTime time.Time, period string) (*WebSocketCostTrends, error) {
-	if period == "" {
+	if err := common.ValidateRequiredParam("period", period); err != nil {
 		period = periodDay
 	}
 
@@ -375,7 +375,7 @@ func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCos
 		if bucket, exists := buckets[bucketTime]; exists {
 			bucket.CostSum += cost.EstimatedCostDollars
 			
-			if cost.UserID != "" {
+			if err := common.ValidateRequiredParam("user_id", cost.UserID); err == nil {
 				bucket.UserSet[cost.UserID] = true
 			}
 			
@@ -457,7 +457,7 @@ func (h *Handler) analyzeWebSocketTrends(dataPoints []WebSocketCostDataPoint) *W
 	}
 
 	// Calculate trend analysis directly from data points
-	if len(dataPoints) > 1 {
+	if err := common.ValidateSliceLength("dataPoints", dataPoints, 1000); err == nil && len(dataPoints) > 1 {
 		return h.enhancedLocalTrendAnalysis(dataPoints)
 	}
 
@@ -475,15 +475,17 @@ func (h *Handler) enhancedLocalTrendAnalysis(dataPoints []WebSocketCostDataPoint
 	shortMA := h.calculateMovingAverage(dataPoints, 3)  // Short-term trend
 	longMA := h.calculateMovingAverage(dataPoints, 7)   // Long-term trend
 
-	if len(shortMA) > 0 && len(longMA) > 0 {
-		// Moving average crossover analysis
-		recentShort := shortMA[len(shortMA)-1]
-		recentLong := longMA[len(longMA)-1]
-		
-		if recentShort > recentLong*1.02 { // 2% threshold for significance
-			analysis.TrendDirection = "increasing"
-		} else if recentShort < recentLong*0.98 {
-			analysis.TrendDirection = "decreasing"
+	if err := common.ValidateSliceNotEmpty("shortMA", shortMA); err == nil {
+		if err := common.ValidateSliceNotEmpty("longMA", longMA); err == nil {
+			// Moving average crossover analysis
+			recentShort := shortMA[len(shortMA)-1]
+			recentLong := longMA[len(longMA)-1]
+			
+			if recentShort > recentLong*1.02 { // 2% threshold for significance
+				analysis.TrendDirection = "increasing"
+			} else if recentShort < recentLong*0.98 {
+				analysis.TrendDirection = "decreasing"
+			}
 		}
 	}
 
@@ -589,8 +591,8 @@ func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, d
 // GetUserWebSocketBudget retrieves budget information for a user
 func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {
 	userID := ctx.Param("user_id")
-	if userID == "" {
-		return nil, lift.ValidationError("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
+		return nil, lift.ValidationError(err.Error())
 	}
 
 	// Get WebSocket cost repository from the repository storage
@@ -625,8 +627,8 @@ func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error)
 // CreateUserWebSocketBudget creates or updates a budget for a user
 func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {
 	userID := ctx.Param("user_id")
-	if userID == "" {
-		return nil, lift.ValidationError("user_id is required")
+	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
+		return nil, lift.ValidationError(err.Error())
 	}
 
 	var budgetReq struct {
@@ -638,7 +640,7 @@ func (h *Handler) CreateUserWebSocketBudget(ctx *lift.Context) (interface{}, err
 		MessagesPerMinute int     `json:"messages_per_minute,omitempty"`
 	}
 
-	if len(ctx.Request.Body) > 0 {
+	if err := common.ValidateSliceNotEmpty("requestBody", ctx.Request.Body); err == nil {
 		if err := json.Unmarshal(ctx.Request.Body, &budgetReq); err != nil {
 			return nil, lift.ValidationError("invalid request body")
 		}

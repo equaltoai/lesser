@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
@@ -126,7 +127,7 @@ func NewTimelineBatchOperations(db core.DB, logger *zap.Logger, tracker *cost.Tr
 
 // BatchInsertTimelineEntries efficiently inserts timeline entries for multiple followers
 func (tbo *TimelineBatchOperations) BatchInsertTimelineEntries(ctx context.Context, followerIDs []string, statusID, authorID string, createdAt time.Time) error {
-	if len(followerIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("follower_ids", followerIDs); err != nil {
 		return nil
 	}
 
@@ -145,7 +146,7 @@ func (tbo *TimelineBatchOperations) BatchInsertTimelineEntries(ctx context.Conte
 	}
 
 	// Use parallel batch operations for large follower lists
-	if len(entries) > 100 {
+	if err := common.ValidateSliceLength("entries", entries, 100); err != nil {
 		_, err := tbo.batchWriter.WriteItemsParallel(ctx, entries, 4)
 		return err
 	}
@@ -170,7 +171,7 @@ func (tbo *TimelineBatchOperations) BatchInsertTimelineEntries(ctx context.Conte
 
 // BatchRemoveTimelineEntries removes timeline entries for unfollowed users
 func (tbo *TimelineBatchOperations) BatchRemoveTimelineEntries(ctx context.Context, followerIDs []string, authorID string) error {
-	if len(followerIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("follower_ids", followerIDs); err != nil {
 		return nil
 	}
 
@@ -216,7 +217,7 @@ func NewNotificationBatchOperations(db core.DB, logger *zap.Logger, tracker *cos
 
 // BatchCreateMentionNotifications creates mention notifications for multiple users
 func (nbo *NotificationBatchOperations) BatchCreateMentionNotifications(ctx context.Context, mentionedUserIDs []string, statusID, authorID string) error {
-	if len(mentionedUserIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("mentioned_user_ids", mentionedUserIDs); err != nil {
 		return nil
 	}
 
@@ -257,7 +258,7 @@ func (nbo *NotificationBatchOperations) BatchCreateMentionNotifications(ctx cont
 
 // BatchMarkNotificationsRead marks multiple notifications as read
 func (nbo *NotificationBatchOperations) BatchMarkNotificationsRead(ctx context.Context, userID string, notificationIDs []string) error {
-	if len(notificationIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("notification_ids", notificationIDs); err != nil {
 		return nil
 	}
 
@@ -304,7 +305,7 @@ func NewMediaBatchOperations(db core.DB, logger *zap.Logger, tracker *cost.Track
 
 // BatchUpdateMediaStatus updates the processing status of multiple media items
 func (mbo *MediaBatchOperations) BatchUpdateMediaStatus(ctx context.Context, mediaIDs []string, status string, processedAt *time.Time) error {
-	if len(mediaIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("media_ids", mediaIDs); err != nil {
 		return nil
 	}
 
@@ -339,7 +340,7 @@ func (mbo *MediaBatchOperations) BatchUpdateMediaStatus(ctx context.Context, med
 
 // BatchCleanupExpiredMedia removes expired unused media items
 func (mbo *MediaBatchOperations) BatchCleanupExpiredMedia(ctx context.Context, expiredMediaKeys []map[string]any) error {
-	if len(expiredMediaKeys) == 0 {
+	if err := common.ValidateSliceNotEmpty("expired_media_keys", expiredMediaKeys); err != nil {
 		return nil
 	}
 
@@ -382,7 +383,7 @@ func NewAdvancedBatchOperations(db core.DB, tableName string, logger *zap.Logger
 
 // BatchUpsertWithConflictResolution performs batch upsert with conflict resolution
 func (abo *AdvancedBatchOperations) BatchUpsertWithConflictResolution(ctx context.Context, items []any, conflictResolver func(existing, newItem any) any) error {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
@@ -484,7 +485,7 @@ func isConflictError(err error) bool {
 
 // resolveConflicts attempts to resolve conflicts by reading existing items and applying conflict resolution
 func (abo *AdvancedBatchOperations) resolveConflicts(ctx context.Context, originalBatch []any, conflictResolver func(existing, newItem any) any) ([]any, error) {
-	if len(originalBatch) == 0 {
+	if err := common.ValidateSliceNotEmpty("original_batch", originalBatch); err != nil {
 		return originalBatch, nil
 	}
 
@@ -553,7 +554,7 @@ func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item a
 		sk = skField
 	}
 	
-	if pk == "" {
+	if err := common.ValidateRequiredParam("pk", pk); err != nil {
 		return nil, fmt.Errorf("could not extract primary key from item")
 	}
 	
@@ -589,7 +590,7 @@ func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item a
 		return nil, fmt.Errorf("failed to read existing item: %w", err)
 	}
 	
-	if len(resultItems) == 0 {
+	if err := common.ValidateSliceNotEmpty("result_items", resultItems); err != nil {
 		return nil, fmt.Errorf("item not found")
 	}
 	
@@ -722,7 +723,7 @@ func isNotFoundError(err error) bool {
 
 // BatchProcessWithRetry processes items with exponential backoff retry
 func (abo *AdvancedBatchOperations) BatchProcessWithRetry(ctx context.Context, items []any, maxRetries int, processor func([]any) error) error {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
@@ -804,7 +805,7 @@ func NewParallelBatchProcessor(repository *BatchRepository, workers, batchSize i
 
 // ProcessWithProgress processes items with progress tracking
 func (pbp *ParallelBatchProcessor) ProcessWithProgress(ctx context.Context, items []any, progressCallback func(processed, total int)) error {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
@@ -927,7 +928,7 @@ func NewBatchValidationProcessor(repository *BatchRepository, validator func(any
 
 // ProcessWithValidation validates and processes items in batches
 func (bvp *BatchValidationProcessor) ProcessWithValidation(ctx context.Context, items []any) (*ValidationResult, error) {
-	if len(items) == 0 {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &ValidationResult{}, nil
 	}
 
@@ -954,7 +955,7 @@ func (bvp *BatchValidationProcessor) ProcessWithValidation(ctx context.Context, 
 	result.InvalidCount = len(result.InvalidItems)
 
 	// Process valid items
-	if len(result.ValidItems) > 0 {
+	if err := common.ValidateSliceNotEmpty("valid_items", result.ValidItems); err == nil {
 		batchResult, err := bvp.repository.batchWriter.WriteItems(ctx, result.ValidItems)
 		if err != nil {
 			return result, fmt.Errorf("batch processing failed: %w", err)

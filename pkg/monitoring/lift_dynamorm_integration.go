@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ProductionMetricsConfig configures comprehensive production monitoring
@@ -312,7 +313,7 @@ func (pm *ProductionMonitor) shouldFlush() bool {
 // flushMetrics sends all buffered metrics to CloudWatch
 func (pm *ProductionMonitor) flushMetrics(ctx context.Context) {
 	pm.buffer.mu.Lock()
-	if len(pm.buffer.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("pm.buffer.metrics", pm.buffer.metrics); err != nil {
 		pm.buffer.mu.Unlock()
 		return
 	}

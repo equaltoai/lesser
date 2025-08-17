@@ -3,7 +3,6 @@ package lift
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -46,8 +45,8 @@ type FeaturedTag struct {
 // HandleGetTagLift retrieves information about a specific hashtag
 func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	tagName := ctx.Param("id")
-	if tagName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "tag name is required"})
+	if err := common.ValidateRequiredParam("id", tagName); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Get actual tag statistics from storage
@@ -103,10 +102,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	}
 
 	// Check if user is following this tag (if authenticated)
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		authHeader = ctx.Header("authorization")
-	}
+	authHeader := h.getAuthorizationHeader(ctx)
 
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
@@ -134,13 +130,13 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 // HandleFollowTagLift follows a hashtag
 func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 	tagName := ctx.Param("id")
-	if tagName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "tag name is required"})
+	if err := common.ValidateRequiredParam("id", tagName); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -149,18 +145,7 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -237,13 +222,13 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 // HandleUnfollowTagLift unfollows a hashtag
 func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 	tagName := ctx.Param("id")
-	if tagName == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "tag name is required"})
+	if err := common.ValidateRequiredParam("id", tagName); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -252,18 +237,7 @@ func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -394,7 +368,7 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 // getHeaderValue gets header value with fallback to direct request access
 func (h *Handler) getHeaderValue(ctx *lift.Context, headerName string) string {
 	value := ctx.Header(headerName)
-	if value == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(value, "value") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		value = ctx.Request.Request.Headers[headerName]
 	}
 	return value
@@ -403,14 +377,14 @@ func (h *Handler) getHeaderValue(ctx *lift.Context, headerName string) string {
 // getAuthorizationHeader extracts Authorization header with case variations
 func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
-	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -426,19 +400,17 @@ type paginationParams struct {
 
 // extractPaginationParams extracts and validates pagination parameters
 func (h *Handler) extractPaginationParams(ctx *lift.Context) paginationParams {
-	limit := 100
 	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
-			limit = l
-		}
+	limit, err := common.ParseHashtagLimit(limitStr)
+	if err != nil {
+		limit = 100
 	}
 
 	cursor := ctx.Query("max_id")
-	if cursor == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(cursor, "cursor") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		cursor = ctx.Request.Request.QueryParams["max_id"]
 	}
 
@@ -493,7 +465,7 @@ func (h *Handler) getHashtagHistory(ctx context.Context, hashtag string) []hasht
 func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -502,18 +474,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -560,7 +521,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -569,18 +530,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -613,8 +563,8 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		}
 	}
 
-	if req.Name == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "name is required"})
+	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Create featured tag
@@ -659,13 +609,13 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 // HandleDeleteFeaturedTagLift removes a featured tag from the user's profile
 func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	tagID := ctx.Param("id")
-	if tagID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "tag ID is required"})
+	if err := common.ValidateRequiredParam("id", tagID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -674,18 +624,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -719,7 +658,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -728,18 +667,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		username = testUsername
 	} else {
 		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if authHeader == "" {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+		authHeader := h.getAuthorizationHeader(ctx)
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
@@ -812,8 +740,8 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 // HandleGetAccountFeaturedTagsLift retrieves featured tags for a specific account
 func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
-	if accountID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "account ID is required"})
+	if err := common.ValidateRequiredParam("id", accountID); err != nil {
+		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Get featured tags for the account

@@ -6,6 +6,7 @@ import (
 
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // RequestIDMiddleware creates middleware that ensures every request has a unique ID
@@ -13,7 +14,7 @@ func RequestIDMiddleware(serviceName string) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := ctx.GetRequestID()
-			if requestID == "" {
+			if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 				requestID = fmt.Sprintf("%s-%d", serviceName, time.Now().UnixNano())
 				ctx.Set("requestID", requestID)
 			}

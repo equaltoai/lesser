@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaAttachment represents the association between media files and their parent entities (users, scheduled statuses, etc.)
@@ -87,13 +89,13 @@ func (m *MediaAttachment) BeforeUpdate() error {
 
 // Validate performs validation on the MediaAttachment
 func (m *MediaAttachment) Validate() error {
-	if strings.TrimSpace(m.MediaID) == "" {
+	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(m.MediaID)); err != nil {
 		return fmt.Errorf("MediaID is required")
 	}
-	if strings.TrimSpace(m.EntityType) == "" {
+	if err := common.ValidateRequiredParam("EntityType", strings.TrimSpace(m.EntityType)); err != nil {
 		return fmt.Errorf("EntityType is required")
 	}
-	if strings.TrimSpace(m.EntityID) == "" {
+	if err := common.ValidateRequiredParam("EntityID", strings.TrimSpace(m.EntityID)); err != nil {
 		return fmt.Errorf("EntityID is required")
 	}
 	if m.Order < 0 {
@@ -141,7 +143,7 @@ func (m *MediaAttachment) SetFocalPoint(x, y float64) {
 
 // GetFocalPoint returns the focal point coordinates
 func (m *MediaAttachment) GetFocalPoint() (x, y float64, ok bool) {
-	if m.FocalPoint == "" {
+	if err := common.ValidateRequiredParam("FocalPoint", m.FocalPoint); err != nil {
 		return 0, 0, false
 	}
 

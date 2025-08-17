@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/dynamorm/pkg/core"
 )
 
@@ -50,10 +51,10 @@ func (r *ModelRepository) Create(_ context.Context, model *Model) error {
 	model.UpdatedAt = now
 
 	// Set primary keys if not already set
-	if model.PK == "" {
+	if err := common.ValidateRequiredParam("PK", model.PK); err != nil {
 		model.PK = fmt.Sprintf("model#%s", model.ID)
 	}
-	if model.SK == "" {
+	if err := common.ValidateRequiredParam("SK", model.SK); err != nil {
 		model.SK = fmt.Sprintf("model#%s", model.ID)
 	}
 
@@ -88,10 +89,10 @@ func (r *ModelRepository) Update(_ context.Context, model *Model) error {
 	model.UpdatedAt = time.Now()
 
 	// Set primary keys if not already set
-	if model.PK == "" {
+	if err := common.ValidateRequiredParam("PK", model.PK); err != nil {
 		model.PK = fmt.Sprintf("model#%s", model.ID)
 	}
-	if model.SK == "" {
+	if err := common.ValidateRequiredParam("SK", model.SK); err != nil {
 		model.SK = fmt.Sprintf("model#%s", model.ID)
 	}
 

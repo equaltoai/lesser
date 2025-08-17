@@ -58,7 +58,7 @@ func (r *MetricsRepository) Create(_ context.Context, metrics *models.Metrics) e
 
 // BatchCreate creates multiple metrics records efficiently using DynamORM batch operations
 func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*models.Metrics) error {
-	if len(metricsList) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics_list", metricsList); err != nil {
 		return nil
 	}
 
@@ -302,7 +302,7 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 		return fmt.Errorf("failed to list metrics for aggregation: %w", err)
 	}
 
-	if len(metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		return nil // Nothing to aggregate
 	}
 
@@ -368,7 +368,7 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 	}
 
 	// Calculate percentiles and standard deviation
-	if len(values) > 0 {
+	if err := common.ValidateSliceNotEmpty("values", values); err == nil {
 		aggregated.Percentiles = calculateMetricPercentiles(values)
 		aggregated.StdDev = calculateStandardDeviation(values, aggregated.Average)
 	}
@@ -521,7 +521,7 @@ func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime ti
 // calculateMetricPercentiles calculates percentiles for a slice of metric values
 // Returns a map with p50, p90, p95, and p99 percentiles
 func calculateMetricPercentiles(values []float64) map[string]float64 {
-	if len(values) == 0 {
+	if err := common.ValidateSliceNotEmpty("values", values); err != nil {
 		return map[string]float64{
 			"p50": 0,
 			"p90": 0,
@@ -548,7 +548,7 @@ func calculateMetricPercentiles(values []float64) map[string]float64 {
 
 // getMetricPercentileValue calculates the value at a specific percentile
 func getMetricPercentileValue(sorted []float64, percentile float64) float64 {
-	if len(sorted) == 0 {
+	if err := common.ValidateSliceNotEmpty("sorted", sorted); err != nil {
 		return 0
 	}
 
@@ -740,7 +740,7 @@ func (r *MetricRecordRepository) CreateMetricRecord(ctx context.Context, record 
 
 // BatchCreateMetricRecords creates multiple metric records efficiently
 func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, records []*models.MetricRecord) error {
-	if len(records) == 0 {
+	if err := common.ValidateSliceNotEmpty("records", records); err != nil {
 		return nil
 	}
 

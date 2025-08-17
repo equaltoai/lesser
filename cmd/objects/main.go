@@ -13,69 +13,76 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // Handler handles ActivityPub federation object requests
 type Handler struct {
-	db                     dynamormCore.DB
+	db                     interface{} // DynamORM DB interface
 	objectRepo             *repositories.ObjectRepository
 	authorizedFetchService *federation.AuthorizedFetchService
 	repos                  core.RepositoryStorage
 	logger                 *zap.Logger
-	cfg                    *config.Config
+	cfg                    interface{} // config.Config interface
+	lambdaCtx              *common.LambdaContext
 }
 
-// NewHandler creates a new objects handler
+// NewHandler creates a new objects handler with standardized initialization
 func NewHandler() (*Handler, error) {
-	logger := common.Logger()
-	cfg := config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Use standardized Lambda initialization for Basic type (simple object serving)
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName:        "objects",
+		LambdaType:         common.LambdaTypeBasic,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableHealthCheck:  false,
+		EnableTracing:      false,
+		EnableCostTracking: false,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
+	}
+
+	// Initialize basic services using default options
+	options := common.DefaultLambdaInitOptions(common.LambdaTypeBasic)
+	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
+		return nil, fmt.Errorf("failed to initialize Lambda services: %w", err)
+	}
+
+	// Extract repositories and services from Lambda context
+	repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok {
+		return nil, fmt.Errorf("failed to get repository storage from Lambda context")
 	}
 
 	// Initialize object repository
-	objectRepo := repositories.NewObjectRepository(db, cfg.DynamoTableName, cfg.Domain, logger)
-
-	// Load AWS config for repository factory
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(), 
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Initialize repository storage for authorized fetch
-	repoStorage, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
-	}
+	objectRepo := repositories.NewObjectRepository(
+		repoStorage.GetDB(), 
+		repoStorage.GetTableName(), 
+		lambdaCtx.Config.Domain, 
+		lambdaCtx.Logger)
 
 	// Initialize authorized fetch service
-	authorizedFetchService := federation.NewAuthorizedFetchService(repoStorage, cfg.Domain, logger)
+	authorizedFetchService := federation.NewAuthorizedFetchService(
+		repoStorage, 
+		lambdaCtx.Config.Domain, 
+		lambdaCtx.Logger)
 
 	return &Handler{
-		db:                     db,
+		db:                     lambdaCtx.DynamoDB,
 		objectRepo:             objectRepo,
 		authorizedFetchService: authorizedFetchService,
 		repos:                  repoStorage,
-		logger:                 logger,
-		cfg:                    cfg,
+		logger:                 lambdaCtx.Logger,
+		cfg:                    lambdaCtx.Config,
+		lambdaCtx:              lambdaCtx,
 	}, nil
 }
 
@@ -83,13 +90,13 @@ func NewHandler() (*Handler, error) {
 func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	// Extract object ID from path parameters
 	objectID := ctx.Param("id")
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return lift.ValidationError("object ID is required")
 	}
 
 	// Check Accept header for content negotiation
 	acceptHeader := ctx.Header("Accept")
-	if acceptHeader == "" {
+	if err := common.ValidateRequiredParam("acceptHeader", acceptHeader); err != nil {
 		acceptHeader = ctx.Header("accept")
 	}
 
@@ -568,7 +575,7 @@ func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
 	}
 
 	// Set host header if not present
-	if req.Header.Get("Host") == "" && ctx.Header("Host") != "" {
+	if err := common.ValidateRequiredParam("host", req.Header.Get("Host")); err != nil && ctx.Header("Host") != "" {
 		req.Host = ctx.Header("Host")
 	}
 
@@ -640,6 +647,10 @@ func main() {
 	// ActivityPub federation endpoint
 	_ = app.GET("/objects/:id", handler.HandleGetObject)
 
-	// Start Lambda handler
-	lambda.Start(app.HandleRequest)
+	// Use standardized Lambda handler with observability
+	standardHandler := handler.lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	})
+
+	lambda.Start(standardHandler)
 }

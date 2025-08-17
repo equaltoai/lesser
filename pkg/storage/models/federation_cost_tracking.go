@@ -276,7 +276,7 @@ func (f *FederationCostTracking) AddRetryDelay(delaySeconds int64) {
 
 // GetAverageRouteLatency returns the average latency across all routes
 func (f *FederationCostTracking) GetAverageRouteLatency() int64 {
-	if len(f.RouteLatency) == 0 {
+	if err := common.ValidateSliceNotEmpty("f.RouteLatency", f.RouteLatency); err != nil {
 		return 0
 	}
 

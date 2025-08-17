@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // UserMediaConfig represents a user's media processing configuration and limits
@@ -106,7 +108,7 @@ func (umc *UserMediaConfig) BeforeUpdate() error {
 
 // setDefaults sets reasonable default values for a new user
 func (umc *UserMediaConfig) setDefaults() {
-	if umc.PlanTier == "" {
+	if err := common.ValidateRequiredParam("plan_tier", umc.PlanTier); err != nil {
 		umc.PlanTier = "free"
 	}
 
@@ -169,27 +171,27 @@ func (umc *UserMediaConfig) setDefaults() {
 	}
 
 	// Default allowed content types
-	if len(umc.AllowedImageTypes) == 0 {
+	if err := common.ValidateSliceNotEmpty("umc.AllowedImageTypes", umc.AllowedImageTypes); err != nil {
 		umc.AllowedImageTypes = []string{
 			"image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp",
 		}
 	}
-	if len(umc.AllowedVideoTypes) == 0 {
+	if err := common.ValidateSliceNotEmpty("umc.AllowedVideoTypes", umc.AllowedVideoTypes); err != nil {
 		umc.AllowedVideoTypes = []string{
 			"video/mp4", "video/webm", "video/quicktime",
 		}
 	}
-	if len(umc.AllowedAudioTypes) == 0 {
+	if err := common.ValidateSliceNotEmpty("umc.AllowedAudioTypes", umc.AllowedAudioTypes); err != nil {
 		umc.AllowedAudioTypes = []string{
 			"audio/mpeg", "audio/mp3", "audio/ogg", "audio/wav", "audio/webm",
 		}
 	}
 
 	// Default quality settings
-	if umc.ImageQuality == "" {
+	if err := common.ValidateRequiredParam("image_quality", umc.ImageQuality); err != nil {
 		umc.ImageQuality = "medium"
 	}
-	if umc.VideoQuality == "" {
+	if err := common.ValidateRequiredParam("video_quality", umc.VideoQuality); err != nil {
 		umc.VideoQuality = "medium"
 	}
 
@@ -205,11 +207,11 @@ func (umc *UserMediaConfig) setDefaults() {
 
 // Validate performs validation on the UserMediaConfig
 func (umc *UserMediaConfig) Validate() error {
-	if strings.TrimSpace(umc.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(umc.UserID)); err != nil {
+		return err
 	}
-	if strings.TrimSpace(umc.Username) == "" {
-		return fmt.Errorf("username is required")
+	if err := common.ValidateRequiredParam("username", strings.TrimSpace(umc.Username)); err != nil {
+		return err
 	}
 
 	// Validate plan tier

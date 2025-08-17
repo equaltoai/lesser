@@ -100,7 +100,7 @@ func GetEventType(record events.DynamoDBEventRecord) (string, error) {
 		return "", fmt.Errorf("unknown event type: %s", record.EventName)
 	}
 
-	if pk == "" {
+	if err := common.ValidateRequiredParam("pk", pk); err != nil {
 		return "", fmt.Errorf("PK not found in record")
 	}
 

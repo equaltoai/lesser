@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -84,11 +85,11 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 		objModel.Sensitive = note.Sensitive
 
 		// Store complex fields as JSON
-		if len(note.Attachment) > 0 {
+		if err := common.ValidateSliceNotEmpty("note attachments", note.Attachment); err == nil {
 			attachJSON, _ := json.Marshal(note.Attachment)
 			objModel.AttachmentJSON = string(attachJSON)
 		}
-		if len(note.Tag) > 0 {
+		if err := common.ValidateSliceNotEmpty("note tags", note.Tag); err == nil {
 			tagJSON, _ := json.Marshal(note.Tag)
 			objModel.TagJSON = string(tagJSON)
 		}
@@ -317,11 +318,11 @@ func (r *ObjectRepository) updateObjectWithEditedFlag(ctx context.Context, objec
 			objModel.Sensitive = note.Sensitive
 
 			// Update complex fields as JSON
-			if len(note.Attachment) > 0 {
+			if err := common.ValidateSliceNotEmpty("note attachments", note.Attachment); err == nil {
 				attachJSON, _ := json.Marshal(note.Attachment)
 				objModel.AttachmentJSON = string(attachJSON)
 			}
-			if len(note.Tag) > 0 {
+			if err := common.ValidateSliceNotEmpty("note tags", note.Tag); err == nil {
 				tagJSON, _ := json.Marshal(note.Tag)
 				objModel.TagJSON = string(tagJSON)
 			}
@@ -396,7 +397,7 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 
 	// Generate next cursor
 	var nextCursor string
-	if len(objects) > limit {
+	if err := common.ValidateSliceLength("objects", objects, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = objects[limit-1].SK
 		objects = objects[:limit] // Trim to requested limit
@@ -459,7 +460,7 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 		objID = note.ID
 	}
 
-	if objID == "" {
+	if err := common.ValidateRequiredParam("object ID", objID); err != nil {
 		return fmt.Errorf("could not extract object ID")
 	}
 
@@ -740,7 +741,7 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 
 	// Generate next cursor
 	var nextCursor string
-	if len(items) > limit {
+	if err := common.ValidateSliceLength("items", items, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = items[limit-1].SK
 		items = items[:limit] // Trim to requested limit
@@ -900,7 +901,7 @@ func (r *ObjectRepository) CreateQuoteRelationship(ctx context.Context, quote *s
 	}
 
 	// Generate ID if not provided
-	if model.ID == "" {
+	if err := common.ValidateRequiredParam("model ID", model.ID); err != nil {
 		model.GenerateID()
 	}
 
@@ -1090,7 +1091,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 
 	// Generate next cursor
 	var nextCursor string
-	if len(objects) > limit {
+	if err := common.ValidateSliceLength("objects", objects, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = objects[limit-1].GSI6SK
 		objects = objects[:limit] // Trim to requested limit
@@ -1374,7 +1375,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 
 	// Generate next cursor
 	var nextCursor string
-	if len(quoteModels) > limit {
+	if err := common.ValidateSliceLength("quote models", quoteModels, limit); err != nil {
 		// We got more results than requested, so there are more pages
 		nextCursor = quoteModels[limit-1].GSI1SK
 		quoteModels = quoteModels[:limit] // Trim to requested limit
@@ -1773,7 +1774,7 @@ func (r *ObjectRepository) checkFollowerPermission(ctx context.Context, statusID
 		authorID = note.AttributedTo
 	}
 
-	if authorID == "" {
+	if err := common.ValidateRequiredParam("author ID", authorID); err != nil {
 		r.logger.Error("could not extract author from status",
 			zap.String("status_id", statusID),
 			zap.String("quoter_id", quoterID))
@@ -2209,7 +2210,7 @@ func (r *ObjectRepository) extractMentionFromMap(tagInterface any) string {
 	}
 
 	href, ok := tagMap["href"].(string)
-	if !ok || href == "" {
+	if !ok || common.ValidateRequiredParam("href", href) != nil {
 		return ""
 	}
 
@@ -2313,7 +2314,7 @@ func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID str
 	if limit > 0 && len(tombstones) > limit {
 		// Remove the extra record and set cursor
 		tombstones = tombstones[:limit]
-		if len(tombstones) > 0 {
+		if err := common.ValidateSliceNotEmpty("tombstones", tombstones); err == nil {
 			nextCursor = tombstones[len(tombstones)-1].GSI1SK
 		}
 	}
@@ -2347,7 +2348,7 @@ func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType s
 	if limit > 0 && len(tombstones) > limit {
 		// Remove the extra record and set cursor
 		tombstones = tombstones[:limit]
-		if len(tombstones) > 0 {
+		if err := common.ValidateSliceNotEmpty("tombstones", tombstones); err == nil {
 			nextCursor = tombstones[len(tombstones)-1].GSI2SK
 		}
 	}

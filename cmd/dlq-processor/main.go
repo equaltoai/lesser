@@ -10,12 +10,10 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/dlq"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -149,33 +147,42 @@ func (h *DLQProcessorHandler) handleAnalytics(ctx *lift.Context) error {
 
 // Global variables for Lambda lifecycle management
 var (
-	logger  *zap.Logger
-	cfg     *config.Config
-	handler *DLQProcessorHandler
-	db      core.DB
+	handler    *DLQProcessorHandler
+	lambdaCtx  *common.LambdaContext
 )
 
 func init() {
-	// Initialize logger
-	logger = common.Logger()
-
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
+	// Use standardized Lambda initialization
 	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	lambdaCtx, err = common.InitializeLambda(common.LambdaConfig{
+		ServiceName:        "dlq-processor",
+		LambdaType:         common.LambdaTypeProcessor,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableHealthCheck:  false,
+		EnableTracing:      true,
+		EnableCostTracking: true,
+	})
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to initialize Lambda", zap.Error(err))
 	}
 
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Set storage in lambdaCtx for reference
+	lambdaCtx.DynamoDB = db
+
 	// Initialize DLQ processor
-	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
+	processor := dlq.NewProcessor(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize handler
-	handler = NewDLQProcessorHandler(processor, logger)
+	handler = NewDLQProcessorHandler(processor, lambdaCtx.Logger)
 
-	logger.Info("DLQ processor initialized successfully")
+	lambdaCtx.Logger.Info("DLQ processor initialized successfully")
 }
 
 func main() {
@@ -218,7 +225,7 @@ func loggingMiddleware() func(lift.Handler) lift.Handler {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
 
-			logger.Info("processing request",
+			lambdaCtx.Logger.Info("processing request",
 				zap.String("request_id", requestID),
 			)
 
@@ -233,13 +240,13 @@ func loggingMiddleware() func(lift.Handler) lift.Handler {
 // logRequestCompletion logs the completion status of a request
 func logRequestCompletion(requestID string, duration time.Duration, err error) {
 	if err != nil {
-		logger.Error("request failed",
+		lambdaCtx.Logger.Error("request failed",
 			zap.String("request_id", requestID),
 			zap.Error(err),
 			zap.Duration("duration", duration),
 		)
 	} else {
-		logger.Info("request completed successfully",
+		lambdaCtx.Logger.Info("request completed successfully",
 			zap.String("request_id", requestID),
 			zap.Duration("duration", duration),
 		)
@@ -261,14 +268,14 @@ func errorHandlingMiddleware() func(lift.Handler) lift.Handler {
 
 // logHandlerError logs handler errors with additional details
 func logHandlerError(ctx *lift.Context, err error) {
-	logger.Error("handler error",
+	lambdaCtx.Logger.Error("handler error",
 		zap.String("request_id", ctx.Get("requestID").(string)),
 		zap.Error(err),
 	)
 
 	// Track error metrics
 	if liftErr, ok := err.(*lift.LiftError); ok {
-		logger.Error("lift error details",
+		lambdaCtx.Logger.Error("lift error details",
 			zap.String("error_code", liftErr.Code),
 			zap.String("error_message", liftErr.Message),
 			zap.Int("status_code", liftErr.StatusCode),
@@ -294,7 +301,7 @@ func costTrackingMiddleware() func(lift.Handler) lift.Handler {
 func trackRequestCost(ctx *lift.Context, duration time.Duration) {
 	processingCostMicroCents := calculateProcessingCost(duration)
 
-	logger.Info("request cost tracking",
+	lambdaCtx.Logger.Info("request cost tracking",
 		zap.String("request_id", ctx.Get("requestID").(string)),
 		zap.Duration("duration", duration),
 		zap.Int64("cost_micro_cents", processingCostMicroCents),
@@ -351,7 +358,7 @@ func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
 	}
 
 	// Try parsing from request body
-	if len(ctx.Request.Body) > 0 {
+	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
 		var event events.SQSEvent
 		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
 			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500)
@@ -383,7 +390,7 @@ func extractEventBridgeEvent(ctx *lift.Context) (events.EventBridgeEvent, error)
 	}
 
 	// Try parsing from request body
-	if len(ctx.Request.Body) > 0 {
+	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
 		var event events.EventBridgeEvent
 		if err := json.Unmarshal(ctx.Request.Body, &event); err != nil {
 			return events.EventBridgeEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse EventBridge event", 500)
@@ -407,7 +414,7 @@ func handleHealthCheck(ctx *lift.Context) error {
 // handleAnalytics returns analytics for a specific service
 func handleAnalytics(ctx *lift.Context) error {
 	service := ctx.Param("service")
-	if service == "" {
+	if err := common.ValidateRequiredParam("service", service); err != nil {
 		return lift.ValidationError("service parameter is required")
 	}
 
@@ -428,7 +435,7 @@ func handleAnalytics(ctx *lift.Context) error {
 // handleTrends returns trend data for a specific service
 func handleTrends(ctx *lift.Context) error {
 	service := ctx.Param("service")
-	if service == "" {
+	if err := common.ValidateRequiredParam("service", service); err != nil {
 		return lift.ValidationError("service parameter is required")
 	}
 
@@ -480,13 +487,13 @@ func handleSearch(ctx *lift.Context) error {
 func parseSearchFilter(ctx *lift.Context) (*repositories.DLQSearchFilter, error) {
 	var filter searchFilter
 
-	if len(ctx.Request.Body) > 0 {
+	if err := common.ValidateSliceNotEmpty("ctx.Request.Body", ctx.Request.Body); err == nil {
 		if err := json.Unmarshal(ctx.Request.Body, &filter); err != nil {
 			return nil, lift.ValidationError("invalid search filter")
 		}
 	}
 
-	if filter.Service == "" {
+	if err := common.ValidateRequiredParam("filter.Service", filter.Service); err != nil {
 		return nil, lift.ValidationError("service is required for search")
 	}
 

@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaMetadataRepository handles media metadata operations using DynamORM
@@ -159,7 +160,7 @@ func (r *MediaMetadataRepository) MarkProcessingComplete(ctx context.Context, me
 		}
 	}
 
-	if metadata.PK == "" {
+	if err := common.ValidateRequiredParam("metadata.PK", metadata.PK); err != nil {
 		return r.CreateMediaMetadata(ctx, metadata)
 	}
 	return r.UpdateMediaMetadata(ctx, metadata)
@@ -181,7 +182,7 @@ func (r *MediaMetadataRepository) MarkProcessingFailed(ctx context.Context, medi
 		zap.String("media_id", mediaID),
 		zap.String("error", errorMsg))
 
-	if metadata.PK == "" {
+	if err := common.ValidateRequiredParam("metadata.PK", metadata.PK); err != nil {
 		return r.CreateMediaMetadata(ctx, metadata)
 	}
 	return r.UpdateMediaMetadata(ctx, metadata)

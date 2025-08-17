@@ -345,7 +345,7 @@ func (r *SearchCostRepository) updateBudgetUsage(ctx context.Context, costData *
 }
 
 func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *models.SearchCostTracking) error {
-	if costData.Query == "" {
+	if err := common.ValidateRequiredParam("costData.Query", costData.Query); err != nil {
 		return nil // Skip empty queries
 	}
 
@@ -473,7 +473,7 @@ func (r *SearchCostRepository) getPeriodDate(period string) string {
 }
 
 func (r *SearchCostRepository) calculateSummary(costs []*models.SearchCostTracking) *SearchCostSummary {
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return &SearchCostSummary{}
 	}
 

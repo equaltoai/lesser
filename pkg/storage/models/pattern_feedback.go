@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // PatternFeedback represents feedback on pattern matching results
@@ -95,7 +96,7 @@ func (p *PatternFeedback) GetFeedbackType() string {
 
 // CalculatePatternAccuracy calculates accuracy from a slice of feedback
 func CalculatePatternAccuracy(feedbacks []*PatternFeedback) float64 {
-	if len(feedbacks) == 0 {
+	if err := common.ValidateSliceNotEmpty("feedbacks", feedbacks); err != nil {
 		return 0
 	}
 
@@ -122,7 +123,7 @@ func CalculatePatternMetrics(feedbacks []*PatternFeedback) map[string]interface{
 		"recall":          0.0,
 	}
 
-	if len(feedbacks) == 0 {
+	if err := common.ValidateSliceNotEmpty("feedbacks", feedbacks); err != nil {
 		return metrics
 	}
 

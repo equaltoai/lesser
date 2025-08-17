@@ -277,7 +277,7 @@ func (mm *ModerationMetrics) FlushMetrics(ctx context.Context) error {
 		return true
 	})
 
-	if len(entries) == 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
 		return nil
 	}
 

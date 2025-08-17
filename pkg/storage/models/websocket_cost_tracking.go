@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/google/uuid"
 )
 
@@ -259,7 +259,7 @@ func (w *WebSocketCostRecord) BeforeCreate() error {
 	w.UpdatedAt = now
 
 	// Generate ID if not provided
-	if w.ID == "" {
+	if err := common.ValidateRequiredParam("w.ID", w.ID); err != nil {
 		w.ID = uuid.New().String()
 	}
 
@@ -317,17 +317,17 @@ func (w *WebSocketCostRecord) setupGSIKeys() {
 
 // Validate performs validation on the WebSocketCostRecord
 func (w *WebSocketCostRecord) Validate() error {
-	if strings.TrimSpace(w.ID) == "" {
-		return fmt.Errorf("ID is required")
+	if err := common.ValidateRequiredParam("ID", w.ID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(w.OperationType) == "" {
-		return fmt.Errorf("OperationType is required")
+	if err := common.ValidateRequiredParam("OperationType", w.OperationType); err != nil {
+		return err
 	}
 	if !isValidWebSocketOperationType(w.OperationType) {
 		return fmt.Errorf("invalid operation type: %s", w.OperationType)
 	}
-	if strings.TrimSpace(w.ConnectionID) == "" {
-		return fmt.Errorf("ConnectionID is required")
+	if err := common.ValidateRequiredParam("ConnectionID", w.ConnectionID); err != nil {
+		return err
 	}
 
 	return nil
@@ -415,11 +415,11 @@ func (w *WebSocketCostBudget) updateStatus() {
 
 // Validate for WebSocketCostBudget
 func (w *WebSocketCostBudget) Validate() error {
-	if strings.TrimSpace(w.UserID) == "" {
-		return fmt.Errorf("UserID is required")
+	if err := common.ValidateRequiredParam("UserID", w.UserID); err != nil {
+		return err
 	}
-	if strings.TrimSpace(w.Period) == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", w.Period); err != nil {
+		return err
 	}
 	if !isValidWebSocketPeriod(w.Period) {
 		return fmt.Errorf("invalid period: %s", w.Period)
@@ -532,11 +532,11 @@ func (w *WebSocketCostAggregation) BeforeUpdate() error {
 
 // Validate for WebSocketCostAggregation
 func (w *WebSocketCostAggregation) Validate() error {
-	if strings.TrimSpace(w.OperationType) == "" {
-		return fmt.Errorf("OperationType is required")
+	if err := common.ValidateRequiredParam("OperationType", w.OperationType); err != nil {
+		return err
 	}
-	if strings.TrimSpace(w.Period) == "" {
-		return fmt.Errorf("period is required")
+	if err := common.ValidateRequiredParam("period", w.Period); err != nil {
+		return err
 	}
 	if w.WindowStart.IsZero() {
 		return fmt.Errorf("WindowStart is required")

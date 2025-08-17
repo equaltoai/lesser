@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SQSHandler is the interface that services must implement to handle SQS events
@@ -64,7 +65,7 @@ func RegisterSQS(app *lift.App, processor *SQSProcessor) {
 func (sp *SQSProcessor) ProcessEvent(ctx *lift.Context, event events.SQSEvent) error {
 	start := time.Now()
 	requestID := ctx.GetRequestID()
-	if requestID == "" {
+	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("%s-%d", sp.queueName, time.Now().UnixNano())
 		ctx.Set("requestID", requestID)
 	}

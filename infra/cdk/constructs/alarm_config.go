@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssns"
 	"github.com/aws/constructs-go/constructs/v10"
 	"github.com/aws/jsii-runtime-go"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AlarmConfiguration defines comprehensive alarm settings for different environments
@@ -636,7 +637,7 @@ func (am *AlarmManager) isStreamProcessor(functionName string) bool {
 }
 
 func (am *AlarmManager) buildCompositeAlarmRule(alarms []awscloudwatch.Alarm) awscloudwatch.IAlarmRule {
-	if len(alarms) == 0 {
+	if err := common.ValidateSliceNotEmpty("alarms", alarms); err != nil {
 		return nil
 	}
 	

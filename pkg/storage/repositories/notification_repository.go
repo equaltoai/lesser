@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -579,7 +580,7 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 
 // CreateNotifications creates multiple notifications efficiently
 func (r *NotificationRepository) CreateNotifications(ctx context.Context, notifications []*models.Notification) error {
-	if len(notifications) == 0 {
+	if err := common.ValidateSliceNotEmpty("notifications", notifications); err != nil {
 		return nil
 	}
 
@@ -635,7 +636,7 @@ func (r *NotificationRepository) DeleteNotificationsByType(ctx context.Context, 
 		return fmt.Errorf("failed to query notifications by type: %w", err)
 	}
 
-	if len(notifications) == 0 {
+	if err := common.ValidateSliceNotEmpty("notifications", notifications); err != nil {
 		return nil // Nothing to delete
 	}
 
@@ -704,7 +705,7 @@ func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context,
 		return 0, fmt.Errorf("failed to scan for expired notifications: %w", err)
 	}
 
-	if len(expiredNotifications) == 0 {
+	if err := common.ValidateSliceNotEmpty("expiredNotifications", expiredNotifications); err != nil {
 		return 0, nil // Nothing to delete
 	}
 

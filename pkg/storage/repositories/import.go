@@ -377,7 +377,7 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 		TypeBreakdown: make(map[string]*models.ImportTypeCostStats),
 	}
 
-	if len(costs) == 0 {
+	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 		return summary, nil
 	}
 

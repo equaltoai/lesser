@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -229,7 +230,7 @@ func (te *TrendingEngine) CalculateTrending(ctx context.Context, since time.Time
 		return nil, fmt.Errorf("failed to get candidate hashtags: %w", err)
 	}
 
-	if len(candidates) == 0 {
+	if err := common.ValidateSliceNotEmpty("candidates", candidates); err != nil {
 		return []*storage.TrendingHashtag{}, nil
 	}
 
@@ -321,7 +322,7 @@ func (te *TrendingEngine) CalculateTrending(ctx context.Context, since time.Time
 		return trendingResults[i].Score > trendingResults[j].Score
 	})
 
-	if len(trendingResults) > limit {
+	if err := common.ValidateSliceLength("trending_results", trendingResults, limit); err != nil {
 		trendingResults = trendingResults[:limit]
 	}
 
@@ -848,7 +849,7 @@ func (te *TrendingEngine) calculateUserTrustScore(userID string, userSet map[str
 
 	// Factor 1: Account age estimation (would normally query account creation date)
 	// For now, use a heuristic based on user activity patterns
-	if len(userID) > 10 { // Longer user IDs might indicate older accounts
+	if err := common.ValidateStringLength("user_id", userID, 11, 1000); err == nil { // Longer user IDs might indicate older accounts
 		trustScore += 0.1
 	}
 
@@ -894,7 +895,7 @@ func (te *TrendingEngine) detectSuspiciousUserPattern(userID string) bool {
 	}
 
 	// Pattern 2: Repetitive patterns (possible generated usernames)
-	if len(userID) > 4 {
+	if err := common.ValidateStringLength("user_id", userID, 5, 1000); err == nil {
 		for i := 0; i < len(userID)-2; i++ {
 			substr := userID[i : i+3]
 			if strings.Count(userID, substr) >= 3 { // Same 3-char sequence appears 3+ times
@@ -913,7 +914,7 @@ func (te *TrendingEngine) detectSuspiciousUserPattern(userID string) bool {
 
 // analyzeContentQuality performs content analysis to determine quality metrics
 func (te *TrendingEngine) analyzeContentQuality(content string) ContentQuality {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return ContentQuality{
 			MediaPresence:  0.0,
 			LinkPresence:   0.0,
@@ -1005,7 +1006,7 @@ func (te *TrendingEngine) detectLanguage(content string) string {
 
 // getStatusContentForAnalysis retrieves the content of a status for content quality analysis
 func (te *TrendingEngine) getStatusContentForAnalysis(statusID string) string {
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
 		return ""
 	}
 

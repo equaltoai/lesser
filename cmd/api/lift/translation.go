@@ -7,6 +7,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/translation"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -55,7 +56,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 
 	// Extract content from the object
 	content, spoilerText, language := h.extractTranslatableContent(obj)
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return ctx.Status(422).JSON(map[string]string{"error": "status has no content to translate"})
 	}
 
@@ -79,8 +80,8 @@ func (h *Handler) isTranslationEnabled() bool {
 // getTranslationStatusID gets and validates the status ID
 func (h *Handler) getTranslationStatusID(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return "", ctx.Status(400).JSON(map[string]string{"error": "missing status ID"})
+	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
+		return "", ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 	return statusID, nil
 }
@@ -130,14 +131,14 @@ func (h *Handler) authenticateTranslationWithToken(ctx *lift.Context) (string, e
 // extractTranslationAuthHeader extracts authorization header
 func (h *Handler) extractTranslationAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("Authorization", authHeader); err != nil {
 		authHeader = ctx.Header("authorization")
 	}
 
 	// Try direct access to headers if ctx.Header doesn't work
 	if authHeader == "" && ctx.Request != nil && ctx.Request.Request != nil {
 		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if authHeader == "" {
+		if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
 	}
@@ -265,7 +266,7 @@ func (h *Handler) translateContent(ctx *lift.Context, svc *translation.Service, 
 
 // translateSpoilerText translates the spoiler text if present
 func (h *Handler) translateSpoilerText(ctx *lift.Context, svc *translation.Service, spoilerText, sourceLang, targetLang string) string {
-	if spoilerText == "" {
+	if err := common.ValidateRequiredParam("spoiler_text", spoilerText); err != nil {
 		return ""
 	}
 

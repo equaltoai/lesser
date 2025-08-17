@@ -74,7 +74,7 @@ func (r *moderationMetricsRepository) RecordMetricsEntry(ctx context.Context, en
 
 // RecordMetricsEntries records multiple metrics entries in batch
 func (r *moderationMetricsRepository) RecordMetricsEntries(ctx context.Context, entries []*models.ModerationMetricsEntry) error {
-	if len(entries) == 0 {
+	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
 		return nil
 	}
 

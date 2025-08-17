@@ -178,7 +178,7 @@ func (s *WebAuthnService) FinishRegistration(ctx context.Context, username strin
 	}
 
 	// Generate a name if not provided
-	if credentialName == "" {
+	if err := common.ValidateRequiredParam("credentialName", credentialName); err != nil {
 		credentialName = fmt.Sprintf("Passkey %d", len(existingCreds)+1)
 	}
 
@@ -216,7 +216,7 @@ func (s *WebAuthnService) BeginLogin(ctx context.Context, username string) (any,
 		return nil, "", fmt.Errorf("failed to get credentials: %w", err)
 	}
 
-	if len(credentials) == 0 {
+	if err := common.ValidateSliceNotEmpty("credentials", credentials); err != nil {
 		return nil, "", ErrUserHasNoCredentials
 	}
 
@@ -377,7 +377,7 @@ func (s *WebAuthnService) DeleteCredential(ctx context.Context, username string,
 			return err
 		}
 
-		if user.PasswordHash == "" {
+		if err := common.ValidateRequiredParam("user.PasswordHash", user.PasswordHash); err != nil {
 			return errors.New("cannot delete last authentication method")
 		}
 	}

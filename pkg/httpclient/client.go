@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 var (
@@ -325,7 +326,7 @@ func validateURL(u *url.URL, _ *zap.Logger) error {
 
 	// Get hostname
 	hostname := u.Hostname()
-	if hostname == "" {
+	if err := common.ValidateRequiredParam("hostname", hostname); err != nil {
 		return errors.New("empty hostname")
 	}
 

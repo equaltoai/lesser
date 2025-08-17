@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // UnicodeEmojiRegex matches Unicode emoji characters
@@ -62,7 +63,7 @@ func (p *Parser) ParseAll(ctx context.Context, content string) (*ParsedResult, e
 // extractUnicodeEmojis extracts unique Unicode emoji characters from content
 func (p *Parser) extractUnicodeEmojis(content string) []string {
 	matches := UnicodeEmojiRegex.FindAllString(content, -1)
-	if len(matches) == 0 {
+	if err := common.ValidateSliceNotEmpty("matches", matches); err != nil {
 		return []string{}
 	}
 
@@ -86,7 +87,7 @@ func (p *Parser) extractUnicodeEmojis(content string) []string {
 
 // isValidUnicodeEmoji performs additional validation for Unicode emoji characters
 func (p *Parser) isValidUnicodeEmoji(s string) bool {
-	if len(s) == 0 {
+	if err := common.ValidateSliceNotEmpty("s", s); err != nil {
 		return false
 	}
 

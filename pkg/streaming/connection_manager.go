@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConnectionManager manages WebSocket connection lifecycle, health checks, and resource management
@@ -206,7 +207,7 @@ func (cm *ConnectionManager) runHealthCheck(ctx context.Context) error {
 
 	allConns := append(connectedConns, idleConns...)
 	
-	if len(allConns) == 0 {
+	if err := common.ValidateSliceNotEmpty("allConns", allConns); err != nil {
 		cm.logger.Debug("no active connections to health check")
 		return nil
 	}

@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsCollector aggregates and publishes custom metrics
@@ -223,7 +224,7 @@ func (mc *MetricsCollector) flushMetrics() {
 	mc.metrics = make(map[string]*MetricBuffer) // Reset
 	mc.mu.Unlock()
 
-	if len(metricsToFlush) == 0 {
+	if err := common.ValidateSliceNotEmpty("metricsToFlush", metricsToFlush); err != nil {
 		return
 	}
 
@@ -301,7 +302,7 @@ func (mc *MetricsCollector) extractDimensions(_ string) []types.Dimension {
 }
 
 func calculateStats(values []float64) (sum, minVal, maxVal float64) {
-	if len(values) == 0 {
+	if err := common.ValidateSliceNotEmpty("values", values); err != nil {
 		return 0, 0, 0
 	}
 

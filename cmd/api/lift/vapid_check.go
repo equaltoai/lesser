@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -11,7 +12,7 @@ import (
 // IsProductionEnvironment checks if the current environment is production
 func IsProductionEnvironment() bool {
 	env := os.Getenv("ENV")
-	if env == "" {
+	if err := common.ValidateRequiredParam("env", env); err != nil {
 		env = os.Getenv("ENVIRONMENT")
 	}
 	return env == "production" || env == "prod"
@@ -36,7 +37,7 @@ func ValidateVAPIDKeysForProduction(ctx context.Context, repos core.RepositorySt
 
 	// Check if VAPID public key environment variable is set (optional but recommended)
 	vapidPublicKey := os.Getenv("VAPID_PUBLIC_KEY")
-	if vapidPublicKey == "" {
+	if err := common.ValidateRequiredParam("vapidPublicKey", vapidPublicKey); err != nil {
 		logger.Warn("VAPID_PUBLIC_KEY environment variable not set - using keys from storage only")
 	} else {
 		logger.Info("VAPID configuration validated successfully")

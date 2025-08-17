@@ -51,7 +51,7 @@ func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.In
 	}
 
 	// Deserialize JSON rules with validation
-	if config.RulesJSON == "" {
+	if err := common.ValidateRequiredParam("rules_json", config.RulesJSON); err != nil {
 		return r.getDefaultInstanceRules(), nil
 	}
 
@@ -75,7 +75,7 @@ func (r *InstanceRepository) SetInstanceRules(ctx context.Context, rules []stora
 	processedRules := make([]storage.InstanceRule, len(rules))
 	for i, rule := range rules {
 		processedRules[i] = rule
-		if processedRules[i].ID == "" {
+		if err := common.ValidateRequiredParam("rule_id", processedRules[i].ID); err != nil {
 			processedRules[i].ID = fmt.Sprintf("%d", i+1)
 		}
 	}
@@ -312,7 +312,7 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	
 	// Filter for local comments (comments from local users)
 	localDomain := os.Getenv("DOMAIN_NAME")
-	if localDomain == "" {
+	if err := common.ValidateRequiredParam("local_domain", localDomain); err != nil {
 		// If no domain configured, count all comments
 		r.logger.Debug("No DOMAIN_NAME set, counting all comments as local")
 		return int64(len(comments)), nil
@@ -415,7 +415,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 		return nil, fmt.Errorf("failed to query admin users: %w", err)
 	}
 
-	if len(users) == 0 {
+	if err := common.ValidateSliceNotEmpty("users", users); err != nil {
 		// No admin users found, return nil (no contact account)
 		return nil, nil
 	}
@@ -479,7 +479,7 @@ func (r *InstanceRepository) GetStorageUsage(ctx context.Context) (any, error) {
 
 // GetStorageHistory returns storage usage history for the last N days
 func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
-	if days <= 0 {
+	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
 		days = 30 // Default to 30 days
 	}
 
@@ -520,7 +520,7 @@ func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([
 
 // GetUserGrowthHistory returns user growth data for the last N days
 func (r *InstanceRepository) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {
-	if days <= 0 {
+	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
 		days = 30 // Default to 30 days
 	}
 
@@ -590,7 +590,7 @@ func (r *InstanceRepository) GetDomainStats(ctx context.Context, domain string) 
 // RecordDailyMetrics records daily historical metrics for the instance
 func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string, metrics map[string]interface{}) error {
 	now := time.Now()
-	if date == "" {
+	if err := common.ValidateRequiredParam("date", date); err != nil {
 		date = now.Format("2006-01-02")
 	}
 
@@ -718,7 +718,7 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 			continue
 		}
 
-		if len(histories) > 0 {
+		if err := common.ValidateSliceNotEmpty("histories", histories); err == nil {
 			// Get latest and earliest values for growth calculation
 			latest := histories[len(histories)-1]
 			earliest := histories[0]
@@ -814,7 +814,7 @@ func (r *InstanceRepository) validateAndFilterRules(rules []storage.InstanceRule
 
 	for i, rule := range rules {
 		// Ensure rule has an ID
-		if rule.ID == "" {
+		if err := common.ValidateRequiredParam("rule_id", rule.ID); err != nil {
 			rule.ID = fmt.Sprintf("rule_%d", i+1)
 		}
 
@@ -826,7 +826,7 @@ func (r *InstanceRepository) validateAndFilterRules(rules []storage.InstanceRule
 		seenIDs[rule.ID] = true
 
 		// Validate rule text
-		if strings.TrimSpace(rule.Text) == "" {
+		if err := common.ValidateRequiredParam("rule_text", strings.TrimSpace(rule.Text)); err != nil {
 			r.logger.Warn("Skipping rule with empty text", zap.String("id", rule.ID))
 			continue
 		}
@@ -875,7 +875,7 @@ func (r *InstanceRepository) sanitizeDescription(desc string) string {
 	desc = strings.ReplaceAll(desc, "on=", "data-on=")
 
 	// Limit length
-	if len(desc) > 10000 {
+	if err := common.ValidateStringLength("description", desc, 0, 10000); err != nil {
 		desc = desc[:9997] + "..."
 	}
 
@@ -884,7 +884,7 @@ func (r *InstanceRepository) sanitizeDescription(desc string) string {
 
 // ruleMatchesCategory checks if a rule matches a given category
 func (r *InstanceRepository) ruleMatchesCategory(rule storage.InstanceRule, category string) bool {
-	if category == "" {
+	if err := common.ValidateRequiredParam("category", category); err != nil {
 		return true // Return all rules for empty category
 	}
 
@@ -935,7 +935,7 @@ func (r *InstanceRepository) categorizeRulesSmartly(rules []storage.InstanceRule
 	}
 
 	// If still no matches, return most relevant rules based on common sense
-	if len(filtered) == 0 {
+	if err := common.ValidateSliceNotEmpty("filtered", filtered); err != nil {
 		switch categoryLower {
 		case "safety", "security":
 			// Return rules about harassment, abuse, etc.
@@ -953,7 +953,7 @@ func (r *InstanceRepository) categorizeRulesSmartly(rules []storage.InstanceRule
 			}
 		default:
 			// Return top 3 most important rules
-			if len(rules) > 3 {
+			if err := common.ValidateSliceLength("rules", rules, 3); err != nil {
 				filtered = rules[:3]
 			} else {
 				filtered = rules

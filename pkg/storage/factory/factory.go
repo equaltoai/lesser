@@ -63,9 +63,11 @@ type RepositoryFactory struct {
 	importRepo            *repositories.ImportRepository
 	dlqRepo               *repositories.DLQRepository
 	metricRecordRepo      *repositories.MetricRecordRepository
-	cloudWatchMetricsRepo *repositories.CloudWatchMetricsRepository
-	publicKeyCacheRepo    *repositories.PublicKeyCacheRepository
-	auditRepo             *repositories.AuditRepository
+	cloudWatchMetricsRepo     *repositories.CloudWatchMetricsRepository
+	streamingCloudWatchRepo   *repositories.StreamingCloudWatchRepository
+	publicKeyCacheRepo        *repositories.PublicKeyCacheRepository
+	auditRepo                 *repositories.AuditRepository
+	oauthRepo                 *repositories.OAuthRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
@@ -134,8 +136,10 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.dlqRepo = repositories.NewDLQRepository(f.db, f.tableName, f.logger)
 	f.metricRecordRepo = repositories.NewMetricRecordRepository(f.db, f.tableName, f.logger)
 	f.cloudWatchMetricsRepo = repositories.NewCloudWatchMetricsRepository(f.awsConfig, "Lesser/Production", "prod", f.logger)
+	f.streamingCloudWatchRepo = repositories.NewStreamingCloudWatchRepository(f.db, f.logger)
 	f.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(f.db, f.tableName, f.logger)
 	f.mediaMetadataRepo = repositories.NewMediaMetadataRepository(f.db, f.logger)
+	f.oauthRepo = repositories.NewOAuthRepository(f.db, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -403,9 +407,19 @@ func (f *RepositoryFactory) CloudWatchMetrics() *repositories.CloudWatchMetricsR
 	return f.cloudWatchMetricsRepo
 }
 
+// StreamingCloudWatch returns the StreamingCloudWatch repository instance
+func (f *RepositoryFactory) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	return f.streamingCloudWatchRepo
+}
+
 // PublicKeyCache returns the PublicKeyCache repository instance
 func (f *RepositoryFactory) PublicKeyCache() *repositories.PublicKeyCacheRepository {
 	return f.publicKeyCacheRepo
+}
+
+// OAuth returns the OAuth repository instance
+func (f *RepositoryFactory) OAuth() *repositories.OAuthRepository {
+	return f.oauthRepo
 }
 
 // Additional repositories can be added here as needed

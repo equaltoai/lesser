@@ -49,7 +49,7 @@ func NewMiddleware() *Middleware {
 	if err != nil {
 		// Get the JWT secret for fallback
 		jwtSecret := os.Getenv("JWT_SECRET")
-		if jwtSecret == "" {
+		if err := common.ValidateRequiredParam("JWT_SECRET", jwtSecret); err != nil {
 			jwtSecret = "development-secret-change-me"
 		}
 
@@ -68,11 +68,11 @@ func NewMiddleware() *Middleware {
 func (m *Middleware) RequireAuth(_ context.Context, request events.APIGatewayV2HTTPRequest) (*Claims, error) {
 	// Extract token from Authorization header
 	authHeader := request.Headers["Authorization"]
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("Authorization", authHeader); err != nil {
 		authHeader = request.Headers["authorization"]
 	}
 
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
 		return nil, ErrMissingAuthHeader
 	}
 
@@ -87,7 +87,7 @@ func (m *Middleware) RequireAuth(_ context.Context, request events.APIGatewayV2H
 	if err != nil {
 		// Log authentication failure
 		ip := request.Headers["X-Forwarded-For"]
-		if ip == "" {
+		if err := common.ValidateRequiredParam("ip", ip); err != nil {
 			ip = request.RequestContext.HTTP.SourceIP
 		}
 		userAgent := request.Headers["User-Agent"]

@@ -11,6 +11,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WalletRepository implements the wallet authentication storage operations
@@ -177,14 +178,14 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 		return nil, fmt.Errorf("failed to query wallet index: %w", err)
 	}
 
-	if len(indexes) == 0 {
+	if err := common.ValidateSliceNotEmpty("indexes", indexes); err != nil {
 		// Legacy implementation returns nil for not found
 		return nil, nil
 	}
 
 	// Extract username from the index
 	username := indexes[0].Username
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, fmt.Errorf("username not found in wallet index")
 	}
 

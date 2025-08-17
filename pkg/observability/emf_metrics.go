@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -188,7 +189,7 @@ func (emc *EMFMetricsCollector) recordMetricWithDimensions(name string, value fl
 // This method is synchronous and safe to call from Lambda handlers
 func (emc *EMFMetricsCollector) Flush() error {
 	metrics := emc.buffer.GetAndClear()
-	if len(metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		return nil
 	}
 
@@ -228,7 +229,7 @@ func (emc *EMFMetricsCollector) groupMetricsByDimensions(metrics []EMFMetric) []
 
 // writeEMFLog writes a group of metrics as a single EMF log entry to stdout
 func (emc *EMFMetricsCollector) writeEMFLog(metrics []EMFMetric) error {
-	if len(metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		return nil
 	}
 
@@ -285,7 +286,7 @@ func (emc *EMFMetricsCollector) writeEMFLog(metrics []EMFMetric) error {
 
 // dimensionsKey creates a consistent key from dimensions for grouping
 func (emc *EMFMetricsCollector) dimensionsKey(dims map[string]string) string {
-	if len(dims) == 0 {
+	if err := common.ValidateSliceNotEmpty("dims", dims); err != nil {
 		return ""
 	}
 
@@ -346,7 +347,7 @@ func (eb *EMFBuffer) GetAndClear() []EMFMetric {
 	eb.mu.Lock()
 	defer eb.mu.Unlock()
 
-	if len(eb.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("eb.metrics", eb.metrics); err != nil {
 		return nil
 	}
 

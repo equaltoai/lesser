@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
 	"github.com/equaltoai/lesser/pkg/services/importexport"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
@@ -172,9 +173,8 @@ func (ach *AsyncCommandHandler) handleBulkFollow(ctx context.Context, conn *stre
 	}
 
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No account IDs provided", "account_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
 
 	reblogs := ach.GetBool(cmd.Payload, "reblogs", true)
@@ -215,15 +215,11 @@ func (ach *AsyncCommandHandler) handleBulkUnfollow(ctx context.Context, conn *st
 	}
 
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No account IDs provided", "account_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Limit batch size to prevent timeouts
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Start async processing
@@ -252,9 +248,8 @@ func (ach *AsyncCommandHandler) handleBulkDeleteStatuses(ctx context.Context, co
 	}
 
 	statusIDs := ach.GetStringSlice(cmd.Payload, "status_ids")
-	if len(statusIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No status IDs provided", "status_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(statusIDs, "status"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid status_ids", err.Error()), nil
 	}
 
 	keepPinned := ach.GetBool(cmd.Payload, "keep_pinned", true)
@@ -475,15 +470,11 @@ func (ach *AsyncCommandHandler) handleBulkMute(ctx context.Context, conn *stream
 	}
 
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No account IDs provided", "account_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Limit batch size to prevent timeouts
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Optional parameters
@@ -523,15 +514,11 @@ func (ach *AsyncCommandHandler) handleBulkUnmute(ctx context.Context, conn *stre
 	}
 
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No account IDs provided", "account_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Limit batch size to prevent timeouts
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Start async processing
@@ -559,15 +546,11 @@ func (ach *AsyncCommandHandler) handleBulkBlock(ctx context.Context, conn *strea
 	}
 
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No account IDs provided", "account_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Limit batch size to prevent timeouts
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many accounts", "Maximum 100 accounts per batch"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Create bulk block command
@@ -605,13 +588,11 @@ func (ach *AsyncCommandHandler) handleBulkUnblock(ctx context.Context, conn *str
 
 	// Extract account IDs from payload
 	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "No account IDs provided", "At least one account ID is required"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Check limits
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Too many accounts", "Maximum 100 accounts per bulk operation"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Create bulk unblock command
@@ -658,13 +639,11 @@ func (ach *AsyncCommandHandler) handleBulkListMembers(ctx context.Context, conn 
 	}
 
 	// Validate account IDs
-	if len(accountIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "No account IDs provided", "At least one account ID is required"), nil
+	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
 	}
-
-	// Check limits
-	if len(accountIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Too many accounts", "Maximum 100 accounts per bulk operation"), nil
+	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Create command for bulk service
@@ -714,8 +693,8 @@ func (ach *AsyncCommandHandler) handleCancelExport(ctx context.Context, conn *st
 
 	// Extract export ID from payload
 	exportID := ach.GetString(cmd.Payload, "export_id", "")
-	if exportID == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Export ID is required", "Please provide a valid export ID"), nil
+	if err := common.ValidateRequiredParam("export_id", exportID); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid export_id", err.Error()), nil
 	}
 
 	// Create cancel command for import/export service
@@ -774,17 +753,17 @@ func (ach *AsyncCommandHandler) handleCreateImport(ctx context.Context, conn *st
 	}
 
 	// Validate parameters
-	if importType == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Import type is required", "Please provide a valid import type"), nil
+	if err := common.ValidateRequiredParam("import_type", importType); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid import_type", err.Error()), nil
 	}
-	if format == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Format is required", "Please provide a valid format"), nil
+	if err := common.ValidateRequiredParam("format", format); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid format", err.Error()), nil
 	}
-	if fileURL == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "File URL is required", "Please provide a valid file URL"), nil
+	if err := common.ValidateRequiredParam("file_url", fileURL); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid file_url", err.Error()), nil
 	}
-	if mergeStrategy == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Merge strategy is required", "Please provide a valid merge strategy"), nil
+	if err := common.ValidateRequiredParam("merge_strategy", mergeStrategy); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid merge_strategy", err.Error()), nil
 	}
 
 	// Create import command for import/export service
@@ -834,8 +813,8 @@ func (ach *AsyncCommandHandler) handleGetImport(ctx context.Context, conn *strea
 
 	// Extract import ID from payload
 	importID := ach.GetString(cmd.Payload, "import_id", "")
-	if importID == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Import ID is required", "Please provide a valid import ID"), nil
+	if err := common.ValidateRequiredParam("import_id", importID); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid import_id", err.Error()), nil
 	}
 
 	// Create get query for import/export service
@@ -1137,15 +1116,11 @@ func (ach *AsyncCommandHandler) handleBulkDelete(ctx context.Context, conn *stre
 	}
 
 	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
-	if len(contentIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No content IDs provided", "content_ids array cannot be empty"), nil
+	if err := common.ValidateEntityIDsList(contentIDs, "content"); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids", err.Error()), nil
 	}
-
-	// Limit batch size to prevent timeouts
-	if len(contentIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many content items", "Maximum 100 items per batch"), nil
+	if err := common.ValidateIntRange("content_ids_count", len(contentIDs), 1, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids count", err.Error()), nil
 	}
 
 	// Optional parameters
@@ -1200,15 +1175,13 @@ func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *str
 	}
 
 	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
-	if len(contentIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No content IDs provided", "content_ids array cannot be empty"), nil
+	if err := common.ValidateSliceNotEmpty("content_ids", contentIDs); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids", err.Error()), nil
 	}
 
 	// Limit batch size to prevent timeouts
-	if len(contentIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many content items", "Maximum 100 items per batch"), nil
+	if err := common.ValidateSliceLength("content_ids", contentIDs, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids count", err.Error()), nil
 	}
 
 	// Optional parameters
@@ -1261,15 +1234,13 @@ func (ach *AsyncCommandHandler) handleBulkRestore(ctx context.Context, conn *str
 	}
 
 	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
-	if len(contentIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No content IDs provided", "content_ids array cannot be empty"), nil
+	if err := common.ValidateSliceNotEmpty("content_ids", contentIDs); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids", err.Error()), nil
 	}
 
 	// Limit batch size to prevent timeouts
-	if len(contentIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many content items", "Maximum 100 items per batch"), nil
+	if err := common.ValidateSliceLength("content_ids", contentIDs, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids count", err.Error()), nil
 	}
 
 	// Optional parameters
@@ -1322,21 +1293,18 @@ func (ach *AsyncCommandHandler) handleBulkExport(ctx context.Context, conn *stre
 	}
 
 	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
-	if len(contentIDs) == 0 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"No content IDs provided", "content_ids array cannot be empty"), nil
+	if err := common.ValidateSliceNotEmpty("content_ids", contentIDs); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids", err.Error()), nil
 	}
 
 	// Limit batch size to prevent timeouts
-	if len(contentIDs) > 100 {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Too many content items", "Maximum 100 items per batch"), nil
+	if err := common.ValidateSliceLength("content_ids", contentIDs, 100); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids count", err.Error()), nil
 	}
 
 	format := ach.GetString(cmd.Payload, "format", "")
-	if format == "" {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR",
-			"Export format is required", "format field cannot be empty"), nil
+	if err := common.ValidateRequiredParam("format", format); err != nil {
+		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid format", err.Error()), nil
 	}
 
 	// Validate format

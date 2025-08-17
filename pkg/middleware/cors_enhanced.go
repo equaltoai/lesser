@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -257,7 +258,7 @@ func (cors *EnhancedCORS) setCORSHeaders(ctx *lift.Context, origin string) {
 	}
 
 	// Set exposed headers
-	if len(cors.config.ExposedHeaders) > 0 {
+	if err := common.ValidateSliceNotEmpty("exposed_headers", cors.config.ExposedHeaders); err == nil {
 		ctx.Set("Access-Control-Expose-Headers", strings.Join(cors.config.ExposedHeaders, ", "))
 	}
 }
@@ -277,7 +278,7 @@ func (cors *EnhancedCORS) setPreflightHeaders(ctx *lift.Context, origin, _, requ
 	// Set allowed headers
 	if cors.config.AllowAllHeaders && requestHeaders != "" {
 		ctx.Set("Access-Control-Allow-Headers", requestHeaders)
-	} else if len(cors.config.AllowedHeaders) > 0 {
+	} else if err := common.ValidateSliceNotEmpty("allowed_headers", cors.config.AllowedHeaders); err == nil {
 		ctx.Set("Access-Control-Allow-Headers", strings.Join(cors.config.AllowedHeaders, ", "))
 	}
 
@@ -295,7 +296,7 @@ func (cors *EnhancedCORS) setPreflightHeaders(ctx *lift.Context, origin, _, requ
 // setVaryHeader sets the Vary header for CORS
 func (cors *EnhancedCORS) setVaryHeader(ctx *lift.Context) {
 	vary := ctx.Header("Vary")
-	if vary == "" {
+	if err := common.ValidateRequiredParam("vary", vary); err != nil {
 		ctx.Set("Vary", "Origin")
 	} else if !strings.Contains(strings.ToLower(vary), "origin") {
 		ctx.Set("Vary", vary+", Origin")
@@ -304,7 +305,7 @@ func (cors *EnhancedCORS) setVaryHeader(ctx *lift.Context) {
 
 // isOriginAllowed checks if an origin is allowed
 func (cors *EnhancedCORS) isOriginAllowed(origin string) bool {
-	if origin == "" {
+	if err := common.ValidateRequiredParam("origin", origin); err != nil {
 		return true // Allow same-origin requests
 	}
 
@@ -365,7 +366,7 @@ func (cors *EnhancedCORS) matchWildcardOrigin(pattern, origin string) bool {
 
 // isMethodAllowed checks if a method is allowed
 func (cors *EnhancedCORS) isMethodAllowed(method string) bool {
-	if method == "" {
+	if err := common.ValidateRequiredParam("method", method); err != nil {
 		return false
 	}
 

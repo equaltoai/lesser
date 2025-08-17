@@ -68,7 +68,7 @@ func (r *SearchRepository) SearchAccountsWithPrivacy(ctx context.Context, query 
 	}
 
 	// Apply limit after filtering
-	if len(results) > limit {
+	if err := common.ValidateSliceLength("results", results, limit); err != nil {
 		results = results[:limit]
 	}
 
@@ -78,7 +78,7 @@ func (r *SearchRepository) SearchAccountsWithPrivacy(ctx context.Context, query 
 // SearchAccountsAdvanced searches for accounts with advanced filtering
 func (r *SearchRepository) SearchAccountsAdvanced(ctx context.Context, query string, _ bool, limit int, offset int, following bool, accountID string) ([]*activitypub.Actor, error) {
 	normalizedQuery := r.normalizeSearchQuery(query)
-	if len(normalizedQuery) < 2 {
+	if err := common.ValidateRepositorySearchQuery(normalizedQuery, 2); err != nil {
 		return []*activitypub.Actor{}, nil
 	}
 
@@ -120,7 +120,7 @@ func (r *SearchRepository) executeSearchStrategies(ctx context.Context, query st
 
 // searchExactUsername searches for exact username matches
 func (r *SearchRepository) searchExactUsername(ctx context.Context, query string, results *[]*activitypub.Actor, seen map[string]bool) {
-	if len(query) < 3 {
+	if err := common.ValidateRepositorySearchQuery(query, 3); err != nil {
 		return
 	}
 
@@ -163,7 +163,7 @@ func (r *SearchRepository) searchUsernamePrefix(ctx context.Context, query strin
 
 // searchDisplayName searches for display names containing the query
 func (r *SearchRepository) searchDisplayName(ctx context.Context, query string, limit int, results *[]*activitypub.Actor, seen map[string]bool) {
-	if len(query) < 2 {
+	if err := common.ValidateRepositorySearchQuery(query, 2); err != nil {
 		return
 	}
 
@@ -297,7 +297,7 @@ func (r *SearchRepository) paginateResults(results []*activitypub.Actor, offset,
 	}
 
 	results = results[offset:]
-	if len(results) > limit {
+	if err := common.ValidateSliceLength("results", results, limit); err != nil {
 		results = results[:limit]
 	}
 
@@ -323,7 +323,7 @@ func (r *SearchRepository) SearchStatusesWithOptions(ctx context.Context, query 
 // SearchStatusesWithOptionsPaginated searches for statuses with advanced options and pagination support
 func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Context, query string, options storage.StatusSearchOptions) ([]*storage.StatusSearchResult, *PaginationResult, error) {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
-	if normalizedQuery == "" {
+	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
 		return []*storage.StatusSearchResult{}, CreatePaginationResult(false, "", 0), nil
 	}
 
@@ -577,7 +577,7 @@ func (r *SearchRepository) searchByURL(ctx context.Context, url string, result *
 // executeHashtagSearch searches for statuses by hashtags
 func (r *SearchRepository) executeHashtagSearch(ctx context.Context, query string, result *statusSearchResult, wg *sync.WaitGroup) {
 	hashtags := r.extractHashtags(query)
-	if len(hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return
 	}
 
@@ -671,7 +671,7 @@ func (r *SearchRepository) getRecentStatuses(ctx context.Context) []models.Objec
 
 // statusMatchesQuery checks if a status matches the search query
 func (r *SearchRepository) statusMatchesQuery(status models.Object, query string) bool {
-	if status.Content == "" {
+	if err := common.ValidateRequiredParam("status.Content", status.Content); err != nil {
 		return false
 	}
 	contentLower := strings.ToLower(status.Content)
@@ -715,7 +715,7 @@ func (r *SearchRepository) mapToSlice(resultMap map[string]*storage.StatusSearch
 
 // filterByAccount filters results by account ID
 func (r *SearchRepository) filterByAccount(results []*storage.StatusSearchResult, accountID string) []*storage.StatusSearchResult {
-	if accountID == "" {
+	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
 		return results
 	}
 
@@ -773,7 +773,7 @@ func (r *SearchRepository) SearchStatusesAdvanced(ctx context.Context, query str
 		}
 
 		// Apply limit after filtering
-		if len(filteredResults) > limit {
+		if err := common.ValidateSliceLength("filtered_results", filteredResults, limit); err != nil {
 			filteredResults = filteredResults[:limit]
 		}
 
@@ -911,7 +911,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	normalizedQuery = strings.TrimPrefix(normalizedQuery, "#")
 
-	if normalizedQuery == "" {
+	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
 		return []*storage.Hashtag{}, nil
 	}
 
@@ -967,7 +967,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 	normalizedQuery = strings.TrimPrefix(normalizedQuery, "#")
 
-	if normalizedQuery == "" {
+	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
 		return []*storage.HashtagSearchResult{}, CreatePaginationResult(false, "", 0), nil
 	}
 
@@ -1174,7 +1174,7 @@ func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestio
 
 // UpdateSearchSuggestion updates an existing search suggestion
 func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestionType, term string, updates map[string]interface{}) error {
-	if len(updates) == 0 {
+	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
 		return nil
 	}
 
@@ -1217,7 +1217,7 @@ func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestio
 
 // GetSearchSuggestions retrieves search suggestions based on prefix
 func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix string, limit int) ([]*models.SearchSuggestion, error) {
-	if len(prefix) < 2 {
+	if err := common.ValidateRepositorySearchQuery(prefix, 2); err != nil {
 		return []*models.SearchSuggestion{}, nil
 	}
 
@@ -1334,7 +1334,7 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 	})
 
 	// Apply limit
-	if len(suggestions) > limit {
+	if err := common.ValidateSliceLength("suggestions", suggestions, limit); err != nil {
 		suggestions = suggestions[:limit]
 	}
 
@@ -1453,7 +1453,7 @@ func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) e
 	}
 
 	// Delete embeddings in batch if they exist
-	if len(embeddings) > 0 {
+	if common.ValidateSliceNotEmpty("embeddings", embeddings) == nil {
 		keys := make([]any, len(embeddings))
 		for i, embedding := range embeddings {
 			keys[i] = &models.SearchEmbedding{
@@ -1497,7 +1497,7 @@ func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) e
 		r.logger.Warn("failed to query search cache for cleanup",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-	} else if len(cacheEntries) > 0 {
+	} else if common.ValidateSliceNotEmpty("cacheEntries", cacheEntries) == nil {
 		// Update cache entries to remove this status ID
 		for _, cacheEntry := range cacheEntries {
 			// Remove statusID from the Results array
@@ -1660,7 +1660,7 @@ func (r *SearchRepository) privacyFilterAnalyticsEvent(event *models.SearchAnaly
 	}
 
 	// Limit query length for privacy
-	if len(event.Query) > 100 {
+	if err := common.ValidateStringLength("event.Query", event.Query, 1, 100); err != nil {
 		event.Query = event.Query[:97] + "..."
 	}
 
@@ -1716,7 +1716,7 @@ func (r *SearchRepository) isPersonalQuery(query string) bool {
 // hashQuery creates a privacy-safe hash of the query
 func (r *SearchRepository) hashQuery(query string) string {
 	// Simple hash for analytics while preserving some structure
-	if len(query) == 0 {
+	if err := common.ValidateSliceNotEmpty("query", query); err != nil {
 		return "[empty]"
 	}
 
@@ -1819,7 +1819,7 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 	})
 
 	// Apply limit
-	if len(stats) > limit {
+	if err := common.ValidateSliceLength("stats", stats, limit); err != nil {
 		stats = stats[:limit]
 	}
 
@@ -1920,11 +1920,11 @@ func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, query
 
 // validateSearchParams validates and normalizes search parameters
 func (r *SearchRepository) validateSearchParams(queryEmbedding []float32, threshold *float64, options **PaginationOptions) error {
-	if len(queryEmbedding) == 0 {
+	if err := common.ValidateSliceNotEmpty("queryEmbedding", queryEmbedding); err != nil {
 		return fmt.Errorf("query embedding cannot be empty")
 	}
 
-	if *threshold < 0 || *threshold > 1 {
+	if err := common.ValidateFloatRange("threshold", *threshold, 0.0, 1.0); err != nil {
 		*threshold = 0.7 // Default threshold for semantic similarity
 	}
 
@@ -2020,7 +2020,7 @@ func (r *SearchRepository) processBatch(baseQuery interface{}, currentBatch, bat
 		return nil, false, fmt.Errorf("failed to search embeddings batch %d: %w", currentBatch, err)
 	}
 
-	if len(embeddings) == 0 {
+	if err := common.ValidateSliceNotEmpty("embeddings", embeddings); err != nil {
 		return nil, true, nil
 	}
 
@@ -2095,7 +2095,7 @@ func (r *SearchRepository) finalizePaginatedResults(allResults []*models.SearchE
 // logSearchCompletion logs the final results of the search operation
 func (r *SearchRepository) logSearchCompletion(finalResults []*models.SearchEmbedding, paginationResult *PaginationResult, processed int) {
 	topScore := 0.0
-	if len(finalResults) > 0 {
+	if common.ValidateSliceNotEmpty("finalResults", finalResults) == nil {
 		topScore = finalResults[0].Score
 	}
 

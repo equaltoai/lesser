@@ -551,7 +551,7 @@ func (r *AccountRepository) GetBookmarkedStatuses(ctx context.Context, username 
 	}
 
 	// If no bookmarks found, return empty result
-	if len(bookmarks) == 0 {
+	if err := common.ValidateSliceNotEmpty("bookmarks", bookmarks); err != nil {
 		return &interfaces.PaginatedResult[*models.Status]{
 			Items:      []*models.Status{},
 			NextCursor: "",

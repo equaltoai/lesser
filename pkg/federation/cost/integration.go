@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DeliveryMiddleware wraps federation delivery with cost tracking and health monitoring
@@ -248,7 +249,7 @@ func (t *HTTPTransportWrapper) RoundTrip(req *http.Request) (*http.Response, err
 
 func extractDomain(instanceURL string) (string, error) {
 	// Simple domain extraction - can be enhanced
-	if instanceURL == "" {
+	if err := common.ValidateRequiredParam("instanceURL", instanceURL); err != nil {
 		return "", fmt.Errorf("empty instance URL")
 	}
 

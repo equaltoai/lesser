@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -20,7 +21,7 @@ import (
 //nolint:gocognit // Complex poll handling with vote counting and user permissions
 func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	pollID := ctx.Param("id")
-	if pollID == "" {
+	if err := common.ValidateRequiredParam("poll_id", pollID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]any{"error": "poll ID required"})
 	}
@@ -33,7 +34,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 
 	// Test mode support
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
@@ -137,7 +138,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 	// Validate poll ID
 	pollID := ctx.Param("id")
-	if pollID == "" {
+	if err := common.ValidateRequiredParam("poll_id", pollID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]any{"error": "poll ID required"})
 	}
@@ -193,7 +194,7 @@ func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *stora
 // getPollTestUsername extracts test username from headers
 func (h *Handler) getPollTestUsername(ctx *lift.Context) string {
 	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 	return testUsername
@@ -289,7 +290,7 @@ func (h *Handler) parsePollVoteRequest(ctx *lift.Context) (*models.PollVoteReque
 	}
 
 	// Validate request
-	if len(req.Choices) == 0 {
+	if err := common.ValidateSliceNotEmpty("req.Choices", req.Choices); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
 		return nil, ctx.JSON(map[string]any{"error": "no choices provided"})
 	}

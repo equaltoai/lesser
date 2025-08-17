@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConversationStatus represents a user's read status for a conversation
@@ -26,10 +28,10 @@ func (ConversationStatus) TableName() string {
 
 // BeforeCreate sets up the keys before creating a status record
 func (s *ConversationStatus) BeforeCreate() error {
-	if s.ConversationID == "" {
+	if err := common.ValidateRequiredParam("ConversationID", s.ConversationID); err != nil {
 		return fmt.Errorf("conversation ID is required")
 	}
-	if s.UserID == "" {
+	if err := common.ValidateRequiredParam("UserID", s.UserID); err != nil {
 		return fmt.Errorf("user ID is required")
 	}
 
@@ -72,10 +74,10 @@ func (ConversationMessage) TableName() string {
 
 // BeforeCreate sets up the keys before creating a message record
 func (m *ConversationMessage) BeforeCreate() error {
-	if m.ConversationID == "" {
+	if err := common.ValidateRequiredParam("ConversationID", m.ConversationID); err != nil {
 		return fmt.Errorf("conversation ID is required")
 	}
-	if m.StatusID == "" {
+	if err := common.ValidateRequiredParam("StatusID", m.StatusID); err != nil {
 		return fmt.Errorf("status ID is required")
 	}
 

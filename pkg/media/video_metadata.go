@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // VideoMetadata contains extracted video metadata from MP4/MOV files
@@ -624,7 +625,7 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 	}
 
 	// Set defaults for other fields
-	if metadata.VideoCodec == "" {
+	if err := common.ValidateRequiredParam("metadata.VideoCodec", metadata.VideoCodec); err != nil {
 		metadata.VideoCodec = "avc1" // H.264 is most common
 	}
 

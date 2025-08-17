@@ -151,7 +151,7 @@ func (a *AICost) BeforeCreate() error {
 	a.UpdatedAt = now
 
 	// Set billing period
-	if a.BillingPeriod == "" {
+	if err := common.ValidateRequiredParam("a.BillingPeriod", a.BillingPeriod); err != nil {
 		a.BillingPeriod = a.Timestamp.Format("2006-01")
 	}
 

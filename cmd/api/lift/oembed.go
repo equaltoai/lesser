@@ -4,10 +4,10 @@ import (
 	"fmt"
 	htmlpkg "html"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -49,7 +49,7 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 
 	// Extract status ID from path
 	statusID := h.extractStatusID(parsedURL.Path)
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		h.logger.Warn("status not found in URL path", zap.String("path", parsedURL.Path))
 		return ctx.Status(404).JSON(map[string]string{
 			"error": "status not found",
@@ -90,11 +90,11 @@ func (h *Handler) extractOEmbedURL(ctx *lift.Context) (string, error) {
 	requestedURL := ctx.Query("url")
 
 	// Fallback to direct query param access if ctx.Query doesn't work
-	if requestedURL == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("requestedURL", requestedURL); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		requestedURL = ctx.Request.Request.QueryParams["url"]
 	}
 
-	if requestedURL == "" {
+	if err := common.ValidateRequiredParam("requestedURL", requestedURL); err != nil {
 		h.logger.Warn("missing required parameter: url")
 		return "", ctx.Status(400).JSON(map[string]string{
 			"error": "missing required parameter: url",
@@ -137,10 +137,10 @@ func (h *Handler) getExpectedHost() string {
 // getOEmbedFormat extracts the format parameter (defaults to "json")
 func (h *Handler) getOEmbedFormat(ctx *lift.Context) string {
 	format := ctx.Query("format")
-	if format == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("format", format); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		format = ctx.Request.Request.QueryParams["format"]
 	}
-	if format == "" {
+	if err := common.ValidateRequiredParam("format", format); err != nil {
 		format = "json"
 	}
 	return format
@@ -148,17 +148,18 @@ func (h *Handler) getOEmbedFormat(ctx *lift.Context) string {
 
 // getOEmbedMaxWidth extracts the maxwidth parameter (defaults to 650)
 func (h *Handler) getOEmbedMaxWidth(ctx *lift.Context) int {
-	maxWidth := 650 // default
 	mw := ctx.Query("maxwidth")
-	if mw == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("mw", mw); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		mw = ctx.Request.Request.QueryParams["maxwidth"]
 	}
-	if mw != "" {
-		if parsed, err := strconv.Atoi(mw); err == nil && parsed > 0 {
-			maxWidth = parsed
-		}
+	
+	// Use validation function with reasonable bounds for embed width
+	if maxWidth, err := common.ParseAndValidateIntWithBounds("maxwidth", mw, 0, 2000, 650); err == nil {
+		return maxWidth
 	}
-	return maxWidth
+	
+	// Return default on any validation error
+	return 650
 }
 
 // normalizeStatusID converts a status ID to a full URL if needed
@@ -192,13 +193,13 @@ func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*acti
 
 // getOEmbedAuthorActor retrieves the author actor for the note
 func (h *Handler) getOEmbedAuthorActor(ctx *lift.Context, note *activitypub.Note) *activitypub.Actor {
-	if note.AttributedTo == "" {
+	if err := common.ValidateRequiredParam("attributedTo", note.AttributedTo); err != nil {
 		return nil
 	}
 
 	// Extract username from actor ID
 	parts := strings.Split(note.AttributedTo, "/")
-	if len(parts) == 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err != nil {
 		return nil
 	}
 
@@ -285,7 +286,7 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 	baseHeight := 150                      // header + footer
 	contentHeight := len(note.Content) / 2 // very rough estimate
 	mediaHeight := 0
-	if len(note.Attachment) > 0 {
+	if err := common.ValidateSliceNotEmpty("attachments", note.Attachment); err == nil {
 		mediaHeight = 300 // standard media preview height
 	}
 	estimatedHeight := baseHeight + contentHeight + mediaHeight
@@ -309,7 +310,7 @@ func (h *Handler) generateOEmbed(note *activitypub.Note, author *activitypub.Act
 	}
 
 	// Add thumbnail if available
-	if len(note.Attachment) > 0 {
+	if err := common.ValidateSliceNotEmpty("attachments", note.Attachment); err == nil {
 		// Use first image/video as thumbnail
 		for _, attachment := range note.Attachment {
 			if attachment.Type == "Document" || attachment.Type == "Image" {
@@ -453,7 +454,7 @@ func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 
 	// Fallback: extract from path if param not available (for testing)
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		path := ""
 		if ctx.Request != nil && ctx.Request.Request != nil {
 			path = ctx.Request.Request.Path
@@ -463,7 +464,7 @@ func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
 		}
 	}
 
-	if statusID == "" {
+	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		h.logger.Warn("missing status ID in embed page request")
 		return "", ctx.Status(400).JSON(map[string]string{
 			"error": "missing status ID",
@@ -526,13 +527,13 @@ func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) 
 		username: "unknown",
 	}
 
-	if note.AttributedTo == "" {
+	if err := common.ValidateRequiredParam("attributedTo", note.AttributedTo); err != nil {
 		return info
 	}
 
 	// Extract username from actor ID
 	parts := strings.Split(note.AttributedTo, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		username := parts[len(parts)-1]
 		info.username = username
 
@@ -540,7 +541,7 @@ func (h *Handler) getEmbedAuthorInfo(ctx *lift.Context, note *activitypub.Note) 
 		if err == nil && result != nil && result.Actor != nil {
 			info.actor = result.Actor
 			info.name = result.Actor.Name
-			if info.name == "" {
+			if err := common.ValidateRequiredParam("actorName", info.name); err != nil {
 				info.name = result.Actor.PreferredUsername
 			}
 		}
@@ -687,7 +688,7 @@ func (h *Handler) writeEmbedBodyContent(builder *strings.Builder, note *activity
 
 // writeEmbedMediaAttachments writes media attachments to the embed
 func (h *Handler) writeEmbedMediaAttachments(builder *strings.Builder, note *activitypub.Note) {
-	if len(note.Attachment) == 0 {
+	if err := common.ValidateSliceNotEmpty("attachments", note.Attachment); err != nil {
 		return
 	}
 

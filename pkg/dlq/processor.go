@@ -15,6 +15,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Processor handles dead letter queue message processing
@@ -182,7 +183,7 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 	// Determine queue names
 	queueName := p.extractQueueName(record.EventSourceARN)
 	sourceQueue := originalMessage.SourceQueue
-	if sourceQueue == "" {
+	if err := common.ValidateRequiredParam("sourceQueue", sourceQueue); err != nil {
 		sourceQueue = strings.ReplaceAll(queueName, "-dlq", "") // Remove DLQ suffix
 	}
 
@@ -383,7 +384,7 @@ func (p *Processor) reprocessServiceMessages(ctx context.Context, service string
 		return 0, 0, fmt.Errorf("failed to get messages for reprocessing: %w", err)
 	}
 
-	if len(messages) == 0 {
+	if err := common.ValidateSliceNotEmpty("messages", messages); err != nil {
 		return 0, 0, nil
 	}
 

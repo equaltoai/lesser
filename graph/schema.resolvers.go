@@ -19,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
@@ -53,11 +54,17 @@ import (
 func (r *queryResolver) Actor(ctx context.Context, id *string, username *string) (*activitypub.Actor, error) {
 	// Determine lookup method
 	var query *accounts.GetAccountQuery
-	if id != nil && *id != "" {
+	if id != nil {
+		if err := common.ValidateRequiredParam("id", *id); err != nil {
+			return nil, err
+		}
 		query = &accounts.GetAccountQuery{
 			Username: *id,
 		}
-	} else if username != nil && *username != "" {
+	} else if username != nil {
+		if err := common.ValidateRequiredParam("username", *username); err != nil {
+			return nil, err
+		}
 		query = &accounts.GetAccountQuery{
 			Username: *username,
 		}
@@ -67,7 +74,7 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 
 	// Get account using service
 	usernameToLookup := ""
-	if query.Username != "" {
+	if err := common.ValidateRequiredParam("username", query.Username); err == nil {
 		usernameToLookup = query.Username
 	}
 	
@@ -126,7 +133,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	// Set timeline filter
 	switch timelineType {
 	case model.TimelineTypeHome:
-		if username == "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
 			return nil, fmt.Errorf("authentication required for home timeline")
 		}
 		query.TimelineType = "home"
@@ -135,20 +142,26 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	case model.TimelineTypeLocal:
 		query.TimelineType = "local"
 	case model.TimelineTypeHashtag:
-		if hashtag == nil || *hashtag == "" {
+		if hashtag == nil {
+			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
+		}
+		if err := common.ValidateRequiredParam("hashtag", *hashtag); err != nil {
 			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
 		}
 		query.TimelineType = TimelineTypeHashtag
 		query.Hashtag = *hashtag
 	case model.TimelineTypeList:
-		if listID == nil || *listID == "" {
+		if listID == nil {
+			return nil, fmt.Errorf("listId parameter required for list timeline")
+		}
+		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
 			return nil, fmt.Errorf("listId parameter required for list timeline")
 		}
 		query.TimelineType = TimelineTypeList
 		// List timeline is handled differently - need to get list members
 		// and fetch their posts
 	case model.TimelineTypeDirect:
-		if username == "" {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
 			return nil, fmt.Errorf("authentication required for direct timeline")
 		}
 		query.TimelineType = TimelineTypeDirect
@@ -175,7 +188,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	}
 
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		startCursor = &edges[0].Cursor
 		endCursor = &edges[len(edges)-1].Cursor
 	}
@@ -239,7 +252,7 @@ func (r *queryResolver) Notifications(ctx context.Context, types []string, exclu
 	}
 
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		startCursor = &edges[0].Cursor
 		endCursor = &edges[len(edges)-1].Cursor
 	}
@@ -609,8 +622,11 @@ func (r *queryResolver) Suggestions(ctx context.Context, limit *int) ([]*model.A
 	username := r.optionalAuth(ctx)
 
 	maxLimit := 40
-	if limit != nil && *limit > 0 && *limit <= 100 {
-		maxLimit = *limit
+	if limit != nil {
+		limitStr := fmt.Sprintf("%d", *limit)
+		if parsedLimit, err := common.ParseAdminLimit(limitStr); err == nil {
+			maxLimit = parsedLimit
+		}
 	}
 
 	result, err := r.Registry.Search().GetSuggestions(ctx, &search.SuggestionsQuery{
@@ -730,8 +746,8 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	// Validate input
-	if len(input.Content) == 0 && len(input.AttachmentIds) == 0 {
-		return nil, fmt.Errorf("content or media attachments required")
+	if err := common.ValidateContentOrAttachments(input.Content, input.AttachmentIds); err != nil {
+		return nil, err
 	}
 
 	// Build create command
@@ -765,11 +781,11 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
-	if len(cmd.MediaIDs) > 0 {
-		r.CostTracker.TrackS3Get(len(cmd.MediaIDs))
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
+	if err := common.ValidateSliceNotEmpty("media_ids", cmd.MediaIDs); err == nil {
+		// Track S3 cost using centralized tracker
+		r.trackS3Operation(ctx, "get", len(cmd.MediaIDs))
 	}
 
 	// Build response
@@ -814,9 +830,8 @@ func (r *mutationResolver) DeleteObject(ctx context.Context, id string) (bool, e
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	return true, nil
 }
@@ -842,9 +857,8 @@ func (r *mutationResolver) LikeObject(ctx context.Context, id string) (*activity
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	// Return activity
 	now := time.Now()
@@ -880,9 +894,8 @@ func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, e
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	return true, nil
 }
@@ -908,9 +921,8 @@ func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activit
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	// Return activity
 	now := time.Now()
@@ -946,9 +958,8 @@ func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (bool, 
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	return true, nil
 }
@@ -976,9 +987,8 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	// Return activity
 	now := time.Now()
@@ -1014,9 +1024,8 @@ func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (bool, 
 	}
 
 	// Track costs
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 
 	return true, nil
 }
@@ -1040,9 +1049,8 @@ func (r *mutationResolver) BookmarkObject(ctx context.Context, id string) (*mode
 		return nil, fmt.Errorf("failed to bookmark: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertStatusToObject(ctx, result.Status), nil
 }
 
@@ -1065,9 +1073,8 @@ func (r *mutationResolver) UnbookmarkObject(ctx context.Context, id string) (boo
 		return false, fmt.Errorf("failed to unbookmark: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1090,9 +1097,8 @@ func (r *mutationResolver) PinObject(ctx context.Context, id string) (*model.Obj
 		return nil, fmt.Errorf("failed to pin: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertStatusToObject(ctx, result.Status), nil
 }
 
@@ -1115,9 +1121,8 @@ func (r *mutationResolver) UnpinObject(ctx context.Context, id string) (bool, er
 		return false, fmt.Errorf("failed to unpin: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1141,9 +1146,8 @@ func (r *mutationResolver) BlockActor(ctx context.Context, id string) (*model.Re
 		return nil, fmt.Errorf("failed to block: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(2); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 2)
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1166,9 +1170,8 @@ func (r *mutationResolver) UnblockActor(ctx context.Context, id string) (bool, e
 		return false, fmt.Errorf("failed to unblock: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1199,9 +1202,8 @@ func (r *mutationResolver) MuteActor(ctx context.Context, id string, muteNotific
 		return nil, fmt.Errorf("failed to mute: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1224,9 +1226,8 @@ func (r *mutationResolver) UnmuteActor(ctx context.Context, id string) (bool, er
 		return false, fmt.Errorf("failed to unmute: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1265,9 +1266,8 @@ func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, in
 		return nil, fmt.Errorf("failed to update relationship: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertRelationshipToGraphQL(result.Relationship), nil
 }
 
@@ -1301,9 +1301,8 @@ func (r *mutationResolver) CreateList(ctx context.Context, input model.CreateLis
 		return nil, fmt.Errorf("failed to create list: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertListToGraphQL(ctx, result.List), nil
 }
 
@@ -1336,9 +1335,8 @@ func (r *mutationResolver) UpdateList(ctx context.Context, id string, input mode
 		return nil, fmt.Errorf("failed to update list: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertListToGraphQL(ctx, result.List), nil
 }
 
@@ -1361,9 +1359,8 @@ func (r *mutationResolver) DeleteList(ctx context.Context, id string) (bool, err
 		return false, fmt.Errorf("failed to delete list: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1407,7 +1404,8 @@ func (r *mutationResolver) AddAccountsToList(ctx context.Context, id string, acc
 		return nil, fmt.Errorf("failed to get updated list: %w", err)
 	}
 
-	_ = r.CostTracker.TrackDynamoWrite(len(accountIDs))
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", int64(len(accountIDs)))
 	return r.convertListToGraphQL(ctx, list), nil
 }
 
@@ -1451,7 +1449,8 @@ func (r *mutationResolver) RemoveAccountsFromList(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to get updated list: %w", err)
 	}
 
-	_ = r.CostTracker.TrackDynamoWrite(len(accountIDs))
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", int64(len(accountIDs)))
 	return r.convertListToGraphQL(ctx, list), nil
 }
 
@@ -1474,9 +1473,8 @@ func (r *mutationResolver) MarkConversationAsRead(ctx context.Context, id string
 		return nil, fmt.Errorf("failed to mark as read: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertConversationToGraphQL(ctx, result.Conversation), nil
 }
 
@@ -1499,9 +1497,8 @@ func (r *mutationResolver) DeleteConversation(ctx context.Context, id string) (b
 		return false, fmt.Errorf("failed to delete conversation: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1535,9 +1532,8 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 		return nil, fmt.Errorf("failed to update media: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertMediaToGraphQL(result.Media), nil
 }
 
@@ -1560,9 +1556,8 @@ func (r *mutationResolver) DismissNotification(ctx context.Context, id string) (
 		return false, fmt.Errorf("failed to dismiss notification: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1584,7 +1579,8 @@ func (r *mutationResolver) ClearNotifications(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("failed to clear notifications: %w", err)
 	}
 
-	_ = r.CostTracker.TrackDynamoWrite(int(result.ClearedCount))
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", int64(result.ClearedCount))
 	return true, nil
 }
 
@@ -1653,9 +1649,8 @@ func (r *mutationResolver) ScheduleStatus(ctx context.Context, input model.Sched
 		return nil, fmt.Errorf("failed to schedule status: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertScheduledStatusToGraphQL(ctx, result.ScheduledStatus), nil
 }
 
@@ -1688,9 +1683,8 @@ func (r *mutationResolver) UpdateScheduledStatus(ctx context.Context, id string,
 		return nil, fmt.Errorf("failed to update scheduled status: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertScheduledStatusToGraphQL(ctx, result.ScheduledStatus), nil
 }
 
@@ -1713,9 +1707,8 @@ func (r *mutationResolver) CancelScheduledStatus(ctx context.Context, id string)
 		return false, fmt.Errorf("failed to cancel scheduled status: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1750,10 +1743,10 @@ func (r *mutationResolver) CreateEmoji(ctx context.Context, input model.CreateEm
 		return nil, fmt.Errorf("failed to create emoji: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
-	r.CostTracker.TrackS3Put(1)
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
+	// Track S3 cost using centralized tracker
+	r.trackS3Operation(ctx, "put", 1)
 	return r.convertEmojiToGraphQL(result.Emoji), nil
 }
 
@@ -1785,9 +1778,8 @@ func (r *mutationResolver) UpdateEmoji(ctx context.Context, shortcode string, in
 		return nil, fmt.Errorf("failed to update emoji: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return r.convertEmojiToGraphQL(result.Emoji), nil
 }
 
@@ -1809,9 +1801,8 @@ func (r *mutationResolver) DeleteEmoji(ctx context.Context, shortcode string) (b
 		return false, fmt.Errorf("failed to delete emoji: %w", err)
 	}
 
-	if err := r.CostTracker.TrackDynamoWrite(1); err != nil {
-		r.Logger.Warn("Failed to track dynamo write cost", zap.Error(err))
-	}
+	// Track cost using centralized tracker
+	r.trackDynamoOperation(ctx, "write", 1)
 	return true, nil
 }
 
@@ -1946,11 +1937,18 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 
 // validateTimelineRequest validates the timeline subscription request
 func (r *subscriptionResolver) validateTimelineRequest(timelineType model.TimelineType, username string, listID *string) error {
-	if timelineType == model.TimelineTypeHome && username == "" {
-		return fmt.Errorf("authentication required for home timeline")
+	if timelineType == model.TimelineTypeHome {
+		if err := common.ValidateRequiredParam("username", username); err != nil {
+			return fmt.Errorf("authentication required for home timeline")
+		}
 	}
-	if timelineType == model.TimelineTypeList && (listID == nil || *listID == "") {
-		return fmt.Errorf("listId required for list timeline")
+	if timelineType == model.TimelineTypeList {
+		if listID == nil {
+			return fmt.Errorf("listId required for list timeline")
+		}
+		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
+			return fmt.Errorf("listId required for list timeline")
+		}
 	}
 	return nil
 }
@@ -2568,7 +2566,7 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 		zap.Float64("score", input.Score))
 
 	// Validate inputs
-	if input.TargetActorID == "" {
+	if err := common.ValidateRequiredParam("targetActorID", input.TargetActorID); err != nil {
 		return nil, fmt.Errorf("trustee_id is required")
 	}
 	if input.Score < -1.0 || input.Score > 1.0 {
@@ -2655,10 +2653,10 @@ func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput
 	}
 
 	// Validate input
-	if input.ObjectID == "" {
+	if err := common.ValidateRequiredParam("objectID", input.ObjectID); err != nil {
 		return nil, fmt.Errorf("objectId is required")
 	}
-	if input.Reason == "" {
+	if err := common.ValidateRequiredParam("reason", input.Reason); err != nil {
 		return nil, fmt.Errorf("reason is required")
 	}
 
@@ -2956,7 +2954,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 // requireAuth ensures the user is authenticated and returns their username
 func (r *Resolver) requireAuth(ctx context.Context) (string, error) {
 	username := getUsernameFromContext(ctx)
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		r.Logger.Warn("Unauthenticated GraphQL request")
 		return "", fmt.Errorf("authentication required")
 	}
@@ -3319,7 +3317,7 @@ func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.
 
 	actor.PreferredUsername = user.Username
 
-	if len(user.Fields) > 0 {
+	if err := common.ValidateSliceNotEmpty("fields", user.Fields); err == nil {
 		attachments := make([]activitypub.Attachment, len(user.Fields))
 		for i, field := range user.Fields {
 			attachments[i] = activitypub.Attachment{
@@ -3468,7 +3466,7 @@ func (r *Resolver) getReplyCount(ctx context.Context, noteID string) int {
 
 // extractContentMaps creates ContentMap entries for content with language detection
 func (r *Resolver) extractContentMaps(content string) []*model.ContentMap {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return []*model.ContentMap{}
 	}
 
@@ -3485,7 +3483,7 @@ func (r *Resolver) extractContentMaps(content string) []*model.ContentMap {
 
 // detectContentLanguage performs simple language detection on content
 func (r *Resolver) detectContentLanguage(content string) string {
-	if content == "" {
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return "en" // Default to English
 	}
 
@@ -3591,7 +3589,7 @@ func (r *Resolver) extractMentionsFromNote(note *activitypub.Note) []*model.Ment
 
 // parseMentionURL extracts username and domain from a mention URL
 func (r *Resolver) parseMentionURL(url string) (username string, domain *string) {
-	if url == "" {
+	if err := common.ValidateRequiredParam("url", url); err != nil {
 		return "", nil
 	}
 
@@ -3609,7 +3607,7 @@ func (r *Resolver) parseMentionURL(url string) (username string, domain *string)
 	usernamePart := parts[len(parts)-1]
 	usernamePart = strings.TrimPrefix(usernamePart, "@")
 	
-	if usernamePart == "" {
+	if err := common.ValidateRequiredParam("usernamePart", usernamePart); err != nil {
 		return "", nil
 	}
 
@@ -3762,7 +3760,7 @@ func (r *Resolver) setModerationFilterExtension(_ context.Context, obj *moderati
 
 // fetchActorFromStorage attempts to fetch an actor from storage repositories
 func (r *Resolver) fetchActorFromStorage(ctx context.Context, actorID string) *activitypub.Actor {
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil
 	}
 	
@@ -3796,7 +3794,7 @@ func (r *Resolver) fetchActorFromStorage(ctx context.Context, actorID string) *a
 	
 	// If not found, return a minimal actor with proper domain-based URL structure
 	domain := r.Registry.GetConfig().BaseURL
-	if domain == "" {
+	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "https://localhost"
 	}
 	
@@ -3848,7 +3846,7 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 		}()))
 
 	// Validate inputs
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil, fmt.Errorf("actorID is required")
 	}
 
@@ -4139,7 +4137,7 @@ func (r *queryResolver) enrichWithStorageAnalysis(ctx context.Context, explanati
 	}
 	
 	// Add synthetic access pattern for demonstration
-	if len(explanation.AccessPattern) == 0 {
+	if err := common.ValidateSliceNotEmpty("access_pattern", explanation.AccessPattern); err != nil {
 		explanation.AccessPattern = []*model.AccessLog{
 			{
 				Timestamp: model.Time(time.Now().Add(-time.Hour)),
@@ -4370,7 +4368,7 @@ func (r *queryResolver) getRecentFederationMetrics(ctx context.Context, federati
 
 // determineReachabilityFromMetrics analyzes recent metrics to determine domain reachability
 func (r *queryResolver) determineReachabilityFromMetrics(status *model.FederationStatus, recentMetrics []*models.FederationAnalyticsTimeSeries) {
-	if len(recentMetrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("recent_metrics", recentMetrics); err != nil {
 		return
 	}
 
@@ -5706,7 +5704,10 @@ func (r *queryResolver) isEventTypeCompatible(event *storage.ModerationEvent, pa
 
 // matchPatternContent performs basic pattern matching on content
 func (r *queryResolver) matchPatternContent(pattern *storage.ModerationPattern, content string) bool {
-	if pattern.Pattern == "" || content == "" {
+	if err := common.ValidateRequiredParam("pattern", pattern.Pattern); err != nil {
+		return false
+	}
+	if err := common.ValidateRequiredParam("content", content); err != nil {
 		return false
 	}
 
@@ -5791,7 +5792,7 @@ func (r *queryResolver) getResponseTimeFromReportData(ctx context.Context, event
 // getResponseTimeByReportID calculates response time using report ID
 func (r *queryResolver) getResponseTimeByReportID(ctx context.Context, event *storage.ModerationEvent, storage core.RepositoryStorage) int64 {
 	reportID, ok := event.Data["report_id"].(string)
-	if !ok || reportID == "" {
+	if !ok || common.ValidateRequiredParam("reportID", reportID) != nil {
 		return 0
 	}
 
@@ -5826,7 +5827,7 @@ func (r *queryResolver) getResponseTimeByTimestamp(event *storage.ModerationEven
 // parseStringTimestamp parses RFC3339 timestamp from event data
 func (r *queryResolver) parseStringTimestamp(event *storage.ModerationEvent) int64 {
 	reportedAt, ok := event.Data["reported_at"].(string)
-	if !ok || reportedAt == "" {
+	if !ok || common.ValidateRequiredParam("reportedAt", reportedAt) != nil {
 		return 0
 	}
 
@@ -5861,7 +5862,7 @@ func (r *queryResolver) parseUnixTimestamp(event *storage.ModerationEvent) int64
 
 // estimateResponseTimeFromObject estimates response time based on object age
 func (r *queryResolver) estimateResponseTimeFromObject(ctx context.Context, event *storage.ModerationEvent, storage core.RepositoryStorage) int64 {
-	if event.ObjectID == "" {
+	if err := common.ValidateRequiredParam("objectID", event.ObjectID); err != nil {
 		return 0
 	}
 
@@ -5931,7 +5932,7 @@ func (r *queryResolver) buildThreatCounts(events []*storage.ModerationEvent) map
 		}
 
 		category := event.Category
-		if category == "" {
+		if common.ValidateRequiredParam("category", category) != nil {
 			category = "General"
 		}
 
@@ -6011,7 +6012,7 @@ func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo inte
 		return trends[i].Count > trends[j].Count
 	})
 
-	if len(trends) > 10 {
+	if err := common.ValidateSliceLength("trends", trends, 10); err != nil {
 		trends = trends[:10]
 	}
 
@@ -6078,8 +6079,11 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 	}
 	
 	resultLimit := 50
-	if limit != nil && *limit > 0 && *limit <= 100 {
-		resultLimit = *limit
+	if limit != nil {
+		limitStr := fmt.Sprintf("%d", *limit)
+		if parsedLimit, err := common.ParseAdminLimit(limitStr); err == nil {
+			resultLimit = parsedLimit
+		}
 	}
 	
 	severityStr := ""
@@ -6348,7 +6352,7 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 		p50 = int64(metrics.LatencyP50Ms)
 		p95 = int64(metrics.LatencyP90Ms) // Using P90 as approximation for P95
 		p99 = int64(metrics.LatencyP99Ms)
-	} else if len(latencies) > 0 {
+	} else if err := common.ValidateSliceNotEmpty("latencies", latencies); err == nil {
 		// Fallback to calculating from sample latencies if we have them
 		p50, _, p95, p99 = calculatePercentiles(latencies) 
 	}
@@ -6367,7 +6371,7 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 
 // calculatePercentiles calculates percentile values from a slice of latencies
 func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
-	if len(latencies) == 0 {
+	if err := common.ValidateSliceNotEmpty("latencies", latencies); err != nil {
 		return 0, 0, 0, 0
 	}
 	
@@ -6503,7 +6507,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 	hasPreviousPage := cursor != ""
 	
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
 		ec := edges[len(edges)-1].Cursor
 		startCursor = &sc
@@ -7047,7 +7051,7 @@ type moderationFilterResolver struct{ *Resolver }
 
 // extractMediaIDFromURL extracts the media ID from a media URL
 func (r *attachmentResolver) extractMediaIDFromURL(url string) (string, error) {
-	if url == "" {
+	if err := common.ValidateRequiredParam("url", url); err != nil {
 		return "", fmt.Errorf("empty URL")
 	}
 	
@@ -7093,7 +7097,7 @@ func (r *attachmentResolver) extractMediaIDFromURL(url string) (string, error) {
 
 // Avatar implements ActorResolver
 func (r *actorResolver) Avatar(_ context.Context, obj *activitypub.Actor) (*string, error) {
-	if obj.Icon == nil || obj.Icon.URL == "" {
+	if obj.Icon == nil || common.ValidateRequiredParam("iconURL", obj.Icon.URL) != nil {
 		return nil, nil
 	}
 	return &obj.Icon.URL, nil
@@ -7101,7 +7105,7 @@ func (r *actorResolver) Avatar(_ context.Context, obj *activitypub.Actor) (*stri
 
 // Header implements ActorResolver
 func (r *actorResolver) Header(_ context.Context, obj *activitypub.Actor) (*string, error) {
-	if obj.Image == nil || obj.Image.URL == "" {
+	if obj.Image == nil || common.ValidateRequiredParam("imageURL", obj.Image.URL) != nil {
 		return nil, nil
 	}
 	return &obj.Image.URL, nil
@@ -7185,7 +7189,7 @@ func (r *actorResolver) UpdatedAt(_ context.Context, actor *activitypub.Actor) (
 
 // Fields implements ActorResolver
 func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*model.Field, error) {
-	if len(obj.Attachment) == 0 {
+	if err := common.ValidateSliceNotEmpty("attachment", obj.Attachment); err != nil {
 		return []*model.Field{}, nil
 	}
 	
@@ -7258,7 +7262,7 @@ func (r *actorResolver) Reputation(ctx context.Context, obj *activitypub.Actor) 
 
 // Vouches implements ActorResolver
 func (r *actorResolver) Vouches(ctx context.Context, actor *activitypub.Actor) ([]*model.Vouch, error) {
-	if actor == nil || actor.PreferredUsername == "" {
+	if actor == nil || common.ValidateRequiredParam("preferredUsername", actor.PreferredUsername) != nil {
 		return []*model.Vouch{}, nil
 	}
 	
@@ -7317,7 +7321,7 @@ func (r *actorResolver) Username(_ context.Context, obj *activitypub.Actor) (str
 
 // Domain implements ActorResolver
 func (r *actorResolver) Domain(_ context.Context, obj *activitypub.Actor) (*string, error) {
-	if obj.ID == "" {
+	if err := common.ValidateRequiredParam("actorID", obj.ID); err != nil {
 		return nil, nil
 	}
 	parsedURL, err := neturl.Parse(obj.ID)
@@ -7330,7 +7334,7 @@ func (r *actorResolver) Domain(_ context.Context, obj *activitypub.Actor) (*stri
 
 // DisplayName implements ActorResolver
 func (r *actorResolver) DisplayName(_ context.Context, obj *activitypub.Actor) (*string, error) {
-	if obj.Name == "" {
+	if err := common.ValidateRequiredParam("actorName", obj.Name); err != nil {
 		return nil, nil
 	}
 	return &obj.Name, nil
@@ -7759,7 +7763,7 @@ func (r *quoteContextResolver) OriginalAuthor(_ context.Context, obj *activitypu
 
 // OriginalNote implements QuoteContextResolver
 func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypub.QuoteContext) (*model.Object, error) {
-	if obj.OriginalNoteID == "" {
+	if err := common.ValidateRequiredParam("originalNoteID", obj.OriginalNoteID); err != nil {
 		return nil, nil
 	}
 
@@ -7921,7 +7925,7 @@ func (r *textAnalysisResolver) KeyPhrases(_ context.Context, obj *moderation.Tex
 
 // From implements TrustEdgeResolver
 func (r *trustEdgeResolver) From(ctx context.Context, edge *trust.TrustEdge) (*activitypub.Actor, error) {
-	if edge == nil || edge.From == "" {
+	if edge == nil || common.ValidateRequiredParam("edgeFrom", edge.From) != nil {
 		return nil, nil
 	}
 
@@ -7942,7 +7946,7 @@ func (r *trustEdgeResolver) From(ctx context.Context, edge *trust.TrustEdge) (*a
 
 // To implements TrustEdgeResolver
 func (r *trustEdgeResolver) To(ctx context.Context, edge *trust.TrustEdge) (*activitypub.Actor, error) {
-	if edge == nil || edge.To == "" {
+	if edge == nil || common.ValidateRequiredParam("edgeTo", edge.To) != nil {
 		return nil, nil
 	}
 
@@ -7963,7 +7967,7 @@ func (r *trustEdgeResolver) To(ctx context.Context, edge *trust.TrustEdge) (*act
 
 // UpdatedAt implements TrustEdgeResolver
 func (r *trustEdgeResolver) UpdatedAt(ctx context.Context, edge *trust.TrustEdge) (*model.Time, error) {
-	if edge == nil || edge.From == "" || edge.To == "" {
+	if edge == nil || common.ValidateRequiredParam("edgeFrom", edge.From) != nil || common.ValidateRequiredParam("edgeTo", edge.To) != nil {
 		return nil, nil
 	}
 
@@ -8175,7 +8179,7 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 
 		// Attempt reconnection for each severed domain
 		for _, severedRel := range severedRels {
-			if severedRel.Domain == "" {
+			if err := common.ValidateRequiredParam("severedDomain", severedRel.Domain); err != nil {
 				continue
 			}
 
@@ -8652,7 +8656,7 @@ func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth
 	}
 
 	// If no conversation ID from local note, use the note ID as conversation identifier
-	if conversationID == "" {
+	if common.ValidateRequiredParam("conversationID", conversationID) != nil {
 		conversationID = noteID
 	}
 
@@ -8714,7 +8718,7 @@ func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth
 	}
 
 	// Mark thread as synced in storage if successful
-	if len(syncErrors) == 0 {
+	if err := common.ValidateSliceNotEmpty("sync_errors", syncErrors); err != nil {
 		if err := objectRepo.MarkThreadAsSynced(ctx, noteID); err != nil {
 			r.Logger.Warn("failed to mark thread as synced", zap.Error(err), zap.String("note_id", noteID))
 		}
@@ -8865,7 +8869,7 @@ func extractUsernameFromActorID(actorID string) string {
 	
 	// Fallback: extract the last path segment
 	parts = strings.Split(strings.TrimSuffix(actorID, "/"), "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	
@@ -8906,7 +8910,7 @@ func (r *mutationResolver) extractNoteIDFromURL(url string) string {
 	// For ActivityPub URLs like https://domain.com/users/user/statuses/123
 	// or https://domain.com/notes/123, extract the last part
 	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return url
@@ -9095,7 +9099,7 @@ func (c *threadSyncFederationClient) fetchContext(_ context.Context, noteURL str
 // extractNoteIDFromURL helper for federation client
 func (c *threadSyncFederationClient) extractNoteIDFromURL(url string) string {
 	parts := strings.Split(url, "/")
-	if len(parts) > 0 {
+	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
 	return url
@@ -9171,7 +9175,7 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 				break // Return only the matching quality
 			}
 		}
-		if len(filteredBitrates) > 0 {
+		if err := common.ValidateSliceNotEmpty("filtered_bitrates", filteredBitrates); err == nil {
 			stream.Bitrates = filteredBitrates
 		}
 	}
@@ -9216,7 +9220,9 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 	}
 
 	// If all preloads failed, return error
-	if len(streams) == 0 && len(errors) > 0 {
+	streamsEmpty := common.ValidateSliceNotEmpty("streams", streams) != nil
+	errorsNotEmpty := common.ValidateSliceNotEmpty("errors", errors) == nil
+	if streamsEmpty && errorsNotEmpty {
 		return nil, fmt.Errorf("failed to preload any media: %w", errors[0])
 	}
 
@@ -9665,7 +9671,7 @@ func (r *queryResolver) buildCostDriversFromDaily(daily *repositories.DailyAggre
 	})
 
 	// Return top 5 drivers
-	if len(drivers) > 5 {
+	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
 		return drivers[:5]
 	}
 	return drivers
@@ -9702,7 +9708,7 @@ func (r *queryResolver) buildCostDriversFromMonthly(monthly *repositories.Monthl
 		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
 	})
 
-	if len(drivers) > 5 {
+	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
 		return drivers[:5]
 	}
 	return drivers
@@ -9748,7 +9754,7 @@ func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.Dail
 		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
 	})
 
-	if len(drivers) > 5 {
+	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
 		return drivers[:5]
 	}
 	return drivers
@@ -9790,7 +9796,7 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 	})
 
 	// Return top 5 drivers
-	if len(drivers) > 5 {
+	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
 		return drivers[:5]
 	}
 	return drivers
@@ -9809,7 +9815,7 @@ func (r *queryResolver) generateDailyRecommendations(daily *repositories.DailyAg
 		recommendations = append(recommendations, "High read-to-write ratio - consider caching")
 	}
 	
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Costs are within normal range")
 	}
 	
@@ -9819,7 +9825,7 @@ func (r *queryResolver) generateDailyRecommendations(daily *repositories.DailyAg
 func (r *queryResolver) generateWeeklyRecommendations(dailies []*repositories.DailyAggregate) []string {
 	recommendations := []string{}
 	
-	if len(dailies) == 0 {
+	if err := common.ValidateSliceNotEmpty("dailies", dailies); err != nil {
 		return []string{"No weekly data available"}
 	}
 	
@@ -9848,7 +9854,7 @@ func (r *queryResolver) generateWeeklyRecommendations(dailies []*repositories.Da
 		recommendations = append(recommendations, "Very high read volume - implement aggressive caching")
 	}
 	
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Weekly costs are stable")
 	}
 	
@@ -9873,7 +9879,7 @@ func (r *queryResolver) generateMonthlyRecommendations(monthly *repositories.Mon
 		}
 	}
 	
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Monthly costs are within acceptable range")
 	}
 	
@@ -9883,7 +9889,7 @@ func (r *queryResolver) generateMonthlyRecommendations(monthly *repositories.Mon
 func (r *queryResolver) generateMonthlyRecommendationsFromDaily(dailies []*repositories.DailyAggregate) []string {
 	recommendations := []string{}
 	
-	if len(dailies) == 0 {
+	if err := common.ValidateSliceNotEmpty("dailies", dailies); err != nil {
 		return []string{"No monthly data available"}
 	}
 	
@@ -9911,7 +9917,7 @@ func (r *queryResolver) generateMonthlyRecommendationsFromDaily(dailies []*repos
 		}
 	}
 	
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Cost trends are healthy")
 	}
 	
@@ -9948,7 +9954,7 @@ func (r *queryResolver) generateRecommendationsFromCosts(serviceCosts, operation
 		recommendations = append(recommendations, "Monitor cost trends and set up budget alerts")
 	}
 	
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Costs are minimal - maintain current patterns")
 	}
 	
@@ -10204,7 +10210,7 @@ func (r *queryResolver) addVarianceRecommendations(recommendations []string, var
 	}
 
 	// Ensure we have some recommendations
-	if len(recommendations) == 0 {
+	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = []string{"Monitor cost trends regularly", "Optimize high-usage operations"}
 	}
 
@@ -10360,7 +10366,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 
 	// Handle empty edges case
 	var startCursor, endCursor *model.Cursor
-	if len(edges) > 0 {
+	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
 		ec := edges[len(edges)-1].Cursor
 		startCursor = &sc
@@ -11575,7 +11581,7 @@ func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Objec
 	}
 
 	// Set visibility based on audience
-	if len(storageObj.To) > 0 {
+	if err := common.ValidateSliceNotEmpty("to", storageObj.To); err == nil {
 		for _, to := range storageObj.To {
 			if to == "https://www.w3.org/ns/activitystreams#Public" {
 				modelObj.Visibility = model.VisibilityPublic
@@ -11805,7 +11811,7 @@ func (r *subscriptionResolver) convertEventToNotification(ctx context.Context, e
 
 // notificationMatchesTypes checks if a notification matches the specified types filter
 func (r *subscriptionResolver) notificationMatchesTypes(notification *model.Notification, types []string) bool {
-	if len(types) == 0 {
+	if err := common.ValidateSliceNotEmpty("types", types); err != nil {
 		return true
 	}
 	
@@ -12264,7 +12270,7 @@ func (r *Resolver) convertImageAnalysisToModeration(analysis *ai.ImageAnalysis) 
 	}
 
 	// Add detected text if any
-	if len(analysis.DetectedText) > 0 {
+	if err := common.ValidateSliceNotEmpty("detected_text", analysis.DetectedText); err == nil {
 		result.DetectedText = analysis.DetectedText
 		if analysis.TextToxicity > 0.7 {
 			result.Recommendations = append(result.Recommendations, "Toxic text in image - review required")
@@ -12768,7 +12774,7 @@ func (r *actorResolver) getModerationScore(ctx context.Context, username string)
 		return 1.0 // Perfect score if no moderation history
 	}
 
-	if len(events) == 0 {
+	if err := common.ValidateSliceNotEmpty("events", events); err != nil {
 		return 1.0 // Perfect score if no events
 	}
 

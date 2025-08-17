@@ -145,7 +145,7 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 
 	// Extract signature from headers
 	signature := req.Header.Get("Signature")
-	if signature == "" {
+	if err := common.ValidateRequiredParam("signature", signature); err != nil {
 		return nil, fmt.Errorf("missing signature header")
 	}
 
@@ -157,7 +157,7 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 
 	// Extract actor ID from keyId
 	actorID := extractActorIDFromKeyID(sig.KeyID)
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil, fmt.Errorf("failed to extract actor ID from keyId: %s", sig.KeyID)
 	}
 

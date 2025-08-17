@@ -11,15 +11,15 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/common"
+	awsInit "github.com/equaltoai/lesser/pkg/aws"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/google/uuid"
-	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
@@ -60,13 +60,14 @@ const (
 // Handler processes DynamoDB streams for real-time metrics pipeline
 type Handler struct {
 	processor *MetricsStreamProcessor
+	repos     core.RepositoryStorage
 	logger    *zap.Logger
 }
 
 // MetricsStreamProcessor transforms operational data into reporting metrics
 type MetricsStreamProcessor struct {
+	repos          core.RepositoryStorage
 	reportingRepo  *repositories.MetricRecordRepository
-	userRepo       *repositories.UserRepository
 	costCalculator *CostCalculator
 	dlqHandler     *DLQHandler
 	logger         *zap.Logger
@@ -115,14 +116,14 @@ type OperationCosts struct {
 }
 
 // NewMetricsStreamProcessor creates a new stream processor
-func NewMetricsStreamProcessor(storageFactory *factory.RepositoryFactory, logger *zap.Logger) *MetricsStreamProcessor {
+func NewMetricsStreamProcessor(repos core.RepositoryStorage, logger *zap.Logger) *MetricsStreamProcessor {
 	return &MetricsStreamProcessor{
+		repos: repos,
 		reportingRepo: repositories.NewMetricRecordRepository(
-			storageFactory.GetDB(),
-			storageFactory.GetTableName(),
+			repos.GetDB(),
+			repos.GetTableName(),
 			logger,
 		),
-		userRepo: storageFactory.User(),
 		costCalculator: &CostCalculator{
 			// AWS On-Demand pricing (as of 2024, in microcents)
 			DynamoDBReadCostPerUnit:  25,  // $0.25 per million RRUs = 25 microcents per 1000
@@ -132,7 +133,7 @@ func NewMetricsStreamProcessor(storageFactory *factory.RepositoryFactory, logger
 			KMSCostPerOperation:      6,   // KMS operation cost (0.000000006-009 cents)
 		},
 		dlqHandler: &DLQHandler{
-			dlqRepo: storageFactory.DLQ(),
+			dlqRepo: repos.DLQ(),
 			logger:  logger,
 		},
 		logger: logger,
@@ -209,13 +210,13 @@ func (p *MetricsStreamProcessor) processDataChange(ctx context.Context, record *
 		sk = skAttr.String()
 	}
 
-	if pk == "" || sk == "" {
+	if common.ValidateRequiredParam("pk", pk) != nil || common.ValidateRequiredParam("sk", sk) != nil {
 		return nil // Skip records without proper keys
 	}
 
 	// Determine what type of operational data this is
 	metricType := p.determineMetricType(pk, sk)
-	if metricType == "" {
+	if err := common.ValidateRequiredParam("metricType", metricType); err != nil {
 		return nil // Not a trackable metric
 	}
 
@@ -935,74 +936,64 @@ func (h *DLQHandler) HandleStreamFailure(ctx context.Context, record *events.Dyn
 	return h.dlqRepo.CreateDLQMessage(ctx, dlqMessage)
 }
 
-// init initializes the Lambda processor
-var db core.DB
-var storageFactory *factory.RepositoryFactory
-
-func init() {
-	// Initialize logger
-	logger, err := zap.NewProduction()
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize logger: %v", err))
-	}
-
-	// Initialize DynamORM with Lambda optimization (91% faster cold starts)
-	tableName := os.Getenv("DYNAMODB_TABLE")
-	if tableName == "" {
-		tableName = "lesser-main"
-	}
-
-	// Get config for region
-	cfg := config.Get()
-
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
-	}
-
-	db, err = dynamorm.LambdaInit(
-		&models.MetricRecord{},
-		&models.DLQMessage{},
-		&models.User{},
-	)
-	if err != nil {
-		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize storage factory
-	storageFactory, err = factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
-	if err != nil {
-		logger.Fatal("failed to initialize storage factory", zap.Error(err))
-	}
-
-	logger.Info("metrics processor initialized",
-		zap.String("table", tableName),
-		zap.String("function", "metrics-processor"),
-	)
-}
+// Global variables for Lambda initialization
+var (
+	handler *Handler
+)
 
 func main() {
-	logger, _ := zap.NewProduction()
+	// Initialize Lambda services with custom configuration for metrics processing
+	config := common.LambdaConfig{
+		ServiceName: "metrics-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+		CustomServiceConfig: &awsInit.ServiceConfig{
+			RequiresDynamoDB:   true,
+			RequiresCloudWatch: true,
+			ServiceName:        "metrics-processor",
+		},
+	}
+
+	lambdaCtx := common.MustInitializeLambda(config)
+
+	logger := lambdaCtx.Logger
+
 	defer func() {
 		if err := logger.Sync(); err != nil {
-			// Can't use logger since it's syncing, use standard log
 			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
 		}
 	}()
 
-	// Initialize processor
-	processor := NewMetricsStreamProcessor(storageFactory, logger)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
 
-	handler := &Handler{
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(
+		db,
+		lambdaCtx.Config.DynamoTableName,
+		lambdaCtx.AWSServices.Config,
+		logger,
+	)
+	if err != nil {
+		logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	// Initialize metrics stream processor
+	processor := NewMetricsStreamProcessor(repos, logger)
+
+	// Create handler instance
+	handler = &Handler{
 		processor: processor,
+		repos:     repos,
 		logger:    logger,
 	}
 
-	logger.Info("starting metrics stream processor Lambda")
+	logger.Info("starting metrics stream processor Lambda",
+		zap.String("service", "metrics-processor"),
+		zap.String("lambda_type", "processor"))
 
-	// Start Lambda handler
+	// Start Lambda handler for DynamoDB streams
 	lambda.Start(handler.HandleDynamoDBStreamEvent)
 }

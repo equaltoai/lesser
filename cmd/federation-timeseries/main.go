@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
@@ -27,11 +26,11 @@ type TimeseriesProcessor struct {
 }
 
 // NewTimeseriesProcessor creates a new timeseries processor
-func NewTimeseriesProcessor(db core.DB, tableName string) *TimeseriesProcessor {
+func NewTimeseriesProcessor(db core.DB, tableName string, logger *zap.Logger) *TimeseriesProcessor {
 	return &TimeseriesProcessor{
 		db:        db,
 		tableName: tableName,
-		logger:    common.Logger(),
+		logger:    logger,
 	}
 }
 
@@ -297,31 +296,30 @@ func (tp *TimeseriesProcessor) storeMetrics(ctx *lift.Context, window time.Time,
 }
 
 var (
-	logger    *zap.Logger
-	cfg       *config.Config
 	processor *TimeseriesProcessor
-	db        core.DB
 )
 
-func init() {
-	// Initialize logger
-	logger = common.Logger()
+func main() {
+	// Use standardized Lambda initialization
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "federation-timeseries",
+		LambdaType:         common.LambdaTypeFederation,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableHealthCheck:  false,
+		EnableTracing:      true,
+		EnableCostTracking: true,
+	})
 
-	// Load configuration
-	cfg = config.Get()
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize processor
-	processor = NewTimeseriesProcessor(db, cfg.DynamoTableName)
-}
+	processor = NewTimeseriesProcessor(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
-func main() {
 	// Use Lift's DynamoDB stream pattern with full middleware stack
-	patterns.StartDynamoDBStreamLambda("federation-timeseries", processor, logger)
+	patterns.StartDynamoDBStreamLambda("federation-timeseries", processor, lambdaCtx.Logger)
 }

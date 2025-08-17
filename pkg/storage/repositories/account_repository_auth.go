@@ -405,7 +405,7 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 		if r.verifyRecoveryCodeHash(recoveryCode, code.CodeHash) {
 			// Found matching code, return the user
 			username := extractUsernameFromPK(code.PK)
-			if username == "" {
+			if err := common.ValidateRequiredParam("username", username); err != nil {
 				r.logger.Error("invalid recovery code PK format",
 					zap.String("pk", code.PK))
 				continue
@@ -707,7 +707,7 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 		return nil, fmt.Errorf("failed to query session by refresh token: %w", err)
 	}
 
-	if len(sessions) == 0 {
+	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
 		// Check if this might be a previous refresh token (for grace period)
 		// This would require scanning all sessions, which is expensive
 		// For now, just return not found
@@ -784,7 +784,7 @@ func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.De
 	}
 
 	// Ensure we have the required fields
-	if modelDevice.TrustLevel == "" {
+	if err := common.ValidateRequiredParam("TrustLevel", modelDevice.TrustLevel); err != nil {
 		modelDevice.TrustLevel = "untrusted" // Default trust level
 	}
 
@@ -827,7 +827,7 @@ func (r *AccountRepository) GetDevice(ctx context.Context, deviceID string) (*st
 		return nil, fmt.Errorf("failed to scan for device: %w", err)
 	}
 
-	if len(devices) == 0 {
+	if err := common.ValidateSliceNotEmpty("devices", devices); err != nil {
 		return nil, fmt.Errorf("device not found")
 	}
 
@@ -1166,7 +1166,7 @@ func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credent
 
 // UpdateWebAuthnCredential updates a WebAuthn credential
 func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, credentialID string, signCount uint32) error {
-	if credentialID == "" {
+	if err := common.ValidateRequiredParam("credentialID", credentialID); err != nil {
 		return fmt.Errorf("credentialID cannot be empty")
 	}
 
@@ -1182,7 +1182,7 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 		return fmt.Errorf("failed to find WebAuthn credential: %w", err)
 	}
 
-	if len(credentials) == 0 {
+	if err := common.ValidateSliceNotEmpty("credentials", credentials); err != nil {
 		return fmt.Errorf("WebAuthn credential not found")
 	}
 
@@ -1209,7 +1209,10 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 
 // UpdateWalletLastUsed updates when a wallet was last used
 func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, address string) error {
-	if username == "" || address == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return fmt.Errorf("username and address cannot be empty")
+	}
+	if err := common.ValidateRequiredParam("address", address); err != nil {
 		return fmt.Errorf("username and address cannot be empty")
 	}
 

@@ -2,7 +2,6 @@ package lift
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	"net/http"
@@ -47,9 +46,8 @@ func (h *Handler) HandleGetInstanceMetricsLift(ctx *lift.Context) error {
 				requestsPerMinute = float64(todayRequests) / (hoursSinceStart * 60.0)
 			}
 
-			// No latency data available - return 0.0 instead of fabricated estimate
-			// Actual latency tracking should be implemented to provide real metrics
-			avgLatencyMs = 0.0
+			// Get real latency data from MetricRecord repository
+			avgLatencyMs = h.calculateRealLatencyMetricsLift(ctx.Context, startOfDay, endOfDay)
 		}
 	}
 
@@ -76,15 +74,10 @@ func (h *Handler) HandleGetDailyAggregatesLift(ctx *lift.Context) error {
 	h.logger.Info("HandleGetDailyAggregatesLift called")
 
 	// Parse query parameters
-	days := 7 // Default to last 7 days
 	daysStr := ctx.Query("days")
-	if daysStr != "" {
-		if d, err := strconv.Atoi(daysStr); err == nil {
-			days = d
-			if days > 30 {
-				days = 30 // Cap at 30 days
-			}
-		}
+	days, err := common.ParseAndValidateIntWithBounds("days", daysStr, 0, 30, 7)
+	if err != nil {
+		days = 7 // Default to last 7 days
 	}
 
 	// Get daily aggregates
@@ -432,4 +425,55 @@ func calculateConfidenceLevel(dataPoints int) float64 {
 		return 0.7 // Good confidence with less than a month
 	}
 	return 0.9 // High confidence with a month or more of data
+}
+
+// calculateRealLatencyMetricsLift calculates real average latency from stored metrics
+func (h *Handler) calculateRealLatencyMetricsLift(ctx context.Context, startTime, endTime time.Time) float64 {
+	// Get latency metrics from the MetricRecord repository
+	latencyRecords, err := h.repos.MetricRecord().GetMetricsByType(ctx, "api_endpoint", startTime, endTime)
+	if err != nil {
+		h.logger.Warn("failed to get latency metrics", zap.Error(err))
+		return 0.0
+	}
+
+	if err := common.ValidateSliceNotEmpty("latencyRecords", latencyRecords); err != nil {
+		// Also try database operation latencies as fallback
+		dbLatencyRecords, dbErr := h.repos.MetricRecord().GetMetricsByType(ctx, "database_operation", startTime, endTime)
+		if dbErr != nil || len(dbLatencyRecords) == 0 {
+			return 0.0
+		}
+		latencyRecords = dbLatencyRecords
+	}
+
+	// Calculate weighted average latency
+	var totalLatency float64
+	var totalCount int64
+
+	for _, record := range latencyRecords {
+		if record.Count > 0 {
+			// Use P50 percentile as representative latency, fallback to average
+			latency := record.P50
+			if latency == 0 {
+				latency = record.Sum / float64(record.Count)
+			}
+			
+			totalLatency += latency * float64(record.Count)
+			totalCount += record.Count
+		}
+	}
+
+	if totalCount == 0 {
+		return 0.0
+	}
+
+	avgLatency := totalLatency / float64(totalCount)
+	
+	h.logger.Debug("calculated real latency metrics",
+		zap.Float64("avg_latency_ms", avgLatency),
+		zap.Int64("total_requests", totalCount),
+		zap.Int("metric_records", len(latencyRecords)),
+		zap.Time("start_time", startTime),
+		zap.Time("end_time", endTime))
+
+	return avgLatency
 }

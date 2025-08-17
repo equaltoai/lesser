@@ -98,53 +98,6 @@ func (f *FederationStorageAdapter) RecordFederationActivity(ctx context.Context,
 	return f.repos.Federation().RecordFederationActivity(ctx, activity)
 }
 
-func init() {
-	var err error
-	logger := common.Logger()
-	cfg := config.Get()
-
-	// Initialize AWS SQS client config first
-	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
-	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
-	}
-
-	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsCfg, logger)
-	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
-	}
-
-	// Create federation storage adapter that implements FederationStorage interface
-	federationStore := &FederationStorageAdapter{repos: repos}
-
-	// Initialize federation delivery service
-	deliveryService := federation.NewDeliveryService(federationStore)
-
-	sqsClient := sqs.NewFromConfig(awsCfg)
-
-	// Get queue URL from environment
-	queueURL := cfg.FederationDeliveryQueueURL
-	if queueURL == "" {
-		logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
-	}
-
-	// Create processor instance
-	processor = &FederationDeliveryProcessor{
-		repos:           repos,
-		deliveryService: deliveryService,
-		cfg:             cfg,
-		sqsClient:       sqsClient,
-		queueURL:        queueURL,
-		logger:          logger,
-	}
-}
 
 // FederationDeliveryMessage represents a message from the SQS queue
 type FederationDeliveryMessage struct {
@@ -172,6 +125,57 @@ type DeliveryStatus struct {
 }
 
 func main() {
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName: "federation-delivery",
+		LambdaType:  common.LambdaTypeFederation,
+		Version:     "1.0.0",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
+	}
+
+	// Initialize AWS SQS client config
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
+	}
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+	}
+
+	// Initialize repository factory
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsCfg, lambdaCtx.Logger)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
+	}
+
+	// Create federation storage adapter that implements FederationStorage interface
+	federationStore := &FederationStorageAdapter{repos: repos}
+
+	// Initialize federation delivery service
+	deliveryService := federation.NewDeliveryService(federationStore)
+
+	sqsClient := sqs.NewFromConfig(awsCfg)
+
+	// Get queue URL from environment
+	queueURL := lambdaCtx.Config.FederationDeliveryQueueURL
+	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
+		lambdaCtx.Logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
+	}
+
+	// Create processor instance
+	processor = &FederationDeliveryProcessor{
+		repos:           repos,
+		deliveryService: deliveryService,
+		cfg:             lambdaCtx.Config,
+		sqsClient:       sqsClient,
+		queueURL:        queueURL,
+		logger:          lambdaCtx.Logger,
+	}
+
 	// Create Lift app
 	app := lift.New()
 

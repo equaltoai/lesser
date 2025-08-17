@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	fedTypes "github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -199,7 +200,7 @@ func (qo *QueryOptimizer) OptimizedBatchGetInstances(ctx context.Context, instan
 		uncachedIDs = append(uncachedIDs, id)
 	}
 
-	if len(uncachedIDs) == 0 {
+	if err := common.ValidateSliceNotEmpty("uncachedIDs", uncachedIDs); err != nil {
 		return instances, nil // All cached in memory
 	}
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Calculator computes reputation scores for actors
@@ -63,7 +64,7 @@ func (c *Calculator) Calculate(_ context.Context, input *CalculationInput) (*Rep
 
 // calculateTrustScore computes trust score based on trust graph (0-250)
 func (c *Calculator) calculateTrustScore(input *CalculationInput) int {
-	if len(input.TrustRelationships) == 0 {
+	if err := common.ValidateSliceNotEmpty("input.TrustRelationships", input.TrustRelationships); err != nil {
 		return 0
 	}
 

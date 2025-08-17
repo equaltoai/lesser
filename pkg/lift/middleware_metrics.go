@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsConfig configures the metrics middleware
@@ -256,7 +257,7 @@ func (mm *MetricsMiddleware) addMetric(name string, value float64, unit types.St
 
 // flushMetrics sends all buffered metrics to CloudWatch
 func (mm *MetricsMiddleware) flushMetrics(ctx context.Context) {
-	if len(mm.buffer.metrics) == 0 {
+	if err := common.ValidateSliceNotEmpty("mm.buffer.metrics", mm.buffer.metrics); err != nil {
 		return
 	}
 

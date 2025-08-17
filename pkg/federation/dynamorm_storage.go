@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DynamORMFederationStorage implements FederationStorage using DynamORM repositories.
@@ -59,7 +60,7 @@ func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, ac
 	// For GetCachedRemoteActor, we need to extract the handle from just the actor ID
 	// Since we don't have preferredUsername here, we'll extract it from the URL
 	handle := extractHandleFromURL(actorID)
-	if handle == "" {
+	if err := common.ValidateRequiredParam("handle", handle); err != nil {
 		return nil, storage.ErrNotFound
 	}
 

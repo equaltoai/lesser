@@ -9,6 +9,7 @@ import (
 
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SecurityHeadersConfig defines configuration for security headers
@@ -245,7 +246,7 @@ func (sh *EnhancedSecurityHeaders) buildCSP(nonce string) string {
 			sources = append(sources, fmt.Sprintf("'nonce-%s'", nonce))
 		}
 
-		if len(sources) == 0 {
+		if err := common.ValidateSliceNotEmpty("sources", sources); err != nil {
 			directives = append(directives, directive)
 		} else {
 			directives = append(directives, fmt.Sprintf("%s %s", directive, strings.Join(sources, " ")))
@@ -265,7 +266,7 @@ func (sh *EnhancedSecurityHeaders) buildPermissionsPolicy() string {
 	var policies []string
 
 	for feature, allowList := range sh.config.PermissionsPolicy {
-		if len(allowList) == 0 {
+		if err := common.ValidateSliceNotEmpty("allowList", allowList); err != nil {
 			policies = append(policies, fmt.Sprintf("%s=()", feature))
 		} else {
 			policies = append(policies, fmt.Sprintf("%s=(%s)", feature, strings.Join(allowList, " ")))

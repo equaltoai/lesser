@@ -2,6 +2,7 @@ package cost
 
 import (
 	"context"
+	"os"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -9,21 +10,34 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // repositoryAdapter implements the Repository interface using DynamORM directly
 type repositoryAdapter struct {
-	db          core.DB
-	logger      *zap.Logger
-	costTracker *cost.Tracker
+	db               core.DB
+	logger           *zap.Logger
+	costTracker      *cost.Tracker
+	unifiedTracker   *cost.UnifiedTracker
+	tableName        string
 }
 
 // NewRepositoryAdapter creates a new repository adapter
 func NewRepositoryAdapter(db core.DB, logger *zap.Logger, costTracker *cost.Tracker) Repository {
+	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
+		tableName = "lesser-main"
+	}
+	
+	// Create unified tracker for centralized cost tracking
+	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "FederationCostRepository", "", "")
+	
 	return &repositoryAdapter{
-		db:          db,
-		logger:      logger,
-		costTracker: costTracker,
+		db:               db,
+		logger:           logger,
+		costTracker:      costTracker,
+		unifiedTracker:   unifiedTracker,
+		tableName:        tableName,
 	}
 }
 
@@ -50,7 +64,8 @@ func (r *repositoryAdapter) RecordCost(ctx context.Context, cost *FederationCost
 		return err
 	}
 
-	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 	return nil
@@ -64,7 +79,8 @@ func (r *repositoryAdapter) GetInstanceCost(ctx context.Context, domain string, 
 		Where("SK", "=", "PERIOD#"+period).
 		First(&model)
 
-	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -106,8 +122,9 @@ func (r *repositoryAdapter) GetCostMetrics(ctx context.Context, period string) (
 		return nil, err
 	}
 
-	readUnits := len(costs)/100 + 1 // Estimate read units
-	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+	// Track cost using centralized tracker
+	readUnits := int64(len(costs)/100 + 1) // Estimate read units
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, readUnits); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -141,7 +158,8 @@ func (r *repositoryAdapter) UpdateInstanceHealth(ctx context.Context, health *In
 		return err
 	}
 
-	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 	return nil
@@ -155,7 +173,8 @@ func (r *repositoryAdapter) GetInstanceHealth(ctx context.Context, domain string
 		Where("SK", "=", "HEALTH").
 		First(&model)
 
-	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -191,8 +210,9 @@ func (r *repositoryAdapter) ListUnhealthyInstances(ctx context.Context) ([]*Inst
 		return nil, err
 	}
 
-	readUnits := len(healthModels)/100 + 1 // Estimate read units
-	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+	// Track cost using centralized tracker
+	readUnits := int64(len(healthModels)/100 + 1) // Estimate read units
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, readUnits); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -240,7 +260,8 @@ func (r *repositoryAdapter) SaveInstanceConfig(ctx context.Context, config *Inst
 		return err
 	}
 
-	if err := r.costTracker.TrackDynamoWrite(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 	return nil
@@ -254,7 +275,8 @@ func (r *repositoryAdapter) GetInstanceConfig(ctx context.Context, domain string
 		Where("SK", "=", "CONFIG").
 		First(&model)
 
-	if err := r.costTracker.TrackDynamoRead(1); err != nil {
+	// Track cost using centralized tracker
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, 1); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 
@@ -298,8 +320,9 @@ func (r *repositoryAdapter) ListInstanceConfigs(ctx context.Context) ([]*Instanc
 		return nil, err
 	}
 
-	readUnits := len(configModels)/100 + 1 // Estimate read units
-	if err := r.costTracker.TrackDynamoRead(readUnits); err != nil {
+	// Track cost using centralized tracker
+	readUnits := int64(len(configModels)/100 + 1) // Estimate read units
+	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, readUnits); err != nil {
 		r.logger.Warn("failed to track cost", zap.Error(err))
 	}
 

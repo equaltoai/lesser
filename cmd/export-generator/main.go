@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -22,11 +23,9 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/services"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -48,7 +47,6 @@ type ExportProcessor struct {
 
 var (
 	processor *ExportProcessor
-	cfg       *config.Config
 )
 
 // ExportGeneratorEvent represents the event triggered for export generation
@@ -68,35 +66,42 @@ type DateRange struct {
 	End   time.Time `json:"end"`
 }
 
-func init() {
-	logger := common.Logger()
-	cfg = config.Get()
+
+func main() {
+	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+		ServiceName: "export-generator",
+		LambdaType:  common.LambdaTypeProcessor,
+		Version:     "1.0.0",
+	})
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
+	}
 
 	// Load AWS config
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
+		awsconfig.WithRegion(lambdaCtx.Config.Region),
 	)
 	if err != nil {
-		logger.Fatal("failed to load AWS config", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to load AWS config", zap.Error(err))
 	}
 
-	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
 	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
+		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize export repository
-	exportRepo := repositories.NewExportRepository(db, cfg.DynamoTableName, logger)
+	exportRepo := repositories.NewExportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize cost tracking repository
-	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
+	costTrackingRepo := repositories.NewCostTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Create processor instance
 	processor = &ExportProcessor{
@@ -104,35 +109,38 @@ func init() {
 		repos:            repos,
 		exportRepo:       exportRepo,
 		costTrackingRepo: costTrackingRepo,
-		logger:           logger,
-		tableName:        cfg.DynamoTableName,
-		bucketName:       cfg.S3BucketName,
-		baseURL:          cfg.BaseURL(),
+		logger:           lambdaCtx.Logger,
+		tableName:        lambdaCtx.Config.DynamoTableName,
+		bucketName:       lambdaCtx.Config.S3BucketName,
+		baseURL:          lambdaCtx.Config.BaseURL(),
 	}
 
-	if processor.bucketName == "" {
-		logger.Fatal("S3_BUCKET_NAME configuration not set")
+	if err := common.ValidateRequiredParam("bucketName", processor.bucketName); err != nil {
+		lambdaCtx.Logger.Fatal("S3_BUCKET_NAME configuration not set")
 	}
-	if processor.baseURL == "" {
+	if common.ValidateRequiredParam("baseURL", processor.baseURL) != nil {
 		processor.baseURL = "https://example.com" // Default
 	}
+
+	lambda.Start(func(ctx context.Context, event events.SQSEvent) error {
+		liftCtx := &lift.Context{
+			Request: &lift.Request{},
+			RequestID: fmt.Sprintf("export-%d", time.Now().UnixNano()),
+		}
+		return processor.HandleSQSWithContext(ctx, liftCtx, event)
+	})
 }
 
-func main() {
-	// Use the SQS pattern from our Lift patterns
-	patterns.StartSQSLambda("export-generator", processor, processor.logger)
-}
-
-// HandleSQS implements the SQS handler interface for Lift
-func (ep *ExportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) error {
+// HandleSQSWithContext implements the SQS handler interface for Lift with explicit context
+func (ep *ExportProcessor) HandleSQSWithContext(ctx context.Context, liftCtx *lift.Context, event events.SQSEvent) error {
 	// Initialize AWS clients
-	if err := ep.initializeAWSClients(ctx.Request.Context()); err != nil {
+	if err := ep.initializeAWSClients(ctx); err != nil {
 		ep.logger.Error("failed to initialize AWS clients", zap.Error(err))
 		return lift.NewLiftError("AWS_INIT_FAILED", "failed to initialize AWS clients", 500).WithCause(err)
 	}
 
 	ep.logger.Info("processing export generation batch",
-		zap.String("request_id", ctx.GetRequestID()),
+		zap.String("request_id", liftCtx.GetRequestID()),
 		zap.Int("message_count", len(event.Records)))
 
 	// Process each message
@@ -158,14 +166,14 @@ func (ep *ExportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) e
 				IncludeMedia: exportMsg.IncludeMedia,
 				DateRange:    dateRange,
 			}
-			if err := ep.processExportJob(ctx.Request.Context(), exportEvent); err != nil {
+			if err := ep.processExportJob(ctx, exportEvent); err != nil {
 				ep.logger.Error("failed to process export job",
 					zap.String("export_id", exportEvent.ExportID),
 					zap.String("username", exportEvent.Username),
-					zap.String("request_id", ctx.GetRequestID()),
+					zap.String("request_id", liftCtx.GetRequestID()),
 					zap.Error(err))
 				// Update job status as failed
-				if updateErr := ep.exportRepo.UpdateExportStatus(ctx.Request.Context(), exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+				if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
 					ep.logger.Error("failed to update export status to failed",
 						zap.String("export_id", exportEvent.ExportID),
 						zap.Error(updateErr))
@@ -179,19 +187,19 @@ func (ep *ExportProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) e
 		if err := common.ParseRequestBody([]byte(message.Body), &exportEvent); err != nil {
 			ep.logger.Error("failed to unmarshal event",
 				zap.String("message_id", message.MessageId),
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.Error(err))
 			continue
 		}
 
-		if err := ep.processExportJob(ctx.Request.Context(), exportEvent); err != nil {
+		if err := ep.processExportJob(ctx, exportEvent); err != nil {
 			ep.logger.Error("failed to process export job",
 				zap.String("export_id", exportEvent.ExportID),
 				zap.String("username", exportEvent.Username),
-				zap.String("request_id", ctx.GetRequestID()),
+				zap.String("request_id", liftCtx.GetRequestID()),
 				zap.Error(err))
 			// Update job status as failed
-			if updateErr := ep.exportRepo.UpdateExportStatus(ctx.Request.Context(), exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
+			if updateErr := ep.exportRepo.UpdateExportStatus(ctx, exportEvent.ExportID, "failed", nil, err.Error()); updateErr != nil {
 				ep.logger.Error("failed to update export status to failed",
 					zap.String("export_id", exportEvent.ExportID),
 					zap.Error(updateErr))
@@ -852,7 +860,7 @@ func (ep *ExportProcessor) getFollowers(ctx context.Context, username string) ([
 			allFollowers = append(allFollowers, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -879,7 +887,7 @@ func (ep *ExportProcessor) getFollowing(ctx context.Context, username string) ([
 			allFollowing = append(allFollowing, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -905,7 +913,7 @@ func (ep *ExportProcessor) getBlocks(ctx context.Context, username string) ([]st
 			allBlocks = append(allBlocks, handle)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -939,7 +947,7 @@ func (ep *ExportProcessor) getMutes(ctx context.Context, username string) ([]Mut
 			})
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1001,7 +1009,7 @@ func (ep *ExportProcessor) getBookmarks(ctx context.Context, username string) ([
 		bookmarks := ep.convertBookmarkIDsToInfo(ctx, bookmarkIDs)
 		allBookmarks = append(allBookmarks, bookmarks...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1047,7 +1055,7 @@ func (ep *ExportProcessor) convertSingleBookmark(ctx context.Context, bookmarkID
 	}
 
 	statusURL, createdAt := ep.extractBookmarkData(obj)
-	if statusURL == "" {
+	if err := common.ValidateRequiredParam("statusURL", statusURL); err != nil {
 		return nil
 	}
 
@@ -1156,7 +1164,7 @@ func (ep *ExportProcessor) getOutbox(ctx context.Context, username string, dateR
 			allActivities = append(allActivities, activity)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1181,7 +1189,7 @@ func (ep *ExportProcessor) getFollowingActors(ctx context.Context, username stri
 		// Keep raw actor IDs for ActivityPub format
 		allFollowing = append(allFollowing, following...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1206,7 +1214,7 @@ func (ep *ExportProcessor) getFollowersActors(ctx context.Context, username stri
 		// Keep raw actor IDs for ActivityPub format
 		allFollowers = append(allFollowers, followers...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1250,7 +1258,7 @@ func (ep *ExportProcessor) getLikes(ctx context.Context, username string) ([]any
 			allLikes = append(allLikes, likeActivity)
 		}
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1403,7 +1411,7 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 
 		allDomainBlocks = append(allDomainBlocks, domains...)
 
-		if nextCursor == "" {
+		if err := common.ValidateRequiredParam("nextCursor", nextCursor); err != nil {
 			break
 		}
 		cursor = nextCursor
@@ -1572,7 +1580,7 @@ func (ep *ExportProcessor) extractVariantKeys(mediaItem map[string]any) []string
 		}
 
 		s3Key, ok := variantS3Key.(string)
-		if !ok || s3Key == "" {
+		if !ok || common.ValidateRequiredParam("s3Key", s3Key) != nil {
 			continue
 		}
 

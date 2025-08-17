@@ -3,16 +3,16 @@ package lift
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
-	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -70,15 +70,21 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
-	if params.query == "" {
-		return nil, ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"})
+	if err := common.ValidateSearchQuery(params.query); err != nil {
+		return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Parse limit
 	params.limit = h.parseSearchLimit(ctx)
 
 	// Parse offset
-	params.offset = h.parseSearchOffset(ctx)
+	offsetStr := ctx.Query("offset")
+	if err := common.ValidateRequiredParam("offset_str", offsetStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		offsetStr = ctx.Request.Request.QueryParams["offset"]
+	}
+	if offset, err := common.ParseSearchOffset(offsetStr); err == nil {
+		params.offset = offset
+	}
 
 	// Parse following filter
 	params.followingOnly = h.parseSearchFollowing(ctx)
@@ -92,7 +98,7 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 // extractSearchQuery extracts the search query parameter
 func (h *Handler) extractSearchQuery(ctx *lift.Context) string {
 	query := ctx.Query("q")
-	if query == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("query", query); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		query = ctx.Request.Request.QueryParams["q"]
 	}
 	return query
@@ -100,61 +106,51 @@ func (h *Handler) extractSearchQuery(ctx *lift.Context) string {
 
 // parseSearchLimit parses and validates the limit parameter
 func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
+	// Extract limit string from query parameters
 	limitStr := ctx.Query("limit")
-	if limitStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("limit_str", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-
-	if limitStr != "" {
-		if parsedLimit, err := strconv.Atoi(limitStr); err == nil {
-			if parsedLimit > 80 {
-				return 80
-			} else if parsedLimit < 1 {
-				return 1
-			}
-			return parsedLimit
-		}
+	
+	// Use centralized search limit parsing
+	limit, err := common.ParseSearchLimit(limitStr)
+	if err != nil {
+		h.logger.Debug("invalid limit parameter", zap.Error(err))
+		return 40 // Return default on validation error
 	}
-	return 40
+	return limit
 }
 
 // parseSearchOffset parses the offset parameter
 func (h *Handler) parseSearchOffset(ctx *lift.Context) int {
+	// Extract offset using shared helper logic
 	offsetStr := ctx.Query("offset")
-	if offsetStr == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("offset_str", offsetStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		offsetStr = ctx.Request.Request.QueryParams["offset"]
 	}
 
-	if offsetStr != "" {
-		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil {
-			return parsedOffset
-		}
+	offset, err := common.ParseSearchOffset(offsetStr)
+	if err != nil {
+		h.logger.Debug("invalid offset parameter", zap.Error(err))
+		return 0 // Return default on validation error
 	}
-	return 0
+	return offset
 }
 
 // parseSearchFollowing parses the following filter parameter
 func (h *Handler) parseSearchFollowing(ctx *lift.Context) bool {
-	followingParam := ctx.Query("following")
-	if followingParam == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		followingParam = ctx.Request.Request.QueryParams["following"]
-	}
-	return followingParam == boolTrue
+	return h.parseBoolParam(ctx, "following")
 }
 
 // parseSearchResolve parses the resolve parameter
 func (h *Handler) parseSearchResolve(ctx *lift.Context) bool {
-	resolveParam := ctx.Query("resolve")
-	if resolveParam == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		resolveParam = ctx.Request.Request.QueryParams["resolve"]
-	}
-	return resolveParam == boolTrue
+	return h.parseBoolParam(ctx, "resolve")
 }
 
 // authenticateAccountSearch handles authentication for account search
 func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly bool) (string, error) {
 	// Check test mode first
-	testUsername := h.extractTestUsernameForSearch(ctx)
+	testUsername := h.getTestUsername(ctx)
 	if testUsername != "" {
 		return testUsername, nil
 	}
@@ -163,46 +159,24 @@ func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly boo
 	authenticatedUser := h.authenticateFromSearchHeader(ctx, followingOnly)
 
 	// If following filter is requested but no auth, return error
-	if followingOnly && authenticatedUser == "" {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
+	if followingOnly {
+		if err := common.ValidateRequiredParam("authenticated_user", authenticatedUser); err != nil {
+			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
+		}
 	}
 
 	return authenticatedUser, nil
 }
 
-// extractTestUsernameForSearch extracts test username from headers
-func (h *Handler) extractTestUsernameForSearch(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
 
 // authenticateFromSearchHeader authenticates from Authorization header
 func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, followingOnly bool) string {
-	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
-		return ""
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
+	// Try to authenticate without requiring it (optional auth)
+	username, err := h.authenticateUser(ctx, []string{})
 	if err != nil {
-		return ""
+		return "" // Authentication is optional for search
 	}
-
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return ""
-	}
-
-	// Check read scope if following filter is requested
-	if followingOnly && !claims.HasScope(auth.ScopeRead) {
-		return ""
-	}
-
-	return claims.Username
+	return username
 }
 
 // performAccountSearch performs the actual search with privacy enforcement
@@ -271,11 +245,10 @@ func (h *Handler) addRemoteSearchResults(ctx context.Context, actors *[]*activit
 
 // convertSearchResultsToAccounts converts actors to API account format
 func (h *Handler) convertSearchResultsToAccounts(actors []*activitypub.Actor) []models.Account {
-	converter := mastodon.NewConverter(h.cfg.BaseURL())
 	accounts := make([]models.Account, 0, len(actors))
 
 	for _, actor := range actors {
-		account := converter.ActorToAccount(actor)
+		account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
 		accounts = append(accounts, account)
 	}
 
@@ -321,10 +294,10 @@ func (h *Handler) finalizeAccountSearchResponse(ctx *lift.Context, params *accou
 func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 	// Extract query prefix
 	prefix := ctx.Query("q")
-	if prefix == "" && ctx.Request != nil && ctx.Request.Request != nil {
+	if err := common.ValidateRequiredParam("prefix", prefix); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		prefix = ctx.Request.Request.QueryParams["q"]
 	}
-	if len(prefix) < 2 {
+	if err := common.ValidateStringLength("prefix", prefix, 2, 500); err != nil {
 		// Return empty array for short prefixes
 		return ctx.JSON([]any{})
 	}
@@ -407,8 +380,8 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
-	if params.query == "" {
-		return nil, ctx.Status(400).JSON(map[string]string{"error": "q parameter is required"})
+	if err := common.ValidateSearchQuery(params.query); err != nil {
+		return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
 	}
 
 	// Parse limit
@@ -437,14 +410,14 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 // authenticateStatusSearch handles authentication for status search
 func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 	// Check test mode first
-	testUsername := h.extractTestUsernameForSearch(ctx)
+	testUsername := h.getTestUsername(ctx)
 	if testUsername != "" {
 		return testUsername, nil
 	}
 
 	// Status search requires authentication for privacy
 	authHeader := ctx.Header("Authorization")
-	if authHeader == "" {
+	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
 		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
 	}
 

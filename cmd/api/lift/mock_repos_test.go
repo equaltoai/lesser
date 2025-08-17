@@ -380,5 +380,21 @@ func (m *MockRepoStorage) MediaMetadata() *repositories.MediaMetadataRepository 
 	return args.Get(0).(*repositories.MediaMetadataRepository)
 }
 
+func (m *MockRepoStorage) OAuth() *repositories.OAuthRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.OAuthRepository)
+}
+
+func (m *MockRepoStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
+}
+
 // Ensure MockRepoStorage implements RepositoryStorage interface
 var _ core.RepositoryStorage = (*MockRepoStorage)(nil)

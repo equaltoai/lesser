@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Canonicalizer implements JSON-LD canonicalization following URDNA2015 algorithm
@@ -306,7 +307,7 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 	var nquads []string
 	
 	// If no subject provided, generate one
-	if subject == "" {
+	if err := common.ValidateRequiredParam("subject", subject); err != nil {
 		if id, hasID := obj["@id"]; hasID {
 			if idStr, ok := id.(string); ok {
 				subject = c.escapeNQuadsValue(idStr)

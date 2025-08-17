@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ActivityFactory creates ActivityPub activities for testing
@@ -36,11 +37,11 @@ type ActivityOptions struct {
 
 // CreateActivity creates a basic activity with default values
 func (f *ActivityFactory) CreateActivity(opts ActivityOptions) *activitypub.Activity {
-	if opts.Type == "" {
+	if err := common.ValidateRequiredParam("type", opts.Type); err != nil {
 		opts.Type = "Create"
 	}
 
-	if opts.Actor == "" {
+	if err := common.ValidateRequiredParam("actor", opts.Actor); err != nil {
 		opts.Actor = f.generateActorID("testuser")
 	}
 
@@ -50,7 +51,7 @@ func (f *ActivityFactory) CreateActivity(opts ActivityOptions) *activitypub.Acti
 	}
 
 	id := opts.ID
-	if id == "" {
+	if err := common.ValidateRequiredParam("id", id); err != nil {
 		id = f.generateActivityID()
 	}
 
@@ -70,7 +71,7 @@ func (f *ActivityFactory) CreateActivity(opts ActivityOptions) *activitypub.Acti
 		activity.Object = opts.Object
 	}
 
-	if opts.Target != "" {
+	if err := common.ValidateRequiredParam("target", opts.Target); err == nil {
 		activity.Target = opts.Target
 	}
 
@@ -85,7 +86,7 @@ func (f *ActivityFactory) CreateNote(content string, actorID string, opts ...Not
 	}
 
 	id := options.ID
-	if id == "" {
+	if err := common.ValidateRequiredParam("id", id); err != nil {
 		id = f.generateObjectID()
 	}
 
@@ -106,7 +107,7 @@ func (f *ActivityFactory) CreateNote(content string, actorID string, opts ...Not
 		AttributedTo: actorID,
 	}
 
-	if options.InReplyTo != "" {
+	if err := common.ValidateRequiredParam("inReplyTo", options.InReplyTo); err == nil {
 		note.InReplyTo = options.InReplyTo
 	}
 
@@ -140,7 +141,7 @@ func (f *ActivityFactory) CreateFollow(follower, target string, opts ...Activity
 	}
 
 	if len(opts) > 0 {
-		if opts[0].ID != "" {
+		if err := common.ValidateRequiredParam("id", opts[0].ID); err == nil {
 			options.ID = opts[0].ID
 		}
 		if opts[0].Published != nil {
@@ -160,7 +161,7 @@ func (f *ActivityFactory) CreateLike(actor string, object interface{}, opts ...A
 	}
 
 	if len(opts) > 0 {
-		if opts[0].ID != "" {
+		if err := common.ValidateRequiredParam("id", opts[0].ID); err == nil {
 			options.ID = opts[0].ID
 		}
 		if opts[0].Published != nil {
@@ -180,7 +181,7 @@ func (f *ActivityFactory) CreateAnnounce(actor string, object interface{}, opts 
 	}
 
 	if len(opts) > 0 {
-		if opts[0].ID != "" {
+		if err := common.ValidateRequiredParam("id", opts[0].ID); err == nil {
 			options.ID = opts[0].ID
 		}
 		if opts[0].Published != nil {
@@ -200,7 +201,7 @@ func (f *ActivityFactory) CreateDelete(actor string, object interface{}, opts ..
 	}
 
 	if len(opts) > 0 {
-		if opts[0].ID != "" {
+		if err := common.ValidateRequiredParam("id", opts[0].ID); err == nil {
 			options.ID = opts[0].ID
 		}
 		if opts[0].Published != nil {
@@ -220,7 +221,7 @@ func (f *ActivityFactory) CreateUpdate(actor string, object interface{}, opts ..
 	}
 
 	if len(opts) > 0 {
-		if opts[0].ID != "" {
+		if err := common.ValidateRequiredParam("id", opts[0].ID); err == nil {
 			options.ID = opts[0].ID
 		}
 		if opts[0].Published != nil {
@@ -275,7 +276,7 @@ func (f *ActivityFactory) CreateConversation(participants []string, messages []s
 		actor := participants[i%len(participants)]
 		noteOpts := NoteOptions{}
 
-		if lastNoteID != "" {
+		if err := common.ValidateRequiredParam("lastNoteID", lastNoteID); err == nil {
 			noteOpts.InReplyTo = lastNoteID
 		}
 

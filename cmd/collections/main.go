@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,15 +10,12 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -46,35 +42,20 @@ type CollectionsHandler struct {
 	repos            core.RepositoryStorage
 	logger           *zap.Logger
 	cfg              *config.Config
+	lambdaCtx        *common.LambdaContext
 }
 
-// NewCollectionsHandler creates a new collections handler with DynamORM repositories
-func NewCollectionsHandler() (*CollectionsHandler, error) {
-	logger := common.Logger()
-	cfg := config.Get()
-
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Initialize DynamORM database connection using the established pattern
-	db, err := dynamorm.GetClient(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM database: %w", err)
-	}
-
-	// Initialize repositories through factory
-	tableName := cfg.DynamoTableName
-	if tableName == "" {
-		tableName = "lesser-main" // Default table name
-	}
-	repos, err := factory.NewRepositoryFactory(db, tableName, awsConfig, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create repository factory: %w", err)
+// NewCollectionsHandler creates a new collections handler with standardized initialization
+func NewCollectionsHandler(lambdaCtx *common.LambdaContext) (*CollectionsHandler, error) {
+	// Extract services from standardized Lambda context
+	cfg := lambdaCtx.Config
+	logger := lambdaCtx.Logger
+	
+	// Get repositories from Lambda context
+	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
+	if !ok {
+		// For now, return error until repository factory is integrated with standardized pattern
+		return nil, fmt.Errorf("repositories not available in Lambda context - standardized pattern integration pending")
 	}
 
 	return &CollectionsHandler{
@@ -84,6 +65,7 @@ func NewCollectionsHandler() (*CollectionsHandler, error) {
 		repos:            repos,
 		logger:           logger,
 		cfg:              cfg,
+		lambdaCtx:        lambdaCtx,
 	}, nil
 }
 
@@ -114,7 +96,7 @@ func (ch *CollectionsHandler) handleLikedCollection(ctx *lift.Context) error {
 func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType string) error {
 	// Extract username from path parameters
 	username := ctx.Param("username")
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return lift.ValidationError("missing username")
 	}
 
@@ -296,10 +278,10 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
 			// Use full HTTPS URL format
-			if strings.HasPrefix(ch.cfg.Domain, "http") {
-				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
+			if strings.HasPrefix(ch.lambdaCtx.Config.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.lambdaCtx.Config.Domain, username)
 			} else {
-				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.cfg.Domain, username)
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.lambdaCtx.Config.Domain, username)
 			}
 		}
 	}
@@ -347,13 +329,13 @@ func (ch *CollectionsHandler) generatePreviousCursor(_ string, collectionType st
 	// For reverse pagination, we need to create a cursor that points to the item before the first item in the current page
 	// This is collection-type specific
 	
-	if len(usernames) == 0 && len(likes) == 0 {
+	if err := common.ValidateSliceNotEmpty("usernames", usernames); err != nil && common.ValidateSliceNotEmpty("likes", likes) != nil {
 		return ""
 	}
 	
 	switch collectionType {
 	case collectionTypeFollowers, collectionTypeFollowing:
-		if len(usernames) > 0 {
+		if err := common.ValidateSliceNotEmpty("usernames", usernames); err == nil {
 			// Use the first username as the reverse cursor
 			// This assumes the cursor format is based on username ordering
 			firstUsername := usernames[0]
@@ -361,7 +343,7 @@ func (ch *CollectionsHandler) generatePreviousCursor(_ string, collectionType st
 			return fmt.Sprintf("before_%s", firstUsername)
 		}
 	case collectionTypeLiked:
-		if len(likes) > 0 {
+		if err := common.ValidateSliceNotEmpty("likes", likes); err == nil {
 			// Use the first like's ID or timestamp for reverse cursor
 			firstLike := likes[0]
 			// Create a reverse cursor that would fetch items before this like
@@ -451,11 +433,11 @@ func (ch *CollectionsHandler) reverseLikeSlice(slice []*storage.Like) {
 func (ch *CollectionsHandler) generateNextCursorForReverse(collectionType string, usernames []string, likes []*storage.Like) string {
 	switch collectionType {
 	case collectionTypeFollowers, collectionTypeFollowing:
-		if len(usernames) > 0 {
+		if err := common.ValidateSliceNotEmpty("usernames", usernames); err == nil {
 			return fmt.Sprintf("after_%s", usernames[len(usernames)-1])
 		}
 	case collectionTypeLiked:
-		if len(likes) > 0 {
+		if err := common.ValidateSliceNotEmpty("likes", likes); err == nil {
 			return fmt.Sprintf("after_%s", likes[len(likes)-1].ID)
 		}
 	}
@@ -489,10 +471,10 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 	} else {
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
-			if strings.HasPrefix(ch.cfg.Domain, "http") {
-				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.cfg.Domain, username)
+			if strings.HasPrefix(ch.lambdaCtx.Config.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.lambdaCtx.Config.Domain, username)
 			} else {
-				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.cfg.Domain, username)
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.lambdaCtx.Config.Domain, username)
 			}
 		}
 	}
@@ -528,8 +510,19 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 }
 
 func main() {
-	// Create the handler
-	handler, err := NewCollectionsHandler()
+	// Initialize Lambda with standardized configuration
+	lambdaConfig := common.LambdaConfig{
+		ServiceName: "collections",
+		LambdaType:  common.LambdaTypeBasic,
+	}
+
+	lambdaCtx, err := common.InitializeLambda(lambdaConfig)
+	if err != nil {
+		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
+	}
+
+	// Create the handler with standardized context
+	handler, err := NewCollectionsHandler(lambdaCtx)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create handler: %v", err))
 	}

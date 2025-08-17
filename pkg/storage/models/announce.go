@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Announce represents a reblog/boost activity
@@ -35,7 +36,7 @@ func (Announce) TableName() string {
 // BeforeCreate prepares the Announce for creation
 func (a *Announce) BeforeCreate() error {
 	// Generate activity ID if not provided
-	if a.ID == "" {
+	if err := common.ValidateRequiredParam("a.ID", a.ID); err != nil {
 		a.ID = fmt.Sprintf("%s/activities/announce-%d-%s",
 			a.Actor,
 			time.Now().Unix(),

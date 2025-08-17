@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -310,7 +311,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 		return nil, fmt.Errorf("subscription manager is not running")
 	}
 
-	if len(hashtags) == 0 {
+	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return nil, fmt.Errorf("at least one hashtag must be specified")
 	}
 
@@ -346,10 +347,10 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 		return nil, fmt.Errorf("subscription manager is not running")
 	}
 
-	if noteID == "" {
+	if err := common.ValidateRequiredParam("noteID", noteID); err != nil {
 		return nil, fmt.Errorf("noteID cannot be empty")
 	}
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil, fmt.Errorf("username cannot be empty")
 	}
 
@@ -391,7 +392,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 
 	// Build streams for metrics filtering
 	streams := []string{"metrics:global"} // Always include global metrics
-	if len(categories) > 0 {
+	if err := common.ValidateSliceNotEmpty("categories", categories); err == nil {
 		for _, category := range categories {
 			streams = append(streams, fmt.Sprintf("metrics:%s", category))
 			if username != "" {
@@ -399,7 +400,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 			}
 		}
 	}
-	if len(services) > 0 {
+	if err := common.ValidateSliceNotEmpty("services", services); err == nil {
 		for _, service := range services {
 			streams = append(streams, fmt.Sprintf("metrics:service:%s", service))
 		}
@@ -411,7 +412,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 	filter.Streams = streams
 
 	// Add category metadata filters if specified
-	if len(categories) > 0 {
+	if err := common.ValidateSliceNotEmpty("categories", categories); err == nil {
 		if filter.Metadata == nil {
 			filter.Metadata = make(map[string]string)
 		}
@@ -482,7 +483,7 @@ func (sm *GraphQLSubscriptionManager) cleanupInactiveSubscriptions() {
 		}
 	}
 
-	if len(toRemove) > 0 {
+	if err := common.ValidateSliceNotEmpty("toRemove", toRemove); err == nil {
 		sm.logger.Info("GraphQL subscription cleanup completed",
 			zap.Int("removed_subscriptions", len(toRemove)),
 			zap.Int("active_subscriptions", len(sm.subscriptions)))

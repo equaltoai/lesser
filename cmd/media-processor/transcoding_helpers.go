@@ -11,6 +11,7 @@ import (
 	mctypes "github.com/aws/aws-sdk-go-v2/service/mediaconvert/types"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
@@ -157,7 +158,7 @@ func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *Tr
 		}
 
 		// If no variants, create a single "original" variant
-		if len(metrics.OutputVariants) == 0 {
+		if err := common.ValidateSliceNotEmpty("outputVariants", metrics.OutputVariants); err != nil {
 			originalCost := models.MediaVariantCost{
 				VariantKey:       "original",
 				Resolution:       "original",
@@ -299,7 +300,7 @@ func sliceContains(slice []string, item string) bool {
 
 // createEnhancedMediaConvertJob creates a comprehensive MediaConvert job with cost tracking
 func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3InputKey string, event MediaProcessingEvent, plan *TranscodingPlan) (string, error) {
-	if mp.mediaConvertRole == "" {
+	if err := common.ValidateRequiredParam("mediaConvertRole", mp.mediaConvertRole); err != nil {
 		return "", fmt.Errorf("MediaConvert role not configured")
 	}
 

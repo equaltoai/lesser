@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -52,7 +53,7 @@ func (t *timelineService) FanOutToFollowers(ctx context.Context, activity *activ
 		}
 	}
 
-	if username == "" {
+	if err := common.ValidateRequiredParam("username", username); err != nil {
 		t.logger.Warn("cannot fan out post: no username available")
 		return nil
 	}
@@ -108,7 +109,7 @@ func (t *timelineService) updateTimelineEntries(_ context.Context, activity *act
 		objectID = note.ID
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return nil
 	}
 
@@ -127,7 +128,7 @@ func (t *timelineService) updateEngagementCounters(_ context.Context, activity *
 		objectID = objID
 	}
 
-	if objectID == "" {
+	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		return nil
 	}
 

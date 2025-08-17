@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/pay-theory/lift/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Domain-specific error constructors using Lift patterns
@@ -29,7 +30,7 @@ func ValidationErrorWithField(field, message string) *lift.LiftError {
 
 // UnauthorizedError creates a Lift error for authentication failures
 func UnauthorizedError(message string) *lift.LiftError {
-	if message == "" {
+	if err := common.ValidateRequiredParam("message", message); err != nil {
 		message = "Authentication required"
 	}
 	return lift.Unauthorized(message)
@@ -59,7 +60,7 @@ func ConflictError(resource, message string) *lift.LiftError {
 
 // RateLimitError creates a Lift error for rate limiting
 func RateLimitError(message string) *lift.LiftError {
-	if message == "" {
+	if err := common.ValidateRequiredParam("message", message); err != nil {
 		message = "Rate limit exceeded"
 	}
 	return lift.NewLiftError(
@@ -83,7 +84,7 @@ func FederationError(operation, remote string, err error) *lift.LiftError {
 // InternalError creates a generic internal server error
 // This should be used when we want to hide internal details from users
 func InternalError(message string) *lift.LiftError {
-	if message == "" {
+	if err := common.ValidateRequiredParam("message", message); err != nil {
 		message = "An internal error occurred"
 	}
 	return lift.NewLiftError(

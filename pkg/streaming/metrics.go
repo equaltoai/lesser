@@ -10,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsCollector collects and aggregates streaming connection metrics
@@ -407,7 +408,7 @@ func (mc *MetricsCollector) GetPerformanceMetrics() PerformanceMetrics {
 
 // calculateDurationStats calculates connection duration statistics
 func (mc *MetricsCollector) calculateDurationStats() (avg, median, p95, p99 time.Duration) {
-	if len(mc.connectionDurations) == 0 {
+	if err := common.ValidateSliceNotEmpty("mc.connectionDurations", mc.connectionDurations); err != nil {
 		return
 	}
 
@@ -457,7 +458,7 @@ func (mc *MetricsCollector) calculateDurationStats() (avg, median, p95, p99 time
 
 // calculateMessageRateStats calculates message rate statistics
 func (mc *MetricsCollector) calculateMessageRateStats() (avg, peak float64) {
-	if len(mc.messageRates) == 0 {
+	if err := common.ValidateSliceNotEmpty("mc.messageRates", mc.messageRates); err != nil {
 		return
 	}
 

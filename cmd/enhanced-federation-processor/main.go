@@ -7,13 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/equaltoai/lesser/pkg/common"
-	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"go.uber.org/zap"
@@ -26,28 +25,19 @@ type Handler struct {
 }
 
 // NewHandler creates a new enhanced federation processor handler
-func NewHandler() (*Handler, error) {
-	logger := common.Logger()
-	cfg := pkgconfig.Get()
-
-	// Initialize AWS config first
-	awsConfig, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
+func NewHandler(lambdaCtx *common.LambdaContext) (*Handler, error) {
 	// Initialize DynamORM with Lambda optimizations
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
 	}
 
 	// Create SQS client
-	sqsClient := sqs.NewFromConfig(awsConfig)
+	sqsClient := sqs.NewFromConfig(lambdaCtx.AWSServices.Config)
 	queueURL := os.Getenv("ENHANCED_RETRY_QUEUE_URL")
 
 	// Create federation storage and delivery service
-	federationStorage := federation.NewDynamORMFederationStorage(db, cfg.DynamoTableName)
+	federationStorage := federation.NewDynamORMFederationStorage(db, lambdaCtx.Config.DynamoTableName)
 	deliveryService := federation.NewDeliveryService(federationStorage)
 
 	// Create enhanced retry processor
@@ -55,7 +45,7 @@ func NewHandler() (*Handler, error) {
 
 	return &Handler{
 		retryProcessor: retryProcessor,
-		logger:         logger,
+		logger:         lambdaCtx.Logger,
 	}, nil
 }
 
@@ -111,11 +101,33 @@ func (h *Handler) processMessage(ctx context.Context, record events.SQSMessage) 
 	return nil
 }
 
-func main() {
-	handler, err := NewHandler()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create handler: %v", err))
-	}
+var (
+	lambdaCtx *common.LambdaContext
+	handler   *Handler
+)
 
+func init() {
+	// Initialize Lambda with federation processing configuration
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName:        "enhanced-federation-processor",
+		LambdaType:         common.LambdaTypeFederation,
+		Version:            "1.0.0",
+		EnableMetrics:      true,
+		EnableTracing:      true,
+		EnableHealthCheck:  false,
+		EnableCostTracking: true,
+		RequestTimeout:     60 * time.Second, // Longer timeout for federation processing
+		RetryMaxAttempts:   3,
+	})
+
+	// Initialize handler
+	var err error
+	handler, err = NewHandler(lambdaCtx)
+	if err != nil {
+		lambdaCtx.Logger.Fatal("Failed to create handler", zap.Error(err))
+	}
+}
+
+func main() {
 	lambda.Start(handler.HandleSQSEvent)
 }
