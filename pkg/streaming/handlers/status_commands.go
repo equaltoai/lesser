@@ -74,6 +74,7 @@ func (sch *StatusCommandHandlerV2) initializeExecutors() {
 				InReplyToID: getString(payload, "in_reply_to_id", ""),
 				MediaIDs:    getStringSlice(payload, "media_ids"),
 				Sensitive:   getBool(payload, "sensitive", false),
+				SpoilerText: getString(payload, "spoiler_text", ""),
 				Visibility:  getString(payload, "visibility", "public"),
 				Language:    getString(payload, "language", ""),
 			}

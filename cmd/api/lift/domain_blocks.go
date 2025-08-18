@@ -73,29 +73,29 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 					zap.Error(err),
 					zap.Error(jsonErr),
 					zap.String("body", string(ctx.Request.Body)))
-				return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
+				return common.RespondInvalidRequest(ctx)
 			}
 			h.logger.Debug("parsed request from body fallback",
 				zap.String("domain", req.Domain))
 		} else {
 			h.logger.Debug("invalid domain block request - no body", zap.Error(err))
-			return ctx.Status(400).JSON(map[string]string{"error": "invalid request"})
+			return common.RespondInvalidRequest(ctx)
 		}
 	}
 
 	// Validate domain
 	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "domain is required"})
+		return common.RespondBadRequest(ctx, "domain is required")
 	}
 
 	// Validate domain format - basic check
 	if err := common.ValidateRequiredParam("domain", req.Domain); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
+		return common.RespondBadRequest(ctx, "invalid domain format")
 	}
 	if strings.Contains(req.Domain, " ") ||
 		strings.Contains(req.Domain, "..") || strings.HasPrefix(req.Domain, ".") ||
 		strings.HasSuffix(req.Domain, ".") {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid domain format"})
+		return common.RespondBadRequest(ctx, "invalid domain format")
 	}
 
 	// Use Relationships service
@@ -107,7 +107,7 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 			zap.String("username", username),
 			zap.String("domain", req.Domain),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to block domain"})
+		return common.RespondInternalServerError(ctx, "failed to block domain")
 	}
 
 	// Return empty response (Mastodon returns empty object)
@@ -144,19 +144,19 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Check write scope for blocks
 		if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+			return common.RespondInsufficientScope(ctx)
 		}
 
 		username = claims.Username
@@ -169,7 +169,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "domain parameter is required"})
+		return common.RespondBadRequest(ctx, "domain parameter is required")
 	}
 
 	// Use Relationships service
@@ -182,7 +182,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 			zap.String("username", username),
 			zap.String("domain", domain),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to unblock domain"})
+		return common.RespondInternalServerError(ctx, "failed to unblock domain")
 	}
 
 	// Return empty response (Mastodon returns empty object)

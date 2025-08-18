@@ -1741,37 +1741,79 @@ func (va *VideoAnalyzer) waitForModerationJob(ctx context.Context, jobID string,
 	return typed, nil
 }
 
+// rekognitionJobConfig holds configuration for creating job handlers
+type rekognitionJobConfig struct {
+	jobType       string
+	operationType string
+	getResult     func(ctx context.Context, jobID string, nextToken *string) (interface{}, error)
+	getJobStatus  func(result interface{}) rekognitionTypes.VideoJobStatus
+	getNextToken  func(result interface{}) *string
+	getStatusMessage func(result interface{}) *string
+}
+
+// createJobHandler creates a generic job handler with provided configuration
+func (va *VideoAnalyzer) createJobHandler(config rekognitionJobConfig) *rekognitionJobHandler {
+	return &rekognitionJobHandler{
+		jobType:          config.jobType,
+		operationType:    config.operationType,
+		getResult:        config.getResult,
+		getJobStatus:     config.getJobStatus,
+		getNextToken:     config.getNextToken,
+		getStatusMessage: config.getStatusMessage,
+	}
+}
+
+// jobHandlerFactory creates standardized job handlers using reflection-like patterns
+type jobHandlerFactory struct {
+	va *VideoAnalyzer
+}
+
+// createStandardJobConfig creates a standard job configuration with type-safe accessors
+func (f *jobHandlerFactory) createStandardJobConfig(
+	jobType, operationType string,
+	getResultFunc func(ctx context.Context, jobID string, nextToken *string) (interface{}, error),
+	resultAccessor func(interface{}) (rekognitionTypes.VideoJobStatus, *string, *string),
+) rekognitionJobConfig {
+	return rekognitionJobConfig{
+		jobType:       jobType,
+		operationType: operationType,
+		getResult:     getResultFunc,
+		getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
+			status, _, _ := resultAccessor(result)
+			return status
+		},
+		getNextToken: func(result interface{}) *string {
+			_, nextToken, _ := resultAccessor(result)
+			return nextToken
+		},
+		getStatusMessage: func(result interface{}) *string {
+			_, _, statusMessage := resultAccessor(result)
+			return statusMessage
+		},
+	}
+}
+
 // createModerationJobHandler creates a handler for content moderation jobs
 func (va *VideoAnalyzer) createModerationJobHandler() *rekognitionJobHandler {
-	return &rekognitionJobHandler{
-		jobType:       "content moderation",
-		operationType: "GetContentModeration",
-		getResult: func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
+	factory := &jobHandlerFactory{va: va}
+	config := factory.createStandardJobConfig(
+		"content moderation",
+		"GetContentModeration",
+		func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
 			input := &rekognition.GetContentModerationInput{
 				JobId:     aws.String(jobID),
 				NextToken: nextToken,
 			}
 			return va.client.GetContentModeration(ctx, input)
 		},
-		getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
+		func(result interface{}) (rekognitionTypes.VideoJobStatus, *string, *string) {
 			if moderationResult, ok := result.(*rekognition.GetContentModerationOutput); ok {
-				return moderationResult.JobStatus
+				return moderationResult.JobStatus, moderationResult.NextToken, moderationResult.StatusMessage
 			}
-			return rekognitionTypes.VideoJobStatusFailed
+			return rekognitionTypes.VideoJobStatusFailed, nil, nil
 		},
-		getNextToken: func(result interface{}) *string {
-			if moderationResult, ok := result.(*rekognition.GetContentModerationOutput); ok {
-				return moderationResult.NextToken
-			}
-			return nil
-		},
-		getStatusMessage: func(result interface{}) *string {
-			if moderationResult, ok := result.(*rekognition.GetContentModerationOutput); ok {
-				return moderationResult.StatusMessage
-			}
-			return nil
-		},
-	}
+	)
+	return va.createJobHandler(config)
 }
 
 func (va *VideoAnalyzer) waitForTextDetectionJob(ctx context.Context, jobID string, timeout time.Duration) ([]rekognition.GetTextDetectionOutput, error) {
@@ -1946,101 +1988,71 @@ func (p *jobPoller) waitWithBackoff(currentBackoff, maxBackoff time.Duration) ti
 
 // createTextDetectionJobHandler creates a handler for text detection jobs
 func (va *VideoAnalyzer) createTextDetectionJobHandler() *rekognitionJobHandler {
-	return &rekognitionJobHandler{
-		jobType:       "text detection",
-		operationType: "GetTextDetection",
-		getResult: func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
+	factory := &jobHandlerFactory{va: va}
+	config := factory.createStandardJobConfig(
+		"text detection",
+		"GetTextDetection",
+		func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
 			input := &rekognition.GetTextDetectionInput{
 				JobId:     aws.String(jobID),
 				NextToken: nextToken,
 			}
 			return va.client.GetTextDetection(ctx, input)
 		},
-		getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
+		func(result interface{}) (rekognitionTypes.VideoJobStatus, *string, *string) {
 			if textResult, ok := result.(*rekognition.GetTextDetectionOutput); ok {
-				return textResult.JobStatus
+				return textResult.JobStatus, textResult.NextToken, textResult.StatusMessage
 			}
-			return rekognitionTypes.VideoJobStatusFailed
+			return rekognitionTypes.VideoJobStatusFailed, nil, nil
 		},
-		getNextToken: func(result interface{}) *string {
-			if textResult, ok := result.(*rekognition.GetTextDetectionOutput); ok {
-				return textResult.NextToken
-			}
-			return nil
-		},
-		getStatusMessage: func(result interface{}) *string {
-			if textResult, ok := result.(*rekognition.GetTextDetectionOutput); ok {
-				return textResult.StatusMessage
-			}
-			return nil
-		},
-	}
+	)
+	return va.createJobHandler(config)
 }
 
 // createFaceDetectionJobHandler creates a handler for face detection jobs
 func (va *VideoAnalyzer) createFaceDetectionJobHandler() *rekognitionJobHandler {
-	return &rekognitionJobHandler{
-		jobType:       "face detection",
-		operationType: "GetFaceDetection",
-		getResult: func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
+	factory := &jobHandlerFactory{va: va}
+	config := factory.createStandardJobConfig(
+		"face detection",
+		"GetFaceDetection",
+		func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
 			input := &rekognition.GetFaceDetectionInput{
 				JobId:     aws.String(jobID),
 				NextToken: nextToken,
 			}
 			return va.client.GetFaceDetection(ctx, input)
 		},
-		getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
+		func(result interface{}) (rekognitionTypes.VideoJobStatus, *string, *string) {
 			if faceResult, ok := result.(*rekognition.GetFaceDetectionOutput); ok {
-				return faceResult.JobStatus
+				return faceResult.JobStatus, faceResult.NextToken, faceResult.StatusMessage
 			}
-			return rekognitionTypes.VideoJobStatusFailed
+			return rekognitionTypes.VideoJobStatusFailed, nil, nil
 		},
-		getNextToken: func(result interface{}) *string {
-			if faceResult, ok := result.(*rekognition.GetFaceDetectionOutput); ok {
-				return faceResult.NextToken
-			}
-			return nil
-		},
-		getStatusMessage: func(result interface{}) *string {
-			if faceResult, ok := result.(*rekognition.GetFaceDetectionOutput); ok {
-				return faceResult.StatusMessage
-			}
-			return nil
-		},
-	}
+	)
+	return va.createJobHandler(config)
 }
 
 // createLabelDetectionJobHandler creates a handler for label detection jobs
 func (va *VideoAnalyzer) createLabelDetectionJobHandler() *rekognitionJobHandler {
-	return &rekognitionJobHandler{
-		jobType:       "label detection",
-		operationType: "GetLabelDetection",
-		getResult: func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
+	factory := &jobHandlerFactory{va: va}
+	config := factory.createStandardJobConfig(
+		"label detection",
+		"GetLabelDetection",
+		func(ctx context.Context, jobID string, nextToken *string) (interface{}, error) {
 			input := &rekognition.GetLabelDetectionInput{
 				JobId:     aws.String(jobID),
 				NextToken: nextToken,
 			}
 			return va.client.GetLabelDetection(ctx, input)
 		},
-		getJobStatus: func(result interface{}) rekognitionTypes.VideoJobStatus {
+		func(result interface{}) (rekognitionTypes.VideoJobStatus, *string, *string) {
 			if labelResult, ok := result.(*rekognition.GetLabelDetectionOutput); ok {
-				return labelResult.JobStatus
+				return labelResult.JobStatus, labelResult.NextToken, labelResult.StatusMessage
 			}
-			return rekognitionTypes.VideoJobStatusFailed
+			return rekognitionTypes.VideoJobStatusFailed, nil, nil
 		},
-		getNextToken: func(result interface{}) *string {
-			if labelResult, ok := result.(*rekognition.GetLabelDetectionOutput); ok {
-				return labelResult.NextToken
-			}
-			return nil
-		},
-		getStatusMessage: func(result interface{}) *string {
-			if labelResult, ok := result.(*rekognition.GetLabelDetectionOutput); ok {
-				return labelResult.StatusMessage
-			}
-			return nil
-		},
-	}
+	)
+	return va.createJobHandler(config)
 }
 
 // Result processing methods
@@ -2368,5 +2380,5 @@ func getEnvBool(key string, defaultValue bool) bool {
 	if err := common.ValidateRequiredParam("value", value); err != nil {
 		return defaultValue
 	}
-	return value == "true" || value == "1" || value == "yes"
+	return common.ValidateBooleanString(value)
 }

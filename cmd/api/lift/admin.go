@@ -88,6 +88,35 @@ func processUserSessions(sessions []*storage.Session) (lastIP *string, ipHistory
 	return lastIP, ipHistory
 }
 
+// adminAccountAction performs a generic admin account action with logging and validation
+func (h *Handler) adminAccountAction(ctx *lift.Context, action string, actionFn func(username string) error) error {
+	// Check admin access
+	adminClaims, err := h.requireAdminLift(ctx)
+	if err != nil {
+		ctx.Status(http.StatusForbidden)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	accountID := ctx.Param("id")
+	// Extract username from account ID
+	username := strings.TrimPrefix(accountID, "user-")
+
+	// Log admin action
+	h.logger.Info("admin "+action+" account",
+		zap.String(roleAdmin, adminClaims.Username),
+		zap.String("target", username))
+
+	// Execute the action
+	if err := actionFn(username); err != nil {
+		h.logger.Error("failed to "+action+" account", zap.Error(err))
+		ctx.Status(http.StatusInternalServerError)
+		return ctx.JSON(map[string]string{"error": err.Error()})
+	}
+
+	ctx.Status(http.StatusNoContent)
+	return nil
+}
+
 // adminAction performs a generic admin action with logging and validation
 func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(username string) (map[string]any, error)) error {
 	// Check admin access
@@ -409,34 +438,10 @@ func (h *Handler) HandleAdminApproveAccountLift(ctx *lift.Context) error {
 
 // HandleAdminRejectAccountLift handles POST /api/v1/admin/accounts/:id/reject
 func (h *Handler) HandleAdminRejectAccountLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	accountID := ctx.Param("id")
-
-	// Extract username from account ID
-	username := strings.TrimPrefix(accountID, "user-")
-
-	// Log admin action
-	h.logger.Info("admin reject account",
-		zap.String(roleAdmin, adminClaims.Username),
-		zap.String("target", username))
-
-	// Delete the user and associated data
-	if err := h.repos.Account().DeleteAccount(ctx.Context, username); err != nil {
-		h.logger.Error("failed to delete user", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Lesser does not support email functionality
-
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return h.adminAccountAction(ctx, "reject", func(username string) error {
+		// Delete the user and associated data
+		return h.repos.Account().DeleteAccount(ctx.Context, username)
+	})
 }
 
 // HandleAdminEnableAccountLift handles POST /api/v1/admin/accounts/:id/enable
@@ -491,32 +496,10 @@ func (h *Handler) HandleAdminUnsuspendAccountLift(ctx *lift.Context) error {
 
 // HandleAdminUnsensitiveAccountLift handles POST /api/v1/admin/accounts/:id/unsensitive
 func (h *Handler) HandleAdminUnsensitiveAccountLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	accountID := ctx.Param("id")
-
-	// Extract username from account ID
-	username := strings.TrimPrefix(accountID, "user-")
-
-	// Log admin action
-	h.logger.Info("admin unsensitive account",
-		zap.String(roleAdmin, adminClaims.Username),
-		zap.String("target", username))
-
-	// Remove sensitive flag from all media
-	if err := h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username); err != nil {
-		h.logger.Error("failed to unmark media as sensitive", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	ctx.Status(http.StatusNoContent)
-	return nil
+	return h.adminAccountAction(ctx, "unsensitive", func(username string) error {
+		// Remove sensitive flag from all media
+		return h.repos.Media().UnmarkAllMediaAsSensitive(ctx.Context, username)
+	})
 }
 
 // HandleAdminGetReportsLift handles GET /api/v1/admin/reports
@@ -1663,7 +1646,7 @@ func (h *Handler) markAllUserMediaAsSensitive(ctx context.Context, username stri
 		}
 
 		mediaID := mediaItem.MediaID
-		if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
+		if err := common.ValidateEntityID(mediaID, "media"); err != nil {
 			continue
 		}
 
@@ -1917,66 +1900,16 @@ func (h *Handler) HandleAdminDeleteStatusLift(ctx *lift.Context) error {
 
 // HandleAdminMarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/sensitive
 func (h *Handler) HandleAdminMarkStatusSensitiveLift(ctx *lift.Context) error {
-	// Check admin access
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	statusID := ctx.Param("id")
-
-	// Get the existing status first
-	status, err := h.repos.Status().GetStatus(ctx.Context, statusID)
-	if err != nil {
-		if err == storage.ErrNotFound {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
-		}
-		h.logger.Error("failed to get status for update", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get status"})
-	}
-
-	// Update the status fields
-	status.Sensitive = true
-	status.UpdatedAt = time.Now()
-
-	err = h.repos.Status().UpdateStatus(ctx.Context, status)
-	if err != nil {
-		if err == storage.ErrNotFound {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "status not found"})
-		}
-		h.logger.Error("failed to mark status as sensitive", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to update status"})
-	}
-
-	// Log admin action
-	h.logger.Info("admin mark status sensitive",
-		zap.String("admin", adminClaims.Username),
-		zap.String("status_id", statusID))
-
-	// Create audit log entry
-	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "mark_sensitive", "status", statusID, "Admin marked status as sensitive", nil); err != nil {
-		h.logger.Warn("failed to create audit log entry", zap.Error(err))
-	}
-
-	// Get updated status
-	updatedStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
-	if err != nil {
-		h.logger.Error("failed to get updated status", zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to get updated status"})
-	}
-
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(updatedStatus)
+	return h.adminStatusSensitiveAction(ctx, true, "mark_sensitive", "Admin marked status as sensitive")
 }
 
 // HandleAdminUnmarkStatusSensitiveLift handles POST /api/v1/admin/statuses/:id/unsensitive
 func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *lift.Context) error {
+	return h.adminStatusSensitiveAction(ctx, false, "unmark_sensitive", "Admin unmarked status as sensitive")
+}
+
+// adminStatusSensitiveAction consolidates status sensitive/unsensitive operations
+func (h *Handler) adminStatusSensitiveAction(ctx *lift.Context, sensitive bool, action, reason string) error {
 	// Check admin access
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
@@ -1999,7 +1932,7 @@ func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *lift.Context) error 
 	}
 
 	// Update the status fields
-	status.Sensitive = false
+	status.Sensitive = sensitive
 	status.UpdatedAt = time.Now()
 
 	err = h.repos.Status().UpdateStatus(ctx.Context, status)
@@ -2008,18 +1941,26 @@ func (h *Handler) HandleAdminUnmarkStatusSensitiveLift(ctx *lift.Context) error 
 			ctx.Status(http.StatusNotFound)
 			return ctx.JSON(map[string]string{"error": "status not found"})
 		}
-		h.logger.Error("failed to unmark status as sensitive", zap.Error(err))
+		logMessage := "failed to mark status as sensitive"
+		if !sensitive {
+			logMessage = "failed to unmark status as sensitive"
+		}
+		h.logger.Error(logMessage, zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
 		return ctx.JSON(map[string]string{"error": "failed to update status"})
 	}
 
 	// Log admin action
-	h.logger.Info("admin unmark status sensitive",
+	logMessage := "admin mark status sensitive"
+	if !sensitive {
+		logMessage = "admin unmark status sensitive"
+	}
+	h.logger.Info(logMessage,
 		zap.String("admin", adminClaims.Username),
 		zap.String("status_id", statusID))
 
 	// Create audit log entry
-	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, "unmark_sensitive", "status", statusID, "Admin unmarked status as sensitive", nil); err != nil {
+	if err := h.createAuditLogEntry(ctx.Context, adminClaims.Username, action, "status", statusID, reason, nil); err != nil {
 		h.logger.Warn("failed to create audit log entry", zap.Error(err))
 	}
 

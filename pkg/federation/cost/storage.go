@@ -8,34 +8,17 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 )
 
-// Repository interface for federation cost operations
-type Repository interface {
-	// Cost tracking
-	RecordCost(ctx context.Context, cost *FederationCost) error
-	GetInstanceCost(ctx context.Context, domain string, period string) (*FederationCost, error)
-	GetCostMetrics(ctx context.Context, period string) (*CostMetrics, error)
-
-	// Health tracking
-	UpdateInstanceHealth(ctx context.Context, health *InstanceHealth) error
-	GetInstanceHealth(ctx context.Context, domain string) (*InstanceHealth, error)
-	ListUnhealthyInstances(ctx context.Context) ([]*InstanceHealth, error)
-
-	// Configuration
-	SaveInstanceConfig(ctx context.Context, config *InstanceConfig) error
-	GetInstanceConfig(ctx context.Context, domain string) (*InstanceConfig, error)
-	ListInstanceConfigs(ctx context.Context) ([]*InstanceConfig, error)
-}
 
 // dynamoStorage implements the Storage interface using DynamoDB via repository pattern
 type dynamoStorage struct {
-	repo        Repository
+	repo        Storage
 	logger      *zap.Logger
 	costTracker *cost.Tracker
 }
 
 // NewDynamoStorage creates a new DynamoDB-backed storage implementation
 func NewDynamoStorage(
-	repo Repository,
+	repo Storage,
 	logger *zap.Logger,
 	costTracker *cost.Tracker,
 ) Storage {

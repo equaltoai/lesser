@@ -44,6 +44,12 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 			return h.respondBadRequest(ctx, err.Error())
 		}
 
+		if err := common.ValidateApplicationName(params["client_name"]); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
+		if err := common.ValidateRedirectURIs(params["redirect_uris"]); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
 		req.ClientName = params["client_name"]
 		req.RedirectURIs = params["redirect_uris"]
 		req.Scopes = params["scopes"]
@@ -56,6 +62,12 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 			return h.respondBadRequest(ctx, err.Error())
 		}
 
+		if err := common.ValidateApplicationName(params["client_name"]); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
+		if err := common.ValidateRedirectURIs(params["redirect_uris"]); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
 		req.ClientName = params["client_name"]
 		req.RedirectURIs = params["redirect_uris"]
 		req.Scopes = params["scopes"]
@@ -70,6 +82,9 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		params, formErr := common.ParseFormURLEncoded(body)
 		if formErr == nil && (params["client_name"] != "" || len(params) > 0) {
 			// Successfully parsed as form data
+			if err := common.ValidateApplicationName(params["client_name"]); err != nil {
+				return common.RespondValidationError(ctx, err)
+			}
 			req.ClientName = params["client_name"]
 			req.RedirectURIs = params["redirect_uris"]
 			req.Scopes = params["scopes"]
@@ -101,7 +116,19 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 		zap.String("scopes", req.Scopes),
 		zap.String("website", req.Website))
 
-	// Validate request
+	// Validate application registration parameters
+	params := map[string]interface{}{
+		"client_name":    req.ClientName,
+		"redirect_uris":  req.RedirectURIs,
+		"scopes":         req.Scopes,
+		"website":        req.Website,
+	}
+	if err := common.ValidateApplicationParams(params); err != nil {
+		h.logger.Info("application validation failed", zap.Error(err))
+		return h.respondUnprocessableEntity(ctx, err.Error())
+	}
+
+	// Additional basic validation
 	if err := common.ValidateRequiredParam("client_name", req.ClientName); err != nil {
 		h.logger.Info("validation failed: client_name is required")
 		return h.respondUnprocessableEntity(ctx, err.Error())
@@ -168,7 +195,7 @@ func (h *Handler) HandleAppRegistrationLift(ctx *lift.Context) error {
 
 	if err := h.repos.Account().CreateOAuthClient(ctx.Context, client); err != nil {
 		h.logger.Error("failed to create OAuth client", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get VAPID public key
@@ -254,12 +281,12 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	// Try to parse as basic auth (client_id:client_secret)
 	decoded, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
+		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
 	parts := strings.SplitN(string(decoded), ":", 2)
 	if len(parts) != 2 {
-		return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
+		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
 	clientID := parts[0]
@@ -268,7 +295,7 @@ func (h *Handler) HandleAppVerifyCredentialsLift(ctx *lift.Context) error {
 	// Verify client credentials
 	client, err := h.repos.Account().GetOAuthClient(ctx.Context, clientID)
 	if err != nil || client.ClientSecret != clientSecret {
-		return ctx.Status(401).JSON(map[string]string{"error": "invalid credentials"})
+		return common.RespondUnauthorized(ctx, "invalid credentials")
 	}
 
 	// Get VAPID public key

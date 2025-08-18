@@ -38,14 +38,37 @@ const (
 	DefaultWorkers    = 5   // Default number of worker goroutines
 )
 
-// BatchWriter provides efficient batch write operations with configurable batch sizes
-//
-//nolint:revive // Batch prefix clarifies this is batch-specific writer
-type BatchWriter struct {
+// BatchOperation represents the type of batch operation
+type BatchOperation int
+
+const (
+	OperationWrite BatchOperation = iota
+	OperationDelete
+	OperationRead
+)
+
+// BatchProcessor provides efficient batch operations with configurable batch sizes and operation types
+type BatchProcessor struct {
 	client    core.DB
 	batchSize int
 	logger    *zap.Logger
 	tracker   CostTracker
+	operation BatchOperation
+}
+
+// BatchWriter provides efficient batch write operations with configurable batch sizes
+//
+//nolint:revive // Batch prefix clarifies this is batch-specific writer
+type BatchWriter struct {
+	*BatchProcessor
+}
+
+// BatchProcessorConfig holds configuration for BatchProcessor
+type BatchProcessorConfig struct {
+	BatchSize int
+	Logger    *zap.Logger
+	Tracker   CostTracker
+	Operation BatchOperation
 }
 
 // BatchWriterConfig holds configuration for BatchWriter
@@ -57,19 +80,37 @@ type BatchWriterConfig struct {
 	Tracker   CostTracker
 }
 
-// NewBatchWriter creates a new BatchWriter with the specified configuration
-func NewBatchWriter(client core.DB, config BatchWriterConfig) *BatchWriter {
+// NewBatchProcessor creates a new BatchProcessor with the specified configuration
+func NewBatchProcessor(client core.DB, config BatchProcessorConfig) *BatchProcessor {
 	batchSize := config.BatchSize
-	if batchSize <= 0 || batchSize > MaxBatchWriteSize {
-		batchSize = DefaultBatchSize
+	if config.Operation == OperationRead {
+		if batchSize <= 0 || batchSize > MaxBatchReadSize {
+			batchSize = MaxBatchReadSize
+		}
+	} else {
+		if batchSize <= 0 || batchSize > MaxBatchWriteSize {
+			batchSize = DefaultBatchSize
+		}
 	}
 
-	return &BatchWriter{
+	return &BatchProcessor{
 		client:    client,
 		batchSize: batchSize,
 		logger:    config.Logger,
 		tracker:   config.Tracker,
+		operation: config.Operation,
 	}
+}
+
+// NewBatchWriter creates a new BatchWriter with the specified configuration
+func NewBatchWriter(client core.DB, config BatchWriterConfig) *BatchWriter {
+	processor := NewBatchProcessor(client, BatchProcessorConfig{
+		BatchSize: config.BatchSize,
+		Logger:    config.Logger,
+		Tracker:   config.Tracker,
+		Operation: OperationWrite,
+	})
+	return &BatchWriter{BatchProcessor: processor}
 }
 
 // NewDefaultBatchWriter creates a BatchWriter with default settings
@@ -100,8 +141,8 @@ type BatchError struct {
 	Error error
 }
 
-// WriteItems writes items in batches, processing them sequentially
-func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
+// ProcessItems processes items in batches, handling different operation types
+func (bp *BatchProcessor) ProcessItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
@@ -113,16 +154,17 @@ func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWrite
 	}
 
 	// Process items in batches
-	for i := 0; i < len(items); i += bw.batchSize {
-		end := i + bw.batchSize
+	for i := 0; i < len(items); i += bp.batchSize {
+		end := i + bp.batchSize
 		if end > len(items) {
 			end = len(items)
 		}
 
 		batch := items[i:end]
-		if err := bw.writeBatch(ctx, batch, i, result); err != nil {
+		if err := bp.processBatch(ctx, batch, i, result); err != nil {
 			// Continue processing other batches even if one fails
-			bw.logError("batch write failed", err, zap.Int("batch_start", i), zap.Int("batch_size", len(batch)))
+			operationName := bp.getOperationName()
+			bp.logError(fmt.Sprintf("batch %s failed", operationName), err, zap.Int("batch_start", i), zap.Int("batch_size", len(batch)))
 		}
 
 		// Check for context cancellation
@@ -138,21 +180,28 @@ func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWrite
 	result.FailedItems = len(result.Errors)
 	result.ProcessedItems = result.TotalItems - result.FailedItems
 
-	if bw.logger != nil {
-		bw.logger.Info("batch_write_completed",
+	if bp.logger != nil {
+		operationName := bp.getOperationName()
+		capacityField := bp.getCapacityFieldName()
+		bp.logger.Info(fmt.Sprintf("batch_%s_completed", operationName),
 			zap.Int("total_items", result.TotalItems),
 			zap.Int("processed_items", result.ProcessedItems),
 			zap.Int("failed_items", result.FailedItems),
 			zap.Duration("duration", result.Duration),
-			zap.Int64("consumed_wcu", result.ConsumedWCU),
+			zap.Int64(capacityField, result.ConsumedWCU),
 		)
 	}
 
 	return result, nil
 }
 
-// WriteItemsParallel writes items in parallel using worker pools
-func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
+// WriteItems writes items in batches, processing them sequentially
+func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
+	return bw.ProcessItems(ctx, items)
+}
+
+// ProcessItemsParallel processes items in parallel using worker pools
+func (bp *BatchProcessor) ProcessItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
@@ -175,14 +224,14 @@ func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, work
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go bw.worker(ctx, workChan, resultChan, &wg)
+		go bp.worker(ctx, workChan, resultChan, &wg)
 	}
 
 	// Send work to workers
 	go func() {
 		defer close(workChan)
-		for i := 0; i < len(items); i += bw.batchSize {
-			end := i + bw.batchSize
+		for i := 0; i < len(items); i += bp.batchSize {
+			end := i + bp.batchSize
 			if end > len(items) {
 				end = len(items)
 			}
@@ -220,18 +269,25 @@ func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, work
 	result.FailedItems = len(result.Errors)
 	result.ProcessedItems = result.TotalItems - result.FailedItems
 
-	if bw.logger != nil {
-		bw.logger.Info("parallel_batch_write_completed",
+	if bp.logger != nil {
+		operationName := bp.getOperationName()
+		capacityField := bp.getCapacityFieldName()
+		bp.logger.Info(fmt.Sprintf("parallel_batch_%s_completed", operationName),
 			zap.Int("total_items", result.TotalItems),
 			zap.Int("processed_items", result.ProcessedItems),
 			zap.Int("failed_items", result.FailedItems),
 			zap.Int("workers", workers),
 			zap.Duration("duration", result.Duration),
-			zap.Int64("consumed_wcu", result.ConsumedWCU),
+			zap.Int64(capacityField, result.ConsumedWCU),
 		)
 	}
 
 	return result, nil
+}
+
+// WriteItemsParallel writes items in parallel using worker pools
+func (bw *BatchWriter) WriteItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
+	return bw.ProcessItemsParallel(ctx, items, workers)
 }
 
 // batchWork represents work to be done by a worker
@@ -246,8 +302,32 @@ type batchResult struct {
 	consumedWCU int64
 }
 
+// getOperationName returns the operation name for logging
+func (bp *BatchProcessor) getOperationName() string {
+	switch bp.operation {
+	case OperationWrite:
+		return "write"
+	case OperationDelete:
+		return "delete"
+	case OperationRead:
+		return "read"
+	default:
+		return "unknown"
+	}
+}
+
+// getCapacityFieldName returns the appropriate capacity field name for logging
+func (bp *BatchProcessor) getCapacityFieldName() string {
+	switch bp.operation {
+	case OperationRead:
+		return "consumed_rcu"
+	default:
+		return "consumed_wcu"
+	}
+}
+
 // worker processes batches from the work channel
-func (bw *BatchWriter) worker(ctx context.Context, workChan <-chan batchWork, resultChan chan<- batchResult, wg *sync.WaitGroup) {
+func (bp *BatchProcessor) worker(ctx context.Context, workChan <-chan batchWork, resultChan chan<- batchResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for work := range workChan {
@@ -266,8 +346,9 @@ func (bw *BatchWriter) worker(ctx context.Context, workChan <-chan batchWork, re
 			Errors: make([]BatchError, 0),
 		}
 
-		if err := bw.writeBatch(ctx, work.items, work.startIndex, tempResult); err != nil {
-			bw.logError("worker batch write failed", err,
+		if err := bp.processBatch(ctx, work.items, work.startIndex, tempResult); err != nil {
+			operationName := bp.getOperationName()
+			bp.logError(fmt.Sprintf("worker batch %s failed", operationName), err,
 				zap.Int("start_index", work.startIndex),
 				zap.Int("batch_size", len(work.items)))
 		}
@@ -283,28 +364,45 @@ func (bw *BatchWriter) worker(ctx context.Context, workChan <-chan batchWork, re
 	}
 }
 
-// writeBatch writes a single batch of items
-func (bw *BatchWriter) writeBatch(_ context.Context, items []any, startIndex int, result *BatchWriteResult) error {
+// processBatch processes a single batch of items based on operation type
+func (bp *BatchProcessor) processBatch(_ context.Context, items []any, startIndex int, result *BatchWriteResult) error {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
 
 	// Track cost if tracker is available
-	var consumedWCU int64
-	if bw.tracker != nil {
-		initialCost := bw.tracker.CalculateCost()
+	var consumedCapacity int64
+	if bp.tracker != nil {
+		initialCost := bp.tracker.CalculateCost()
 		defer func() {
-			finalCost := bw.tracker.CalculateCost()
-			consumedWCU = finalCost.DynamoDBWrites - initialCost.DynamoDBWrites
-			atomic.AddInt64(&result.ConsumedWCU, consumedWCU)
+			finalCost := bp.tracker.CalculateCost()
+			if bp.operation == OperationRead {
+				consumedCapacity = finalCost.DynamoDBReads - initialCost.DynamoDBReads
+			} else {
+				consumedCapacity = finalCost.DynamoDBWrites - initialCost.DynamoDBWrites
+			}
+			atomic.AddInt64(&result.ConsumedWCU, consumedCapacity)
 		}()
 	}
 
-	// Use DynamORM's batch write functionality
-	query := bw.client.Model(items[0]) // Use first item to determine model type
-	err := query.BatchCreate(items)
+	// Use DynamORM's batch functionality based on operation type
+	query := bp.client.Model(items[0]) // Use first item to determine model type
+	var err error
+	var operationName string
+
+	switch bp.operation {
+	case OperationWrite:
+		err = query.BatchCreate(items)
+		operationName = "write"
+	case OperationDelete:
+		err = query.BatchDelete(items)
+		operationName = "delete"
+	default:
+		return fmt.Errorf("unsupported operation type: %v", bp.operation)
+	}
+
 	if err != nil {
-		// If batch write fails, add all items as failed
+		// If batch operation fails, add all items as failed
 		for i, item := range items {
 			result.Errors = append(result.Errors, BatchError{
 				Index: startIndex + i,
@@ -312,12 +410,16 @@ func (bw *BatchWriter) writeBatch(_ context.Context, items []any, startIndex int
 				Error: err,
 			})
 		}
-		return fmt.Errorf("batch write failed: %w", err)
+		return fmt.Errorf("batch %s failed: %w", operationName, err)
 	}
 
-	// Track successful writes
-	if bw.tracker != nil {
-		bw.tracker.TrackDynamoWrite(len(items))
+	// Track successful operations
+	if bp.tracker != nil {
+		if bp.operation == OperationRead {
+			bp.tracker.TrackDynamoRead(len(items))
+		} else {
+			bp.tracker.TrackDynamoWrite(len(items))
+		}
 	}
 
 	return nil
@@ -616,10 +718,10 @@ func (bwp *BatchWriterWithProgress) WriteItemsParallelWithProgress(ctx context.C
 // Helper functions
 
 // logError logs an error if logger is available
-func (bw *BatchWriter) logError(message string, err error, fields ...zap.Field) {
-	if bw.logger != nil {
+func (bp *BatchProcessor) logError(message string, err error, fields ...zap.Field) {
+	if bp.logger != nil {
 		allFields := append(fields, zap.Error(err))
-		bw.logger.Error(message, allFields...)
+		bp.logger.Error(message, allFields...)
 	}
 }
 
@@ -635,10 +737,7 @@ func (br *BatchReader) logError(message string, err error, fields ...zap.Field) 
 //
 //nolint:revive // Batch prefix clarifies this is batch-specific deleter
 type BatchDeleter struct {
-	client    core.DB
-	batchSize int
-	logger    *zap.Logger
-	tracker   CostTracker
+	*BatchProcessor
 }
 
 // BatchDeleterConfig holds configuration for BatchDeleter
@@ -652,17 +751,13 @@ type BatchDeleterConfig struct {
 
 // NewBatchDeleter creates a new BatchDeleter with the specified configuration
 func NewBatchDeleter(client core.DB, config BatchDeleterConfig) *BatchDeleter {
-	batchSize := config.BatchSize
-	if batchSize <= 0 || batchSize > MaxBatchWriteSize {
-		batchSize = DefaultBatchSize
-	}
-
-	return &BatchDeleter{
-		client:    client,
-		batchSize: batchSize,
-		logger:    config.Logger,
-		tracker:   config.Tracker,
-	}
+	processor := NewBatchProcessor(client, BatchProcessorConfig{
+		BatchSize: config.BatchSize,
+		Logger:    config.Logger,
+		Tracker:   config.Tracker,
+		Operation: OperationDelete,
+	})
+	return &BatchDeleter{BatchProcessor: processor}
 }
 
 // NewDefaultBatchDeleter creates a BatchDeleter with default settings
@@ -686,50 +781,19 @@ type BatchDeleteResult struct {
 
 // DeleteItems deletes items in batches, processing them sequentially
 func (bd *BatchDeleter) DeleteItems(ctx context.Context, keys []any) (*BatchDeleteResult, error) {
-	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
-		return &BatchDeleteResult{}, nil
+	writeResult, err := bd.ProcessItems(ctx, keys)
+	if err != nil {
+		return nil, err
 	}
 
-	startTime := time.Now()
+	// Convert BatchWriteResult to BatchDeleteResult
 	result := &BatchDeleteResult{
-		TotalItems: len(keys),
-		Errors:     make([]BatchError, 0),
-	}
-
-	// Process keys in batches
-	for i := 0; i < len(keys); i += bd.batchSize {
-		end := i + bd.batchSize
-		if end > len(keys) {
-			end = len(keys)
-		}
-
-		batch := keys[i:end]
-		if err := bd.deleteBatch(ctx, batch, i, result); err != nil {
-			// Continue processing other batches even if one fails
-			bd.logError("batch delete failed", err, zap.Int("batch_start", i), zap.Int("batch_size", len(batch)))
-		}
-
-		// Check for context cancellation
-		select {
-		case <-ctx.Done():
-			result.Duration = time.Since(startTime)
-			return result, ctx.Err()
-		default:
-		}
-	}
-
-	result.Duration = time.Since(startTime)
-	result.FailedItems = len(result.Errors)
-	result.ProcessedItems = result.TotalItems - result.FailedItems
-
-	if bd.logger != nil {
-		bd.logger.Info("batch_delete_completed",
-			zap.Int("total_items", result.TotalItems),
-			zap.Int("processed_items", result.ProcessedItems),
-			zap.Int("failed_items", result.FailedItems),
-			zap.Duration("duration", result.Duration),
-			zap.Int64("consumed_wcu", result.ConsumedWCU),
-		)
+		TotalItems:     writeResult.TotalItems,
+		ProcessedItems: writeResult.ProcessedItems,
+		FailedItems:    writeResult.FailedItems,
+		Errors:         writeResult.Errors,
+		Duration:       writeResult.Duration,
+		ConsumedWCU:    writeResult.ConsumedWCU,
 	}
 
 	return result, nil
@@ -737,82 +801,19 @@ func (bd *BatchDeleter) DeleteItems(ctx context.Context, keys []any) (*BatchDele
 
 // DeleteItemsParallel deletes items in parallel using worker pools
 func (bd *BatchDeleter) DeleteItemsParallel(ctx context.Context, keys []any, workers int) (*BatchDeleteResult, error) {
-	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
-		return &BatchDeleteResult{}, nil
+	writeResult, err := bd.ProcessItemsParallel(ctx, keys, workers)
+	if err != nil {
+		return nil, err
 	}
 
-	if workers <= 0 {
-		workers = DefaultWorkers
-	}
-
-	startTime := time.Now()
+	// Convert BatchWriteResult to BatchDeleteResult
 	result := &BatchDeleteResult{
-		TotalItems: len(keys),
-		Errors:     make([]BatchError, 0),
-	}
-
-	// Create channels for work distribution
-	workChan := make(chan batchWork, workers)
-	resultChan := make(chan batchResult, workers)
-
-	// Start workers
-	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go bd.deleteWorker(ctx, workChan, resultChan, &wg)
-	}
-
-	// Send work to workers
-	go func() {
-		defer close(workChan)
-		for i := 0; i < len(keys); i += bd.batchSize {
-			end := i + bd.batchSize
-			if end > len(keys) {
-				end = len(keys)
-			}
-
-			select {
-			case workChan <- batchWork{
-				items:      keys[i:end],
-				startIndex: i,
-			}:
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	// Collect results
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	// Process results
-	var mu sync.Mutex
-	var totalWCU int64
-
-	for batchRes := range resultChan {
-		mu.Lock()
-		result.Errors = append(result.Errors, batchRes.errors...)
-		atomic.AddInt64(&totalWCU, batchRes.consumedWCU)
-		mu.Unlock()
-	}
-
-	result.ConsumedWCU = totalWCU
-	result.Duration = time.Since(startTime)
-	result.FailedItems = len(result.Errors)
-	result.ProcessedItems = result.TotalItems - result.FailedItems
-
-	if bd.logger != nil {
-		bd.logger.Info("parallel_batch_delete_completed",
-			zap.Int("total_items", result.TotalItems),
-			zap.Int("processed_items", result.ProcessedItems),
-			zap.Int("failed_items", result.FailedItems),
-			zap.Int("workers", workers),
-			zap.Duration("duration", result.Duration),
-			zap.Int64("consumed_wcu", result.ConsumedWCU),
-		)
+		TotalItems:     writeResult.TotalItems,
+		ProcessedItems: writeResult.ProcessedItems,
+		FailedItems:    writeResult.FailedItems,
+		Errors:         writeResult.Errors,
+		Duration:       writeResult.Duration,
+		ConsumedWCU:    writeResult.ConsumedWCU,
 	}
 
 	return result, nil
@@ -950,82 +951,7 @@ func (bd *BatchDeleter) logFinalFailure(maxRetries int, totalItems int, lastResu
 	}
 }
 
-// deleteWorker processes delete batches from the work channel
-func (bd *BatchDeleter) deleteWorker(ctx context.Context, workChan <-chan batchWork, resultChan chan<- batchResult, wg *sync.WaitGroup) {
-	defer wg.Done()
 
-	for work := range workChan {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		result := batchResult{
-			errors: make([]BatchError, 0),
-		}
-
-		// Create a temporary result for this batch
-		tempResult := &BatchDeleteResult{
-			Errors: make([]BatchError, 0),
-		}
-
-		if err := bd.deleteBatch(ctx, work.items, work.startIndex, tempResult); err != nil {
-			bd.logError("worker batch delete failed", err,
-				zap.Int("start_index", work.startIndex),
-				zap.Int("batch_size", len(work.items)))
-		}
-
-		result.errors = tempResult.Errors
-		result.consumedWCU = tempResult.ConsumedWCU
-
-		select {
-		case resultChan <- result:
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// deleteBatch deletes a single batch of items
-func (bd *BatchDeleter) deleteBatch(_ context.Context, keys []any, startIndex int, result *BatchDeleteResult) error {
-	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
-		return nil
-	}
-
-	// Track cost if tracker is available
-	var consumedWCU int64
-	if bd.tracker != nil {
-		initialCost := bd.tracker.CalculateCost()
-		defer func() {
-			finalCost := bd.tracker.CalculateCost()
-			consumedWCU = finalCost.DynamoDBWrites - initialCost.DynamoDBWrites
-			atomic.AddInt64(&result.ConsumedWCU, consumedWCU)
-		}()
-	}
-
-	// Use DynamORM's batch delete functionality
-	query := bd.client.Model(keys[0]) // Use first key to determine model type
-	err := query.BatchDelete(keys)
-	if err != nil {
-		// If batch delete fails, add all keys as failed
-		for i, key := range keys {
-			result.Errors = append(result.Errors, BatchError{
-				Index: startIndex + i,
-				Item:  key,
-				Error: err,
-			})
-		}
-		return fmt.Errorf("batch delete failed: %w", err)
-	}
-
-	// Track successful deletes
-	if bd.tracker != nil {
-		bd.tracker.TrackDynamoWrite(len(keys))
-	}
-
-	return nil
-}
 
 // isRetryableError determines if an error is retryable for delete operations
 func (bd *BatchDeleter) isRetryableError(err error) bool {
@@ -1053,13 +979,6 @@ func (bd *BatchDeleter) isRetryableError(err error) bool {
 	return false
 }
 
-// logError logs an error if logger is available
-func (bd *BatchDeleter) logError(message string, err error, fields ...zap.Field) {
-	if bd.logger != nil {
-		allFields := append(fields, zap.Error(err))
-		bd.logger.Error(message, allFields...)
-	}
-}
 
 // Convenience functions for easy usage
 

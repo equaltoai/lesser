@@ -51,6 +51,16 @@ func (i *Import) UpdateKeys() {
 	i.GSI1SK = fmt.Sprintf("CREATED#%s", i.CreatedAt.Format(time.RFC3339))
 }
 
+// GetStatus returns the status of the import
+func (i *Import) GetStatus() string {
+	return i.Status
+}
+
+// GetCreatedAt returns the creation timestamp of the import
+func (i *Import) GetCreatedAt() time.Time {
+	return i.CreatedAt
+}
+
 // TableName returns the DynamoDB table name
 func (i *Import) TableName() string {
 	return "" // Will be set by the repository

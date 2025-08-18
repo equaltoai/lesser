@@ -13,7 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// repositoryAdapter implements the Repository interface using DynamORM directly
+// repositoryAdapter implements the Storage interface using DynamORM directly
 type repositoryAdapter struct {
 	db               core.DB
 	logger           *zap.Logger
@@ -23,7 +23,7 @@ type repositoryAdapter struct {
 }
 
 // NewRepositoryAdapter creates a new repository adapter
-func NewRepositoryAdapter(db core.DB, logger *zap.Logger, costTracker *cost.Tracker) Repository {
+func NewRepositoryAdapter(db core.DB, logger *zap.Logger, costTracker *cost.Tracker) Storage {
 	tableName := os.Getenv("DYNAMO_TABLE_NAME")
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"

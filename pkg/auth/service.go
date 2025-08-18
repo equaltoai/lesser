@@ -540,12 +540,12 @@ func (as *AuthService) GetStore() StorageProvider {
 }
 
 // GetConfig returns configuration (for handlers that need environment info)
-func (as *AuthService) GetConfig() *Config {
+func (as *AuthService) GetConfig() *ServiceConfig {
 	env := os.Getenv("GO_ENV")
 	if err := common.ValidateRequiredParam("GO_ENV", env); err != nil {
 		env = "development"
 	}
-	return &Config{
+	return &ServiceConfig{
 		Environment: env,
 	}
 }
@@ -576,8 +576,8 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	return token, nil
 }
 
-// Config represents auth service configuration
-type Config struct {
+// ServiceConfig represents auth service configuration
+type ServiceConfig struct {
 	Environment string
 }
 

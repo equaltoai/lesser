@@ -18,7 +18,7 @@ func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
 	emojiService := h.registry.Emoji()
 	if emojiService == nil {
 		h.logger.Error("emoji service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "emoji service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "emoji")
 	}
 
 	// List all visible emojis
@@ -28,7 +28,7 @@ func (h *Handler) HandleGetCustomEmojisLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get custom emojis", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API format
@@ -59,31 +59,31 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	if account.User == nil || account.User.Role != roleAdmin {
-		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
+		return common.RespondForbidden(ctx, "admin access required")
 	}
 
 	// Parse request
 	var req models.CreateCustomEmojiRequest
 	if err := h.parseEmojiRequest(ctx, &req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+		return common.RespondInvalidRequest(ctx)
 	}
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("shortcode", req.Shortcode); err != nil {
-		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 	if err := common.ValidateRequiredParam("url", req.URL); err != nil {
-		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 
 	// Get emoji service
 	emojiService := h.registry.Emoji()
 	if emojiService == nil {
 		h.logger.Error("emoji service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "emoji service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "emoji")
 	}
 
 	// Create emoji using service
@@ -99,9 +99,9 @@ func (h *Handler) HandleCreateCustomEmojiLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check for specific error types
 		if err.Error() == "emoji with shortcode "+req.Shortcode+" already exists" {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return the created emoji
@@ -121,7 +121,7 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
 	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate and check admin role
@@ -134,23 +134,23 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	if account.User == nil || account.User.Role != roleAdmin {
-		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
+		return common.RespondForbidden(ctx, "admin access required")
 	}
 
 	// Parse request
 	var req models.UpdateCustomEmojiRequest
 	if err := h.parseEmojiRequest(ctx, &req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+		return common.RespondInvalidRequest(ctx)
 	}
 
 	// Get emoji service
 	emojiService := h.registry.Emoji()
 	if emojiService == nil {
 		h.logger.Error("emoji service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "emoji service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "emoji")
 	}
 
 	// Update emoji using service
@@ -166,9 +166,9 @@ func (h *Handler) HandleUpdateCustomEmojiLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check for specific error types
 		if err.Error() == "emoji not found: "+shortcode {
-			return ctx.Status(404).JSON(map[string]string{"error": "custom emoji not found"})
+			return common.RespondNotFound(ctx, "custom emoji not found")
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return the updated emoji
@@ -188,7 +188,7 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	// Get shortcode from path parameter
 	shortcode := ctx.Param("shortcode")
 	if err := common.ValidateRequiredParam("shortcode", shortcode); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate and check admin role
@@ -201,17 +201,17 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get user for admin check", zap.String("username", username), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	if account.User == nil || account.User.Role != roleAdmin {
-		return ctx.Status(403).JSON(map[string]string{"error": "admin access required"})
+		return common.RespondForbidden(ctx, "admin access required")
 	}
 
 	// Get emoji service
 	emojiService := h.registry.Emoji()
 	if emojiService == nil {
 		h.logger.Error("emoji service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "emoji service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "emoji")
 	}
 
 	// Delete emoji using service
@@ -224,9 +224,9 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check for specific error types
 		if err.Error() == "emoji not found: "+shortcode {
-			return ctx.Status(404).JSON(map[string]string{"error": "custom emoji not found"})
+			return common.RespondNotFound(ctx, "custom emoji not found")
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return empty object
@@ -265,14 +265,14 @@ func (h *Handler) authenticateAdminRequest(ctx *lift.Context) (string, error) {
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	return claims.Username, nil

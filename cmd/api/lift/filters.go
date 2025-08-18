@@ -108,14 +108,33 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 		return h.respondUnauthorized(ctx)
 	}
 
-	// Parse and validate request
-	params, err := h.parseCreateFilterRequest(ctx)
-	if err != nil {
-		return err
+	// Parse request
+	var params createFilterParams
+	if err := ctx.ParseRequest(&params); err != nil {
+		return common.RespondInvalidRequest(ctx)
+	}
+
+	// Validate filter parameters using comprehensive validation
+	filterParams := map[string]interface{}{
+		"title":         params.Title,
+		"context":       params.Context,
+		"filter_action": params.FilterAction,
+		"expires_in":    params.ExpiresIn,
+	}
+	if err := common.ValidateFilterParams(filterParams); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
+
+	// Validate and set default filter action if not provided
+	if err := common.ValidateFilterAction(params.FilterAction); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
+	}
+	if params.FilterAction == "" {
+		params.FilterAction = "warn"
 	}
 
 	// Create the filter
-	filter := h.buildFilterFromParams(username, params)
+	filter := h.buildFilterFromParams(username, &params)
 
 	// Save filter to storage
 	if err := h.saveFilter(ctx, filter); err != nil {
@@ -175,7 +194,7 @@ func (h *Handler) parseFilterRequestBody(ctx *lift.Context, params *createFilter
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 	return nil
@@ -384,7 +403,7 @@ func (h *Handler) parseFilterUpdateParams(ctx *lift.Context) (map[string]any, er
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return nil, common.RespondValidationError(ctx, err)
 		}
 	}
 
@@ -675,7 +694,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 
@@ -709,10 +728,10 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
 	filterID := ctx.Param("filter_id")
 	keywordID := ctx.Param("keyword_id")
 	if err := common.ValidateFilterParamID(filterID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 	if err := common.ValidateKeywordParamID(keywordID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user with write:filters scope
@@ -783,7 +802,7 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 
@@ -815,10 +834,10 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
 	filterID := ctx.Param("filter_id")
 	statusID := ctx.Param("status_id")
 	if err := common.ValidateRequiredParam("filterID", filterID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing filter id"})
+		return common.RespondBadRequest(ctx, "missing filter id")
 	}
 	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Authenticate user with write:filters scope
@@ -875,7 +894,7 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 

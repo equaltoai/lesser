@@ -326,9 +326,9 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 		return fmt.Errorf("file extension does not match content type")
 	}
 
-	// Validate description length
-	if err := common.ValidateStringLength("description", cmd.Description, 0, 1500); err != nil {
-		return fmt.Errorf("description too long (max 1500 characters)")
+	// Validate description using proper validation function
+	if err := common.ValidateMediaDescription(cmd.Description); err != nil {
+		return fmt.Errorf("invalid media description: %v", err)
 	}
 
 	// Validate focus point format if provided
@@ -348,9 +348,9 @@ func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateMediaComma
 		return err
 	}
 
-	// Validate description length
-	if err := common.ValidateStringLength("description", cmd.Description, 0, 1500); err != nil {
-		return fmt.Errorf("description too long (max 1500 characters)")
+	// Validate description using proper validation function
+	if err := common.ValidateMediaDescription(cmd.Description); err != nil {
+		return fmt.Errorf("invalid media description: %v", err)
 	}
 
 	// Validate focus point format if provided

@@ -590,7 +590,6 @@ func createTestService() (*Service, *MockNoteRepository, *MockAccountRepository,
 		accountRepo,
 		relationshipRepo, // Add the concrete relationship repository
 		likeRepo,
-		nil, // listRepo - Add missing ListRepository parameter
 		socialRepo,
 		conversationRepo,
 		objectRepo,

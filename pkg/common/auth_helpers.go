@@ -1,0 +1,402 @@
+package common
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/pay-theory/lift/pkg/lift"
+)
+
+// Claims represents JWT claims interface
+type Claims interface {
+	HasScope(scope string) bool
+	GetUsername() string
+}
+
+// AuthContext holds authentication state and test mode information
+type AuthContext struct {
+	Username     string
+	Claims       Claims
+	IsTestMode   bool
+	TestUsername string
+}
+
+// AuthenticationResult holds the result of authentication validation
+type AuthenticationResult struct {
+	Context   *AuthContext
+	Error     error
+	ErrorCode int
+}
+
+// Common authentication patterns consolidated into reusable functions
+
+// ExtractAndValidateAuth performs the complete authentication flow
+// This consolidates the most common pattern found across 80+ files:
+//   - Check for test mode (X-Test-Username header)
+//   - Extract Authorization header (with fallback patterns)
+//   - Extract bearer token
+//   - Validate JWT token
+//   - Check required scopes
+func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthService OAuthServiceInterface) *AuthenticationResult {
+	// Check for test mode first
+	testUsername := GetTestUsername(ctx)
+	if testUsername != "" {
+		return &AuthenticationResult{
+			Context: &AuthContext{
+				Username:     testUsername,
+				IsTestMode:   true,
+				TestUsername: testUsername,
+			},
+		}
+	}
+
+	// Extract Authorization header with multiple fallback patterns
+	authHeader := ExtractAuthHeader(ctx)
+	if authHeader == "" {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("missing authorization header"),
+		}
+	}
+
+	// Extract bearer token
+	token, err := ExtractBearerToken(authHeader)
+	if err != nil {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("invalid bearer token: %w", err),
+		}
+	}
+
+	// Validate token and get claims
+	claims, err := oauthService.ValidateAccessToken(token)
+	if err != nil {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("invalid token: %w", err),
+		}
+	}
+
+	// Check required scope if specified
+	if requiredScope != "" && !claims.HasScope(requiredScope) {
+		return &AuthenticationResult{
+			ErrorCode: 403,
+			Error:     fmt.Errorf("insufficient scope: requires %s", requiredScope),
+		}
+	}
+
+	return &AuthenticationResult{
+		Context: &AuthContext{
+			Username: claims.GetUsername(),
+			Claims:   claims,
+		},
+	}
+}
+
+// ExtractAndValidateAuthWithMultipleScopes validates authentication with multiple allowed scopes
+// This handles the pattern where either of several scopes is acceptable
+func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes []string, oauthService OAuthServiceInterface) *AuthenticationResult {
+	// Check for test mode first
+	testUsername := GetTestUsername(ctx)
+	if testUsername != "" {
+		return &AuthenticationResult{
+			Context: &AuthContext{
+				Username:     testUsername,
+				IsTestMode:   true,
+				TestUsername: testUsername,
+			},
+		}
+	}
+
+	// Extract Authorization header
+	authHeader := ExtractAuthHeader(ctx)
+	if authHeader == "" {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("missing authorization header"),
+		}
+	}
+
+	// Extract bearer token
+	token, err := ExtractBearerToken(authHeader)
+	if err != nil {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("invalid bearer token: %w", err),
+		}
+	}
+
+	// Validate token and get claims
+	claims, err := oauthService.ValidateAccessToken(token)
+	if err != nil {
+		return &AuthenticationResult{
+			ErrorCode: 401,
+			Error:     fmt.Errorf("invalid token: %w", err),
+		}
+	}
+
+	// Check if user has any of the allowed scopes
+	if len(allowedScopes) > 0 {
+		hasValidScope := false
+		for _, scope := range allowedScopes {
+			if claims.HasScope(scope) {
+				hasValidScope = true
+				break
+			}
+		}
+
+		if !hasValidScope {
+			return &AuthenticationResult{
+				ErrorCode: 403,
+				Error:     fmt.Errorf("insufficient scope: requires one of %v", allowedScopes),
+			}
+		}
+	}
+
+	return &AuthenticationResult{
+		Context: &AuthContext{
+			Username: claims.GetUsername(),
+			Claims:   claims,
+		},
+	}
+}
+
+// ExtractOptionalAuth performs optional authentication (for public endpoints that benefit from auth)
+// This consolidates the pattern where auth is optional but used if present
+func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) *AuthenticationResult {
+	// Check for test mode first
+	testUsername := GetTestUsername(ctx)
+	if testUsername != "" {
+		return &AuthenticationResult{
+			Context: &AuthContext{
+				Username:     testUsername,
+				IsTestMode:   true,
+				TestUsername: testUsername,
+			},
+		}
+	}
+
+	// Extract Authorization header
+	authHeader := ExtractAuthHeader(ctx)
+	if authHeader == "" {
+		// No auth provided - this is OK for optional auth
+		return &AuthenticationResult{
+			Context: &AuthContext{},
+		}
+	}
+
+	// Extract bearer token
+	token, err := ExtractBearerToken(authHeader)
+	if err != nil {
+		// Invalid token format - return unauthenticated state for optional auth
+		return &AuthenticationResult{
+			Context: &AuthContext{},
+		}
+	}
+
+	// Validate token and get claims
+	claims, err := oauthService.ValidateAccessToken(token)
+	if err != nil {
+		// Invalid token - return unauthenticated state for optional auth
+		return &AuthenticationResult{
+			Context: &AuthContext{},
+		}
+	}
+
+	return &AuthenticationResult{
+		Context: &AuthContext{
+			Username: claims.GetUsername(),
+			Claims:   claims,
+		},
+	}
+}
+
+// GetTestUsername extracts test username from multiple header locations
+// This consolidates the pattern found in 50+ files
+func GetTestUsername(ctx *lift.Context) string {
+	// Try primary header method
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername != "" {
+		return testUsername
+	}
+
+	// Try direct request access (fallback pattern found in many files)
+	if ctx.Request != nil && ctx.Request.Request != nil {
+		if headers := ctx.Request.Request.Headers; headers != nil {
+			return headers["X-Test-Username"]
+		}
+	}
+
+	return ""
+}
+
+// ExtractAuthHeader extracts Authorization header with multiple fallback patterns
+// This consolidates the various patterns found across the codebase
+func ExtractAuthHeader(ctx *lift.Context) string {
+	// Try primary method
+	authHeader := ctx.Header("Authorization")
+	if authHeader != "" {
+		return authHeader
+	}
+
+	// Try lowercase variant
+	authHeader = ctx.Header("authorization")
+	if authHeader != "" {
+		return authHeader
+	}
+
+	// Try direct request access (fallback pattern)
+	if ctx.Request != nil && ctx.Request.Request != nil {
+		if headers := ctx.Request.Request.Headers; headers != nil {
+			authHeader = headers["Authorization"]
+			if authHeader != "" {
+				return authHeader
+			}
+			authHeader = headers["authorization"]
+			if authHeader != "" {
+				return authHeader
+			}
+		}
+	}
+
+	return ""
+}
+
+// ValidateWriteAccess validates that the authenticated user can perform write operations
+func ValidateWriteAccess(authResult *AuthenticationResult) error {
+	if authResult.Error != nil {
+		return authResult.Error
+	}
+
+	if authResult.Context.IsTestMode {
+		return nil // Test mode bypasses scope checks
+	}
+
+	if authResult.Context.Claims == nil {
+		return fmt.Errorf("authentication required for write operations")
+	}
+
+	if !authResult.Context.Claims.HasScope(ScopeWrite) {
+		return fmt.Errorf("insufficient scope: write access required")
+	}
+
+	return nil
+}
+
+// ValidateReadAccess validates that the authenticated user can perform read operations
+func ValidateReadAccess(authResult *AuthenticationResult) error {
+	if authResult.Error != nil {
+		return authResult.Error
+	}
+
+	if authResult.Context.IsTestMode {
+		return nil // Test mode bypasses scope checks
+	}
+
+	if authResult.Context.Claims == nil {
+		return fmt.Errorf("authentication required for read operations")
+	}
+
+	if !authResult.Context.Claims.HasScope(ScopeRead) {
+		return fmt.Errorf("insufficient scope: read access required")
+	}
+
+	return nil
+}
+
+// OAuthServiceInterface defines the interface for OAuth validation
+// This avoids import cycles while providing the needed validation functionality
+type OAuthServiceInterface interface {
+	ValidateAccessToken(token string) (Claims, error)
+}
+
+// Common scope constants to avoid import cycles
+const (
+	ScopeRead      = "read"
+	ScopeWrite     = "write"
+	WriteFollows   = "write:follows"
+	ReadFollows    = "read:follows"
+	AdminRead      = "admin:read"
+	AdminWrite     = "admin:write"
+)
+
+// Common scope validation patterns
+
+// HasAnyScope checks if claims has any of the provided scopes
+func HasAnyScope(claims Claims, scopes []string) bool {
+	if claims == nil {
+		return false
+	}
+
+	for _, scope := range scopes {
+		if claims.HasScope(scope) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasAllScopes checks if claims has all of the provided scopes
+func HasAllScopes(claims Claims, scopes []string) bool {
+	if claims == nil {
+		return false
+	}
+
+	for _, scope := range scopes {
+		if !claims.HasScope(scope) {
+			return false
+		}
+	}
+	return true
+}
+
+// Common scope combinations found in the codebase
+var (
+	ReadScopes     = []string{ScopeRead, "read:accounts", "read:statuses", "read:follows"}
+	WriteScopes    = []string{ScopeWrite, "write:accounts", "write:statuses", "write:follows"}
+	FollowScopes   = []string{WriteFollows, ScopeWrite, "write:follows"}
+	BlockScopes    = []string{ScopeWrite, "write:blocks"}
+	AdminScopes    = []string{AdminRead, AdminWrite}
+)
+
+// ValidateSpecificScopes validates against common scope combinations
+func ValidateReadScopes(claims Claims) bool {
+	return HasAnyScope(claims, ReadScopes)
+}
+
+func ValidateWriteScopes(claims Claims) bool {
+	return HasAnyScope(claims, WriteScopes)
+}
+
+func ValidateFollowScopes(claims Claims) bool {
+	return HasAnyScope(claims, FollowScopes)
+}
+
+func ValidateBlockScopes(claims Claims) bool {
+	return HasAnyScope(claims, BlockScopes)
+}
+
+func ValidateAdminScopes(claims Claims) bool {
+	return HasAnyScope(claims, AdminScopes)
+}
+
+// ExtractBearerToken extracts the token from the Authorization header
+// This consolidates auth.ExtractBearerToken to avoid import cycles
+func ExtractBearerToken(authHeader string) (string, error) {
+	if authHeader == "" {
+		return "", fmt.Errorf("authorization header is empty")
+	}
+
+	const bearerPrefix = "Bearer "
+	if !strings.HasPrefix(authHeader, bearerPrefix) {
+		return "", fmt.Errorf("authorization header must start with 'Bearer '")
+	}
+
+	// Use centralized validation and sanitization for bearer token
+	token, err := ValidateAndSanitizeString("bearer_token", authHeader[len(bearerPrefix):], 1, 2000)
+	if err != nil {
+		return "", fmt.Errorf("bearer token validation failed: %w", err)
+	}
+
+	return token, nil
+}

@@ -16,10 +16,12 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/moderation/advanced"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -390,22 +392,31 @@ func parseCategoryFromString(s string) moderation.Category {
 	}
 }
 
+var (
+	cfg    *config.Config
+	logger *zap.Logger
+	repos  storageCore.RepositoryStorage
+)
+
 func init() {
-	// Initialize Lambda with processor configuration for moderation processing
+	// Standardized Lambda initialization for processor functions
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName:        "moderation-processor",
-		LambdaType:         common.LambdaTypeProcessor,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableTracing:      true,
-		EnableHealthCheck:  false,
-		EnableCostTracking: true,
-		RequestTimeout:     60 * time.Second, // Longer timeout for complex moderation processing
-		RetryMaxAttempts:   3,
+		ServiceName: "moderation-processor",
+		LambdaType:  common.LambdaTypeProcessor,
 	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
 
 	// Initialize DynamORM with Lambda optimizations
-	var err error
 	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
@@ -1413,94 +1424,94 @@ func (mp *ModerationProcessor) triggerAutomaticActions(ctx context.Context, even
 	return nil
 }
 
-// enforceAccountSilencing implements comprehensive account silencing across all systems
-func (mp *ModerationProcessor) enforceAccountSilencing(ctx context.Context, username string, reason string) error {
-	mp.logger.Info("Enforcing account silencing across all systems",
+// enforceAccountAction implements comprehensive account enforcement (silencing/suspension) across all systems
+func (mp *ModerationProcessor) enforceAccountAction(ctx context.Context, username string, reason string, config AccountActionConfig) error {
+	mp.logger.Info(fmt.Sprintf("Enforcing account %s across all systems", config.ActionType),
 		zap.String("username", username),
 		zap.String("reason", reason))
 
 	var errors []error
 
 	// 1. Update user account status
-	updates := map[string]interface{}{
-		"silenced":        true,
-		"silenced_at":     time.Now().Format(time.RFC3339),
-		"silenced_reason": reason,
-	}
-
-	if err := mp.userRepo.UpdateUser(ctx, username, updates); err != nil {
-		mp.logger.Error("Failed to silence user account", zap.Error(err))
+	if err := mp.userRepo.UpdateUser(ctx, username, config.UserUpdates(reason)); err != nil {
+		mp.logger.Error(fmt.Sprintf("Failed to %s user account", config.ActionType), zap.Error(err))
 		errors = append(errors, fmt.Errorf("user update: %w", err))
 	}
 
-	// 2. Remove user content from public timelines
-	if err := mp.filterFromTimelines(ctx, username, "silence"); err != nil {
+	// 2. Filter content from timelines
+	if err := mp.filterFromTimelines(ctx, username, config.TimelineAction); err != nil {
 		mp.logger.Error("Failed to filter from timelines", zap.Error(err))
 		errors = append(errors, fmt.Errorf("timeline filtering: %w", err))
 	}
 
-	// 3. Reduce search visibility
-	if err := mp.updateSearchVisibility(ctx, username, "hidden"); err != nil {
-		mp.logger.Error("Failed to update search visibility", zap.Error(err))
-		errors = append(errors, fmt.Errorf("search visibility: %w", err))
+	// 3. Update search visibility
+	if err := mp.updateSearchVisibility(ctx, username, config.SearchAction); err != nil {
+		mp.logger.Error(fmt.Sprintf("Failed to %s", config.SearchErrorMsg), zap.Error(err))
+		errors = append(errors, fmt.Errorf("search %s: %w", config.SearchAction, err))
 	}
 
 	// 4. Apply federation constraints
-	if err := mp.applyFederationConstraints(ctx, username, "silence"); err != nil {
-		mp.logger.Error("Failed to apply federation constraints", zap.Error(err))
-		errors = append(errors, fmt.Errorf("federation constraints: %w", err))
+	if err := mp.applyFederationConstraints(ctx, username, config.FederationAction); err != nil {
+		mp.logger.Error(fmt.Sprintf("Failed to apply federation %s", config.FederationErrorMsg), zap.Error(err))
+		errors = append(errors, fmt.Errorf("federation %s: %w", config.FederationErrorMsg, err))
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("silencing enforcement failed: %v", errors)
+		return fmt.Errorf("%s enforcement failed: %v", config.ActionType, errors)
 	}
 
 	return nil
 }
 
+// AccountActionConfig defines the configuration for different account enforcement actions
+type AccountActionConfig struct {
+	ActionType         string
+	TimelineAction     string
+	SearchAction       string
+	SearchErrorMsg     string
+	FederationAction   string
+	FederationErrorMsg string
+	UserUpdates        func(reason string) map[string]interface{}
+}
+
+// enforceAccountSilencing implements comprehensive account silencing across all systems
+func (mp *ModerationProcessor) enforceAccountSilencing(ctx context.Context, username string, reason string) error {
+	config := AccountActionConfig{
+		ActionType:         "silencing",
+		TimelineAction:     "silence",
+		SearchAction:       "hidden",
+		SearchErrorMsg:     "update search visibility",
+		FederationAction:   "silence",
+		FederationErrorMsg: "constraints",
+		UserUpdates: func(reason string) map[string]interface{} {
+			return map[string]interface{}{
+				"silenced":        true,
+				"silenced_at":     time.Now().Format(time.RFC3339),
+				"silenced_reason": reason,
+			}
+		},
+	}
+	return mp.enforceAccountAction(ctx, username, reason, config)
+}
+
 // enforceAccountSuspension implements comprehensive account suspension across all systems
 func (mp *ModerationProcessor) enforceAccountSuspension(ctx context.Context, username string, reason string) error {
-	mp.logger.Info("Enforcing account suspension across all systems",
-		zap.String("username", username),
-		zap.String("reason", reason))
-
-	var errors []error
-
-	// 1. Update user account status
-	updates := map[string]interface{}{
-		"suspended":        true,
-		"suspended_at":     time.Now().Format(time.RFC3339),
-		"suspended_reason": reason,
+	config := AccountActionConfig{
+		ActionType:         "suspension",
+		TimelineAction:     "suspend",
+		SearchAction:       "removed",
+		SearchErrorMsg:     "remove from search",
+		FederationAction:   "suspend",
+		FederationErrorMsg: "blocks",
+		UserUpdates: func(reason string) map[string]interface{} {
+			return map[string]interface{}{
+				"suspended":        true,
+				"suspended_at":     time.Now().Format(time.RFC3339),
+				"suspended_reason": reason,
+			}
+		},
 	}
-
-	if err := mp.userRepo.UpdateUser(ctx, username, updates); err != nil {
-		mp.logger.Error("Failed to suspend user account", zap.Error(err))
-		errors = append(errors, fmt.Errorf("user update: %w", err))
-	}
-
-	// 2. Remove all user content from timelines
-	if err := mp.filterFromTimelines(ctx, username, "suspend"); err != nil {
-		mp.logger.Error("Failed to filter from timelines", zap.Error(err))
-		errors = append(errors, fmt.Errorf("timeline filtering: %w", err))
-	}
-
-	// 3. Remove from search entirely
-	if err := mp.updateSearchVisibility(ctx, username, "removed"); err != nil {
-		mp.logger.Error("Failed to remove from search", zap.Error(err))
-		errors = append(errors, fmt.Errorf("search removal: %w", err))
-	}
-
-	// 4. Block federation for this user
-	if err := mp.applyFederationConstraints(ctx, username, "suspend"); err != nil {
-		mp.logger.Error("Failed to apply federation blocks", zap.Error(err))
-		errors = append(errors, fmt.Errorf("federation blocking: %w", err))
-	}
-
-	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("suspension enforcement failed: %v", errors)
-	}
-
-	return nil
+	return mp.enforceAccountAction(ctx, username, reason, config)
 }
 
 // enforceContentRemoval implements comprehensive content removal across all systems

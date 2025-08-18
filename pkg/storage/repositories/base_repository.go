@@ -11,6 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // BaseModel interface that all DynamoDB models must implement
@@ -472,4 +473,337 @@ func (r *BaseRepository[T]) SetCostService(costService *cost.TrackingService) {
 // SetRepoName allows setting the repository name for better cost tracking identification
 func (r *BaseRepository[T]) SetRepoName(repoName string) {
 	r.repoName = repoName
+}
+
+// === CONSOLIDATION HELPER FUNCTIONS ===
+
+// These helper functions eliminate code duplication patterns identified across repositories
+
+// CollectionQueryConfig configures behavior for collection query operations
+type CollectionQueryConfig struct {
+	PKKey        string // What to use as PK value prefix (e.g., "object", "USER", "ACTOR")
+	SKKey        string // What to use as SK value prefix (e.g., "likes", "PROFILE", "BLOCKED")
+	IndexName    string // GSI index name if using GSI (empty for main table)
+	GSIConfig    *GSIQueryConfig
+	LogName      string // Name for logging (e.g., "likes", "blocks")
+	ErrorPrefix  string // Error message prefix (e.g., "get likes", "query blocks")
+}
+
+// GSIQueryConfig configures GSI-specific query behavior
+type GSIQueryConfig struct {
+	PKField    string // GSI PK field name (e.g., "GSI1PK", "GSI2PK")
+	SKField    string // GSI SK field name (e.g., "GSI1SK", "GSI2SK")
+	PKValue    string // PK value for the GSI
+	SKPattern  string // SK pattern (for BEGINS_WITH, range queries, etc.)
+	UseCursor  bool   // Whether to support cursor-based pagination
+	OrderBy    string // Sort order ("ASC" or "DESC")
+}
+
+// QueryCollectionWithConversion performs paginated collection queries with type conversion
+// This eliminates duplication in social relationship queries (likes, blocks, follows, etc.)
+func QueryCollectionWithConversion[M BaseModel, R any](
+	ctx context.Context,
+	r *BaseRepository[M],
+	config CollectionQueryConfig,
+	entityID string,
+	limit int,
+	cursor string,
+	converter func([]M) ([]R, error),
+) ([]R, string, error) {
+	// Build and execute the query
+	var models []M
+	var err error
+
+	if config.GSIConfig != nil {
+		// GSI query
+		gsi := config.GSIConfig
+		pkValue := fmt.Sprintf(gsi.PKValue, entityID)
+		
+		query := r.db.WithContext(ctx).Model(new(M)).
+			Index(config.IndexName).
+			Where(gsi.PKField, "=", pkValue).
+			Limit(limit)
+			
+		if gsi.SKPattern != "" {
+			query = query.Filter(gsi.SKField, "BEGINS_WITH", gsi.SKPattern)
+		}
+		
+		if gsi.UseCursor && cursor != "" {
+			if gsi.OrderBy == "DESC" {
+				query = query.Where(gsi.SKField, "<", cursor)
+			} else {
+				query = query.Where(gsi.SKField, ">", cursor)
+			}
+		}
+		
+		if gsi.OrderBy != "" {
+			query = query.OrderBy(gsi.SKField, gsi.OrderBy)
+		}
+		
+		err = query.All(&models)
+	} else {
+		// Main table query
+		pkValue := fmt.Sprintf("%s#%s", config.PKKey, entityID)
+		skPattern := config.SKKey
+		
+		query := r.db.WithContext(ctx).Model(new(M)).
+			Where("PK", "=", pkValue).
+			Limit(limit)
+			
+		if skPattern != "" {
+			query = query.Filter("SK", "BEGINS_WITH", skPattern)
+		}
+		
+		err = query.All(&models)
+	}
+	if err != nil {
+		r.logger.Error(fmt.Sprintf("failed to %s", config.ErrorPrefix),
+			zap.String("entity_id", entityID),
+			zap.Error(err))
+		return nil, "", fmt.Errorf("failed to %s: %w", config.ErrorPrefix, err)
+	}
+
+	// Convert to target type
+	results, err := converter(models)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to convert %s: %w", config.LogName, err)
+	}
+
+	// Generate next cursor
+	nextCursor := ""
+	if len(models) == limit && len(models) > 0 {
+		if config.GSIConfig != nil {
+			nextCursor = getGSISK(models[len(models)-1], config.GSIConfig.SKField)
+		} else {
+			nextCursor = models[len(models)-1].GetSK()
+		}
+	}
+
+	return results, nextCursor, nil
+}
+
+// DeleteEntityWithLogging performs safe delete operations with consistent error handling and logging
+// This eliminates duplication in delete operations across repositories
+func DeleteEntityWithLogging[M BaseModel](
+	ctx context.Context,
+	r *BaseRepository[M],
+	pk, sk string,
+	entityType string,
+	identifiers map[string]string, // key-value pairs for logging (e.g., "actor": actorID, "object": objectID)
+) error {
+	model := new(M)
+	
+	err := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+		
+	if err != nil {
+		if errors.IsNotFound(err) {
+			logFields := []zap.Field{zap.String("entity_type", entityType)}
+			for key, value := range identifiers {
+				logFields = append(logFields, zap.String(key, value))
+			}
+			r.logger.Debug(fmt.Sprintf("%s not found", entityType), logFields...)
+			return nil
+		}
+		
+		logFields := []zap.Field{zap.Error(err), zap.String("entity_type", entityType)}
+		for key, value := range identifiers {
+			logFields = append(logFields, zap.String(key, value))
+		}
+		r.logger.Error(fmt.Sprintf("failed to delete %s", entityType), logFields...)
+		return fmt.Errorf("failed to delete %s: %w", entityType, err)
+	}
+
+	logFields := []zap.Field{zap.String("entity_type", entityType)}
+	for key, value := range identifiers {
+		logFields = append(logFields, zap.String(key, value))
+	}
+	r.logger.Info(fmt.Sprintf("deleted %s", entityType), logFields...)
+	
+	return nil
+}
+
+// HistoryQueryConfig configures behavior for history/metrics query operations
+type HistoryQueryConfig struct {
+	MetricType   string // The metric type (e.g., "storage_bytes", "user_count")
+	IndexName    string // GSI index name
+	PKField      string // GSI PK field name
+	SKField      string // GSI SK field name
+	LogName      string // Name for logging
+	ErrorPrefix  string // Error message prefix
+	Converter    func(interface{}) map[string]interface{} // Custom field converter
+}
+
+// QueryHistoryWithDateRange performs time-range queries for metrics/history data
+// This eliminates duplication in GetStorageHistory, GetUserGrowthHistory, etc.
+func QueryHistoryWithDateRange[M BaseModel](
+	ctx context.Context,
+	r *BaseRepository[M],
+	config HistoryQueryConfig,
+	days int,
+) ([]any, error) {
+	// Validate and default days parameter
+	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
+		days = 30 // Default to 30 days
+	}
+
+	// Calculate date range
+	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
+	endDate := time.Now().Format("2006-01-02")
+
+	// Query using GSI
+	var models []M
+	err := r.db.WithContext(ctx).Model(new(M)).
+		Index(config.IndexName).
+		Where(config.PKField, "=", fmt.Sprintf("METRIC#%s", config.MetricType)).
+		Where(config.SKField, ">=", fmt.Sprintf("DATE#%s", startDate)).
+		Where(config.SKField, "<=", fmt.Sprintf("DATE#%s", endDate)).
+		All(&models)
+
+	if err != nil {
+		r.logger.Error(fmt.Sprintf("Failed to get %s", config.LogName), 
+			zap.Error(err), 
+			zap.Int("days", days))
+		return nil, fmt.Errorf("failed to get %s: %w", config.LogName, err)
+	}
+
+	// Convert to expected format
+	result := make([]any, len(models))
+	for i, model := range models {
+		if config.Converter != nil {
+			result[i] = config.Converter(model)
+		} else {
+			// Default conversion - this would need to be customized per use case
+			result[i] = model
+		}
+	}
+
+	r.logger.Info(fmt.Sprintf("Retrieved %s", config.LogName), 
+		zap.Int("days", days), 
+		zap.Int("records", len(result)))
+	
+	return result, nil
+}
+
+// MetricsQueryConfig configures behavior for metrics query operations
+type MetricsQueryConfig struct {
+	IndexName   string // GSI index name
+	PKField     string // GSI PK field name  
+	SKField     string // GSI SK field name
+	PKPattern   string // PK value pattern (e.g., "SERVICE#%s", "METRIC_TYPE#%s")
+	LogName     string // Name for logging
+	ErrorPrefix string // Error message prefix
+}
+
+// QueryMetricsByTimeRange performs time-range queries for metric records
+// This eliminates duplication in GetMetricsByService, GetMetricsByType, GetMetricsByAggregationLevel
+func QueryMetricsByTimeRange[M BaseModel](
+	ctx context.Context,
+	r *BaseRepository[M],
+	config MetricsQueryConfig,
+	entityName string,
+	startTime, endTime time.Time,
+) ([]M, error) {
+	var records []M
+
+	pkValue := fmt.Sprintf(config.PKPattern, entityName)
+	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
+	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
+
+	err := r.db.WithContext(ctx).Model(new(M)).
+		Index(config.IndexName).
+		Where(config.PKField, "=", pkValue).
+		Where(config.SKField, ">=", startSK).
+		Where(config.SKField, "<=", endSK).
+		OrderBy(config.SKField, "DESC").
+		All(&records)
+
+	if err != nil {
+		r.logger.Error(fmt.Sprintf("failed to get %s", config.LogName),
+			zap.Error(err),
+			zap.String("entity", entityName),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
+		return nil, MapErrorWithContext(err, fmt.Sprintf("failed to get %s", config.LogName))
+	}
+
+	return records, nil
+}
+
+// ReportConversionConfig configures report model to storage type conversion
+type ReportConversionConfig struct {
+	CursorField string // Field to use for cursor (e.g., "GSI2SK", "GSI3SK")
+	LogContext  string // Context for logging (e.g., "status", "category")
+}
+
+// ConvertAndPaginateReports converts report models to storage types with pagination
+// This eliminates duplication in GetReportsByStatus, GetReportsByCategory, etc.
+func ConvertAndPaginateReports[M interface{}](
+	models []M,
+	limit int,
+	config ReportConversionConfig,
+	converter func(M) *storage.Report,
+	cursorExtractor func(M) string,
+) ([]*storage.Report, string, error) {
+	// Convert models to storage types
+	reports := make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = converter(model)
+	}
+
+	// Generate next cursor
+	var nextCursor string
+	if err := common.ValidateSliceLength("models", models, limit); err != nil {
+		// We got more results than requested, so there are more pages
+		nextCursor = cursorExtractor(models[limit-1])
+		models = models[:limit] // Trim to requested limit
+
+		// Re-process the trimmed models to create reports
+		reports = make([]*storage.Report, len(models))
+		for i, model := range models {
+			reports[i] = converter(model)
+		}
+	}
+
+	return reports, nextCursor, nil
+}
+
+// AuditLogConversionConfig configures audit log model to storage type conversion
+type AuditLogConversionConfig struct {
+	GSIField   string // GSI field for cursor (e.g., "GSI1SK", "GSI2SK")
+	LogContext string // Context for logging
+}
+
+// ConvertAndPaginateAuditLogs converts audit log models to storage types with pagination
+// This eliminates duplication in GetAuditLogsByAdmin, GetAuditLogsByTarget
+func ConvertAndPaginateAuditLogs[M interface{}](
+	models []M,
+	config AuditLogConversionConfig,
+	converter func(M) *storage.AuditLog,
+	cursorExtractor func(M) string,
+) ([]*storage.AuditLog, string) {
+	// Convert models to storage types
+	logs := make([]*storage.AuditLog, 0, len(models))
+	for _, model := range models {
+		log := converter(model)
+		logs = append(logs, log)
+	}
+
+	// Get next cursor - use the last item's GSI field if we got results
+	nextCursor := ""
+	if common.ValidateSliceNotEmpty("models", models) == nil {
+		nextCursor = cursorExtractor(models[len(models)-1])
+	}
+
+	return logs, nextCursor
+}
+
+// getGSISK extracts GSI SK value from a model using reflection or interface
+// This is a helper function to get cursor values from different GSI fields
+func getGSISK(model BaseModel, fieldName string) string {
+	// This would need to be implemented based on the actual model structure
+	// For now, return empty string - this should be customized per repository
+	return ""
 }

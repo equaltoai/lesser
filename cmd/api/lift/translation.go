@@ -32,7 +32,7 @@ type TranslationLanguage struct {
 func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 	// Check if translation is enabled
 	if !h.isTranslationEnabled() {
-		return ctx.Status(422).JSON(map[string]string{"error": "translation service is not enabled"})
+		return common.RespondUnprocessableEntity(ctx, "translation service is not enabled")
 	}
 
 	// Get and validate status ID
@@ -57,7 +57,7 @@ func (h *Handler) HandleTranslateStatusLift(ctx *lift.Context) error {
 	// Extract content from the object
 	content, spoilerText, language := h.extractTranslatableContent(obj)
 	if err := common.ValidateRequiredParam("content", content); err != nil {
-		return ctx.Status(422).JSON(map[string]string{"error": "status has no content to translate"})
+		return common.RespondUnprocessableEntity(ctx, "status has no content to translate")
 	}
 
 	// Get target language
@@ -80,8 +80,8 @@ func (h *Handler) isTranslationEnabled() bool {
 // getTranslationStatusID gets and validates the status ID
 func (h *Handler) getTranslationStatusID(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return "", ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return "", common.RespondValidationError(ctx, err)
 	}
 	return statusID, nil
 }
@@ -115,14 +115,14 @@ func (h *Handler) authenticateTranslationWithToken(ctx *lift.Context) (string, e
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	return claims.Username, nil
@@ -163,7 +163,7 @@ func (h *Handler) getStatusForTranslation(ctx *lift.Context, statusID, objectID 
 			zap.String("status_id", statusID),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return nil, common.RespondNotFound(ctx, "status not found")
 	}
 
 	// Convert to generic object for translation
@@ -209,6 +209,13 @@ func (h *Handler) getTargetLanguage(ctx *lift.Context, username string) string {
 	})
 	if err == nil && result != nil && result.Preferences != nil {
 		if lang, ok := result.Preferences["language"].(string); ok && lang != "" {
+			if err := common.ValidateLanguageCode(lang); err != nil {
+				h.logger.Warn("invalid language code in user preferences", 
+					zap.String("username", username),
+					zap.String("lang", lang),
+					zap.Error(err))
+				return "en" // Fall back to English for invalid codes
+			}
 			return lang
 		}
 	}
@@ -217,6 +224,16 @@ func (h *Handler) getTargetLanguage(ctx *lift.Context, username string) string {
 
 // performTranslation performs the actual translation
 func (h *Handler) performTranslation(ctx *lift.Context, statusID, content, spoilerText, sourceLang, targetLang string) (*TranslationResult, error) {
+	// Validate language codes
+	if sourceLang != "" {
+		if err := common.ValidateLanguageCode(sourceLang); err != nil {
+			return nil, fmt.Errorf("invalid source language code: %w", err)
+		}
+	}
+	if err := common.ValidateLanguageCode(targetLang); err != nil {
+		return nil, fmt.Errorf("invalid target language code: %w", err)
+	}
+
 	// Initialize translation service
 	translationSvc, err := h.initializeTranslationService(ctx)
 	if err != nil {
@@ -246,7 +263,7 @@ func (h *Handler) initializeTranslationService(ctx *lift.Context) (*translation.
 	translationSvc, err := translation.NewService(ctx.Context, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
-		return nil, ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})
+		return nil, common.RespondInternalServerError(ctx, "translation service initialization failed")
 	}
 	return translationSvc, nil
 }
@@ -259,7 +276,7 @@ func (h *Handler) translateContent(ctx *lift.Context, svc *translation.Service, 
 			zap.String("status_id", statusID),
 			zap.String("target_lang", targetLang),
 			zap.Error(err))
-		return "", "", ctx.Status(500).JSON(map[string]string{"error": "translation failed"})
+		return "", "", common.RespondInternalServerError(ctx, "translation failed")
 	}
 	return translatedContent, detectedLang, nil
 }
@@ -284,21 +301,21 @@ func (h *Handler) HandleGetTranslationLanguagesLift(ctx *lift.Context) error {
 	// Check if translation is enabled
 	translationEnabled := os.Getenv("TRANSLATION_ENABLED") == boolTrue
 	if !translationEnabled {
-		return ctx.Status(422).JSON(map[string]string{"error": "translation service is not enabled"})
+		return common.RespondUnprocessableEntity(ctx, "translation service is not enabled")
 	}
 
 	// Initialize translation service
 	translationSvc, err := translation.NewService(ctx.Context, h.repos, h.logger, true)
 	if err != nil {
 		h.logger.Error("failed to initialize translation service", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "translation service initialization failed"})
+		return common.RespondInternalServerError(ctx, "translation service initialization failed")
 	}
 
 	// Get supported languages from AWS Translate
 	supportedLangs, err := translationSvc.GetSupportedLanguages(ctx.Context)
 	if err != nil {
 		h.logger.Error("failed to get supported languages", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get supported languages"})
+		return common.RespondInternalServerError(ctx, "failed to get supported languages")
 	}
 
 	// Convert to API format

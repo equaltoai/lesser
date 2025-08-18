@@ -28,13 +28,19 @@ const (
 
 // Service provides account operations
 type Service struct {
-	storage    core.RepositoryStorage
-	publisher  streaming.Publisher
-	logger     *zap.Logger
-	domainName string
-	federation FederationService // Interface to be defined
-	crypto     CryptoService     // Interface for crypto operations
-	auth       AuthService       // Interface for auth operations
+	storage          core.RepositoryStorage
+	publisher        streaming.Publisher
+	logger           *zap.Logger
+	domainName       string
+	federation       FederationService // Interface to be defined
+	crypto           CryptoService     // Interface for crypto operations
+	auth             AuthService       // Interface for auth operations
+	
+	// Business logic frameworks for semantic consolidation
+	businessLogic    *common.BusinessLogicService
+	activityPubLogic *common.ActivityPubBusinessLogic
+	mastodonLogic    *common.MastodonBusinessLogic
+	streamingEmitter streamingEventEmitter
 }
 
 // FederationService defines the interface for federation operations
@@ -56,6 +62,34 @@ type AuthService interface {
 	PasswordStrength(password string) int
 }
 
+// streamingEventEmitter adapts streaming.Publisher to common.EventEmitter interface
+type streamingEventEmitter struct {
+	publisher streaming.Publisher
+}
+
+// EmitEvents implements the common.EventEmitter interface
+func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common.StreamingEvent) error {
+	// Convert common.StreamingEvent to streaming.Event
+	streamingEvents := make([]*streaming.Event, len(events))
+	for i, event := range events {
+		streamingEvents[i] = &streaming.Event{
+			Type:      event.Type,
+			Stream:    "user", // Default stream, will be overridden
+			Timestamp: event.Timestamp,
+			Payload:   event.Metadata,
+		}
+	}
+	
+	// Emit using the publisher
+	for _, event := range streamingEvents {
+		if err := e.publisher.PublishToStream(ctx, event.Stream, event); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
 // NewService creates a new Accounts Service with the required dependencies
 func NewService(
 	storage core.RepositoryStorage,
@@ -70,14 +104,33 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
+	// Initialize business logic frameworks
+	streamingEmitter := streamingEventEmitter{publisher: publisher}
+	businessLogic := common.NewBusinessLogicService(logger, &streamingEmitter, domainName)
+	federationConfig := &common.FederationConfig{
+		Domain:         domainName,
+		UserAgent:      "Lesser/1.0",
+		MaxRetries:     3,
+		RetryDelay:     5 * time.Second,
+		RequestTimeout: 30 * time.Second,
+	}
+	activityPubLogic := common.NewActivityPubBusinessLogic(federationConfig, logger)
+	mastodonConfig := common.DefaultMastodonConfig()
+	mastodonConfig.Domain = domainName
+	mastodonLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
+
 	return &Service{
-		storage:    storage,
-		publisher:  publisher,
-		federation: federation,
-		crypto:     crypto,
-		auth:       auth,
-		logger:     logger,
-		domainName: domainName,
+		storage:          storage,
+		publisher:        publisher,
+		federation:       federation,
+		crypto:           crypto,
+		auth:             auth,
+		logger:           logger,
+		domainName:       domainName,
+		businessLogic:    businessLogic,
+		activityPubLogic: activityPubLogic,
+		mastodonLogic:    mastodonLogic,
+		streamingEmitter: streamingEmitter,
 	}
 }
 
@@ -496,7 +549,8 @@ func (s *Service) SearchAccounts(ctx context.Context, query *SearchAccountsQuery
 
 // Private helper methods
 
-func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdateProfileCommand) error {
+func (s *Service) validateUpdateProfileCommand(ctx context.Context, cmd *UpdateProfileCommand) error {
+	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
 		return fmt.Errorf("username is required")
 	}
@@ -505,14 +559,15 @@ func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdatePro
 		return fmt.Errorf("updater_id is required")
 	}
 
-	if err := common.ValidateStringLength("display_name", cmd.DisplayName, 0, 100); err != nil {
+	// Use Mastodon business logic for profile validation
+	if err := s.mastodonLogic.ValidateDisplayName(cmd.DisplayName); err != nil {
+		return err
+	}
+	if err := s.mastodonLogic.ValidateBio(cmd.Bio); err != nil {
 		return err
 	}
 
-	if err := common.ValidateStringLength("bio", cmd.Bio, 0, 5000); err != nil {
-		return err
-	}
-
+	// Use business logic pattern for field validation
 	if err := common.ValidateSliceLength("fields", cmd.Fields, 4); err != nil {
 		return err
 	}
@@ -673,38 +728,40 @@ func (s *Service) sanitizeAccountForViewer(account *storage.Account, viewerID st
 }
 
 func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage.Account) []*streaming.Event {
-	var events []*streaming.Event
-
-	// Create base event
-	event := &streaming.Event{
-		Type:      "account.updated",
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"account": account,
-		},
+	// Use centralized business logic for event creation
+	businessEvents := common.EmitEntityUpdatedEvents(ctx, "account", account.User.Username, account.User.Username, account, map[string]interface{}{
+		"profile_fields": account.User.Fields,
+		"last_updated":  time.Now(),
+	})
+	
+	// Convert to streaming events and emit
+	var streamingEvents []*streaming.Event
+	for _, businessEvent := range businessEvents {
+		streamingEvent := &streaming.Event{
+			Type:      businessEvent.Type,
+			Stream:    fmt.Sprintf("user:%s", account.User.Username),
+			Timestamp: businessEvent.Timestamp,
+			Payload:   businessEvent.Metadata,
+		}
+		
+		// Emit to user's stream
+		if err := s.publisher.PublishToUser(ctx, account.User.Username, streamingEvent); err != nil {
+			s.logger.Error("failed to publish account update to user stream", zap.Error(err))
+		} else {
+			streamingEvents = append(streamingEvents, streamingEvent)
+		}
+		
+		// Also emit to followers' streams
+		followersEvent := *streamingEvent
+		followersEvent.Stream = fmt.Sprintf("followers:%s", account.User.Username)
+		if err := s.publisher.PublishToStream(ctx, followersEvent.Stream, &followersEvent); err != nil {
+			s.logger.Error("failed to publish to followers stream", zap.Error(err))
+		} else {
+			streamingEvents = append(streamingEvents, &followersEvent)
+		}
 	}
 
-	// Emit to user's own stream
-	userEvent := *event
-	userEvent.Stream = fmt.Sprintf("user:%s", account.User.Username)
-	if err := s.publisher.PublishToUser(ctx, account.User.Username, &userEvent); err != nil {
-		s.logger.Error("failed to publish to user stream", zap.Error(err))
-	} else {
-		events = append(events, &userEvent)
-	}
-
-	// Emit to followers' streams (they should see profile updates)
-	// Note: This would typically require getting the follower list, but for now
-	// we'll emit to a followers stream that other services can subscribe to
-	followersEvent := *event
-	followersEvent.Stream = fmt.Sprintf("followers:%s", account.User.Username)
-	if err := s.publisher.PublishToStream(ctx, followersEvent.Stream, &followersEvent); err != nil {
-		s.logger.Error("failed to publish to followers stream", zap.Error(err))
-	} else {
-		events = append(events, &followersEvent)
-	}
-
-	return events
+	return streamingEvents
 }
 
 func (s *Service) emitPreferencesUpdatedEvents(ctx context.Context, username string, preferences map[string]interface{}) []*streaming.Event {

@@ -25,7 +25,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/ai"
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -155,7 +157,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 }
 
 var (
-	processor *NoteProcessor
+	originalProcessor *NoteProcessor
 )
 
 // HandleStream processes DynamoDB stream events with Lift-style patterns
@@ -1327,26 +1329,43 @@ func minInt(a, b int) int {
 	return b
 }
 
-func main() {
-	// Initialize Lambda with custom service configuration for Comprehend
-	config := common.LambdaConfig{
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage
+	processor *NoteProcessor
+)
+
+func init() {
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "note-processor",
-		LambdaType:  common.LambdaTypeAI,
+		LambdaType:  common.LambdaTypeProcessor,
 		CustomServiceConfig: &awsInit.ServiceConfig{
 			RequiresDynamoDB:   true,
 			RequiresCloudWatch: true,
 			RequiresComprehend: true,
 			ServiceName:        "note-processor",
 		},
-	}
+	})
 	
-	lambdaCtx, err := common.InitializeLambda(config)
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 	
 	// Initialize processor
 	processor = NewNoteProcessor(lambdaCtx)
+}
+
+func main() {
 
 	// Start Lambda with traditional approach but Lift-style patterns
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {

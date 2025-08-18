@@ -43,6 +43,47 @@ func (r *ReprocessorClient) SetSQSClient(client *sqs.Client) {
 	r.sqsClient = client
 }
 
+// ReprocessConfig defines configuration for message reprocessing
+type ReprocessConfig struct {
+	ValidateMessage    func(map[string]interface{}) error
+	CheckAccessibility func(context.Context, map[string]interface{}) error
+	ReprocessType      string
+}
+
+// reprocessWithValidation provides a generic reprocessing workflow
+func (r *ReprocessorClient) reprocessWithValidation(ctx context.Context, originalMessage *OriginalMessage, messageType string, config ReprocessConfig) error {
+	r.logger.Info("reprocessing message",
+		zap.String("message_id", originalMessage.MessageID),
+		zap.String("message_type", messageType),
+	)
+
+	// Parse the message request
+	var messageRequest map[string]interface{}
+	if err := json.Unmarshal([]byte(originalMessage.Body), &messageRequest); err != nil {
+		return fmt.Errorf("invalid %s message format: %w", messageType, err)
+	}
+
+	// Validate message structure
+	if err := config.ValidateMessage(messageRequest); err != nil {
+		return fmt.Errorf("%s message validation failed: %w", messageType, err)
+	}
+
+	// Check accessibility if configured
+	if config.CheckAccessibility != nil {
+		if err := config.CheckAccessibility(ctx, messageRequest); err != nil {
+			return fmt.Errorf("%s not accessible for reprocessing: %w", messageType, err)
+		}
+	}
+
+	// Send back to the original queue
+	queueURL, err := r.getQueueURL(ctx, originalMessage.SourceQueue)
+	if err != nil {
+		return fmt.Errorf("failed to get queue URL for %s: %w", originalMessage.SourceQueue, err)
+	}
+
+	return r.sendMessageToQueue(ctx, queueURL, originalMessage.Body, originalMessage.Attributes, config.ReprocessType)
+}
+
 // ReprocessNotification reprocesses a failed notification message
 func (r *ReprocessorClient) ReprocessNotification(ctx context.Context, originalMessage *OriginalMessage) error {
 	r.logger.Info("reprocessing notification message",
@@ -97,72 +138,34 @@ func (r *ReprocessorClient) ReprocessActivity(ctx context.Context, originalMessa
 
 // ReprocessMedia reprocesses a failed media processing message
 func (r *ReprocessorClient) ReprocessMedia(ctx context.Context, originalMessage *OriginalMessage) error {
-	r.logger.Info("reprocessing media message",
-		zap.String("message_id", originalMessage.MessageID),
-	)
-
-	// Parse the media processing request
-	var mediaRequest map[string]interface{}
-	if err := json.Unmarshal([]byte(originalMessage.Body), &mediaRequest); err != nil {
-		return fmt.Errorf("invalid media message format: %w", err)
-	}
-
-	// Validate media processing request
-	if err := r.validateMediaMessage(mediaRequest); err != nil {
-		return fmt.Errorf("media message validation failed: %w", err)
-	}
-
-	// Check if media is still accessible (for transient network errors)
-	if mediaURL, exists := mediaRequest["media_url"]; exists {
-		if urlStr, ok := mediaURL.(string); ok {
-			if err := r.validateMediaAccessibility(ctx, urlStr); err != nil {
-				return fmt.Errorf("media not accessible for reprocessing: %w", err)
+	return r.reprocessWithValidation(ctx, originalMessage, "media", ReprocessConfig{
+		ValidateMessage: r.validateMediaMessage,
+		CheckAccessibility: func(ctx context.Context, request map[string]interface{}) error {
+			if mediaURL, exists := request["media_url"]; exists {
+				if urlStr, ok := mediaURL.(string); ok {
+					return r.validateMediaAccessibility(ctx, urlStr)
+				}
 			}
-		}
-	}
-
-	// Send back to the original queue
-	queueURL, err := r.getQueueURL(ctx, originalMessage.SourceQueue)
-	if err != nil {
-		return fmt.Errorf("failed to get queue URL for %s: %w", originalMessage.SourceQueue, err)
-	}
-
-	return r.sendMessageToQueue(ctx, queueURL, originalMessage.Body, originalMessage.Attributes, "media_reprocess")
+			return nil
+		},
+		ReprocessType: "media_reprocess",
+	})
 }
 
 // ReprocessFederation reprocesses a failed federation delivery message
 func (r *ReprocessorClient) ReprocessFederation(ctx context.Context, originalMessage *OriginalMessage) error {
-	r.logger.Info("reprocessing federation message",
-		zap.String("message_id", originalMessage.MessageID),
-	)
-
-	// Parse the federation delivery request
-	var federationRequest map[string]interface{}
-	if err := json.Unmarshal([]byte(originalMessage.Body), &federationRequest); err != nil {
-		return fmt.Errorf("invalid federation message format: %w", err)
-	}
-
-	// Validate federation delivery request
-	if err := r.validateFederationMessage(federationRequest); err != nil {
-		return fmt.Errorf("federation message validation failed: %w", err)
-	}
-
-	// Check if the target inbox is now accessible
-	if inboxURL, exists := federationRequest["inbox_url"]; exists {
-		if urlStr, ok := inboxURL.(string); ok {
-			if err := r.validateInboxAccessibility(ctx, urlStr); err != nil {
-				return fmt.Errorf("inbox not accessible for reprocessing: %w", err)
+	return r.reprocessWithValidation(ctx, originalMessage, "federation", ReprocessConfig{
+		ValidateMessage: r.validateFederationMessage,
+		CheckAccessibility: func(ctx context.Context, request map[string]interface{}) error {
+			if inboxURL, exists := request["inbox_url"]; exists {
+				if urlStr, ok := inboxURL.(string); ok {
+					return r.validateInboxAccessibility(ctx, urlStr)
+				}
 			}
-		}
-	}
-
-	// Send back to the original queue
-	queueURL, err := r.getQueueURL(ctx, originalMessage.SourceQueue)
-	if err != nil {
-		return fmt.Errorf("failed to get queue URL for %s: %w", originalMessage.SourceQueue, err)
-	}
-
-	return r.sendMessageToQueue(ctx, queueURL, originalMessage.Body, originalMessage.Attributes, "federation_reprocess")
+			return nil
+		},
+		ReprocessType: "federation_reprocess",
+	})
 }
 
 // ReprocessSearch reprocesses a failed search indexing message

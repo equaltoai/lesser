@@ -758,7 +758,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		Sensitive:  input.Sensitive != nil && *input.Sensitive,
 	}
 
-	// Note: spoiler text should be handled by including it in the Note content
+	if input.SpoilerText != nil {
+		cmd.SpoilerText = *input.SpoilerText
+	}
 
 	if input.InReplyToID != nil {
 		cmd.InReplyToID = *input.InReplyToID
@@ -838,130 +840,46 @@ func (r *mutationResolver) DeleteObject(ctx context.Context, id string) (bool, e
 
 // LikeObject is the resolver for the likeObject field.
 func (r *mutationResolver) LikeObject(ctx context.Context, id string) (*activitypub.Activity, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Like using notes service
-	_, err = r.Registry.Notes().LikeNote(ctx, &notes.LikeNoteCommand{
-		StatusID: id,
-		LikerID:  username,
+	return r.executeSocialAction(ctx, id, activitypub.LikeType, "like", func(ctx context.Context, objectID, username string) error {
+		_, err := r.Registry.Notes().LikeNote(ctx, &notes.LikeNoteCommand{
+			StatusID: objectID,
+			LikerID:  username,
+		})
+		return err
 	})
-	if err != nil {
-		r.Logger.Error("Failed to like object",
-			zap.String("user", username),
-			zap.String("object", id),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to like object: %w", err)
-	}
-
-	// Track costs
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	// Return activity
-	now := time.Now()
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			ID:        generateID(),
-			Type:      activitypub.LikeType,
-			Published: &now,
-		},
-		Actor:  username,
-		Object: id,
-	}, nil
 }
 
 // UnlikeObject is the resolver for the unlikeObject field.
 func (r *mutationResolver) UnlikeObject(ctx context.Context, id string) (bool, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	// Unlike using notes service
-	_, err = r.Registry.Notes().UnlikeNote(ctx, &notes.UnlikeNoteCommand{
-		StatusID:  id,
-		UnlikerID: username,
+	return r.executeSocialUndo(ctx, id, "unlike", func(ctx context.Context, objectID, username string) error {
+		_, err := r.Registry.Notes().UnlikeNote(ctx, &notes.UnlikeNoteCommand{
+			StatusID:  objectID,
+			UnlikerID: username,
+		})
+		return err
 	})
-	if err != nil {
-		r.Logger.Error("Failed to unlike object",
-			zap.String("user", username),
-			zap.String("object", id),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to unlike object: %w", err)
-	}
-
-	// Track costs
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	return true, nil
 }
 
 // ShareObject is the resolver for the shareObject field.
 func (r *mutationResolver) ShareObject(ctx context.Context, id string) (*activitypub.Activity, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Boost using notes service
-	_, err = r.Registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
-		StatusID:    id,
-		RebloggerID: username,
+	return r.executeSocialAction(ctx, id, activitypub.AnnounceType, "share", func(ctx context.Context, objectID, username string) error {
+		_, err := r.Registry.Notes().ReblogNote(ctx, &notes.ReblogNoteCommand{
+			StatusID:    objectID,
+			RebloggerID: username,
+		})
+		return err
 	})
-	if err != nil {
-		r.Logger.Error("Failed to share object",
-			zap.String("user", username),
-			zap.String("object", id),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to share object: %w", err)
-	}
-
-	// Track costs
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	// Return activity
-	now := time.Now()
-	return &activitypub.Activity{
-		BaseObject: activitypub.BaseObject{
-			ID:        generateID(),
-			Type:      activitypub.AnnounceType,
-			Published: &now,
-		},
-		Actor:  username,
-		Object: id,
-	}, nil
 }
 
 // UnshareObject is the resolver for the unshareObject field.
 func (r *mutationResolver) UnshareObject(ctx context.Context, id string) (bool, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	// Unboost using notes service
-	_, err = r.Registry.Notes().UnreblogNote(ctx, &notes.UnreblogNoteCommand{
-		StatusID:      id,
-		UnrebloggerID: username,
+	return r.executeSocialUndo(ctx, id, "unshare", func(ctx context.Context, objectID, username string) error {
+		_, err := r.Registry.Notes().UnreblogNote(ctx, &notes.UnreblogNoteCommand{
+			StatusID:      objectID,
+			UnrebloggerID: username,
+		})
+		return err
 	})
-	if err != nil {
-		r.Logger.Error("Failed to unshare object",
-			zap.String("user", username),
-			zap.String("object", id),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to unshare object: %w", err)
-	}
-
-	// Track costs
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", 1)
-
-	return true, nil
 }
 
 // FollowActor is the resolver for the followActor field.
@@ -1366,92 +1284,24 @@ func (r *mutationResolver) DeleteList(ctx context.Context, id string) (bool, err
 
 // AddAccountsToList is the resolver for the addAccountsToList field.
 func (r *mutationResolver) AddAccountsToList(ctx context.Context, id string, accountIDs []string) (*model.List, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add each account to the list individually
-	var lastResult *lists.MembershipResult
-	for _, accountID := range accountIDs {
-		result, err := r.Registry.Lists().AddToList(ctx, &lists.AddToListCommand{
-			ListID:         id,
+	return r.executeListMembershipOperation(ctx, id, accountIDs, "add", func(ctx context.Context, listID, accountID, username string) (*lists.MembershipResult, error) {
+		return r.Registry.Lists().AddToList(ctx, &lists.AddToListCommand{
+			ListID:         listID,
 			MemberUsername: accountID,
 			AdderID:        username,
 		})
-		if err != nil {
-			r.Logger.Error("Failed to add account to list",
-				zap.String("user", username),
-				zap.String("list", id),
-				zap.String("account", accountID),
-				zap.Error(err))
-			// Continue with other accounts even if one fails
-			continue
-		}
-		lastResult = result
-	}
-
-	if lastResult == nil {
-		return nil, fmt.Errorf("failed to add any accounts to list")
-	}
-
-	// Get the updated list
-	list, err := r.Registry.Lists().GetList(ctx, &lists.GetListQuery{
-		ListID:   id,
-		ViewerID: username,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get updated list: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", int64(len(accountIDs)))
-	return r.convertListToGraphQL(ctx, list), nil
 }
 
 // RemoveAccountsFromList is the resolver for the removeAccountsFromList field.
 func (r *mutationResolver) RemoveAccountsFromList(ctx context.Context, id string, accountIDs []string) (*model.List, error) {
-	username, err := r.requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Remove each account from the list individually
-	var lastResult *lists.MembershipResult
-	for _, accountID := range accountIDs {
-		result, err := r.Registry.Lists().RemoveFromList(ctx, &lists.RemoveFromListCommand{
-			ListID:         id,
+	return r.executeListMembershipOperation(ctx, id, accountIDs, "remove", func(ctx context.Context, listID, accountID, username string) (*lists.MembershipResult, error) {
+		return r.Registry.Lists().RemoveFromList(ctx, &lists.RemoveFromListCommand{
+			ListID:         listID,
 			MemberUsername: accountID,
 			RemoverID:      username,
 		})
-		if err != nil {
-			r.Logger.Error("Failed to remove account from list",
-				zap.String("user", username),
-				zap.String("list", id),
-				zap.String("account", accountID),
-				zap.Error(err))
-			// Continue with other accounts even if one fails
-			continue
-		}
-		lastResult = result
-	}
-
-	if lastResult == nil {
-		return nil, fmt.Errorf("failed to remove any accounts from list")
-	}
-
-	// Get the updated list
-	list, err := r.Registry.Lists().GetList(ctx, &lists.GetListQuery{
-		ListID:   id,
-		ViewerID: username,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get updated list: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	r.trackDynamoOperation(ctx, "write", int64(len(accountIDs)))
-	return r.convertListToGraphQL(ctx, list), nil
 }
 
 // MarkConversationAsRead is the resolver for the markConversationAsRead field.
@@ -3197,6 +3047,12 @@ func (r *Resolver) convertScheduledStatusToGraphQL(ctx context.Context, ss *stor
 
 	// Handle poll if present
 	if ss.Poll != nil {
+		// Validate poll parameters using centralized validation
+		if err := common.ValidatePollParams(ss.Poll); err != nil {
+			// Log error but continue - this is a conversion function
+			r.Logger.Warn("invalid poll parameters in scheduled status", zap.Error(err))
+		}
+		
 		// Poll is stored as map[string]any, need to extract fields
 		pollParams := &model.PollParams{}
 		if options, ok := ss.Poll["options"].([]string); ok {
@@ -8097,13 +7953,19 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 
 	// Create the quote note using the notes service
 	// Note: QuoteURL would need to be parsed to extract the note ID for quoting
-	result, err := r.Registry.Notes().CreateNote(ctx, &notes.CreateNoteCommand{
-		AuthorID:     username,
-		Content:      fmt.Sprintf("%s\n\nQuoting: %s", input.Content, input.QuoteURL),
-		Visibility:   visibility,
-		Sensitive:    input.Sensitive != nil && *input.Sensitive,
-		MediaIDs:     input.MediaIds,
-	})
+	cmd := &notes.CreateNoteCommand{
+		AuthorID:   username,
+		Content:    fmt.Sprintf("%s\n\nQuoting: %s", input.Content, input.QuoteURL),
+		Visibility: visibility,
+		Sensitive:  input.Sensitive != nil && *input.Sensitive,
+		MediaIDs:   input.MediaIds,
+	}
+
+	if input.SpoilerText != nil {
+		cmd.SpoilerText = *input.SpoilerText
+	}
+
+	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create quote note: %w", err)
 	}
@@ -9641,77 +9503,12 @@ func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, cos
 
 // buildCostDriversFromDaily builds cost drivers from daily aggregate data
 func (r *queryResolver) buildCostDriversFromDaily(daily *repositories.DailyAggregate) []*model.CostDriver {
-	drivers := []*model.CostDriver{}
-	
-	if daily.TotalReads > 0 && daily.TotalCostDollars > 0 {
-		readCost := float64(daily.TotalReads) * 0.00025 // Approximate DynamoDB read cost
-		readPercentage := (readCost / daily.TotalCostDollars) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Reads",
-			Cost:           readCost,
-			PercentOfTotal: readPercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-	
-	if daily.TotalWrites > 0 && daily.TotalCostDollars > 0 {
-		writeCost := float64(daily.TotalWrites) * 0.00125 // Approximate DynamoDB write cost
-		writePercentage := (writeCost / daily.TotalCostDollars) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Writes", 
-			Cost:           writeCost,
-			PercentOfTotal: writePercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-
-	// Sort by cost percentage
-	sort.Slice(drivers, func(i, j int) bool {
-		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
-	})
-
-	// Return top 5 drivers
-	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
-		return drivers[:5]
-	}
-	return drivers
+	return r.createReadWriteDrivers(daily.TotalReads, daily.TotalWrites, daily.TotalCostDollars)
 }
 
 // buildCostDriversFromMonthly builds cost drivers from monthly aggregate data
 func (r *queryResolver) buildCostDriversFromMonthly(monthly *repositories.MonthlyAggregate) []*model.CostDriver {
-	drivers := []*model.CostDriver{}
-	
-	if monthly.TotalReads > 0 && monthly.TotalCostDollars > 0 {
-		readCost := float64(monthly.TotalReads) * 0.00025
-		readPercentage := (readCost / monthly.TotalCostDollars) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Reads",
-			Cost:           readCost,
-			PercentOfTotal: readPercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-	
-	if monthly.TotalWrites > 0 && monthly.TotalCostDollars > 0 {
-		writeCost := float64(monthly.TotalWrites) * 0.00125
-		writePercentage := (writeCost / monthly.TotalCostDollars) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Writes",
-			Cost:           writeCost,
-			PercentOfTotal: writePercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-
-	// Sort by cost percentage
-	sort.Slice(drivers, func(i, j int) bool {
-		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
-	})
-
-	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
-		return drivers[:5]
-	}
-	return drivers
+	return r.createReadWriteDrivers(monthly.TotalReads, monthly.TotalWrites, monthly.TotalCostDollars)
 }
 
 // buildWeeklyDriversFromDaily builds cost drivers from weekly daily aggregates
@@ -9725,39 +9522,7 @@ func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.Dail
 		totalCost += daily.TotalCostDollars
 	}
 	
-	drivers := []*model.CostDriver{}
-	
-	if totalReads > 0 && totalCost > 0 {
-		readCost := float64(totalReads) * 0.00025
-		readPercentage := (readCost / totalCost) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Reads",
-			Cost:           readCost,
-			PercentOfTotal: readPercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-	
-	if totalWrites > 0 && totalCost > 0 {
-		writeCost := float64(totalWrites) * 0.00125
-		writePercentage := (writeCost / totalCost) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Writes",
-			Cost:           writeCost,
-			PercentOfTotal: writePercentage,
-			Trend:          model.TrendStable,
-		})
-	}
-
-	// Sort by cost percentage
-	sort.Slice(drivers, func(i, j int) bool {
-		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
-	})
-
-	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
-		return drivers[:5]
-	}
-	return drivers
+	return r.createReadWriteDrivers(totalReads, totalWrites, totalCost)
 }
 
 // buildDriversFromCostMaps builds drivers from service and operation cost maps
@@ -9790,16 +9555,7 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 		}
 	}
 
-	// Sort by cost percentage
-	sort.Slice(drivers, func(i, j int) bool {
-		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
-	})
-
-	// Return top 5 drivers
-	if err := common.ValidateSliceLength("drivers", drivers, 5); err != nil {
-		return drivers[:5]
-	}
-	return drivers
+	return r.buildAndSortCostDrivers(drivers)
 }
 
 // Recommendation generation functions
@@ -10402,14 +10158,14 @@ func (r *activityResolver) Actor(ctx context.Context, obj *activitypub.Activity)
 
 // Cost implements ActivityResolver - returns cost in microcents
 func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) (int, error) {
-	// Get cost tracking from context using the proper cost package
-	tracker := cost.FromContext(ctx)
-	if tracker == nil {
+	// Get cost tracking from context using existing pattern
+	costTracker := cost.FromContext(ctx)
+	if costTracker == nil {
 		// No alternative context available
 		r.Logger.Debug("No cost tracker available from context")
 	}
 	
-	if tracker == nil {
+	if costTracker == nil {
 		// No cost tracking available - query from storage
 		costRepo := r.Registry.GetStorage().Cost()
 		if costRepo != nil && obj.ID != "" {
@@ -10429,7 +10185,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 	}
 
 	// Get real cost data from tracker
-	costCalc := tracker.CalculateCost()
+	costCalc := costTracker.CalculateCost()
 	if costCalc == nil {
 		return 0, nil
 	}
@@ -10730,12 +10486,12 @@ func (r *subscriptionResolver) startFallbackCostTracking(ctx context.Context, up
 
 // createCostUpdateFromTracker creates a cost update from the context cost tracker
 func (r *subscriptionResolver) createCostUpdateFromTracker(ctx context.Context) *model.CostUpdate {
-	tracker := cost.FromContext(ctx)
-	if tracker == nil {
+	costTracker := cost.FromContext(ctx)
+	if costTracker == nil {
 		return nil
 	}
 
-	summary := tracker.CalculateCost()
+	summary := costTracker.CalculateCost()
 	if summary == nil {
 		return nil
 	}

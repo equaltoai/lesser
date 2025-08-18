@@ -1668,35 +1668,49 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 	return nil
 }
 
-// DeleteFilterKeyword deletes a filter keyword
-func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
-	// First find the keyword to get its FilterID
-	var existingModels []models.FilterKeyword
+// deleteFilterEntity is a helper to eliminate duplication between DeleteFilterKeyword and DeleteFilterStatus
+func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID, entityType string, modelType interface{}) error {
+	// First find the entity to get its FilterID
+	var existingModels []interface{}
 
-	err := r.db.WithContext(ctx).Model(&existingModels).
-		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
+	err := r.db.WithContext(ctx).Model(modelType).
+		Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
 		All(&existingModels)
 
 	if err != nil || len(existingModels) == 0 {
 		if errors.IsNotFound(err) || len(existingModels) == 0 {
-			return fmt.Errorf("filter keyword not found")
+			return fmt.Errorf("filter %s not found", strings.ToLower(entityType))
 		}
-		return fmt.Errorf("failed to find filter keyword: %w", err)
+		return fmt.Errorf("failed to find filter %s: %w", strings.ToLower(entityType), err)
 	}
 
-	existing := existingModels[0]
+	// Extract FilterID - this assumes both models have a FilterID field
+	var filterID string
+	switch entity := existingModels[0].(type) {
+	case models.FilterKeyword:
+		filterID = entity.FilterID
+	case models.FilterStatus:
+		filterID = entity.FilterID
+	default:
+		return fmt.Errorf("unsupported filter entity type")
+	}
 
-	// Delete the keyword
-	err = r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", existing.FilterID)).
-		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
+	// Delete the entity
+	err = r.db.WithContext(ctx).Model(modelType).
+		Where("PK", "=", fmt.Sprintf("FILTER#%s", filterID)).
+		Where("SK", "=", fmt.Sprintf("%s#%s", entityType, entityID)).
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete filter keyword: %w", err)
+		return fmt.Errorf("failed to delete filter %s: %w", strings.ToLower(entityType), err)
 	}
 
 	return nil
+}
+
+// DeleteFilterKeyword deletes a filter keyword
+func (r *ModerationRepository) DeleteFilterKeyword(ctx context.Context, keywordID string) error {
+	return r.deleteFilterEntity(ctx, keywordID, "KEYWORD", &models.FilterKeyword{})
 }
 
 // AddFilterStatus adds a new status to a filter
@@ -1767,34 +1781,56 @@ func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID s
 
 // DeleteFilterStatus deletes a filter status by statusID (the ID being filtered, not the filter entry ID)
 func (r *ModerationRepository) DeleteFilterStatus(ctx context.Context, statusID string) error {
-	// First find the status to get its FilterID
-	var existingModels []models.FilterStatus
+	return r.deleteFilterEntity(ctx, statusID, "STATUS", &models.FilterStatus{})
+}
 
-	// Look for the filter status entry that filters this statusID
-	err := r.db.WithContext(ctx).Model(&existingModels).
-		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		All(&existingModels)
-
-	if err != nil || len(existingModels) == 0 {
-		if errors.IsNotFound(err) || len(existingModels) == 0 {
-			return fmt.Errorf("filter status not found")
-		}
-		return fmt.Errorf("failed to find filter status: %w", err)
+// convertReportModelToStorage converts a Report model to storage.Report
+// This helper eliminates duplication in report conversion across different query methods
+func (r *ModerationRepository) convertReportModelToStorage(model models.Report) *storage.Report {
+	return &storage.Report{
+		ID:              model.ID,
+		ReporterID:      model.ReporterID,
+		TargetAccountID: model.TargetAccountID,
+		StatusIDs:       model.StatusIDs,
+		Comment:         model.Comment,
+		Category:        model.Category,
+		RuleIDs: func() []string {
+			var result []string
+			for _, ruleID := range model.RuleIDs {
+				result = append(result, strconv.Itoa(ruleID))
+			}
+			return result
+		}(),
+		Forwarded:         model.Forwarded,
+		Status:            model.Status,
+		ActionTaken:       model.ActionTaken,
+		ActionTakenAt:     model.ActionTakenAt,
+		ModeratorID:       model.ModeratorID,
+		ModerationEventID: model.ModerationEventID,
+		CreatedAt:         model.CreatedAt,
+		UpdatedAt:         model.UpdatedAt,
+		AssignedTo:        model.AssignedTo,
 	}
+}
 
-	existing := existingModels[0]
-
-	// Delete the status
-	err = r.db.WithContext(ctx).Model(&models.FilterStatus{}).
-		Where("PK", "=", fmt.Sprintf("FILTER#%s", existing.FilterID)).
-		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		Delete()
-
-	if err != nil {
-		return fmt.Errorf("failed to delete filter status: %w", err)
+// convertAuditLogModelToStorage converts an AuditLog model to storage.AuditLog
+// This helper eliminates duplication in audit log conversion across different query methods
+func (r *ModerationRepository) convertAuditLogModelToStorage(model models.AuditLog) *storage.AuditLog {
+	return &storage.AuditLog{
+		ID:         model.ID,
+		AdminID:    model.AdminID,
+		AdminRole:  model.AdminRole,
+		Action:     model.Action,
+		TargetType: model.TargetType,
+		TargetID:   model.TargetID,
+		Reason:     model.Reason,
+		Details:    model.Details,
+		IPAddress:  model.IPAddress,
+		UserAgent:  model.UserAgent,
+		RequestID:  model.RequestID,
+		Timestamp:  model.Timestamp,
+		CreatedAt:  model.CreatedAt,
 	}
-
-	return nil
 }
 
 // REPORT METHODS
@@ -2574,35 +2610,12 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 		// We got more results than requested, so there are more pages
 		nextCursor = models[limit-1].GSI2SK
 		models = models[:limit] // Trim to requested limit
+	}
 
-		// Re-process the trimmed models to create reports
-		reports = make([]*storage.Report, len(models))
-		for i, model := range models {
-			reports[i] = &storage.Report{
-				ID:              model.ID,
-				ReporterID:      model.ReporterID,
-				TargetAccountID: model.TargetAccountID,
-				StatusIDs:       model.StatusIDs,
-				Comment:         model.Comment,
-				Category:        model.Category,
-				RuleIDs: func() []string {
-					var result []string
-					for _, ruleID := range model.RuleIDs {
-						result = append(result, strconv.Itoa(ruleID))
-					}
-					return result
-				}(),
-				Forwarded:         model.Forwarded,
-				Status:            model.Status,
-				ActionTaken:       model.ActionTaken,
-				ActionTakenAt:     model.ActionTakenAt,
-				ModeratorID:       model.ModeratorID,
-				ModerationEventID: model.ModerationEventID,
-				CreatedAt:         model.CreatedAt,
-				UpdatedAt:         model.UpdatedAt,
-				AssignedTo:        model.AssignedTo,
-			}
-		}
+	// Convert to storage types using our helper method
+	reports = make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = r.convertReportModelToStorage(model)
 	}
 
 	return reports, nextCursor, nil
@@ -2662,35 +2675,12 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 		// We got more results than requested, so there are more pages
 		nextCursor = models[limit-1].GSI3SK
 		models = models[:limit] // Trim to requested limit
+	}
 
-		// Re-process the trimmed models to create reports
-		reports = make([]*storage.Report, len(models))
-		for i, model := range models {
-			reports[i] = &storage.Report{
-				ID:              model.ID,
-				ReporterID:      model.ReporterID,
-				TargetAccountID: model.TargetAccountID,
-				StatusIDs:       model.StatusIDs,
-				Comment:         model.Comment,
-				Category:        model.Category,
-				RuleIDs: func() []string {
-					var result []string
-					for _, ruleID := range model.RuleIDs {
-						result = append(result, strconv.Itoa(ruleID))
-					}
-					return result
-				}(),
-				Forwarded:         model.Forwarded,
-				Status:            model.Status,
-				ActionTaken:       model.ActionTaken,
-				ActionTakenAt:     model.ActionTakenAt,
-				ModeratorID:       model.ModeratorID,
-				ModerationEventID: model.ModerationEventID,
-				CreatedAt:         model.CreatedAt,
-				UpdatedAt:         model.UpdatedAt,
-				AssignedTo:        model.AssignedTo,
-			}
-		}
+	// Convert to storage types using our helper method
+	reports = make([]*storage.Report, len(models))
+	for i, model := range models {
+		reports[i] = r.convertReportModelToStorage(model)
 	}
 
 	return reports, nextCursor, nil
@@ -2869,114 +2859,58 @@ func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, curs
 	return logs, nextCursor, nil
 }
 
-// GetAuditLogsByAdmin retrieves audit log entries for a specific admin
-func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+// getAuditLogsByGSI is a helper function to retrieve audit logs using a specific GSI
+func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, pkField, skField, idPrefix, id string, limit int, cursor string, logContext string) ([]*storage.AuditLog, string, error) {
 	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
-		Where("GSI1PK", "=", fmt.Sprintf("ADMIN#%s", adminID)).
-		Index("gsi1").
+		Where(pkField, "=", fmt.Sprintf("%s#%s", idPrefix, id)).
+		Index(gsiIndex).
 		Limit(limit)
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where(skField, ">", cursor)
 	}
 
 	var models []*models.AuditLog
 	if err := query.Scan(&models); err != nil {
-		r.logger.Error("Failed to get audit logs by admin",
+		r.logger.Error(fmt.Sprintf("Failed to get audit logs by %s", logContext),
 			zap.Error(err),
-			zap.String("admin_id", adminID),
+			zap.String(fmt.Sprintf("%s_id", logContext), id),
 			zap.Int("limit", limit))
-		return nil, "", fmt.Errorf("failed to get audit logs by admin: %w", err)
+		return nil, "", fmt.Errorf("failed to get audit logs by %s: %w", logContext, err)
 	}
 
-	// Convert models to storage types
+	// Convert models to storage types using our helper method
 	logs := make([]*storage.AuditLog, 0, len(models))
 	for _, model := range models {
-		log := &storage.AuditLog{
-			ID:         model.ID,
-			AdminID:    model.AdminID,
-			AdminRole:  model.AdminRole,
-			Action:     model.Action,
-			TargetType: model.TargetType,
-			TargetID:   model.TargetID,
-			Reason:     model.Reason,
-			Details:    model.Details,
-			IPAddress:  model.IPAddress,
-			UserAgent:  model.UserAgent,
-			RequestID:  model.RequestID,
-			Timestamp:  model.Timestamp,
-			CreatedAt:  model.CreatedAt,
-		}
-		logs = append(logs, log)
+		logs = append(logs, r.convertAuditLogModelToStorage(*model))
 	}
 
-	// Get next cursor - use the last item's GSI1SK if we got results
+	// Get next cursor - use the last item's SK field if we got results
 	nextCursor := ""
 	if common.ValidateSliceNotEmpty("models", models) == nil {
-		nextCursor = models[len(models)-1].GSI1SK
+		if skField == "GSI1SK" {
+			nextCursor = models[len(models)-1].GSI1SK
+		} else {
+			nextCursor = models[len(models)-1].GSI2SK
+		}
 	}
 
-	r.logger.Debug("Retrieved audit logs by admin",
-		zap.String("admin_id", adminID),
+	r.logger.Debug(fmt.Sprintf("Retrieved audit logs by %s", logContext),
+		zap.String(fmt.Sprintf("%s_id", logContext), id),
 		zap.Int("count", len(logs)),
 		zap.String("next_cursor", nextCursor))
 
 	return logs, nextCursor, nil
 }
 
+// GetAuditLogsByAdmin retrieves audit log entries for a specific admin
+func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
+	return r.getAuditLogsByGSI(ctx, "gsi1", "GSI1PK", "GSI1SK", "ADMIN", adminID, limit, cursor, "admin")
+}
+
 // GetAuditLogsByTarget retrieves audit log entries for a specific target
 func (r *ModerationRepository) GetAuditLogsByTarget(ctx context.Context, targetID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.AuditLog{}).
-		Where("GSI2PK", "=", fmt.Sprintf("TARGET#%s", targetID)).
-		Index("gsi2").
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Where("GSI2SK", ">", cursor)
-	}
-
-	var models []*models.AuditLog
-	if err := query.Scan(&models); err != nil {
-		r.logger.Error("Failed to get audit logs by target",
-			zap.Error(err),
-			zap.String("target_id", targetID),
-			zap.Int("limit", limit))
-		return nil, "", fmt.Errorf("failed to get audit logs by target: %w", err)
-	}
-
-	// Convert models to storage types
-	logs := make([]*storage.AuditLog, 0, len(models))
-	for _, model := range models {
-		log := &storage.AuditLog{
-			ID:         model.ID,
-			AdminID:    model.AdminID,
-			AdminRole:  model.AdminRole,
-			Action:     model.Action,
-			TargetType: model.TargetType,
-			TargetID:   model.TargetID,
-			Reason:     model.Reason,
-			Details:    model.Details,
-			IPAddress:  model.IPAddress,
-			UserAgent:  model.UserAgent,
-			RequestID:  model.RequestID,
-			Timestamp:  model.Timestamp,
-			CreatedAt:  model.CreatedAt,
-		}
-		logs = append(logs, log)
-	}
-
-	// Get next cursor - use the last item's GSI2SK if we got results
-	nextCursor := ""
-	if common.ValidateSliceNotEmpty("models", models) == nil {
-		nextCursor = models[len(models)-1].GSI2SK
-	}
-
-	r.logger.Debug("Retrieved audit logs by target",
-		zap.String("target_id", targetID),
-		zap.Int("count", len(logs)),
-		zap.String("next_cursor", nextCursor))
-
-	return logs, nextCursor, nil
+	return r.getAuditLogsByGSI(ctx, "gsi2", "GSI2PK", "GSI2SK", "TARGET", targetID, limit, cursor, "target")
 }
 
 // GetPendingModerationCount returns the count of pending moderation tasks for a specific moderator
@@ -3217,6 +3151,11 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 
 // GetReviewQueue retrieves review queue items with filtering
 func (r *ModerationRepository) GetReviewQueue(ctx context.Context, filters map[string]interface{}) ([]*models.ModerationReviewQueue, error) {
+	// Validate filters using centralized validation
+	if err := common.ValidateQueryFilters(filters); err != nil {
+		return nil, fmt.Errorf("invalid query filters: %w", err)
+	}
+
 	status := StatusPending
 	if filterStatus, ok := filters["status"].(string); ok && filterStatus != "" {
 		status = filterStatus

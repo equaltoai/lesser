@@ -309,17 +309,30 @@ func GetCurrentSession(ctx *lift.Context) (string, error) {
 
 // Cost tracking helpers
 
-// GetCostTracker retrieves the cost tracker from the context
-func GetCostTracker(ctx *lift.Context) *cost.Tracker {
+// GetCostTracker retrieves the cost tracker from the context (supports both types)
+func GetCostTracker(ctx *lift.Context) interface{} {
+	// Try unified tracker first
+	if tracker, ok := ctx.Get("unified_cost_tracker").(*cost.UnifiedTracker); ok {
+		return tracker
+	}
+	// Fall back to regular cost tracker
 	if tracker, ok := ctx.Get("cost_tracker").(*cost.Tracker); ok {
 		return tracker
 	}
 	return nil
 }
 
-// TrackCost is a convenience function for tracking costs with a callback
+// GetUnifiedCostTracker specifically retrieves the unified cost tracker
+func GetUnifiedCostTracker(ctx *lift.Context) *cost.UnifiedTracker {
+	if tracker, ok := ctx.Get("unified_cost_tracker").(*cost.UnifiedTracker); ok {
+		return tracker
+	}
+	return nil
+}
+
+// TrackCost is a convenience function for tracking costs with a callback (legacy)
 func TrackCost(ctx *lift.Context, fn func(*cost.Tracker)) {
-	if tracker := GetCostTracker(ctx); tracker != nil {
+	if tracker, ok := ctx.Get("cost_tracker").(*cost.Tracker); ok && tracker != nil {
 		fn(tracker)
 	}
 }

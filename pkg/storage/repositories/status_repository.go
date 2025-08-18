@@ -656,17 +656,27 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 	}, nil
 }
 
-// GetUserTimeline retrieves user's own statuses
-func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+// queryStatusesByGSI is a consolidated helper for GSI-based status queries
+func (r *StatusRepository) queryStatusesByGSI(ctx context.Context, indexName, gsiPKField, gsiPKValue, gsiSKField, orderDirection string, opts interfaces.PaginationOptions, errorMsg string) (*interfaces.PaginatedResult[*models.Status], error) {
 	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("author-timeline-index").
-		Where("GSI1PK", "=", fmt.Sprintf("AUTHOR#%s", userID)).
-		OrderBy("GSI1SK", "DESC").
-		Limit(opts.Limit).
-		All(&statuses)
+	query := r.db.WithContext(ctx).Model(&models.Status{}).
+		Index(indexName).
+		Where(gsiPKField, "=", gsiPKValue).
+		OrderBy(gsiSKField, orderDirection).
+		Limit(opts.Limit)
+
+	// Add cursor-based pagination if provided
+	if opts.Cursor != "" {
+		operator := "<"
+		if orderDirection == "ASC" {
+			operator = ">"
+		}
+		query = query.Where(gsiSKField, operator, opts.Cursor)
+	}
+
+	err := query.All(&statuses)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user timeline: %w", err)
+		return nil, fmt.Errorf("%s: %w", errorMsg, err)
 	}
 
 	// Convert to pointer slice
@@ -683,31 +693,14 @@ func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, o
 	}, nil
 }
 
+// GetUserTimeline retrieves user's own statuses
+func (r *StatusRepository) GetUserTimeline(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
+	return r.queryStatusesByGSI(ctx, "author-timeline-index", "GSI1PK", fmt.Sprintf("AUTHOR#%s", userID), "GSI1SK", "DESC", opts, "failed to get user timeline")
+}
+
 // GetConversationThread retrieves all statuses in a conversation thread
 func (r *StatusRepository) GetConversationThread(ctx context.Context, conversationID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
-	var statuses []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("conversation-index").
-		Where("GSI3PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
-		OrderBy("GSI3SK", "ASC").
-		Limit(opts.Limit).
-		All(&statuses)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation thread: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	return &interfaces.PaginatedResult[*models.Status]{
-		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
-		Total:      -1,
-	}, nil
+	return r.queryStatusesByGSI(ctx, "conversation-index", "GSI3PK", fmt.Sprintf("CONVERSATION#%s", conversationID), "GSI3SK", "ASC", opts, "failed to get conversation thread")
 }
 
 // SearchStatuses searches statuses by query string
@@ -829,42 +822,49 @@ func (r *StatusRepository) LikeStatus(ctx context.Context, userID, statusID stri
 	return nil
 }
 
-// UnlikeStatus unlikes a status for a user
-func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID string) error {
-	// Find and delete the like record - need to scan since we don't know the exact timestamp
+// removeEngagement removes an engagement (like or reblog) for a user and updates the status count
+func (r *StatusRepository) removeEngagement(ctx context.Context, userID, statusID, engagementType, actionName string, updateCount func(*models.Status)) error {
+	// Find and delete the engagement record - need to scan since we don't know the exact timestamp
 	var engagements []models.StatusEngagement
 	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
 		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
-		Filter("EngagementType", "=", "like").
+		Filter("EngagementType", "=", engagementType).
 		Filter("UserID", "=", userID).
 		All(&engagements)
 	if err != nil {
-		return fmt.Errorf("failed to find like record: %w", err)
+		return fmt.Errorf("failed to find %s record: %w", actionName, err)
 	}
 
 	// Delete the first matching record (there should only be one)
 	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
 		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
 		if err != nil {
-			return fmt.Errorf("failed to delete like: %w", err)
+			return fmt.Errorf("failed to delete %s: %w", actionName, err)
 		}
 	}
 
-	// Update status like count
+	// Update status count
 	status, err := r.GetStatus(ctx, statusID)
 	if err != nil {
-		return fmt.Errorf("failed to get status for unlike update: %w", err)
+		return fmt.Errorf("failed to get status for %s update: %w", actionName, err)
 	}
 
-	if status.LikeCount > 0 {
-		status.LikeCount--
-	}
+	updateCount(status)
 	err = r.UpdateStatus(ctx, status)
 	if err != nil {
-		return fmt.Errorf("failed to update status like count: %w", err)
+		return fmt.Errorf("failed to update status %s count: %w", actionName, err)
 	}
 
 	return nil
+}
+
+// UnlikeStatus unlikes a status for a user
+func (r *StatusRepository) UnlikeStatus(ctx context.Context, userID, statusID string) error {
+	return r.removeEngagement(ctx, userID, statusID, "like", "like", func(status *models.Status) {
+		if status.LikeCount > 0 {
+			status.LikeCount--
+		}
+	})
 }
 
 // ReblogStatus reblogs a status for a user
@@ -903,40 +903,11 @@ func (r *StatusRepository) ReblogStatus(ctx context.Context, userID, statusID, _
 
 // UnreblogStatus unreblogs a status for a user
 func (r *StatusRepository) UnreblogStatus(ctx context.Context, userID, statusID string) error {
-	// Find and delete the reblog record - need to scan since we don't know the exact timestamp
-	var engagements []models.StatusEngagement
-	err := r.db.WithContext(ctx).Model(&models.StatusEngagement{}).
-		Where("PK", "=", fmt.Sprintf("STATUS_ENGAGEMENT#%s", statusID)).
-		Filter("EngagementType", "=", "boost").
-		Filter("UserID", "=", userID).
-		All(&engagements)
-	if err != nil {
-		return fmt.Errorf("failed to find reblog record: %w", err)
-	}
-
-	// Delete the first matching record (there should only be one)
-	if err := common.ValidateSliceNotEmpty("engagements", engagements); err == nil {
-		err = r.db.WithContext(ctx).Model(&engagements[0]).Delete()
-		if err != nil {
-			return fmt.Errorf("failed to delete reblog: %w", err)
+	return r.removeEngagement(ctx, userID, statusID, "boost", "reblog", func(status *models.Status) {
+		if status.ReblogCount > 0 {
+			status.ReblogCount--
 		}
-	}
-
-	// Update status reblog count
-	status, err := r.GetStatus(ctx, statusID)
-	if err != nil {
-		return fmt.Errorf("failed to get status for unreblog update: %w", err)
-	}
-
-	if status.ReblogCount > 0 {
-		status.ReblogCount--
-	}
-	err = r.UpdateStatus(ctx, status)
-	if err != nil {
-		return fmt.Errorf("failed to update status reblog count: %w", err)
-	}
-
-	return nil
+	})
 }
 
 // BookmarkStatus bookmarks a status for a user
@@ -1150,35 +1121,7 @@ func (r *StatusRepository) GetReplies(ctx context.Context, parentStatusID string
 // GetFlaggedStatuses retrieves flagged statuses with pagination using GSI6 (flagged-content-index)
 func (r *StatusRepository) GetFlaggedStatuses(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Status], error) {
 	// Use GSI6 (flagged-content-index) for efficient flagged content queries
-	var statuses []models.Status
-	query := r.db.WithContext(ctx).Model(&models.Status{}).
-		Index("flagged-content-index").
-		Where("GSI6PK", "=", "FLAGGED_CONTENT").
-		OrderBy("GSI6SK", "DESC"). // Newest first (descending order by timestamp)
-		Limit(opts.Limit)
-
-	// Add cursor-based pagination if provided
-	if opts.Cursor != "" {
-		query = query.Where("GSI6SK", "<", opts.Cursor)
-	}
-
-	err := query.All(&statuses)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get flagged statuses: %w", err)
-	}
-
-	// Convert to pointer slice
-	result := make([]*models.Status, len(statuses))
-	for i := range statuses {
-		result[i] = &statuses[i]
-	}
-
-	return &interfaces.PaginatedResult[*models.Status]{
-		Items:      result,
-		NextCursor: "", // Simple implementation without cursor
-		HasMore:    len(result) == opts.Limit,
-		Total:      -1,
-	}, nil
+	return r.queryStatusesByGSI(ctx, "flagged-content-index", "GSI6PK", "FLAGGED_CONTENT", "GSI6SK", "DESC", opts, "failed to get flagged statuses")
 }
 
 // FlagStatus marks a status as flagged for moderation

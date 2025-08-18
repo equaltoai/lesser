@@ -15,59 +15,66 @@ import (
 	"go.uber.org/zap"
 )
 
-// HandleCreateNoteLift handles POST /api/v1/notes
-func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
+// authenticateNotesUser handles authentication for notes endpoints with userID formatting
+func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, error) {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
 	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
-	var userID string
 	if testUsername != "" {
 		// Test mode - use test username directly
-		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, testUsername)
-	} else {
-		// Production mode - extract and validate token
-		authHeader := ctx.Header("Authorization")
+		return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, testUsername), nil
+	}
+
+	// Production mode - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
 		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
+			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
+	}
 
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
 
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
 
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
+	return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username), nil
+}
 
-		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
+// HandleCreateNoteLift handles POST /api/v1/notes
+func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
+	userID, err := h.authenticateNotesUser(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Initialize services
 	repService, err := h.getNoteReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Check user's reputation
 	rep, err := repService.GetReputation(ctx.Context, userID)
 	if err != nil || rep.TotalScore < notes.MinReputationToCreateNotes {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient reputation to create notes"})
+		return common.RespondForbidden(ctx, "insufficient reputation to create notes")
 	}
 
 	// Parse request with fallback pattern
@@ -76,16 +83,16 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
 	// Validate sources
 	if len(req.Sources) > notes.MaxSources {
-		return ctx.Status(400).JSON(map[string]string{"error": fmt.Sprintf("maximum %d sources allowed", notes.MaxSources)})
+		return common.RespondBadRequest(ctx, fmt.Sprintf("maximum %d sources allowed", notes.MaxSources))
 	}
 
 	// Check rate limit based on reputation
@@ -134,7 +141,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 		Note: note,
 	}); err != nil {
 		h.logger.Error("Failed to store note", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Add rate limit info to response
@@ -159,7 +166,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	objectID := ctx.Param("object_id")
 	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Optional auth - for personalized scoring
@@ -207,7 +214,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("Failed to get visible notes", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	visibleNotes := result.Notes
 
@@ -316,47 +323,12 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	noteID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", noteID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "note ID required"})
+		return common.RespondBadRequest(ctx, "note ID required")
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var userID string
-	if testUsername != "" {
-		// Test mode - use test username directly
-		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, testUsername)
-	} else {
-		// Production mode - extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
+	userID, err := h.authenticateNotesUser(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Parse vote with fallback pattern
@@ -365,10 +337,10 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if jsonErr := json.Unmarshal(ctx.Request.Body, &req); jsonErr != nil {
-				return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
@@ -376,13 +348,13 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 	repService, err := h.getNoteReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get user's reputation
 	rep, err := repService.GetReputation(ctx.Context, userID)
 	if err != nil || rep.TotalScore < notes.MinReputationToVote {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient reputation to vote"})
+		return common.RespondForbidden(ctx, "insufficient reputation to vote")
 	}
 
 	// Check if note exists using Notes service
@@ -390,13 +362,13 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		NoteID: noteID,
 	})
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "note not found"})
+		return common.RespondNotFound(ctx, "note not found")
 	}
 	note := noteResult.Note
 
 	// Can't vote on your own notes
 	if note.AuthorID == userID {
-		return ctx.Status(403).JSON(map[string]string{"error": "cannot vote on your own notes"})
+		return common.RespondForbidden(ctx, "cannot vote on your own notes")
 	}
 
 	// Calculate vote weight
@@ -415,7 +387,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 		Vote: vote,
 	}); err != nil {
 		h.logger.Error("Failed to store vote", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	response := map[string]any{
@@ -435,7 +407,7 @@ func (h *Handler) HandleVoteNoteLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	username := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", username); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "username required"})
+		return common.RespondBadRequest(ctx, "username required")
 	}
 
 	// Convert username to actor ID
@@ -450,7 +422,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	if limitStr != "" {
 		parsed, err := common.ParseAdminLimit(limitStr)
 		if err != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 		limit = parsed
 	}
@@ -463,7 +435,7 @@ func (h *Handler) HandleGetUserNotesLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("Failed to get user notes", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	userNotes := result.Notes
 

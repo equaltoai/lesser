@@ -71,13 +71,10 @@ type DeliveryResult struct {
 // NewOutboxProcessor creates a new outbox processor using standardized Lambda initialization
 func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Initialize Lambda with federation-specific configuration
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "outbox",
 		LambdaType:  common.LambdaTypeFederation,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
-	}
 
 	// Initialize federation-specific services
 	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
@@ -725,6 +722,21 @@ func (op *OutboxProcessor) parseActivityFromRequest(ctx *lift.Context) (*activit
 	if err := common.ValidateRequiredParam("activityType", activity.Type); err != nil {
 		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
 			"error": "activity type is required",
+		})
+	}
+
+	// Validate ActivityPub activity structure
+	activityMap := map[string]interface{}{
+		"id":    activity.ID,
+		"type":  activity.Type,
+		"actor": activity.Actor,
+		"to":    activity.To,
+		"cc":    activity.CC,
+	}
+	if err := common.ValidateActivityPubActivity(activityMap); err != nil {
+		op.logger.Warn("invalid ActivityPub activity", zap.Error(err))
+		return nil, ctx.Status(http.StatusUnprocessableEntity).JSON(map[string]string{
+			"error": fmt.Sprintf("invalid activity format: %v", err),
 		})
 	}
 

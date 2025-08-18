@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -547,14 +548,14 @@ func (rl *RateLimiter) getClientIP(ctx *lift.Context) string {
 	if xff := ctx.Header("X-Forwarded-For"); xff != "" {
 		// Take the first IP in the chain
 		if idx := strings.Index(xff, ","); idx != -1 {
-			return strings.TrimSpace(xff[:idx])
+			return common.SanitizeInput(xff[:idx])
 		}
-		return strings.TrimSpace(xff)
+		return common.SanitizeInput(xff)
 	}
 
 	// Check X-Real-IP header
 	if xri := ctx.Header("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+		return common.SanitizeInput(xri)
 	}
 
 	// Fall back to remote address from Lambda context if available

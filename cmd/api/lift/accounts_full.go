@@ -6,7 +6,6 @@ package lift
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -26,17 +25,17 @@ import (
 func (h *Handler) HandleGetAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Get the actor
 	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "account not found"})
+			return common.RespondNotFound(ctx, "account not found")
 		}
 		h.logger.Error("failed to resolve account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Build account response
@@ -56,7 +55,7 @@ func (h *Handler) HandleVerifyCredentialsFull(ctx *lift.Context) error {
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	return ctx.JSON(account)
@@ -67,7 +66,7 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
 	// Parse request
 	var req models.UpdateCredentialsRequest
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
+		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
 	// Authenticate user
@@ -88,7 +87,7 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to update profile", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to update profile"})
+		return common.RespondInternalServerError(ctx, "failed to update profile")
 	}
 
 	return ctx.JSON(result.Account)
@@ -98,7 +97,7 @@ func (h *Handler) HandleUpdateCredentialsFull(ctx *lift.Context) error {
 func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse query parameters
@@ -150,7 +149,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get account statuses via Notes service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert Notes service result to Mastodon API format
@@ -173,7 +172,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse pagination parameters
@@ -189,17 +188,17 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "account not found"})
+			return common.RespondNotFound(ctx, "account not found")
 		}
 		h.logger.Error("failed to resolve account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Get followers
 	followersResult, nextCursor, err := h.registry.Relationships().GetFollowers(ctx.Context, actor.PreferredUsername, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get followers", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	followerAccounts := followersResult
 	nextMaxID := nextCursor
@@ -228,7 +227,7 @@ func (h *Handler) HandleGetAccountFollowersFull(ctx *lift.Context) error {
 func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("accountID", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing account id"})
+		return common.RespondBadRequest(ctx, "missing account id")
 	}
 
 	// Parse pagination parameters
@@ -244,17 +243,17 @@ func (h *Handler) HandleGetAccountFollowingFull(ctx *lift.Context) error {
 	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "account not found"})
+			return common.RespondNotFound(ctx, "account not found")
 		}
 		h.logger.Error("failed to resolve account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Get following
 	followingIDs, nextMaxID, err := h.registry.Relationships().GetFollowing(ctx.Context, actor.PreferredUsername, limit, maxID)
 	if err != nil {
 		h.logger.Error("failed to get following", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert following to accounts
@@ -379,10 +378,10 @@ func (h *Handler) handleAccountStatusesFallback(ctx *lift.Context, accountID str
 	actor, err := h.resolveAccountIDFull(ctx.Context, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "account not found"})
+			return common.RespondNotFound(ctx, "account not found")
 		}
 		h.logger.Error("failed to resolve account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Get statuses using GetUserTimeline
@@ -390,7 +389,7 @@ func (h *Handler) handleAccountStatusesFallback(ctx *lift.Context, accountID str
 	result, err := h.registry.Notes().GetUserTimeline(ctx.Context, actor.ID, opts)
 	if err != nil {
 		h.logger.Error("failed to get account statuses", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	statusModels := result.Items
 	nextCursor := result.NextCursor

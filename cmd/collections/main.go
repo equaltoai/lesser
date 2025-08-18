@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,32 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+)
+
+func init() {
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "collections",
+		LambdaType:  common.LambdaTypeAPI,
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
+	}
+}
+
 // Collection type constants
 const (
 	collectionTypeFollowers = "followers"
@@ -39,34 +66,15 @@ type CollectionsHandler struct {
 	actorRepo        *repositories.ActorRepository
 	relationshipRepo *repositories.RelationshipRepository
 	likeRepo         *repositories.LikeRepository
-	repos            core.RepositoryStorage
-	logger           *zap.Logger
-	cfg              *config.Config
-	lambdaCtx        *common.LambdaContext
 }
 
 // NewCollectionsHandler creates a new collections handler with standardized initialization
-func NewCollectionsHandler(lambdaCtx *common.LambdaContext) (*CollectionsHandler, error) {
-	// Extract services from standardized Lambda context
-	cfg := lambdaCtx.Config
-	logger := lambdaCtx.Logger
-	
-	// Get repositories from Lambda context
-	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok {
-		// For now, return error until repository factory is integrated with standardized pattern
-		return nil, fmt.Errorf("repositories not available in Lambda context - standardized pattern integration pending")
-	}
-
+func NewCollectionsHandler() *CollectionsHandler {
 	return &CollectionsHandler{
 		actorRepo:        repos.Actor(),
 		relationshipRepo: repos.Relationship(),
 		likeRepo:         repos.Like(),
-		repos:            repos,
-		logger:           logger,
-		cfg:              cfg,
-		lambdaCtx:        lambdaCtx,
-	}, nil
+	}
 }
 
 // RegisterRoutes registers all collections routes
@@ -106,7 +114,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 		requestID = "unknown"
 	}
 
-	ch.logger.Info("processing collections request",
+	logger.Info("processing collections request",
 		zap.String("username", username),
 		zap.String("collection_type", collectionType),
 		zap.Any("request_id", requestID))
@@ -115,16 +123,16 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	actor, err := ch.actorRepo.GetActor(ctx.Context, username)
 	if err != nil {
 		if common.IsNotFound(err) {
-			ch.logger.Debug("actor not found",
+			logger.Debug("actor not found",
 				zap.String("username", username))
 			return lift.NotFound("actor not found")
 		}
-		ch.logger.Error("failed to get actor", zap.Error(err))
+		logger.Error("failed to get actor", zap.Error(err))
 		return lift.NewLiftError("DATABASE_ERROR", "database error", 500)
 	}
 
 	// Log privacy settings for observability
-	ch.logger.Debug("processing collection request",
+	logger.Debug("processing collection request",
 		zap.String("username", username),
 		zap.String("collection_type", collectionType),
 		zap.Bool("manually_approves_followers", actor.ManuallyApprovesFollowers),
@@ -180,7 +188,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	}
 
 	if err != nil {
-		ch.logger.Error("failed to get relationships",
+		logger.Error("failed to get relationships",
 			zap.String("type", collectionType),
 			zap.Error(err))
 		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
@@ -200,7 +208,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	case collectionTypeFollowers:
 		count, err := ch.relationshipRepo.CountFollowers(ctx.Context, actor.PreferredUsername)
 		if err != nil {
-			ch.logger.Error("failed to get followers count", zap.Error(err))
+			logger.Error("failed to get followers count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = count > 0
@@ -208,7 +216,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	case collectionTypeFollowing:
 		count, err := ch.relationshipRepo.CountFollowing(ctx.Context, actor.PreferredUsername)
 		if err != nil {
-			ch.logger.Error("failed to get following count", zap.Error(err))
+			logger.Error("failed to get following count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = count > 0
@@ -216,7 +224,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 	case collectionTypeLiked:
 		count, err := ch.likeRepo.CountActorLikes(ctx.Context, actor.ID)
 		if err != nil {
-			ch.logger.Error("failed to get liked count", zap.Error(err))
+			logger.Error("failed to get liked count", zap.Error(err))
 			return lift.NewLiftError("DATABASE_ERROR", "failed to get collection count", 500)
 		}
 		hasItems = count > 0
@@ -251,7 +259,7 @@ func (ch *CollectionsHandler) returnCollection(ctx *lift.Context, actor *activit
 
 // returnCollectionPage returns a page of the collection
 func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, nextCursor string, limit int) error {
-	ch.logger.Debug("returning collection page",
+	logger.Debug("returning collection page",
 		zap.String("actor", actor.ID),
 		zap.String("collection_type", collectionType),
 		zap.Int("usernames_count", len(usernames)),
@@ -278,10 +286,10 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
 			// Use full HTTPS URL format
-			if strings.HasPrefix(ch.lambdaCtx.Config.Domain, "http") {
-				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.lambdaCtx.Config.Domain, username)
+			if strings.HasPrefix(cfg.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
 			} else {
-				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.lambdaCtx.Config.Domain, username)
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", cfg.Domain, username)
 			}
 		}
 	}
@@ -401,7 +409,7 @@ func (ch *CollectionsHandler) handleReverseDirection(ctx *lift.Context, actor *a
 	}
 	
 	if err != nil {
-		ch.logger.Error("failed to get relationships for reverse pagination",
+		logger.Error("failed to get relationships for reverse pagination",
 			zap.String("type", collectionType),
 			zap.Error(err))
 		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
@@ -447,7 +455,7 @@ func (ch *CollectionsHandler) generateNextCursorForReverse(collectionType string
 // returnCollectionPageReverse returns a page with reverse pagination links
 func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, actor *activitypub.Actor, collectionType string, usernames []string, likes []*storage.Like, cursor, prevCursor, nextCursor string, limit int) error {
 	// Similar to returnCollectionPage but with swapped prev/next logic for reverse pagination
-	ch.logger.Debug("returning reverse collection page",
+	logger.Debug("returning reverse collection page",
 		zap.String("actor", actor.ID),
 		zap.String("collection_type", collectionType),
 		zap.Int("usernames_count", len(usernames)),
@@ -471,10 +479,10 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 	} else {
 		orderedItems = make([]any, len(usernames))
 		for i, username := range usernames {
-			if strings.HasPrefix(ch.lambdaCtx.Config.Domain, "http") {
-				orderedItems[i] = fmt.Sprintf("%s/users/%s", ch.lambdaCtx.Config.Domain, username)
+			if strings.HasPrefix(cfg.Domain, "http") {
+				orderedItems[i] = fmt.Sprintf("%s/users/%s", cfg.Domain, username)
 			} else {
-				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", ch.lambdaCtx.Config.Domain, username)
+				orderedItems[i] = fmt.Sprintf("https://%s/users/%s", cfg.Domain, username)
 			}
 		}
 	}
@@ -510,22 +518,8 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 }
 
 func main() {
-	// Initialize Lambda with standardized configuration
-	lambdaConfig := common.LambdaConfig{
-		ServiceName: "collections",
-		LambdaType:  common.LambdaTypeBasic,
-	}
-
-	lambdaCtx, err := common.InitializeLambda(lambdaConfig)
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
-	}
-
-	// Create the handler with standardized context
-	handler, err := NewCollectionsHandler(lambdaCtx)
-	if err != nil {
-		panic(fmt.Sprintf("failed to create handler: %v", err))
-	}
+	// Create the handler with standardized services
+	handler := NewCollectionsHandler()
 
 	// Create new Lift app
 	app := lift.New()
@@ -548,7 +542,7 @@ func main() {
 
 			err := next.Handle(ctx)
 
-			handler.logger.Info("collections request completed",
+			logger.Info("collections request completed",
 				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 				zap.String("method", method),
 				zap.String("path", path),
@@ -565,11 +559,11 @@ func main() {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			defer func() {
 				if r := recover(); r != nil {
-					handler.logger.Error("panic recovered in collections handler",
+					logger.Error("panic recovered in collections handler",
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 						zap.Any("panic", r))
 					if err := ctx.Status(500).Text("Internal server error"); err != nil {
-						handler.logger.Error("failed to send error response", zap.Error(err))
+						logger.Error("failed to send error response", zap.Error(err))
 					}
 				}
 			}()
@@ -580,8 +574,8 @@ func main() {
 
 	// Add federation rate limiting middleware (fourth in chain)
 	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
-		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
-		handler.logger.Info("enabled federation rate limiting middleware for collections service")
+		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
+		logger.Info("enabled federation rate limiting middleware for collections service")
 	}
 
 	// Add CORS middleware for ActivityPub federation compatibility
@@ -604,6 +598,10 @@ func main() {
 	// Register all collections routes
 	handler.RegisterRoutes(app)
 
-	// Use app.HandleRequest for Lambda (not app.Start())
-	lambda.Start(app.HandleRequest)
+	// Use standardized Lambda handler with observability
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+		return app.HandleRequest(ctx, event)
+	})
+
+	lambda.Start(standardHandler)
 }

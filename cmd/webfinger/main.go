@@ -11,11 +11,12 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/reputation"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/lift/pkg/lift"
+	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
@@ -31,62 +32,38 @@ type WebFingerHandler struct {
 	statusRepo *repositories.StatusRepository
 	repos      core.RepositoryStorage
 	logger     *zap.Logger
-	cfg        interface{} // config.Config interface
+	cfg        *config.Config
 	repService *reputation.Service
 	lambdaCtx  *common.LambdaContext
 }
 
-// NewWebFingerHandler creates a new webfinger handler with standardized initialization
-func NewWebFingerHandler() (*WebFingerHandler, error) {
-	// Use standardized Lambda initialization
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
-		ServiceName:        "webfinger",
-		LambdaType:         common.LambdaTypeBasic,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableHealthCheck:  true,
-		EnableTracing:      true,
-		EnableCostTracking: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
-	}
+// initWebFingerServices initializes webfinger-specific services
+func initWebFingerServices(lambdaCtx *common.LambdaContext) error {
+	// This function is kept for compatibility but doesn't need to do anything
+	// since reputation service is now created directly in NewWebFingerHandler
+	return nil
+}
 
-	// Initialize basic services using default options
-	options := common.DefaultLambdaInitOptions(common.LambdaTypeBasic)
-	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda services: %w", err)
-	}
+// configureWebFingerRoutes configures the webfinger-specific routes
+func configureWebFingerRoutes(app *liftPkg.App, lambdaCtx *common.LambdaContext) error {
+	// Extract services from Lambda context
+	repos := lambdaCtx.Repos.(core.RepositoryStorage)
+	// Reputation service is now passed directly in the handler
 
-	// Extract repositories and services from Lambda context
-	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok {
-		return nil, fmt.Errorf("failed to get repository storage from Lambda context")
-	}
-
-	// Initialize reputation service with repository storage
-	repService, err := reputation.NewService(&reputation.Config{
-		Storage:     repos,
-		Logger:      lambdaCtx.Logger,
-		InstanceURL: lambdaCtx.Config.BaseURL(),
-		PrivateKey:  lambdaCtx.Config.ReputationPrivateKey,
-	})
-	if err != nil {
-		lambdaCtx.Logger.Warn("failed to initialize reputation service, disabling reputation features", zap.Error(err))
-		// Continue without reputation service rather than failing
-		repService = nil
-	}
-
-	return &WebFingerHandler{
+	wh := &WebFingerHandler{
 		actorRepo:  repos.Actor(),
 		userRepo:   repos.User(),
 		statusRepo: repos.Status(),
 		repos:      repos,
 		logger:     lambdaCtx.Logger,
 		cfg:        lambdaCtx.Config,
-		repService: repService,
+		repService: nil, // Will be set by the calling code
 		lambdaCtx:  lambdaCtx,
-	}, nil
+	}
+
+	// Register all webfinger routes
+	wh.RegisterRoutes(app)
+	return nil
 }
 
 // parseWebFingerResource parses a WebFinger resource identifier
@@ -110,7 +87,7 @@ func parseWebFingerResource(resource string) (username, domain string, err error
 }
 
 // RegisterRoutes registers all webfinger routes
-func (wh *WebFingerHandler) RegisterRoutes(app *lift.App) {
+func (wh *WebFingerHandler) RegisterRoutes(app *liftPkg.App) {
 	// WebFinger and NodeInfo endpoints
 	_ = app.GET("/.well-known/webfinger", wh.handleWebFinger)
 	_ = app.GET("/.well-known/nodeinfo", wh.handleNodeInfoDiscovery)
@@ -121,12 +98,20 @@ func (wh *WebFingerHandler) RegisterRoutes(app *lift.App) {
 }
 
 // handleWebFinger handles webfinger requests using DynamORM
-func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 	// Validate resource parameter
 	resource := ctx.Query("resource")
 	if err := common.ValidateRequiredParam("resource", resource); err != nil {
 		wh.logger.Warn("missing resource parameter")
-		return lift.ValidationError("resource parameter is required")
+		return liftPkg.ValidationError("resource parameter is required")
+	}
+
+	// Validate webfinger resource format
+	if err := common.ValidateWebfingerResource(resource); err != nil {
+		wh.logger.Warn("invalid webfinger resource format", 
+			zap.String("resource", resource),
+			zap.Error(err))
+		return liftPkg.ValidationError(err.Error())
 	}
 
 	wh.logger.Info("processing webfinger request",
@@ -141,16 +126,16 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
 			zap.String("resource", resource),
 			zap.Error(err),
 		)
-		return lift.ValidationError(err.Error())
+		return liftPkg.ValidationError(err.Error())
 	}
 
 	// Check if the domain matches our instance
-	if domain != wh.lambdaCtx.Config.Domain {
+	if domain != cfg.Domain {
 		wh.logger.Debug("domain mismatch",
 			zap.String("requested_domain", domain),
-			zap.String("our_domain", wh.lambdaCtx.Config.Domain),
+			zap.String("our_domain", cfg.Domain),
 		)
-		return lift.NotFound("actor not found")
+		return liftPkg.NotFound("actor not found")
 	}
 
 	// Check if the actor exists using DynamORM repository
@@ -160,14 +145,14 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
 			wh.logger.Debug("actor not found",
 				zap.String("username", username),
 			)
-			return lift.NotFound("actor not found")
+			return liftPkg.NotFound("actor not found")
 		}
 		wh.logger.Error("failed to get actor", zap.Error(err))
-		return lift.NewLiftError("DATABASE_ERROR", "database error", 500)
+		return liftPkg.NewLiftError("DATABASE_ERROR", "database error", 500)
 	}
 
 	// Build WebFinger response
-	actorURL := wh.lambdaCtx.Config.ActorURL(username)
+	actorURL := cfg.ActorURL(username)
 	response := activitypub.WebFingerResource{
 		Subject: resource,
 		Aliases: []string{actorURL},
@@ -184,7 +169,7 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
 			},
 			{
 				Rel:      "http://ostatus.org/schema/1.0/subscribe",
-				Template: fmt.Sprintf("%s/authorize_interaction?uri={uri}", wh.lambdaCtx.Config.BaseURL()),
+				Template: fmt.Sprintf("%s/authorize_interaction?uri={uri}", cfg.BaseURL()),
 			},
 		},
 	}
@@ -201,7 +186,7 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *lift.Context) error {
 }
 
 // handleNodeInfoDiscovery returns the well-known nodeinfo discovery document
-func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling nodeinfo discovery request",
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
@@ -210,11 +195,11 @@ func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *lift.Context) error {
 		"links": []map[string]string{
 			{
 				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.0",
-				"href": wh.lambdaCtx.Config.BaseURL() + "/nodeinfo/2.0",
+				"href": cfg.BaseURL() + "/nodeinfo/2.0",
 			},
 			{
 				"rel":  "http://nodeinfo.diaspora.software/ns/schema/2.1",
-				"href": wh.lambdaCtx.Config.BaseURL() + "/nodeinfo/2.1",
+				"href": cfg.BaseURL() + "/nodeinfo/2.1",
 			},
 		},
 	}
@@ -224,7 +209,7 @@ func (wh *WebFingerHandler) handleNodeInfoDiscovery(ctx *lift.Context) error {
 }
 
 // handleNodeInfo20 returns nodeinfo 2.0 format using DynamORM
-func (wh *WebFingerHandler) handleNodeInfo20(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleNodeInfo20(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling nodeinfo 2.0 request",
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
@@ -262,7 +247,7 @@ func (wh *WebFingerHandler) handleNodeInfo20(ctx *lift.Context) error {
 		},
 		"openRegistrations": true,
 		"metadata": map[string]any{
-			"nodeName":        wh.lambdaCtx.Config.InstanceName,
+			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",
 		},
 	}
@@ -273,7 +258,7 @@ func (wh *WebFingerHandler) handleNodeInfo20(ctx *lift.Context) error {
 }
 
 // handleNodeInfo21 returns nodeinfo 2.1 format using DynamORM
-func (wh *WebFingerHandler) handleNodeInfo21(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleNodeInfo21(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling nodeinfo 2.1 request",
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
@@ -325,7 +310,7 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *lift.Context) error {
 		},
 		"openRegistrations": true,
 		"metadata": map[string]any{
-			"nodeName":        wh.lambdaCtx.Config.InstanceName,
+			"nodeName":        cfg.InstanceName,
 			"nodeDescription": "A serverless ActivityPub implementation",
 		},
 	}
@@ -336,7 +321,7 @@ func (wh *WebFingerHandler) handleNodeInfo21(ctx *lift.Context) error {
 }
 
 // handleReputationKeys returns the instance's public key for reputation signing
-func (wh *WebFingerHandler) handleReputationKeys(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleReputationKeys(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling reputation keys request",
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
@@ -344,20 +329,20 @@ func (wh *WebFingerHandler) handleReputationKeys(ctx *lift.Context) error {
 	// Check if reputation service is available
 	if wh.repService == nil {
 		wh.logger.Warn("reputation service unavailable")
-		return lift.NewLiftError("SERVICE_UNAVAILABLE", "reputation service temporarily disabled", 503)
+		return liftPkg.NewLiftError("SERVICE_UNAVAILABLE", "reputation service temporarily disabled", 503)
 	}
 
 	// Get the actual public key from the reputation service
 	publicKeyBase64 := wh.repService.GetPublicKey()
 	if err := common.ValidateRequiredParam("publicKey", publicKeyBase64); err != nil {
 		wh.logger.Error("reputation service returned empty public key")
-		return lift.NewLiftError("INTERNAL_ERROR", "reputation service unavailable", 500)
+		return liftPkg.NewLiftError("INTERNAL_ERROR", "reputation service unavailable", 500)
 	}
 
 	keys := map[string]any{
 		"publicKey": publicKeyBase64,
 		"algorithm": "Ed25519",
-		"keyId":     wh.lambdaCtx.Config.BaseURL() + "#reputation-key",
+		"keyId":     cfg.BaseURL() + "#reputation-key",
 		"created":   time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -372,7 +357,7 @@ func (wh *WebFingerHandler) handleReputationKeys(ctx *lift.Context) error {
 }
 
 // handleHostMeta returns the XRD host-meta document for federation discovery
-func (wh *WebFingerHandler) handleHostMeta(ctx *lift.Context) error {
+func (wh *WebFingerHandler) handleHostMeta(ctx *liftPkg.Context) error {
 	wh.logger.Info("handling host-meta request",
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
@@ -381,14 +366,14 @@ func (wh *WebFingerHandler) handleHostMeta(ctx *lift.Context) error {
 	xrd := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
   <Link rel="lrdd" type="application/xrd+xml" template="%s/.well-known/webfinger?resource={uri}"/>
-</XRD>`, wh.lambdaCtx.Config.BaseURL())
+</XRD>`, cfg.BaseURL())
 
 	// Set proper content type for XRD documents and caching
 	ctx.Response.Headers["Content-Type"] = "application/xrd+xml"
 	ctx.Response.Headers["Cache-Control"] = CacheControlMaxAge // Cache for 24 hours
 
 	wh.logger.Debug("returning host-meta XRD document",
-		zap.String("baseURL", wh.lambdaCtx.Config.BaseURL()),
+		zap.String("baseURL", cfg.BaseURL()),
 		zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 	)
 
@@ -398,7 +383,7 @@ func (wh *WebFingerHandler) handleHostMeta(ctx *lift.Context) error {
 // Helper methods for user and post counts using DynamORM repositories
 
 // getUserCount gets the total user count using UserRepository
-func (wh *WebFingerHandler) getUserCount(ctx *lift.Context) (int, error) {
+func (wh *WebFingerHandler) getUserCount(ctx *liftPkg.Context) (int, error) {
 	count, err := wh.userRepo.GetTotalUserCount(ctx)
 	if err != nil {
 		wh.logger.Error("failed to get total user count", zap.Error(err))
@@ -408,7 +393,7 @@ func (wh *WebFingerHandler) getUserCount(ctx *lift.Context) (int, error) {
 }
 
 // getActiveUserCount gets active user count for a given number of days
-func (wh *WebFingerHandler) getActiveUserCount(ctx *lift.Context, days int) int {
+func (wh *WebFingerHandler) getActiveUserCount(ctx *liftPkg.Context, days int) int {
 	count, err := wh.userRepo.GetActiveUserCount(ctx, days)
 	if err != nil {
 		wh.logger.Error("failed to get active user count", zap.Error(err), zap.Int("days", days))
@@ -418,7 +403,7 @@ func (wh *WebFingerHandler) getActiveUserCount(ctx *lift.Context, days int) int 
 }
 
 // getPostCount gets the total post count using StatusRepository
-func (wh *WebFingerHandler) getPostCount(ctx *lift.Context) (int, error) {
+func (wh *WebFingerHandler) getPostCount(ctx *liftPkg.Context) (int, error) {
 	count, err := wh.statusRepo.GetTotalStatusCount(ctx)
 	if err != nil {
 		wh.logger.Error("failed to get total status count", zap.Error(err))
@@ -427,19 +412,82 @@ func (wh *WebFingerHandler) getPostCount(ctx *lift.Context) (int, error) {
 	return int(count), nil
 }
 
-func main() {
-	// Create the handler with standardized initialization
-	handler, err := NewWebFingerHandler()
+// createWebFingerMiddleware creates webfinger-specific middleware
+func createWebFingerMiddleware(lambdaCtx *common.LambdaContext) []liftPkg.Middleware {
+	var middleware []liftPkg.Middleware
+	
+	// Add federation rate limiting if not disabled
+	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+		repos := lambdaCtx.Repos.(core.RepositoryStorage)
+		middleware = append(middleware, ratelimit.FederationRateLimitMiddleware(repos))
+		lambdaCtx.Logger.Info("enabled federation rate limiting middleware for webfinger service")
+	}
+	
+	return middleware
+}
+
+// NewWebFingerHandler creates a new webfinger handler with standardized initialization
+func NewWebFingerHandler() *WebFingerHandler {
+	// Create reputation service directly
+	repService, err := reputation.NewService(&reputation.Config{
+		Storage:     repos,
+		Logger:      logger,
+		InstanceURL: cfg.BaseURL(),
+		PrivateKey:  cfg.ReputationPrivateKey,
+	})
 	if err != nil {
-		panic(fmt.Sprintf("failed to create handler: %v", err))
+		logger.Warn("failed to initialize reputation service, disabling reputation features", zap.Error(err))
+		repService = nil
 	}
 
-	// Create new Lift app
-	app := lift.New()
+	return &WebFingerHandler{
+		actorRepo:  repos.Actor(),
+		userRepo:   repos.User(),
+		statusRepo: repos.Status(),
+		repos:      repos,
+		logger:     logger,
+		cfg:        cfg,
+		repService: repService,
+		lambdaCtx:  lambdaCtx,
+	}
+}
 
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+)
+
+func init() {
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "webfinger",
+		LambdaType:  common.LambdaTypeAPI,
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
+	}
+}
+
+func main() {
+	// Create webfinger handler using standardized services
+	handler := NewWebFingerHandler()
+	
+	// Create Lift application
+	app := liftPkg.New()
+	
 	// Add request ID middleware (first - generates request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
+		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			requestID := fmt.Sprintf("webfinger-%d", time.Now().UnixNano())
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
@@ -447,55 +495,53 @@ func main() {
 	})
 
 	// Add logging middleware (second - logs with request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
+		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
-			path := ctx.Request.Path
-			method := ctx.Request.Method
-
 			err := next.Handle(ctx)
 
-			handler.logger.Info("webfinger request completed",
+			logger.Info("webfinger request completed",
 				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
-				zap.String("method", method),
-				zap.String("path", path),
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("has_error", err != nil),
 			)
 
+			if err != nil {
+				logger.Error("webfinger handler error",
+					zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
+					zap.Error(err),
+				)
+			}
 			return err
 		})
 	})
 
 	// Add recovery middleware (third - catches panics)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
+	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
+		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			defer func() {
 				if r := recover(); r != nil {
-					handler.logger.Error("panic recovered in webfinger handler",
+					logger.Error("panic recovered in webfinger handler",
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
-						zap.Any("panic", r))
-					if err := ctx.Status(500).Text("Internal server error"); err != nil {
-						handler.logger.Error("failed to send error response", zap.Error(err))
-					}
+						zap.Any("panic", r),
+					)
 				}
 			}()
-
 			return next.Handle(ctx)
 		})
 	})
 
-	// Add federation rate limiting middleware (fourth in chain)
+	// Add federation rate limiting middleware if enabled
 	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
-		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
-		handler.logger.Info("enabled federation rate limiting middleware for webfinger service")
+		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
+		logger.Info("enabled federation rate limiting middleware for webfinger service")
 	}
 
-	// Register all webfinger routes
+	// Register webfinger routes
 	handler.RegisterRoutes(app)
 
-	// Use standardized Lambda handler wrapper with observability
-	standardHandler := handler.lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+	// Use standardized Lambda handler with observability
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
 		return app.HandleRequest(ctx, event)
 	})
 

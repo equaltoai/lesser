@@ -73,155 +73,46 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 
 // DeleteMute removes a mute relationship (for Undo Mute)
 func (r *MuteRepository) DeleteMute(ctx context.Context, muterActor, mutedActor string) error {
-	// Extract usernames for key generation
-	muterUsername := extractUsernameFromActor(muterActor)
-	mutedUsername := extractUsernameFromActor(mutedActor)
-
-	mute := &models.Mute{
-		PK: fmt.Sprintf("MUTE#%s", muterUsername),
-		SK: fmt.Sprintf("MUTED#%s", mutedUsername),
-	}
-
-	if err := r.db.WithContext(ctx).Model(mute).
-		Where("PK", "=", mute.PK).
-		Where("SK", "=", mute.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("mute not found for deletion",
-				zap.String("muter", muterActor),
-				zap.String("muted", mutedActor))
-			return nil // Idempotent - don't fail if mute doesn't exist
-		}
-		r.logger.Error("failed to delete mute",
-			zap.String("muter", muterActor),
-			zap.String("muted", mutedActor),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete mute: %w", err)
-	}
-
-	r.logger.Info("deleted mute relationship",
-		zap.String("muter", muterActor),
-		zap.String("muted", mutedActor))
-
-	return nil
+	helper := NewRelationshipHelper(r.db, r.logger, "mute")
+	return helper.DeleteRelationship(ctx, muterActor, mutedActor, 
+		"MUTE#%s", "MUTED#%s", &models.Mute{})
 }
 
 // IsMuted checks if one actor has muted another
 func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor string) (bool, error) {
-	// Extract usernames for key generation
-	muterUsername := extractUsernameFromActor(muterActor)
-	mutedUsername := extractUsernameFromActor(mutedActor)
-
-	var mute models.Mute
-
-	err := r.db.WithContext(ctx).Model(&mute).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
-		First(&mute)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		r.logger.Error("failed to check mute status",
-			zap.String("muter", muterActor),
-			zap.String("muted", mutedActor),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to check mute status: %w", err)
-	}
-
-	return true, nil
+	helper := NewRelationshipHelper(r.db, r.logger, "mute")
+	return helper.CheckRelationship(ctx, muterActor, mutedActor, 
+		"MUTE#%s", "MUTED#%s", &models.Mute{})
 }
 
 // GetMutedUsers returns a list of users muted by the given actor
 func (r *MuteRepository) GetMutedUsers(ctx context.Context, muterActor string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
 	muterUsername := extractUsernameFromActor(muterActor)
-
-	query := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	
+	config := RelationshipPaginationConfig{
+		IndexName:   "",               // Use main table
+		PKFormat:    "MUTE#%s",       // PK format
+		SKField:     "SK",            // Sort key field
+		ActorField:  "Object",        // Extract muted users (Object field)
+		ErrorPrefix: "muted users",   // Error message prefix
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var mutes []models.Mute
-	err := query.All(&mutes)
-	if err != nil {
-		r.logger.Error("failed to get muted users",
-			zap.String("muter", muterActor),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get muted users: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(mutes) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = mutes[limit-1].SK
-		mutes = mutes[:limit] // Trim to requested limit
-	}
-
-	// Extract muted actor IDs
-	mutedUsers := make([]string, len(mutes))
-	for i, mute := range mutes {
-		mutedUsers[i] = mute.Object
-	}
-
-	return mutedUsers, nextCursor, nil
+	
+	return getPaginatedMuteList(ctx, r.db, r.logger, muterUsername, limit, cursor, config)
 }
 
 // GetUsersWhoMuted returns a list of users who have muted the given actor
 func (r *MuteRepository) GetUsersWhoMuted(ctx context.Context, mutedActor string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
 	mutedUsername := extractUsernameFromActor(mutedActor)
-
-	query := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	
+	config := RelationshipPaginationConfig{
+		IndexName:   "GSI1",                    // Use GSI1 for reverse lookup
+		PKFormat:    "MUTED#%s",                // GSI1PK format
+		SKField:     "GSI1SK",                  // Sort key field for GSI1
+		ActorField:  "Actor",                   // Extract muter users (Actor field)
+		ErrorPrefix: "users who muted actor",  // Error message prefix
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var mutes []models.Mute
-	err := query.All(&mutes)
-	if err != nil {
-		r.logger.Error("failed to get users who muted actor",
-			zap.String("muted_actor", mutedActor),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get users who muted actor: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(mutes) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = mutes[limit-1].GSI1SK
-		mutes = mutes[:limit] // Trim to requested limit
-	}
-
-	// Extract muter actor IDs
-	muters := make([]string, len(mutes))
-	for i, mute := range mutes {
-		muters[i] = mute.Actor
-	}
-
-	return muters, nextCursor, nil
+	
+	return getPaginatedMuteList(ctx, r.db, r.logger, mutedUsername, limit, cursor, config)
 }
 
 // GetMute retrieves a specific mute relationship

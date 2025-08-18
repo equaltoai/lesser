@@ -74,195 +74,57 @@ func (dmw *DynamORMMetricsWrapper) GetItem(ctx context.Context, params *dynamodb
 
 // PutItem wraps the PutItem operation with metrics
 func (dmw *DynamORMMetricsWrapper) PutItem(ctx context.Context, params *dynamodb.PutItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
-	start := time.Now()
-	result, err := dmw.client.PutItem(ctx, params, optFns...)
-	duration := time.Since(start)
-
-	metrics := DynamORMMetrics{
-		Operation: "PutItem",
-		TableName: getTableName(params.TableName),
-		Duration:  duration,
-		Error:     err,
-		ItemCount: 1, // Always 1 for PutItem
+	result, err := dmw.wrapSingleItemOperation(ctx, "PutItem", getTableName(params.TableName), func() (interface{}, error) {
+		return dmw.client.PutItem(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
 	}
-
-	if result != nil && result.ConsumedCapacity != nil {
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  getCapacityUnits(result.ConsumedCapacity.ReadCapacityUnits),
-			WriteUnits: getCapacityUnits(result.ConsumedCapacity.WriteCapacityUnits),
-		}
-	}
-
-	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
-
-	if err != nil {
-		dmw.logger.Error("DynamoDB PutItem error",
-			zap.Error(err),
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration))
-	}
-
-	return result, err
+	return result.(*dynamodb.PutItemOutput), err
 }
 
 // UpdateItem wraps the UpdateItem operation with metrics
 func (dmw *DynamORMMetricsWrapper) UpdateItem(ctx context.Context, params *dynamodb.UpdateItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error) {
-	start := time.Now()
-	result, err := dmw.client.UpdateItem(ctx, params, optFns...)
-	duration := time.Since(start)
-
-	metrics := DynamORMMetrics{
-		Operation: "UpdateItem",
-		TableName: getTableName(params.TableName),
-		Duration:  duration,
-		Error:     err,
-		ItemCount: 1, // Always 1 for UpdateItem
+	result, err := dmw.wrapSingleItemOperation(ctx, "UpdateItem", getTableName(params.TableName), func() (interface{}, error) {
+		return dmw.client.UpdateItem(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
 	}
-
-	if result != nil && result.ConsumedCapacity != nil {
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  getCapacityUnits(result.ConsumedCapacity.ReadCapacityUnits),
-			WriteUnits: getCapacityUnits(result.ConsumedCapacity.WriteCapacityUnits),
-		}
-	}
-
-	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
-
-	if err != nil {
-		dmw.logger.Error("DynamoDB UpdateItem error",
-			zap.Error(err),
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration))
-	}
-
-	return result, err
+	return result.(*dynamodb.UpdateItemOutput), err
 }
 
 // DeleteItem wraps the DeleteItem operation with metrics
 func (dmw *DynamORMMetricsWrapper) DeleteItem(ctx context.Context, params *dynamodb.DeleteItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.DeleteItemOutput, error) {
-	start := time.Now()
-	result, err := dmw.client.DeleteItem(ctx, params, optFns...)
-	duration := time.Since(start)
-
-	metrics := DynamORMMetrics{
-		Operation: "DeleteItem",
-		TableName: getTableName(params.TableName),
-		Duration:  duration,
-		Error:     err,
-		ItemCount: 1, // Always 1 for DeleteItem
+	result, err := dmw.wrapSingleItemOperation(ctx, "DeleteItem", getTableName(params.TableName), func() (interface{}, error) {
+		return dmw.client.DeleteItem(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
 	}
-
-	if result != nil && result.ConsumedCapacity != nil {
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  getCapacityUnits(result.ConsumedCapacity.ReadCapacityUnits),
-			WriteUnits: getCapacityUnits(result.ConsumedCapacity.WriteCapacityUnits),
-		}
-	}
-
-	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
-
-	if err != nil {
-		dmw.logger.Error("DynamoDB DeleteItem error",
-			zap.Error(err),
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration))
-	}
-
-	return result, err
+	return result.(*dynamodb.DeleteItemOutput), err
 }
 
 // Query wraps the Query operation with metrics
 func (dmw *DynamORMMetricsWrapper) Query(ctx context.Context, params *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
-	start := time.Now()
-	result, err := dmw.client.Query(ctx, params, optFns...)
-	duration := time.Since(start)
-
-	itemCount := int64(0)
-	if result != nil {
-		itemCount = int64(result.Count)
+	result, err := dmw.wrapQueryOperation(ctx, "Query", getTableName(params.TableName), 100*time.Millisecond, func() (interface{}, error) {
+		return dmw.client.Query(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
 	}
-
-	metrics := DynamORMMetrics{
-		Operation: "Query",
-		TableName: getTableName(params.TableName),
-		Duration:  duration,
-		Error:     err,
-		ItemCount: itemCount,
-	}
-
-	if result != nil && result.ConsumedCapacity != nil {
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  getCapacityUnits(result.ConsumedCapacity.ReadCapacityUnits),
-			WriteUnits: getCapacityUnits(result.ConsumedCapacity.WriteCapacityUnits),
-		}
-	}
-
-	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
-
-	// Log slow queries
-	if duration > 100*time.Millisecond {
-		dmw.logger.Warn("Slow DynamoDB Query",
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration),
-			zap.Int64("item_count", itemCount),
-			zap.Bool("has_error", err != nil))
-	}
-
-	if err != nil {
-		dmw.logger.Error("DynamoDB Query error",
-			zap.Error(err),
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration))
-	}
-
-	return result, err
+	return result.(*dynamodb.QueryOutput), err
 }
 
 // Scan wraps the Scan operation with metrics
 func (dmw *DynamORMMetricsWrapper) Scan(ctx context.Context, params *dynamodb.ScanInput, optFns ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
-	start := time.Now()
-	result, err := dmw.client.Scan(ctx, params, optFns...)
-	duration := time.Since(start)
-
-	itemCount := int64(0)
-	if result != nil {
-		itemCount = int64(result.Count)
+	result, err := dmw.wrapQueryOperation(ctx, "Scan", getTableName(params.TableName), 500*time.Millisecond, func() (interface{}, error) {
+		return dmw.client.Scan(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
 	}
-
-	metrics := DynamORMMetrics{
-		Operation: "Scan",
-		TableName: getTableName(params.TableName),
-		Duration:  duration,
-		Error:     err,
-		ItemCount: itemCount,
-	}
-
-	if result != nil && result.ConsumedCapacity != nil {
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  getCapacityUnits(result.ConsumedCapacity.ReadCapacityUnits),
-			WriteUnits: getCapacityUnits(result.ConsumedCapacity.WriteCapacityUnits),
-		}
-	}
-
-	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
-
-	// Log slow scans (scans are typically slow, so higher threshold)
-	if duration > 500*time.Millisecond {
-		dmw.logger.Warn("Slow DynamoDB Scan",
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration),
-			zap.Int64("item_count", itemCount),
-			zap.Bool("has_error", err != nil))
-	}
-
-	if err != nil {
-		dmw.logger.Error("DynamoDB Scan error",
-			zap.Error(err),
-			zap.String("table", metrics.TableName),
-			zap.Duration("duration", duration))
-	}
-
-	return result, err
+	return result.(*dynamodb.ScanOutput), err
 }
 
 // BatchGetItem wraps the BatchGetItem operation with metrics
@@ -375,77 +237,191 @@ func (dmw *DynamORMMetricsWrapper) BatchWriteItem(ctx context.Context, params *d
 
 // TransactWriteItems wraps the TransactWriteItems operation with metrics
 func (dmw *DynamORMMetricsWrapper) TransactWriteItems(ctx context.Context, params *dynamodb.TransactWriteItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactWriteItemsOutput, error) {
+	result, err := dmw.wrapTransactionOperation(ctx, "TransactWriteItems", int64(len(params.TransactItems)), func() (interface{}, error) {
+		return dmw.client.TransactWriteItems(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
+	}
+	return result.(*dynamodb.TransactWriteItemsOutput), err
+}
+
+// TransactGetItems wraps the TransactGetItems operation with metrics
+func (dmw *DynamORMMetricsWrapper) TransactGetItems(ctx context.Context, params *dynamodb.TransactGetItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactGetItemsOutput, error) {
+	result, err := dmw.wrapTransactionOperation(ctx, "TransactGetItems", int64(len(params.TransactItems)), func() (interface{}, error) {
+		return dmw.client.TransactGetItems(ctx, params, optFns...)
+	})
+	if result == nil {
+		return nil, err
+	}
+	return result.(*dynamodb.TransactGetItemsOutput), err
+}
+
+// Helper methods for consolidating common patterns
+
+// wrapSingleItemOperation handles the common pattern for single-item operations (Put, Update, Delete)
+func (dmw *DynamORMMetricsWrapper) wrapSingleItemOperation(ctx context.Context, operation, tableName string, clientCall func() (interface{}, error)) (interface{}, error) {
 	start := time.Now()
-	result, err := dmw.client.TransactWriteItems(ctx, params, optFns...)
+	result, err := clientCall()
 	duration := time.Since(start)
 
 	metrics := DynamORMMetrics{
-		Operation: "TransactWriteItems",
-		TableName: "transaction", // Transactions can span multiple tables
+		Operation: operation,
+		TableName: tableName,
 		Duration:  duration,
 		Error:     err,
-		ItemCount: int64(len(params.TransactItems)),
+		ItemCount: 1, // Always 1 for single-item operations
 	}
 
-	// Sum consumed capacity from all tables
-	if result != nil && len(result.ConsumedCapacity) > 0 {
-		var totalRead, totalWrite float64
-		for _, capacity := range result.ConsumedCapacity {
-			totalRead += getCapacityUnits(capacity.ReadCapacityUnits)
-			totalWrite += getCapacityUnits(capacity.WriteCapacityUnits)
+	// Extract consumed capacity based on result type
+	switch r := result.(type) {
+	case *dynamodb.PutItemOutput:
+		if r != nil && r.ConsumedCapacity != nil {
+			metrics.ConsumedCapacity = ConsumedCapacity{
+				ReadUnits:  getCapacityUnits(r.ConsumedCapacity.ReadCapacityUnits),
+				WriteUnits: getCapacityUnits(r.ConsumedCapacity.WriteCapacityUnits),
+			}
 		}
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  totalRead,
-			WriteUnits: totalWrite,
+	case *dynamodb.UpdateItemOutput:
+		if r != nil && r.ConsumedCapacity != nil {
+			metrics.ConsumedCapacity = ConsumedCapacity{
+				ReadUnits:  getCapacityUnits(r.ConsumedCapacity.ReadCapacityUnits),
+				WriteUnits: getCapacityUnits(r.ConsumedCapacity.WriteCapacityUnits),
+			}
+		}
+	case *dynamodb.DeleteItemOutput:
+		if r != nil && r.ConsumedCapacity != nil {
+			metrics.ConsumedCapacity = ConsumedCapacity{
+				ReadUnits:  getCapacityUnits(r.ConsumedCapacity.ReadCapacityUnits),
+				WriteUnits: getCapacityUnits(r.ConsumedCapacity.WriteCapacityUnits),
+			}
 		}
 	}
 
 	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
 
 	if err != nil {
-		dmw.logger.Error("DynamoDB TransactWriteItems error",
+		dmw.logger.Error("DynamoDB "+operation+" error",
 			zap.Error(err),
-			zap.Duration("duration", duration),
-			zap.Int("transaction_items", len(params.TransactItems)))
+			zap.String("table", tableName),
+			zap.Duration("duration", duration))
 	}
 
 	return result, err
 }
 
-// TransactGetItems wraps the TransactGetItems operation with metrics
-func (dmw *DynamORMMetricsWrapper) TransactGetItems(ctx context.Context, params *dynamodb.TransactGetItemsInput, optFns ...func(*dynamodb.Options)) (*dynamodb.TransactGetItemsOutput, error) {
+// wrapQueryOperation handles the common pattern for query operations (Query, Scan)
+func (dmw *DynamORMMetricsWrapper) wrapQueryOperation(ctx context.Context, operation, tableName string, slowThreshold time.Duration, clientCall func() (interface{}, error)) (interface{}, error) {
 	start := time.Now()
-	result, err := dmw.client.TransactGetItems(ctx, params, optFns...)
+	result, err := clientCall()
+	duration := time.Since(start)
+
+	itemCount := int64(0)
+	var consumedCapacity ConsumedCapacity
+
+	// Extract data based on result type
+	switch r := result.(type) {
+	case *dynamodb.QueryOutput:
+		if r != nil {
+			itemCount = int64(r.Count)
+			if r.ConsumedCapacity != nil {
+				consumedCapacity = ConsumedCapacity{
+					ReadUnits:  getCapacityUnits(r.ConsumedCapacity.ReadCapacityUnits),
+					WriteUnits: getCapacityUnits(r.ConsumedCapacity.WriteCapacityUnits),
+				}
+			}
+		}
+	case *dynamodb.ScanOutput:
+		if r != nil {
+			itemCount = int64(r.Count)
+			if r.ConsumedCapacity != nil {
+				consumedCapacity = ConsumedCapacity{
+					ReadUnits:  getCapacityUnits(r.ConsumedCapacity.ReadCapacityUnits),
+					WriteUnits: getCapacityUnits(r.ConsumedCapacity.WriteCapacityUnits),
+				}
+			}
+		}
+	}
+
+	metrics := DynamORMMetrics{
+		Operation:        operation,
+		TableName:        tableName,
+		Duration:         duration,
+		Error:            err,
+		ItemCount:        itemCount,
+		ConsumedCapacity: consumedCapacity,
+	}
+
+	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
+
+	// Log slow operations
+	if duration > slowThreshold {
+		dmw.logger.Warn("Slow DynamoDB "+operation,
+			zap.String("table", tableName),
+			zap.Duration("duration", duration),
+			zap.Int64("item_count", itemCount),
+			zap.Bool("has_error", err != nil))
+	}
+
+	if err != nil {
+		dmw.logger.Error("DynamoDB "+operation+" error",
+			zap.Error(err),
+			zap.String("table", tableName),
+			zap.Duration("duration", duration))
+	}
+
+	return result, err
+}
+
+// wrapTransactionOperation handles the common pattern for transaction operations
+func (dmw *DynamORMMetricsWrapper) wrapTransactionOperation(ctx context.Context, operation string, itemCount int64, clientCall func() (interface{}, error)) (interface{}, error) {
+	start := time.Now()
+	result, err := clientCall()
 	duration := time.Since(start)
 
 	metrics := DynamORMMetrics{
-		Operation: "TransactGetItems",
+		Operation: operation,
 		TableName: "transaction", // Transactions can span multiple tables
 		Duration:  duration,
 		Error:     err,
-		ItemCount: int64(len(params.TransactItems)),
+		ItemCount: itemCount,
 	}
 
 	// Sum consumed capacity from all tables
-	if result != nil && len(result.ConsumedCapacity) > 0 {
-		var totalRead, totalWrite float64
-		for _, capacity := range result.ConsumedCapacity {
-			totalRead += getCapacityUnits(capacity.ReadCapacityUnits)
-			totalWrite += getCapacityUnits(capacity.WriteCapacityUnits)
+	switch r := result.(type) {
+	case *dynamodb.TransactWriteItemsOutput:
+		if r != nil && len(r.ConsumedCapacity) > 0 {
+			var totalRead, totalWrite float64
+			for _, capacity := range r.ConsumedCapacity {
+				totalRead += getCapacityUnits(capacity.ReadCapacityUnits)
+				totalWrite += getCapacityUnits(capacity.WriteCapacityUnits)
+			}
+			metrics.ConsumedCapacity = ConsumedCapacity{
+				ReadUnits:  totalRead,
+				WriteUnits: totalWrite,
+			}
 		}
-		metrics.ConsumedCapacity = ConsumedCapacity{
-			ReadUnits:  totalRead,
-			WriteUnits: totalWrite,
+	case *dynamodb.TransactGetItemsOutput:
+		if r != nil && len(r.ConsumedCapacity) > 0 {
+			var totalRead, totalWrite float64
+			for _, capacity := range r.ConsumedCapacity {
+				totalRead += getCapacityUnits(capacity.ReadCapacityUnits)
+				totalWrite += getCapacityUnits(capacity.WriteCapacityUnits)
+			}
+			metrics.ConsumedCapacity = ConsumedCapacity{
+				ReadUnits:  totalRead,
+				WriteUnits: totalWrite,
+			}
 		}
 	}
 
 	dmw.metrics.RecordDynamORMMetrics(ctx, metrics)
 
 	if err != nil {
-		dmw.logger.Error("DynamoDB TransactGetItems error",
+		dmw.logger.Error("DynamoDB "+operation+" error",
 			zap.Error(err),
 			zap.Duration("duration", duration),
-			zap.Int("transaction_items", len(params.TransactItems)))
+			zap.Int("transaction_items", int(itemCount)))
 	}
 
 	return result, err

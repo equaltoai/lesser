@@ -362,7 +362,8 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 	}
 
 	// If it's an outbox activity, simulate delivery
-	if activity.Type == "Create" || activity.Type == "Update" || activity.Type == "Delete" || activity.Type == "Announce" || activity.Type == "Like" {
+	deliverableTypes := []string{"Create", "Update", "Delete", "Announce", "Like"}
+	if common.ValidateEnumField(activity.Type, deliverableTypes, "activity_type") == nil {
 		result["federation_targets"] = []string{
 			"https://activitypub.sharedInbox",
 			"https://followers.sharedInbox",

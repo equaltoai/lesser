@@ -40,6 +40,7 @@ var (
 const (
 	ScopeRead  = "read"
 	ScopeWrite = "write"
+	ScopeAdmin = "admin"
 )
 
 // Grant types
@@ -397,6 +398,11 @@ func (c *Claims) HasScope(scope string) bool {
 		}
 	}
 	return false
+}
+
+// GetUsername returns the username from the claims
+func (c *Claims) GetUsername() string {
+	return c.Username
 }
 
 // DefaultScopes returns the default scopes for a user

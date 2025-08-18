@@ -33,7 +33,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "scheduled service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "scheduled service")
 	}
 
 	// Get scheduled statuses using service
@@ -48,7 +48,7 @@ func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get scheduled statuses",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API format
@@ -69,7 +69,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam(id, "id") != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
+		return common.RespondBadRequest(ctx, "ID required")
 	}
 
 	// Authenticate request
@@ -82,7 +82,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "scheduled service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "scheduled service")
 	}
 
 	// Get scheduled status using service
@@ -94,7 +94,7 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 		h.logger.Debug("scheduled status not found",
 			zap.String("id", id),
 			zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{"error": "Record not found"})
+		return common.RespondNotFound(ctx, "Record not found")
 	}
 
 	// Convert to API format with media attachments
@@ -108,7 +108,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam(id, "id") != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
+		return common.RespondBadRequest(ctx, "ID required")
 	}
 
 	// Authenticate request
@@ -120,16 +120,19 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	// Parse request body
 	var req apimodels.ScheduledStatusUpdateRequest
 	if err := h.parseScheduledStatusRequest(ctx, &req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Invalid request body"})
+		return common.RespondBadRequest(ctx, "Invalid request body")
 	}
 
 	// Validate scheduled_at if provided
 	var scheduledAt *time.Time
 	if req.ScheduledAt != "" {
-		t, err := time.Parse(time.RFC3339, req.ScheduledAt)
-		if err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": "Invalid scheduled_at format"})
+		if err := common.ValidateScheduledTime(req.ScheduledAt); err != nil {
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
+		if err := common.ValidateTimestamp(req.ScheduledAt, "scheduled_at"); err != nil {
+			return common.RespondUnprocessableEntity(ctx, err.Error())
+		}
+		t, _ := time.Parse(time.RFC3339, req.ScheduledAt) // Validation passed, parse is safe
 		scheduledAt = &t
 	}
 
@@ -137,7 +140,7 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "scheduled service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "scheduled service")
 	}
 
 	// Update scheduled status using service
@@ -152,15 +155,15 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check error type
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Record not found"})
+			return common.RespondNotFound(ctx, "Record not found")
 		}
 		if strings.Contains(err.Error(), "cannot update published") {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
 		if strings.Contains(err.Error(), "must be at least") {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API format with media attachments
@@ -174,7 +177,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	// Get ID from path parameter
 	id := ctx.Param("id")
 	if common.ValidateRequiredParam(id, "id") != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "ID required"})
+		return common.RespondBadRequest(ctx, "ID required")
 	}
 
 	// Authenticate request
@@ -187,7 +190,7 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		return ctx.Status(500).JSON(map[string]string{"error": "scheduled service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "scheduled service")
 	}
 
 	// Delete scheduled status using service
@@ -201,12 +204,12 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check error type
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Record not found"})
+			return common.RespondNotFound(ctx, "Record not found")
 		}
 		if strings.Contains(err.Error(), "cannot delete published") {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return empty object
@@ -228,11 +231,12 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 		ctx.Status(422)
 		return nil, fmt.Errorf("scheduled_at is required")
 	}
-	scheduledAt, err := time.Parse(time.RFC3339, *statusReq.ScheduledAt)
-	if err != nil {
+	// Validate scheduled time format and constraints
+	if err := common.ValidateScheduledTime(*statusReq.ScheduledAt); err != nil {
 		ctx.Status(422)
-		return nil, fmt.Errorf("invalid scheduled_at format")
+		return nil, fmt.Errorf("invalid scheduled_at: %s", err.Error())
 	}
+	scheduledAt, _ := time.Parse(time.RFC3339, *statusReq.ScheduledAt) // ValidateScheduledTime already validated this
 
 	// Get scheduled service
 	scheduledService := h.registry.Scheduled()
@@ -246,6 +250,12 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	var poll map[string]any
 	if statusReq.Poll != nil {
 		poll = h.convertAPIPollToMap(statusReq.Poll)
+		
+		// Validate poll parameters using centralized validation
+		if err := common.ValidatePollParams(poll); err != nil {
+			ctx.Status(422)
+			return nil, fmt.Errorf("invalid poll parameters: %v", err)
+		}
 	}
 
 	// Create scheduled status using service
@@ -297,7 +307,7 @@ func (h *Handler) authenticateScheduledStatusRequest(ctx *lift.Context) (string,
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and check scope
@@ -335,11 +345,11 @@ func (h *Handler) validateScheduledStatusToken(ctx *lift.Context, token string) 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	if !claims.HasScope(auth.ScopeRead) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return "", common.RespondInsufficientScope(ctx)
 	}
 
 	return claims.Username, nil

@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -72,7 +73,7 @@ func (ec *EventConverter) ConvertToNotification(event *streaming.InternalEvent) 
 			PreferredUsername: extractUsernameFromID(payload.ActorID),
 		},
 		Status: func() *model.Object {
-			if payload.StatusID == "" {
+			if err := common.ValidateRequiredParam("status_id", payload.StatusID); err != nil {
 				return nil
 			}
 			return &model.Object{
@@ -376,7 +377,7 @@ func (ec *EventConverter) convertStatusToQuoteActivity(event *streaming.Internal
 // extractUsernameFromID extracts username from an actor ID URL
 func extractUsernameFromID(actorID string) string {
 	// Simple extraction - in a full implementation this would be more robust
-	if actorID == "" {
+	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
 		return ""
 	}
 

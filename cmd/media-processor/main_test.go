@@ -263,7 +263,7 @@ func TestValidateFileForUserWithVideoDuration(t *testing.T) {
 				MaxVideoDuration: tt.maxDurationS,
 			}
 
-			err := mp.validateFileForUser(mockData, "video/mp4", config, "testuser")
+			err := mp.validateFileForUser(mockData, "video/mp4", config, "testuser", "test-media-id")
 
 			if tt.expectError {
 				if err == nil {

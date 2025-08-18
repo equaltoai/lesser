@@ -12,10 +12,8 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
-	awsInit "github.com/equaltoai/lesser/pkg/aws"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -930,56 +928,53 @@ func (h *DLQHandler) HandleStreamFailure(ctx context.Context, record *events.Dyn
 		WithError("StreamProcessingError", processingErr.Error(), "").
 		WithFailureReason("Failed to process stream record for metrics generation").
 		WithPriority("medium"). // Not critical but impactful
-		WithContext(os.Getenv("AWS_LAMBDA_FUNCTION_NAME"), "", "", uuid.New().String()).
+		WithContext(os.Getenv("AWS_LAMBDA_FUNCTION_NAME"), "", "", generateValidatedUUID()).
 		Build()
 
 	return h.dlqRepo.CreateDLQMessage(ctx, dlqMessage)
 }
 
+// generateValidatedUUID creates a UUID and validates it using common validation
+func generateValidatedUUID() string {
+	requestID := uuid.New().String()
+	
+	// Validate the generated UUID
+	if err := common.ValidateUUID("uuid", requestID); err != nil {
+		// Fall back to a simple timestamp-based ID if validation fails
+		return fmt.Sprintf("id_%d", time.Now().UnixNano())
+	}
+	
+	return requestID
+}
+
 // Global variables for Lambda initialization
 var (
-	handler *Handler
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+	handler   *Handler
 )
 
-func main() {
-	// Initialize Lambda services with custom configuration for metrics processing
-	config := common.LambdaConfig{
-		ServiceName: "metrics-processor",
-		LambdaType:  common.LambdaTypeProcessor,
-		CustomServiceConfig: &awsInit.ServiceConfig{
-			RequiresDynamoDB:   true,
-			RequiresCloudWatch: true,
-			ServiceName:        "metrics-processor",
-		},
-	}
-
-	lambdaCtx := common.MustInitializeLambda(config)
-
-	logger := lambdaCtx.Logger
-
-	defer func() {
-		if err := logger.Sync(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
-		}
-	}()
-
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
+func init() {
+	// Standardized Lambda initialization for metrics-processor function
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "metrics-processor", // metrics-processor
+		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-
-	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(
-		db,
-		lambdaCtx.Config.DynamoTableName,
-		lambdaCtx.AWSServices.Config,
-		logger,
-	)
-	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
-	}
-
+	
+	// Function-specific initialization only
 	// Initialize metrics stream processor
 	processor := NewMetricsStreamProcessor(repos, logger)
 
@@ -989,6 +984,14 @@ func main() {
 		repos:     repos,
 		logger:    logger,
 	}
+}
+
+func main() {
+	defer func() {
+		if err := logger.Sync(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to sync logger: %v\n", err)
+		}
+	}()
 
 	logger.Info("starting metrics stream processor Lambda",
 		zap.String("service", "metrics-processor"),

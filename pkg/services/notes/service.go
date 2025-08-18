@@ -45,6 +45,11 @@ type Service struct {
 	logger            *zap.Logger
 	domainName        string
 	federation        FederationService // Interface to be defined
+	
+	// Business logic services
+	businessLogic     *common.BusinessLogicService
+	activityPubLogic  *common.ActivityPubBusinessLogic
+	mastodonLogic     *common.MastodonBusinessLogic
 }
 
 // ScheduledStatusRepository defines the interface for scheduled status operations
@@ -70,6 +75,34 @@ type AnalyticsService interface {
 	RecordInstanceActivity(ctx context.Context, activityType string, timestamp time.Time) error
 }
 
+// streamingEventEmitter adapts streaming.Publisher to common.EventEmitter interface
+type streamingEventEmitter struct {
+	publisher streaming.Publisher
+}
+
+// EmitEvents implements the common.EventEmitter interface
+func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common.StreamingEvent) error {
+	// Convert common.StreamingEvent to streaming.Event
+	streamingEvents := make([]*streaming.Event, len(events))
+	for i, event := range events {
+		streamingEvents[i] = &streaming.Event{
+			Type:      event.Type,
+			Stream:    "user", // Default stream, will be overridden
+			Timestamp: event.Timestamp,
+			Payload:   event.Metadata,
+		}
+	}
+	
+	// Emit using the publisher
+	for _, event := range streamingEvents {
+		if err := e.publisher.PublishToStream(ctx, event.Stream, event); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
 // NewService creates a new Notes Service with the required dependencies
 func NewService(
 	noteRepo *repositories.StatusRepository,
@@ -93,6 +126,21 @@ func NewService(
 		logger = zap.NewNop()
 	}
 
+	// Create business logic services
+	businessLogic := common.NewBusinessLogicService(logger, &streamingEventEmitter{publisher: publisher}, domainName)
+	
+	activityPubConfig := &common.FederationConfig{
+		Domain:         domainName,
+		UserAgent:      "Lesser/1.0",
+		MaxRetries:     3,
+		RequestTimeout: 30 * time.Second,
+	}
+	activityPubLogic := common.NewActivityPubBusinessLogic(activityPubConfig, logger)
+	
+	mastodonConfig := common.DefaultMastodonConfig()
+	mastodonConfig.Domain = domainName
+	mastodonLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
+
 	return &Service{
 		noteRepo:          noteRepo,
 		accountRepo:       accountRepo,
@@ -110,6 +158,9 @@ func NewService(
 		federation:        federation,
 		logger:            logger,
 		domainName:        domainName,
+		businessLogic:     businessLogic,
+		activityPubLogic:  activityPubLogic,
+		mastodonLogic:     mastodonLogic,
 	}
 }
 
@@ -121,6 +172,7 @@ type CreateNoteCommand struct {
 	Content        string   `json:"content" validate:"required,max=5000"`
 	Visibility     string   `json:"visibility" validate:"required,oneof=public unlisted private direct"`
 	Sensitive      bool     `json:"sensitive"`
+	SpoilerText    string   `json:"spoiler_text"`
 	Language       string   `json:"language"`
 	InReplyToID    string   `json:"in_reply_to_id"`
 	ConversationID string   `json:"conversation_id"`
@@ -138,9 +190,10 @@ type CreateNoteCommand struct {
 // UpdateNoteCommand contains all data needed to update an existing note
 type UpdateNoteCommand struct {
 	StatusID  string   `json:"status_id" validate:"required"`
-	Content   string   `json:"content" validate:"required,max=5000"`
-	Sensitive bool     `json:"sensitive"`
-	Language  string   `json:"language"`
+	Content     string   `json:"content" validate:"required,max=5000"`
+	Sensitive   bool     `json:"sensitive"`
+	SpoilerText string   `json:"spoiler_text"`
+	Language    string   `json:"language"`
 	MediaIDs  []string `json:"media_ids"`
 	UpdaterID string   `json:"updater_id" validate:"required"` // Must be author
 }
@@ -622,27 +675,39 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 // Private helper methods
 
 func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteCommand) error {
-	if err := common.ValidateRequiredParam("author_id", cmd.AuthorID); err != nil {
-		return fmt.Errorf("author_id is required")
+	// Use centralized business logic validation
+	rules := common.ValidationRules{
+		Required: []string{"author_id", "content"},
+		MaxLen: map[string]int{
+			"content": 5000,
+		},
+	}
+	
+	// Validate basic command structure
+	validationResult := common.ValidateCommand(ctx, cmd, rules)
+	if !validationResult.IsValid {
+		return fmt.Errorf("validation failed: %s", strings.Join(validationResult.Errors, "; "))
 	}
 
-	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
-		return fmt.Errorf("content cannot be empty")
+	// Use Mastodon business logic for content validation
+	if err := s.mastodonLogic.ValidateStatusContent(cmd.Content, len(cmd.MediaIDs), len(cmd.PollOptions)); err != nil {
+		return fmt.Errorf("status content validation failed: %w", err)
 	}
 
-	if err := common.ValidateStringLength("cmd.Content", cmd.Content, 0, 5000); err != nil {
-		return fmt.Errorf("content too long (max 5000 characters)")
+	// Use business logic for visibility validation
+	visibility := common.VisibilityLevel(cmd.Visibility)
+	if err := common.ValidateBusinessVisibility(visibility, cmd.AuthorID); err != nil {
+		return fmt.Errorf("visibility validation failed: %w", err)
 	}
 
-	validVisibilities := map[string]bool{
-		models.VisibilityPublic:   true,
-		models.VisibilityUnlisted: true,
-		models.VisibilityPrivate:  true,
-		models.VisibilityDirect:   true,
-	}
-
-	if !validVisibilities[cmd.Visibility] {
-		return fmt.Errorf("invalid visibility: %s", cmd.Visibility)
+	// Validate spoiler text if provided using business logic
+	if cmd.SpoilerText != "" {
+		rules := common.ContentValidationRules{
+			MaxLength: 500, // Spoiler text limit
+		}
+		if err := common.ValidateBusinessContent(cmd.SpoilerText, rules); err != nil {
+			return fmt.Errorf("spoiler text validation failed: %w", err)
+		}
 	}
 
 	// Validate in_reply_to_id if provided
@@ -656,13 +721,25 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 	return nil
 }
 
-func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateNoteCommand) error {
+func (s *Service) validateUpdateCommand(ctx context.Context, cmd *UpdateNoteCommand) error {
+	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
 		return fmt.Errorf("content cannot be empty")
 	}
-
-	if err := common.ValidateStringLength("cmd.Content", cmd.Content, 0, 5000); err != nil {
+	if err := common.ValidateStringLength("content", cmd.Content, 0, 5000); err != nil {
 		return fmt.Errorf("content too long (max 5000 characters)")
+	}
+
+	// Additional Mastodon-specific validation
+	if err := s.mastodonLogic.ValidateStatusContent(cmd.Content, 0, 0); err != nil {
+		return err
+	}
+
+	// Use business logic validation for spoiler text
+	if cmd.SpoilerText != "" {
+		if err := common.ValidateStringLength("spoiler_text", cmd.SpoilerText, 0, 160); err != nil {
+			return fmt.Errorf("spoiler text validation failed: %w", err)
+		}
 	}
 
 	return nil
@@ -682,6 +759,7 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 			BTo:       cmd.BtoRecipients,
 			BCC:       cmd.BccRecipients,
 			Sensitive: cmd.Sensitive,
+			Summary:   cmd.SpoilerText,
 		},
 		Content:      cmd.Content,
 		AttributedTo: fmt.Sprintf("https://%s/users/%s", s.domainName, author.User.Username),
@@ -702,122 +780,111 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 }
 
 func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
-	var events []*streaming.Event
-
-	// Create base event
-	event := &streaming.Event{
-		Type:      "status.created",
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"status": status,
-		},
-	}
-
-	// Emit to user's stream
-	userEvent := *event
-	userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
-	if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
-		s.logger.Error("failed to publish to user stream", zap.Error(err))
-	} else {
-		events = append(events, &userEvent)
-	}
-
-	// Emit to public stream if public
-	if status.IsPublic() {
-		publicEvent := *event
-		publicEvent.Stream = VisibilityPublic
-		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
-			s.logger.Error("failed to publish to public stream", zap.Error(err))
+	// Use centralized business logic for event creation
+	businessEvents := common.EmitEntityCreatedEvents(ctx, "status", status.StatusID, status.AuthorID, status)
+	
+	// Convert to streaming events and emit
+	var streamingEvents []*streaming.Event
+	for _, businessEvent := range businessEvents {
+		streamingEvent := &streaming.Event{
+			Type:      businessEvent.Type,
+			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername), 
+			Timestamp: businessEvent.Timestamp,
+			Payload:   businessEvent.Metadata,
+		}
+		
+		// Emit to user's stream
+		userEvent := *streamingEvent
+		userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
+		if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
+			s.logger.Error("failed to publish to user stream", zap.Error(err))
 		} else {
-			events = append(events, &publicEvent)
+			streamingEvents = append(streamingEvents, &userEvent)
+		}
+
+		// Emit to public stream if public
+		if status.IsPublic() {
+			publicEvent := *streamingEvent
+			publicEvent.Stream = "public"
+			if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
+				s.logger.Error("failed to publish to public stream", zap.Error(err))
+			} else {
+				streamingEvents = append(streamingEvents, &publicEvent)
+			}
+		}
+
+		// Emit to hashtag streams for this event
+		for _, hashtag := range status.Hashtags {
+			hashtagEvent := *streamingEvent
+			hashtagEvent.Stream = fmt.Sprintf("hashtag:%s", hashtag)
+			if err := s.publisher.PublishToStream(ctx, hashtagEvent.Stream, &hashtagEvent); err != nil {
+				s.logger.Error("failed to publish to hashtag stream",
+					zap.String("hashtag", hashtag),
+					zap.Error(err))
+			} else {
+				streamingEvents = append(streamingEvents, &hashtagEvent)
+			}
+		}
+
+		// If it's a direct message, emit to conversation
+		if status.IsDirect() && status.ConversationID != "" {
+			conversationEvent := *streamingEvent
+			conversationEvent.Stream = fmt.Sprintf("conversation:%s", status.ConversationID)
+			if err := s.publisher.PublishToConversation(ctx, status.ConversationID, &conversationEvent); err != nil {
+				s.logger.Error("failed to publish to conversation stream", zap.Error(err))
+			} else {
+				streamingEvents = append(streamingEvents, &conversationEvent)
+			}
 		}
 	}
 
-	// Emit to hashtag streams
-	for _, hashtag := range status.Hashtags {
-		hashtagEvent := *event
-		hashtagEvent.Stream = fmt.Sprintf("hashtag:%s", hashtag)
-		if err := s.publisher.PublishToStream(ctx, hashtagEvent.Stream, &hashtagEvent); err != nil {
-			s.logger.Error("failed to publish to hashtag stream",
-				zap.String("hashtag", hashtag),
-				zap.Error(err))
-		} else {
-			events = append(events, &hashtagEvent)
-		}
-	}
-
-	// If it's a direct message, emit to conversation
-	if status.IsDirect() && status.ConversationID != "" {
-		conversationEvent := *event
-		conversationEvent.Stream = fmt.Sprintf("conversation:%s", status.ConversationID)
-		if err := s.publisher.PublishToConversation(ctx, status.ConversationID, &conversationEvent); err != nil {
-			s.logger.Error("failed to publish to conversation stream", zap.Error(err))
-		} else {
-			events = append(events, &conversationEvent)
-		}
-	}
-
-	return events
+	return streamingEvents
 }
 
 func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
-	var events []*streaming.Event
-
-	// Create base event
-	event := &streaming.Event{
-		Type:      "status.updated",
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"status": status,
-		},
-	}
-
-	// Emit to user's stream
-	userEvent := *event
-	userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
-	if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
-		s.logger.Error("failed to publish update to user stream", zap.Error(err))
-	} else {
-		events = append(events, &userEvent)
-	}
-
-	// Emit to public stream if public
-	if status.IsPublic() {
-		publicEvent := *event
-		publicEvent.Stream = VisibilityPublic
-		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
-			s.logger.Error("failed to publish update to public stream", zap.Error(err))
+	// Use centralized business logic for event creation
+	businessEvents := common.EmitEntityUpdatedEvents(ctx, "status", status.StatusID, status.AuthorID, status, map[string]interface{}{
+		"visibility": status.Visibility,
+		"author":     status.AuthorUsername,
+	})
+	
+	// Convert to streaming events and emit
+	var streamingEvents []*streaming.Event
+	for _, businessEvent := range businessEvents {
+		streamingEvent := &streaming.Event{
+			Type:      businessEvent.Type,
+			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername),
+			Timestamp: businessEvent.Timestamp,
+			Payload:   businessEvent.Metadata,
+		}
+		
+		// Emit to user's stream  
+		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+			s.logger.Error("failed to publish update to user stream", zap.Error(err))
 		} else {
-			events = append(events, &publicEvent)
+			streamingEvents = append(streamingEvents, streamingEvent)
 		}
 	}
 
-	return events
+	return streamingEvents
 }
 
 func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.Status) {
-	// Create base event
-	event := &streaming.Event{
-		Type:      "status.deleted",
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"status_id": status.StatusID,
-		},
-	}
-
-	// Emit to user's stream
-	userEvent := *event
-	userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
-	if err := s.publisher.PublishToUser(ctx, status.AuthorID, &userEvent); err != nil {
-		s.logger.Error("failed to publish deletion to user stream", zap.Error(err))
-	}
-
-	// Emit to public stream if it was public
-	if status.IsPublic() {
-		publicEvent := *event
-		publicEvent.Stream = VisibilityPublic
-		if err := s.publisher.PublishToStream(ctx, "public", &publicEvent); err != nil {
-			s.logger.Error("failed to publish deletion to public stream", zap.Error(err))
+	// Use centralized business logic for event creation
+	businessEvents := common.EmitEntityDeletedEvents(ctx, "status", status.StatusID, status.AuthorID)
+	
+	// Convert to streaming events and emit
+	for _, businessEvent := range businessEvents {
+		streamingEvent := &streaming.Event{
+			Type:      businessEvent.Type,
+			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername),
+			Timestamp: businessEvent.Timestamp,
+			Payload:   businessEvent.Metadata,
+		}
+		
+		// Emit to user's stream
+		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
+			s.logger.Error("failed to publish deletion to user stream", zap.Error(err))
 		}
 	}
 }
@@ -1249,31 +1316,41 @@ type UsersResult struct {
 	Pagination *interfaces.PaginatedResult[*storage.Account] `json:"pagination"`
 }
 
-// LikeNote adds a like to a status
-func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
+// noteActionParams contains parameters for note actions
+type noteActionParams struct {
+	statusID    string
+	actorID     string
+	actorType   string
+	actionFn    func(context.Context, string, string) error
+	emitEventsFn func(context.Context, *models.Status, string) []*streaming.Event
+	errorMsg    string
+}
+
+// executeNoteActionGeneric handles the common pattern for note actions
+func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActionParams) (*LikeResult, error) {
 	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, err := s.noteRepo.GetStatus(ctx, params.statusID)
 	if err != nil {
 		return nil, fmt.Errorf("status not found: %w", err)
 	}
 
-	// Get liker's account
-	liker, err := s.accountRepo.GetAccount(ctx, cmd.LikerID)
+	// Get actor's account
+	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get liker account: %w", err)
+		return nil, fmt.Errorf("failed to get %s account: %w", params.actorType, err)
 	}
 
-	// Create actor and object URLs for the like
-	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, liker.User.Username)
-	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
+	// Create actor and object URLs
+	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, actor.User.Username)
+	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, params.statusID)
 
-	// Create the like through repository interface
-	if err := s.createLike(ctx, actorURL, objectURL); err != nil {
-		return nil, fmt.Errorf("failed to like status: %w", err)
+	// Execute the action through repository interface
+	if err := params.actionFn(ctx, actorURL, objectURL); err != nil {
+		return nil, fmt.Errorf("%s: %w", params.errorMsg, err)
 	}
 
 	// Emit events
-	events := s.emitLikeEvents(ctx, note, cmd.LikerID)
+	events := params.emitEventsFn(ctx, note, params.actorID)
 
 	return &LikeResult{
 		Status: note,
@@ -1281,36 +1358,28 @@ func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResu
 	}, nil
 }
 
+// LikeNote adds a like to a status
+func (s *Service) LikeNote(ctx context.Context, cmd *LikeNoteCommand) (*LikeResult, error) {
+	return s.executeNoteActionGeneric(ctx, noteActionParams{
+		statusID:     cmd.StatusID,
+		actorID:      cmd.LikerID,
+		actorType:    "liker",
+		actionFn:     s.createLike,
+		emitEventsFn: s.emitLikeEvents,
+		errorMsg:     "failed to like status",
+	})
+}
+
 // UnlikeNote removes a like from a status
 func (s *Service) UnlikeNote(ctx context.Context, cmd *UnlikeNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
-	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
-	}
-
-	// Get unliker's account
-	unliker, err := s.accountRepo.GetAccount(ctx, cmd.UnlikerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get unliker account: %w", err)
-	}
-
-	// Create actor and object URLs for the unlike
-	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, unliker.User.Username)
-	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
-
-	// Remove the like through repository interface
-	if err := s.deleteLike(ctx, actorURL, objectURL); err != nil {
-		return nil, fmt.Errorf("failed to unlike status: %w", err)
-	}
-
-	// Emit events
-	events := s.emitUnlikeEvents(ctx, note, cmd.UnlikerID)
-
-	return &LikeResult{
-		Status: note,
-		Events: events,
-	}, nil
+	return s.executeNoteActionGeneric(ctx, noteActionParams{
+		statusID:     cmd.StatusID,
+		actorID:      cmd.UnlikerID,
+		actorType:    "unliker",
+		actionFn:     s.deleteLike,
+		emitEventsFn: s.emitUnlikeEvents,
+		errorMsg:     "failed to unlike status",
+	})
 }
 
 // GetLikers retrieves users who liked a status
@@ -1387,34 +1456,14 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 
 // UnreblogNote removes a reblog/announce of a status
 func (s *Service) UnreblogNote(ctx context.Context, cmd *UnreblogNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
-	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
-	}
-
-	// Get unreblogger's account
-	unreblogger, err := s.accountRepo.GetAccount(ctx, cmd.UnrebloggerID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get unreblogger account: %w", err)
-	}
-
-	// Create actor and object URLs for the unreblog
-	actorURL := fmt.Sprintf("https://%s/users/%s", s.domainName, unreblogger.User.Username)
-	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, cmd.StatusID)
-
-	// Remove the reblog through repository interface
-	if err := s.deleteReblog(ctx, actorURL, objectURL); err != nil {
-		return nil, fmt.Errorf("failed to unreblog status: %w", err)
-	}
-
-	// Emit events
-	events := s.emitUnreblogEvents(ctx, note, cmd.UnrebloggerID)
-
-	return &LikeResult{
-		Status: note,
-		Events: events,
-	}, nil
+	return s.executeNoteActionGeneric(ctx, noteActionParams{
+		statusID:     cmd.StatusID,
+		actorID:      cmd.UnrebloggerID,
+		actorType:    "unreblogger",
+		actionFn:     s.deleteReblog,
+		emitEventsFn: s.emitUnreblogEvents,
+		errorMsg:     "failed to unreblog status",
+	})
 }
 
 // GetRebloggers retrieves users who reblogged a status
@@ -1451,33 +1500,44 @@ type UnpinNoteCommand struct {
 	PinnerID string `json:"pinner_id" validate:"required"`
 }
 
-// PinNote pins a status to user's profile
-func (s *Service) PinNote(ctx context.Context, cmd *PinNoteCommand) (*LikeResult, error) {
+// pinActionParams contains parameters for pin/unpin actions
+type pinActionParams struct {
+	statusID     string
+	pinnerID     string
+	actionFn     func(context.Context, string, string) error
+	eventType    streaming.EventType
+	actorKey     string
+	timestampKey string
+	errorMsg     string
+}
+
+// executePinActionGeneric handles the common pattern for pin/unpin actions
+func (s *Service) executePinActionGeneric(ctx context.Context, params pinActionParams) (*LikeResult, error) {
 	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
+	note, err := s.noteRepo.GetStatus(ctx, params.statusID)
 	if err != nil {
 		return nil, fmt.Errorf("status not found: %w", err)
 	}
 
-	// Verify the user owns the status (can only pin own statuses)
-	if note.AuthorID != cmd.PinnerID {
-		return nil, fmt.Errorf("unauthorized: can only pin own statuses")
+	// Verify the user owns the status (can only pin/unpin own statuses)
+	if note.AuthorID != params.pinnerID {
+		return nil, fmt.Errorf("unauthorized: can only pin/unpin own statuses")
 	}
 
-	// Pin the status through repository interface
-	if err := s.pinStatus(ctx, cmd.PinnerID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to pin status: %w", err)
+	// Execute the action through repository interface
+	if err := params.actionFn(ctx, params.pinnerID, params.statusID); err != nil {
+		return nil, fmt.Errorf("%s: %w", params.errorMsg, err)
 	}
 
-	// Emit pin events
+	// Emit events
 	events := []*streaming.Event{
 		{
-			Type: streaming.StatusPinned,
-			Stream: streaming.UserStreamName(cmd.PinnerID),
+			Type: string(params.eventType),
+			Stream: streaming.UserStreamName(params.pinnerID),
 			Payload: map[string]interface{}{
-				"status_id": cmd.StatusID,
-				"pinner_id": cmd.PinnerID,
-				"pinned_at": time.Now(),
+				"status_id": params.statusID,
+				params.actorKey: params.pinnerID,
+				params.timestampKey: time.Now(),
 			},
 			Timestamp: time.Now(),
 		},
@@ -1489,42 +1549,30 @@ func (s *Service) PinNote(ctx context.Context, cmd *PinNoteCommand) (*LikeResult
 	}, nil
 }
 
+// PinNote pins a status to user's profile
+func (s *Service) PinNote(ctx context.Context, cmd *PinNoteCommand) (*LikeResult, error) {
+	return s.executePinActionGeneric(ctx, pinActionParams{
+		statusID:     cmd.StatusID,
+		pinnerID:     cmd.PinnerID,
+		actionFn:     s.pinStatus,
+		eventType:    streaming.StatusPinned,
+		actorKey:     "pinner_id",
+		timestampKey: "pinned_at",
+		errorMsg:     "failed to pin status",
+	})
+}
+
 // UnpinNote unpins a status from user's profile
 func (s *Service) UnpinNote(ctx context.Context, cmd *UnpinNoteCommand) (*LikeResult, error) {
-	// Get the status first to validate it exists
-	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
-	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
-	}
-
-	// Verify the user owns the status (can only unpin own statuses)
-	if note.AuthorID != cmd.PinnerID {
-		return nil, fmt.Errorf("unauthorized: can only unpin own statuses")
-	}
-
-	// Unpin the status through repository interface
-	if err := s.unpinStatus(ctx, cmd.PinnerID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to unpin status: %w", err)
-	}
-
-	// Emit unpin events
-	events := []*streaming.Event{
-		{
-			Type: streaming.StatusUnpinned,
-			Stream: streaming.UserStreamName(cmd.PinnerID),
-			Payload: map[string]interface{}{
-				"status_id": cmd.StatusID,
-				"unpinner_id": cmd.PinnerID,
-				"unpinned_at": time.Now(),
-			},
-			Timestamp: time.Now(),
-		},
-	}
-
-	return &LikeResult{
-		Status: note,
-		Events: events,
-	}, nil
+	return s.executePinActionGeneric(ctx, pinActionParams{
+		statusID:     cmd.StatusID,
+		pinnerID:     cmd.PinnerID,
+		actionFn:     s.unpinStatus,
+		eventType:    streaming.StatusUnpinned,
+		actorKey:     "unpinner_id",
+		timestampKey: "unpinned_at",
+		errorMsg:     "failed to unpin status",
+	})
 }
 
 // Mute Commands
@@ -2082,22 +2130,30 @@ func (s *Service) CreateScheduledNote(ctx context.Context, cmd *CreateScheduledN
 }
 
 // validateCreateScheduledNoteCommand validates the create scheduled note command
-func (s *Service) validateCreateScheduledNoteCommand(_ context.Context, cmd *CreateScheduledNoteCommand) error {
+func (s *Service) validateCreateScheduledNoteCommand(ctx context.Context, cmd *CreateScheduledNoteCommand) error {
+	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
-		return fmt.Errorf("content is required")
+		return fmt.Errorf("content cannot be empty")
 	}
-	if len(cmd.Content) > 500 {
+	if err := common.ValidateStringLength("content", cmd.Content, 0, 500); err != nil {
 		return fmt.Errorf("content too long (max 500 characters)")
 	}
+
+	// Validate scheduled time using business logic 
 	if cmd.ScheduledAt.Before(time.Now()) {
 		return fmt.Errorf("scheduled time must be in the future")
 	}
-	validVisibilities := map[string]bool{
-		"public": true, "unlisted": true, "private": true, "direct": true,
+
+	// Additional Mastodon-specific validation
+	if err := s.mastodonLogic.ValidateStatusContent(cmd.Content, 0, 0); err != nil {
+		return err
 	}
-	if !validVisibilities[cmd.Visibility] {
-		return fmt.Errorf("invalid visibility: %s", cmd.Visibility)
+
+	// Use common validation for visibility
+	if err := common.ValidateVisibility(cmd.Visibility); err != nil {
+		return err
 	}
+
 	return nil
 }
 

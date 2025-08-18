@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -799,12 +798,7 @@ type instanceHealth struct {
 
 // getEnvInt gets an integer environment variable with a default value
 func getEnvInt(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if intValue, err := strconv.Atoi(value); err == nil {
-			return intValue
-		}
-	}
-	return defaultValue
+	return common.GetEnvInt(key, defaultValue)
 }
 
 // max returns the maximum of two integers

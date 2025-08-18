@@ -392,7 +392,7 @@ func (h *Handler) markdownToHTMLLift(markdown string) string {
 	var inParagraph bool
 
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
+		trimmed := common.SanitizeInput(line)
 
 		// Process each line and update paragraph state
 		result, newParagraphState := h.processMarkdownLine(line, trimmed, inParagraph)

@@ -80,6 +80,16 @@ func (e *Export) UpdateKeys() {
 	e.GSI1SK = fmt.Sprintf("CREATED#%s", e.CreatedAt.Format(time.RFC3339))
 }
 
+// GetStatus returns the status of the export
+func (e *Export) GetStatus() string {
+	return e.Status
+}
+
+// GetCreatedAt returns the creation timestamp of the export
+func (e *Export) GetCreatedAt() time.Time {
+	return e.CreatedAt
+}
+
 // TableName returns the DynamoDB table name
 func (e *Export) TableName() string {
 	return "" // Will be set by the repository

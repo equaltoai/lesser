@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -16,17 +15,21 @@ import (
 
 // NotificationRepository handles notification operations using DynamORM
 type NotificationRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db           core.DB
+	tableName    string
+	logger       *zap.Logger
+	queryHelper  *NotificationQueryHelper
+	batchHelper  *BatchOperationHelper
 }
 
 // NewNotificationRepository creates a new notification repository
 func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationRepository {
 	return &NotificationRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:          db,
+		tableName:   tableName,
+		logger:      logger,
+		queryHelper: NewNotificationQueryHelper(db, tableName, logger),
+		batchHelper: NewBatchOperationHelper(db, tableName, logger),
 	}
 }
 
@@ -143,50 +146,13 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 
 // GetUnreadNotifications retrieves unread notifications for a user with pagination
 func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
-	if opts.Limit <= 0 {
-		opts.Limit = 20
-	}
-	if opts.Limit > 100 {
-		opts.Limit = 100
-	}
-	pk := "USER#" + userID
-
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Filter("IsRead", "=", false).
-		OrderBy("SK", "DESC")
-
-	// Handle cursor-based pagination
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
+	filters := map[string]interface{}{
+		"IsRead": false,
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(opts.Limit + 1)
-
-	var notifications []models.Notification
-	err := query.All(&notifications)
+	result, err := r.queryHelper.GetPaginatedNotifications(ctx, userID, opts, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get unread notifications for user: %w", err)
-	}
-
-	// Build result
-	result := &interfaces.PaginatedResult[*models.Notification]{
-		Items: make([]*models.Notification, 0, len(notifications)),
-		Total: -1, // Not calculated
-	}
-
-	// Generate next cursor
-	if len(notifications) > opts.Limit {
-		// We got more results than requested, so there are more pages
-		result.NextCursor = notifications[opts.Limit-1].SK
-		result.HasMore = true
-		notifications = notifications[:opts.Limit] // Trim to requested limit
-	}
-
-	// Convert to pointers
-	for i := range notifications {
-		result.Items = append(result.Items, &notifications[i])
 	}
 
 	return result, nil
@@ -194,50 +160,13 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 
 // GetNotificationsByType retrieves notifications by type with pagination
 func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, userID, notificationType string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
-	if opts.Limit <= 0 {
-		opts.Limit = 20
-	}
-	if opts.Limit > 100 {
-		opts.Limit = 100
+	filters := map[string]interface{}{
+		"Type": notificationType,
 	}
 
-	// Filter notifications by type for specific user
-	pk := "USER#" + userID
-	query := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Where("PK", "=", pk).
-		Filter("Type", "=", notificationType).
-		OrderBy("SK", "DESC")
-
-	if opts.Cursor != "" {
-		query = query.Where("SK", "<", opts.Cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(opts.Limit + 1)
-
-	var notifications []models.Notification
-	err := query.All(&notifications)
+	result, err := r.queryHelper.GetPaginatedNotifications(ctx, userID, opts, filters)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get notifications by type: %w", err)
-	}
-
-	// Build result
-	result := &interfaces.PaginatedResult[*models.Notification]{
-		Items: make([]*models.Notification, 0, len(notifications)),
-		Total: -1, // Not calculated
-	}
-
-	// Generate next cursor
-	if len(notifications) > opts.Limit {
-		// We got more results than requested, so there are more pages
-		result.NextCursor = notifications[opts.Limit-1].SK
-		result.HasMore = true
-		notifications = notifications[:opts.Limit] // Trim to requested limit
-	}
-
-	// Convert to pointers
-	for i := range notifications {
-		result.Items = append(result.Items, &notifications[i])
 	}
 
 	return result, nil
@@ -580,45 +509,13 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 
 // CreateNotifications creates multiple notifications efficiently
 func (r *NotificationRepository) CreateNotifications(ctx context.Context, notifications []*models.Notification) error {
-	if err := common.ValidateSliceNotEmpty("notifications", notifications); err != nil {
-		return nil
-	}
-
-	// Prepare all notifications
-	for _, notification := range notifications {
-		if err := notification.BeforeCreate(); err != nil {
-			return fmt.Errorf("failed to prepare notification for creation: %w", err)
-		}
-	}
-
-	// Convert to []any for batch operations
-	items := make([]any, len(notifications))
+	// Convert to []interface{} for the batch helper
+	items := make([]interface{}, len(notifications))
 	for i, notification := range notifications {
 		items[i] = notification
 	}
 
-	// Use batch writer for efficient bulk creation
-	batchWriter := batch.NewBatchWriter(r.db, batch.BatchWriterConfig{
-		BatchSize: batch.DefaultBatchSize,
-		Logger:    r.logger,
-	})
-
-	result, err := batchWriter.WriteItems(ctx, items)
-	if err != nil {
-		return fmt.Errorf("failed to batch create notifications: %w", err)
-	}
-
-	// Check if any items failed
-	if result.FailedItems > 0 {
-		r.logger.Warn("some notifications failed to create",
-			zap.Int("failed_items", result.FailedItems),
-			zap.Int("total_items", result.TotalItems),
-		)
-		// For notifications, we'll continue even with some failures
-		// since they're not critical for app functionality
-	}
-
-	return nil
+	return r.batchHelper.BatchCreateItems(ctx, items, "notifications")
 }
 
 // DeleteNotificationsByType deletes notifications by type for a user

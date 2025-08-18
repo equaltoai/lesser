@@ -73,7 +73,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 		}
 	}
 
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
+	if err := common.ValidateMastodonStatusID(statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": err.Error(),
@@ -217,7 +217,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 		}
 	}
 
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
+	if err := common.ValidateMastodonStatusID(statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": err.Error(),
@@ -354,9 +354,9 @@ func (h *Handler) extractMuteStatusID(ctx *lift.Context) (string, error) {
 		statusID = h.extractStatusIDFromPath(ctx, "mute")
 	}
 
-	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
+	if err := common.ValidateMastodonStatusID(statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return "", ctx.JSON(map[string]string{"error": "status ID is required"})
+		return "", ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
 	return statusID, nil
@@ -542,7 +542,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 		}
 	}
 
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
+	if err := common.ValidateMastodonStatusID(statusID); err != nil {
 		ctx.Status(http.StatusBadRequest)
 		return ctx.JSON(map[string]string{
 			"error": err.Error(),

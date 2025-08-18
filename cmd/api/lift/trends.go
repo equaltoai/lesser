@@ -22,7 +22,7 @@ func (h *Handler) getTrendService() *trends.Service {
 func (h *Handler) handleTrendError(ctx *lift.Context, err error, operation string) error {
 	if err != nil {
 		h.logger.Error(fmt.Sprintf("failed to %s", operation), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	return nil
 }
@@ -152,7 +152,7 @@ func (h *Handler) HandleGetLinkTimelineLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateRequiredParam("url", url); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	trendService := h.getTrendService()
@@ -245,7 +245,7 @@ func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
 	trends, err := trendService.GetTrends(ctx.Context, limit)
 	if err != nil {
 		h.logger.Error("failed to get trends", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert to v2 format with enhanced metadata
@@ -257,34 +257,9 @@ func (h *Handler) HandleGetTrendsV2Lift(ctx *lift.Context) error {
 // HandleGetTrendingTagsV2Lift handles GET /api/v2/trends/tags
 // Returns trending hashtags with enhanced metrics
 func (h *Handler) HandleGetTrendingTagsV2Lift(ctx *lift.Context) error {
-	// Initialize trend service if not already initialized
-	trendService := trends.NewService(h.repos)
-
-	// Get limit from query params, default to 10
-	limitStr := ctx.Query("limit")
-
-	if err := common.ValidateRequiredParam("limit", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-
-	limit, err := common.ParseAndValidateIntWithBounds("limit", limitStr, 0, 20, 10)
-	if err != nil {
-		limit = 10
-	}
-
-	// Note: offset parameter available but not used by underlying service
-
-	// Get trending hashtags
-	hashtags, err := trendService.GetTrendingHashtags(ctx.Context, limit)
-	if err != nil {
-		h.logger.Error("failed to get trending hashtags", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Convert to v2 format with enhanced metrics
-	response := h.convertHashtagsToV2Format(hashtags)
-
-	return ctx.JSON(response)
+	return h.handleTrendingV2Request(ctx, "hashtags", 10, func(service *trends.Service, limit int) (any, error) {
+		return service.GetTrendingHashtags(ctx.Context, limit)
+	}, h.convertHashtagsToV2Format)
 }
 
 // HandleGetTrendingStatusesV2Lift handles GET /api/v2/trends/statuses  
@@ -311,7 +286,7 @@ func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
 	statuses, err := trendService.GetTrendingStatuses(ctx.Context, limit)
 	if err != nil {
 		h.logger.Error("failed to get trending statuses", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Convert to v2 format with enhanced metrics
@@ -323,37 +298,47 @@ func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
 // HandleGetTrendingLinksV2Lift handles GET /api/v2/trends/links
 // Returns trending links with enhanced metadata
 func (h *Handler) HandleGetTrendingLinksV2Lift(ctx *lift.Context) error {
-	// Initialize trend service if not already initialized
+	return h.handleTrendingV2Request(ctx, "links", 10, func(service *trends.Service, limit int) (any, error) {
+		return service.GetTrendingLinks(ctx.Context, limit)
+	}, h.convertLinksToV2Format)
+}
+
+// Helper functions for v2 format conversion
+
+// handleTrendingV2Request handles common v2 trending request pattern
+func (h *Handler) handleTrendingV2Request(
+	ctx *lift.Context,
+	itemType string,
+	defaultLimit int,
+	fetcher func(*trends.Service, int) (any, error),
+	converter func(any) []map[string]any,
+) error {
+	// Initialize trend service
 	trendService := trends.NewService(h.repos)
 
-	// Get limit from query params, default to 10
+	// Get limit from query params
 	limitStr := ctx.Query("limit")
-
 	if err := common.ValidateRequiredParam("limit", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
 
-	limit, err := common.ParseAndValidateIntWithBounds("limit", limitStr, 0, 20, 10)
+	limit, err := common.ParseAndValidateIntWithBounds("limit", limitStr, 0, 20, defaultLimit)
 	if err != nil {
-		limit = 10
+		limit = defaultLimit
 	}
 
-	// Note: offset parameter available but not used by underlying service
-
-	// Get trending links with enhanced metadata
-	links, err := trendService.GetTrendingLinks(ctx.Context, limit)
+	// Get trending items using provided fetcher
+	items, err := fetcher(trendService, limit)
 	if err != nil {
-		h.logger.Error("failed to get trending links", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		h.logger.Error(fmt.Sprintf("failed to get trending %s", itemType), zap.Error(err))
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
-	// Convert to v2 format with enhanced metadata
-	response := h.convertLinksToV2Format(links)
+	// Convert to v2 format using provided converter
+	response := converter(items)
 
 	return ctx.JSON(response)
 }
-
-// Helper functions for v2 format conversion
 
 func (h *Handler) convertTrendsToV2Format(_ any) []map[string]any {
 	// This is a placeholder - would convert to v2 format with enhanced metadata

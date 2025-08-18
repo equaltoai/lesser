@@ -20,20 +20,25 @@ func NewValidationService(config *ServiceConfig) ValidationService {
 
 // ValidateCreatePost validates post creation input
 func (v *validationService) ValidateCreatePost(input *CreatePostInput) error {
-	if err := common.ValidateRequiredParam("content", input.Content); err != nil {
-		return NewValidationError("Post content is required")
+	if err := common.ValidateStatusContent(input.Content); err != nil {
+		return NewValidationError("Post content is required and must not exceed 500 characters")
 	}
 
-	if len(input.Content) > 500 {
-		return NewValidationError("Post content must not exceed 500 characters")
+	if input.Visibility != "" {
+		if err := common.ValidateVisibility(input.Visibility); err != nil {
+			return NewValidationError("Invalid visibility setting")
+		}
 	}
 
-	if input.Visibility != "" && !isValidVisibility(input.Visibility) {
-		return NewValidationError("Invalid visibility setting")
-	}
-
-	if len(input.MediaIDs) > 4 {
-		return NewValidationError("Maximum 4 media attachments allowed")
+	if len(input.MediaIDs) > 0 {
+		// Convert []string to []interface{} for validation
+		mediaIDs := make([]interface{}, len(input.MediaIDs))
+		for i, id := range input.MediaIDs {
+			mediaIDs[i] = id
+		}
+		if err := common.ValidateMediaIDs(mediaIDs); err != nil {
+			return NewValidationError("Invalid media attachments")
+		}
 	}
 
 	return nil
@@ -84,24 +89,19 @@ func (v *validationService) ValidateUpdatePost(input *UpdatePostInput) error {
 		return NewValidationError("Object ID is required")
 	}
 
-	if input.Content != "" && len(input.Content) > 500 {
-		return NewValidationError("Post content must not exceed 500 characters")
+	if input.Content != "" {
+		if err := common.ValidateStringLength("content", input.Content, 0, 500); err != nil {
+			return NewValidationError("Post content must not exceed 500 characters")
+		}
 	}
 
-	if input.Visibility != "" && !isValidVisibility(input.Visibility) {
-		return NewValidationError("Invalid visibility setting")
+	if input.Visibility != "" {
+		if err := common.ValidateVisibility(input.Visibility); err != nil {
+			return NewValidationError("Invalid visibility setting")
+		}
 	}
 
 	return nil
 }
 
 // Helper functions
-func isValidVisibility(visibility string) bool {
-	validVisibilities := map[string]bool{
-		"public":   true,
-		"unlisted": true,
-		"private":  true,
-		"direct":   true,
-	}
-	return validVisibilities[visibility]
-}

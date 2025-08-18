@@ -226,8 +226,10 @@ func (qs *QuoteService) validateCreateQuoteRequest(req *CreateQuoteRequest) erro
 	if err := common.ValidateRequiredParam("req.TargetStatusID", req.TargetStatusID); err != nil {
 		return common.ValidateRequiredParam("target_status_id", req.TargetStatusID)
 	}
-	if len(req.Content) > 500 {
-		return fmt.Errorf("quote content too long")
+	if req.Content != "" {
+		if err := common.ValidateStringLength("content", req.Content, 0, 500); err != nil {
+			return fmt.Errorf("quote content too long")
+		}
 	}
 	return nil
 }
@@ -235,7 +237,7 @@ func (qs *QuoteService) validateCreateQuoteRequest(req *CreateQuoteRequest) erro
 func (qs *QuoteService) isStatusQuotable(status *models.Status) bool {
 	// Check if status allows quotes
 	// This would depend on the status visibility and user preferences
-	return status.Visibility == "public" || status.Visibility == "unlisted"
+	return common.IsPubliclyVisible(status.Visibility)
 }
 
 func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsername string, targetStatus *models.Status) (bool, error) {

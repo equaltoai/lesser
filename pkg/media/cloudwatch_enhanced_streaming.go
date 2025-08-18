@@ -34,92 +34,24 @@ func NewCloudWatchEnhancedStreamingService(awsConfig aws.Config, storage core.Re
 
 // GetRealQualityBreakdown retrieves real quality breakdown from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealQualityBreakdown(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
-	// Try to get from cache first
-	cachedMetrics, err := s.storage.StreamingCloudWatch().GetQualityBreakdown(ctx, mediaID)
-	if err != nil {
-		s.logger.Warn("failed to get cached quality breakdown", zap.Error(err), zap.String("media_id", mediaID))
-	}
-
-	if cachedMetrics != nil && !cachedMetrics.IsExpired() {
-		s.logger.Debug("using cached quality breakdown", zap.String("media_id", mediaID))
-		result := make(map[string]int64)
-		for quality, metrics := range cachedMetrics.QualityMetrics {
-			result[quality] = metrics.ViewerCount
-		}
-		return result, nil
-	}
-
-	// Cache miss or expired - query CloudWatch
-	s.logger.Debug("fetching quality breakdown from CloudWatch", zap.String("media_id", mediaID))
-
-	realMetrics, err := s.fetchQualityMetricsFromCloudWatch(ctx, mediaID)
-	if err != nil {
-		s.logger.Error("failed to fetch quality metrics from CloudWatch", zap.Error(err), zap.String("media_id", mediaID))
-		// Return fallback data
-		return s.generateFallbackQualityBreakdown(totalViews), nil
-	}
-
-	// Cache the results using DynamORM
-	if err := s.storage.StreamingCloudWatch().CacheQualityBreakdown(ctx, mediaID, realMetrics); err != nil {
-		s.logger.Warn("failed to cache quality breakdown", zap.Error(err), zap.String("media_id", mediaID))
-	}
-
-	// Convert to return format
-	result := make(map[string]int64)
-	for quality, metrics := range realMetrics {
-		result[quality] = metrics.ViewerCount
-	}
-
-	s.logger.Info("fetched real quality breakdown from CloudWatch",
-		zap.String("media_id", mediaID),
-		zap.Int("quality_count", len(result)))
-
-	return result, nil
+	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "quality", 
+		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetQualityBreakdown(ctx, mediaID) },
+		func() (interface{}, error) { return s.fetchQualityMetricsFromCloudWatch(ctx, mediaID) },
+		func(data interface{}) error { return s.storage.StreamingCloudWatch().CacheQualityBreakdown(ctx, mediaID, data.(map[string]models.QualityMetric)) },
+		func() map[string]int64 { return s.generateFallbackQualityBreakdown(totalViews) },
+		s.extractQualityViewerCounts,
+	)
 }
 
 // GetRealGeographicData retrieves real geographic distribution from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealGeographicData(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
-	// Try to get from cache first
-	cachedMetrics, err := s.storage.StreamingCloudWatch().GetGeographicData(ctx, mediaID)
-	if err != nil {
-		s.logger.Warn("failed to get cached geographic data", zap.Error(err), zap.String("media_id", mediaID))
-	}
-
-	if cachedMetrics != nil && !cachedMetrics.IsExpired() {
-		s.logger.Debug("using cached geographic data", zap.String("media_id", mediaID))
-		result := make(map[string]int64)
-		for region, metrics := range cachedMetrics.GeographicMetrics {
-			result[region] = metrics.ViewerCount
-		}
-		return result, nil
-	}
-
-	// Cache miss or expired - query CloudWatch
-	s.logger.Debug("fetching geographic data from CloudWatch", zap.String("media_id", mediaID))
-
-	realMetrics, err := s.fetchGeographicMetricsFromCloudWatch(ctx, mediaID)
-	if err != nil {
-		s.logger.Error("failed to fetch geographic metrics from CloudWatch", zap.Error(err), zap.String("media_id", mediaID))
-		// Return fallback data
-		return s.generateFallbackGeographicData(totalViews), nil
-	}
-
-	// Cache the results using DynamORM
-	if err := s.storage.StreamingCloudWatch().CacheGeographicData(ctx, mediaID, realMetrics); err != nil {
-		s.logger.Warn("failed to cache geographic data", zap.Error(err), zap.String("media_id", mediaID))
-	}
-
-	// Convert to return format
-	result := make(map[string]int64)
-	for region, metrics := range realMetrics {
-		result[region] = metrics.ViewerCount
-	}
-
-	s.logger.Info("fetched real geographic data from CloudWatch",
-		zap.String("media_id", mediaID),
-		zap.Int("region_count", len(result)))
-
-	return result, nil
+	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "geographic", 
+		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetGeographicData(ctx, mediaID) },
+		func() (interface{}, error) { return s.fetchGeographicMetricsFromCloudWatch(ctx, mediaID) },
+		func(data interface{}) error { return s.storage.StreamingCloudWatch().CacheGeographicData(ctx, mediaID, data.(map[string]models.GeographicMetric)) },
+		func() map[string]int64 { return s.generateFallbackGeographicData(totalViews) },
+		s.extractGeographicViewerCounts,
+	)
 }
 
 // GetRealConcurrentMetrics retrieves real concurrent viewer metrics from CloudWatch with DynamORM caching
@@ -486,6 +418,76 @@ func (s *CloudWatchEnhancedStreamingService) getMetricValueWithDimension(ctx con
 	return latestValue, nil
 }
 
+// getMetricsWithCaching provides a generic caching pattern for CloudWatch metrics
+func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
+	ctx context.Context, 
+	mediaID string, 
+	totalViews int64, 
+	metricType string,
+	getCached func() (interface{}, error),
+	fetchFromCloudWatch func() (interface{}, error),
+	cacheData func(interface{}) error,
+	generateFallback func() map[string]int64,
+	convertToResult func(interface{}) map[string]int64,
+) (map[string]int64, error) {
+	// Try to get from cache first
+	cachedData, err := getCached()
+	if err != nil {
+		s.logger.Warn("failed to get cached data", zap.Error(err), zap.String("media_id", mediaID), zap.String("metric_type", metricType))
+	}
+
+	// Check if cached data is valid and not expired
+	if cachedData != nil {
+		// Check expiration - assume all cached data implements IsExpired()
+		if data, ok := cachedData.(*models.StreamingCloudWatchMetrics); ok {
+			if !data.IsExpired() {
+				s.logger.Debug("using cached data", zap.String("media_id", mediaID), zap.String("metric_type", metricType))
+				
+				// Convert cached data to result format based on metric type
+				switch metricType {
+				case "quality":
+					result := make(map[string]int64)
+					for quality, metrics := range data.QualityMetrics {
+						result[quality] = metrics.ViewerCount
+					}
+					return result, nil
+				case "geographic":
+					result := make(map[string]int64)
+					for region, metrics := range data.GeographicMetrics {
+						result[region] = metrics.ViewerCount
+					}
+					return result, nil
+				}
+			}
+		}
+	}
+
+	// Cache miss or expired - query CloudWatch
+	s.logger.Debug("fetching data from CloudWatch", zap.String("media_id", mediaID), zap.String("metric_type", metricType))
+
+	realMetrics, err := fetchFromCloudWatch()
+	if err != nil {
+		s.logger.Error("failed to fetch metrics from CloudWatch", zap.Error(err), zap.String("media_id", mediaID), zap.String("metric_type", metricType))
+		// Return fallback data
+		return generateFallback(), nil
+	}
+
+	// Cache the results using DynamORM
+	if err := cacheData(realMetrics); err != nil {
+		s.logger.Warn("failed to cache data", zap.Error(err), zap.String("media_id", mediaID), zap.String("metric_type", metricType))
+	}
+
+	// Convert to return format
+	result := convertToResult(realMetrics)
+
+	s.logger.Info("fetched real data from CloudWatch",
+		zap.String("media_id", mediaID),
+		zap.String("metric_type", metricType),
+		zap.Int("data_count", len(result)))
+
+	return result, nil
+}
+
 // Fallback methods for when CloudWatch data is unavailable
 
 func (s *CloudWatchEnhancedStreamingService) generateFallbackQualityBreakdown(totalViews int64) map[string]int64 {
@@ -515,4 +517,22 @@ func (s *CloudWatchEnhancedStreamingService) getPreferredQualityForRegion(region
 	default:
 		return "480p" // Conservative for other regions
 	}
+}
+
+// extractQualityViewerCounts extracts viewer counts from quality metrics data
+func (s *CloudWatchEnhancedStreamingService) extractQualityViewerCounts(data interface{}) map[string]int64 {
+	result := make(map[string]int64)
+	for quality, metrics := range data.(map[string]models.QualityMetric) {
+		result[quality] = metrics.ViewerCount
+	}
+	return result
+}
+
+// extractGeographicViewerCounts extracts viewer counts from geographic metrics data
+func (s *CloudWatchEnhancedStreamingService) extractGeographicViewerCounts(data interface{}) map[string]int64 {
+	result := make(map[string]int64)
+	for region, metrics := range data.(map[string]models.GeographicMetric) {
+		result[region] = metrics.ViewerCount
+	}
+	return result
 }

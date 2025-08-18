@@ -9,19 +9,24 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 var (
 	lambdaCtx                    *common.LambdaContext
+	cfg                          *config.Config
+	logger                       *zap.Logger
+	repos                        core.RepositoryStorage
 	federationActivityRepository *repositories.FederationActivityRepository
-	db                           core.DB
+	db                           dynamormCore.DB
 )
 
 // FederationTracker implements the DynamoDBStreamHandler interface
@@ -32,40 +37,44 @@ type FederationTracker struct {
 }
 
 func init() {
-	// Initialize Lambda with federation-specific configuration
+	// Standardized Lambda initialization for federation-tracker function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName:        "federation-tracker",
-		LambdaType:         common.LambdaTypeFederation,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableTracing:      true,
-		EnableHealthCheck:  false,
-		EnableCostTracking: true,
-		RequestTimeout:     30 * time.Second,
-		RetryMaxAttempts:   3,
+		ServiceName: "federation-tracker", // federation-tracker
+		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
-
-	// Initialize DynamORM with Lambda optimizations
-	var err error
-	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+	
+	// Function-specific initialization only
+	// Initialize DynamORM with Lambda optimizations
+	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("Failed to initialize DynamORM", zap.Error(err))
 	}
 
 	// Initialize repository
-	federationActivityRepository = repositories.NewFederationActivityRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	federationActivityRepository = repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
 }
 
 func main() {
 	// Create the handler
 	handler := &FederationTracker{
-		logger:                       lambdaCtx.Logger,
+		logger:                       logger,
 		cfg:                          lambdaCtx,
 		federationActivityRepository: federationActivityRepository,
 	}
 
 	// Start the Lambda using Lift DynamoDB stream pattern
-	patterns.StartDynamoDBStreamLambda("federation-tracker", handler, lambdaCtx.Logger)
+	patterns.StartDynamoDBStreamLambda("federation-tracker", handler, logger)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface

@@ -131,15 +131,12 @@ func createCORSMiddleware() lift.Middleware {
 func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Initialize cost tracking context
-			tracker := cost.NewWithRequest(ctx.GetRequestID(), "api_request")
-
-			// Store the tracker in the Lift context for easy access
-			ctx.Set("cost_tracker", tracker)
-
-			// Initialize unified tracker for centralized cost tracking
-			unifiedTracker := cost.NewRequestTracker(nil, logger, "api", ctx.GetRequestID(), ctx.GetRequestID())
-			ctx.Set("unified_tracker", unifiedTracker)
+			// Initialize unified cost tracking system
+			unifiedTracker := cost.NewUnifiedTracker(nil, logger, ctx.GetUserID(), ctx.GetRequestID())
+			
+			// Store the unified tracker in context for all cost tracking
+			ctx.Set("cost_tracker", unifiedTracker)
+			ctx.Set("unified_cost_tracker", unifiedTracker)
 
 			// Track Lambda invocation
 			start := time.Now()
@@ -155,17 +152,11 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 			}
 
 			// Calculate and log costs
-			operationCost := tracker.CalculateCost()
-			if operationCost.TotalCostMicroCents > 0 {
+			totalCost := unifiedTracker.GetCurrentCostMicroCents()
+			if totalCost > 0 {
 				logger.Info("request_costs",
 					zap.String("request_id", ctx.GetRequestID()),
-					zap.Int64("total_cost_microcents", operationCost.TotalCostMicroCents),
-					zap.Int64("dynamodb_reads", operationCost.DynamoDBReads),
-					zap.Int64("dynamodb_writes", operationCost.DynamoDBWrites),
-					zap.Int64("lambda_invocations", operationCost.LambdaInvocations),
-					zap.Int64("lambda_duration_ms", operationCost.LambdaDurationMs),
-					zap.Int64("s3_gets", operationCost.S3Gets),
-					zap.Int64("s3_puts", operationCost.S3Puts),
+					zap.Int64("total_cost_microcents", totalCost),
 				)
 			}
 

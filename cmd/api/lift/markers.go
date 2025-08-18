@@ -33,24 +33,24 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 		// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
 		if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Check read scope
 		if !claims.HasScope(auth.ScopeRead) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+			return common.RespondInsufficientScope(ctx)
 		}
 
 		username = claims.Username
@@ -76,7 +76,7 @@ func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get markers", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	markers := result.Markers
 
@@ -119,7 +119,7 @@ func (h *Handler) HandleSaveMarkersLift(ctx *lift.Context) error {
 
 	// Validate markers
 	if err := h.validateMarkers(req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Save markers
@@ -156,24 +156,24 @@ func (h *Handler) authenticateMarkersWithScope(ctx *lift.Context, requiredScope 
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Check required scope
 	if !claims.HasScope(requiredScope) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return "", common.RespondInsufficientScope(ctx)
 	}
 
 	return claims.Username, nil
@@ -207,11 +207,11 @@ func (h *Handler) parseMarkersRequestFallback(ctx *lift.Context, originalErr err
 			h.logger.Debug("invalid markers request",
 				zap.Error(originalErr),
 				zap.Error(jsonErr))
-			return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+			return nil, common.RespondBadRequest(ctx, "invalid request body")
 		}
 		return req, nil
 	}
-	return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+	return nil, common.RespondBadRequest(ctx, "invalid request body")
 }
 
 // validateMarkers validates the markers request
@@ -302,7 +302,7 @@ func (h *Handler) returnUpdatedMarkers(ctx *lift.Context, username string) error
 	})
 	if err != nil {
 		h.logger.Error("failed to get updated markers", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	updatedMarkers := result.Markers
 

@@ -986,12 +986,12 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 	return &vouch, nil
 }
 
-// GetVouchesByActor retrieves vouches given by an actor
-func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
-	// Query GSI1 for vouches by this actor
+// queryVouchesByGSI is a helper function to query vouches using a specific GSI
+func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiIndex, keyPrefix, errorContext string) ([]*storage.Vouch, error) {
+	// Query the specified GSI for vouches
 	query := r.db.Model(&models.Vouch{}).
-		Index("gsi1-index").
-		Where("GSI1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
+		Index(gsiIndex).
+		Where(fmt.Sprintf("%sPK", strings.ToUpper(gsiIndex[:4])), "=", fmt.Sprintf("%s#%s", keyPrefix, actorID))
 
 	// Add active filter if requested
 	if activeOnly {
@@ -1001,7 +1001,7 @@ func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, ac
 	// Execute query
 	var vouchModels []*models.Vouch
 	if err := query.Scan(&vouchModels); err != nil {
-		return nil, fmt.Errorf("failed to query vouches by actor: %w", err)
+		return nil, fmt.Errorf("failed to query vouches %s: %w", errorContext, err)
 	}
 
 	// Convert to storage.Vouch slice
@@ -1022,40 +1022,14 @@ func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, ac
 	return vouches, nil
 }
 
+// GetVouchesByActor retrieves vouches given by an actor
+func (r *UserRepository) GetVouchesByActor(_ context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
+	return r.queryVouchesByGSI(actorID, activeOnly, "gsi1-index", "VOUCHER", "by actor")
+}
+
 // GetVouchesForActor retrieves vouches received by an actor
 func (r *UserRepository) GetVouchesForActor(_ context.Context, actorID string, activeOnly bool) ([]*storage.Vouch, error) {
-	// Query GSI2 for vouches for this actor
-	query := r.db.Model(&models.Vouch{}).
-		Index("gsi2-index").
-		Where("GSI2PK", "=", fmt.Sprintf("VOUCHEE#%s", actorID))
-
-	// Add active filter if requested
-	if activeOnly {
-		query = query.Filter("Active", "=", true)
-	}
-
-	// Execute query
-	var vouchModels []*models.Vouch
-	if err := query.Scan(&vouchModels); err != nil {
-		return nil, fmt.Errorf("failed to query vouches for actor: %w", err)
-	}
-
-	// Convert to storage.Vouch slice
-	vouches := make([]*storage.Vouch, 0, len(vouchModels))
-	for _, model := range vouchModels {
-		if common.ValidateRequiredParam(model.VouchData, "vouchData") != nil {
-			continue
-		}
-
-		var vouch storage.Vouch
-		if err := json.Unmarshal([]byte(model.VouchData), &vouch); err != nil {
-			r.logger.Warn("Failed to unmarshal vouch data", zap.Error(err))
-			continue
-		}
-		vouches = append(vouches, &vouch)
-	}
-
-	return vouches, nil
+	return r.queryVouchesByGSI(actorID, activeOnly, "gsi2-index", "VOUCHEE", "for actor")
 }
 
 // UpdateVouchStatus updates the active status of a vouch

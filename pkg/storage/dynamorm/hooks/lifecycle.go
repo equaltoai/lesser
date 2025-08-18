@@ -641,112 +641,86 @@ func createStatusNotifications(ctx context.Context, status StatusModel, repo Not
 	return nil
 }
 
-func createMentionNotification(ctx context.Context, mention MentionModel, repo NotificationRepository) error {
+// NotificationData holds parameters for creating notifications
+type NotificationData struct {
+	Type         string
+	UserID       string
+	FromUser     string
+	StatusID     string
+	ErrorFields  []zap.Field
+}
+
+// createNotificationWithPush creates a notification and sends push notification asynchronously
+func createNotificationWithPush(ctx context.Context, data NotificationData, repo NotificationRepository) error {
 	notification := map[string]any{
-		"type":       "mention",
-		"user_id":    mention.GetMentionedUserID(),
-		"from_user":  mention.GetUserID(),
-		"status_id":  mention.GetStatusID(),
+		"type":       data.Type,
+		"user_id":    data.UserID,
+		"from_user":  data.FromUser,
+		"status_id":  data.StatusID,
 		"created_at": time.Now(),
 	}
 
 	if err := repo.CreateNotification(ctx, notification); err != nil {
 		if logger := getLoggerFromContext(ctx); logger != nil {
-			logger.Error("failed_to_create_mention_notification",
-				zap.Error(err),
-				zap.String("mentioned_user_id", mention.GetMentionedUserID()),
-				zap.String("status_id", mention.GetStatusID()),
-			)
+			errorFields := append([]zap.Field{zap.Error(err)}, data.ErrorFields...)
+			logger.Error(fmt.Sprintf("failed_to_create_%s_notification", data.Type), errorFields...)
 		}
 		return err
 	}
 
 	// Send push notification asynchronously
 	go func() {
-		if err := repo.SendPushNotification(ctx, mention.GetMentionedUserID(), notification); err != nil {
+		if err := repo.SendPushNotification(ctx, data.UserID, notification); err != nil {
 			if logger := getLoggerFromContext(ctx); logger != nil {
 				logger.Warn("failed_to_send_push_notification",
 					zap.Error(err),
-					zap.String("type", "mention"),
-					zap.String("user_id", mention.GetMentionedUserID()),
+					zap.String("type", data.Type),
+					zap.String("user_id", data.UserID),
 				)
 			}
 		}
 	}()
 
 	return nil
+}
+
+func createMentionNotification(ctx context.Context, mention MentionModel, repo NotificationRepository) error {
+	return createNotificationWithPush(ctx, NotificationData{
+		Type:     "mention",
+		UserID:   mention.GetMentionedUserID(),
+		FromUser: mention.GetUserID(),
+		StatusID: mention.GetStatusID(),
+		ErrorFields: []zap.Field{
+			zap.String("mentioned_user_id", mention.GetMentionedUserID()),
+			zap.String("status_id", mention.GetStatusID()),
+		},
+	}, repo)
 }
 
 func createReblogNotification(ctx context.Context, reblog ReblogModel, repo NotificationRepository) error {
-	notification := map[string]any{
-		"type":       "reblog",
-		"user_id":    reblog.GetOriginalAuthorID(),
-		"from_user":  reblog.GetUserID(),
-		"status_id":  reblog.GetStatusID(),
-		"created_at": time.Now(),
-	}
-
-	if err := repo.CreateNotification(ctx, notification); err != nil {
-		if logger := getLoggerFromContext(ctx); logger != nil {
-			logger.Error("failed_to_create_reblog_notification",
-				zap.Error(err),
-				zap.String("reblogger_id", reblog.GetUserID()),
-				zap.String("original_author_id", reblog.GetOriginalAuthorID()),
-			)
-		}
-		return err
-	}
-
-	// Send push notification asynchronously
-	go func() {
-		if err := repo.SendPushNotification(ctx, reblog.GetOriginalAuthorID(), notification); err != nil {
-			if logger := getLoggerFromContext(ctx); logger != nil {
-				logger.Warn("failed_to_send_push_notification",
-					zap.Error(err),
-					zap.String("type", "reblog"),
-					zap.String("user_id", reblog.GetOriginalAuthorID()),
-				)
-			}
-		}
-	}()
-
-	return nil
+	return createNotificationWithPush(ctx, NotificationData{
+		Type:     "reblog",
+		UserID:   reblog.GetOriginalAuthorID(),
+		FromUser: reblog.GetUserID(),
+		StatusID: reblog.GetStatusID(),
+		ErrorFields: []zap.Field{
+			zap.String("reblogger_id", reblog.GetUserID()),
+			zap.String("original_author_id", reblog.GetOriginalAuthorID()),
+		},
+	}, repo)
 }
 
 func createFavoriteNotification(ctx context.Context, favorite FavoriteModel, repo NotificationRepository) error {
-	notification := map[string]any{
-		"type":       "favourite",
-		"user_id":    favorite.GetStatusAuthorID(),
-		"from_user":  favorite.GetUserID(),
-		"status_id":  favorite.GetStatusID(),
-		"created_at": time.Now(),
-	}
-
-	if err := repo.CreateNotification(ctx, notification); err != nil {
-		if logger := getLoggerFromContext(ctx); logger != nil {
-			logger.Error("failed_to_create_favorite_notification",
-				zap.Error(err),
-				zap.String("favoriter_id", favorite.GetUserID()),
-				zap.String("status_author_id", favorite.GetStatusAuthorID()),
-			)
-		}
-		return err
-	}
-
-	// Send push notification asynchronously
-	go func() {
-		if err := repo.SendPushNotification(ctx, favorite.GetStatusAuthorID(), notification); err != nil {
-			if logger := getLoggerFromContext(ctx); logger != nil {
-				logger.Warn("failed_to_send_push_notification",
-					zap.Error(err),
-					zap.String("type", "favourite"),
-					zap.String("user_id", favorite.GetStatusAuthorID()),
-				)
-			}
-		}
-	}()
-
-	return nil
+	return createNotificationWithPush(ctx, NotificationData{
+		Type:     "favourite",
+		UserID:   favorite.GetStatusAuthorID(),
+		FromUser: favorite.GetUserID(),
+		StatusID: favorite.GetStatusID(),
+		ErrorFields: []zap.Field{
+			zap.String("favoriter_id", favorite.GetUserID()),
+			zap.String("status_author_id", favorite.GetStatusAuthorID()),
+		},
+	}, repo)
 }
 
 func createPollNotification(ctx context.Context, poll PollModel, repo NotificationRepository) error {

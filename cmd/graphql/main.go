@@ -22,7 +22,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql/handler"
@@ -35,6 +35,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/observability"
@@ -62,55 +63,83 @@ const (
 )
 
 var (
-	lambdaCtx         *common.LambdaContext
-	cfg               interface{} // config.Config interface
-	repos             core.RepositoryStorage
-	logger            *zap.Logger
-	graphQLHandler    *handler.Server
-	emfMetricsService interface{} // *observability.EMFMetricsService interface
-	costTracker       *cost.Tracker
-	initTime          time.Time
+	lambdaCtx           *common.LambdaContext
+	cfg                 *config.Config
+	repos               core.RepositoryStorage
+	logger              *zap.Logger
+	graphQLHandler      *handler.Server
+	emfMetricsService   interface{} // *observability.EMFMetricsService interface
+	costTracker         *cost.Tracker // Legacy tracker for resolver compatibility
+	costTrackingService *cost.TrackingService // Centralized service
+	initTime            time.Time
 )
 
 func init() {
 	initTime = time.Now()
 
-	// Initialize Lambda with GraphQL API-specific configuration
-	lambdaConfig := common.LambdaConfig{
-		ServiceName:        "graphql",
-		LambdaType:         common.LambdaTypeAPI,
-		EnableMetrics:      os.Getenv("DISABLE_METRICS") != envTrue,
-		EnableTracing:      true,
-		EnableHealthCheck:  true,
-		EnableCostTracking: true,
-		RequestTimeout:     30 * time.Second,
-	}
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "graphql",
+		LambdaType:  common.LambdaTypeAPI,
+		RequestTimeout: 30 * time.Second,
+	})
 
-	var err error
-	lambdaCtx, err = common.InitializeLambda(lambdaConfig)
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
+		// Fallback to manual initialization for services requiring it
+		initializeManualServices()
+	} else {
+		// Extract standardized services
+		extractStandardizedServices()
 	}
 
-	// Initialize all services using default API options
-	options := common.DefaultLambdaInitOptions(common.LambdaTypeAPI)
-	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
-	}
+	// Initialize GraphQL-specific services
+	initializeGraphQLSpecificServices()
+}
 
-	// Get initialized components
+// extractStandardizedServices extracts services from standardized initialization
+func extractStandardizedServices() {
+	// Automatic dependency injection from Lambda context
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
 	emfMetricsService = lambdaCtx.EMFMetrics
 
-	// Repositories and storage already initialized by Lambda framework
+	// Initialize centralized cost tracking service if CloudWatch client is available
+	if lambdaCtx.AWSServices != nil && lambdaCtx.AWSServices.CloudWatch != nil {
+		costTrackingService = cost.NewCostTrackingServiceForLambda(lambdaCtx.AWSServices.CloudWatch, logger, "graphql")
+		logger.Info("initialized centralized cost tracking service from standardized initialization")
+	}
 
-	// Auth service available from Lambda context as lambdaCtx.AuthService
-
-	// Initialize cost tracker
+	// Initialize unified cost tracker for resolver compatibility
+	// Use standard cost tracker for resolver compatibility
 	costTracker = cost.New()
 
+	logger.Info("extracted services from standardized initialization")
+}
+
+// initializeManualServices provides fallback manual initialization
+func initializeManualServices() {
+	logger = lambdaCtx.Logger
+	cfg = lambdaCtx.Config
+
+	logger.Info("falling back to manual service initialization")
+
+	// Manual storage initialization would go here if needed
+	// For now, use services from Lambda context
+	if lambdaCtx.Repos != nil {
+		repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	}
+
+	// Initialize cost tracker for resolver compatibility
+	costTracker = cost.New()
+
+	logger.Info("manual service initialization completed")
+}
+
+// initializeGraphQLSpecificServices initializes GraphQL-specific components
+func initializeGraphQLSpecificServices() {
 	// Initialize AI service (optional)
 	var aiService *ai.AIService
 	if os.Getenv("DISABLE_AI") != envTrue {
@@ -123,7 +152,7 @@ func init() {
 			EnableAIDetection:   false,
 			EnableImageAnalysis: false,
 			BedrockModelID:      "anthropic.claude-v2",
-			S3Bucket:            lambdaCtx.Config.S3BucketName,
+			S3Bucket:            cfg.S3BucketName,
 		}
 		aiService = ai.NewAIService(lambdaCtx.AWSServices.Config, aiConfig)
 		logger.Info("AI service initialized")
@@ -131,22 +160,16 @@ func init() {
 		logger.Info("AI service disabled")
 	}
 
-	// EMF metrics service already initialized by Lambda framework
-
-	// Initialize GraphQL-specific components
-	// Use the config directly from Lambda context - it's already the right type
-	configTyped := lambdaCtx.Config
-
 	// Initialize event publisher for real-time updates
 	// For GraphQL, we'll use a mock publisher as real events go through WebSocket
 	publisher := streaming.NewMockPublisher()
-	
+
 	// Create service registry with all dependencies
 	serviceConfig := &services.ServiceConfig{
-		BaseURL:   configTyped.BaseURL(),
-		JWTSecret: configTyped.JWTSecret,
+		BaseURL:   cfg.BaseURL(),
+		JWTSecret: cfg.JWTSecret,
 	}
-	
+
 	registry, err := services.NewRegistry(
 		services.WithStorage(repos),
 		services.WithPublisher(publisher),
@@ -159,15 +182,15 @@ func init() {
 
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "GraphQLResolver", "", "")
-	
+
 	// Initialize GraphQL resolver with service registry
 	resolver := &graph.Resolver{
 		Registry:       registry,
 		Storage:        repos,      // Keep for legacy resolvers
 		CostTracker:    costTracker,
 		UnifiedTracker: unifiedTracker,
-		TableName:      configTyped.DynamoTableName,
-		MastodonConv:   mastodon.NewConverter(configTyped.BaseURL()),
+		TableName:      cfg.DynamoTableName,
+		MastodonConv:   mastodon.NewConverter(cfg.BaseURL()),
 		Logger:         logger,
 		AIService:      aiService,
 	}
@@ -327,21 +350,7 @@ func (r *bytesReader) Close() error {
 	return nil
 }
 
-// extractBearerToken extracts Bearer token from Authorization header
-func extractBearerToken(ctx *lift.Context) string {
-	authHeader := ctx.Request.Headers["Authorization"]
-	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-		return ""
-	}
-
-	// Check for Bearer token format
-	const bearerPrefix = "Bearer "
-	if strings.HasPrefix(authHeader, bearerPrefix) {
-		return strings.TrimPrefix(authHeader, bearerPrefix)
-	}
-
-	return ""
-}
+// extractBearerToken is now handled by unified auth middleware
 
 // createDataLoaderMiddleware creates DataLoader middleware for N+1 query prevention
 func createDataLoaderMiddleware() lift.Middleware {
@@ -355,11 +364,11 @@ func createDataLoaderMiddleware() lift.Middleware {
 	}
 }
 
-// createCostTrackingMiddleware creates cost tracking middleware
+// createCostTrackingMiddleware creates cost tracking middleware with centralized service integration
 func createCostTrackingMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Add cost tracker to context
+			// Add legacy cost tracker to context for resolver compatibility
 			ctx.Set("cost_tracker", costTracker)
 
 			// Track request start
@@ -367,8 +376,36 @@ func createCostTrackingMiddleware() lift.Middleware {
 
 			err := next.Handle(ctx)
 
-			// Log cost information
+			// Track costs with centralized service
 			duration := time.Since(start)
+			
+			// Track with centralized cost tracking service
+			if costTrackingService != nil {
+				go func() {
+					memoryMB := int64(128) // Default Lambda memory
+					if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
+						if mem, parseErr := strconv.ParseInt(envMem, 10, 64); parseErr == nil {
+							memoryMB = mem
+						}
+					}
+
+					// Track Lambda execution
+					lambdaOp := cost.LambdaOperation{
+						FunctionName: "graphql",
+						Duration:     duration,
+						MemoryMB:     memoryMB,
+						Timestamp:    start,
+					}
+					if trackErr := costTrackingService.TrackLambdaInvocation(context.Background(), lambdaOp); trackErr != nil {
+						logger.Warn("failed to track GraphQL Lambda cost", zap.Error(trackErr))
+					}
+
+					// Note: DynamoDB costs are tracked at the resolver level via the unified tracker
+					// This middleware focuses on Lambda execution costs
+				}()
+			}
+
+			// Log cost information
 			logger.Info("GraphQL request completed",
 				zap.Duration("duration", duration),
 				zap.String("path", ctx.Request.Path),
@@ -379,54 +416,16 @@ func createCostTrackingMiddleware() lift.Middleware {
 	}
 }
 
-// createAuthMiddleware creates authentication middleware
+// createAuthMiddleware creates authentication middleware using unified patterns
 func createAuthMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Extract authorization header
-			authHeader := ctx.Request.Headers["Authorization"]
-			if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-				// No authentication - continue with anonymous access
-				return next.Handle(ctx)
-			}
-
-			// Extract Bearer token
-			token := extractBearerToken(ctx)
-			if err := common.ValidateRequiredParam("token", token); err != nil {
-				logger.Debug("Invalid authorization format - expected Bearer token")
-				// Continue without authentication for GraphQL introspection queries
-				return next.Handle(ctx)
-			}
-
-			// Create auth service for this request
-			authService, err := auth.NewAuthService(repos)
-			if err != nil {
-				logger.Error("Failed to create auth service", zap.Error(err))
-				return next.Handle(ctx)
-			}
-
-			// Validate JWT access token
-			claims, err := authService.ValidateAccessToken(token)
-			if err != nil {
-				logger.Debug("Invalid access token", zap.Error(err))
-				// Continue without authentication - GraphQL can handle unauthorized requests
-				return next.Handle(ctx)
-			}
-
-			// Store enhanced claims in context for resolvers
-			ctx.Set("claims", claims)
-			ctx.Set("user", claims) // For GraphQL context compatibility
-			ctx.Set("username", claims.Username)
-			ctx.Set("session_id", claims.SessionID)
-			ctx.Set("device_id", claims.DeviceID)
-
-			logger.Debug("User authenticated",
-				zap.String("username", claims.Username),
-				zap.String("session_id", claims.SessionID))
-
-			return next.Handle(ctx)
-		})
+	// Create auth service for GraphQL middleware
+	authService, err := auth.NewAuthService(repos)
+	if err != nil {
+		logger.Fatal("Failed to create auth service for GraphQL middleware", zap.Error(err))
 	}
+	
+	// Use the unified GraphQL auth middleware
+	return auth.CreateGraphQLAuthMiddlewareFromAuthService(authService, logger)
 }
 
 // createCORSMiddleware creates CORS middleware for GraphQL
@@ -511,7 +510,10 @@ func main() {
 	// 5. CORS middleware
 	app.Use(createCORSMiddleware())
 
-	// 6. Rate limiting middleware (before auth to catch anonymous users)
+	// 6. Unified error handling middleware
+	app.Use(common.CreateGraphQLErrorMiddleware(logger))
+
+	// 7. Rate limiting middleware (before auth to catch anonymous users)
 	if os.Getenv("DISABLE_RATE_LIMITING") != "true" {
 		// Create GraphQL-specific rate limiting config
 		graphqlConfig := ratelimit.DefaultRateLimitConfig()

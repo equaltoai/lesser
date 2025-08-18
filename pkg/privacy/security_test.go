@@ -12,167 +12,227 @@ func TestSecurityProperties(t *testing.T) {
 	hasher := createTestHasher(t)
 	
 	t.Run("NoReversibleInformation", func(t *testing.T) {
-		// Verify that hashed data doesn't contain reversible information
-		sensitiveData := []string{
-			"192.168.1.100",
-			"user@example.com", 
-			"john_doe",
-			"John Doe",
-			"sensitive personal information",
-		}
-		
-		for _, data := range sensitiveData {
-			hash, err := hasher.Hash(data, DataTypePII)
-			if err != nil {
-				t.Fatalf("Hash failed: %v", err)
-			}
-			
-			// Hash should not contain the original data
-			if strings.Contains(hash, data) {
-				t.Errorf("Hash contains original data: %s -> %s", data, hash)
-			}
-			
-			// Hash should not contain obvious derivatives
-			dataLower := strings.ToLower(data)
-			if strings.Contains(strings.ToLower(hash), dataLower) && len(dataLower) > 3 {
-				t.Errorf("Hash contains derivative of original data: %s -> %s", data, hash)
-			}
-		}
+		testNoReversibleInformation(t, hasher)
 	})
 	
 	t.Run("UniformDistribution", func(t *testing.T) {
-		// Test that hashes have good distribution (basic check)
-		hashes := make(map[string]int)
-		
-		for i := 0; i < 1000; i++ {
-			data := fmt.Sprintf("test_data_%d", i)
-			hash, err := hasher.Hash(data, DataTypeGeneric)
-			if err != nil {
-				t.Fatalf("Hash failed: %v", err)
-			}
-			
-			// Count first few characters after the prefix for distribution check
-			hashWithoutPrefix := strings.TrimPrefix(hash, "full_generic_")
-			if len(hashWithoutPrefix) >= 8 {
-				prefix := hashWithoutPrefix[:8]
-				hashes[prefix]++
-			}
-		}
-		
-		// Check that we don't have too many collisions in prefixes
-		maxCollisions := 50 // Allow some collisions but not too many
-		for prefix, count := range hashes {
-			if count > maxCollisions {
-				t.Errorf("Too many prefix collisions for %s: %d", prefix, count)
-			}
-		}
+		testUniformDistribution(t, hasher)
 	})
 	
 	t.Run("DeterministicHashing", func(t *testing.T) {
-		// Verify that the same input always produces the same output
-		testData := "deterministic_test_data"
-		
-		hash1, err := hasher.Hash(testData, DataTypeGeneric)
+		testDeterministicHashing(t, hasher)
+	})
+	
+	t.Run("ContextSeparation", func(t *testing.T) {
+		testContextSeparation(t, hasher)
+	})
+	
+	t.Run("KeySensitivity", func(t *testing.T) {
+		testKeySensitivity(t)
+	})
+	
+	t.Run("OutputLength", func(t *testing.T) {
+		testOutputLength(t, hasher)
+	})
+}
+
+// testNoReversibleInformation verifies that hashed data doesn't contain reversible information
+func testNoReversibleInformation(t *testing.T, hasher *Hasher) {
+	sensitiveData := []string{
+		"192.168.1.100",
+		"user@example.com",
+		"john_doe",
+		"John Doe",
+		"sensitive personal information",
+	}
+	
+	for _, data := range sensitiveData {
+		hash, err := hasher.Hash(data, DataTypePII)
 		if err != nil {
 			t.Fatalf("Hash failed: %v", err)
 		}
 		
-		// Hash the same data multiple times
-		for i := 0; i < 10; i++ {
-			hash2, err := hasher.Hash(testData, DataTypeGeneric)
-			if err != nil {
-				t.Fatalf("Hash failed: %v", err)
-			}
-			
-			if hash1 != hash2 {
-				t.Error("Hashing is not deterministic")
-				break
-			}
-		}
-	})
+		validateHashDoesNotContainOriginalData(t, hash, data)
+		validateHashDoesNotContainDerivatives(t, hash, data)
+	}
+}
+
+// validateHashDoesNotContainOriginalData checks that hash doesn't contain the original data
+func validateHashDoesNotContainOriginalData(t *testing.T, hash, data string) {
+	if strings.Contains(hash, data) {
+		t.Errorf("Hash contains original data: %s -> %s", data, hash)
+	}
+}
+
+// validateHashDoesNotContainDerivatives checks that hash doesn't contain obvious derivatives
+func validateHashDoesNotContainDerivatives(t *testing.T, hash, data string) {
+	dataLower := strings.ToLower(data)
+	if strings.Contains(strings.ToLower(hash), dataLower) && len(dataLower) > 3 {
+		t.Errorf("Hash contains derivative of original data: %s -> %s", data, hash)
+	}
+}
+
+// testUniformDistribution tests that hashes have good distribution
+func testUniformDistribution(t *testing.T, hasher *Hasher) {
+	hashes := make(map[string]int)
 	
-	t.Run("ContextSeparation", func(t *testing.T) {
-		// Verify that different contexts produce different hashes
-		testData := "context_test_data"
-		
-		hashIP, _ := hasher.Hash(testData, DataTypeIP)
-		hashEmail, _ := hasher.Hash(testData, DataTypeEmail)
-		hashUsername, _ := hasher.Hash(testData, DataTypeUsername)
-		hashPII, _ := hasher.Hash(testData, DataTypePII)
-		hashGeneric, _ := hasher.Hash(testData, DataTypeGeneric)
-		
-		hashes := []string{hashIP, hashEmail, hashUsername, hashPII, hashGeneric}
-		
-		// All hashes should be different
-		for i := 0; i < len(hashes); i++ {
-			for j := i + 1; j < len(hashes); j++ {
-				if hashes[i] == hashes[j] {
-					t.Errorf("Context separation failed: same hash for different contexts")
-				}
-			}
-		}
-	})
-	
-	t.Run("KeySensitivity", func(t *testing.T) {
-		// Verify that different keys produce different hashes
-		hasher1 := createTestHasher(t)
-		
-		// Create second hasher with different key
-		config2 := DefaultConfig()
-		config2.MasterKey = make([]byte, 64)
-		for i := range config2.MasterKey {
-			config2.MasterKey[i] = byte((i + 1) % 256) // Different from first hasher
-		}
-		
-		hasher2, err := NewHasher(config2)
+	for i := 0; i < 1000; i++ {
+		data := fmt.Sprintf("test_data_%d", i)
+		hash, err := hasher.Hash(data, DataTypeGeneric)
 		if err != nil {
-			t.Fatalf("Failed to create second hasher: %v", err)
+			t.Fatalf("Hash failed: %v", err)
 		}
 		
-		testData := "key_sensitivity_test"
-		
-		hash1, _ := hasher1.Hash(testData, DataTypeGeneric)
-		hash2, _ := hasher2.Hash(testData, DataTypeGeneric)
-		
-		if hash1 == hash2 {
-			t.Error("Different keys should produce different hashes")
-		}
-	})
+		countHashPrefix(hashes, hash)
+	}
 	
-	t.Run("OutputLength", func(t *testing.T) {
-		// Verify consistent output lengths
-		testInputs := []string{
-			"a",
-			"short",
-			"medium_length_input",
-			"very_long_input_string_that_is_much_longer_than_others_to_test_consistency",
+	validateDistribution(t, hashes)
+}
+
+// countHashPrefix extracts and counts hash prefixes for distribution analysis
+func countHashPrefix(hashes map[string]int, hash string) {
+	hashWithoutPrefix := strings.TrimPrefix(hash, "full_generic_")
+	if len(hashWithoutPrefix) >= 8 {
+		prefix := hashWithoutPrefix[:8]
+		hashes[prefix]++
+	}
+}
+
+// validateDistribution checks that we don't have too many collisions in prefixes
+func validateDistribution(t *testing.T, hashes map[string]int) {
+	maxCollisions := 50 // Allow some collisions but not too many
+	for prefix, count := range hashes {
+		if count > maxCollisions {
+			t.Errorf("Too many prefix collisions for %s: %d", prefix, count)
+		}
+	}
+}
+
+// testDeterministicHashing verifies that the same input always produces the same output
+func testDeterministicHashing(t *testing.T, hasher *Hasher) {
+	testData := "deterministic_test_data"
+	
+	hash1, err := hasher.Hash(testData, DataTypeGeneric)
+	if err != nil {
+		t.Fatalf("Hash failed: %v", err)
+	}
+	
+	for i := 0; i < 10; i++ {
+		hash2, err := hasher.Hash(testData, DataTypeGeneric)
+		if err != nil {
+			t.Fatalf("Hash failed: %v", err)
 		}
 		
-		var lengths []int
-		for _, input := range testInputs {
-			hash, err := hasher.Hash(input, DataTypeGeneric)
-			if err != nil {
-				t.Fatalf("Hash failed: %v", err)
+		if hash1 != hash2 {
+			t.Error("Hashing is not deterministic")
+			break
+		}
+	}
+}
+
+// testContextSeparation verifies that different contexts produce different hashes
+func testContextSeparation(t *testing.T, hasher *Hasher) {
+	testData := "context_test_data"
+	
+	hashes := generateHashesForAllContexts(t, hasher, testData)
+	validateAllHashesAreDifferent(t, hashes)
+}
+
+// generateHashesForAllContexts creates hashes for all data types
+func generateHashesForAllContexts(t *testing.T, hasher *Hasher, testData string) []string {
+	hashIP, _ := hasher.Hash(testData, DataTypeIP)
+	hashEmail, _ := hasher.Hash(testData, DataTypeEmail)
+	hashUsername, _ := hasher.Hash(testData, DataTypeUsername)
+	hashPII, _ := hasher.Hash(testData, DataTypePII)
+	hashGeneric, _ := hasher.Hash(testData, DataTypeGeneric)
+	
+	return []string{hashIP, hashEmail, hashUsername, hashPII, hashGeneric}
+}
+
+// validateAllHashesAreDifferent checks that all hashes in the slice are unique
+func validateAllHashesAreDifferent(t *testing.T, hashes []string) {
+	for i := 0; i < len(hashes); i++ {
+		for j := i + 1; j < len(hashes); j++ {
+			if hashes[i] == hashes[j] {
+				t.Errorf("Context separation failed: same hash for different contexts")
 			}
-			
-			lengths = append(lengths, len(hash))
+		}
+	}
+}
+
+// testKeySensitivity verifies that different keys produce different hashes
+func testKeySensitivity(t *testing.T) {
+	hasher1 := createTestHasher(t)
+	hasher2 := createTestHasherWithDifferentKey(t)
+	
+	testData := "key_sensitivity_test"
+	
+	hash1, _ := hasher1.Hash(testData, DataTypeGeneric)
+	hash2, _ := hasher2.Hash(testData, DataTypeGeneric)
+	
+	if hash1 == hash2 {
+		t.Error("Different keys should produce different hashes")
+	}
+}
+
+// createTestHasherWithDifferentKey creates a hasher with a different master key
+func createTestHasherWithDifferentKey(t *testing.T) *Hasher {
+	config2 := DefaultConfig()
+	config2.MasterKey = make([]byte, 64)
+	for i := range config2.MasterKey {
+		config2.MasterKey[i] = byte((i + 1) % 256) // Different from first hasher
+	}
+	
+	hasher2, err := NewHasher(config2)
+	if err != nil {
+		t.Fatalf("Failed to create second hasher: %v", err)
+	}
+	
+	return hasher2
+}
+
+// testOutputLength verifies consistent output lengths
+func testOutputLength(t *testing.T, hasher *Hasher) {
+	testInputs := []string{
+		"a",
+		"short",
+		"medium_length_input",
+		"very_long_input_string_that_is_much_longer_than_others_to_test_consistency",
+	}
+	
+	lengths := collectHashLengths(t, hasher, testInputs)
+	validateHashLengthConsistency(t, lengths)
+}
+
+// collectHashLengths generates hashes for test inputs and collects their lengths
+func collectHashLengths(t *testing.T, hasher *Hasher, testInputs []string) []int {
+	var lengths []int
+	for _, input := range testInputs {
+		hash, err := hasher.Hash(input, DataTypeGeneric)
+		if err != nil {
+			t.Fatalf("Hash failed: %v", err)
 		}
 		
-		// All hashes should have similar lengths (within reason)
-		minLen, maxLen := lengths[0], lengths[0]
-		for _, length := range lengths {
-			if length < minLen {
-				minLen = length
-			}
-			if length > maxLen {
-				maxLen = length
-			}
+		lengths = append(lengths, len(hash))
+	}
+	return lengths
+}
+
+// validateHashLengthConsistency checks that hash lengths don't vary too much
+func validateHashLengthConsistency(t *testing.T, lengths []int) {
+	minLen, maxLen := lengths[0], lengths[0]
+	for _, length := range lengths {
+		if length < minLen {
+			minLen = length
 		}
-		
-		if maxLen-minLen > 10 {
-			t.Errorf("Hash lengths vary too much: min=%d, max=%d", minLen, maxLen)
+		if length > maxLen {
+			maxLen = length
 		}
-	})
+	}
+	
+	if maxLen-minLen > 10 {
+		t.Errorf("Hash lengths vary too much: min=%d, max=%d", minLen, maxLen)
+	}
 }
 
 // TestIPPartialHashing tests the security of partial IP hashing

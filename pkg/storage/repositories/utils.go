@@ -223,8 +223,13 @@ func (p *PaginationUtils) EncodeCursor(pk, sk string) string {
 
 // DecodeCursor decodes pagination cursor from base64 format
 func (p *PaginationUtils) DecodeCursor(cursor string) (pk, sk string, err error) {
-	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
+	if cursor == "" {
 		return "", "", nil
+	}
+
+	// Validate cursor format
+	if err := common.ValidateRepositoryCursor(cursor); err != nil {
+		return "", "", fmt.Errorf("invalid cursor: %w", err)
 	}
 
 	// Decode from base64

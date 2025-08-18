@@ -37,7 +37,7 @@ func (h *Handler) HandleGetConversationsLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to list conversations", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Set pagination header if there are more results
@@ -75,7 +75,7 @@ func (h *Handler) setConversationPaginationHeader(ctx *lift.Context, cursor stri
 func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 	conversationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing conversation id"})
+		return common.RespondBadRequest(ctx, "missing conversation id")
 	}
 
 	// Authenticate user
@@ -91,13 +91,13 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "conversation not found"})
+			return common.RespondNotFound(ctx, "conversation not found")
 		}
 		if strings.Contains(err.Error(), "not a participant") {
-			return ctx.Status(404).JSON(map[string]string{"error": "conversation not found"})
+			return common.RespondNotFound(ctx, "conversation not found")
 		}
 		h.logger.Error("failed to delete conversation", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.Status(200).JSON(map[string]interface{}{})
@@ -107,7 +107,7 @@ func (h *Handler) HandleDeleteConversationLift(ctx *lift.Context) error {
 func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 	conversationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("conversation_id", conversationID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing conversation id"})
+		return common.RespondBadRequest(ctx, "missing conversation id")
 	}
 
 	// Authenticate user
@@ -123,7 +123,7 @@ func (h *Handler) HandleMarkConversationReadLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to mark conversation as read", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(result.Conversation)

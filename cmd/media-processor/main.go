@@ -24,6 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/media"
 	"github.com/equaltoai/lesser/pkg/monitoring"
@@ -123,8 +124,6 @@ type MediaJobCostTracker struct {
 }
 
 var (
-	processor *MediaProcessor
-
 	// Global transcoding cost tracker with current AWS pricing
 	transcodingCosts = TranscodingCostTracker{
 		SDCostPerMinute:    15000, // $0.015 per minute
@@ -259,18 +258,88 @@ func init() {
 	}
 }
 
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage
+	processor *MediaProcessor
+)
+
+func init() {
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "media-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+	
+	// Initialize processor with media-specific configuration
+	processor = NewMediaProcessor(lambdaCtx)
+}
+
+// NewMediaProcessor creates a new media processor instance with simplified Lambda context
+func NewMediaProcessor(lambdaCtx *common.LambdaContext) *MediaProcessor {
+	// Initialize simplified processor with essential components
+	return &MediaProcessor{
+		db:        lambdaCtx.DynamoDB.(core.DB),
+		repos:     lambdaCtx.Repos.(storageCore.RepositoryStorage),
+		tableName: lambdaCtx.Config.DynamoTableName,
+		logger:    lambdaCtx.Logger,
+	}
+}
+
 func main() {
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	// Configure and start Lambda
+	app := setupLiftApp()
+	lambdaHandler := createLambdaHandler(app)
+	lambda.Start(lambdaHandler)
+}
+
+// mediaConfiguration holds media processing configuration
+type mediaConfiguration struct {
+	bucketName           string
+	cdnDomain            string
+	mediaConvertEndpoint string
+	mediaConvertRole     string
+	mediaConvertQueue    string
+}
+
+// mediaRepositories holds all media-related repositories
+type mediaRepositories struct {
+	mediaRepo         *repositories.MediaRepository
+	mediaAnalyticsRepo *repositories.MediaAnalyticsRepository
+	mediaMetadataRepo  *repositories.MediaMetadataRepository
+}
+
+// liftApp interface defines the methods we need from the Lift app
+type liftApp interface {
+	Use(middleware lift.Middleware) *lift.App
+	SQS(name string, handler interface{}) error
+	HandleRequest(ctx context.Context, event interface{}) (interface{}, error)
+}
+
+// initializeLambdaContext initializes the Lambda context and extracts basic configuration
+func initializeLambdaContext() (*common.LambdaContext, *config.Config, *zap.Logger) {
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		LambdaType: common.LambdaTypeMedia,
 	})
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
-	}
+	
+	return lambdaCtx, lambdaCtx.Config, lambdaCtx.Logger
+}
 
-	cfg := lambdaCtx.Config
-	logger := lambdaCtx.Logger
-
-	// Get DynamORM DB instance
+// initializeDynamoDB initializes and validates the DynamoDB connection
+func initializeDynamoDB(lambdaCtx *common.LambdaContext, logger *zap.Logger) core.DB {
 	var db core.DB
 	if lambdaCtx.DynamoDB != nil {
 		if dynamoDB, ok := lambdaCtx.DynamoDB.(core.DB); ok {
@@ -281,52 +350,69 @@ func main() {
 	} else {
 		logger.Fatal("DynamoDB client not initialized")
 	}
+	return db
+}
 
-	// Load AWS config for CloudWatch
+// initializeAWSConfig loads the AWS configuration for CloudWatch and other services
+func initializeAWSConfig(cfg *config.Config, logger *zap.Logger) aws.Config {
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.Region),
 	)
 	if err != nil {
 		logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
+	return awsConfig
+}
 
+// initializeRepositories creates all repository instances needed for media processing
+func initializeRepositories(db core.DB, cfg *config.Config, awsConfig aws.Config, logger *zap.Logger) (*factory.RepositoryFactory, *mediaRepositories) {
 	// Initialize repository factory
 	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
-	// Initialize media repository directly for backward compatibility
-	mediaRepo := repositories.NewMediaRepository(db, cfg.DynamoTableName, logger)
-
-	// Initialize media analytics repository for variant-level cost tracking
-	mediaAnalyticsRepo := repositories.NewMediaAnalyticsRepository(db, cfg.DynamoTableName, logger)
-
-	// Initialize media metadata repository for processing status and blurhash tracking
-	mediaMetadataRepo := repositories.NewMediaMetadataRepository(db, logger)
-
 	// Initialize EMF metrics service for performance monitoring
 	_ = observability.NewEMFMetricsService(logger)
 
-	// Get configuration from environment
-	bucketName := os.Getenv("S3_BUCKET_NAME")
-	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
-		bucketName = cfg.S3BucketName
+	mediaRepos := &mediaRepositories{
+		mediaRepo:          repositories.NewMediaRepository(db, cfg.DynamoTableName, logger),
+		mediaAnalyticsRepo: repositories.NewMediaAnalyticsRepository(db, cfg.DynamoTableName, logger),
+		mediaMetadataRepo:  repositories.NewMediaMetadataRepository(db, logger),
+	}
+	
+	return repos, mediaRepos
+}
+
+// parseMediaConfiguration extracts media configuration from environment variables
+func parseMediaConfiguration(cfg *config.Config) *mediaConfiguration {
+	mediaConfig := &mediaConfiguration{}
+	
+	// Get S3 bucket configuration
+	mediaConfig.bucketName = os.Getenv("S3_BUCKET_NAME")
+	if err := common.ValidateRequiredParam("bucketName", mediaConfig.bucketName); err != nil {
+		mediaConfig.bucketName = cfg.S3BucketName
 	}
 
-	cdnDomain := os.Getenv("CDN_DOMAIN")
-	if err := common.ValidateRequiredParam("cdnDomain", cdnDomain); err != nil {
-		cdnDomain = cfg.Domain // Use domain instead of CDNDomain
+	// Get CDN domain configuration
+	mediaConfig.cdnDomain = os.Getenv("CDN_DOMAIN")
+	if err := common.ValidateRequiredParam("cdnDomain", mediaConfig.cdnDomain); err != nil {
+		mediaConfig.cdnDomain = cfg.Domain // Use domain instead of CDNDomain
 	}
 
-	mediaConvertEndpoint := os.Getenv("MEDIACONVERT_ENDPOINT")
-	mediaConvertRole := os.Getenv("MEDIACONVERT_ROLE_ARN")
-	mediaConvertQueue := os.Getenv("MEDIACONVERT_QUEUE")
-	if err := common.ValidateRequiredParam("mediaConvertQueue", mediaConvertQueue); err != nil {
-		mediaConvertQueue = "Default"
+	// Get MediaConvert configuration
+	mediaConfig.mediaConvertEndpoint = os.Getenv("MEDIACONVERT_ENDPOINT")
+	mediaConfig.mediaConvertRole = os.Getenv("MEDIACONVERT_ROLE_ARN")
+	mediaConfig.mediaConvertQueue = os.Getenv("MEDIACONVERT_QUEUE")
+	if err := common.ValidateRequiredParam("mediaConvertQueue", mediaConfig.mediaConvertQueue); err != nil {
+		mediaConfig.mediaConvertQueue = "Default"
 	}
+	
+	return mediaConfig
+}
 
-	// Initialize observability services
+// initializeObservabilityServices sets up metrics and alerting services
+func initializeObservabilityServices(cfg *config.Config, awsConfig aws.Config, logger *zap.Logger) (*observability.EMFMetrics, *monitoring.AlertManager) {
 	var emfMetrics *observability.EMFMetrics
 	var alertManager *monitoring.AlertManager
 	
@@ -349,41 +435,61 @@ func main() {
 			zap.String("alerts_enabled", "true"),
 			zap.String("metrics_namespace", "Lesser/Media"))
 	}
+	
+	return emfMetrics, alertManager
+}
 
-	// Create processor instance
-	processor = &MediaProcessor{
+// createMediaProcessor creates the main MediaProcessor instance with all dependencies
+func createMediaProcessor(db core.DB, repos *factory.RepositoryFactory, mediaRepos *mediaRepositories, cfg *config.Config, mediaConfig *mediaConfiguration, emfMetrics *observability.EMFMetrics, alertManager *monitoring.AlertManager, awsConfig aws.Config, logger *zap.Logger) *MediaProcessor {
+	return &MediaProcessor{
 		db:                   db,
 		repos:                repos,
-		mediaRepo:            mediaRepo,
-		mediaAnalyticsRepo:   mediaAnalyticsRepo,
-		mediaMetadataRepo:    mediaMetadataRepo,
+		mediaRepo:            mediaRepos.mediaRepo,
+		mediaAnalyticsRepo:   mediaRepos.mediaAnalyticsRepo,
+		mediaMetadataRepo:    mediaRepos.mediaMetadataRepo,
 		unifiedTracker:      cost.NewLambdaUnifiedTracker(cloudwatch.NewFromConfig(awsConfig), logger, "media-processor", "", ""),
 		tableName:            cfg.DynamoTableName,
-		bucketName:           bucketName,
-		cdnDomain:            cdnDomain,
-		mediaConvertEndpoint: mediaConvertEndpoint,
-		mediaConvertRole:     mediaConvertRole,
-		mediaConvertQueue:    mediaConvertQueue,
+		bucketName:           mediaConfig.bucketName,
+		cdnDomain:            mediaConfig.cdnDomain,
+		mediaConvertEndpoint: mediaConfig.mediaConvertEndpoint,
+		mediaConvertRole:     mediaConfig.mediaConvertRole,
+		mediaConvertQueue:    mediaConfig.mediaConvertQueue,
 		emfMetrics:           emfMetrics,
 		alertManager:         alertManager,
 		startTime:            time.Now(),
 		logger:               logger,
 	}
+}
 
-	// Create Lift app
+// setupLiftApp configures the Lift application with middleware and handlers
+func setupLiftApp() liftApp {
 	app := lift.New()
+	
+	// Add all middleware
+	addRequestIDMiddleware(app)
+	addLoggingMetricsMiddleware(app)
+	addErrorHandlingMiddleware(app)
+	
+	// Set SQS handler for media processing
+	addSQSHandler(app)
+	
+	return app
+}
 
-	// Add request ID middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// addRequestIDMiddleware adds request ID generation middleware
+func addRequestIDMiddleware(app liftApp) {
+	_ = app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("media-processing-%d", time.Now().UnixNano())
 			ctx.Set("requestID", requestID)
 			return next.Handle(ctx)
 		})
 	})
+}
 
-	// Add logging and metrics middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// addLoggingMetricsMiddleware adds logging and metrics collection middleware
+func addLoggingMetricsMiddleware(app liftApp) {
+	_ = app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
@@ -398,43 +504,54 @@ func main() {
 			}
 
 			err := next.Handle(ctx)
-
 			duration := time.Since(start)
 			
-			// Record latency and success/failure metrics
-			if processor.emfMetrics != nil {
-				processor.emfMetrics.RecordLatency("sqs_batch_processing", duration)
-				
-				if err != nil {
-					processor.emfMetrics.RecordError("sqs_batch_processing", observability.ErrorTypeInternal)
-				} else {
-					processor.emfMetrics.RecordSuccess("sqs_batch_processing")
-				}
-				
-				// Record processing time metric
-				processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime, 
-					float64(duration.Milliseconds()), observability.UnitMilliseconds, nil)
-			}
-
-			if err != nil {
-				processor.logger.Error("failed to process SQS batch",
-					zap.String("request_id", requestID),
-					zap.Error(err),
-					zap.Duration("duration", duration),
-				)
-			} else {
-				processor.logger.Info("successfully processed SQS batch",
-					zap.String("request_id", requestID),
-					zap.Duration("duration", duration),
-				)
-			}
+			recordProcessingMetrics(err, duration)
+			logProcessingResult(requestID, err, duration)
 
 			return err
 		})
 	})
+}
 
-	// Add error handling middleware
-	app.Use(func(next lift.Handler) lift.Handler {
+// recordProcessingMetrics records processing metrics based on success/failure
+func recordProcessingMetrics(err error, duration time.Duration) {
+	if processor.emfMetrics == nil {
+		return
+	}
+	
+	processor.emfMetrics.RecordLatency("sqs_batch_processing", duration)
+	
+	if err != nil {
+		processor.emfMetrics.RecordError("sqs_batch_processing", observability.ErrorTypeInternal)
+	} else {
+		processor.emfMetrics.RecordSuccess("sqs_batch_processing")
+	}
+	
+	// Record processing time metric
+	processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime, 
+		float64(duration.Milliseconds()), observability.UnitMilliseconds, nil)
+}
+
+// logProcessingResult logs the processing result with appropriate level
+func logProcessingResult(requestID string, err error, duration time.Duration) {
+	if err != nil {
+		processor.logger.Error("failed to process SQS batch",
+			zap.String("request_id", requestID),
+			zap.Error(err),
+			zap.Duration("duration", duration),
+		)
+	} else {
+		processor.logger.Info("successfully processed SQS batch",
+			zap.String("request_id", requestID),
+			zap.Duration("duration", duration),
+		)
+	}
+}
+
+// addErrorHandlingMiddleware adds error handling middleware
+func addErrorHandlingMiddleware(app liftApp) {
+	_ = app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
 			if err != nil {
@@ -446,70 +563,97 @@ func main() {
 			return err
 		})
 	})
+}
 
-	// Set SQS handler for media processing
+// addSQSHandler adds the SQS message handler
+func addSQSHandler(app liftApp) {
 	_ = app.SQS("media-processing", func(ctx *lift.Context) error {
-		// Extract SQS event from Lift context
-		if ctx.Request.RawEvent == nil {
-			return lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+		event, err := extractSQSEvent(ctx)
+		if err != nil {
+			return err
 		}
-
-		// Parse the raw event as SQS event
-		var event events.SQSEvent
-		if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
-			event = sqsEvent
-		} else {
-			// Try to parse from interface if it's a map
-			eventBytes, err := json.Marshal(ctx.Request.RawEvent)
-			if err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
-			}
-
-			if err := json.Unmarshal(eventBytes, &event); err != nil {
-				return lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
-			}
-		}
-
 		return processor.HandleSQS(ctx, event)
 	})
+}
 
-	// Start the Lambda handler with observability
-	lambdaHandler := func(ctx context.Context, event interface{}) (interface{}, error) {
+// extractSQSEvent extracts and parses the SQS event from the Lift context
+func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
+	// Extract SQS event from Lift context
+	if ctx.Request.RawEvent == nil {
+		return events.SQSEvent{}, lift.NewLiftError("MISSING_EVENT", "no SQS event in request", 400)
+	}
+
+	// Parse the raw event as SQS event
+	var event events.SQSEvent
+	if sqsEvent, ok := ctx.Request.RawEvent.(events.SQSEvent); ok {
+		event = sqsEvent
+	} else {
+		// Try to parse from interface if it's a map
+		eventBytes, err := json.Marshal(ctx.Request.RawEvent)
+		if err != nil {
+			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to marshal raw event", 500).WithCause(err)
+		}
+
+		if err := json.Unmarshal(eventBytes, &event); err != nil {
+			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
+		}
+	}
+	
+	return event, nil
+}
+
+// createLambdaHandler creates the main Lambda handler with observability
+func createLambdaHandler(app liftApp) func(context.Context, interface{}) (interface{}, error) {
+	return func(ctx context.Context, event interface{}) (interface{}, error) {
 		requestStart := time.Now()
 
-		// Record cold start metric if this is a cold start
-		if time.Since(processor.startTime) < 30*time.Second && processor.emfMetrics != nil {
-			processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStarts, 1.0, observability.UnitCount, nil)
-			coldStartDuration := time.Since(processor.startTime)
-			processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStartDuration, float64(coldStartDuration.Milliseconds()), observability.UnitMilliseconds, nil)
-		}
+		// Record cold start metrics
+		recordColdStartMetrics()
 
 		// Process the request
 		result, err := app.HandleRequest(ctx, event)
 
 		// Record Lambda-level metrics
-		requestDuration := time.Since(requestStart)
-		if processor.emfMetrics != nil {
-			processor.emfMetrics.RecordLatency("media_lambda_request", requestDuration)
-			processor.emfMetrics.RecordThroughput("media_lambda_request", 1)
-			
-			if err != nil {
-				processor.emfMetrics.RecordError("media_lambda_request", "lambda_error")
-			} else {
-				processor.emfMetrics.RecordSuccess("media_lambda_request")
-			}
-		}
+		recordLambdaMetrics(requestStart, err)
 
-		// CRITICAL: Flush EMF metrics before Lambda terminates
-		// This ensures all media processing metrics are written to CloudWatch
-		if processor.emfMetrics != nil {
-			processor.emfMetrics.Flush()
-		}
+		// Flush metrics before termination
+		flushMetrics()
 
 		return result, err
 	}
+}
 
-	lambda.Start(lambdaHandler)
+// recordColdStartMetrics records cold start metrics if applicable
+func recordColdStartMetrics() {
+	if time.Since(processor.startTime) < 30*time.Second && processor.emfMetrics != nil {
+		processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStarts, 1.0, observability.UnitCount, nil)
+		coldStartDuration := time.Since(processor.startTime)
+		processor.emfMetrics.RecordBusinessMetric(observability.MetricColdStartDuration, float64(coldStartDuration.Milliseconds()), observability.UnitMilliseconds, nil)
+	}
+}
+
+// recordLambdaMetrics records Lambda-level metrics
+func recordLambdaMetrics(requestStart time.Time, err error) {
+	if processor.emfMetrics == nil {
+		return
+	}
+	
+	requestDuration := time.Since(requestStart)
+	processor.emfMetrics.RecordLatency("media_lambda_request", requestDuration)
+	processor.emfMetrics.RecordThroughput("media_lambda_request", 1)
+	
+	if err != nil {
+		processor.emfMetrics.RecordError("media_lambda_request", "lambda_error")
+	} else {
+		processor.emfMetrics.RecordSuccess("media_lambda_request")
+	}
+}
+
+// flushMetrics ensures all EMF metrics are written to CloudWatch before Lambda terminates
+func flushMetrics() {
+	if processor.emfMetrics != nil {
+		processor.emfMetrics.Flush()
+	}
 }
 
 // HandleSQS implements the SQS handler interface for Lift
@@ -666,7 +810,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 
 	// Validate file type and size against user's configuration
-	if err := mp.validateFileForUser(originalData, job.MimeType, userConfig, event.Username); err != nil {
+	if err := mp.validateFileForUser(originalData, job.MimeType, userConfig, event.Username, event.MediaID); err != nil {
 		return fmt.Errorf("file validation failed: %w", err)
 	}
 
@@ -1505,12 +1649,24 @@ func validateFileType(data []byte, claimedMimeType string) error {
 		return fmt.Errorf("empty file")
 	}
 
+	// Validate claimed MIME type format if provided
+	if claimedMimeType != "" {
+		if err := common.ValidateMastodonMimeType(claimedMimeType); err != nil {
+			return fmt.Errorf("invalid MIME type format: %w", err)
+		}
+	}
+
 	// Detect actual MIME type from file content
 	detectedType := http.DetectContentType(data)
 
 	// Clean up detected type (remove charset info)
 	if idx := strings.Index(detectedType, ";"); idx > 0 {
 		detectedType = detectedType[:idx]
+	}
+
+	// Validate detected MIME type format
+	if err := common.ValidateMastodonMimeType(detectedType); err != nil {
+		return fmt.Errorf("detected MIME type is invalid: %w", err)
 	}
 
 	// Check if detected type is allowed
@@ -1652,14 +1808,24 @@ func sanitizeS3Key(username, mediaID, filename string) (string, error) {
 }
 
 // validateFileForUser validates a file against user's media configuration
-func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, config *MediaConfig, username string) error {
+func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, config *MediaConfig, username string, mediaID string) error {
+	// Check file size first
+	fileSize := int64(len(data))
+	
 	// First do basic file type validation
 	if err := validateFileType(data, mimeType); err != nil {
 		return err
 	}
-
-	// Check file size against user's limits
-	fileSize := int64(len(data))
+	
+	// Use common validation for basic checks first
+	if err := common.ValidateMediaEntity(mediaID, "media_file", fileSize); err != nil {
+		// If common validation fails with size limit, continue with user-specific limits
+		// The common validation uses 100MB limit, but we want user-specific limits
+		if !strings.Contains(err.Error(), "cannot be larger than") {
+			return err // Other errors (mediaID, filename validation)
+		}
+	}
+	
 	var userMaxSize int64
 
 	switch {

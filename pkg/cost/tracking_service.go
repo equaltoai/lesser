@@ -336,112 +336,67 @@ func (ts *TrackingService) flushMetrics(ctx context.Context) error {
 	return nil
 }
 
-func (ts *TrackingService) recordDynamoMetrics(ctx context.Context, operation DynamoOperation, cost Cost) error {
-	metrics := []MetricData{
-		{
-			Name:       "DynamoDB.ReadUnits",
-			Value:      float64(operation.ConsumedReadUnits),
-			Unit:       types.StandardUnitCount,
+// ServiceMetric represents a metric specific to a service
+type ServiceMetric struct {
+	Name  string
+	Value float64
+	Unit  types.StandardUnit
+}
+
+// recordServiceMetrics provides a generic method for recording service-specific metrics
+func (ts *TrackingService) recordServiceMetrics(ctx context.Context, serviceName string, cost Cost, serviceMetrics []ServiceMetric, dimensions []types.Dimension) error {
+	metrics := make([]MetricData, 0, len(serviceMetrics)+1)
+	
+	// Add service-specific metrics
+	for _, metric := range serviceMetrics {
+		metrics = append(metrics, MetricData{
+			Name:       fmt.Sprintf("%s.%s", serviceName, metric.Name),
+			Value:      metric.Value,
+			Unit:       metric.Unit,
 			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Table"), Value: aws.String(operation.TableName)},
-			},
-		},
-		{
-			Name:       "DynamoDB.WriteUnits",
-			Value:      float64(operation.ConsumedWriteUnits),
-			Unit:       types.StandardUnitCount,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Table"), Value: aws.String(operation.TableName)},
-			},
-		},
-		{
-			Name:       "DynamoDB.Cost",
-			Value:      cost.TotalDollars(),
-			Unit:       types.StandardUnitNone,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Table"), Value: aws.String(operation.TableName)},
-			},
-		},
+			Dimensions: dimensions,
+		})
 	}
 	
+	// Add cost metric
+	metrics = append(metrics, MetricData{
+		Name:       fmt.Sprintf("%s.Cost", serviceName),
+		Value:      cost.TotalDollars(),
+		Unit:       types.StandardUnitNone,
+		Timestamp:  time.Now(),
+		Dimensions: dimensions,
+	})
+	
 	return ts.RecordMetrics(ctx, metrics)
+}
+
+func (ts *TrackingService) recordDynamoMetrics(ctx context.Context, operation DynamoOperation, cost Cost) error {
+	return ts.recordServiceMetrics(ctx, "DynamoDB", cost, []ServiceMetric{
+		{Name: "ReadUnits", Value: float64(operation.ConsumedReadUnits), Unit: types.StandardUnitCount},
+		{Name: "WriteUnits", Value: float64(operation.ConsumedWriteUnits), Unit: types.StandardUnitCount},
+	}, []types.Dimension{
+		{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
+		{Name: aws.String("Table"), Value: aws.String(operation.TableName)},
+	})
 }
 
 func (ts *TrackingService) recordS3Metrics(ctx context.Context, operation S3Operation, cost Cost) error {
-	metrics := []MetricData{
-		{
-			Name:       "S3.Requests",
-			Value:      float64(operation.RequestCount),
-			Unit:       types.StandardUnitCount,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Bucket"), Value: aws.String(operation.BucketName)},
-			},
-		},
-		{
-			Name:       "S3.BytesTransferred",
-			Value:      float64(operation.BytesTransferred),
-			Unit:       types.StandardUnitBytes,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Bucket"), Value: aws.String(operation.BucketName)},
-			},
-		},
-		{
-			Name:       "S3.Cost",
-			Value:      cost.TotalDollars(),
-			Unit:       types.StandardUnitNone,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
-				{Name: aws.String("Bucket"), Value: aws.String(operation.BucketName)},
-			},
-		},
-	}
-	
-	return ts.RecordMetrics(ctx, metrics)
+	return ts.recordServiceMetrics(ctx, "S3", cost, []ServiceMetric{
+		{Name: "Requests", Value: float64(operation.RequestCount), Unit: types.StandardUnitCount},
+		{Name: "BytesTransferred", Value: float64(operation.BytesTransferred), Unit: types.StandardUnitBytes},
+	}, []types.Dimension{
+		{Name: aws.String("Operation"), Value: aws.String(operation.Type)},
+		{Name: aws.String("Bucket"), Value: aws.String(operation.BucketName)},
+	})
 }
 
 func (ts *TrackingService) recordLambdaMetrics(ctx context.Context, operation LambdaOperation, cost Cost) error {
-	metrics := []MetricData{
-		{
-			Name:       "Lambda.Duration",
-			Value:      float64(operation.Duration.Milliseconds()),
-			Unit:       types.StandardUnitMilliseconds,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Function"), Value: aws.String(operation.FunctionName)},
-			},
-		},
-		{
-			Name:       "Lambda.Memory",
-			Value:      float64(operation.MemoryMB),
-			Unit:       types.StandardUnitBytes,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Function"), Value: aws.String(operation.FunctionName)},
-			},
-		},
-		{
-			Name:       "Lambda.Cost",
-			Value:      cost.TotalDollars(),
-			Unit:       types.StandardUnitNone,
-			Timestamp:  time.Now(),
-			Dimensions: []types.Dimension{
-				{Name: aws.String("Function"), Value: aws.String(operation.FunctionName)},
-			},
-		},
-	}
-	
-	return ts.RecordMetrics(ctx, metrics)
+	return ts.recordServiceMetrics(ctx, "Lambda", cost, []ServiceMetric{
+		{Name: "Duration", Value: float64(operation.Duration.Milliseconds()), Unit: types.StandardUnitMilliseconds},
+		{Name: "Memory", Value: float64(operation.MemoryMB), Unit: types.StandardUnitBytes},
+	}, []types.Dimension{
+		{Name: aws.String("Function"), Value: aws.String(operation.FunctionName)},
+	})
 }
 
 func (ts *TrackingService) checkCostThresholds(operationType string, costDollars float64) {

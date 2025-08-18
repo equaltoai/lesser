@@ -12,19 +12,17 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/ai"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
-	"github.com/equaltoai/lesser/pkg/streaming"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 )
 
 // AIProcessor handles AI-based content analysis for posts and media in the system.
@@ -39,19 +37,6 @@ type AIProcessor struct {
 	logger        *zap.Logger
 }
 
-// NewAIProcessor creates a new AI processor instance configured with the specified
-// database connection, DynamoDB table name, and AI service. The processor will
-// analyze content from stream events and store results for moderation workflows.
-func NewAIProcessor(db core.DB, tableName string, aiAnalyzer *ai.AIService, serviceRegistry *services.Registry, logger *zap.Logger) *AIProcessor {
-	return &AIProcessor{
-		db:            db,
-		tableName:     tableName,
-		aiAnalyzer:    aiAnalyzer,
-		aiService:     serviceRegistry.AI(),
-		serviceRegistry: serviceRegistry,
-		logger:        logger,
-	}
-}
 
 // HandleStreamWithContext processes DynamoDB stream events with explicit context
 func (ap *AIProcessor) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
@@ -180,7 +165,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 	// Extract media URLs from attachments
 	var mediaURLs []string
 	for _, att := range item.Attachment {
-		if att.URL != "" && (att.Type == "Image" || att.Type == "Video" || att.Type == "Document") {
+		if att.URL != "" && common.IsProcessableMediaType(att.Type) {
 			mediaURLs = append(mediaURLs, att.URL)
 		}
 	}
@@ -272,75 +257,46 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 }
 
 var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage
 	processor *AIProcessor
 )
 
+func init() {
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "ai-processor",
+		LambdaType:  common.LambdaTypeProcessor,
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+	
+	// Initialize processor with simplified configuration
+	processor = NewSimplifiedAIProcessor(lambdaCtx)
+}
+
+// NewSimplifiedAIProcessor creates a new AI processor instance with simplified Lambda context
+func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
+	// Initialize simplified processor with essential components
+	return &AIProcessor{
+		db:        lambdaCtx.DynamoDB.(core.DB),
+		tableName: lambdaCtx.Config.DynamoTableName,
+		logger:    lambdaCtx.Logger,
+	}
+}
 
 func main() {
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName:        "ai-processor",
-		LambdaType:         common.LambdaTypeAI,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableTracing:      true,
-		EnableHealthCheck:  false,
-		EnableCostTracking: true,
-		RequestTimeout:     2 * time.Minute,
-		RetryMaxAttempts:   3,
-	})
-
-	// Initialize AI service
-	aiConfig := &ai.AIConfig{
-		NSFWThreshold:       0.8,
-		ToxicityThreshold:   0.7,
-		SpamThreshold:       0.75,
-		AIContentThreshold:  0.85,
-		EnablePIIDetection:  true,
-		EnableAIDetection:   true,
-		EnableImageAnalysis: true,
-		BedrockModelID:      "anthropic.claude-v2",
-		S3Bucket:            lambdaCtx.Config.S3BucketName,
-	}
-
-	// Load AWS config for AI service
-	awsConfig, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-
-	// Create AI analyzer (for AWS AI services)
-	aiAnalyzer := ai.NewAIService(awsConfig, aiConfig)
-
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
-	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
-	}
-
-	// Create repository factory for storage
-	repoFactory, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
-	}
-
-	// Create service registry
-	publisher := streaming.NewMockPublisher() // Or real publisher if configured
-	serviceRegistry, err := services.NewRegistry(
-		services.WithStorage(repoFactory),
-		services.WithPublisher(publisher),
-		services.WithLogger(lambdaCtx.Logger),
-		services.WithConfig(&services.ServiceConfig{
-			BaseURL:   fmt.Sprintf("https://%s", lambdaCtx.Config.Domain),
-			JWTSecret: lambdaCtx.Config.JWTSecret,
-		}),
-	)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to create service registry", zap.Error(err))
-	}
-
-	// Initialize processor
-	processor = NewAIProcessor(db, lambdaCtx.Config.DynamoTableName, aiAnalyzer, serviceRegistry, lambdaCtx.Logger)
-
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		// Create a simple lift context with minimal setup
 		liftCtx := &lift.Context{

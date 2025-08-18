@@ -103,7 +103,13 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 		scopes = strings.Fields(scope)
 	}
 
-	// Validate scopes
+	// Validate scopes using centralized validation
+	scopesStr := strings.Join(scopes, " ")
+	if err := common.ValidateApplicationScopes(scopesStr); err != nil {
+		return h.oauthErrorLift(ctx, "invalid_scope", fmt.Sprintf("Invalid scopes: %v", err), redirectURI, state)
+	}
+	
+	// Additional validation using auth package for backward compatibility
 	if err := auth.ValidateScopes(scopes); err != nil {
 		return h.oauthErrorLift(ctx, "invalid_scope", "One or more requested scopes are invalid", redirectURI, state)
 	}
@@ -212,13 +218,10 @@ func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
 		return testUsername
 	}
 
-	// Check for JWT in Authorization header
-	authHeader := ctx.Header("Authorization")
-	if authHeader != "" && strings.HasPrefix(authHeader, "Bearer ") {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		claims, err := h.authMiddleware.ValidateToken(token)
-		if err == nil && claims != nil {
-			return claims.Username
+	// Check for authentication context from unified middleware
+	if username := ctx.Get("username"); username != nil {
+		if usernameStr, ok := username.(string); ok && usernameStr != "" {
+			return usernameStr
 		}
 	}
 

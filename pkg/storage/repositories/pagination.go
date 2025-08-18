@@ -70,12 +70,10 @@ func (p *PaginationOptions) Validate() error {
 		p.SortOrder = SearchSortRelevance
 	}
 
-	// Validate sort order
-	switch p.SortOrder {
-	case SearchSortRelevance, SearchSortTimeAsc, SearchSortTimeDesc:
-		// Valid
-	default:
-		return fmt.Errorf("invalid sort order: %s", p.SortOrder)
+	// Use centralized sort parameter validation
+	allowedSortOrders := []string{string(SearchSortRelevance), string(SearchSortTimeAsc), string(SearchSortTimeDesc)}
+	if err := common.ValidateSortParameters("", string(p.SortOrder), allowedSortOrders); err != nil {
+		return fmt.Errorf("invalid pagination parameters: %w", err)
 	}
 
 	return nil
@@ -102,8 +100,13 @@ func EncodeCursor(data *CursorData) string {
 
 // DecodeCursor parses a cursor string back to cursor data
 func DecodeCursor(cursor string) (*CursorData, error) {
-	if err := common.ValidateRequiredParam("cursor", cursor); err != nil {
+	if cursor == "" {
 		return &CursorData{}, nil
+	}
+
+	// Validate cursor format
+	if err := common.ValidateRepositoryCursor(cursor); err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
 	}
 
 	jsonData, err := base64.URLEncoding.DecodeString(cursor)

@@ -3,6 +3,8 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -47,33 +49,41 @@ func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, 
 	return nil
 }
 
-// GetRouteMetricsWindows retrieves route metrics for a time range
-func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, routeID string, since time.Time, limit int) ([]*models.RouteMetricsWindow, error) {
-	var windows []*models.RouteMetricsWindow
-
-	pk := fmt.Sprintf("METRICS#ROUTE#%s", routeID)
+// getMetricsWindows is a generic function to retrieve metrics windows
+func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, metricsType, id string, since time.Time, limit int, model interface{}, result interface{}) error {
+	pk := fmt.Sprintf("METRICS#%s#%s", metricsType, id)
 	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
 
-	err := r.db.WithContext(ctx).Model(&models.RouteMetricsWindow{}).
+	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", pk).
 		Where("SK", ">", sinceKey).
 		Limit(limit).
 		OrderBy("SK", "DESC"). // Most recent first
-		All(&windows)
+		All(result)
 
 	if err != nil {
-		r.logger.Error("Failed to get route metrics windows",
-			zap.String("routeID", routeID),
+		r.logger.Error(fmt.Sprintf("Failed to get %s metrics windows", strings.ToLower(metricsType)),
+			zap.String(fmt.Sprintf("%sID", strings.ToLower(metricsType)), id),
 			zap.Time("since", since),
 			zap.Error(err))
-		return nil, fmt.Errorf("get route metrics windows: %w", err)
+		return fmt.Errorf("get %s metrics windows: %w", strings.ToLower(metricsType), err)
 	}
 
-	r.logger.Debug("Retrieved route metrics windows",
-		zap.String("routeID", routeID),
+	r.logger.Debug(fmt.Sprintf("Retrieved %s metrics windows", strings.ToLower(metricsType)),
+		zap.String(fmt.Sprintf("%sID", strings.ToLower(metricsType)), id),
 		zap.Time("since", since),
-		zap.Int("count", len(windows)))
+		zap.Int("count", reflect.ValueOf(result).Elem().Len()))
 
+	return nil
+}
+
+// GetRouteMetricsWindows retrieves route metrics for a time range
+func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, routeID string, since time.Time, limit int) ([]*models.RouteMetricsWindow, error) {
+	var windows []*models.RouteMetricsWindow
+	err := r.getMetricsWindows(ctx, "ROUTE", routeID, since, limit, &models.RouteMetricsWindow{}, &windows)
+	if err != nil {
+		return nil, err
+	}
 	return windows, nil
 }
 
@@ -148,30 +158,10 @@ func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Contex
 // GetInstanceMetricsWindows retrieves instance metrics for a time range
 func (r *RoutingMetricsRepository) GetInstanceMetricsWindows(ctx context.Context, instanceID string, since time.Time, limit int) ([]*models.InstanceMetricsWindow, error) {
 	var windows []*models.InstanceMetricsWindow
-
-	pk := fmt.Sprintf("METRICS#INSTANCE#%s", instanceID)
-	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
-
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetricsWindow{}).
-		Where("PK", "=", pk).
-		Where("SK", ">", sinceKey).
-		Limit(limit).
-		OrderBy("SK", "DESC"). // Most recent first
-		All(&windows)
-
+	err := r.getMetricsWindows(ctx, "INSTANCE", instanceID, since, limit, &models.InstanceMetricsWindow{}, &windows)
 	if err != nil {
-		r.logger.Error("Failed to get instance metrics windows",
-			zap.String("instanceID", instanceID),
-			zap.Time("since", since),
-			zap.Error(err))
-		return nil, fmt.Errorf("get instance metrics windows: %w", err)
+		return nil, err
 	}
-
-	r.logger.Debug("Retrieved instance metrics windows",
-		zap.String("instanceID", instanceID),
-		zap.Time("since", since),
-		zap.Int("count", len(windows)))
-
 	return windows, nil
 }
 

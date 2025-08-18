@@ -212,34 +212,54 @@ func (sch *SystemCommandHandler) handleDeleteList(ctx context.Context, conn *str
 	return sch.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-// handleAddToList handles adding accounts to a list
-func (sch *SystemCommandHandler) handleAddToList(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
+// handleListMembership handles adding or removing accounts from a list
+func (sch *SystemCommandHandler) handleListMembership(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command, isAdd bool) (*streaming.CommandResponse, error) {
+	config := &streaming.ListCommandValidationConfig{
+		RequiredFields: []string{"id", "account_id"},
 	}
-
-	// Validate required fields
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id", "account_id"}, cmd.ID); validationErr != nil {
+	if validationErr := sch.ValidateListCommand(conn, cmd, config); validationErr != nil {
 		return validationErr, nil
 	}
 
 	listID := sch.GetString(cmd.Payload, "id", "")
 	accountID := sch.GetString(cmd.Payload, "account_id", "")
 
-	addCmd := &lists.AddToListCommand{
-		ListID:         listID,
-		MemberUsername: accountID, // account_id is the username
-		AdderID:        conn.UserID,
+	var result *lists.MembershipResult
+	var err error
+
+	if isAdd {
+		addCmd := &lists.AddToListCommand{
+			ListID:         listID,
+			MemberUsername: accountID, // account_id is the username
+			AdderID:        conn.UserID,
+		}
+		result, err = sch.listsService.AddToList(ctx, addCmd)
+		if err != nil {
+			return sch.CreateErrorResponse(cmd.ID, "ADD_TO_LIST_FAILED", 
+				"Failed to add accounts to list", err.Error()), nil
+		}
+	} else {
+		removeCmd := &lists.RemoveFromListCommand{
+			ListID:         listID,
+			MemberUsername: accountID, // account_id is the username
+			RemoverID:      conn.UserID,
+		}
+		result, err = sch.listsService.RemoveFromList(ctx, removeCmd)
+		if err != nil {
+			return sch.CreateErrorResponse(cmd.ID, "REMOVE_FROM_LIST_FAILED", 
+				"Failed to remove accounts from list", err.Error()), nil
+		}
 	}
 
-	result, err := sch.listsService.AddToList(ctx, addCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "ADD_TO_LIST_FAILED", 
-			"Failed to add accounts to list", err.Error()), nil
+	var resultKey string
+	if isAdd {
+		resultKey = "added"
+	} else {
+		resultKey = "removed"
 	}
 
 	data := map[string]interface{}{
-		"added":      result.Success,
+		resultKey:     result.Success,
 		"list_id":    listID,
 		"account_id": accountID,
 	}
@@ -247,38 +267,14 @@ func (sch *SystemCommandHandler) handleAddToList(ctx context.Context, conn *stre
 	return sch.CreateSuccessResponse(cmd.ID, data), nil
 }
 
+// handleAddToList handles adding accounts to a list
+func (sch *SystemCommandHandler) handleAddToList(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	return sch.handleListMembership(ctx, conn, cmd, true)
+}
+
 // handleRemoveFromList handles removing accounts from a list
 func (sch *SystemCommandHandler) handleRemoveFromList(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id", "account_id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	listID := sch.GetString(cmd.Payload, "id", "")
-	accountID := sch.GetString(cmd.Payload, "account_id", "")
-
-	removeCmd := &lists.RemoveFromListCommand{
-		ListID:         listID,
-		MemberUsername: accountID, // account_id is the username
-		RemoverID:      conn.UserID,
-	}
-
-	result, err := sch.listsService.RemoveFromList(ctx, removeCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "REMOVE_FROM_LIST_FAILED", 
-			"Failed to remove accounts from list", err.Error()), nil
-	}
-
-	data := map[string]interface{}{
-		"removed":    result.Success,
-		"list_id":    listID,
-		"account_id": accountID,
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
+	return sch.handleListMembership(ctx, conn, cmd, false)
 }
 
 // Media Command Handlers
@@ -306,36 +302,24 @@ func (sch *SystemCommandHandler) handleUploadMedia(_ context.Context, conn *stre
 // Notification Command Handlers
 
 func (sch *SystemCommandHandler) handleMarkNotificationRead(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
+	config := &streaming.CommandHandlerConfig{
+		RequiredFields:  []string{"id"},
+		ParameterName:   "id",
+		ErrorCodePrefix: "MARK_READ",
+		OperationName:   "mark notification as read",
+		ResultExtractor: func(result interface{}) interface{} {
+			return result.(*notifications.NotificationResult).Notification
+		},
+		ServiceCall: func(ctx context.Context, conn *streaming.ConnectionInfo, notificationID string) (interface{}, error) {
+			markCmd := &notifications.MarkAsReadCommand{
+				NotificationID: notificationID,
+				UserID:         conn.UserID,
+			}
+			return sch.notificationsService.MarkAsRead(ctx, markCmd)
+		},
 	}
-
-	if validationErr := sch.ValidatePayload(cmd.Payload, []string{"id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	notificationID := sch.GetString(cmd.Payload, "id", "")
-
-	// Mark the notification as read using the notifications service
-	markCmd := &notifications.MarkAsReadCommand{
-		NotificationID: notificationID,
-		UserID:         conn.UserID,
-	}
-
-	result, err := sch.notificationsService.MarkAsRead(ctx, markCmd)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "MARK_READ_FAILED", 
-			"Failed to mark notification as read", err.Error()), nil
-	}
-
-	// Convert result to JSON for response
-	data, err := sch.ConvertToJSON(result.Notification)
-	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
-			"Failed to format response", err.Error()), nil
-	}
-
-	return sch.CreateSuccessResponse(cmd.ID, data), nil
+	
+	return sch.ExecuteStandardCommandFlow(ctx, conn, cmd, config)
 }
 
 func (sch *SystemCommandHandler) handleMarkAllNotificationsRead(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {

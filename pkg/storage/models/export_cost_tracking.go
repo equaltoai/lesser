@@ -118,6 +118,16 @@ func (e *ExportCostTracking) GetTotalCostDollars() float64 {
 	return float64(e.TotalCostMicroCents) / 1_000_000.0
 }
 
+// GetTimestamp returns the timestamp for cost tracking
+func (e *ExportCostTracking) GetTimestamp() time.Time {
+	return e.Timestamp
+}
+
+// GetTotalCostMicroCents returns the total cost in microcents
+func (e *ExportCostTracking) GetTotalCostMicroCents() int64 {
+	return e.TotalCostMicroCents
+}
+
 // TableName returns the DynamoDB table name
 func (e *ExportCostTracking) TableName() string {
 	return "" // Will be set by the repository

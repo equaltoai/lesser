@@ -3,6 +3,7 @@ package lift
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -293,6 +294,14 @@ func (h *Handler) parsePollVoteRequest(ctx *lift.Context) (*models.PollVoteReque
 	if err := common.ValidateSliceNotEmpty("req.Choices", req.Choices); err != nil {
 		ctx.Status(http.StatusUnprocessableEntity)
 		return nil, ctx.JSON(map[string]any{"error": "no choices provided"})
+	}
+
+	// Validate poll vote choices
+	for i, choice := range req.Choices {
+		if choice < 0 {
+			ctx.Status(http.StatusUnprocessableEntity)
+			return nil, ctx.JSON(map[string]any{"error": fmt.Sprintf("invalid choice index %d at position %d", choice, i)})
+		}
 	}
 
 	return &req, nil

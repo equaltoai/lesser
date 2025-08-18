@@ -233,6 +233,11 @@ func (r *HashtagRepository) IndexHashtag(_ context.Context, hashtag string, stat
 
 // IndexStatusHashtags indexes a status with its hashtags for efficient search
 func (r *HashtagRepository) IndexStatusHashtags(ctx context.Context, statusID string, authorID string, authorHandle string, statusURL string, content string, hashtags []string, published time.Time, visibility string) error {
+	// Validate status entity using centralized validation
+	if err := common.ValidateStatusEntity(statusID, content, visibility); err != nil {
+		return fmt.Errorf("invalid status entity: %w", err)
+	}
+
 	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
 		return nil // Nothing to index
 	}
@@ -816,115 +821,31 @@ func (r *HashtagRepository) GetFollowedHashtags(_ context.Context, userID string
 }
 
 // UpdateHashtagNotificationSettings updates notification settings for a followed hashtag
-func (r *HashtagRepository) UpdateHashtagNotificationSettings(_ context.Context, userID, hashtag string, notify bool) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	now := time.Now()
-
-	// Get existing follow
-	var existingFollow models.HashtagFollow
-	err := r.db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "=", fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)).
-		First(&existingFollow)
-
-	if err != nil {
-		r.logger.Error("failed to get hashtag follow for update",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return fmt.Errorf("failed to get hashtag follow: %w", err)
+func (r *HashtagRepository) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error {
+	config := HashtagFollowUpdateConfig{
+		Operation:   "notification",
+		BoolValue:   &notify,
+		ErrorPrefix: "update hashtag notification settings",
 	}
-
-	// Update the fields
-	existingFollow.NotificationsEnabled = notify
-	existingFollow.UpdatedAt = now
-
-	// Save by recreating (DynamORM pattern)
-	err = r.db.Model(&existingFollow).Create()
-	if err != nil {
-		r.logger.Error("failed to update hashtag notification settings",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Bool("notify", notify),
-			zap.Error(err))
-		return fmt.Errorf("failed to update hashtag notification settings: %w", err)
-	}
-
-	return nil
+	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
 }
 
 // MuteHashtag mutes a hashtag for a user
-func (r *HashtagRepository) MuteHashtag(_ context.Context, userID, hashtag string) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	now := time.Now()
-
-	// Get existing follow
-	var existingFollow models.HashtagFollow
-	err := r.db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "=", fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)).
-		First(&existingFollow)
-
-	if err != nil {
-		r.logger.Error("failed to get hashtag follow for mute",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return fmt.Errorf("failed to get hashtag follow: %w", err)
+func (r *HashtagRepository) MuteHashtag(ctx context.Context, userID, hashtag string) error {
+	config := HashtagFollowUpdateConfig{
+		Operation:   "mute",
+		ErrorPrefix: "mute hashtag",
 	}
-
-	// Update the fields
-	existingFollow.Muted = true
-	existingFollow.UpdatedAt = now
-
-	// Save by recreating (DynamORM pattern)
-	err = r.db.Model(&existingFollow).Create()
-	if err != nil {
-		r.logger.Error("failed to mute hashtag",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return fmt.Errorf("failed to mute hashtag: %w", err)
-	}
-
-	return nil
+	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
 }
 
 // UnmuteHashtag unmutes a hashtag for a user
-func (r *HashtagRepository) UnmuteHashtag(_ context.Context, userID, hashtag string) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	now := time.Now()
-
-	// Get existing follow
-	var existingFollow models.HashtagFollow
-	err := r.db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "=", fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)).
-		First(&existingFollow)
-
-	if err != nil {
-		r.logger.Error("failed to get hashtag follow for unmute",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return fmt.Errorf("failed to get hashtag follow: %w", err)
+func (r *HashtagRepository) UnmuteHashtag(ctx context.Context, userID, hashtag string) error {
+	config := HashtagFollowUpdateConfig{
+		Operation:   "unmute",
+		ErrorPrefix: "unmute hashtag",
 	}
-
-	// Update the fields
-	existingFollow.Muted = false
-	existingFollow.UpdatedAt = now
-
-	// Save by recreating (DynamORM pattern)
-	err = r.db.Model(&existingFollow).Create()
-	if err != nil {
-		r.logger.Error("failed to unmute hashtag",
-			zap.String("user_id", userID),
-			zap.String("hashtag", tagLower),
-			zap.Error(err))
-		return fmt.Errorf("failed to unmute hashtag: %w", err)
-	}
-
-	return nil
+	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
 }
 
 // IsHashtagMuted checks if a hashtag is muted for a user
@@ -1132,174 +1053,40 @@ func (r *HashtagRepository) StoreHashtagTrend(_ context.Context, trendData any) 
 
 // deleteOldHashtagTrendRecords deletes HashtagTrend model records older than specified time
 func (r *HashtagRepository) deleteOldHashtagTrendRecords(ctx context.Context, before time.Time) (int, error) {
-	var trends []*models.HashtagTrend
-	var deletedCount int
-	batchSize := 25 // DynamoDB batch limit
-
-	// Query old trend records using Filter and Scan
-	err := r.db.WithContext(ctx).Model(&models.HashtagTrend{}).
-		Filter("UpdatedAt", "<", before.Format(time.RFC3339)).
-		Limit(100). // Process in chunks
-		Scan(&trends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return 0, nil // No old trends to delete
-		}
-		return 0, fmt.Errorf("failed to query old hashtag trends: %w", err)
+	config := BatchDeleteConfig{
+		ModelType:   "hashtag_trend",
+		ErrorPrefix: "hashtag trend records",
+		BatchSize:   25,
+		QueryLimit:  100,
+		FilterField: "UpdatedAt",
 	}
-
-	// Use batch delete for efficiency
-	if err := common.ValidateSliceNotEmpty("trends", trends); err == nil {
-		// Convert to []any for batch operations
-		items := make([]any, len(trends))
-		for i, trend := range trends {
-			items[i] = trend
-		}
-
-		// Process in batches to respect DynamoDB limits
-		for i := 0; i < len(items); i += batchSize {
-			end := i + batchSize
-			if end > len(items) {
-				end = len(items)
-			}
-
-			batchItems := items[i:end]
-			err := r.deleteTrendBatch(ctx, batchItems)
-			if err != nil {
-				r.logger.Warn("failed to delete trend batch",
-					zap.Int("batch_start", i),
-					zap.Int("batch_size", len(batchItems)),
-					zap.Error(err))
-				// Continue with other batches
-			} else {
-				deletedCount += len(batchItems)
-			}
-		}
-	}
-
-	r.logger.Debug("deleted hashtag trend records",
-		zap.Int("count", deletedCount))
-
-	return deletedCount, nil
+	return deleteOldRecordsBatch(ctx, r.db, r.logger, before, config)
 }
 
 // deleteOldTrendingHashtagRecords deletes TrendingHashtag model records older than specified time
 func (r *HashtagRepository) deleteOldTrendingHashtagRecords(ctx context.Context, before time.Time) (int, error) {
-	var trends []*models.TrendingHashtag
-	var deletedCount int
-	batchSize := 25
-
-	// Query old trending hashtag records
-	err := r.db.WithContext(ctx).Model(&models.TrendingHashtag{}).
-		Filter("UpdatedAt", "<", before.Format(time.RFC3339)).
-		Limit(100).
-		Scan(&trends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("failed to query old trending hashtags: %w", err)
+	config := BatchDeleteConfig{
+		ModelType:   "trending_hashtag",
+		ErrorPrefix: "trending hashtag records",
+		BatchSize:   25,
+		QueryLimit:  100,
+		FilterField: "UpdatedAt",
 	}
-
-	// Batch delete trending hashtags
-	if err := common.ValidateSliceNotEmpty("trends", trends); err == nil {
-		items := make([]any, len(trends))
-		for i, trend := range trends {
-			items[i] = trend
-		}
-
-		for i := 0; i < len(items); i += batchSize {
-			end := i + batchSize
-			if end > len(items) {
-				end = len(items)
-			}
-
-			batchItems := items[i:end]
-			err := r.deleteTrendBatch(ctx, batchItems)
-			if err != nil {
-				r.logger.Warn("failed to delete trending hashtag batch",
-					zap.Int("batch_start", i),
-					zap.Error(err))
-			} else {
-				deletedCount += len(batchItems)
-			}
-		}
-	}
-
-	r.logger.Debug("deleted trending hashtag records",
-		zap.Int("count", deletedCount))
-
-	return deletedCount, nil
+	return deleteOldRecordsBatch(ctx, r.db, r.logger, before, config)
 }
 
 // deleteOldHashtagUsage removes expired hashtag usage records
 func (r *HashtagRepository) deleteOldHashtagUsage(ctx context.Context, before time.Time) (int, error) {
-	var usageRecords []*models.HashtagUsage
-	var deletedCount int
-	batchSize := 25
-
-	// Query old usage records that haven't been cleaned up by TTL
-	err := r.db.WithContext(ctx).Model(&models.HashtagUsage{}).
-		Filter("UsedAt", "<", before.Format(time.RFC3339)).
-		Limit(200). // Larger limit for usage cleanup
-		Scan(&usageRecords)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("failed to query old hashtag usage: %w", err)
+	config := BatchDeleteConfig{
+		ModelType:   "hashtag_usage",
+		ErrorPrefix: "hashtag usage records",
+		BatchSize:   25,
+		QueryLimit:  200, // Larger limit for usage cleanup
+		FilterField: "UsedAt",
 	}
-
-	// Batch delete usage records
-	if err := common.ValidateSliceNotEmpty("usage_records", usageRecords); err == nil {
-		items := make([]any, len(usageRecords))
-		for i, usage := range usageRecords {
-			items[i] = usage
-		}
-
-		for i := 0; i < len(items); i += batchSize {
-			end := i + batchSize
-			if end > len(items) {
-				end = len(items)
-			}
-
-			batchItems := items[i:end]
-			err := r.deleteTrendBatch(ctx, batchItems)
-			if err != nil {
-				r.logger.Warn("failed to delete usage batch",
-					zap.Int("batch_start", i),
-					zap.Error(err))
-			} else {
-				deletedCount += len(batchItems)
-			}
-		}
-	}
-
-	r.logger.Debug("deleted hashtag usage records",
-		zap.Int("count", deletedCount))
-
-	return deletedCount, nil
+	return deleteOldRecordsBatch(ctx, r.db, r.logger, before, config)
 }
 
-// deleteTrendBatch performs batch delete using DynamORM
-func (r *HashtagRepository) deleteTrendBatch(ctx context.Context, items []any) error {
-	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
-		return nil
-	}
-
-	// Use DynamORM batch delete - delete items individually since BatchDelete may not be available
-	for _, item := range items {
-		if err := r.db.WithContext(ctx).Model(item).Delete(); err != nil {
-			r.logger.Warn("failed to delete individual item", zap.Error(err))
-			// Continue with other items rather than failing the whole batch
-		}
-	}
-
-	return nil
-}
 
 // GetHashtagsByTimeRange retrieves hashtags within a specific time range
 func (r *HashtagRepository) GetHashtagsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*storage.TrendingHashtag, error) {

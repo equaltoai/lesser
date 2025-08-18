@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -22,6 +23,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
@@ -60,6 +62,7 @@ var (
 	tracingManager    *observability.TracingManager
 	latencyAggregator *observability.LatencyAggregator
 	latencyAlerter    *observability.LatencyAlerter
+	costTrackingService *cost.TrackingService
 	startTime         time.Time
 )
 
@@ -126,6 +129,12 @@ func extractStandardizedServices() {
 	}
 	if lambdaCtx.LatencyAlerter != nil {
 		latencyAlerter = lambdaCtx.LatencyAlerter.(*observability.LatencyAlerter)
+	}
+	
+	// Initialize centralized cost tracking service if CloudWatch client is available
+	if lambdaCtx.AWSServices != nil && lambdaCtx.AWSServices.CloudWatch != nil {
+		costTrackingService = cost.NewCostTrackingServiceForLambda(lambdaCtx.AWSServices.CloudWatch, logger, "api")
+		logger.Info("initialized centralized cost tracking service from standardized initialization")
 	}
 	
 	logger.Info("extracted services from standardized initialization")
@@ -216,6 +225,12 @@ func initializeManualServices() {
 		// Initialize latency alerter
 		latencyAlerter = observability.NewLatencyAlerter(logger, metricsRecorder)
 		
+		// Initialize centralized cost tracking service
+		if cloudWatchClient != nil {
+			costTrackingService = cost.NewCostTrackingServiceForLambda(cloudWatchClient, logger, "api")
+			logger.Info("initialized centralized cost tracking service")
+		}
+		
 		logger.Info("initialized observability services manually")
 	}
 }
@@ -230,11 +245,8 @@ func initializeAPISpecificServices() {
 		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
 	}
 
-	// Create auth middleware
-	legacyAuthMiddleware, err := auth.GetMiddleware()
-	if err != nil {
-		logger.Fatal("failed to initialize legacy auth middleware", zap.Error(err))
-	}
+	// Create unified auth middleware
+	unifiedAuthMiddleware := auth.CreateAPIAuthMiddlewareFromAuthService(authService, logger)
 
 	// Create stream queue service with proper fallback
 	var streamQueue streaming.StreamQueueService
@@ -267,7 +279,7 @@ func initializeAPISpecificServices() {
 	}
 
 	// Create Lift handler for all endpoints
-	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, legacyAuthMiddleware, streamQueue)
+	liftHandler = liftHandlers.NewHandler(cfg, repos, logger, unifiedAuthMiddleware, streamQueue)
 	
 	logger.Info("initialized API-specific services")
 }
@@ -275,7 +287,7 @@ func initializeAPISpecificServices() {
 func main() {
 	// Create a new Lift application
 	app := lift.New()
-	if os.Getenv("DEBUG") == "true" {
+	if debugMode, _ := common.ParseAndValidateBoolean(os.Getenv("DEBUG")); debugMode {
 		app = lift.New(lift.WithDebug())
 	}
 
@@ -291,8 +303,13 @@ func main() {
 	// Add CORS middleware
 	app.Use(createCORSMiddleware())
 
-	// Add cost tracking middleware
-	app.Use(createCostTrackingMiddleware(logger))
+	// Add unified error handling middleware
+	app.Use(common.CreateAPIErrorMiddleware(logger))
+
+	// Add centralized cost tracking middleware
+	if costTrackingService != nil {
+		app.Use(createCentralizedCostTrackingMiddleware())
+	}
 
 	// Add distributed tracing middleware
 	if tracingManager != nil {
@@ -849,4 +866,46 @@ func recordLatencyMetric(ctx context.Context, metricType, operation string, dura
 	
 	// Store to DynamoDB via metrics repository
 	return repos.MetricRecord().CreateMetricRecord(ctx, metric)
+}
+
+// createCentralizedCostTrackingMiddleware creates centralized cost tracking middleware using the TrackingService
+func createCentralizedCostTrackingMiddleware() lift.Middleware {
+	return func(next lift.Handler) lift.Handler {
+		return lift.HandlerFunc(func(ctx *lift.Context) error {
+			if costTrackingService == nil {
+				return next.Handle(ctx)
+			}
+
+			startTime := time.Now()
+			
+			// Execute request
+			err := next.Handle(ctx)
+			
+			// Track Lambda execution cost
+			duration := time.Since(startTime)
+			memoryMB := int64(128) // Default Lambda memory, could be extracted from env
+			if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
+				if mem, parseErr := strconv.ParseInt(envMem, 10, 64); parseErr == nil {
+					memoryMB = mem
+				}
+			}
+			
+			// Create Lambda operation for cost tracking
+			lambdaOp := cost.LambdaOperation{
+				FunctionName: "api",
+				Duration:     duration,
+				MemoryMB:     memoryMB,
+				Timestamp:    startTime,
+			}
+			
+			// Track the operation asynchronously to avoid blocking the response
+			go func() {
+				if trackErr := costTrackingService.TrackLambdaInvocation(context.Background(), lambdaOp); trackErr != nil {
+					logger.Warn("failed to track Lambda cost", zap.Error(trackErr))
+				}
+			}()
+			
+			return err
+		})
+	}
 }

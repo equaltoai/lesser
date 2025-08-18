@@ -1,7 +1,10 @@
 package lift
 
 import (
-	"net/http"
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -17,19 +20,42 @@ import (
 
 // Handler contains dependencies for Lift handlers
 type Handler struct {
-	cfg            *config.Config
-	repos          core.RepositoryStorage
-	logger         *zap.Logger
-	authMiddleware *auth.Middleware
-	converter      mastodon.Converter
-	businessLogic  services.BusinessLogicService
-	authService    services.AuthenticationService
-	registry       *services.Registry
-	streamQueue    streaming.StreamQueueService
+	cfg               *config.Config
+	repos             core.RepositoryStorage
+	logger            *zap.Logger
+	authMiddleware    lift.Middleware
+	converter         mastodon.Converter
+	businessLogic     services.BusinessLogicService
+	authService       services.AuthenticationService
+	registry          *services.Registry
+	streamQueue       streaming.StreamQueueService
+	
+	// Additional business logic frameworks for enhanced semantic consolidation
+	commonBusinessLogic    *common.BusinessLogicService
+	activityPubLogic       *common.ActivityPubBusinessLogic
+	mastodonLogic          *common.MastodonBusinessLogic
+}
+
+// streamingEventEmitter adapts streaming.StreamQueueService to common.EventEmitter interface
+type streamingEventEmitter struct {
+	streamQueue streaming.StreamQueueService
+}
+
+// EmitEvents implements the common.EventEmitter interface
+func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common.StreamingEvent) error {
+	// Convert common.StreamingEvent to streaming events and queue them
+	for _, event := range events {
+		// Queue the event using the stream queue service - use default stream for now
+		if err := e.streamQueue.QueueEventForStream(ctx, "user", event.Type, event.Metadata); err != nil {
+			return err
+		}
+	}
+	
+	return nil
 }
 
 // NewHandler creates a new handler with dependencies
-func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware *auth.Middleware, streamQueue streaming.StreamQueueService) *Handler {
+func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware lift.Middleware, streamQueue streaming.StreamQueueService) *Handler {
 	// Create emoji repository
 	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), logger)
 	
@@ -59,16 +85,34 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		// Continue with nil registry for now - will be handled gracefully
 	}
 
+	// Initialize enhanced business logic frameworks
+	streamingEmitter := &streamingEventEmitter{streamQueue: streamQueue}
+	commonBusinessLogic := common.NewBusinessLogicService(logger, streamingEmitter, cfg.Domain)
+	federationConfig := &common.FederationConfig{
+		Domain:         cfg.Domain,
+		UserAgent:      "Lesser/1.0",
+		MaxRetries:     3,
+		RetryDelay:     5 * time.Second,
+		RequestTimeout: 30 * time.Second,
+	}
+	activityPubLogic := common.NewActivityPubBusinessLogic(federationConfig, logger)
+	mastodonConfig := common.DefaultMastodonConfig()
+	mastodonConfig.Domain = cfg.Domain
+	mastodonApiLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
+
 	return &Handler{
-		cfg:            cfg,
-		repos:          repos,
-		logger:         logger,
-		authMiddleware: authMiddleware,
-		converter:      converter,
-		businessLogic:  businessLogic,
-		authService:    authService,
-		registry:       registry,
-		streamQueue:    streamQueue,
+		cfg:                 cfg,
+		repos:               repos,
+		logger:              logger,
+		authMiddleware:      authMiddleware,
+		converter:           converter,
+		businessLogic:       businessLogic,
+		authService:         authService,
+		registry:            registry,
+		streamQueue:         streamQueue,
+		commonBusinessLogic: commonBusinessLogic,
+		activityPubLogic:    activityPubLogic,
+		mastodonLogic:       mastodonApiLogic,
 	}
 }
 
@@ -91,17 +135,28 @@ func (h *Handler) getBearerTokenLift(ctx *lift.Context) string {
 func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string) (*auth.Claims, error) {
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
+		return nil, common.RespondMissingAuth(ctx)
+	}
+
+	// Validate required scope format using centralized validation
+	if err := common.ValidateApplicationScopes(requiredScope); err != nil {
+		return nil, common.RespondBadRequest(ctx, fmt.Sprintf("invalid required scope: %v", err))
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
+		return nil, common.RespondUnauthorized(ctx, err.Error())
+	}
+
+	// Validate token scopes using centralized validation
+	tokenScopes := strings.Join(claims.Scopes, " ")
+	if err := common.ValidateApplicationScopes(tokenScopes); err != nil {
+		return nil, common.RespondForbidden(ctx, fmt.Sprintf("invalid token scopes: %v", err))
 	}
 
 	if !claims.HasScope(requiredScope) {
-		return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "insufficient scope"})
+		return nil, common.RespondInsufficientScope(ctx, requiredScope)
 	}
 
 	return claims, nil

@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	liftErrors "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -33,68 +34,53 @@ import (
 
 var (
 	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
 )
 
 func init() {
-	// Use standardized Lambda initialization
-	var err error
-	lambdaCtx, err = common.InitializeLambda(common.LambdaConfig{
-		ServiceName:        "actor",
-		LambdaType:         common.LambdaTypeBasic,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableHealthCheck:  true,
-		EnableTracing:      true,
-		EnableCostTracking: false,
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "actor",
+		LambdaType:  common.LambdaTypeAPI,
 	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
-	}
-
-	// Initialize basic services using default options
-	options := common.DefaultLambdaInitOptions(common.LambdaTypeBasic)
-	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
 	}
 }
 
 // Handler contains dependencies for the actor service
 type Handler struct {
-	cfg                    interface{} // config.Config interface
 	actorRepo              *repositories.ActorRepository
 	authorizedFetchService *federation.AuthorizedFetchService
-	logger                 *zap.Logger
-	lambdaCtx              *common.LambdaContext
-	repos                  core.RepositoryStorage
 }
 
-// NewHandler creates a new handler instance using standardized initialization
-func NewHandler(lambdaCtx *common.LambdaContext) *Handler {
-	// Extract repositories and services from Lambda context
-	repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok {
-		lambdaCtx.Logger.Fatal("failed to get repository storage from Lambda context")
-	}
-
+// NewHandler creates a new handler instance using standardized services
+func NewHandler() *Handler {
 	// Initialize actor repository
 	actorRepo := repositories.NewActorRepository(
-		repoStorage.GetDB(), 
-		repoStorage.GetTableName(), 
-		lambdaCtx.Logger)
+		repos.GetDB(), 
+		repos.GetTableName(), 
+		logger)
 
 	// Initialize authorized fetch service
 	authorizedFetchService := federation.NewAuthorizedFetchService(
-		repoStorage, 
-		lambdaCtx.Config.Domain, 
-		lambdaCtx.Logger)
+		repos, 
+		cfg.Domain, 
+		logger)
 	
 	return &Handler{
-		cfg:                    lambdaCtx.Config,
 		actorRepo:              actorRepo,
 		authorizedFetchService: authorizedFetchService,
-		logger:                 lambdaCtx.Logger,
-		lambdaCtx:              lambdaCtx,
-		repos:                  repoStorage,
 	}
 }
 
@@ -112,7 +98,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		requestID = "unknown"
 	}
 
-	h.logger.Info("fetching actor profile",
+	logger.Info("fetching actor profile",
 		zap.String("username", username),
 		zap.String("accept", ctx.Header("Accept")),
 		zap.Any("request_id", requestID))
@@ -123,7 +109,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		if common.IsNotFound(err) {
 			return liftErrors.NotFoundError("actor")
 		}
-		h.logger.Error("failed to get actor",
+		logger.Error("failed to get actor",
 			zap.Error(err),
 			zap.String("username", username),
 			zap.Any("request_id", requestID))
@@ -142,7 +128,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 		strings.Contains(accept, "application/json") {
 		// Check if authorized fetch is enabled for ActivityPub JSON requests
 		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Context) {
-			h.logger.Debug("authorized fetch enabled, verifying request",
+			logger.Debug("authorized fetch enabled, verifying request",
 				zap.String("username", username),
 				zap.Any("request_id", requestID),
 			)
@@ -150,7 +136,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 			// Convert lift.Context to http.Request for signature verification
 			httpReq, err := h.convertLiftRequest(ctx)
 			if err != nil {
-				h.logger.Error("failed to convert request for authorized fetch",
+				logger.Error("failed to convert request for authorized fetch",
 					zap.String("username", username),
 					zap.Any("request_id", requestID),
 					zap.Error(err),
@@ -163,13 +149,13 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 			if err != nil {
 				// Check if signature is missing vs invalid
 				if strings.Contains(err.Error(), "missing signature") {
-					h.logger.Debug("unauthorized request - missing signature",
+					logger.Debug("unauthorized request - missing signature",
 						zap.String("username", username),
 						zap.Any("request_id", requestID),
 					)
 					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
 				}
-				h.logger.Debug("authorized fetch verification failed",
+				logger.Debug("authorized fetch verification failed",
 					zap.String("username", username),
 					zap.Any("request_id", requestID),
 					zap.Error(err),
@@ -177,7 +163,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
 			}
 
-			h.logger.Debug("authorized fetch verification successful",
+			logger.Debug("authorized fetch verification successful",
 				zap.String("username", username),
 				zap.Any("request_id", requestID),
 			)
@@ -298,7 +284,7 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 </head>
 <body>
 	<div class="profile">`,
-		displayName, actor.PreferredUsername, h.lambdaCtx.Config.Domain,
+		displayName, actor.PreferredUsername, cfg.Domain,
 		metaTags,
 		actor.ID)
 
@@ -311,7 +297,7 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 	// Add profile content
 	html += fmt.Sprintf(`
 		<h1>%s</h1>
-		<div class="username">@%s@%s</div>`, displayName, actor.PreferredUsername, h.lambdaCtx.Config.Domain)
+		<div class="username">@%s@%s</div>`, displayName, actor.PreferredUsername, cfg.Domain)
 
 	// Add bio if available
 	if actor.BaseObject.Summary != "" {
@@ -327,7 +313,7 @@ func (h *Handler) generateHTMLProfile(actor *activitypub.Actor) string {
 		<div class="meta">
 			<p>This is an ActivityPub profile. You can follow @%s@%s from any compatible server.</p>
 			<p><a href="%s" type="application/activity+json">View ActivityPub data</a></p>
-		</div>`, actor.PreferredUsername, h.lambdaCtx.Config.Domain, actor.ID)
+		</div>`, actor.PreferredUsername, cfg.Domain, actor.ID)
 
 	html += `
 	</div>
@@ -393,7 +379,7 @@ func main() {
 			duration := time.Since(start)
 
 			requestID := ctx.Get("requestID")
-			lambdaCtx.Logger.Info("request completed",
+			logger.Info("request completed",
 				zap.Any("request_id", requestID),
 				zap.String("method", ctx.Request.Method),
 				zap.String("path", ctx.Request.URL().Path),
@@ -410,7 +396,7 @@ func main() {
 			defer func() {
 				if r := recover(); r != nil {
 					requestID := ctx.Get("requestID")
-					lambdaCtx.Logger.Error("panic recovered",
+					logger.Error("panic recovered",
 						zap.Any("request_id", requestID),
 						zap.Any("panic", r),
 					)
@@ -440,8 +426,8 @@ func main() {
 		})
 	})
 
-	// Create handler instance using standardized initialization
-	handler := NewHandler(lambdaCtx)
+	// Create handler instance using standardized services
+	handler := NewHandler()
 
 	// Define routes for ActivityPub federation
 	_ = app.GET("/users/:username", handler.HandleActorProfile)

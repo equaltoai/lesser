@@ -533,42 +533,10 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 
 // HandleDeleteAdminDomainAllowLift handles DELETE /api/v1/admin/domain_allows/:id
 func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *lift.Context) error {
-	// Check admin authentication
-	adminClaims, err := h.requireAdminLift(ctx)
-	if err != nil {
-		ctx.Status(http.StatusForbidden)
-		return ctx.JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Get domain allow ID from path
-	allowID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("allowID", allowID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "allow ID required"})
-	}
-
-	// Delete domain allow
-	if err := h.repos.DomainBlock().DeleteDomainAllow(ctx.Context, allowID); err != nil {
-		if err == storage.ErrNotFound {
-			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "domain allow not found"})
-		}
-		h.logger.Error("failed to delete domain allow",
-			zap.String("id", allowID),
-			zap.String("admin", adminClaims.Username),
-			zap.Error(err))
-		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to delete domain allow"})
-	}
-
-	// Log admin action
-	h.logger.Info("admin deleted domain allow",
-		zap.String("id", allowID),
-		zap.String("admin", adminClaims.Username))
-
-	// Return empty object (Mastodon compatibility)
-	ctx.Status(http.StatusOK)
-	return ctx.JSON(map[string]any{})
+	return h.adminDomainDeleteAction(ctx, "allow", "allow ID required", "domain allow not found", 
+		func(itemID string) error {
+			return h.repos.DomainBlock().DeleteDomainAllow(ctx.Context, itemID)
+		})
 }
 
 // HandleGetFederationInstancesLift handles GET /api/v1/admin/federation/instances
@@ -869,6 +837,14 @@ func (h *Handler) HandleCreateEmailDomainBlockLift(ctx *lift.Context) error {
 
 // HandleDeleteEmailDomainBlockLift handles DELETE /api/v1/admin/email_domain_blocks/:id
 func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *lift.Context) error {
+	return h.adminDomainDeleteAction(ctx, "email domain block", "block ID required", "email domain block not found",
+		func(itemID string) error {
+			return h.repos.DomainBlock().DeleteEmailDomainBlock(ctx.Context, itemID)
+		})
+}
+
+// adminDomainDeleteAction consolidates domain deletion operations
+func (h *Handler) adminDomainDeleteAction(ctx *lift.Context, itemType, validationError, notFoundError string, deleteFn func(string) error) error {
 	// Check admin authentication
 	adminClaims, err := h.requireAdminLift(ctx)
 	if err != nil {
@@ -876,30 +852,30 @@ func (h *Handler) HandleDeleteEmailDomainBlockLift(ctx *lift.Context) error {
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Get email domain block ID from path
-	blockID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("blockID", blockID); err != nil {
+	// Get item ID from path
+	itemID := ctx.Param("id")
+	if err := common.ValidateRequiredParam("itemID", itemID); err != nil {
 		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "block ID required"})
+		return ctx.JSON(map[string]string{"error": validationError})
 	}
 
-	// Delete email domain block
-	if err := h.repos.DomainBlock().DeleteEmailDomainBlock(ctx.Context, blockID); err != nil {
+	// Delete the item
+	if err := deleteFn(itemID); err != nil {
 		if err == storage.ErrNotFound {
 			ctx.Status(http.StatusNotFound)
-			return ctx.JSON(map[string]string{"error": "email domain block not found"})
+			return ctx.JSON(map[string]string{"error": notFoundError})
 		}
-		h.logger.Error("failed to delete email domain block",
-			zap.String("id", blockID),
+		h.logger.Error("failed to delete "+itemType,
+			zap.String("id", itemID),
 			zap.String("admin", adminClaims.Username),
 			zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
-		return ctx.JSON(map[string]string{"error": "failed to delete email domain block"})
+		return ctx.JSON(map[string]string{"error": "failed to delete " + itemType})
 	}
 
 	// Log admin action
-	h.logger.Info("admin deleted email domain block",
-		zap.String("id", blockID),
+	h.logger.Info("admin deleted "+itemType,
+		zap.String("id", itemID),
 		zap.String("admin", adminClaims.Username))
 
 	// Return empty object (Mastodon compatibility)

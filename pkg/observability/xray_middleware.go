@@ -3,10 +3,12 @@ package observability
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-xray-sdk-go/xray"
+	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -143,6 +145,11 @@ func TraceFederationCall(ctx context.Context, instance, method, url string, fn f
 
 // TraceMediaProcessing traces media processing operations
 func TraceMediaProcessing(ctx context.Context, mediaType, operation string, fn func(ctx context.Context) error) error {
+	// Validate media type using centralized validation
+	if err := common.ValidateMediaType(mediaType); err != nil {
+		return fmt.Errorf("invalid media type for tracing: %w", err)
+	}
+
 	return TraceSubsegment(ctx, "MediaProcessing", func(segmentCtx context.Context) error {
 		if segment := xray.GetSegment(segmentCtx); segment != nil {
 			_ = segment.AddAnnotation("media_type", mediaType)

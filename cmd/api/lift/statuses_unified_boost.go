@@ -22,7 +22,7 @@ import (
 func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Test hook - check for test username header
@@ -52,19 +52,19 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Check write scope
 		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+			return common.RespondInsufficientScope(ctx)
 		}
 
 		username = claims.Username
@@ -74,7 +74,7 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Parse request body if present
@@ -135,13 +135,13 @@ func (h *Handler) createPureBoostLift(ctx *lift.Context, statusID, objectID stri
 
 	if err := h.repos.Social().CreateAnnounce(ctx.Context, announce); err != nil {
 		h.logger.Error("failed to create announce", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.repos.Activity().CreateActivity(ctx.Context, announceActivity); err != nil {
 		h.logger.Error("failed to create announce activity", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Record engagement for trending
@@ -203,8 +203,11 @@ func (h *Handler) extractContentFromObject(obj any) string {
 
 // createQuoteBoostLift creates a new status with a quote relationship
 func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, comment, visibility string, actor *activitypub.Actor) error {
-	// Default visibility if not specified
-	if err := common.ValidateRequiredParam("visibility", visibility); err != nil {
+	// Validate and default visibility if not specified
+	if err := common.ValidateVisibility(visibility); err != nil {
+		return err
+	}
+	if visibility == "" {
 		visibility = storageModels.VisibilityPublic
 	}
 
@@ -247,7 +250,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	// Create the Note object
 	if err := h.repos.Object().CreateObject(ctx.Context, note); err != nil {
 		h.logger.Error("failed to create quote note object", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Create quote relationship
@@ -288,7 +291,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.repos.Activity().CreateActivity(ctx.Context, createActivity); err != nil {
 		h.logger.Error("failed to create activity", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Fan out the post to timelines
@@ -381,7 +384,7 @@ func (h *Handler) createQuoteBoostLift(ctx *lift.Context, statusID, objectID, co
 func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "missing status id"})
+		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Authenticate user
@@ -394,7 +397,7 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 	actor, err := h.repos.Actor().GetActor(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Normalize the status ID to a full URL
@@ -431,19 +434,19 @@ func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error
 	// Extract and validate token
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Check write scope
 	if !claims.HasScope(auth.ScopeWrite) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return "", common.RespondInsufficientScope(ctx)
 	}
 
 	return claims.Username, nil

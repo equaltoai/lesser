@@ -264,57 +264,11 @@ func (r *DomainBlockRepository) GetInstanceDomainBlockByID(ctx context.Context, 
 
 // ListInstanceDomainBlocks lists all instance domain blocks with pagination
 func (r *DomainBlockRepository) ListInstanceDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.InstanceDomainBlock, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	config := DomainPaginationConfig{
+		GSIPKValue:  "DOMAIN_BLOCKS",
+		ErrorPrefix: "list domain blocks",
 	}
-
-	query := r.db.WithContext(ctx).Model(&models.InstanceDomainBlock{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "DOMAIN_BLOCKS").
-		OrderBy("GSI1SK", "DESC"). // Newest first
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var modelBlocks []models.InstanceDomainBlock
-	err := query.All(&modelBlocks)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to list domain blocks: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(modelBlocks) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = modelBlocks[limit-1].GSI1SK
-		modelBlocks = modelBlocks[:limit] // Trim to requested limit
-	}
-
-	// Convert to storage type
-	blocks := make([]*storage.InstanceDomainBlock, 0, len(modelBlocks))
-	for _, mb := range modelBlocks {
-		blocks = append(blocks, &storage.InstanceDomainBlock{
-			ID:             mb.ID,
-			Domain:         mb.Domain,
-			Severity:       mb.Severity,
-			RejectMedia:    mb.RejectMedia,
-			RejectReports:  mb.RejectReports,
-			PrivateComment: mb.PrivateComment,
-			PublicComment:  mb.PublicComment,
-			Obfuscate:      mb.Obfuscate,
-			CreatedBy:      mb.CreatedBy,
-			CreatedByID:    mb.CreatedByID,
-			CreatedAt:      mb.CreatedAt,
-			UpdatedAt:      mb.UpdatedAt,
-		})
-	}
-
-	return blocks, nextCursor, nil
+	return getPaginatedInstanceDomainBlocks(ctx, r.db, r.logger, limit, cursor, config)
 }
 
 // UpdateInstanceDomainBlock updates an existing domain block
@@ -491,138 +445,27 @@ func (r *DomainBlockRepository) CreateEmailDomainBlock(ctx context.Context, bloc
 
 // GetEmailDomainBlocks retrieves email domain blocks with pagination
 func (r *DomainBlockRepository) GetEmailDomainBlocks(ctx context.Context, limit int, cursor string) ([]*storage.EmailDomainBlock, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	config := DomainPaginationConfig{
+		GSIPKValue:  "EMAIL_DOMAIN_BLOCKS",
+		ErrorPrefix: "query email domain blocks",
 	}
-
-	query := r.db.WithContext(ctx).Model(&models.EmailDomainBlock{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "EMAIL_DOMAIN_BLOCKS").
-		OrderBy("GSI1SK", "DESC"). // Newest first
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var modelBlocks []models.EmailDomainBlock
-	err := query.All(&modelBlocks)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to query email domain blocks: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(modelBlocks) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = modelBlocks[limit-1].GSI1SK
-		modelBlocks = modelBlocks[:limit] // Trim to requested limit
-	}
-
-	// Convert to storage type
-	blocks := make([]*storage.EmailDomainBlock, 0, len(modelBlocks))
-	for _, mb := range modelBlocks {
-		blocks = append(blocks, &storage.EmailDomainBlock{
-			ID:        mb.ID,
-			Domain:    mb.Domain,
-			CreatedBy: mb.CreatedBy,
-			CreatedAt: mb.CreatedAt,
-		})
-	}
-
-	return blocks, nextCursor, nil
+	return getPaginatedEmailDomainBlocks(ctx, r.db, r.logger, limit, cursor, config)
 }
 
 // DeleteEmailDomainBlock deletes an email domain block
 func (r *DomainBlockRepository) DeleteEmailDomainBlock(ctx context.Context, id string) error {
-	// First, find the email domain block by ID - need to query GSI1 and filter
-	var blocks []models.EmailDomainBlock
-	err := r.db.WithContext(ctx).Model(&models.EmailDomainBlock{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "EMAIL_DOMAIN_BLOCKS").
-		Limit(100). // Need to scan to find by ID
-		All(&blocks)
-
-	if err != nil {
-		return fmt.Errorf("failed to find email domain block: %w", err)
-	}
-
-	// Find the block with matching ID
-	var block *models.EmailDomainBlock
-	for _, b := range blocks {
-		if b.ID == id {
-			block = &b
-			break
-		}
-	}
-
-	if block == nil {
-		return storage.ErrNotFound
-	}
-
-	// Delete the found block
-	err = r.db.WithContext(ctx).Model(&models.EmailDomainBlock{}).
-		Where("PK", "=", block.PK).
-		Where("SK", "=", block.SK).
-		Delete()
-
-	if err != nil {
-		return fmt.Errorf("failed to delete email domain block: %w", err)
-	}
-
-	return nil
+	return deleteEmailDomainBlockByID(ctx, r.db, r.logger, id, "EMAIL_DOMAIN_BLOCKS")
 }
 
 // Domain allow operations (for allowlist mode)
 
 // GetDomainAllows retrieves domain allows (for allowlist mode)
 func (r *DomainBlockRepository) GetDomainAllows(ctx context.Context, limit int, cursor string) ([]*storage.DomainAllow, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	config := DomainPaginationConfig{
+		GSIPKValue:  "DOMAIN_ALLOWS",
+		ErrorPrefix: "query domain allows",
 	}
-
-	query := r.db.WithContext(ctx).Model(&models.DomainAllow{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "DOMAIN_ALLOWS").
-		OrderBy("GSI1SK", "DESC"). // Newest first
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var modelAllows []models.DomainAllow
-	err := query.All(&modelAllows)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to query domain allows: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(modelAllows) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = modelAllows[limit-1].GSI1SK
-		modelAllows = modelAllows[:limit] // Trim to requested limit
-	}
-
-	// Convert to storage type
-	allows := make([]*storage.DomainAllow, 0, len(modelAllows))
-	for _, ma := range modelAllows {
-		allows = append(allows, &storage.DomainAllow{
-			ID:        ma.ID,
-			Domain:    ma.Domain,
-			CreatedBy: ma.CreatedBy,
-			CreatedAt: ma.CreatedAt,
-		})
-	}
-
-	return allows, nextCursor, nil
+	return getPaginatedDomainAllows(ctx, r.db, r.logger, limit, cursor, config)
 }
 
 // CreateDomainAllow adds a domain to the allowlist
@@ -657,40 +500,5 @@ func (r *DomainBlockRepository) CreateDomainAllow(ctx context.Context, allow *st
 
 // DeleteDomainAllow removes a domain from the allowlist
 func (r *DomainBlockRepository) DeleteDomainAllow(ctx context.Context, id string) error {
-	// First, find the domain allow by ID - need to query GSI1 and filter
-	var allows []models.DomainAllow
-	err := r.db.WithContext(ctx).Model(&models.DomainAllow{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "DOMAIN_ALLOWS").
-		Limit(100). // Need to scan to find by ID
-		All(&allows)
-
-	if err != nil {
-		return fmt.Errorf("failed to find domain allow: %w", err)
-	}
-
-	// Find the allow with matching ID
-	var allow *models.DomainAllow
-	for _, a := range allows {
-		if a.ID == id {
-			allow = &a
-			break
-		}
-	}
-
-	if allow == nil {
-		return storage.ErrNotFound
-	}
-
-	// Delete the found allow
-	err = r.db.WithContext(ctx).Model(&models.DomainAllow{}).
-		Where("PK", "=", allow.PK).
-		Where("SK", "=", allow.SK).
-		Delete()
-
-	if err != nil {
-		return fmt.Errorf("failed to delete domain allow: %w", err)
-	}
-
-	return nil
+	return deleteDomainAllowByID(ctx, r.db, r.logger, id, "DOMAIN_ALLOWS")
 }

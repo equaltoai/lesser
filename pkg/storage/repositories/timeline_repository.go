@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -15,17 +14,19 @@ import (
 
 // TimelineRepository handles timeline operations using DynamORM
 type TimelineRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db          core.DB
+	tableName   string
+	logger      *zap.Logger
+	batchHelper *BatchOperationHelper
 }
 
 // NewTimelineRepository creates a new timeline repository
 func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger) *TimelineRepository {
 	return &TimelineRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:          db,
+		tableName:   tableName,
+		logger:      logger,
+		batchHelper: NewBatchOperationHelper(db, tableName, logger),
 	}
 }
 
@@ -45,45 +46,13 @@ func (r *TimelineRepository) CreateTimelineEntry(_ context.Context, entry *model
 
 // CreateTimelineEntries creates multiple timeline entries in batch
 func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries []*models.Timeline) error {
-	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
-		return nil
-	}
-
-	// Prepare all entries
-	for _, entry := range entries {
-		if err := entry.BeforeCreate(); err != nil {
-			return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
-		}
-	}
-
-	// Convert to []any for batch operations
-	items := make([]any, len(entries))
+	// Convert to []interface{} for the batch helper
+	items := make([]interface{}, len(entries))
 	for i, entry := range entries {
 		items[i] = entry
 	}
 
-	// Use batch writer for efficient bulk creation
-	batchWriter := batch.NewBatchWriter(r.db, batch.BatchWriterConfig{
-		BatchSize: batch.DefaultBatchSize,
-		Logger:    r.logger,
-	})
-
-	result, err := batchWriter.WriteItems(ctx, items)
-	if err != nil {
-		return fmt.Errorf("failed to batch create timeline entries: %w", err)
-	}
-
-	// Check if any items failed
-	if result.FailedItems > 0 {
-		r.logger.Warn("some timeline entries failed to create",
-			zap.Int("failed_items", result.FailedItems),
-			zap.Int("total_items", result.TotalItems),
-		)
-		// For timeline entries, we'll continue even with some failures
-		// since they're not critical for app functionality
-	}
-
-	return nil
+	return r.batchHelper.BatchCreateItems(ctx, items, "timeline entries")
 }
 
 // GetHomeTimeline retrieves home timeline entries for a user
@@ -184,15 +153,15 @@ func (r *TimelineRepository) getTimelineEntries(_ context.Context, timelineType,
 	return entries, nextCursor, nil
 }
 
-// GetTimelineEntriesByPost retrieves all timeline entries for a specific post
-func (r *TimelineRepository) GetTimelineEntriesByPost(_ context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+// getTimelineEntriesByGSI is a consolidated function that handles timeline queries by different GSI patterns
+func (r *TimelineRepository) getTimelineEntriesByGSI(ctx context.Context, indexName, pkField, skField, keyPrefix, value string, limit int, cursor, errorContext string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
-		Index("post-timeline-index").
-		Where("GSI1PK", "=", "POST#"+postID).
-		OrderBy("GSI1SK", "ASC") // ASC because we use reverse timestamp
+		Index(indexName).
+		Where(pkField, "=", keyPrefix+value).
+		OrderBy(skField, "ASC") // ASC because we use reverse timestamp
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where(skField, ">", cursor)
 	}
 
 	// Get one more item than requested to determine if there are more results
@@ -201,111 +170,48 @@ func (r *TimelineRepository) GetTimelineEntriesByPost(_ context.Context, postID 
 	var entries []*models.Timeline
 	err := query.All(&entries)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries by post: %w", err)
+		return nil, "", fmt.Errorf("failed to get timeline entries by %s: %w", errorContext, err)
 	}
 
 	// Generate next cursor
 	var nextCursor string
 	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
 		// We got more results than requested, so there are more pages
-		nextCursor = entries[limit-1].GSI1SK
+		// Use reflection to get the correct SK field value for cursor
+		switch skField {
+		case "GSI1SK":
+			nextCursor = entries[limit-1].GSI1SK
+		case "GSI2SK":
+			nextCursor = entries[limit-1].GSI2SK
+		case "GSI3SK":
+			nextCursor = entries[limit-1].GSI3SK
+		case "GSI4SK":
+			nextCursor = entries[limit-1].GSI4SK
+		}
 		entries = entries[:limit] // Trim to requested limit
 	}
 
 	return entries, nextCursor, nil
+}
+
+// GetTimelineEntriesByPost retrieves all timeline entries for a specific post
+func (r *TimelineRepository) GetTimelineEntriesByPost(ctx context.Context, postID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntriesByGSI(ctx, "post-timeline-index", "GSI1PK", "GSI1SK", "POST#", postID, limit, cursor, "post")
 }
 
 // GetTimelineEntriesByActor retrieves all timeline entries by a specific actor
-func (r *TimelineRepository) GetTimelineEntriesByActor(_ context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	query := r.db.Model(&models.Timeline{}).
-		Index("actor-timeline-index").
-		Where("GSI2PK", "=", "ACTOR#"+actorID).
-		OrderBy("GSI2SK", "ASC") // ASC because we use reverse timestamp
-
-	if cursor != "" {
-		query = query.Where("GSI2SK", ">", cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var entries []*models.Timeline
-	err := query.All(&entries)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries by actor: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = entries[limit-1].GSI2SK
-		entries = entries[:limit] // Trim to requested limit
-	}
-
-	return entries, nextCursor, nil
+func (r *TimelineRepository) GetTimelineEntriesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntriesByGSI(ctx, "actor-timeline-index", "GSI2PK", "GSI2SK", "ACTOR#", actorID, limit, cursor, "actor")
 }
 
 // GetTimelineEntriesByVisibility retrieves timeline entries by visibility level
-func (r *TimelineRepository) GetTimelineEntriesByVisibility(_ context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	query := r.db.Model(&models.Timeline{}).
-		Index("visibility-timeline-index").
-		Where("GSI3PK", "=", "VISIBILITY#"+visibility).
-		OrderBy("GSI3SK", "ASC") // ASC because we use reverse timestamp
-
-	if cursor != "" {
-		query = query.Where("GSI3SK", ">", cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var entries []*models.Timeline
-	err := query.All(&entries)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries by visibility: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = entries[limit-1].GSI3SK
-		entries = entries[:limit] // Trim to requested limit
-	}
-
-	return entries, nextCursor, nil
+func (r *TimelineRepository) GetTimelineEntriesByVisibility(ctx context.Context, visibility string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntriesByGSI(ctx, "visibility-timeline-index", "GSI3PK", "GSI3SK", "VISIBILITY#", visibility, limit, cursor, "visibility")
 }
 
 // GetTimelineEntriesByLanguage retrieves timeline entries by language
-func (r *TimelineRepository) GetTimelineEntriesByLanguage(_ context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
-	query := r.db.Model(&models.Timeline{}).
-		Index("language-timeline-index").
-		Where("GSI4PK", "=", "LANGUAGE#"+language).
-		OrderBy("GSI4SK", "ASC") // ASC because we use reverse timestamp
-
-	if cursor != "" {
-		query = query.Where("GSI4SK", ">", cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var entries []*models.Timeline
-	err := query.All(&entries)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries by language: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = entries[limit-1].GSI4SK
-		entries = entries[:limit] // Trim to requested limit
-	}
-
-	return entries, nextCursor, nil
+func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, language string, limit int, cursor string) ([]*models.Timeline, string, error) {
+	return r.getTimelineEntriesByGSI(ctx, "language-timeline-index", "GSI4PK", "GSI4SK", "LANGUAGE#", language, limit, cursor, "language")
 }
 
 // GetTimelineEntry retrieves a specific timeline entry

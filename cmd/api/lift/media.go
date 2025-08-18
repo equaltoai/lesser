@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"mime/multipart"
-	"net/http"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -51,7 +50,18 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 	mediaData, err := h.parseMediaUpload(ctx)
 	if err != nil {
 		h.logger.Error("failed to parse media upload", zap.Error(err))
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "failed to parse media upload"})
+		return common.RespondBadRequest(ctx, "failed to parse media upload")
+	}
+
+	// Validate media parameters
+	params := map[string]interface{}{
+		"file":        mediaData.FileName,
+		"description": mediaData.Description,
+		"focus":       mediaData.Focus,
+	}
+	if err := common.ValidateMediaParams(params); err != nil {
+		h.logger.Error("media validation failed", zap.Error(err))
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Call Media service
@@ -65,7 +75,7 @@ func (h *Handler) HandleUploadMediaLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to upload media", zap.String("user", claims.Username), zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to upload media"})
+		return common.RespondInternalServerError(ctx, "failed to upload media")
 	}
 
 	return ctx.JSON(result.Media)
@@ -81,8 +91,8 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 
 	// Extract media ID
 	mediaID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("media_id", mediaID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateEntityID(mediaID, "media"); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Call Media service
@@ -92,7 +102,7 @@ func (h *Handler) HandleGetMediaLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get media", zap.String("media_id", mediaID), zap.Error(err))
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "media not found"})
+		return common.RespondNotFound(ctx, "media")
 	}
 
 	return ctx.JSON(mediaResult)
@@ -108,8 +118,8 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 
 	// Extract media ID
 	mediaID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("media_id", mediaID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateEntityID(mediaID, "media"); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Parse update request
@@ -118,7 +128,21 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 		Focus       string `json:"focus"`
 	}
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+		return common.RespondBadRequest(ctx, "invalid request body")
+	}
+
+	// Validate media update parameters
+	if req.Description != "" {
+		if err := common.ValidateMediaDescription(req.Description); err != nil {
+			h.logger.Error("media description validation failed", zap.Error(err))
+			return common.RespondBadRequest(ctx, err.Error())
+		}
+	}
+	if req.Focus != "" {
+		if err := common.ValidateMediaFocus(req.Focus); err != nil {
+			h.logger.Error("media focus validation failed", zap.Error(err))
+			return common.RespondBadRequest(ctx, err.Error())
+		}
 	}
 
 	// Call Media service
@@ -130,7 +154,7 @@ func (h *Handler) HandleUpdateMediaLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to update media", zap.String("media_id", mediaID), zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to update media"})
+		return common.RespondInternalServerError(ctx, "failed to update media")
 	}
 
 	return ctx.JSON(result.Media)

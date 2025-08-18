@@ -67,58 +67,12 @@ func (r *AuditRepository) GetAuditLogByID(ctx context.Context, id string, date t
 
 // GetUserAuditLogs retrieves audit logs for a specific user
 func (r *AuditRepository) GetUserAuditLogs(ctx context.Context, username string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error) {
-	var logs []*models.AuthAuditLog
-
-	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-
-	// Add time range filter if specified
-	if !startTime.IsZero() && !endTime.IsZero() {
-		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
-		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where("GSI1SK", ">=", startTimestamp).Where("GSI1SK", "<=", endTimestamp)
-	}
-
-	// Apply limit
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
-	// Execute query
-	if err := query.All(&logs); err != nil {
-		return nil, fmt.Errorf("failed to get user audit logs: %w", err)
-	}
-
-	return logs, nil
+	return AuditLogQueryHelper(r.db, ctx, "GSI1", fmt.Sprintf("USER#%s", username), limit, startTime, endTime, "user")
 }
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address
 func (r *AuditRepository) GetIPAuditLogs(ctx context.Context, ipAddress string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error) {
-	var logs []*models.AuthAuditLog
-
-	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
-		Index("GSI2").
-		Where("GSI2PK", "=", fmt.Sprintf("IP#%s", ipAddress))
-
-	// Add time range filter if specified
-	if !startTime.IsZero() && !endTime.IsZero() {
-		startTimestamp := fmt.Sprintf("AUDIT#%d", startTime.Unix())
-		endTimestamp := fmt.Sprintf("AUDIT#%d", endTime.Unix())
-		query = query.Where("GSI2SK", ">=", startTimestamp).Where("GSI2SK", "<=", endTimestamp)
-	}
-
-	// Apply limit
-	if limit > 0 {
-		query = query.Limit(limit)
-	}
-
-	// Execute query
-	if err := query.All(&logs); err != nil {
-		return nil, fmt.Errorf("failed to get IP audit logs: %w", err)
-	}
-
-	return logs, nil
+	return AuditLogQueryHelper(r.db, ctx, "GSI2", fmt.Sprintf("IP#%s", ipAddress), limit, startTime, endTime, "IP")
 }
 
 // GetSessionAuditLogs retrieves audit logs for a specific session

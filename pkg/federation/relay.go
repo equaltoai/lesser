@@ -637,24 +637,16 @@ func extractDomainFromRelayURL(relayURL string) string {
 		return "unknown"
 	}
 
+	// Validate URL format
+	if err := common.ValidateURL(relayURL, "relay_url"); err != nil {
+		return "unknown"
+	}
+
 	// Parse URL to extract domain
 	parsedURL, err := url.Parse(relayURL)
 	if err != nil {
-		// Fallback to simple string parsing
-		if strings.HasPrefix(relayURL, "https://") {
-			domain := relayURL[8:]
-			if idx := strings.Index(domain, "/"); idx > 0 {
-				domain = domain[:idx]
-			}
-			return domain
-		} else if strings.HasPrefix(relayURL, "http://") {
-			domain := relayURL[7:]
-			if idx := strings.Index(domain, "/"); idx > 0 {
-				domain = domain[:idx]
-			}
-			return domain
-		}
-		return relayURL
+		// Should not happen after ValidateURL, but fallback anyway
+		return "unknown"
 	}
 
 	return parsedURL.Hostname()

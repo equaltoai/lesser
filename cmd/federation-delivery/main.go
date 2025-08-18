@@ -35,8 +35,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -124,32 +122,36 @@ type DeliveryStatus struct {
 	DeliveredAt   *time.Time `json:"delivered_at,omitempty"`
 }
 
-func main() {
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
-		ServiceName: "federation-delivery",
-		LambdaType:  common.LambdaTypeFederation,
-		Version:     "1.0.0",
-	})
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
-	}
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+)
 
+func init() {
+	// Standardized Lambda initialization for federation-delivery function
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "federation-delivery", // federation-delivery
+		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+	
+	// Function-specific initialization only
 	// Initialize AWS SQS client config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
 	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
-	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
-	}
-
-	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsCfg, lambdaCtx.Logger)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
+		logger.Fatal("Failed to load AWS config", zap.Error(err))
 	}
 
 	// Create federation storage adapter that implements FederationStorage interface
@@ -161,20 +163,23 @@ func main() {
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Get queue URL from environment
-	queueURL := lambdaCtx.Config.FederationDeliveryQueueURL
+	queueURL := cfg.FederationDeliveryQueueURL
 	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
-		lambdaCtx.Logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
+		logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
 	}
 
 	// Create processor instance
 	processor = &FederationDeliveryProcessor{
 		repos:           repos,
 		deliveryService: deliveryService,
-		cfg:             lambdaCtx.Config,
+		cfg:             cfg,
 		sqsClient:       sqsClient,
 		queueURL:        queueURL,
-		logger:          lambdaCtx.Logger,
+		logger:          logger,
 	}
+}
+
+func main() {
 
 	// Create Lift app
 	app := lift.New()

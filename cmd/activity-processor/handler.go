@@ -181,17 +181,36 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	}
 }
 
-// processInboxActivity processes an incoming activity
-//
-//nolint:unused // False positive - called in Handle method
-func (h *ActivityHandler) processInboxActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing inbox activity",
+// processActivityByType processes an activity based on its type with configurable handlers
+func (h *ActivityHandler) processActivityByType(ctx context.Context, activity *activitypub.Activity, username string, isInbox bool) error {
+	logType := "outbox"
+	if isInbox {
+		logType = "inbox"
+	}
+	
+	h.Logger.Info("Processing "+logType+" activity",
 		zap.String("type", activity.Type),
 		zap.String("username", username),
 		zap.String("id", activity.ID),
 	)
 
-	// Process based on activity type
+	// For outbox, most activities just need delivery
+	if !isInbox {
+		switch activity.Type {
+		case ActivityTypeCreate, ActivityTypeFollow, ActivityTypeAccept, ActivityTypeReject,
+			 ActivityTypeUpdate, ActivityTypeDelete, ActivityTypeLike, ActivityTypeAnnounce,
+			 ActivityTypeUndo, ActivityTypeBlock, ActivityTypeFlag, ActivityTypeMove,
+			 ActivityTypeAdd, ActivityTypeRemove:
+			return h.deliverActivity(ctx, activity, username)
+		default:
+			h.Logger.Info("Ignoring unsupported activity type",
+				zap.String("type", activity.Type),
+			)
+			return nil
+		}
+	}
+
+	// For inbox, use specific processing methods
 	switch activity.Type {
 	case ActivityTypeFollow:
 		return h.processFollowActivity(ctx, activity, username)
@@ -229,52 +248,18 @@ func (h *ActivityHandler) processInboxActivity(ctx context.Context, activity *ac
 	}
 }
 
+// processInboxActivity processes an incoming activity
+//
+//nolint:unused // False positive - called in Handle method
+func (h *ActivityHandler) processInboxActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	return h.processActivityByType(ctx, activity, username, true)
+}
+
 // processOutboxActivity processes an outgoing activity
 //
 //nolint:unused // False positive - called in Handle method
 func (h *ActivityHandler) processOutboxActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing outbox activity",
-		zap.String("type", activity.Type),
-		zap.String("username", username),
-		zap.String("id", activity.ID),
-	)
-
-	// Process based on activity type
-	switch activity.Type {
-	case ActivityTypeCreate:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeFollow:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeAccept:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeReject:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeUpdate:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeDelete:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeLike:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeAnnounce:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeUndo:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeBlock:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeFlag:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeMove:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeAdd:
-		return h.deliverActivity(ctx, activity, username)
-	case ActivityTypeRemove:
-		return h.deliverActivity(ctx, activity, username)
-	default:
-		h.Logger.Info("Ignoring unsupported activity type",
-			zap.String("type", activity.Type),
-		)
-		return nil
-	}
+	return h.processActivityByType(ctx, activity, username, false)
 }
 
 // processFollowActivity processes a Follow activity
@@ -1140,54 +1125,8 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 		return fmt.Errorf("failed to create like record: %w", err)
 	}
 
-	// Find the owner of the object being liked to send notification
-	object, err := h.ObjectRepo.GetObject(ctx, objectID)
-	if err != nil {
-		h.Logger.Warn("Could not find object for like notification",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Don't fail the entire operation, the like was saved
-	} else {
-		// Extract object author for notification
-		var objectAuthor string
-		switch obj := object.(type) {
-		case *models.Status:
-			objectAuthor = obj.AuthorID
-		case *models.Object:
-			objectAuthor = obj.AttributedTo
-		case map[string]interface{}:
-			if author, ok := obj["attributedTo"].(string); ok {
-				objectAuthor = author
-			}
-		}
-
-		if objectAuthor != "" {
-			authorUsername := h.extractUsernameFromActorURI(objectAuthor)
-			likerUsername := h.extractUsernameFromActorURI(actorURI)
-
-			if authorUsername != "" && likerUsername != "" {
-				// Create favourite notification for the object author
-				notification := models.NewNotificationBuilder().
-					ForUser(authorUsername).
-					OfType("favourite").
-					FromActor(likerUsername, "remote_actor").
-					AboutTarget(objectID, "status").
-					WithContent(
-						fmt.Sprintf("%s liked your post", likerUsername),
-						fmt.Sprintf("Your post was liked by %s", likerUsername)).
-					Build()
-
-				if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
-					h.Logger.Error("Failed to create favourite notification",
-						zap.String("author", authorUsername),
-						zap.String("liker", likerUsername),
-						zap.String("object_id", objectID),
-						zap.Error(err))
-					// Don't return error - the like was created successfully
-				}
-			}
-		}
-	}
+	// Create notification for the object owner
+	h.createObjectInteractionNotification(ctx, objectID, actorURI, "favourite", "liked", "liker")
 
 	h.Logger.Info("Successfully processed Like activity",
 		zap.String("actor", actorURI),
@@ -1262,54 +1201,8 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 		return fmt.Errorf("failed to create announce record: %w", err)
 	}
 
-	// Find the owner of the object being announced to send notification
-	object, err := h.ObjectRepo.GetObject(ctx, objectID)
-	if err != nil {
-		h.Logger.Warn("Could not find object for announce notification",
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		// Don't fail the entire operation, the announce was saved
-	} else {
-		// Extract object author for notification
-		var objectAuthor string
-		switch obj := object.(type) {
-		case *models.Status:
-			objectAuthor = obj.AuthorID
-		case *models.Object:
-			objectAuthor = obj.AttributedTo
-		case map[string]interface{}:
-			if author, ok := obj["attributedTo"].(string); ok {
-				objectAuthor = author
-			}
-		}
-
-		if objectAuthor != "" {
-			authorUsername := h.extractUsernameFromActorURI(objectAuthor)
-			announcerUsername := h.extractUsernameFromActorURI(actorURI)
-
-			if authorUsername != "" && announcerUsername != "" {
-				// Create reblog notification for the object author
-				notification := models.NewNotificationBuilder().
-					ForUser(authorUsername).
-					OfType("reblog").
-					FromActor(announcerUsername, "remote_actor").
-					AboutTarget(objectID, "status").
-					WithContent(
-						fmt.Sprintf("%s boosted your post", announcerUsername),
-						fmt.Sprintf("Your post was boosted by %s", announcerUsername)).
-					Build()
-
-				if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
-					h.Logger.Error("Failed to create reblog notification",
-						zap.String("author", authorUsername),
-						zap.String("announcer", announcerUsername),
-						zap.String("object_id", objectID),
-						zap.Error(err))
-					// Don't return error - the announce was created successfully
-				}
-			}
-		}
-	}
+	// Create notification for the object owner
+	h.createObjectInteractionNotification(ctx, objectID, actorURI, "reblog", "boosted", "announcer")
 
 	h.Logger.Info("Successfully processed Announce activity",
 		zap.String("actor", actorURI),
@@ -1510,123 +1403,21 @@ func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *a
 //
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoLike(ctx context.Context, undoActivity *activitypub.Activity, likeActivity interface{}, _ string) error {
-	targetObject := h.extractActivityObject(likeActivity)
-	
-	var objectID string
-	switch obj := targetObject.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from like activity")
-	}
-
-	actorURI := undoActivity.Actor
-	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo like activity missing actor")
-	}
-
-	// Remove the like record
-	if err := h.LikeRepo.DeleteLike(ctx, actorURI, objectID); err != nil {
-		h.Logger.Error("Failed to delete like record",
-			zap.String("actor", actorURI),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete like record: %w", err)
-	}
-
-	h.Logger.Info("Successfully processed Undo Like",
-		zap.String("actor", actorURI),
-		zap.String("object_id", objectID))
-
-	return nil
+	return h.processUndoWithObjectExtraction(ctx, undoActivity, likeActivity, "like", h.LikeRepo.DeleteLike)
 }
 
 // processUndoAnnounce processes an undo of an Announce activity
 //
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoAnnounce(ctx context.Context, undoActivity *activitypub.Activity, announceActivity interface{}, _ string) error {
-	targetObject := h.extractActivityObject(announceActivity)
-	
-	var objectID string
-	switch obj := targetObject.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from announce activity")
-	}
-
-	actorURI := undoActivity.Actor
-	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo announce activity missing actor")
-	}
-
-	// Remove the announce/boost record
-	if err := h.SocialRepo.DeleteAnnounce(ctx, actorURI, objectID); err != nil {
-		h.Logger.Error("Failed to delete announce record",
-			zap.String("actor", actorURI),
-			zap.String("object_id", objectID),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete announce record: %w", err)
-	}
-
-	h.Logger.Info("Successfully processed Undo Announce",
-		zap.String("actor", actorURI),
-		zap.String("object_id", objectID))
-
-	return nil
+	return h.processUndoWithObjectExtraction(ctx, undoActivity, announceActivity, "announce", h.SocialRepo.DeleteAnnounce)
 }
 
 // processUndoBlock processes an undo of a Block activity
 //
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoBlock(ctx context.Context, undoActivity *activitypub.Activity, blockActivity interface{}, _ string) error {
-	targetObject := h.extractActivityObject(blockActivity)
-	
-	var blockedActor string
-	switch obj := targetObject.(type) {
-	case string:
-		blockedActor = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			blockedActor = id
-		}
-	}
-
-	if err := common.ValidateRequiredParam("blockedActor", blockedActor); err != nil {
-		return fmt.Errorf("unable to extract blocked actor from block activity")
-	}
-
-	blockerActor := undoActivity.Actor
-	if err := common.ValidateRequiredParam("blockerActor", blockerActor); err != nil {
-		return fmt.Errorf("undo block activity missing actor")
-	}
-
-	// Remove the block relationship
-	if err := h.RelationshipRepo.DeleteBlock(ctx, blockerActor, blockedActor); err != nil {
-		h.Logger.Error("Failed to delete block relationship",
-			zap.String("blocker", blockerActor),
-			zap.String("blocked", blockedActor),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete block relationship: %w", err)
-	}
-
-	h.Logger.Info("Successfully processed Undo Block",
-		zap.String("blocker", blockerActor),
-		zap.String("blocked", blockedActor))
-
-	return nil
+	return h.processUndoWithObjectExtraction(ctx, undoActivity, blockActivity, "block", h.RelationshipRepo.DeleteBlock)
 }
 
 // processUndoCreate processes an undo of a Create activity
@@ -2066,12 +1857,11 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 	return nil
 }
 
-// processUndoAdd processes an undo of an Add activity
-//
-//nolint:unused // Called from processUndoActivity but kept for full implementation
-func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *activitypub.Activity, addActivity interface{}, _ string) error {
-	targetObject := h.extractActivityObject(addActivity)
-	
+// processUndoListActivity processes undo operations for Add/Remove activities on lists
+// This consolidates processUndoAdd and processUndoRemove which had 85 lines of duplication
+func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActivity *activitypub.Activity, originalActivity interface{}, activityType string) error {
+	// Extract object ID from the original activity
+	targetObject := h.extractActivityObject(originalActivity)
 	var objectID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -2083,17 +1873,17 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from add activity")
+		return fmt.Errorf("unable to extract object ID from %s activity", activityType)
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo add activity missing actor")
+		return fmt.Errorf("undo %s activity missing actor", activityType)
 	}
 
-	// Extract target collection from the add activity
+	// Extract target collection from the original activity
 	var targetCollection string
-	if act, ok := addActivity.(map[string]interface{}); ok {
+	if act, ok := originalActivity.(map[string]interface{}); ok {
 		if target, ok := act["target"].(string); ok {
 			targetCollection = target
 		}
@@ -2111,9 +1901,10 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 	// Verify the list exists and the actor has permission to modify it
 	list, err := h.ListRepo.GetList(ctx, listID)
 	if err != nil {
-		h.Logger.Error("Failed to get target list for undo add",
+		h.Logger.Error("Failed to get target list for undo",
 			zap.String("list_id", listID),
 			zap.String("activity_id", undoActivity.ID),
+			zap.String("activity_type", activityType),
 			zap.Error(err))
 		return fmt.Errorf("failed to get target list: %w", err)
 	}
@@ -2121,14 +1912,15 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 	// Check if actor has permission (must be list owner)
 	actorUsername := h.extractUsernameFromActor(actorURI)
 	if list.Username != actorUsername {
-		h.Logger.Warn("Actor does not own the target list for undo add",
+		h.Logger.Warn("Actor does not own the target list",
 			zap.String("actor", actorURI),
 			zap.String("list_owner", list.Username),
-			zap.String("list_id", listID))
+			zap.String("list_id", listID),
+			zap.String("activity_type", activityType))
 		return fmt.Errorf("actor does not have permission to modify list")
 	}
 
-	// Extract username from object ID and remove from list (undoing the Add)
+	// Extract username from object ID
 	memberUsername := h.extractUsernameFromActor(objectID)
 	if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 		h.Logger.Error("Unable to extract username from object ID",
@@ -2136,112 +1928,53 @@ func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *acti
 		return fmt.Errorf("unable to extract username from object ID")
 	}
 
-	// Remove the member from the list (undoing the original Add)
-	if err := h.ListRepo.RemoveListMember(ctx, listID, memberUsername); err != nil {
-		h.Logger.Error("Failed to remove member from list in undo add",
+	// Perform the inverse operation based on the original activity type
+	var opErr error
+	var action string
+	if activityType == "add" {
+		// Undo Add means Remove
+		opErr = h.ListRepo.RemoveListMember(ctx, listID, memberUsername)
+		action = "removed"
+	} else {
+		// Undo Remove means Add
+		opErr = h.ListRepo.AddListMember(ctx, listID, memberUsername)
+		action = "added"
+	}
+
+	if opErr != nil {
+		h.Logger.Error("Failed to perform list operation in undo",
 			zap.String("list_id", listID),
 			zap.String("member_username", memberUsername),
 			zap.String("activity_id", undoActivity.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to remove member from list: %w", err)
+			zap.String("activity_type", activityType),
+			zap.String("action", action),
+			zap.Error(opErr))
+		return fmt.Errorf("failed to perform list operation: %w", opErr)
 	}
 
-	h.Logger.Info("Successfully processed Undo Add",
+	h.Logger.Info("Successfully processed Undo",
 		zap.String("actor", actorURI),
 		zap.String("list_id", listID),
-		zap.String("removed_member", memberUsername),
-		zap.String("activity_id", undoActivity.ID))
+		zap.String("member", memberUsername),
+		zap.String("activity_id", undoActivity.ID),
+		zap.String("activity_type", activityType),
+		zap.String("action", action))
 
 	return nil
+}
+
+// processUndoAdd processes an undo of an Add activity
+//
+//nolint:unused // Called from processUndoActivity but kept for full implementation
+func (h *ActivityHandler) processUndoAdd(ctx context.Context, undoActivity *activitypub.Activity, addActivity interface{}, _ string) error {
+	return h.processUndoListActivity(ctx, undoActivity, addActivity, "add")
 }
 
 // processUndoRemove processes an undo of a Remove activity
 //
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoRemove(ctx context.Context, undoActivity *activitypub.Activity, removeActivity interface{}, _ string) error {
-	targetObject := h.extractActivityObject(removeActivity)
-	
-	var objectID string
-	switch obj := targetObject.(type) {
-	case string:
-		objectID = obj
-	case map[string]interface{}:
-		if id, ok := obj["id"].(string); ok {
-			objectID = id
-		}
-	}
-
-	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from remove activity")
-	}
-
-	actorURI := undoActivity.Actor
-	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo remove activity missing actor")
-	}
-
-	// Extract target collection from the remove activity
-	var targetCollection string
-	if act, ok := removeActivity.(map[string]interface{}); ok {
-		if target, ok := act["target"].(string); ok {
-			targetCollection = target
-		}
-	}
-
-	// Extract list ID from target collection
-	listID := h.extractListIDFromCollection(targetCollection)
-	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		h.Logger.Error("Unable to extract list ID from target collection",
-			zap.String("target", targetCollection),
-			zap.String("activity_id", undoActivity.ID))
-		return fmt.Errorf("unable to extract list ID from target collection")
-	}
-
-	// Verify the list exists and the actor has permission to modify it
-	list, err := h.ListRepo.GetList(ctx, listID)
-	if err != nil {
-		h.Logger.Error("Failed to get target list for undo remove",
-			zap.String("list_id", listID),
-			zap.String("activity_id", undoActivity.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to get target list: %w", err)
-	}
-
-	// Check if actor has permission (must be list owner)
-	actorUsername := h.extractUsernameFromActor(actorURI)
-	if list.Username != actorUsername {
-		h.Logger.Warn("Actor does not own the target list for undo remove",
-			zap.String("actor", actorURI),
-			zap.String("list_owner", list.Username),
-			zap.String("list_id", listID))
-		return fmt.Errorf("actor does not have permission to modify list")
-	}
-
-	// Extract username from object ID and add back to list (undoing the Remove)
-	memberUsername := h.extractUsernameFromActor(objectID)
-	if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
-		h.Logger.Error("Unable to extract username from object ID",
-			zap.String("object_id", objectID))
-		return fmt.Errorf("unable to extract username from object ID")
-	}
-
-	// Add the member back to the list (undoing the original Remove)
-	if err := h.ListRepo.AddListMember(ctx, listID, memberUsername); err != nil {
-		h.Logger.Error("Failed to add member back to list in undo remove",
-			zap.String("list_id", listID),
-			zap.String("member_username", memberUsername),
-			zap.String("activity_id", undoActivity.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to add member back to list: %w", err)
-	}
-
-	h.Logger.Info("Successfully processed Undo Remove",
-		zap.String("actor", actorURI),
-		zap.String("list_id", listID),
-		zap.String("added_member", memberUsername),
-		zap.String("activity_id", undoActivity.ID))
-
-	return nil
+	return h.processUndoListActivity(ctx, undoActivity, removeActivity, "remove")
 }
 
 
@@ -2518,23 +2251,24 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 	return nil
 }
 
-// processAddActivity processes an Add activity
-//
-//nolint:unused // False positive - called from processInboxActivity
-func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing Add activity",
+// processListActivity processes Add/Remove activities on lists
+// This consolidates processAddActivity and processRemoveActivity which had 104 lines of duplication
+func (h *ActivityHandler) processListActivity(ctx context.Context, activity *activitypub.Activity, username string, activityType string) error {
+	h.Logger.Info("Processing list activity",
 		zap.String("username", username),
 		zap.String("activity_id", activity.ID),
-		zap.String("actor", activity.Actor))
+		zap.String("actor", activity.Actor),
+		zap.String("activity_type", activityType))
 
 	// Extract the target collection from activity.Target
 	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
-		h.Logger.Error("Add activity missing target collection",
-			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("add activity missing target collection")
+		h.Logger.Error("List activity missing target collection",
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activityType))
+		return fmt.Errorf("%s activity missing target collection", activityType)
 	}
 
-	// Extract the object being added
+	// Extract the objects being processed
 	var objectIDs []string
 	switch obj := activity.Object.(type) {
 	case string:
@@ -2557,122 +2291,15 @@ func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *acti
 			objectIDs = []string{id}
 		}
 	default:
-		h.Logger.Error("Unable to extract object from Add activity",
+		h.Logger.Error("Unable to extract object from list activity",
 			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activityType),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("unable to extract object from Add activity")
+		return fmt.Errorf("unable to extract object from %s activity", activityType)
 	}
 
 	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
-		return fmt.Errorf("no objects found to add in Add activity")
-	}
-
-	// Extract list ID from target (format: https://domain.com/users/username/lists/{listID})
-	listID := h.extractListIDFromCollection(activity.Target)
-	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		h.Logger.Error("Unable to extract list ID from target collection",
-			zap.String("target", activity.Target),
-			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("unable to extract list ID from target collection")
-	}
-
-	// Verify the list exists and the actor has permission to modify it
-	list, err := h.ListRepo.GetList(ctx, listID)
-	if err != nil {
-		h.Logger.Error("Failed to get target list",
-			zap.String("list_id", listID),
-			zap.String("activity_id", activity.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to get target list: %w", err)
-	}
-
-	// Check if actor has permission (must be list owner)
-	actorUsername := h.extractUsernameFromActor(activity.Actor)
-	if list.Username != actorUsername {
-		h.Logger.Warn("Actor does not own the target list",
-			zap.String("actor", activity.Actor),
-			zap.String("list_owner", list.Username),
-			zap.String("list_id", listID))
-		return fmt.Errorf("actor does not have permission to modify list")
-	}
-
-	// Add each object (assuming they are accounts) to the list
-	for _, objectID := range objectIDs {
-		// Extract username from object ID (assume format: https://domain.com/users/username)
-		memberUsername := h.extractUsernameFromActor(objectID)
-		if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
-			h.Logger.Warn("Unable to extract username from object ID",
-				zap.String("object_id", objectID))
-			continue
-		}
-
-		// Add the member to the list
-		if err := h.ListRepo.AddListMember(ctx, listID, memberUsername); err != nil {
-			h.Logger.Error("Failed to add member to list",
-				zap.String("list_id", listID),
-				zap.String("member_username", memberUsername),
-				zap.String("activity_id", activity.ID),
-				zap.Error(err))
-			// Continue with other members instead of failing entirely
-			continue
-		}
-
-		h.Logger.Info("Added member to list",
-			zap.String("list_id", listID),
-			zap.String("member_username", memberUsername),
-			zap.String("activity_id", activity.ID))
-	}
-
-	return nil
-}
-
-// processRemoveActivity processes a Remove activity
-//
-//nolint:unused // False positive - called from processInboxActivity
-func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
-	h.Logger.Info("Processing Remove activity",
-		zap.String("username", username),
-		zap.String("activity_id", activity.ID),
-		zap.String("actor", activity.Actor))
-
-	// Extract the target collection from activity.Target
-	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
-		h.Logger.Error("Remove activity missing target collection",
-			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("remove activity missing target collection")
-	}
-
-	// Extract the object being removed
-	var objectIDs []string
-	switch obj := activity.Object.(type) {
-	case string:
-		// Single object ID
-		objectIDs = []string{obj}
-	case []interface{}:
-		// Multiple objects
-		for _, item := range obj {
-			if objID, ok := item.(string); ok {
-				objectIDs = append(objectIDs, objID)
-			} else if objMap, ok := item.(map[string]interface{}); ok {
-				if id, ok := objMap["id"].(string); ok {
-					objectIDs = append(objectIDs, id)
-				}
-			}
-		}
-	case map[string]interface{}:
-		// Object with ID field
-		if id, ok := obj["id"].(string); ok {
-			objectIDs = []string{id}
-		}
-	default:
-		h.Logger.Error("Unable to extract object from Remove activity",
-			zap.String("activity_id", activity.ID),
-			zap.Any("object", activity.Object))
-		return fmt.Errorf("unable to extract object from Remove activity")
-	}
-
-	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
-		return fmt.Errorf("no objects found to remove in Remove activity")
+		return fmt.Errorf("no objects found to %s in %s activity", activityType, activityType)
 	}
 
 	// Extract list ID from target
@@ -2680,7 +2307,8 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", activity.Target),
-			zap.String("activity_id", activity.ID))
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activityType))
 		return fmt.Errorf("unable to extract list ID from target collection")
 	}
 
@@ -2690,6 +2318,7 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 		h.Logger.Error("Failed to get target list",
 			zap.String("list_id", listID),
 			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activityType),
 			zap.Error(err))
 		return fmt.Errorf("failed to get target list: %w", err)
 	}
@@ -2700,38 +2329,68 @@ func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *a
 		h.Logger.Warn("Actor does not own the target list",
 			zap.String("actor", activity.Actor),
 			zap.String("list_owner", list.Username),
-			zap.String("list_id", listID))
+			zap.String("list_id", listID),
+			zap.String("activity_type", activityType))
 		return fmt.Errorf("actor does not have permission to modify list")
 	}
 
-	// Remove each object from the list
+	// Process each object based on activity type
 	for _, objectID := range objectIDs {
 		// Extract username from object ID
 		memberUsername := h.extractUsernameFromActor(objectID)
 		if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 			h.Logger.Warn("Unable to extract username from object ID",
-				zap.String("object_id", objectID))
+				zap.String("object_id", objectID),
+				zap.String("activity_type", activityType))
 			continue
 		}
 
-		// Remove the member from the list
-		if err := h.ListRepo.RemoveListMember(ctx, listID, memberUsername); err != nil {
-			h.Logger.Error("Failed to remove member from list",
+		// Perform the appropriate list operation
+		var opErr error
+		var action string
+		if activityType == "add" {
+			opErr = h.ListRepo.AddListMember(ctx, listID, memberUsername)
+			action = "Added"
+		} else {
+			opErr = h.ListRepo.RemoveListMember(ctx, listID, memberUsername)
+			action = "Removed"
+		}
+
+		if opErr != nil {
+			h.Logger.Error("Failed to perform list operation",
 				zap.String("list_id", listID),
 				zap.String("member_username", memberUsername),
 				zap.String("activity_id", activity.ID),
-				zap.Error(err))
+				zap.String("activity_type", activityType),
+				zap.String("action", action),
+				zap.Error(opErr))
 			// Continue with other members instead of failing entirely
 			continue
 		}
 
-		h.Logger.Info("Removed member from list",
+		h.Logger.Info("List operation completed",
 			zap.String("list_id", listID),
 			zap.String("member_username", memberUsername),
-			zap.String("activity_id", activity.ID))
+			zap.String("activity_id", activity.ID),
+			zap.String("activity_type", activityType),
+			zap.String("action", action))
 	}
 
 	return nil
+}
+
+// processAddActivity processes an Add activity
+//
+//nolint:unused // False positive - called from processInboxActivity
+func (h *ActivityHandler) processAddActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	return h.processListActivity(ctx, activity, username, "add")
+}
+
+// processRemoveActivity processes a Remove activity
+//
+//nolint:unused // False positive - called from processInboxActivity
+func (h *ActivityHandler) processRemoveActivity(ctx context.Context, activity *activitypub.Activity, username string) error {
+	return h.processListActivity(ctx, activity, username, "remove")
 }
 
 // deliverActivity delivers an activity to remote servers
@@ -2875,6 +2534,105 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
 	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger)
+}
+
+// processUndoWithObjectExtraction handles the common pattern for Undo activities
+// that need to extract an object/target from the original activity and delete a record
+func (h *ActivityHandler) processUndoWithObjectExtraction(
+	ctx context.Context,
+	undoActivity *activitypub.Activity,
+	originalActivity interface{},
+	activityType string,
+	deleteFunc func(ctx context.Context, actor, target string) error,
+) error {
+	targetObject := h.extractActivityObject(originalActivity)
+	
+	var extractedID string
+	switch obj := targetObject.(type) {
+	case string:
+		extractedID = obj
+	case map[string]interface{}:
+		if id, ok := obj["id"].(string); ok {
+			extractedID = id
+		}
+	}
+
+	if err := common.ValidateRequiredParam("extractedID", extractedID); err != nil {
+		return fmt.Errorf("unable to extract target ID from %s activity", activityType)
+	}
+
+	actorURI := undoActivity.Actor
+	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
+		return fmt.Errorf("undo %s activity missing actor", activityType)
+	}
+
+	// Call the specific delete function
+	if err := deleteFunc(ctx, actorURI, extractedID); err != nil {
+		h.Logger.Error(fmt.Sprintf("Failed to delete %s record", activityType),
+			zap.String("actor", actorURI),
+			zap.String("target_id", extractedID),
+			zap.Error(err))
+		return fmt.Errorf("failed to delete %s record: %w", activityType, err)
+	}
+
+	h.Logger.Info(fmt.Sprintf("Successfully processed Undo %s", strings.Title(activityType)),
+		zap.String("actor", actorURI),
+		zap.String("target_id", extractedID))
+
+	return nil
+}
+
+// createObjectInteractionNotification creates a notification for object interactions (like, announce, etc.)
+func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Context, objectID, actorURI, notificationType, actionVerb, actorRole string) {
+	// Find the owner of the object to send notification
+	object, err := h.ObjectRepo.GetObject(ctx, objectID)
+	if err != nil {
+		h.Logger.Warn(fmt.Sprintf("Could not find object for %s notification", notificationType),
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		// Don't fail the entire operation, the action was saved
+		return
+	}
+
+	// Extract object author for notification
+	var objectAuthor string
+	switch obj := object.(type) {
+	case *models.Status:
+		objectAuthor = obj.AuthorID
+	case *models.Object:
+		objectAuthor = obj.AttributedTo
+	case map[string]interface{}:
+		if author, ok := obj["attributedTo"].(string); ok {
+			objectAuthor = author
+		}
+	}
+
+	if objectAuthor != "" {
+		authorUsername := h.extractUsernameFromActorURI(objectAuthor)
+		actorUsername := h.extractUsernameFromActorURI(actorURI)
+
+		if authorUsername != "" && actorUsername != "" {
+			// Create notification for the object author
+			notification := models.NewNotificationBuilder().
+				ForUser(authorUsername).
+				OfType(notificationType).
+				FromActor(actorUsername, "remote_actor").
+				AboutTarget(objectID, "status").
+				WithContent(
+					fmt.Sprintf("%s %s your post", actorUsername, actionVerb),
+					fmt.Sprintf("Your post was %s by %s", actionVerb, actorUsername)).
+				Build()
+
+			if err := h.createNotificationRepo().CreateNotification(ctx, notification); err != nil {
+				h.Logger.Error(fmt.Sprintf("Failed to create %s notification", notificationType),
+					zap.String("author", authorUsername),
+					zap.String(actorRole, actorUsername),
+					zap.String("object_id", objectID),
+					zap.Error(err))
+				// Don't return error - the action was created successfully
+			}
+		}
+	}
 }
 
 // extractUsernameFromActorURI extracts the username from an ActivityPub actor URI

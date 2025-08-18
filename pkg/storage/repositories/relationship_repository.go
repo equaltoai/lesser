@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -21,6 +22,7 @@ type RelationshipRepository struct {
 	blockRepo  *BlockRepository
 	muteRepo   *MuteRepository
 	socialRepo *SocialRepository
+	queryUtils *QueryUtils
 }
 
 // NewRelationshipRepository creates a new relationship repository
@@ -32,6 +34,7 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 		blockRepo:  NewBlockRepository(db, tableName, logger),
 		muteRepo:   NewMuteRepository(db, tableName, logger),
 		socialRepo: NewSocialRepository(db, logger),
+		queryUtils: NewQueryUtils(db, logger),
 	}
 }
 
@@ -121,6 +124,24 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 	return nil
 }
 
+// deleteWithLogging provides a common pattern for deleting records with proper error handling and logging
+func (r *RelationshipRepository) deleteWithLogging(ctx context.Context, model interface{}, pk, sk, entityType string, debugFields, errorFields, successFields []zap.Field) error {
+	if err := r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete(); err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug(fmt.Sprintf("%s not found", entityType), debugFields...)
+			return nil
+		}
+		r.logger.Error(fmt.Sprintf("failed to delete %s", entityType), append(errorFields, zap.Error(err))...)
+		return fmt.Errorf("failed to delete %s: %w", entityType, err)
+	}
+
+	r.logger.Info(fmt.Sprintf("deleted %s", entityType), successFields...)
+	return nil
+}
+
 // DeleteRelationship removes a follow relationship
 func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followerUsername, followingUsername string) error {
 	relationship := &models.RelationshipRecord{
@@ -128,28 +149,20 @@ func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followe
 		SK: fmt.Sprintf("FOLLOWING#%s", followingUsername),
 	}
 
-	if err := r.db.WithContext(ctx).Model(relationship).
-		Where("PK", "=", relationship.PK).
-		Where("SK", "=", relationship.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("relationship not found",
-				zap.String("follower", followerUsername),
-				zap.String("following", followingUsername))
-			return nil
-		}
-		r.logger.Error("failed to delete relationship",
-			zap.String("follower", followerUsername),
-			zap.String("following", followingUsername),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete relationship: %w", err)
+	debugFields := []zap.Field{
+		zap.String("follower", followerUsername),
+		zap.String("following", followingUsername),
+	}
+	errorFields := []zap.Field{
+		zap.String("follower", followerUsername),
+		zap.String("following", followingUsername),
+	}
+	successFields := []zap.Field{
+		zap.String("follower", followerUsername),
+		zap.String("following", followingUsername),
 	}
 
-	r.logger.Info("deleted relationship",
-		zap.String("follower", followerUsername),
-		zap.String("following", followingUsername))
-
-	return nil
+	return r.deleteWithLogging(ctx, relationship, relationship.PK, relationship.SK, "relationship", debugFields, errorFields, successFields)
 }
 
 // GetRelationship retrieves a specific follow relationship
@@ -170,12 +183,12 @@ func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUs
 	return &relationship, nil
 }
 
-// GetFollowers retrieves all followers for a user
-func (r *RelationshipRepository) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+// getRelationshipsByState retrieves relationships for a user filtered by state
+func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, username string, state models.RelationshipState, limit int, cursor string, errorContext string) ([]string, string, error) {
 	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", models.RelationshipAccepted).
+		Filter("State", "=", state).
 		Limit(limit)
 
 	if cursor != "" {
@@ -188,10 +201,10 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 	var relationships []models.RelationshipRecord
 	err := query.All(&relationships)
 	if err != nil {
-		r.logger.Error("failed to query followers",
+		r.logger.Error(fmt.Sprintf("failed to query %s", errorContext),
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query followers: %w", err)
+		return nil, "", fmt.Errorf("failed to query %s: %w", errorContext, err)
 	}
 
 	// Generate next cursor
@@ -211,6 +224,11 @@ func (r *RelationshipRepository) GetFollowers(ctx context.Context, username stri
 	}
 
 	return followers, nextCursor, nil
+}
+
+// GetFollowers retrieves all followers for a user
+func (r *RelationshipRepository) GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
+	return r.getRelationshipsByState(ctx, username, models.RelationshipAccepted, limit, cursor, "followers")
 }
 
 // GetFollowing retrieves all users that a user is following
@@ -342,45 +360,7 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 
 // GetPendingFollowRequests retrieves pending follow requests for a user
 func (r *RelationshipRepository) GetPendingFollowRequests(ctx context.Context, username string, limit int, cursor string) ([]string, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
-		Filter("State", "=", models.RelationshipPending).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
-	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var relationships []models.RelationshipRecord
-	err := query.All(&relationships)
-	if err != nil {
-		r.logger.Error("failed to query pending requests",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query pending requests: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(relationships) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = relationships[limit-1].GSI1SK
-		relationships = relationships[:limit] // Trim to requested limit
-	}
-
-	// Extract follower usernames
-	followers := make([]string, 0, len(relationships))
-	for _, rel := range relationships {
-		if follower := rel.ExtractFollowerFromGSI(); follower != "" {
-			followers = append(followers, follower)
-		}
-	}
-
-	return followers, nextCursor, nil
+	return r.getRelationshipsByState(ctx, username, models.RelationshipPending, limit, cursor, "pending requests")
 }
 
 // AcceptFollowRequest accepts a follow request
@@ -857,28 +837,7 @@ func (r *RelationshipRepository) GetRelationshipNote(ctx context.Context, userID
 
 // AddToCollection adds an item to a collection
 func (r *RelationshipRepository) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
-	collectionItem := models.NewCollectionItem(collection, item.ItemID, item.ItemType, item.AddedBy)
-	collectionItem.Position = item.Position
-
-	if err := r.db.WithContext(ctx).Model(collectionItem).Create(); err != nil {
-		if errors.IsConditionFailed(err) {
-			r.logger.Info("item already in collection",
-				zap.String("collection", collection),
-				zap.String("item_id", item.ItemID))
-			return nil // Not an error to add something already in collection
-		}
-		r.logger.Error("failed to add to collection",
-			zap.String("collection", collection),
-			zap.String("item_id", item.ItemID),
-			zap.Error(err))
-		return fmt.Errorf("failed to add to collection: %w", err)
-	}
-
-	r.logger.Info("added item to collection",
-		zap.String("collection", collection),
-		zap.String("item_id", item.ItemID))
-
-	return nil
+	return r.queryUtils.AddToCollectionHelper(ctx, collection, item, r.db)
 }
 
 // RemoveFromCollection removes an item from a collection
@@ -888,28 +847,20 @@ func (r *RelationshipRepository) RemoveFromCollection(ctx context.Context, colle
 		SK: fmt.Sprintf("ITEM#%s", itemID),
 	}
 
-	if err := r.db.WithContext(ctx).Model(collectionItem).
-		Where("PK", "=", collectionItem.PK).
-		Where("SK", "=", collectionItem.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("item not in collection",
-				zap.String("collection", collection),
-				zap.String("item_id", itemID))
-			return nil
-		}
-		r.logger.Error("failed to remove from collection",
-			zap.String("collection", collection),
-			zap.String("item_id", itemID),
-			zap.Error(err))
-		return fmt.Errorf("failed to remove from collection: %w", err)
+	debugFields := []zap.Field{
+		zap.String("collection", collection),
+		zap.String("item_id", itemID),
+	}
+	errorFields := []zap.Field{
+		zap.String("collection", collection),
+		zap.String("item_id", itemID),
+	}
+	successFields := []zap.Field{
+		zap.String("collection", collection),
+		zap.String("item_id", itemID),
 	}
 
-	r.logger.Info("removed item from collection",
-		zap.String("collection", collection),
-		zap.String("item_id", itemID))
-
-	return nil
+	return r.deleteWithLogging(ctx, collectionItem, collectionItem.PK, collectionItem.SK, "item from collection", debugFields, errorFields, successFields)
 }
 
 // GetCollectionItems retrieves items from a collection with pagination
@@ -1041,6 +992,11 @@ func (r *RelationshipRepository) DeleteBlock(ctx context.Context, blockerActor, 
 
 // BlockUser blocks another user
 func (r *RelationshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
+	// Validate the relationship using centralized validation
+	if err := common.ValidateRepositoryRelationship(blockerID, blockedID, "block"); err != nil {
+		return fmt.Errorf("invalid block relationship: %w", err)
+	}
+
 	// Generate a unique activity ID for the block action
 	activityID := fmt.Sprintf("block_%s_%s_%d", blockerID, blockedID, time.Now().Unix())
 	return r.blockRepo.CreateBlock(ctx, blockerID, blockedID, activityID)

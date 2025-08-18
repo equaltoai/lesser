@@ -9,13 +9,11 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-
-	// Removed unused import
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ActivityRepository implements activity operations using DynamORM
@@ -530,6 +528,11 @@ func activityEncodeCursor(data map[string]string) string {
 
 // activityDecodeCursor decodes a string cursor to a map
 func activityDecodeCursor(cursor string) (string, error) {
+	// Validate cursor format first
+	if err := common.ValidateRepositoryCursor(cursor); err != nil {
+		return "", fmt.Errorf("invalid cursor: %w", err)
+	}
+
 	data, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
 		return "", fmt.Errorf("invalid cursor format: %w", err)

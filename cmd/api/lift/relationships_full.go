@@ -4,7 +4,6 @@
 package lift
 
 import (
-	"net/http"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -18,7 +17,7 @@ import (
 func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	var req models.FollowRequest
@@ -36,7 +35,7 @@ func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 		Notify:      req.Notify != nil && *req.Notify,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -46,7 +45,7 @@ func (h *Handler) HandleFollowAccountFull(ctx *lift.Context) error {
 func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -59,7 +58,7 @@ func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 		FollowingID: accountID,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -69,7 +68,7 @@ func (h *Handler) HandleUnfollowAccountFull(ctx *lift.Context) error {
 func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -82,7 +81,7 @@ func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 		BlockedID: accountID,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -92,7 +91,7 @@ func (h *Handler) HandleBlockAccountFull(ctx *lift.Context) error {
 func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -105,7 +104,7 @@ func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 		BlockedID: accountID,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -115,7 +114,7 @@ func (h *Handler) HandleUnblockAccountFull(ctx *lift.Context) error {
 func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	var req models.MuteRequest
@@ -132,7 +131,7 @@ func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 		MuteNotifications: req.Notifications != nil && *req.Notifications,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -142,7 +141,7 @@ func (h *Handler) HandleMuteAccountFull(ctx *lift.Context) error {
 func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -155,7 +154,7 @@ func (h *Handler) HandleUnmuteAccountFull(ctx *lift.Context) error {
 		MutedID: accountID,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -170,12 +169,12 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 
 	accountIDsParam := ctx.Query("id")
 	if err := common.ValidateRequiredParam("account_ids", accountIDsParam); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	accountIDs := strings.Split(accountIDsParam, ",")
 	if err := common.ValidateSliceNotEmpty("accountIDs", accountIDs); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid account ids"})
+		return common.RespondBadRequest(ctx, "invalid account ids")
 	}
 
 	result, err := h.registry.Relationships().GetRelationships(ctx.Context, &relationships.GetRelationshipsQuery{
@@ -183,7 +182,7 @@ func (h *Handler) HandleGetRelationshipsFull(ctx *lift.Context) error {
 		TargetIDs:   accountIDs,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(result.Relationships)

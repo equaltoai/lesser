@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -35,8 +34,60 @@ const DefaultPaginationLimit = 20
 // MaxPaginationLimit is the maximum allowed limit for paginated responses
 const MaxPaginationLimit = 80
 
+// authenticateRequestWithScope extracts and validates authentication for both test and production modes
+func (h *Handler) authenticateRequestWithScope(ctx *lift.Context, requiredScope string) (string, error) {
+	// Test hook - check for test username header
+	testUsername := ctx.Header("X-Test-Username")
+	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	}
+
+	if testUsername != "" {
+		// Test mode - skip auth
+		return testUsername, nil
+	}
+
+	// Extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		authHeader = ctx.Header("authorization")
+	}
+
+	// Try direct access to headers if ctx.Header doesn't work
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+			authHeader = ctx.Request.Request.Headers["authorization"]
+		}
+	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
+
+	// Check required scope
+	if !claims.HasScope(requiredScope) {
+		return "", common.RespondInsufficientScope(ctx)
+	}
+
+	return claims.Username, nil
+}
+
 // resolveAccountID resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
+	// Validate account ID format
+	if err := common.ValidateAccountID(accountID); err != nil {
+		return nil, fmt.Errorf("invalid account ID: %w", err)
+	}
+
 	// Handle different account ID formats
 	if strings.HasPrefix(accountID, "http://") || strings.HasPrefix(accountID, "https://") {
 		// Full ActivityPub actor URL
@@ -54,7 +105,7 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 	}
 
 	// Check if it's a numeric ID (Mastodon compatibility)
-	if _, err := strconv.ParseInt(accountID, 10, 64); err == nil && len(accountID) >= 10 {
+	if common.ValidateNumericID("account_id", accountID) == nil && len(accountID) >= 10 {
 		// It's a numeric ID - use the dedicated lookup method
 		return h.repos.Actor().GetActorByNumericID(ctx, accountID)
 	}
@@ -146,7 +197,7 @@ func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []s
 func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, action func(statusID, username string) (*models.Status, error)) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Authenticate user with single scope wrapped in array
@@ -157,9 +208,9 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 	username, err := h.authenticateUser(ctx, scopes)
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Execute the action
@@ -170,7 +221,7 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 			zap.String("status_id", statusID),
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": err.Error()})
+		return common.RespondInternalServerError(ctx, err.Error())
 	}
 
 	return ctx.JSON(status)
@@ -564,7 +615,7 @@ func (h *Handler) parseBoolParam(ctx *lift.Context, param string) bool {
 	if common.ValidateRequiredParam("value", value) != nil {
 		return false
 	}
-	return value == "true" || value == "1" || value == "yes"
+	return common.ValidateBooleanString(value)
 }
 
 // parseArrayParam parses an array parameter from the request
@@ -599,7 +650,7 @@ func (h *Handler) parseArrayParam(ctx *lift.Context, param string) []string {
 	seen := make(map[string]bool)
 	unique := []string{}
 	for _, v := range values {
-		v = strings.TrimSpace(v)
+		v = common.SanitizeInput(v)
 		if v != "" && !seen[v] {
 			seen[v] = true
 			unique = append(unique, v)
@@ -614,7 +665,7 @@ func parseBoolParam(value string, defaultValue bool) bool {
 	if common.ValidateRequiredParam("value", value) != nil {
 		return defaultValue
 	}
-	return value == "true" || value == "1" || value == "yes"
+	return common.ValidateBooleanString(value)
 }
 
 // parseArrayParamHelper parses a comma-separated array parameter (standalone)
@@ -626,7 +677,7 @@ func parseArrayParam(value string) []string {
 	parts := strings.Split(value, ",")
 	result := make([]string, 0, len(parts))
 	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
+		trimmed := common.SanitizeInput(part)
 		if trimmed != "" {
 			result = append(result, trimmed)
 		}

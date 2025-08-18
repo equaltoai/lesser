@@ -38,6 +38,11 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 		return fmt.Errorf("failed to marshal reputation: %w", err)
 	}
 
+	// Validate JSON before unmarshaling
+	if err := common.ValidateJSONField(string(repJSON), "reputation"); err != nil {
+		return fmt.Errorf("invalid reputation JSON: %w", err)
+	}
+
 	// Unmarshal to a map to access fields
 	var repMap map[string]interface{}
 	if err := json.Unmarshal(repJSON, &repMap); err != nil {
@@ -79,6 +84,11 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 
 // ToStorageReputation converts the model back to a map that can be used as storage.Reputation
 func (r *Reputation) ToStorageReputation() (interface{}, error) {
+	// Validate JSON before unmarshaling
+	if err := common.ValidateJSONField(r.ReputationData, "reputation_data"); err != nil {
+		return nil, fmt.Errorf("invalid reputation data JSON: %w", err)
+	}
+
 	var reputation map[string]interface{}
 	if err := json.Unmarshal([]byte(r.ReputationData), &reputation); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal reputation data: %w", err)
