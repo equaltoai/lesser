@@ -112,7 +112,7 @@ func (rl *RateLimiter) Allow(userID string) bool {
 // NewPushDeliveryProcessor creates a new push delivery processor
 func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	// Use standardized Lambda initialization
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "push-delivery",
 		LambdaType:         common.LambdaTypeProcessor,
 		Version:            "1.0.0",
@@ -121,9 +121,6 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 		EnableTracing:      true,
 		EnableCostTracking: true,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
-	}
 
 	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())

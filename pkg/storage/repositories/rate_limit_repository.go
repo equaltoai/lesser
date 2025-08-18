@@ -313,12 +313,11 @@ func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, end
 	return nil
 }
 
-// GetAPIRateLimitInfo returns current rate limit info for response headers
-func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+// getRateLimitInfo is a helper function that consolidates the common pattern for getting rate limit info
+func (r *RateLimitRepository) getRateLimitInfo(ctx context.Context, key string, limit int, window time.Duration, logContext map[string]interface{}) (remaining int, resetTime time.Time, err error) {
 	now := time.Now()
 	windowStart := now.Truncate(window)
 	resetTime = windowStart.Add(window)
-	key := fmt.Sprintf("%s:%s", userID, endpoint)
 
 	// Get current rate limit data
 	var current models.APIRateLimit
@@ -335,10 +334,15 @@ func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, e
 			// No data yet, full limit available
 			return limit, resetTime, nil
 		}
-		r.logger.Error("failed to get API rate limit info",
-			zap.String("user_id", userID),
-			zap.String("endpoint", endpoint),
-			zap.Error(err))
+		// Build log fields from context
+		logFields := []zap.Field{zap.Error(err)}
+		for k, v := range logContext {
+			switch val := v.(type) {
+			case string:
+				logFields = append(logFields, zap.String(k, val))
+			}
+		}
+		r.logger.Error("failed to get rate limit info", logFields...)
 		// Return full limit on error to avoid blocking legitimate requests
 		return limit, resetTime, nil
 	}
@@ -350,6 +354,16 @@ func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, e
 	}
 
 	return remaining, resetTime, nil
+}
+
+// GetAPIRateLimitInfo returns current rate limit info for response headers
+func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
+	key := fmt.Sprintf("%s:%s", userID, endpoint)
+	logContext := map[string]interface{}{
+		"user_id": userID,
+		"endpoint": endpoint,
+	}
+	return r.getRateLimitInfo(ctx, key, limit, window, logContext)
 }
 
 // updateAPIRateLimit updates an API rate limit record using DynamORM
@@ -474,41 +488,12 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 
 // GetFederationRateLimitInfo returns current federation rate limit info
 func (r *RateLimitRepository) GetFederationRateLimitInfo(ctx context.Context, domain, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
-	now := time.Now()
-	windowStart := now.Truncate(window)
-	resetTime = windowStart.Add(window)
 	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
-
-	// Get current rate limit data
-	var current models.APIRateLimit
-	pk := fmt.Sprintf("RATELIMIT#%s", key)
-	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
-
-	err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&current)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// No data yet, full limit available
-			return limit, resetTime, nil
-		}
-		r.logger.Error("failed to get federation rate limit info",
-			zap.String("domain", domain),
-			zap.String("endpoint", endpoint),
-			zap.Error(err))
-		// Return full limit on error to avoid blocking legitimate requests
-		return limit, resetTime, nil
+	logContext := map[string]interface{}{
+		"domain": domain,
+		"endpoint": endpoint,
 	}
-
-	// Calculate remaining
-	remaining = limit - current.Count
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	return remaining, resetTime, nil
+	return r.getRateLimitInfo(ctx, key, limit, window, logContext)
 }
 
 // GetViolationCount returns the number of violations in a time period for escalating penalties
@@ -553,17 +538,21 @@ func (r *RateLimitRepository) calculatePenaltyDuration(violationCount int) time.
 	}
 }
 
-// IsUserBlocked checks if a user is currently blocked due to rate limiting
-func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) (bool, time.Time, error) {
+// checkBlockedStatus is a helper function that consolidates the common pattern for checking if something is blocked
+func (r *RateLimitRepository) checkBlockedStatus(ctx context.Context, pkQuery string, usePrefix bool) (bool, time.Time, error) {
 	now := time.Now()
 
 	// Check recent rate limit records for any blocks
 	var rateLimits []models.APIRateLimit
-	pk := fmt.Sprintf("RATELIMIT#%s", userID)
 
-	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "=", pk).
-		All(&rateLimits)
+	query := r.db.WithContext(ctx).Model(&models.APIRateLimit{})
+	if usePrefix {
+		query = query.Where("PK", "begins_with", pkQuery)
+	} else {
+		query = query.Where("PK", "=", pkQuery)
+	}
+
+	err := query.All(&rateLimits)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -588,37 +577,14 @@ func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) 
 	return isBlocked, latestBlockUntil, nil
 }
 
+// IsUserBlocked checks if a user is currently blocked due to rate limiting
+func (r *RateLimitRepository) IsUserBlocked(ctx context.Context, userID string) (bool, time.Time, error) {
+	pk := fmt.Sprintf("RATELIMIT#%s", userID)
+	return r.checkBlockedStatus(ctx, pk, false)
+}
+
 // IsDomainBlocked checks if a federation domain is currently blocked
 func (r *RateLimitRepository) IsDomainBlocked(ctx context.Context, domain string) (bool, time.Time, error) {
-	now := time.Now()
-
-	// Check recent rate limit records for any blocks
-	var rateLimits []models.APIRateLimit
 	pkPrefix := fmt.Sprintf("RATELIMIT#DOMAIN#%s", domain)
-
-	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "begins_with", pkPrefix).
-		All(&rateLimits)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, time.Time{}, nil
-		}
-		return false, time.Time{}, err
-	}
-
-	// Find the longest block time that's still active
-	var latestBlockUntil time.Time
-	isBlocked := false
-
-	for _, limit := range rateLimits {
-		if limit.Blocked && now.Before(limit.BlockedUntil) {
-			isBlocked = true
-			if limit.BlockedUntil.After(latestBlockUntil) {
-				latestBlockUntil = limit.BlockedUntil
-			}
-		}
-	}
-
-	return isBlocked, latestBlockUntil, nil
+	return r.checkBlockedStatus(ctx, pkPrefix, true)
 }

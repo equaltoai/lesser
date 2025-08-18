@@ -807,8 +807,8 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	
 	// Apply limit
 	limit := opts.Limit
-	if limit <= 0 || limit > 100 {
-		limit = 20 // Default limit
+	if err := common.ValidateQueryLimit(limit, 100, "user search"); err != nil {
+		limit = 20 // Default limit on validation error
 	}
 	
 	// Use the user list GSI (GSI1) which is more efficient than scanning
@@ -887,8 +887,8 @@ func (r *AccountRepository) GetSuggestedAccounts(ctx context.Context, _ string, 
 		Where("GSI1PK", "=", "USERS")
 
 	limit := opts.Limit
-	if limit <= 0 || limit > 50 {
-		limit = 10 // Default limit for suggestions
+	if err := common.ValidateQueryLimit(limit, 50, "user suggestions"); err != nil {
+		limit = 10 // Default limit for suggestions on validation error
 	}
 	queryBuilder = queryBuilder.Limit(limit + 1)
 

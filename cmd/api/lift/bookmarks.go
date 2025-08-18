@@ -49,16 +49,16 @@ func (h *Handler) HandleBookmarkLift(ctx *lift.Context) error {
 func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
 	username, err := h.authenticateUser(ctx, []string{auth.ScopeWrite})
 	if err != nil {
 		if err.Error() == ErrInsufficientScope {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Use the Notes service to unbookmark the status
@@ -70,13 +70,13 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 	result, err := h.registry.Notes().UnbookmarkNote(ctx.Context, cmd)
 	if err != nil {
 		if err.Error() == "status not found" {
-			return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		h.logger.Error("failed to unbookmark status",
 			zap.String("username", username),
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to unbookmark status"})
+		return common.RespondInternalServerError(ctx, "failed to unbookmark status")
 	}
 
 	// Convert the storage Status model to API Status model
@@ -85,7 +85,7 @@ func (h *Handler) HandleUnbookmarkLift(ctx *lift.Context) error {
 		h.logger.Error("failed to convert status to API format",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to convert status"})
+		return common.RespondInternalServerError(ctx, "failed to convert status")
 	}
 
 	return ctx.JSON(apiStatus)
@@ -97,9 +97,9 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 	username, err := h.authenticateUser(ctx, []string{auth.ScopeRead})
 	if err != nil {
 		if err.Error() == ErrInsufficientScope {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse query parameters
@@ -133,7 +133,7 @@ func (h *Handler) HandleGetBookmarksLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get bookmarks"})
+		return common.RespondInternalServerError(ctx, "failed to get bookmarks")
 	}
 
 	// Convert storage Status models to API Status models

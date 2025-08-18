@@ -88,16 +88,42 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		}
 	}
 
+	// Validate report parameters
+	params := map[string]interface{}{
+		"account_id": req.AccountID,
+		"status_ids": req.StatusIDs,
+		"comment":    req.Comment,
+		"category":   req.Category,
+		"forward":    req.Forward,
+	}
+	if err := common.ValidateReportParams(params); err != nil {
+		h.logger.Info("report validation failed", zap.Error(err))
+		return h.respondBadRequest(ctx, err.Error())
+	}
+
 	// Validate required fields
 	if err := common.ValidateRequiredParam("accountID", req.AccountID); err != nil {
 		return h.respondBadRequest(ctx, err.Error())
 	}
 
-	// Validate category
-	if err := common.ValidateRequiredParam("category", req.Category); err != nil {
+	// Validate category using common validation function
+	if err := common.ValidateReportCategory(req.Category); err != nil {
+		// Default to "other" if validation fails
 		req.Category = "other"
-	} else if req.Category != "spam" && req.Category != "violation" && req.Category != "other" {
-		return h.respondBadRequest(ctx, "invalid category")
+	}
+
+	// Validate comment if provided
+	if req.Comment != "" {
+		if err := common.ValidateReportComment(req.Comment); err != nil {
+			return h.respondBadRequest(ctx, err.Error())
+		}
+	}
+
+	// Validate status IDs if provided
+	if len(req.StatusIDs) > 0 {
+		if err := common.ValidateReportStatusIDs(req.StatusIDs); err != nil {
+			return h.respondBadRequest(ctx, err.Error())
+		}
 	}
 
 	// Create the report

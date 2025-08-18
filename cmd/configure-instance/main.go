@@ -39,14 +39,11 @@ type appContext struct {
 func main() {
 	flags := parseFlags()
 	
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "configure-instance",
 		LambdaType:  common.LambdaTypeBasic,
 		Version:     "1.0.0",
 	})
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
-	}
 
 	// Load AWS config
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
@@ -250,7 +247,7 @@ func parseRules(rulesText string) []storage.InstanceRule {
 	for i, text := range ruleTexts {
 		rules[i] = storage.InstanceRule{
 			ID:   fmt.Sprintf("%d", i+1),
-			Text: strings.TrimSpace(text),
+			Text: common.SanitizeInput(text),
 		}
 	}
 	return rules

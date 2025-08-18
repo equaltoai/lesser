@@ -19,6 +19,11 @@ import (
 
 // SearchActors searches for actors by username or display name
 func (r *AccountRepository) SearchActors(ctx context.Context, query string, limit int, offset int, following bool, username string) ([]*activitypub.Actor, error) {
+	// Validate query offset using centralized validation
+	if err := common.ValidateQueryOffset(offset, 10000); err != nil {
+		return nil, fmt.Errorf("invalid query offset: %w", err)
+	}
+
 	// Normalize query for search
 	query = strings.ToLower(strings.TrimSpace(query))
 	if err := common.ValidateRequiredParam("query", query); err != nil {

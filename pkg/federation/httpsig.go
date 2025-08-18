@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -61,6 +62,11 @@ type HTTPSignature struct {
 
 // ParseSignatureHeader parses the Signature header according to draft-cavage-http-signatures-12
 func ParseSignatureHeader(header string) (*HTTPSignature, error) {
+	// Validate signature header format using centralized validation
+	if err := common.ValidateActivityPubSignature(header); err != nil {
+		return nil, fmt.Errorf("invalid signature header format: %w", err)
+	}
+
 	sig := &HTTPSignature{}
 
 	// Parse key-value pairs from the header
@@ -219,10 +225,6 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 
 	// Parse signature header
 	sigHeader := req.Header.Get(SignatureHeader)
-	if err := common.ValidateRequiredParam("signature_header", sigHeader); err != nil {
-		return common.AuthenticationError{Message: "missing signature header"}
-	}
-
 	sig, err := ParseSignatureHeader(sigHeader)
 	if err != nil {
 		return fmt.Errorf("failed to parse signature: %w", err)

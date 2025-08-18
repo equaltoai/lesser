@@ -184,33 +184,7 @@ func (vm *VouchManager) GetVouchesForActor(ctx context.Context, actorID string) 
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
 
-	// Convert storage.Vouch slice to reputation.Vouch slice
-	vouches := make([]Vouch, 0, len(storageVouches))
-	for _, sv := range storageVouches {
-		vouch := Vouch{
-			ID:          sv.ID,
-			From:        sv.From,
-			To:          sv.To,
-			InstanceURL: vm.instanceURL, // Use service's instance URL
-			CreatedAt:   sv.CreatedAt,
-			ExpiresAt: func() time.Time {
-				if sv.ExpiresAt == nil {
-					return time.Time{}
-				}
-				return *sv.ExpiresAt
-			}(),
-			Confidence:        sv.Confidence,
-			Context:           sv.Context,
-			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
-			Active:            sv.Active,
-			Revoked:           sv.Revoked,
-			RevokedAt:         sv.RevokedAt,
-			Signature:         sv.Signature,
-		}
-		vouches = append(vouches, vouch)
-	}
-
-	return vouches, nil
+	return vm.convertStorageVouchesToReputationVouches(storageVouches), nil
 }
 
 // GetVouchesFromActor gets all vouches created by an actor
@@ -220,33 +194,7 @@ func (vm *VouchManager) GetVouchesFromActor(ctx context.Context, actorID string)
 		return nil, fmt.Errorf("failed to query vouches: %w", err)
 	}
 
-	// Convert storage.Vouch slice to reputation.Vouch slice
-	vouches := make([]Vouch, 0, len(storageVouches))
-	for _, sv := range storageVouches {
-		vouch := Vouch{
-			ID:          sv.ID,
-			From:        sv.From,
-			To:          sv.To,
-			InstanceURL: vm.instanceURL, // Use service's instance URL
-			CreatedAt:   sv.CreatedAt,
-			ExpiresAt: func() time.Time {
-				if sv.ExpiresAt == nil {
-					return time.Time{}
-				}
-				return *sv.ExpiresAt
-			}(),
-			Confidence:        sv.Confidence,
-			Context:           sv.Context,
-			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
-			Active:            sv.Active,
-			Revoked:           sv.Revoked,
-			RevokedAt:         sv.RevokedAt,
-			Signature:         sv.Signature,
-		}
-		vouches = append(vouches, vouch)
-	}
-
-	return vouches, nil
+	return vm.convertStorageVouchesToReputationVouches(storageVouches), nil
 }
 
 // canCreateVouch checks if an actor can create more vouches this month
@@ -367,4 +315,33 @@ func (vm *VouchManager) ImportVouches(ctx context.Context, vouches []Vouch, veri
 	}
 
 	return imported, nil
+}
+
+// convertStorageVouchesToReputationVouches converts a slice of storage.Vouch to reputation.Vouch
+func (vm *VouchManager) convertStorageVouchesToReputationVouches(storageVouches []*storage.Vouch) []Vouch {
+	vouches := make([]Vouch, 0, len(storageVouches))
+	for _, sv := range storageVouches {
+		vouch := Vouch{
+			ID:          sv.ID,
+			From:        sv.From,
+			To:          sv.To,
+			InstanceURL: vm.instanceURL, // Use service's instance URL
+			CreatedAt:   sv.CreatedAt,
+			ExpiresAt: func() time.Time {
+				if sv.ExpiresAt == nil {
+					return time.Time{}
+				}
+				return *sv.ExpiresAt
+			}(),
+			Confidence:        sv.Confidence,
+			Context:           sv.Context,
+			VoucherReputation: int(sv.VoucherReputation), // Convert float64 to int
+			Active:            sv.Active,
+			Revoked:           sv.Revoked,
+			RevokedAt:         sv.RevokedAt,
+			Signature:         sv.Signature,
+		}
+		vouches = append(vouches, vouch)
+	}
+	return vouches
 }

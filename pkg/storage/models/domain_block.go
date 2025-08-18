@@ -81,6 +81,21 @@ func (d *EmailDomainBlock) UpdateKeys() {
 	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
 }
 
+// GetID returns the ID of the email domain block
+func (d *EmailDomainBlock) GetID() string {
+	return d.ID
+}
+
+// GetPK returns the primary key of the email domain block
+func (d *EmailDomainBlock) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key of the email domain block
+func (d *EmailDomainBlock) GetSK() string {
+	return d.SK
+}
+
 // DomainAllow represents a domain in the allowlist
 type DomainAllow struct {
 	PK        string    `dynamorm:"pk"`
@@ -99,6 +114,21 @@ func (d *DomainAllow) UpdateKeys() {
 	d.SK = fmt.Sprintf("DOMAIN_ALLOW#%s", d.Domain)
 	d.GSI1PK = "DOMAIN_ALLOWS"
 	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
+}
+
+// GetID returns the ID of the domain allow
+func (d *DomainAllow) GetID() string {
+	return d.ID
+}
+
+// GetPK returns the primary key of the domain allow
+func (d *DomainAllow) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key of the domain allow
+func (d *DomainAllow) GetSK() string {
+	return d.SK
 }
 
 // Domain block severity constants

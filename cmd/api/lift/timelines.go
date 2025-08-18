@@ -91,7 +91,7 @@ type TagTimelineUser struct {
 func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	hashtag := ctx.Param("hashtag")
 	if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get authenticated user (if any)
@@ -109,7 +109,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	// Parse query parameters
 	params, err := h.parseTagTimelineParams(ctx, hashtag)
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Use the Notes service to get hashtag timeline
@@ -129,7 +129,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get hashtag timeline",
 			zap.String("hashtag", hashtag),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert and filter statuses
@@ -166,6 +166,20 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*Ta
 	params := &TagTimelineParams{
 		Hashtag: hashtag,
 		Limit:   20,
+	}
+
+	// Build parameter map for centralized validation
+	paramMap := map[string]interface{}{
+		"limit":      ctx.Query("limit"),
+		"max_id":     ctx.Query("max_id"),
+		"local":      ctx.Query("local"),
+		"only_media": ctx.Query("only_media"),
+	}
+
+	// Validate timeline parameters using centralized validation
+	if err := common.ValidateMastodonTimeline(paramMap); err != nil {
+		h.logger.Debug("invalid timeline parameters", zap.Error(err))
+		// Continue with defaults on validation error
 	}
 
 	// Parse limit
@@ -218,11 +232,11 @@ func (h *Handler) addTagTimelinePaginationHeader(ctx *lift.Context, params *TagT
 func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	listID := ctx.Param("list_id")
 	if err := common.ValidateRequiredParam("list_id", listID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate and get username
-	username, err := h.authenticateTimelineRequest(ctx, auth.ScopeRead)
+	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeRead)
 	if err != nil {
 		return err
 	}
@@ -230,13 +244,13 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	// Parse timeline parameters
 	limit, cursor, err := h.parseTimelineParams(ctx)
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Use the Lists service to get list timeline
 	listService := h.registry.Lists()
 	if listService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "Lists service not available"})
+		return common.RespondInternalServerError(ctx, "Lists service not available")
 	}
 
 	// Get list timeline through the service
@@ -256,12 +270,12 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 
 		// Handle specific error cases
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "list not found"})
+			return common.RespondNotFound(ctx, "list not found")
 		}
 		if strings.Contains(err.Error(), "unauthorized") {
-			return ctx.Status(403).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondForbidden(ctx, "unauthorized")
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert storage statuses to API format
@@ -288,54 +302,21 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 
 // Helper functions for HandleGetListTimelineLift
 
-// authenticateTimelineRequest handles authentication for timeline requests
-func (h *Handler) authenticateTimelineRequest(ctx *lift.Context, requiredScope string) (string, error) {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check required scope
-	if !claims.HasScope(requiredScope) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-	}
-
-	return claims.Username, nil
-}
 
 // parseTimelineParams parses limit and cursor from query parameters
 func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
+	// Build parameter map for centralized validation
+	paramMap := map[string]interface{}{
+		"limit":  ctx.Query("limit"),
+		"max_id": ctx.Query("max_id"),
+	}
+
+	// Validate timeline parameters using centralized validation
+	if err := common.ValidateMastodonTimeline(paramMap); err != nil {
+		h.logger.Debug("invalid timeline parameters", zap.Error(err))
+		// Continue with defaults on validation error
+	}
+
 	// Parse limit parameter
 	limit := 20
 	limitStr := ctx.Query("limit")
@@ -385,7 +366,7 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get direct timeline",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert storage statuses to API format
@@ -428,19 +409,19 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 	authHeader := h.extractDirectTimelineAuthHeader(ctx)
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return "", common.RespondUnauthorized(ctx)
 	}
 
 	// Check read scope
 	if !claims.HasScope(auth.ScopeRead) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return "", common.RespondInsufficientScope(ctx)
 	}
 
 	return claims.Username, nil
@@ -471,6 +452,18 @@ func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelineParams {
 	params := directTimelineParams{
 		limit: 20,
+	}
+
+	// Build parameter map for centralized validation
+	paramMap := map[string]interface{}{
+		"limit":  ctx.Query("limit"),
+		"max_id": ctx.Query("max_id"),
+	}
+
+	// Validate timeline parameters using centralized validation
+	if err := common.ValidateMastodonTimeline(paramMap); err != nil {
+		h.logger.Debug("invalid timeline parameters", zap.Error(err))
+		// Continue with defaults on validation error
 	}
 
 	// Parse limit

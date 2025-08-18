@@ -456,11 +456,8 @@ func (s *Service) validateShortcode(shortcode string) error {
 	}
 
 	// Check for valid characters (alphanumeric and underscore)
-	for _, r := range shortcode {
-		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') &&
-			(r < '0' || r > '9') && r != '_' {
-			return fmt.Errorf("shortcode can only contain letters, numbers, and underscores")
-		}
+	if err := common.ValidateAlphanumericID("shortcode", shortcode); err != nil {
+		return err
 	}
 
 	// Check for reserved words

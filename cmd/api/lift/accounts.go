@@ -28,20 +28,20 @@ const (
 func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 	// Parse request body
 	var req models.AccountRegistrationRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	if err := common.ParseRequestWithValidation(ctx, &req); err != nil {
+		return err
 	}
 
 	// Validate request
 	if err := h.validateRegistrationRequestLift(req); err != nil {
-		return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+		return common.RespondUnprocessableEntity(ctx, err.Error())
 	}
 
 	// Validate password strength if provided
 	if req.Password != "" {
 		// Validate password strength
 		if err := auth.ValidatePassword(req.Password, req.Username); err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
 
 		// Check password strength
@@ -68,13 +68,13 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "username already taken") || strings.Contains(err.Error(), "Username is already taken") {
-			return ctx.Status(422).JSON(map[string]string{"error": "Username is already taken"})
+			return common.RespondAlreadyExists(ctx, "Username")
 		}
 		if strings.Contains(err.Error(), "validation failed") {
-			return ctx.Status(422).JSON(map[string]string{"error": err.Error()})
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
 		h.logger.Error("failed to register account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return response
@@ -100,7 +100,7 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(account)
@@ -111,7 +111,19 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
 	// Parse request
 	var req models.UpdateCredentialsRequest
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "invalid request format"})
+		return common.RespondInvalidRequest(ctx)
+	}
+
+	// Validate account parameters using comprehensive validation
+	accountParams := map[string]interface{}{
+		"display_name": req.DisplayName,
+		"note":         req.Note,
+		"locked":       req.Locked,
+		"bot":          req.Bot,
+		"discoverable": req.Discoverable,
+	}
+	if err := common.ValidateAccountParams(accountParams); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Authenticate user
@@ -132,7 +144,7 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to update profile", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to update profile"})
+		return common.RespondFailedToUpdate(ctx, "profile")
 	}
 
 	return ctx.JSON(result.Account)
@@ -207,17 +219,17 @@ func (h *Handler) extractBoundary(contentType string) (string, error) {
 func (h *Handler) HandleGetAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, accountID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+			return common.RespondAccountNotFound(ctx)
 		}
 		h.logger.Error("failed to get account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(account)
@@ -228,7 +240,7 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	// Get acct parameter
 	acct := ctx.Query("acct")
 	if err := common.ValidateAcctParameter(acct); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
@@ -238,10 +250,10 @@ func (h *Handler) HandleAccountLookupLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+			return common.RespondAccountNotFound(ctx)
 		}
 		h.logger.Error("failed to lookup account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to Mastodon account format
@@ -262,7 +274,7 @@ const (
 func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType relationshipType) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Extract username from accountID
@@ -271,7 +283,7 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 	// Get the actor to verify it exists
 	_, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+		return common.RespondAccountNotFound(ctx)
 	}
 
 	// Parse pagination parameters
@@ -294,13 +306,13 @@ func (h *Handler) handleAccountRelationshipsList(ctx *lift.Context, relType rela
 		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowers(ctx.Context, username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get followers", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+			return common.RespondInternalServerError(ctx)
 		}
 	case relationshipFollowing:
 		relationshipAccounts, nextCursor, err = h.registry.Relationships().GetFollowing(ctx.Context, username, limit, cursor)
 		if err != nil {
 			h.logger.Error("failed to get following", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+			return common.RespondInternalServerError(ctx)
 		}
 	}
 
@@ -342,21 +354,21 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	authHeader := ctx.Header("Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token and get claims
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Get account IDs from query parameter
 	accountIDs := ctx.Query("id[]")
 	ids, err := common.ValidateAccountIDsParameter(accountIDs)
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Use Accounts service to get familiar followers
@@ -366,7 +378,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get familiar followers", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Build response for each requested account
@@ -399,7 +411,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -416,16 +428,16 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+			return common.RespondAccountNotFound(ctx)
 		}
 		if strings.Contains(err.Error(), "already pinned") {
-			return ctx.Status(422).JSON(map[string]string{"error": "Account already pinned"})
+			return common.RespondUnprocessableEntity(ctx, "Account already pinned")
 		}
 		if strings.Contains(err.Error(), "unauthorized") {
-			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+			return common.RespondForbidden(ctx)
 		}
 		h.logger.Error("failed to pin account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -435,7 +447,7 @@ func (h *Handler) HandlePinAccountLift(ctx *lift.Context) error {
 func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -452,13 +464,13 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+			return common.RespondAccountNotFound(ctx)
 		}
 		if strings.Contains(err.Error(), "unauthorized") {
-			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+			return common.RespondForbidden(ctx)
 		}
 		h.logger.Error("failed to unpin account", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -468,7 +480,7 @@ func (h *Handler) HandleUnpinAccountLift(ctx *lift.Context) error {
 func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -482,7 +494,7 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 		Comment string `json:"comment"`
 	}
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Call Accounts service
@@ -494,13 +506,13 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found"})
+			return common.RespondAccountNotFound(ctx)
 		}
 		if strings.Contains(err.Error(), "unauthorized") {
-			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+			return common.RespondForbidden(ctx)
 		}
 		h.logger.Error("failed to set account note", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -510,7 +522,7 @@ func (h *Handler) HandleSetAccountNoteLift(ctx *lift.Context) error {
 func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -527,13 +539,13 @@ func (h *Handler) HandleRemoveFromFollowersLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "Account not found or is not following you"})
+			return common.RespondNotFound(ctx, "Account not found or is not following you")
 		}
 		if strings.Contains(err.Error(), "unauthorized") {
-			return ctx.Status(403).JSON(map[string]string{"error": "Forbidden"})
+			return common.RespondForbidden(ctx)
 		}
 		h.logger.Error("failed to remove follower", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.JSON(result.Relationship)
@@ -630,13 +642,13 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	// Extract username from path parameters
 	username := ctx.Param("username")
 	if err := common.ValidateUsernameParamID(username); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Check if actor exists
 	actor, err := h.registry.Accounts().GetAccount(ctx.Context, username)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+		return common.RespondUserNotFound(ctx)
 	}
 
 	// Check Accept header for content negotiation
@@ -661,7 +673,7 @@ func (h *Handler) handleActivityPubCollection(ctx *lift.Context, collectionType 
 	cursor := ctx.Query("cursor")
 	limit, err := common.ParseAndValidateActivityPubLimit(ctx.Query("limit"))
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// If not requesting a page, return the collection metadata
@@ -713,7 +725,7 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 
 	if err != nil {
 		h.logger.Error("failed to get collection count", zap.String("type", collectionType), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Build collection URL
@@ -753,7 +765,7 @@ func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *acti
 	usernames, nextCursor, err := h.getCollectionData(ctx, actor, collectionType, cursor, limit)
 	if err != nil {
 		h.logger.Error("failed to get collection data", zap.String("type", collectionType), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Build and return the ActivityPub collection page

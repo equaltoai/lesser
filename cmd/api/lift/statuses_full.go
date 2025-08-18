@@ -6,7 +6,6 @@ package lift
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -33,7 +32,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	// Parse request
 	var req models.CreateStatusRequest
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
+		return common.RespondBadRequest(ctx, "invalid request format")
 	}
 
 	// Authenticate with write scope
@@ -49,6 +48,17 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	var pollHideTotals bool
 	
 	if req.Poll != nil && len(req.Poll.Options) > 0 {
+		// Validate poll parameters using centralized validation
+		pollMap := map[string]interface{}{
+			"options":     req.Poll.Options,
+			"expires_in":  req.Poll.ExpiresIn,
+			"multiple":    req.Poll.Multiple,
+			"hide_totals": req.Poll.HideTotals,
+		}
+		if err := common.ValidatePollParams(pollMap); err != nil {
+			return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("Invalid poll parameters: %v", err))
+		}
+		
 		pollOptions = req.Poll.Options
 		pollExpiresIn = req.Poll.ExpiresIn
 		pollMultiple = req.Poll.Multiple
@@ -61,6 +71,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 		Content:        req.Status,
 		Visibility:     req.Visibility,
 		Sensitive:      req.Sensitive,
+		SpoilerText:    req.SpoilerText,
 		Language:       req.Language,
 		InReplyToID:    req.InReplyToID,
 		MediaIDs:       req.MediaIDs,
@@ -71,7 +82,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
+		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
 
 	// Convert to Mastodon API format using converter
@@ -83,14 +94,14 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	}
 
 	// Return created status
-	return ctx.Status(http.StatusCreated).JSON(mastodonStatus)
+	return ctx.Status(201).JSON(mastodonStatus)
 }
 
 // HandleGetStatusFull retrieves a status by ID using the Notes service
 func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Extract optional authenticated user context for privacy filtering
@@ -100,12 +111,12 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 	note, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		if strings.Contains(err.Error(), "access denied") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Check privacy permissions for the viewer using robust authorization
@@ -115,11 +126,11 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 			zap.String("status_id", statusID),
 			zap.String("viewer_id", viewerID),
 			zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	
 	if !canView {
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		return common.RespondNotFound(ctx, "status not found")
 	}
 
 	// Convert to Mastodon API format using converter
@@ -136,8 +147,8 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 // HandleDeleteStatusFull deletes a status using the Notes service
 func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing status id"})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
 	// Authenticate with write scope
@@ -153,12 +164,12 @@ func (h *Handler) HandleDeleteStatusFull(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		if strings.Contains(err.Error(), "not authorized") {
-			return ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "not authorized to delete this status"})
+			return common.RespondForbidden(ctx, "not authorized to delete this status")
 		}
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete status"})
+		return common.RespondInternalServerError(ctx, "failed to delete status")
 	}
 
 	// Return empty response for successful deletion

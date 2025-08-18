@@ -72,64 +72,16 @@ func (r *BlockRepository) CreateBlock(ctx context.Context, blockerActor, blocked
 
 // DeleteBlock removes a block relationship (for Undo Block)
 func (r *BlockRepository) DeleteBlock(ctx context.Context, blockerActor, blockedActor string) error {
-	// Extract usernames for key generation
-	blockerUsername := extractUsernameFromActor(blockerActor)
-	blockedUsername := extractUsernameFromActor(blockedActor)
-
-	block := &models.Block{
-		PK: fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername),
-		SK: fmt.Sprintf("BLOCKED#%s", blockedUsername),
-	}
-
-	if err := r.db.WithContext(ctx).Model(block).
-		Where("PK", "=", block.PK).
-		Where("SK", "=", block.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("block not found for deletion",
-				zap.String("blocker", blockerActor),
-				zap.String("blocked", blockedActor))
-			return nil // Idempotent - don't fail if block doesn't exist
-		}
-		r.logger.Error("failed to delete block",
-			zap.String("blocker", blockerActor),
-			zap.String("blocked", blockedActor),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete block: %w", err)
-	}
-
-	r.logger.Info("deleted block relationship",
-		zap.String("blocker", blockerActor),
-		zap.String("blocked", blockedActor))
-
-	return nil
+	helper := NewRelationshipHelper(r.db, r.logger, "block")
+	return helper.DeleteRelationship(ctx, blockerActor, blockedActor, 
+		"ACTOR#%s#BLOCKS", "BLOCKED#%s", &models.Block{})
 }
 
 // IsBlocked checks if one actor has blocked another
 func (r *BlockRepository) IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error) {
-	// Extract usernames for key generation
-	blockerUsername := extractUsernameFromActor(blockerActor)
-	blockedUsername := extractUsernameFromActor(blockedActor)
-
-	var block models.Block
-
-	err := r.db.WithContext(ctx).Model(&block).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		First(&block)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		r.logger.Error("failed to check block status",
-			zap.String("blocker", blockerActor),
-			zap.String("blocked", blockedActor),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to check block status: %w", err)
-	}
-
-	return true, nil
+	helper := NewRelationshipHelper(r.db, r.logger, "block")
+	return helper.CheckRelationship(ctx, blockerActor, blockedActor, 
+		"ACTOR#%s#BLOCKS", "BLOCKED#%s", &models.Block{})
 }
 
 // IsBlockedBidirectional checks if either actor has blocked the other
@@ -153,93 +105,32 @@ func (r *BlockRepository) IsBlockedBidirectional(ctx context.Context, actor1, ac
 
 // GetBlockedUsers returns a list of users blocked by the given actor
 func (r *BlockRepository) GetBlockedUsers(ctx context.Context, blockerActor string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
 	blockerUsername := extractUsernameFromActor(blockerActor)
-
-	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	
+	config := RelationshipPaginationConfig{
+		IndexName:   "",                       // Use main table
+		PKFormat:    "ACTOR#%s#BLOCKS",       // PK format
+		SKField:     "SK",                    // Sort key field
+		ActorField:  "Object",                // Extract blocked users (Object field)
+		ErrorPrefix: "blocked users",         // Error message prefix
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var blocks []models.Block
-	err := query.All(&blocks)
-	if err != nil {
-		r.logger.Error("failed to get blocked users",
-			zap.String("blocker", blockerActor),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get blocked users: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(blocks) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = blocks[limit-1].SK
-		blocks = blocks[:limit] // Trim to requested limit
-	}
-
-	// Extract blocked actor IDs
-	blockedUsers := make([]string, len(blocks))
-	for i, block := range blocks {
-		blockedUsers[i] = block.Object
-	}
-
-	return blockedUsers, nextCursor, nil
+	
+	return getPaginatedBlockList(ctx, r.db, r.logger, blockerUsername, limit, cursor, config)
 }
 
 // GetUsersWhoBlocked returns a list of users who have blocked the given actor
 func (r *BlockRepository) GetUsersWhoBlocked(ctx context.Context, blockedActor string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
-
 	blockedUsername := extractUsernameFromActor(blockedActor)
-
-	query := r.db.WithContext(ctx).Model(&models.Block{}).
-		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		Limit(limit)
-
-	if cursor != "" {
-		query = query.Cursor(cursor)
+	
+	config := RelationshipPaginationConfig{
+		IndexName:   "GSI5",                     // Use GSI5 for reverse lookup
+		PKFormat:    "BLOCKED#%s",               // GSI5PK format
+		SKField:     "GSI5SK",                   // Sort key field for GSI5
+		ActorField:  "Actor",                    // Extract blocker users (Actor field)
+		ErrorPrefix: "users who blocked actor", // Error message prefix
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var blocks []models.Block
-	err := query.All(&blocks)
-	if err != nil {
-		r.logger.Error("failed to get users who blocked actor",
-			zap.String("blocked_actor", blockedActor),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get users who blocked actor: %w", err)
-	}
-
-	// Generate next cursor
-	var nextCursor string
-	if len(blocks) > limit {
-		// We got more results than requested, so there are more pages
-		nextCursor = blocks[limit-1].GSI5SK
-		blocks = blocks[:limit] // Trim to requested limit
-	}
-
-	// Extract blocker actor IDs
-	blockers := make([]string, len(blocks))
-	for i, block := range blocks {
-		blockers[i] = block.Actor
-	}
-
-	return blockers, nextCursor, nil
+	
+	return getPaginatedBlockList(ctx, r.db, r.logger, blockedUsername, limit, cursor, config)
 }
 
 // GetBlock retrieves a specific block relationship
@@ -313,28 +204,3 @@ func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor
 	return int(count), nil
 }
 
-// extractUsernameFromActor extracts username from full actor ID
-// e.g., "https://example.com/users/alice" -> "alice"
-func extractUsernameFromActor(actorID string) string {
-	// Split by forward slashes and take the last part
-	parts := []string{}
-	current := ""
-	for _, char := range actorID {
-		if char == '/' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(char)
-		}
-	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-
-	if len(parts) > 0 {
-		return parts[len(parts)-1]
-	}
-	return actorID
-}

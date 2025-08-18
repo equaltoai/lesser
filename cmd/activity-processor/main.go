@@ -19,6 +19,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -116,6 +117,13 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
 	// Generate request ID for tracking (Lift pattern)
 	requestID := uuid.New().String()
+	
+	// Validate the generated UUID
+	if err := common.ValidateUUID("requestID", requestID); err != nil {
+		ap.logger.Error("failed to generate valid request ID", zap.Error(err))
+		// Fall back to a simple timestamp-based ID
+		requestID = fmt.Sprintf("req_%d", time.Now().UnixNano())
+	}
 
 	// Add request ID to context for downstream use
 	ctx = context.WithValue(ctx, requestIDKey, requestID)
@@ -1452,24 +1460,36 @@ func containsPublicAddress(slice []string) bool {
 }
 
 var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage
 	processor *ActivityProcessor
 )
 
-func main() {
-	// Initialize Lambda with processor services
-	config := common.LambdaConfig{
+func init() {
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "activity-processor",
 		LambdaType:  common.LambdaTypeProcessor,
-	}
+	})
 	
-	lambdaCtx, err := common.InitializeLambda(config)
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 	
 	// Initialize processor
 	processor = NewActivityProcessor(lambdaCtx)
+}
 
+func main() {
 	// DynamoDB Stream handler with Lift-style patterns but traditional Lambda execution
 	// This provides structured logging, error handling, and request tracking
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {

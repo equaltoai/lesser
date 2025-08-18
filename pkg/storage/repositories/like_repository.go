@@ -15,17 +15,19 @@ import (
 
 // LikeRepository implements like operations using DynamORM
 type LikeRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db         core.DB
+	tableName  string
+	logger     *zap.Logger
+	queryUtils *QueryUtils
 }
 
 // NewLikeRepository creates a new like repository
 func NewLikeRepository(db core.DB, tableName string, logger *zap.Logger) *LikeRepository {
 	return &LikeRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		queryUtils: NewQueryUtils(db, logger),
 	}
 }
 
@@ -58,33 +60,15 @@ func (r *LikeRepository) CreateLike(ctx context.Context, actor, object string) (
 
 // DeleteLike removes a like
 func (r *LikeRepository) DeleteLike(ctx context.Context, actor, object string) error {
+	pk := fmt.Sprintf("object#%s#likes", object)
+	sk := fmt.Sprintf("actor#%s", actor)
+	
 	like := &models.Like{
-		PK: fmt.Sprintf("object#%s#likes", object),
-		SK: fmt.Sprintf("actor#%s", actor),
+		PK: pk,
+		SK: sk,
 	}
 
-	if err := r.db.WithContext(ctx).Model(like).
-		Where("PK", "=", like.PK).
-		Where("SK", "=", like.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("like not found",
-				zap.String("actor", actor),
-				zap.String("object", object))
-			return nil
-		}
-		r.logger.Error("failed to delete like",
-			zap.String("actor", actor),
-			zap.String("object", object),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete like: %w", err)
-	}
-
-	r.logger.Info("deleted like",
-		zap.String("actor", actor),
-		zap.String("object", object))
-
-	return nil
+	return r.queryUtils.DeleteWithNotFoundHandling(ctx, pk, sk, like, "delete like", actor, object)
 }
 
 // GetLike retrieves a specific like

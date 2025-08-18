@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -135,82 +136,106 @@ func (r *TrendingRepository) RecordLinkShare(ctx context.Context, linkURL string
 
 // GetTrendingHashtags returns the top trending hashtags since the given time
 func (r *TrendingRepository) GetTrendingHashtags(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingHashtag, error) {
-	timeBucket := time.Now().Format(common.DateFormat)
-	pk := fmt.Sprintf("TREND_TYPE#HASHTAG#%s", timeBucket)
-
-	var trendModels []models.HashtagTrend
-	err := r.db.WithContext(ctx).Model(&models.HashtagTrend{}).
-		Where("GSI8PK", "=", pk).
-		OrderBy("GSI8SK", "DESC"). // Sort by score descending
-		Limit(limit).
-		All(&trendModels)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("no trending hashtags found", zap.String("timeBucket", timeBucket))
-			return []*storage.TrendingHashtag{}, nil
-		}
-		r.logger.Error("failed to get trending hashtags", zap.Error(err))
-		return nil, err
-	}
-
-	trends := make([]*storage.TrendingHashtag, 0, len(trendModels))
-	for _, model := range trendModels {
-		trend := &storage.TrendingHashtag{
-			Name:        model.Name,
-			URL:         model.URL,
-			UsageCount:  model.UsageCount,
-			UniqueUsers: model.UniqueUsers,
-			LastUsed:    model.LastUsed,
-			FirstSeen:   model.FirstSeen,
-		}
-		trends = append(trends, trend)
-	}
-
-	return trends, nil
+	return r.getTrendingHashtagsInternal(ctx, "HASHTAG", limit)
 }
 
 // GetTrendingStatuses returns the top trending statuses since the given time
 func (r *TrendingRepository) GetTrendingStatuses(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingStatus, error) {
-	timeBucket := time.Now().Format(common.DateFormat)
-	pk := fmt.Sprintf("TREND_TYPE#STATUS#%s", timeBucket)
-
-	var trendModels []models.StatusTrend
-	err := r.db.WithContext(ctx).Model(&models.StatusTrend{}).
-		Where("GSI8PK", "=", pk).
-		OrderBy("GSI8SK", "DESC"). // Sort by score descending
-		Limit(limit).
-		All(&trendModels)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("no trending statuses found", zap.String("timeBucket", timeBucket))
-			return []*storage.TrendingStatus{}, nil
-		}
-		r.logger.Error("failed to get trending statuses", zap.Error(err))
-		return nil, err
-	}
-
-	trends := make([]*storage.TrendingStatus, 0, len(trendModels))
-	for _, model := range trendModels {
-		trend := &storage.TrendingStatus{
-			ID:          model.ID,
-			URL:         model.URL,
-			AuthorID:    model.AuthorID,
-			Content:     model.Content,
-			Engagements: model.Engagements,
-			PublishedAt: model.PublishedAt,
-		}
-		trends = append(trends, trend)
-	}
-
-	return trends, nil
+	return r.getTrendingStatusesInternal(ctx, "STATUS", limit)
 }
 
 // GetTrendingLinks returns the top trending links since the given time
 func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, limit int) ([]*storage.TrendingLink, error) {
+	return r.getTrendingLinksInternal(ctx, "LINK", limit)
+}
+
+// Generic helper functions to eliminate duplication
+
+// getTrendingItemsGeneric is a generic function to fetch trending items
+func (r *TrendingRepository) getTrendingItemsGeneric(ctx context.Context, trendType string, limit int, modelInstance interface{}, converter func(interface{}) interface{}) (interface{}, error) {
 	timeBucket := time.Now().Format(common.DateFormat)
-	pk := fmt.Sprintf("TREND_TYPE#LINK#%s", timeBucket)
+	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
+
+	// Use reflection to create a slice of the appropriate type
+	modelType := reflect.TypeOf(modelInstance)
+	sliceType := reflect.SliceOf(modelType)
+	trendsValue := reflect.New(sliceType).Elem()
+
+	err := r.db.WithContext(ctx).Model(modelInstance).
+		Where("GSI8PK", "=", pk).
+		OrderBy("GSI8SK", "DESC"). // Sort by score descending
+		Limit(limit).
+		All(trendsValue.Addr().Interface())
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug(fmt.Sprintf("no trending %s found", strings.ToLower(trendType)), zap.String("timeBucket", timeBucket))
+			// Return empty slice of the appropriate result type
+			resultType := reflect.TypeOf(converter(modelInstance))
+			resultSliceType := reflect.SliceOf(resultType)
+			return reflect.New(resultSliceType).Elem().Interface(), nil
+		}
+		r.logger.Error(fmt.Sprintf("failed to get trending %s", strings.ToLower(trendType)), zap.Error(err))
+		return nil, err
+	}
+
+	// Convert models to result type
+	count := trendsValue.Len()
+	resultType := reflect.TypeOf(converter(modelInstance))
+	resultSliceType := reflect.SliceOf(resultType)
+	resultSlice := reflect.MakeSlice(resultSliceType, 0, count)
+
+	for i := 0; i < count; i++ {
+		model := trendsValue.Index(i).Interface()
+		converted := converter(model)
+		resultSlice = reflect.Append(resultSlice, reflect.ValueOf(converted))
+	}
+
+	return resultSlice.Interface(), nil
+}
+
+// getTrendingHashtagsInternal handles the actual hashtag trend fetching
+func (r *TrendingRepository) getTrendingHashtagsInternal(ctx context.Context, trendType string, limit int) ([]*storage.TrendingHashtag, error) {
+	result, err := r.getTrendingItemsGeneric(ctx, trendType, limit, &models.HashtagTrend{}, func(model interface{}) interface{} {
+		m := model.(*models.HashtagTrend)
+		return &storage.TrendingHashtag{
+			Name:        m.Name,
+			URL:         m.URL,
+			UsageCount:  m.UsageCount,
+			UniqueUsers: m.UniqueUsers,
+			LastUsed:    m.LastUsed,
+			FirstSeen:   m.FirstSeen,
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.([]*storage.TrendingHashtag), nil
+}
+
+// getTrendingStatusesInternal handles the actual status trend fetching
+func (r *TrendingRepository) getTrendingStatusesInternal(ctx context.Context, trendType string, limit int) ([]*storage.TrendingStatus, error) {
+	result, err := r.getTrendingItemsGeneric(ctx, trendType, limit, &models.StatusTrend{}, func(model interface{}) interface{} {
+		m := model.(*models.StatusTrend)
+		return &storage.TrendingStatus{
+			ID:          m.ID,
+			URL:         m.URL,
+			AuthorID:    m.AuthorID,
+			Content:     m.Content,
+			Engagements: m.Engagements,
+			PublishedAt: m.PublishedAt,
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.([]*storage.TrendingStatus), nil
+}
+
+// getTrendingLinksInternal handles the actual link trend fetching
+func (r *TrendingRepository) getTrendingLinksInternal(ctx context.Context, trendType string, limit int) ([]*storage.TrendingLink, error) {
+	timeBucket := time.Now().Format(common.DateFormat)
+	pk := fmt.Sprintf("TREND_TYPE#%s#%s", trendType, timeBucket)
 
 	var trendModels []models.LinkTrend
 	err := r.db.WithContext(ctx).Model(&models.LinkTrend{}).
@@ -221,10 +246,10 @@ func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.logger.Debug("no trending links found", zap.String("timeBucket", timeBucket))
+			r.logger.Debug(fmt.Sprintf("no trending %s found", strings.ToLower(trendType)), zap.String("timeBucket", timeBucket))
 			return []*storage.TrendingLink{}, nil
 		}
-		r.logger.Error("failed to get trending links", zap.Error(err))
+		r.logger.Error(fmt.Sprintf("failed to get trending %s", strings.ToLower(trendType)), zap.Error(err))
 		return nil, err
 	}
 
@@ -243,6 +268,110 @@ func (r *TrendingRepository) GetTrendingLinks(ctx context.Context, _ time.Time, 
 	}
 
 	return trends, nil
+}
+
+// TrendModel represents any trend model that can be stored
+type TrendModel interface {
+	UpdateKeys()
+}
+
+// storeTrendInternal handles the common pattern for storing any type of trend
+func (r *TrendingRepository) storeTrendInternal(ctx context.Context, model TrendModel, trendType string, identifier string) error {
+	// Update keys
+	model.UpdateKeys()
+
+	// Store the trend
+	err := r.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		r.logger.Error(fmt.Sprintf("failed to store %s trend", trendType),
+			zap.String("identifier", identifier),
+			zap.Error(err))
+		return fmt.Errorf("failed to store %s trend: %w", trendType, err)
+	}
+
+	return nil
+}
+
+// storeHashtagTrendInternal handles the common pattern for storing hashtag trends
+func (r *TrendingRepository) storeHashtagTrendInternal(ctx context.Context, trend any) error {
+	// Convert from interface{} to expected type
+	hashtagTrend, ok := trend.(*models.HashtagTrend)
+	if !ok {
+		// Try to convert from storage type
+		storageTrend, ok := trend.(*storage.TrendingHashtag)
+		if !ok {
+			return fmt.Errorf("invalid trend type: expected *models.HashtagTrend or *storage.TrendingHashtag")
+		}
+
+		// Convert storage to model
+		hashtagTrend = &models.HashtagTrend{
+			Name:        storageTrend.Name,
+			URL:         storageTrend.URL,
+			UsageCount:  storageTrend.UsageCount,
+			UniqueUsers: storageTrend.UniqueUsers,
+			LastUsed:    storageTrend.LastUsed,
+			FirstSeen:   storageTrend.FirstSeen,
+			TrendScore:  float64(storageTrend.UsageCount),
+			UpdatedAt:   time.Now(),
+		}
+	}
+
+	return r.storeTrendInternal(ctx, hashtagTrend, "hashtag", hashtagTrend.Name)
+}
+
+// storeStatusTrendInternal handles the common pattern for storing status trends
+func (r *TrendingRepository) storeStatusTrendInternal(ctx context.Context, trend any) error {
+	// Convert from interface{} to expected type
+	statusTrend, ok := trend.(*models.StatusTrend)
+	if !ok {
+		// Try to convert from storage type
+		storageTrend, ok := trend.(*storage.TrendingStatus)
+		if !ok {
+			return fmt.Errorf("invalid trend type: expected *models.StatusTrend or *storage.TrendingStatus")
+		}
+
+		// Convert storage to model
+		statusTrend = &models.StatusTrend{
+			ID:          storageTrend.ID,
+			URL:         storageTrend.URL,
+			AuthorID:    storageTrend.AuthorID,
+			Content:     storageTrend.Content,
+			Engagements: storageTrend.Engagements,
+			PublishedAt: storageTrend.PublishedAt,
+			TrendScore:  float64(storageTrend.Engagements),
+			UpdatedAt:   time.Now(),
+		}
+	}
+
+	return r.storeTrendInternal(ctx, statusTrend, "status", statusTrend.ID)
+}
+
+// storeLinkTrendInternal handles the common pattern for storing link trends
+func (r *TrendingRepository) storeLinkTrendInternal(ctx context.Context, trend any) error {
+	// Convert from interface{} to expected type
+	linkTrend, ok := trend.(*models.LinkTrend)
+	if !ok {
+		// Try to convert from storage type
+		storageTrend, ok := trend.(*storage.TrendingLink)
+		if !ok {
+			return fmt.Errorf("invalid trend type: expected *models.LinkTrend or *storage.TrendingLink")
+		}
+
+		// Convert storage to model
+		linkTrend = &models.LinkTrend{
+			URL:         storageTrend.URL,
+			Title:       storageTrend.Title,
+			Description: storageTrend.Description,
+			Type:        storageTrend.Type,
+			AuthorName:  storageTrend.AuthorName,
+			Image:       storageTrend.Image,
+			ShareCount:  storageTrend.ShareCount,
+			TrendScore:  float64(storageTrend.ShareCount),
+			UpdatedAt:   time.Now(),
+		}
+	}
+
+	return r.storeTrendInternal(ctx, linkTrend, "link", linkTrend.URL)
 }
 
 // Helper methods for updating trend scores
@@ -715,237 +844,92 @@ func (r *TrendingRepository) GetEngagementMetrics(ctx context.Context, statusID 
 
 // StoreHashtagTrend stores a hashtag trend record
 func (r *TrendingRepository) StoreHashtagTrend(ctx context.Context, trend any) error {
-	// Convert from interface{} to expected type
-	hashtagTrend, ok := trend.(*models.HashtagTrend)
-	if !ok {
-		// Try to convert from storage type
-		storageTrend, ok := trend.(*storage.TrendingHashtag)
-		if !ok {
-			return fmt.Errorf("invalid trend type: expected *models.HashtagTrend or *storage.TrendingHashtag")
-		}
-
-		// Convert storage to model
-		hashtagTrend = &models.HashtagTrend{
-			Name:        storageTrend.Name,
-			URL:         storageTrend.URL,
-			UsageCount:  storageTrend.UsageCount,
-			UniqueUsers: storageTrend.UniqueUsers,
-			LastUsed:    storageTrend.LastUsed,
-			FirstSeen:   storageTrend.FirstSeen,
-			TrendScore:  float64(storageTrend.UsageCount), // Calculate based on usage
-			UpdatedAt:   time.Now(),
-		}
-	}
-
-	// Update keys
-	hashtagTrend.UpdateKeys()
-
-	// Store the trend
-	err := r.db.WithContext(ctx).Model(hashtagTrend).Create()
-	if err != nil {
-		r.logger.Error("failed to store hashtag trend",
-			zap.String("hashtag", hashtagTrend.Name),
-			zap.Error(err))
-		return fmt.Errorf("failed to store hashtag trend: %w", err)
-	}
-
-	return nil
+	return r.storeHashtagTrendInternal(ctx, trend)
 }
 
 // StoreStatusTrend stores a status trend record
 func (r *TrendingRepository) StoreStatusTrend(ctx context.Context, trend any) error {
-	// Convert from interface{} to expected type
-	statusTrend, ok := trend.(*models.StatusTrend)
-	if !ok {
-		// Try to convert from storage type
-		storageTrend, ok := trend.(*storage.TrendingStatus)
-		if !ok {
-			return fmt.Errorf("invalid trend type: expected *models.StatusTrend or *storage.TrendingStatus")
-		}
-
-		// Convert storage to model
-		statusTrend = &models.StatusTrend{
-			ID:          storageTrend.ID,
-			URL:         storageTrend.URL,
-			AuthorID:    storageTrend.AuthorID,
-			Content:     storageTrend.Content,
-			Engagements: storageTrend.Engagements,
-			PublishedAt: storageTrend.PublishedAt,
-			TrendScore:  float64(storageTrend.Engagements),
-			UpdatedAt:   time.Now(),
-		}
-	}
-
-	// Update keys
-	statusTrend.UpdateKeys()
-
-	// Store the trend
-	err := r.db.WithContext(ctx).Model(statusTrend).Create()
-	if err != nil {
-		r.logger.Error("failed to store status trend",
-			zap.String("statusID", statusTrend.ID),
-			zap.Error(err))
-		return fmt.Errorf("failed to store status trend: %w", err)
-	}
-
-	return nil
+	return r.storeStatusTrendInternal(ctx, trend)
 }
 
 // StoreLinkTrend stores a link trend record
 func (r *TrendingRepository) StoreLinkTrend(ctx context.Context, trend any) error {
-	// Convert from interface{} to expected type
-	linkTrend, ok := trend.(*models.LinkTrend)
-	if !ok {
-		// Try to convert from storage type
-		storageTrend, ok := trend.(*storage.TrendingLink)
-		if !ok {
-			return fmt.Errorf("invalid trend type: expected *models.LinkTrend or *storage.TrendingLink")
-		}
+	return r.storeLinkTrendInternal(ctx, trend)
+}
 
-		// Convert storage to model
-		linkTrend = &models.LinkTrend{
-			URL:         storageTrend.URL,
-			Title:       storageTrend.Title,
-			Description: storageTrend.Description,
-			Type:        storageTrend.Type,
-			AuthorName:  storageTrend.AuthorName,
-			Image:       storageTrend.Image,
-			ShareCount:  storageTrend.ShareCount,
-			TrendScore:  float64(storageTrend.ShareCount),
-			UpdatedAt:   time.Now(),
-		}
-	}
+// TrendDeletable defines the interface for trend models that can be deleted
+type TrendDeletable interface {
+	GetIdentifier() string // Returns a string that identifies the trend for logging
+}
 
-	// Update keys
-	linkTrend.UpdateKeys()
+// deleteOldTrendsGeneric is a generic function to delete old trend records
+func (r *TrendingRepository) deleteOldTrendsGeneric(ctx context.Context, before time.Time, trendType string, modelInstance interface{}, getIdentifier func(interface{}) string) error {
+	// Use reflection to create a slice of the appropriate type
+	modelType := reflect.TypeOf(modelInstance)
+	sliceType := reflect.SliceOf(modelType)
+	trendsValue := reflect.New(sliceType).Elem()
 
-	// Store the trend
-	err := r.db.WithContext(ctx).Model(linkTrend).Create()
+	// DynamORM doesn't support direct batch delete, so we need to query and delete
+	err := r.db.WithContext(ctx).Model(modelInstance).
+		Filter("UpdatedAt", "<", before).
+		Limit(100). // Process in batches
+		Scan(trendsValue.Addr().Interface())
+
 	if err != nil {
-		r.logger.Error("failed to store link trend",
-			zap.String("url", linkTrend.URL),
-			zap.Error(err))
-		return fmt.Errorf("failed to store link trend: %w", err)
+		if errors.IsNotFound(err) {
+			return nil // No old trends to delete
+		}
+		r.logger.Error(fmt.Sprintf("failed to query old %s trends", trendType), zap.Error(err))
+		return fmt.Errorf("failed to query old %s trends: %w", trendType, err)
 	}
+
+	// Delete each trend
+	count := trendsValue.Len()
+	for i := 0; i < count; i++ {
+		trend := trendsValue.Index(i).Interface()
+		err := r.db.WithContext(ctx).Model(trend).Delete()
+		if err != nil {
+			r.logger.Warn(fmt.Sprintf("failed to delete %s trend", trendType),
+				zap.String("identifier", getIdentifier(trend)),
+				zap.Error(err))
+			// Continue with other deletions
+		}
+	}
+
+	r.logger.Info(fmt.Sprintf("deleted old %s trends", trendType),
+		zap.Int("count", count),
+		zap.Time("before", before))
 
 	return nil
 }
 
 // DeleteOldHashtagTrends deletes hashtag trend records older than the specified time
 func (r *TrendingRepository) DeleteOldHashtagTrends(ctx context.Context, before time.Time) error {
-	// Query for old hashtag trends
-	var trends []models.HashtagTrend
-
-	// DynamORM doesn't support direct batch delete, so we need to query and delete
-	err := r.db.WithContext(ctx).Model(&models.HashtagTrend{}).
-		Filter("UpdatedAt", "<", before).
-		Limit(100). // Process in batches
-		Scan(&trends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No old trends to delete
-		}
-		r.logger.Error("failed to query old hashtag trends", zap.Error(err))
-		return fmt.Errorf("failed to query old hashtag trends: %w", err)
-	}
-
-	// Delete each trend
-	for _, trend := range trends {
-		err := r.db.WithContext(ctx).Model(&trend).Delete()
-		if err != nil {
-			r.logger.Warn("failed to delete hashtag trend",
-				zap.String("hashtag", trend.Name),
-				zap.Error(err))
-			// Continue with other deletions
-		}
-	}
-
-	r.logger.Info("deleted old hashtag trends",
-		zap.Int("count", len(trends)),
-		zap.Time("before", before))
-
-	return nil
+	return r.deleteOldTrendsGeneric(ctx, before, "hashtag", &models.HashtagTrend{}, func(trend interface{}) string {
+		return trend.(*models.HashtagTrend).Name
+	})
 }
 
 // DeleteOldLinkTrends deletes link trend records older than the specified time
 func (r *TrendingRepository) DeleteOldLinkTrends(ctx context.Context, before time.Time) error {
-	// Query for old link trends
-	var trends []models.LinkTrend
-
-	err := r.db.WithContext(ctx).Model(&models.LinkTrend{}).
-		Filter("UpdatedAt", "<", before).
-		Limit(100). // Process in batches
-		Scan(&trends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No old trends to delete
-		}
-		r.logger.Error("failed to query old link trends", zap.Error(err))
-		return fmt.Errorf("failed to query old link trends: %w", err)
-	}
-
-	// Delete each trend
-	for _, trend := range trends {
-		err := r.db.WithContext(ctx).Model(&trend).Delete()
-		if err != nil {
-			r.logger.Warn("failed to delete link trend",
-				zap.String("url", trend.URL),
-				zap.Error(err))
-			// Continue with other deletions
-		}
-	}
-
-	r.logger.Info("deleted old link trends",
-		zap.Int("count", len(trends)),
-		zap.Time("before", before))
-
-	return nil
+	return r.deleteOldTrendsGeneric(ctx, before, "link", &models.LinkTrend{}, func(trend interface{}) string {
+		return trend.(*models.LinkTrend).URL
+	})
 }
 
 // DeleteOldStatusTrends deletes status trend records older than the specified time
 func (r *TrendingRepository) DeleteOldStatusTrends(ctx context.Context, before time.Time) error {
-	// Query for old status trends
-	var trends []models.StatusTrend
-
-	err := r.db.WithContext(ctx).Model(&models.StatusTrend{}).
-		Filter("UpdatedAt", "<", before).
-		Limit(100). // Process in batches
-		Scan(&trends)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil // No old trends to delete
-		}
-		r.logger.Error("failed to query old status trends", zap.Error(err))
-		return fmt.Errorf("failed to query old status trends: %w", err)
-	}
-
-	// Delete each trend
-	for _, trend := range trends {
-		err := r.db.WithContext(ctx).Model(&trend).Delete()
-		if err != nil {
-			r.logger.Warn("failed to delete status trend",
-				zap.String("statusID", trend.ID),
-				zap.Error(err))
-			// Continue with other deletions
-		}
-	}
-
-	r.logger.Info("deleted old status trends",
-		zap.Int("count", len(trends)),
-		zap.Time("before", before))
-
-	return nil
+	return r.deleteOldTrendsGeneric(ctx, before, "status", &models.StatusTrend{}, func(trend interface{}) string {
+		return trend.(*models.StatusTrend).ID
+	})
 }
 
 // TrackSearchQuery records a search query for analytics
 func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query string, resultCount int) error {
-	// Normalize query
-	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
-	if err := common.ValidateRequiredParam("normalizedQuery", normalizedQuery); err != nil {
-		return nil
+	// Normalize and validate query using centralized validation
+	normalizedQuery, err := common.ValidateNormalizedQuery(query)
+	if err != nil {
+		return fmt.Errorf("invalid search query: %w", err)
 	}
 
 	// Create search query record
@@ -960,7 +944,7 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 	searchQuery.UpdateKeys()
 
 	// Store the query
-	err := r.db.WithContext(ctx).Model(searchQuery).Create()
+	err = r.db.WithContext(ctx).Model(searchQuery).Create()
 	if err != nil {
 		r.logger.Error("failed to track search query",
 			zap.String("query", query),
@@ -1863,14 +1847,14 @@ func (r *TrendingRepository) RecordMediaEvent(ctx context.Context, eventType, me
 	return nil
 }
 
-// GetManifestGenerationStats retrieves manifest generation statistics for a date range
-func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
+// getMediaAnalyticsStatsGeneric is a generic function to retrieve media analytics statistics
+func (r *TrendingRepository) getMediaAnalyticsStatsGeneric(ctx context.Context, pkPrefix, identifier, startDate, endDate string) (map[string]int64, error) {
 	stats := make(map[string]int64)
 
-	// Query manifest generation records
+	// Query media analytics records
 	var analytics []models.MediaAnalytics
 	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", fmt.Sprintf("MANIFEST#%s", format)).
+		Where("PK", "=", fmt.Sprintf("%s#%s", pkPrefix, identifier)).
 		Where("Date", ">=", startDate).
 		Where("Date", "<=", endDate).
 		All(&analytics)
@@ -1879,12 +1863,12 @@ func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, for
 		if errors.IsNotFound(err) {
 			return stats, nil
 		}
-		r.logger.Error("failed to get manifest generation stats",
-			zap.String("format", format),
+		r.logger.Error(fmt.Sprintf("failed to get %s stats", strings.ToLower(pkPrefix)),
+			zap.String("identifier", identifier),
 			zap.String("startDate", startDate),
 			zap.String("endDate", endDate),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get manifest generation stats: %w", err)
+		return nil, fmt.Errorf("failed to get %s stats: %w", strings.ToLower(pkPrefix), err)
 	}
 
 	// Count by date
@@ -1895,36 +1879,14 @@ func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, for
 	return stats, nil
 }
 
+// GetManifestGenerationStats retrieves manifest generation statistics for a date range
+func (r *TrendingRepository) GetManifestGenerationStats(ctx context.Context, format, startDate, endDate string) (map[string]int64, error) {
+	return r.getMediaAnalyticsStatsGeneric(ctx, "MANIFEST", format, startDate, endDate)
+}
+
 // GetMediaEventStats retrieves general media event statistics
 func (r *TrendingRepository) GetMediaEventStats(ctx context.Context, eventType, startDate, endDate string) (map[string]int64, error) {
-	stats := make(map[string]int64)
-
-	// Query media event records
-	var analytics []models.MediaAnalytics
-	err := r.db.WithContext(ctx).Model(&models.MediaAnalytics{}).
-		Where("PK", "=", fmt.Sprintf("MEDIA_EVENT#%s", eventType)).
-		Where("Date", ">=", startDate).
-		Where("Date", "<=", endDate).
-		All(&analytics)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return stats, nil
-		}
-		r.logger.Error("failed to get media event stats",
-			zap.String("eventType", eventType),
-			zap.String("startDate", startDate),
-			zap.String("endDate", endDate),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get media event stats: %w", err)
-	}
-
-	// Count by date
-	for _, record := range analytics {
-		stats[record.Date]++
-	}
-
-	return stats, nil
+	return r.getMediaAnalyticsStatsGeneric(ctx, "MEDIA_EVENT", eventType, startDate, endDate)
 }
 
 // initializeAnalyticsData creates and initializes streaming analytics data structure
@@ -2490,8 +2452,11 @@ func (r *TrendingRepository) IncrementQueryCount(ctx context.Context, query stri
 		return fmt.Errorf("invalid parameters: query cannot be empty and count must be positive")
 	}
 
-	// Normalize query for consistent counting
-	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	// Normalize and validate query using centralized validation
+	normalizedQuery, err := common.ValidateNormalizedQuery(query)
+	if err != nil {
+		return fmt.Errorf("invalid query for counting: %w", err)
+	}
 	queryHash := r.hashQuery(normalizedQuery)
 
 	now := time.Now()
@@ -2515,7 +2480,11 @@ func (r *TrendingRepository) IncrementQueryCount(ctx context.Context, query stri
 
 // GetQueryCount retrieves the current count for a query
 func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (int, error) {
-	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
+	// Normalize and validate query using centralized validation
+	normalizedQuery, err := common.ValidateNormalizedQuery(query)
+	if err != nil {
+		return 0, fmt.Errorf("invalid query for count retrieval: %w", err)
+	}
 	queryHash := r.hashQuery(normalizedQuery)
 
 	// Get daily count by default
@@ -2523,7 +2492,7 @@ func (r *TrendingRepository) GetQueryCount(ctx context.Context, query string) (i
 	sk := "COUNTER#daily"
 
 	var counter models.PopularQueryCounter
-	err := r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
+	err = r.db.WithContext(ctx).Model(&models.PopularQueryCounter{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&counter)

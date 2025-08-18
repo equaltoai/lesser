@@ -3,14 +3,11 @@ package patterns
 
 import (
 	"encoding/json"
-	"fmt"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // DynamoDBStreamHandler is the interface that services must implement to handle DynamoDB stream events
@@ -66,41 +63,14 @@ func RegisterDynamoDBStream(app *lift.App, processor *DynamoDBStreamProcessor) {
 
 // ProcessEvent processes a DynamoDB stream event with proper logging and error handling
 func (dsp *DynamoDBStreamProcessor) ProcessEvent(ctx *lift.Context, event events.DynamoDBEvent) error {
-	start := time.Now()
-	requestID := ctx.GetRequestID()
-	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
-		requestID = fmt.Sprintf("%s-%d", dsp.name, time.Now().UnixNano())
-		ctx.Set("requestID", requestID)
-	}
-
-	dsp.logger.Info("processing DynamoDB stream batch",
-		zap.String("processor", dsp.name),
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-	)
-
-	// Call the actual handler
-	err := dsp.handler.HandleStream(ctx, event)
-
-	duration := time.Since(start)
-	if err != nil {
-		dsp.logger.Error("failed to process DynamoDB stream batch",
-			zap.String("processor", dsp.name),
-			zap.String("request_id", requestID),
-			zap.Error(err),
-			zap.Duration("duration", duration),
-		)
-		return err
-	}
-
-	dsp.logger.Info("successfully processed DynamoDB stream batch",
-		zap.String("processor", dsp.name),
-		zap.String("request_id", requestID),
-		zap.Int("record_count", len(event.Records)),
-		zap.Duration("duration", duration),
-	)
-
-	return nil
+	return ProcessEventWithTiming(ctx, ProcessEventConfig{
+		ProcessorName: dsp.name,
+		RequestIDKey:  "requestID",
+		RecordCount:   len(event.Records),
+		Logger:        dsp.logger,
+	}, func(ctx *lift.Context) error {
+		return dsp.handler.HandleStream(ctx, event)
+	})
 }
 
 // CreateDynamoDBStreamApp creates a standard Lift app configured for DynamoDB streams

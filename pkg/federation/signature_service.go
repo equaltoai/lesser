@@ -211,10 +211,6 @@ func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey cryp
 	if algorithm != "" && algorithm != "rsa-sha256" {
 		// Create a synthetic signature object for enhanced verification
 		sigHeader := req.Header.Get(SignatureHeader)
-		if err := common.ValidateRequiredParam("sigHeader", sigHeader); err != nil {
-			return common.AuthenticationError{Message: "missing signature header"}
-		}
-
 		sig, err := ParseSignatureHeader(sigHeader)
 		if err != nil {
 			return fmt.Errorf("failed to parse signature: %w", err)

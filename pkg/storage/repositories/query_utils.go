@@ -9,6 +9,8 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // QueryUtils provides common query patterns used across repositories
@@ -307,6 +309,35 @@ func (q *QueryUtils) DeleteItem(ctx context.Context, pk, sk string, model interf
 		return ErrorHandler.HandleDeleteError(err, "delete item", fmt.Sprintf("%s#%s", pk, sk))
 	}
 	
+	return nil
+}
+
+// DeleteWithNotFoundHandling performs a delete operation that treats NotFound as success
+// This is a common pattern where deletion is idempotent (deleting non-existing items succeeds)
+func (q *QueryUtils) DeleteWithNotFoundHandling(ctx context.Context, pk, sk string, model interface{}, operationType, param1, param2 string) error {
+	err := q.db.WithContext(ctx).Model(model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+	
+	if err != nil {
+		if errors.IsNotFound(err) {
+			q.logger.Debug(fmt.Sprintf("%s not found", operationType),
+				zap.String("param1", param1),
+				zap.String("param2", param2))
+			return nil
+		}
+		q.logger.Error(fmt.Sprintf("failed to %s", operationType),
+			zap.String("param1", param1),
+			zap.String("param2", param2),
+			zap.Error(err))
+		return fmt.Errorf("failed to %s: %w", operationType, err)
+	}
+
+	q.logger.Info(fmt.Sprintf("%s successful", operationType),
+		zap.String("param1", param1),
+		zap.String("param2", param2))
+
 	return nil
 }
 
@@ -617,4 +648,102 @@ func (c *CommonQueries) GetActiveTokensForUser(ctx context.Context, username str
 	result.Items = c.FilterActiveItems(result.Items, currentTime)
 
 	return result, nil
+}
+
+// AddToCollectionHelper provides a shared implementation for adding items to collections
+// This eliminates duplication between ObjectRepository and RelationshipRepository AddToCollection methods
+func (q *QueryUtils) AddToCollectionHelper(ctx context.Context, collection string, item *storage.CollectionItem, db core.DB) error {
+	collectionItem := models.NewCollectionItem(collection, item.ItemID, item.ItemType, item.AddedBy)
+	collectionItem.Position = item.Position
+
+	if err := db.WithContext(ctx).Model(collectionItem).Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			q.logger.Info("item already in collection",
+				zap.String("collection", collection),
+				zap.String("item_id", item.ItemID))
+			return nil // Not an error to add something already in collection
+		}
+		q.logger.Error("failed to add to collection",
+			zap.String("collection", collection),
+			zap.String("item_id", item.ItemID),
+			zap.Error(err))
+		return fmt.Errorf("failed to add to collection: %w", err)
+	}
+
+	q.logger.Info("added item to collection",
+		zap.String("collection", collection),
+		zap.String("item_id", item.ItemID))
+
+	return nil
+}
+
+// QueryAndConvert performs a database query and converts the results to storage types
+// This eliminates the common pattern of: query → error check → convert loop → return
+func QueryAndConvert[M any, S any](
+	q *QueryUtils,
+	ctx context.Context,
+	queryFunc func() ([]M, error),
+	convertFunc func(M) S,
+	operationName string,
+	operationParam string,
+) ([]S, error) {
+	// Execute the query
+	models, err := queryFunc()
+	if err != nil {
+		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),
+			zap.String("param", operationParam),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to %s: %w", operationName, err)
+	}
+
+	// Convert models to storage types
+	results := make([]S, len(models))
+	for i, model := range models {
+		results[i] = convertFunc(model)
+	}
+
+	return results, nil
+}
+
+// QueryWithPKAndSKPrefix eliminates the PK/SK prefix query duplication pattern
+// This consolidates the common "Where PK = X, Where/Filter SK BEGINS_WITH Y" pattern
+func QueryWithPKAndSKPrefix[M any, S any](
+	q *QueryUtils,
+	ctx context.Context,
+	modelFactory func() *M,
+	pkValue, skPrefix string,
+	useFilter bool, // true for Filter("SK", "BEGINS_WITH"), false for Where("SK", "BEGINS_WITH")
+	convertFunc func(M) S,
+	operationName string,
+	operationParam string,
+) ([]S, error) {
+	var models []M
+	var err error
+
+	if useFilter {
+		err = q.db.WithContext(ctx).Model(modelFactory()).
+			Where("PK", "=", pkValue).
+			Filter("SK", "BEGINS_WITH", skPrefix).
+			Scan(&models)
+	} else {
+		err = q.db.WithContext(ctx).Model(modelFactory()).
+			Where("PK", "=", pkValue).
+			Where("SK", "BEGINS_WITH", skPrefix).
+			All(&models)
+	}
+
+	if err != nil {
+		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),
+			zap.String("param", operationParam),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to %s: %w", operationName, err)
+	}
+
+	// Convert models to storage types
+	results := make([]S, len(models))
+	for i, model := range models {
+		results[i] = convertFunc(model)
+	}
+
+	return results, nil
 }

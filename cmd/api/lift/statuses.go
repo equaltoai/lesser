@@ -35,7 +35,22 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 	// Parse request
 	var req models.CreateStatusRequest
 	if err := ctx.ParseRequest(&req); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
+		return common.RespondBadRequest(ctx, "invalid request format")
+	}
+
+	// Validate status parameters using comprehensive validation
+	statusParams := map[string]interface{}{
+		"status":         req.Status,
+		"visibility":     req.Visibility,
+		"sensitive":      req.Sensitive,
+		"spoiler_text":   req.SpoilerText,
+		"language":       req.Language,
+		"in_reply_to_id": req.InReplyToID,
+		"media_ids":      req.MediaIDs,
+		"scheduled_at":   req.ScheduledAt,
+	}
+	if err := common.ValidateStatusParams(statusParams); err != nil {
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Authenticate with write scope
@@ -55,20 +70,21 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 		Content:     req.Status,
 		Visibility:  req.Visibility,
 		Sensitive:   req.Sensitive,
+		SpoilerText: req.SpoilerText,
 		Language:    req.Language,
 		InReplyToID: req.InReplyToID,
 		MediaIDs:    req.MediaIDs,
 	})
 	if err != nil {
 		h.logger.Error("failed to create note", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
+		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
 
 	// Get the author actor for proper conversion
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get author account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create status"})
+		return common.RespondInternalServerError(ctx, "failed to create status")
 	}
 
 	// Convert to Mastodon API format using transformations
@@ -85,7 +101,7 @@ func (h *Handler) HandleCreateStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Authenticate with write scope
@@ -98,10 +114,10 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		h.logger.Error("failed to get status for deletion", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete status"})
+		return common.RespondInternalServerError(ctx, "failed to delete status")
 	}
 
 	// Delete using Notes service
@@ -111,13 +127,13 @@ func (h *Handler) HandleDeleteStatusLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		if strings.Contains(err.Error(), "not authorized") {
-			return ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "not authorized to delete this status"})
+			return common.RespondForbidden(ctx, "not authorized to delete this status")
 		}
 		h.logger.Error("failed to delete status", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete status"})
+		return common.RespondInternalServerError(ctx, "failed to delete status")
 	}
 
 	// Get the author actor for proper conversion
@@ -141,7 +157,7 @@ func (h *Handler) HandleUpdateStatusLift(ctx *lift.Context) error {
 	// Validate status ID
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Authenticate and authorize user
@@ -191,25 +207,25 @@ func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *ac
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "missing token"})
+		return nil, nil, common.RespondUnauthorized(ctx, "missing token")
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, nil, ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": err.Error()})
+		return nil, nil, common.RespondUnauthorized(ctx, err.Error())
 	}
 
 	// Check write scope
 	if !claims.HasScope(auth.ScopeWrite) {
-		return nil, nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "insufficient scope"})
+		return nil, nil, common.RespondInsufficientScope(ctx)
 	}
 
 	// Get the user's actor
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return nil, nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return nil, nil, common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	actor := account.Actor
 
@@ -247,7 +263,7 @@ func (h *Handler) getAndVerifyStatusOwnership(ctx *lift.Context, objectID, _ str
 			})
 		}
 		// Regular 404 for genuinely missing objects
-		return nil, ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		return nil, common.RespondNotFound(ctx, "status not found")
 	}
 	return object, nil
 }
@@ -256,7 +272,7 @@ func (h *Handler) getAndVerifyStatusOwnership(ctx *lift.Context, objectID, _ str
 func (h *Handler) parseUpdateStatusRequest(ctx *lift.Context) (*models.UpdateStatusRequest, error) {
 	var req models.UpdateStatusRequest
 	if err := ctx.ParseRequest(&req); err != nil {
-		return nil, ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request format"})
+		return nil, common.RespondBadRequest(ctx, "invalid request format")
 	}
 	return &req, nil
 }
@@ -266,13 +282,13 @@ func (h *Handler) convertObjectToNoteWithOwnershipCheck(ctx *lift.Context, objec
 	switch obj := object.(type) {
 	case *activitypub.Note:
 		if obj.AttributedTo != actorID {
-			return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "you can only update your own statuses"})
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
 		}
 		return obj, nil
 
 	case map[string]any:
 		if attr, ok := obj["attributedTo"].(string); ok && attr != actorID {
-			return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "you can only update your own statuses"})
+			return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
 		}
 		return h.convertMapToNote(ctx, obj)
 
@@ -286,13 +302,13 @@ func (h *Handler) convertMapToNote(ctx *lift.Context, obj map[string]any) (*acti
 	noteBytes, err := json.Marshal(obj)
 	if err != nil {
 		h.logger.Error("failed to marshal object to JSON", zap.Error(err))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return nil, common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	note := &activitypub.Note{}
 	if err := json.Unmarshal(noteBytes, note); err != nil {
 		h.logger.Error("failed to unmarshal JSON to Note", zap.Error(err))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return nil, common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	return note, nil
@@ -318,18 +334,18 @@ func (h *Handler) convertUnknownObjectToNote(ctx *lift.Context, object any, acto
 		h.logger.Error("unexpected object type or missing AttributedTo",
 			zap.String("type", fmt.Sprintf("%T", object)),
 			zap.Any("object", object))
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "unexpected object type"})
+		return nil, common.RespondInternalServerError(ctx, "unexpected object type")
 	}
 
 	if attributedTo != actorID {
-		return nil, ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "you can only update your own statuses"})
+		return nil, common.RespondForbidden(ctx, "you can only update your own statuses")
 	}
 
 	// Convert to Note via JSON marshaling
 	noteBytes, _ := json.Marshal(object)
 	note := &activitypub.Note{}
 	if err := json.Unmarshal(noteBytes, note); err != nil {
-		return nil, ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to convert object to Note"})
+		return nil, common.RespondInternalServerError(ctx, "failed to convert object to Note")
 	}
 
 	return note, nil
@@ -355,7 +371,7 @@ func (h *Handler) saveUpdatedStatus(ctx *lift.Context, note *activitypub.Note) e
 	// Extract the username from the authentication token
 	username := h.extractUsernameFromToken(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to extract username for edit tracking"})
+		return common.RespondInternalServerError(ctx, "failed to extract username for edit tracking")
 	}
 
 	// Build actor ID for edit tracking
@@ -364,7 +380,7 @@ func (h *Handler) saveUpdatedStatus(ctx *lift.Context, note *activitypub.Note) e
 	// Update object with history tracking using the new method
 	if err := h.repos.Object().UpdateObjectWithHistory(ctx.Context, note, actorID); err != nil {
 		h.logger.Error("failed to update object with history", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	return nil
 }
@@ -388,7 +404,7 @@ func (h *Handler) createStatusUpdateActivity(ctx *lift.Context, note *activitypu
 	// Store the activity in the outbox (this will trigger delivery)
 	if err := h.repos.Activity().CreateActivity(ctx.Context, updateActivity); err != nil {
 		h.logger.Error("failed to create update activity", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Federation: Deliver Update activity to relevant recipients
@@ -426,7 +442,7 @@ func (h *Handler) buildUpdateStatusResponse(ctx *lift.Context, note *activitypub
 func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Optional authentication (public statuses can be viewed without auth)
@@ -443,17 +459,17 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	status, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+			return common.RespondNotFound(ctx, "status not found")
 		}
 		h.logger.Error("failed to get status", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
+		return common.RespondInternalServerError(ctx, "failed to retrieve status")
 	}
 
 	// Get the author actor for proper conversion
 	account, err := h.registry.Accounts().GetAccount(ctx.Context, transformations.ExtractUsernameFromActorID(status.AuthorID))
 	if err != nil {
 		h.logger.Error("failed to get author account", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to retrieve status"})
+		return common.RespondInternalServerError(ctx, "failed to retrieve status")
 	}
 
 	// Check user-specific metadata if viewer is authenticated
@@ -605,7 +621,7 @@ func (h *Handler) HandleGetStatusContextLift(ctx *lift.Context) error {
 func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return "", ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return "", common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Normalize and validate the status ID
@@ -635,7 +651,7 @@ func (h *Handler) validateStatusIDForContext(ctx *lift.Context) (string, error) 
 			})
 		}
 		// Regular 404 for genuinely missing objects
-		return "", ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "status not found"})
+		return "", common.RespondNotFound(ctx, "status not found")
 	}
 
 	return objectID, nil
@@ -809,13 +825,13 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	// Validate and get account ID
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Resolve account ID to actor
 	actor, err := h.resolveAccountID(ctx.Context, accountID)
 	if err != nil {
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "account not found"})
+		return common.RespondNotFound(ctx, "account not found")
 	}
 
 	// Parse query parameters
@@ -828,7 +844,7 @@ func (h *Handler) HandleGetAccountStatusesLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get objects by actor", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 	statusItems := userTimeline.Items
 	cursor := userTimeline.NextCursor
@@ -981,7 +997,7 @@ func (h *Handler) objectHasHashtags(obj any, taggedParam string) bool {
 func (h *Handler) parseRequiredTags(taggedParam string) []string {
 	requiredTags := strings.Split(taggedParam, ",")
 	for i, tag := range requiredTags {
-		requiredTags[i] = strings.TrimSpace(strings.ToLower(tag))
+		requiredTags[i] = strings.ToLower(common.SanitizeInput(tag))
 	}
 	return requiredTags
 }

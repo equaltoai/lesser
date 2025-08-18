@@ -96,7 +96,7 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 func (h *Handler) parseSearchParams(ctx *lift.Context) (*SearchParams, error) {
 	query := ctx.Query("q")
 	if err := common.ValidateSearchQuery(query); err != nil {
-		if err := ctx.Status(400).JSON(map[string]string{"error": err.Error()}); err != nil {
+		if err := common.RespondValidationError(ctx, err); err != nil {
 			h.logger.Error("failed to send error response", zap.Error(err))
 		}
 		return nil, err
@@ -374,9 +374,9 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Build notification filter from query parameters
@@ -388,7 +388,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	// Use the Notifications service to get notifications
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
 	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
@@ -405,7 +405,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get notifications",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
+		return common.RespondFailedToGet(ctx, "notifications")
 	}
 
 	notificationsList := listResult.Notifications
@@ -473,11 +473,7 @@ func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.Notificati
 // parseNotificationLimit parses and validates the limit parameter
 func (h *Handler) parseNotificationLimit(ctx *lift.Context, filter *storage.NotificationFilter) {
 	if limitStr := ctx.Query("limit"); limitStr != "" {
-		var limit int
-		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && limit > 0 {
-			if limit > 40 {
-				limit = 40
-			}
+		if limit, err := common.ParseAndValidateAPILimit(limitStr, 40); err == nil {
 			filter.Limit = limit
 		}
 	}
@@ -545,7 +541,7 @@ func (h *Handler) convertSingleNotification(ctx *lift.Context, notif *storage.No
 
 // shouldIncludeStatus checks if a status should be included in the notification
 func (h *Handler) shouldIncludeStatus(notif *storage.Notification) bool {
-	if err := common.ValidateRequiredParam("status_id", notif.StatusID); err != nil {
+	if err := common.ValidateMastodonStatusID(notif.StatusID); err != nil {
 		return false
 	}
 	return notif.Type == models.NotificationTypeMention ||
@@ -768,27 +764,27 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	notificationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "notification ID required"})
+		return common.RespondMissingParameter(ctx, "notification ID")
 	}
 
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Get notification
 	notification, err := h.repos.Notification().GetNotification(ctx.Context, notificationID)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
+		return common.RespondNotFound(ctx, "notification")
 	}
 
 	// Verify ownership
 	if notification.UserID != username {
-		return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
+		return common.RespondNotFound(ctx, "notification")
 	}
 
 	// Get the account that triggered the notification
@@ -798,7 +794,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 			zap.String("notification_id", notification.ID),
 			zap.String("actor_id", notification.ActorID),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notification details"})
+		return common.RespondFailedToGet(ctx, "notification details")
 	}
 
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
@@ -838,15 +834,15 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Use the Notifications service to clear all notifications
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
 	clearResult, err := notificationService.ClearNotifications(ctx.Context, &notifications.ClearCommand{
@@ -857,7 +853,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 		h.logger.Error("failed to clear notifications",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to clear notifications"})
+		return common.RespondFailedToUpdate(ctx, "notifications")
 	}
 
 	h.logger.Info("cleared notifications", zap.String("username", username), zap.Int64("deleted", clearResult.ClearedCount))
@@ -870,22 +866,22 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	notificationID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("notification_id", notificationID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "notification ID required"})
+		return common.RespondMissingParameter(ctx, "notification ID")
 	}
 
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Use the Notifications service to mark as read (dismiss)
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
 	// Mark notification as read (which is effectively dismissing it in Mastodon API)
@@ -899,9 +895,9 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 			zap.Error(err))
 		// Check if the error is due to not found
 		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "notification not found"})
+			return common.RespondNotFound(ctx, "notification")
 		}
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to dismiss notification"})
+		return common.RespondInternalServerError(ctx, "failed to dismiss notification")
 	}
 
 	ctx.Status(204)
@@ -1254,9 +1250,9 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Parse grouping options from query parameters
@@ -1268,7 +1264,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	// Get notifications using the existing service
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
 	listResult, err := notificationService.ListNotifications(ctx.Context, &notifications.ListNotificationsQuery{
@@ -1285,7 +1281,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get notifications for grouping",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get notifications"})
+		return common.RespondFailedToGet(ctx, "notifications")
 	}
 
 	// Group notifications using the grouping service
@@ -1297,7 +1293,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	)
 	if err != nil {
 		h.logger.Error("failed to group notifications", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to group notifications"})
+		return common.RespondInternalServerError(ctx, "failed to group notifications")
 	}
 
 	// Convert to API format with enhanced metadata
@@ -1344,12 +1340,16 @@ func (h *Handler) parseGroupingOptions(ctx *lift.Context) *notifications.Groupin
 	}
 
 	// Parse grouping flags
-	if groupByType := ctx.Query("group_by_type"); groupByType == "false" {
-		strategy.GroupByType = false
+	if groupByType := ctx.Query("group_by_type"); groupByType != "" {
+		if result, _ := common.ParseAndValidateBoolean(groupByType); !result {
+			strategy.GroupByType = false
+		}
 	}
 
-	if groupByTarget := ctx.Query("group_by_target"); groupByTarget == "false" {
-		strategy.GroupByTarget = false
+	if groupByTarget := ctx.Query("group_by_target"); groupByTarget != "" {
+		if result, _ := common.ParseAndValidateBoolean(groupByTarget); !result {
+			strategy.GroupByTarget = false
+		}
 	}
 
 	return strategy
@@ -1396,7 +1396,7 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 		}
 
 		// Optionally include all notifications if requested
-		if ctx.Query("include_all") == "true" && len(group.AllNotifications) > 0 {
+		if func() bool { result, _ := common.ParseAndValidateBoolean(ctx.Query("include_all")); return result }() && len(group.AllNotifications) > 0 {
 			allNotifs := make([]map[string]interface{}, 0, len(group.AllNotifications))
 			for _, notif := range group.AllNotifications {
 				allNotifs = append(allNotifs, map[string]interface{}{
@@ -1448,22 +1448,22 @@ func (h *Handler) generateGroupSummary(group *notifications.GroupedNotification)
 func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 	groupID := ctx.Param("group_id")
 	if err := common.ValidateRequiredParam("group_id", groupID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "group ID required"})
+		return common.RespondMissingParameter(ctx, "group ID")
 	}
 
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications"})
 	if err != nil {
 		if err.Error() == "insufficient scope" {
-			return ctx.Status(403).JSON(map[string]string{"error": err.Error()})
+			return common.RespondForbidden(ctx, err.Error())
 		}
-		return ctx.Status(401).JSON(map[string]string{"error": "authorization required"})
+		return common.RespondMissingAuth(ctx)
 	}
 
 	// Get notification service
 	notificationService := h.registry.Notifications()
 	if notificationService == nil {
-		return ctx.Status(500).JSON(map[string]string{"error": "notification service unavailable"})
+		return common.RespondServiceUnavailable(ctx, "notification")
 	}
 
 	// Mark notifications as read based on group ID
@@ -1482,7 +1482,7 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 			zap.String("group_id", groupID),
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to mark group as read"})
+		return common.RespondInternalServerError(ctx, "failed to mark group as read")
 	}
 
 	return ctx.Status(200).JSON(map[string]string{"message": "group marked as read"})

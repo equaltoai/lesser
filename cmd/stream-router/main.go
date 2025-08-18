@@ -19,9 +19,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/mastodon"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -203,34 +203,38 @@ func (a *connectionRepositoryAdapter) GetConversationConnections(ctx context.Con
 	return a.GetStreamConnections(ctx, conversationStreamName)
 }
 
+// Global variables for standardized Lambda initialization
 var (
 	lambdaCtx *common.LambdaContext
-	handler   *StreamRouterHandler
+	cfg       *config.Config
 	logger    *zap.Logger
+	repos     interface{}
+	handler   *StreamRouterHandler
 )
 
 func init() {
-	// Initialize Lambda with basic configuration for stream routing
+	// Standardized Lambda initialization for background processors
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName:        "stream-router",
-		LambdaType:         common.LambdaTypeBasic,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableTracing:      true,
-		EnableHealthCheck:  false,
-		EnableCostTracking: true,
-		RequestTimeout:     30 * time.Second,
-		RetryMaxAttempts:   3,
+		ServiceName: "stream-router",
+		LambdaType:  common.LambdaTypeProcessor, // Background processing
 	})
 	
-	// Set global logger
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-
-	// Initialize the handler
-	var err error
-	handler, err = NewStreamRouterHandler()
+	repos = lambdaCtx.Repos
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		logger.Fatal("failed to create stream router handler", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+
+	// Stream router-specific initialization
+	var initErr error
+	handler, initErr = NewStreamRouterHandler()
+	if initErr != nil {
+		logger.Fatal("failed to create stream router handler", zap.Error(initErr))
 	}
 }
 
@@ -239,11 +243,9 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	// Get config from the initialized lambda context
 	globalCfg := lambdaCtx.AWSServices.Config
 
-	// Initialize DynamORM database connection
-	lambdaDB, err := dynamorm.GetLambdaClient(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
+	// Use the standardized database connection
+	db := lambdaCtx.DynamoDB.(core.DB)
+	tableName := cfg.DynamoTableName
 
 	// Get environment variables
 	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
@@ -256,12 +258,8 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 		return nil, fmt.Errorf("WEBSOCKET_ENDPOINT environment variable not set")
 	}
 
-	// Initialize repositories
-	db := lambdaDB.WithLambdaTimeoutBuffer(500) // 500ms buffer
-	tableName := "lesser-main"
-
-	// Get domain from environment
-	domain := os.Getenv("DOMAIN_NAME")
+	// Get domain from config
+	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "localhost"
 		logger.Warn("DOMAIN_NAME not set, using localhost as default")
@@ -278,8 +276,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	})
 
 	// Initialize streaming repository
-	subscriptionDB := lambdaDB.WithLambdaTimeoutBuffer(500) // Separate DB connection for subscriptions
-	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, subscriptionDB, subscriptionsTable, logger)
+	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, db, subscriptionsTable, logger)
 
 	// Create connection repository adapter
 	connRepoAdapter := &connectionRepositoryAdapter{

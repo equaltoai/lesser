@@ -40,7 +40,15 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	}
 
 	if err := common.ValidateRequiredParam("resource", resource); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "resource parameter is required"})
+		return common.RespondBadRequest(ctx, "resource parameter is required")
+	}
+
+	// Validate webfinger resource format
+	if err := common.ValidateWebfingerResource(resource); err != nil {
+		h.logger.Warn("invalid webfinger resource format", 
+			zap.String("resource", resource),
+			zap.Error(err))
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	h.logger.Info("webfinger request",
@@ -53,7 +61,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 		h.logger.Warn("invalid webfinger resource",
 			zap.String("resource", resource),
 			zap.Error(err))
-		return ctx.Status(400).JSON(map[string]string{"error": fmt.Sprintf("invalid resource format: %v", err)})
+		return common.RespondBadRequest(ctx, fmt.Sprintf("invalid resource format: %v", err))
 	}
 
 	// Verify this is for our domain
@@ -61,7 +69,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 		h.logger.Warn("webfinger request for wrong domain",
 			zap.String("requested_domain", domain),
 			zap.String("our_domain", h.cfg.Domain))
-		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+		return common.RespondNotFound(ctx, "user not found")
 	}
 
 	// Look up the user using Accounts service
@@ -70,7 +78,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 		h.logger.Warn("account not found for webfinger",
 			zap.String("username", username),
 			zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+		return common.RespondNotFound(ctx, "user not found")
 	}
 
 	// Get the actor from the account
@@ -78,7 +86,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 	if actor == nil {
 		h.logger.Warn("actor data missing for account",
 			zap.String("username", username))
-		return ctx.Status(404).JSON(map[string]string{"error": "user not found"})
+		return common.RespondNotFound(ctx, "user not found")
 	}
 
 	// Build WebFinger response

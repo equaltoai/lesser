@@ -1461,33 +1461,25 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 
 // GetUserSeveredRelationships returns all severed relationships for a user
 func (r *FederationRepository) GetUserSeveredRelationships(ctx context.Context, userID string) ([]*storage.SeveredRelationship, error) {
-	var severances []models.FederationSeverance
-
-	err := r.db.WithContext(ctx).Model(&models.FederationSeverance{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Filter("SK", "BEGINS_WITH", "SEVERANCE#").
-		Scan(&severances)
-
-	if err != nil {
-		r.logger.Error("Failed to query severed relationships",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to query severed relationships: %w", err)
-	}
-
-	// Convert to storage types
-	relationships := make([]*storage.SeveredRelationship, len(severances))
-	for i, sev := range severances {
-		relationships[i] = &storage.SeveredRelationship{
-			Domain:       sev.Domain,
-			SeveredAt:    sev.SeveredAt,
-			Acknowledged: sev.Acknowledged,
-			Reason:       sev.Reason,
-			Type:         sev.Type,
-		}
-	}
-
-	return relationships, nil
+	return QueryWithPKAndSKPrefix(
+		&QueryUtils{db: r.db, logger: r.logger},
+		ctx,
+		func() *models.FederationSeverance { return &models.FederationSeverance{} },
+		fmt.Sprintf("USER#%s", userID),
+		"SEVERANCE#",
+		true, // use Filter
+		func(sev models.FederationSeverance) *storage.SeveredRelationship {
+			return &storage.SeveredRelationship{
+				Domain:       sev.Domain,
+				SeveredAt:    sev.SeveredAt,
+				Acknowledged: sev.Acknowledged,
+				Reason:       sev.Reason,
+				Type:         sev.Type,
+			}
+		},
+		"query severed relationships",
+		userID,
+	)
 }
 
 // GetAffectedRelationships returns relationships affected by domain severance
@@ -2334,11 +2326,18 @@ func (r *FederationRepository) AddToInbox(ctx context.Context, actorID string, a
 	return nil
 }
 
-// GetInboxItems retrieves activities from an actor's inbox
-func (r *FederationRepository) GetInboxItems(ctx context.Context, actorID string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.InboxItem{}).
+// getActivitiesFromBoxItems is a helper to eliminate duplication between inbox/outbox queries
+func (r *FederationRepository) getActivitiesFromBoxItems(
+	ctx context.Context,
+	actorID string,
+	limit int,
+	cursor string,
+	boxType string, // "INBOX" or "PUBLIC_OUTBOX"
+	modelType interface{}, // &models.InboxItem{} or &models.OutboxItem{}
+) ([]*activitypub.Activity, string, error) {
+	query := r.db.WithContext(ctx).Model(modelType).
 		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("INBOX#%s", actorID)).
+		Where("GSI1PK", "=", fmt.Sprintf("%s#%s", boxType, actorID)).
 		Limit(limit)
 
 	// Add cursor if provided
@@ -2346,29 +2345,60 @@ func (r *FederationRepository) GetInboxItems(ctx context.Context, actorID string
 		query = query.Where("GSI1SK", "<", cursor)
 	}
 
-	var items []models.InboxItem
-	err := query.Scan(&items)
-	if err != nil {
-		r.logger.Error("Failed to get inbox items",
-			zap.String("actor_id", actorID),
-			zap.Int("limit", limit),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get inbox items: %w", err)
-	}
+	// Execute query based on model type
+	var activities []*activitypub.Activity
+	var nextCursor string
 
-	// Extract activities
-	activities := make([]*activitypub.Activity, len(items))
-	for i, item := range items {
-		activities[i] = item.Activity
-	}
+	if boxType == "INBOX" {
+		var items []models.InboxItem
+		err := query.Scan(&items)
+		if err != nil {
+			r.logger.Error("Failed to get inbox items",
+				zap.String("actor_id", actorID),
+				zap.Int("limit", limit),
+				zap.Error(err))
+			return nil, "", fmt.Errorf("failed to get inbox items: %w", err)
+		}
 
-	// Prepare next cursor
-	nextCursor := ""
-	if len(items) == limit && len(items) > 0 {
-		nextCursor = items[len(items)-1].GSI1SK
+		// Extract activities
+		activities = make([]*activitypub.Activity, len(items))
+		for i, item := range items {
+			activities[i] = item.Activity
+		}
+
+		// Prepare next cursor
+		if len(items) == limit && len(items) > 0 {
+			nextCursor = items[len(items)-1].GSI1SK
+		}
+	} else {
+		var items []models.OutboxItem
+		err := query.Scan(&items)
+		if err != nil {
+			r.logger.Error("Failed to get public outbox items",
+				zap.String("actor_id", actorID),
+				zap.Int("limit", limit),
+				zap.Error(err))
+			return nil, "", fmt.Errorf("failed to get public outbox items: %w", err)
+		}
+
+		// Extract activities
+		activities = make([]*activitypub.Activity, len(items))
+		for i, item := range items {
+			activities[i] = item.Activity
+		}
+
+		// Prepare next cursor
+		if len(items) == limit && len(items) > 0 {
+			nextCursor = items[len(items)-1].GSI1SK
+		}
 	}
 
 	return activities, nextCursor, nil
+}
+
+// GetInboxItems retrieves activities from an actor's inbox
+func (r *FederationRepository) GetInboxItems(ctx context.Context, actorID string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
+	return r.getActivitiesFromBoxItems(ctx, actorID, limit, cursor, "INBOX", &models.InboxItem{})
 }
 
 // AddToOutbox adds an activity to an actor's outbox
@@ -2441,39 +2471,7 @@ func (r *FederationRepository) GetOutboxItems(ctx context.Context, actorID strin
 
 // GetPublicOutbox retrieves only public activities from an actor's outbox
 func (r *FederationRepository) GetPublicOutbox(ctx context.Context, actorID string, limit int, cursor string) ([]*activitypub.Activity, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.OutboxItem{}).
-		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("PUBLIC_OUTBOX#%s", actorID)).
-		Limit(limit)
-
-	// Add cursor if provided
-	if cursor != "" {
-		query = query.Where("GSI1SK", "<", cursor)
-	}
-
-	var items []models.OutboxItem
-	err := query.Scan(&items)
-	if err != nil {
-		r.logger.Error("Failed to get public outbox items",
-			zap.String("actor_id", actorID),
-			zap.Int("limit", limit),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get public outbox items: %w", err)
-	}
-
-	// Extract activities
-	activities := make([]*activitypub.Activity, len(items))
-	for i, item := range items {
-		activities[i] = item.Activity
-	}
-
-	// Prepare next cursor
-	nextCursor := ""
-	if len(items) == limit && len(items) > 0 {
-		nextCursor = items[len(items)-1].GSI1SK
-	}
-
-	return activities, nextCursor, nil
+	return r.getActivitiesFromBoxItems(ctx, actorID, limit, cursor, "PUBLIC_OUTBOX", &models.OutboxItem{})
 }
 
 // GetStrongestConnectionsByType retrieves the strongest federation connections by type

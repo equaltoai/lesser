@@ -25,7 +25,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 	// Extract account IDs from query parameters
 	accountIDs := h.extractAccountIDsLift(ctx)
 	if err := common.ValidateSliceNotEmpty("account_ids", accountIDs); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "no account IDs provided"})
+		return common.RespondBadRequest(ctx, "no account IDs provided")
 	}
 
 	// Build relationships for each requested account
@@ -57,7 +57,7 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 				zap.String("requester", username),
 				zap.String("target", accountID),
 				zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "failed to get relationships"})
+			return common.RespondInternalServerError(ctx, "failed to get relationships")
 		}
 
 		// Convert service relationship data to API model

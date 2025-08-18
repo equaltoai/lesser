@@ -317,7 +317,7 @@ func (c *SecureClient) checkRedirect(req *http.Request, via []*http.Request) err
 func validateURL(u *url.URL, _ *zap.Logger) error {
 	// Check scheme
 	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if err := common.ValidateHTTPScheme(scheme); err != nil {
 		if blockedSchemes[scheme] {
 			return fmt.Errorf("%w: %s", ErrInvalidScheme, scheme)
 		}

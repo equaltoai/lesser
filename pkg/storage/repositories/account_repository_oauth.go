@@ -129,84 +129,14 @@ func (r *AccountRepository) DeleteOAuthState(ctx context.Context, state string) 
 
 // CreateAuthorizationCode creates a new OAuth authorization code
 func (r *AccountRepository) CreateAuthorizationCode(ctx context.Context, code *storage.AuthorizationCode) error {
-	// Create DynamORM model
-	model := &models.AuthorizationCode{
-		Code:          code.Code,
-		ClientID:      code.ClientID,
-		Username:      code.Username,
-		CodeChallenge: code.CodeChallenge,
-		ExpiresAt:     code.ExpiresAt,
-		Scopes:        code.Scopes,
-		CreatedAt:     time.Now(),
-	}
-
-	// BeforeCreate will set up keys and TTL
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare authorization code: %w", err)
-	}
-
-	// Create the item with condition that it doesn't exist
-	err := r.db.WithContext(ctx).Model(model).Create()
-	if err != nil {
-		// Check if it's a duplicate key error
-		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("authorization code already exists: %s", code.Code)
-		}
-		r.logger.Error("failed to create authorization code", zap.Error(err))
-		return fmt.Errorf("failed to create authorization code: %w", err)
-	}
-
-	r.logger.Debug("created authorization code",
-		zap.String("code", code.Code),
-		zap.String("client_id", code.ClientID),
-		zap.String("username", code.Username))
-
-	return nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.CreateAuthorizationCodeGeneric(ctx, code)
 }
 
 // GetAuthorizationCode retrieves an OAuth authorization code
 func (r *AccountRepository) GetAuthorizationCode(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
-	// Construct the key
-	pk := "AUTHCODE#" + code
-	sk := "CODE"
-
-	// Query for the item
-	var model models.AuthorizationCode
-	err := r.db.WithContext(ctx).Model(&models.AuthorizationCode{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("authorization code not found: %s", code)
-		}
-		r.logger.Error("failed to get authorization code", zap.Error(err))
-		return nil, fmt.Errorf("failed to get authorization code: %w", err)
-	}
-
-	// Check if code has expired
-	if time.Now().After(model.ExpiresAt) {
-		// Clean up expired code
-		_ = r.DeleteAuthorizationCode(ctx, code)
-		return nil, fmt.Errorf("authorization code expired: %s", code)
-	}
-
-	// Convert to storage model
-	result := &storage.AuthorizationCode{
-		Code:          model.Code,
-		ClientID:      model.ClientID,
-		Username:      model.Username,
-		CodeChallenge: model.CodeChallenge,
-		ExpiresAt:     model.ExpiresAt,
-		Scopes:        model.Scopes,
-	}
-
-	r.logger.Debug("retrieved authorization code",
-		zap.String("code", code),
-		zap.String("client_id", result.ClientID))
-
-	return result, nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.GetAuthorizationCodeGeneric(ctx, code)
 }
 
 // DeleteAuthorizationCode deletes an OAuth authorization code
@@ -232,102 +162,20 @@ func (r *AccountRepository) DeleteAuthorizationCode(ctx context.Context, code st
 
 // CreateRefreshToken creates a new OAuth refresh token
 func (r *AccountRepository) CreateRefreshToken(ctx context.Context, token *storage.RefreshToken) error {
-	// Create DynamORM model
-	model := &models.RefreshToken{
-		Token:     token.Token,
-		ClientID:  token.ClientID,
-		Username:  token.Username,
-		ExpiresAt: token.ExpiresAt,
-		Scopes:    token.Scopes,
-		CreatedAt: time.Now(),
-	}
-
-	// BeforeCreate will set up keys and TTL
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare refresh token: %w", err)
-	}
-
-	// Create the item with condition that it doesn't exist
-	err := r.db.WithContext(ctx).Model(model).Create()
-	if err != nil {
-		// Check if it's a duplicate key error
-		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("refresh token already exists")
-		}
-		r.logger.Error("failed to create refresh token", zap.Error(err))
-		return fmt.Errorf("failed to create refresh token: %w", err)
-	}
-
-	r.logger.Debug("created refresh token",
-		zap.String("client_id", token.ClientID),
-		zap.String("username", token.Username))
-
-	return nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.CreateRefreshTokenGeneric(ctx, token)
 }
 
 // GetRefreshToken retrieves an OAuth refresh token
 func (r *AccountRepository) GetRefreshToken(ctx context.Context, token string) (*storage.RefreshToken, error) {
-	// Construct the key
-	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
-
-	// Query for the item
-	var model models.RefreshToken
-	err := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("refresh token not found")
-		}
-		r.logger.Error("failed to get refresh token", zap.Error(err))
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
-	}
-
-	// Check if token has expired
-	if time.Now().After(model.ExpiresAt) {
-		// Clean up expired token
-		_ = r.DeleteRefreshToken(ctx, token)
-		return nil, fmt.Errorf("refresh token expired")
-	}
-
-	// Convert to storage model
-	result := &storage.RefreshToken{
-		Token:     model.Token,
-		ClientID:  model.ClientID,
-		Username:  model.Username,
-		ExpiresAt: model.ExpiresAt,
-		Scopes:    model.Scopes,
-	}
-
-	r.logger.Debug("retrieved refresh token",
-		zap.String("client_id", result.ClientID),
-		zap.String("username", result.Username))
-
-	return result, nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.GetRefreshTokenGeneric(ctx, token)
 }
 
 // DeleteRefreshToken deletes an OAuth refresh token
 func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string) error {
-	// Construct the key
-	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
-
-	// Delete the item
-	err := r.db.WithContext(ctx).Model(&models.RefreshToken{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete()
-
-	if err != nil {
-		r.logger.Error("failed to delete refresh token", zap.Error(err))
-		return fmt.Errorf("failed to delete refresh token: %w", err)
-	}
-
-	r.logger.Debug("deleted refresh token", zap.String("token", token))
-	return nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.DeleteRefreshTokenGeneric(ctx, token)
 }
 
 // ===== OAuth Client Operations =====
@@ -610,86 +458,13 @@ func (r *AccountRepository) GetOAuthApp(ctx context.Context, clientID string) (*
 }
 
 // SaveUserAppConsent saves user consent for an OAuth app
-//
-//nolint:dupl // OAuth operations are shared between account and oauth repositories
 func (r *AccountRepository) SaveUserAppConsent(ctx context.Context, consent *storage.UserAppConsent) error {
-	// Create DynamORM model
-	model := &models.UserAppConsent{
-		UserID:    consent.UserID,
-		AppID:     consent.AppID,
-		Scopes:    consent.Scopes,
-		CreatedAt: consent.CreatedAt,
-		UpdatedAt: time.Now(),
-		Active:    true, // Default to active
-	}
-
-	// Set default timestamps if not provided
-	if model.CreatedAt.IsZero() {
-		model.CreatedAt = time.Now()
-	}
-
-	// Update keys
-	model.UpdateKeys()
-
-	// Use upsert logic - try to update first, then create if not exists
-	err := r.db.WithContext(ctx).Model(model).
-		Where("PK", "=", model.PK).
-		Where("SK", "=", model.SK).
-		Update()
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Item doesn't exist, create it
-			err = r.db.WithContext(ctx).Model(model).Create()
-			if err != nil {
-				r.logger.Error("failed to create user app consent", zap.Error(err))
-				return fmt.Errorf("failed to create user app consent: %w", err)
-			}
-		} else {
-			r.logger.Error("failed to update user app consent", zap.Error(err))
-			return fmt.Errorf("failed to update user app consent: %w", err)
-		}
-	}
-
-	r.logger.Debug("saved user app consent",
-		zap.String("user_id", consent.UserID),
-		zap.String("app_id", consent.AppID))
-
-	return nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.SaveUserAppConsentGeneric(ctx, consent)
 }
 
 // GetUserAppConsent retrieves user consent for an OAuth app
 func (r *AccountRepository) GetUserAppConsent(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
-	// Construct the key using the model's pattern
-	pk := fmt.Sprintf("USER#%s", userID)
-	sk := fmt.Sprintf("CONSENT#%s", appID)
-
-	// Query for the item
-	var model models.UserAppConsent
-	err := r.db.WithContext(ctx).Model(&models.UserAppConsent{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
-		}
-		r.logger.Error("failed to get user app consent", zap.Error(err))
-		return nil, fmt.Errorf("failed to get user app consent: %w", err)
-	}
-
-	// Convert to storage model (only fields that exist in storage interface)
-	result := &storage.UserAppConsent{
-		UserID:    model.UserID,
-		AppID:     model.AppID,
-		Scopes:    model.Scopes,
-		CreatedAt: model.CreatedAt,
-	}
-
-	r.logger.Debug("retrieved user app consent",
-		zap.String("user_id", userID),
-		zap.String("app_id", appID))
-
-	return result, nil
+	helper := NewOAuthHelper(r.db, r.logger)
+	return helper.GetUserAppConsentGeneric(ctx, userID, appID)
 }

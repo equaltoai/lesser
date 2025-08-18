@@ -245,207 +245,47 @@ func (sm *GraphQLSubscriptionManager) processTimelineEvents(subscription *GraphQ
 
 // processNotificationEvents processes notification events from the event bus
 func (sm *GraphQLSubscriptionManager) processNotificationEvents(subscription *GraphQLSubscription, ch chan *model.Notification) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
-
-	for {
-		select {
-		case event := <-subscription.Subscriber.Channel:
-			if event == nil {
-				return
-			}
-
-			subscription.LastActivity = time.Now()
-
-			if notification := sm.converter.ConvertToNotification(event); notification != nil {
-				select {
-				case ch <- notification:
-					sm.logger.Debug("sent notification event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("notification subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID))
-				}
-			}
-
-		case <-subscription.Subscriber.Quit:
-			return
-		case <-subscription.Context.Done():
-			return
-		}
-	}
+	sm.processGenericEvents(subscription, ch, "notification", func(event *streaming.InternalEvent) interface{} {
+		return sm.converter.ConvertToNotification(event)
+	})
 }
 
 // processCostEvents processes cost events from the event bus
 func (sm *GraphQLSubscriptionManager) processCostEvents(subscription *GraphQLSubscription, ch chan *model.CostUpdate, threshold *int) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
-
-	for {
-		select {
-		case event := <-subscription.Subscriber.Channel:
-			if event == nil {
-				return
-			}
-
-			subscription.LastActivity = time.Now()
-
-			if costUpdate := sm.converter.ConvertToCostUpdate(event); costUpdate != nil {
-				// Apply threshold filter if specified
-				if threshold != nil && costUpdate.OperationCost < *threshold {
-					continue
-				}
-
-				select {
-				case ch <- costUpdate:
-					sm.logger.Debug("sent cost event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("cost subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID))
-				}
-			}
-
-		case <-subscription.Subscriber.Quit:
-			return
-		case <-subscription.Context.Done():
-			return
+	sm.processGenericEvents(subscription, ch, "cost", func(event *streaming.InternalEvent) interface{} {
+		costUpdate := sm.converter.ConvertToCostUpdate(event)
+		if costUpdate == nil {
+			return nil
 		}
-	}
+		
+		// Apply threshold filter if specified
+		if threshold != nil && costUpdate.OperationCost < *threshold {
+			return nil
+		}
+		
+		return costUpdate
+	})
 }
 
 // processModerationEvents processes moderation events from the event bus
 func (sm *GraphQLSubscriptionManager) processModerationEvents(subscription *GraphQLSubscription, ch chan *moderation.ModerationDecision) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
-
-	for {
-		select {
-		case event := <-subscription.Subscriber.Channel:
-			if event == nil {
-				return
-			}
-
-			subscription.LastActivity = time.Now()
-
-			if decision := sm.converter.ConvertToModerationDecision(event); decision != nil {
-				select {
-				case ch <- decision:
-					sm.logger.Debug("sent moderation event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("moderation subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID))
-				}
-			}
-
-		case <-subscription.Subscriber.Quit:
-			return
-		case <-subscription.Context.Done():
-			return
-		}
-	}
+	sm.processGenericEvents(subscription, ch, "moderation", func(event *streaming.InternalEvent) interface{} {
+		return sm.converter.ConvertToModerationDecision(event)
+	})
 }
 
 // processTrustEvents processes trust events from the event bus
 func (sm *GraphQLSubscriptionManager) processTrustEvents(subscription *GraphQLSubscription, ch chan *trust.TrustEdge) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
-
-	for {
-		select {
-		case event := <-subscription.Subscriber.Channel:
-			if event == nil {
-				return
-			}
-
-			subscription.LastActivity = time.Now()
-
-			if trustEdge := sm.converter.ConvertToTrustEdge(event); trustEdge != nil {
-				select {
-				case ch <- trustEdge:
-					sm.logger.Debug("sent trust event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("trust subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID))
-				}
-			}
-
-		case <-subscription.Subscriber.Quit:
-			return
-		case <-subscription.Context.Done():
-			return
-		}
-	}
+	sm.processGenericEvents(subscription, ch, "trust", func(event *streaming.InternalEvent) interface{} {
+		return sm.converter.ConvertToTrustEdge(event)
+	})
 }
 
 // processAIEvents processes AI analysis events from the event bus
 func (sm *GraphQLSubscriptionManager) processAIEvents(subscription *GraphQLSubscription, ch chan *model.AIAnalysis) {
-	defer func() {
-		close(ch)
-		sm.subscriptionsMux.Lock()
-		delete(sm.subscriptions, subscription.ID)
-		sm.subscriptionsMux.Unlock()
-	}()
-
-	for {
-		select {
-		case event := <-subscription.Subscriber.Channel:
-			if event == nil {
-				return
-			}
-
-			subscription.LastActivity = time.Now()
-
-			if analysis := sm.converter.ConvertToAIAnalysis(event); analysis != nil {
-				select {
-				case ch <- analysis:
-					sm.logger.Debug("sent AI event to GraphQL subscription",
-						zap.String("subscription_id", subscription.ID),
-						zap.String("event_id", event.ID))
-				case <-subscription.Context.Done():
-					return
-				default:
-					sm.logger.Warn("AI subscription channel full, dropping event",
-						zap.String("subscription_id", subscription.ID))
-				}
-			}
-
-		case <-subscription.Subscriber.Quit:
-			return
-		case <-subscription.Context.Done():
-			return
-		}
-	}
+	sm.processGenericEvents(subscription, ch, "AI", func(event *streaming.InternalEvent) interface{} {
+		return sm.converter.ConvertToAIAnalysis(event)
+	})
 }
 
 // processHashtagEvents processes hashtag events from the event bus
@@ -592,6 +432,137 @@ func (sm *GraphQLSubscriptionManager) processMetricsEvents(subscription *GraphQL
 			return
 		case <-subscription.Context.Done():
 			return
+		}
+	}
+}
+
+// processGenericEvents provides a generic event processing pattern for all subscription types
+func (sm *GraphQLSubscriptionManager) processGenericEvents(subscription *GraphQLSubscription, ch interface{}, eventType string, converter func(*streaming.InternalEvent) interface{}) {
+	defer func() {
+		// Close the channel using reflection since we don't know the exact type
+		if closer, ok := ch.(interface{ Close() }); ok {
+			closer.Close()
+		} else {
+			// For channels, we need to close them properly
+			sm.closeChannel(ch)
+		}
+		sm.subscriptionsMux.Lock()
+		delete(sm.subscriptions, subscription.ID)
+		sm.subscriptionsMux.Unlock()
+	}()
+
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			subscription.LastActivity = time.Now()
+
+			if converted := converter(event); converted != nil {
+				sm.sendConvertedEvent(subscription, event, ch, converted, eventType)
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// closeChannel safely closes a channel using reflection
+func (sm *GraphQLSubscriptionManager) closeChannel(ch interface{}) {
+	// Use reflection to close the channel since we don't know the exact type
+	// This is a temporary solution - ideally we'd use a better interface design
+	switch c := ch.(type) {
+	case chan *model.Notification:
+		close(c)
+	case chan *moderation.ModerationDecision:
+		close(c)
+	case chan *trust.TrustEdge:
+		close(c)
+	case chan *model.AIAnalysis:
+		close(c)
+	case chan *model.CostUpdate:
+		close(c)
+	}
+}
+
+// sendConvertedEvent sends a converted event to the appropriate channel
+func (sm *GraphQLSubscriptionManager) sendConvertedEvent(subscription *GraphQLSubscription, event *streaming.InternalEvent, ch interface{}, converted interface{}, eventType string) {
+	// Handle different channel types
+	switch c := ch.(type) {
+	case chan *model.Notification:
+		if notif, ok := converted.(*model.Notification); ok {
+			select {
+			case c <- notif:
+				sm.logger.Debug("sent "+eventType+" event to GraphQL subscription",
+					zap.String("subscription_id", subscription.ID),
+					zap.String("event_id", event.ID))
+			case <-subscription.Context.Done():
+				return
+			default:
+				sm.logger.Warn(eventType+" subscription channel full, dropping event",
+					zap.String("subscription_id", subscription.ID))
+			}
+		}
+	case chan *moderation.ModerationDecision:
+		if decision, ok := converted.(*moderation.ModerationDecision); ok {
+			select {
+			case c <- decision:
+				sm.logger.Debug("sent "+eventType+" event to GraphQL subscription",
+					zap.String("subscription_id", subscription.ID),
+					zap.String("event_id", event.ID))
+			case <-subscription.Context.Done():
+				return
+			default:
+				sm.logger.Warn(eventType+" subscription channel full, dropping event",
+					zap.String("subscription_id", subscription.ID))
+			}
+		}
+	case chan *trust.TrustEdge:
+		if edge, ok := converted.(*trust.TrustEdge); ok {
+			select {
+			case c <- edge:
+				sm.logger.Debug("sent "+eventType+" event to GraphQL subscription",
+					zap.String("subscription_id", subscription.ID),
+					zap.String("event_id", event.ID))
+			case <-subscription.Context.Done():
+				return
+			default:
+				sm.logger.Warn(eventType+" subscription channel full, dropping event",
+					zap.String("subscription_id", subscription.ID))
+			}
+		}
+	case chan *model.AIAnalysis:
+		if analysis, ok := converted.(*model.AIAnalysis); ok {
+			select {
+			case c <- analysis:
+				sm.logger.Debug("sent "+eventType+" event to GraphQL subscription",
+					zap.String("subscription_id", subscription.ID),
+					zap.String("event_id", event.ID))
+			case <-subscription.Context.Done():
+				return
+			default:
+				sm.logger.Warn(eventType+" subscription channel full, dropping event",
+					zap.String("subscription_id", subscription.ID))
+			}
+		}
+	case chan *model.CostUpdate:
+		if cost, ok := converted.(*model.CostUpdate); ok {
+			select {
+			case c <- cost:
+				sm.logger.Debug("sent "+eventType+" event to GraphQL subscription",
+					zap.String("subscription_id", subscription.ID),
+					zap.String("event_id", event.ID))
+			case <-subscription.Context.Done():
+				return
+			default:
+				sm.logger.Warn(eventType+" subscription channel full, dropping event",
+					zap.String("subscription_id", subscription.ID))
+			}
 		}
 	}
 }

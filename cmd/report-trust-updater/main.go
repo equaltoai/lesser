@@ -385,7 +385,7 @@ func (rtu *ReportTrustUpdater) logTrustUpdateSuccess(reportID, actorID string, d
 
 func main() {
 	// Use standardized Lambda initialization
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "report-trust-updater",
 		LambdaType:         common.LambdaTypeProcessor,
 		Version:            "1.0.0",
@@ -394,9 +394,6 @@ func main() {
 		EnableTracing:      true,
 		EnableCostTracking: true,
 	})
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda: %v", err))
-	}
 
 	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())

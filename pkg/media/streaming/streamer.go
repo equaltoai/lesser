@@ -92,14 +92,19 @@ func (s *Streamer) SetSessionManager(sessionManager *SessionManager) {
 	s.sessionManager = sessionManager
 }
 
-// GenerateHLSManifest generates an HLS manifest for a media item
-func (s *Streamer) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
+// generateManifest is a generic helper that consolidates common manifest generation logic
+func (s *Streamer) generateManifest(mediaID, format string, generator func(string, *MediaMetadata) (interface{}, error)) (interface{}, error) {
 	// Check cache first
-	cacheKey := fmt.Sprintf("hls:%s", mediaID)
+	cacheKey := fmt.Sprintf("%s:%s", format, mediaID)
 	if cached, ok := s.manifestCache.Load(cacheKey); ok {
 		if manifest, ok := cached.(*cachedManifest); ok && time.Since(manifest.generatedAt) < s.cacheTTL {
-			s.logger.Debug("returning cached HLS manifest", zap.String("mediaID", mediaID))
-			return manifest.hlsManifest, nil
+			s.logger.Debug("returning cached manifest", zap.String("format", format), zap.String("mediaID", mediaID))
+			switch format {
+			case "hls":
+				return manifest.hlsManifest, nil
+			case "dash":
+				return manifest.dashManifest, nil
+			}
 		}
 	}
 
@@ -122,22 +127,27 @@ func (s *Streamer) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
 	}
 
 	// Generate manifest
-	manifest, err := s.hlsGenerator.GenerateMasterPlaylist(mediaID, metadata)
+	manifest, err := generator(mediaID, metadata)
 	if err != nil {
-		s.logger.Error("failed to generate HLS manifest",
+		s.logger.Error("failed to generate manifest",
+			zap.String("format", format),
 			zap.String("mediaID", mediaID),
 			zap.Error(err))
-		return nil, fmt.Errorf("generate HLS manifest: %w", err)
+		return nil, fmt.Errorf("generate %s manifest: %w", format, err)
 	}
 
 	// Cache the manifest
-	s.manifestCache.Store(cacheKey, &cachedManifest{
-		hlsManifest: manifest,
-		generatedAt: time.Now(),
-	})
+	cachedEntry := &cachedManifest{generatedAt: time.Now()}
+	switch format {
+	case "hls":
+		cachedEntry.hlsManifest = manifest.(*HLSManifest)
+	case "dash":
+		cachedEntry.dashManifest = manifest.(*DASHManifest)
+	}
+	s.manifestCache.Store(cacheKey, cachedEntry)
 
 	// Track manifest generation using DynamORM
-	err = s.recordManifestGeneration(mediaID, "hls", metadata.Duration)
+	err = s.recordManifestGeneration(mediaID, format, metadata.Duration)
 	if err != nil {
 		s.logger.Warn("failed to record manifest generation", zap.Error(err))
 	}
@@ -145,57 +155,26 @@ func (s *Streamer) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
 	return manifest, nil
 }
 
+// GenerateHLSManifest generates an HLS manifest for a media item
+func (s *Streamer) GenerateHLSManifest(mediaID string) (*HLSManifest, error) {
+	result, err := s.generateManifest(mediaID, "hls", func(id string, metadata *MediaMetadata) (interface{}, error) {
+		return s.hlsGenerator.GenerateMasterPlaylist(id, metadata)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result.(*HLSManifest), nil
+}
+
 // GenerateDASHManifest generates a DASH manifest for a media item
 func (s *Streamer) GenerateDASHManifest(mediaID string) (*DASHManifest, error) {
-	// Check cache first
-	cacheKey := fmt.Sprintf("dash:%s", mediaID)
-	if cached, ok := s.manifestCache.Load(cacheKey); ok {
-		if manifest, ok := cached.(*cachedManifest); ok && time.Since(manifest.generatedAt) < s.cacheTTL {
-			s.logger.Debug("returning cached DASH manifest", zap.String("mediaID", mediaID))
-			return manifest.dashManifest, nil
-		}
-	}
-
-	// Get media metadata
-	metadata, err := s.storage.GetMediaMetadata(mediaID)
-	if err != nil {
-		s.logger.Error("failed to get media metadata",
-			zap.String("mediaID", mediaID),
-			zap.Error(err))
-		return nil, fmt.Errorf("get media metadata: %w", err)
-	}
-
-	// Check if media is ready
-	if metadata.Status != StatusComplete {
-		return nil, &StreamingError{
-			Code:    "MEDIA_NOT_READY",
-			Message: fmt.Sprintf("media %s is not ready for streaming (status: %s)", mediaID, metadata.Status),
-			MediaID: mediaID,
-		}
-	}
-
-	// Generate manifest
-	manifest, err := s.dashGenerator.GenerateMPD(mediaID, metadata)
-	if err != nil {
-		s.logger.Error("failed to generate DASH manifest",
-			zap.String("mediaID", mediaID),
-			zap.Error(err))
-		return nil, fmt.Errorf("generate DASH manifest: %w", err)
-	}
-
-	// Cache the manifest
-	s.manifestCache.Store(cacheKey, &cachedManifest{
-		dashManifest: manifest,
-		generatedAt:  time.Now(),
+	result, err := s.generateManifest(mediaID, "dash", func(id string, metadata *MediaMetadata) (interface{}, error) {
+		return s.dashGenerator.GenerateMPD(id, metadata)
 	})
-
-	// Track manifest generation using DynamORM
-	err = s.recordManifestGeneration(mediaID, "dash", metadata.Duration)
 	if err != nil {
-		s.logger.Warn("failed to record manifest generation", zap.Error(err))
+		return nil, err
 	}
-
-	return manifest, nil
+	return result.(*DASHManifest), nil
 }
 
 // GetSegmentURL returns the URL for a specific segment

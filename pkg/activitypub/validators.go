@@ -29,27 +29,12 @@ var (
 
 // ValidateUsername validates an ActivityPub username format
 func ValidateUsername(username string) error {
-	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return fmt.Errorf("username cannot be empty")
+	// Use the common validation function which includes all the same checks
+	if err := common.ValidateUsername(username); err != nil {
+		return err
 	}
 
-	if len(username) > 30 {
-		return fmt.Errorf("username too long (max 30 characters)")
-	}
-
-	if !usernameRegex.MatchString(username) {
-		return fmt.Errorf("username can only contain letters, numbers, underscores, and hyphens")
-	}
-
-	// Check for reserved usernames
-	reserved := []string{"admin", "root", "system", "api", "well-known"}
-	lowerUsername := strings.ToLower(username)
-	for _, r := range reserved {
-		if lowerUsername == r {
-			return fmt.Errorf("username '%s' is reserved", username)
-		}
-	}
-
+	// Additional ActivityPub-specific validation can be added here if needed
 	return nil
 }
 

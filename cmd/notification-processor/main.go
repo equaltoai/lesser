@@ -26,7 +26,9 @@ import (
 
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -616,7 +618,7 @@ func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID 
 	// Check if prefs has preferences map
 	if prefs != nil && prefs.Preferences != nil {
 		return &UserPreferences{
-			PushNotifications:      prefs.Preferences["push_enabled"] == "true",
+			PushNotifications:      func() bool { result, _ := common.ParseAndValidateBoolean(prefs.Preferences["push_enabled"]); return result }(),
 			WebSocketNotifications: prefs.Preferences["websocket_enabled"] != "false", // Default true
 			PushEndpoint:           prefs.Preferences["push_endpoint"],
 		}, nil
@@ -717,12 +719,16 @@ func (np *NotificationProcessor) updateDeliveryStatus(ctx context.Context, notif
 // This function extracted usernames from ActivityPub actor IDs
 
 var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     storageCore.RepositoryStorage
 	processor *NotificationProcessor
 )
 
-func main() {
-	// Initialize Lambda with custom service configuration for notifications
-	config := common.LambdaConfig{
+func init() {
+	// Standardized Lambda initialization for processor functions
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "notification-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 		CustomServiceConfig: &awsInit.ServiceConfig{
@@ -732,15 +738,24 @@ func main() {
 			RequiresSQS:        true,
 			ServiceName:        "notification-processor",
 		},
-	}
+	})
 	
-	lambdaCtx, err := common.InitializeLambda(config)
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda services: %v", err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 	
 	// Initialize processor
 	processor = NewNotificationProcessor(lambdaCtx)
+}
+
+func main() {
 
 	// Create Lift app
 	app := lift.New()

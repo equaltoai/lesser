@@ -53,6 +53,11 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	req.Header.Set("Accept", ActivityPubAcceptType)
 	req.Header.Set("User-Agent", UserAgent)
 
+	// Validate repository access for private key retrieval
+	if err := common.ValidateRepositoryAccess(signingActor.PreferredUsername, signingActor.ID, "GetActorPrivateKey"); err != nil {
+		return nil, fmt.Errorf("repository access validation failed: %w", err)
+	}
+
 	// Get the actor's private key
 	privateKeyPEM, err := f.store.Actor().GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {

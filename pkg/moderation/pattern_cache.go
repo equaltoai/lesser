@@ -399,14 +399,20 @@ func (c *PatternCacheManager) compileIPPattern(patternContent, patternType strin
 	}, nil
 }
 
-// MatchURL matches a URL using cached patterns
-func (c *PatternCacheManager) MatchURL(ctx context.Context, urlStr string, patterns []*models.EnhancedModerationPattern) (bool, *models.EnhancedModerationPattern, error) {
+// matchPatterns provides generic pattern matching logic
+func (c *PatternCacheManager) matchPatterns(
+	ctx context.Context,
+	target string,
+	patterns []*models.EnhancedModerationPattern,
+	isValidType func(string) bool,
+	performMatch func(string, []string) (bool, string, error),
+) (bool, *models.EnhancedModerationPattern, error) {
 	// Prepare pattern list for matching
 	patternStrings := make([]string, 0, len(patterns))
 	patternMap := make(map[string]*models.EnhancedModerationPattern)
 
 	for _, pattern := range patterns {
-		if !isURLPatternType(pattern.PatternType) {
+		if !isValidType(pattern.PatternType) {
 			continue
 		}
 
@@ -424,7 +430,7 @@ func (c *PatternCacheManager) MatchURL(ctx context.Context, urlStr string, patte
 	}
 
 	// Perform matching
-	matched, matchedPattern, err := c.urlMatcher.MatchURL(urlStr, patternStrings)
+	matched, matchedPattern, err := performMatch(target, patternStrings)
 	if err != nil {
 		return false, nil, err
 	}
@@ -438,43 +444,14 @@ func (c *PatternCacheManager) MatchURL(ctx context.Context, urlStr string, patte
 	return false, nil, nil
 }
 
+// MatchURL matches a URL using cached patterns
+func (c *PatternCacheManager) MatchURL(ctx context.Context, urlStr string, patterns []*models.EnhancedModerationPattern) (bool, *models.EnhancedModerationPattern, error) {
+	return c.matchPatterns(ctx, urlStr, patterns, isURLPatternType, c.urlMatcher.MatchURL)
+}
+
 // MatchIP matches an IP using cached patterns
 func (c *PatternCacheManager) MatchIP(ctx context.Context, ipStr string, patterns []*models.EnhancedModerationPattern) (bool, *models.EnhancedModerationPattern, error) {
-	// Prepare pattern list for matching
-	patternStrings := make([]string, 0, len(patterns))
-	patternMap := make(map[string]*models.EnhancedModerationPattern)
-
-	for _, pattern := range patterns {
-		if !isIPPatternType(pattern.PatternType) {
-			continue
-		}
-
-		// Ensure pattern is compiled and cached
-		_, err := c.GetCompiledPattern(ctx, pattern.PatternID, pattern.PatternContent, pattern.PatternType)
-		if err != nil {
-			c.logger.Warn("failed to compile pattern",
-				zap.String("pattern_id", pattern.PatternID),
-				zap.Error(err))
-			continue
-		}
-
-		patternStrings = append(patternStrings, pattern.PatternContent)
-		patternMap[pattern.PatternContent] = pattern
-	}
-
-	// Perform matching
-	matched, matchedPattern, err := c.ipMatcher.MatchIP(ipStr, patternStrings)
-	if err != nil {
-		return false, nil, err
-	}
-
-	if matched && matchedPattern != "" {
-		if pattern, exists := patternMap[matchedPattern]; exists {
-			return true, pattern, nil
-		}
-	}
-
-	return false, nil, nil
+	return c.matchPatterns(ctx, ipStr, patterns, isIPPatternType, c.ipMatcher.MatchIP)
 }
 
 // InvalidatePattern removes a pattern from all caches

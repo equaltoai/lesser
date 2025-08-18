@@ -28,14 +28,11 @@ import (
 func main() {
 	ctx := context.Background()
 	
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "init-deploy",
 		LambdaType:  common.LambdaTypeBasic,
 		Version:     "1.0.0",
 	})
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
-	}
 
 	// Get domain from environment or command line
 	domain := os.Getenv("DOMAIN")

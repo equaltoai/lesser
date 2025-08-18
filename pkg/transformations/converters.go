@@ -154,7 +154,8 @@ func getHeaderURL(image interface{}, baseURL string) string {
 }
 
 func isBot(actorType string) bool {
-	return actorType == "Service" || actorType == "Application"
+	botTypes := []string{"Service", "Application"}
+	return common.ValidateEnumField(actorType, botTypes, "actor_type") == nil
 }
 
 func transformAttachments(attachment interface{}) []any {

@@ -597,60 +597,48 @@ func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger)
 	}
 }
 
-// GetMetricsByService queries metrics by service within a time range using GSI1
-func (r *MetricRecordRepository) GetMetricsByService(ctx context.Context, serviceName string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
+// queryMetricsByTimeRange is a consolidated helper for GSI time range queries
+func (r *MetricRecordRepository) queryMetricsByTimeRange(ctx context.Context, pkPrefix, pkValue, indexName, pkField, skField string, startTime, endTime time.Time, logContext map[string]interface{}, errorMsg string) ([]*models.MetricRecord, error) {
 	var records []*models.MetricRecord
 
-	gsi1pk := fmt.Sprintf("SERVICE#%s", serviceName)
+	pkValue = fmt.Sprintf("%s#%s", pkPrefix, pkValue)
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
 	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
-		Index("service-index").
-		Where("GSI1PK", "=", gsi1pk).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
-		OrderBy("GSI1SK", "DESC").
+		Index(indexName).
+		Where(pkField, "=", pkValue).
+		Where(skField, ">=", startSK).
+		Where(skField, "<=", endSK).
+		OrderBy(skField, "DESC").
 		All(&records)
 
 	if err != nil {
-		r.logger.Error("failed to get metrics by service",
+		logFields := []zap.Field{
 			zap.Error(err),
-			zap.String("service", serviceName),
 			zap.Time("startTime", startTime),
-			zap.Time("endTime", endTime))
-		return nil, MapErrorWithContext(err, "failed to get metrics by service")
+			zap.Time("endTime", endTime),
+		}
+		for key, value := range logContext {
+			logFields = append(logFields, zap.Any(key, value))
+		}
+		r.logger.Error(errorMsg, logFields...)
+		return nil, MapErrorWithContext(err, errorMsg)
 	}
 
 	return records, nil
 }
 
+// GetMetricsByService queries metrics by service within a time range using GSI1
+func (r *MetricRecordRepository) GetMetricsByService(ctx context.Context, serviceName string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
+	return r.queryMetricsByTimeRange(ctx, "SERVICE", serviceName, "service-index", "GSI1PK", "GSI1SK", startTime, endTime,
+		map[string]interface{}{"service": serviceName}, "failed to get metrics by service")
+}
+
 // GetMetricsByType queries metrics by type within a time range using GSI2
 func (r *MetricRecordRepository) GetMetricsByType(ctx context.Context, metricType string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
-	var records []*models.MetricRecord
-
-	gsi2pk := fmt.Sprintf("METRIC_TYPE#%s", metricType)
-	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
-
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
-		Index("metric-type-index").
-		Where("GSI2PK", "=", gsi2pk).
-		Where("GSI2SK", ">=", startSK).
-		Where("GSI2SK", "<=", endSK).
-		OrderBy("GSI2SK", "DESC").
-		All(&records)
-
-	if err != nil {
-		r.logger.Error("failed to get metrics by type",
-			zap.Error(err),
-			zap.String("metricType", metricType),
-			zap.Time("startTime", startTime),
-			zap.Time("endTime", endTime))
-		return nil, MapErrorWithContext(err, "failed to get metrics by type")
-	}
-
-	return records, nil
+	return r.queryMetricsByTimeRange(ctx, "METRIC_TYPE", metricType, "metric-type-index", "GSI2PK", "GSI2SK", startTime, endTime,
+		map[string]interface{}{"metricType": metricType}, "failed to get metrics by type")
 }
 
 // GetMetricsByDate queries metrics by date and service using GSI3
@@ -685,30 +673,8 @@ func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time
 
 // GetMetricsByAggregationLevel queries metrics by aggregation level within a time range using GSI4
 func (r *MetricRecordRepository) GetMetricsByAggregationLevel(ctx context.Context, level string, startTime, endTime time.Time) ([]*models.MetricRecord, error) {
-	var records []*models.MetricRecord
-
-	gsi4pk := fmt.Sprintf("AGGREGATION#%s", level)
-	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
-
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
-		Index("aggregation-index").
-		Where("GSI4PK", "=", gsi4pk).
-		Where("GSI4SK", ">=", startSK).
-		Where("GSI4SK", "<=", endSK).
-		OrderBy("GSI4SK", "DESC").
-		All(&records)
-
-	if err != nil {
-		r.logger.Error("failed to get metrics by aggregation level",
-			zap.Error(err),
-			zap.String("level", level),
-			zap.Time("startTime", startTime),
-			zap.Time("endTime", endTime))
-		return nil, MapErrorWithContext(err, "failed to get metrics by aggregation level")
-	}
-
-	return records, nil
+	return r.queryMetricsByTimeRange(ctx, "AGGREGATION", level, "aggregation-index", "GSI4PK", "GSI4SK", startTime, endTime,
+		map[string]interface{}{"level": level}, "failed to get metrics by aggregation level")
 }
 
 // CreateMetricRecord creates a new metric record

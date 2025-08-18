@@ -5,15 +5,11 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap/zaptest"
 )
 
 func TestHandler_extractUsernameFromURL(t *testing.T) {
 	// Create a handler instance for testing
-	logger := zaptest.NewLogger(t)
-	handler := &Handler{
-		logger: logger,
-	}
+	handler := &Handler{}
 
 	tests := []struct {
 		name     string
@@ -56,10 +52,7 @@ func TestHandler_extractUsernameFromURL(t *testing.T) {
 }
 
 func TestHandler_generateObjectHTML(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	handler := &Handler{
-		logger: logger,
-	}
+	handler := &Handler{}
 
 	tests := []struct {
 		name     string
@@ -151,10 +144,7 @@ func TestHandler_generateObjectHTML(t *testing.T) {
 }
 
 func TestHandler_extractObjectData(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	handler := &Handler{
-		logger: logger,
-	}
+	handler := &Handler{}
 
 	t.Run("Extract from ActivityPub Note", func(t *testing.T) {
 		// Test with the actual fields that exist in activitypub.Note

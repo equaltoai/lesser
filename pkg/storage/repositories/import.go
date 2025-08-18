@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -163,85 +162,21 @@ func (r *ImportRepository) UpdateImportProgress(ctx context.Context, importID st
 }
 
 // GetImportsForUser retrieves all imports for a user
-func (r *ImportRepository) GetImportsForUser(_ context.Context, username string, limit int, cursor string) ([]*models.Import, string, error) {
-	var imports []*models.Import
-
-	query := r.db.Model(&models.Import{}).
-		Where("Username", "=", username).
-		Limit(limit)
-
-	if cursor != "" {
-		// Add cursor-based pagination
-		query = query.Where("CreatedAt", ">", cursor)
-	}
-
-	err := query.Scan(&imports)
+func (r *ImportRepository) GetImportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Import, string, error) {
+	result, nextCursor, err := getImportExportItemsForUser(r.db, r.logger, ctx, username, limit, cursor, "import", false)
 	if err != nil {
-		r.logger.Error("failed to get imports for user",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get imports for user: %w", err)
+		return nil, "", err
 	}
-
-	// Calculate next cursor
-	var nextCursor string
-	if len(imports) == limit {
-		nextCursor = imports[len(imports)-1].CreatedAt.Format(time.RFC3339)
-	}
-
-	r.logger.Debug("retrieved imports for user",
-		zap.String("username", username),
-		zap.Int("count", len(imports)))
-
-	return imports, nextCursor, nil
+	return result.([]*models.Import), nextCursor, nil
 }
 
 // GetUserImportsByStatus retrieves imports for a user filtered by status
-func (r *ImportRepository) GetUserImportsByStatus(_ context.Context, username string, statuses []string) ([]*models.Import, error) {
-	var imports []*models.Import
-
-	// Query using GSI1
-	query := r.db.Model(&models.Import{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-
-	// Get all imports for the user, then filter by status in memory
-	// This is because DynamORM doesn't support complex OR filters on non-key attributes
-	err := query.All(&imports)
+func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Import, error) {
+	result, err := getImportExportItemsByStatus(r.db, r.logger, ctx, username, statuses, "import", &models.Import{})
 	if err != nil {
-		r.logger.Error("failed to query imports by GSI1",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get imports for user: %w", err)
+		return nil, err
 	}
-
-	// Filter by status if specified
-	if len(statuses) > 0 {
-		statusMap := make(map[string]bool)
-		for _, status := range statuses {
-			statusMap[status] = true
-		}
-
-		filtered := make([]*models.Import, 0)
-		for _, imp := range imports {
-			if statusMap[imp.Status] {
-				filtered = append(filtered, imp)
-			}
-		}
-		imports = filtered
-	}
-
-	// Sort by creation date descending (most recent first)
-	for i, j := 0, len(imports)-1; i < j; i, j = i+1, j-1 {
-		imports[i], imports[j] = imports[j], imports[i]
-	}
-
-	r.logger.Debug("retrieved imports by status",
-		zap.String("username", username),
-		zap.Strings("statuses", statuses),
-		zap.Int("count", len(imports)))
-
-	return imports, nil
+	return result, nil
 }
 
 // Import Cost Tracking Methods
@@ -290,76 +225,21 @@ func (r *ImportRepository) GetImportCostTracking(_ context.Context, importID str
 }
 
 // GetUserImportCosts retrieves import costs for a user within a date range
-func (r *ImportRepository) GetUserImportCosts(_ context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	var costTrackingRecords []*models.ImportCostTracking
-
-	startSK := fmt.Sprintf("COST#%s", startDate.Format(time.RFC3339))
-	endSK := fmt.Sprintf("COST#%s", endDate.Format(time.RFC3339))
-
-	query := r.db.Model(&models.ImportCostTracking{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
-		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&costTrackingRecords)
+func (r *ImportRepository) GetUserImportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
+	result, err := getUserCosts(r.db, r.logger, ctx, username, startDate, endDate, limit, "import", &models.ImportCostTracking{})
 	if err != nil {
-		r.logger.Error("failed to get user import costs",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user import costs: %w", err)
+		return nil, err
 	}
-
-	return costTrackingRecords, nil
+	return result, nil
 }
 
 // GetImportCostsByDateRange retrieves import costs for all users within a date range
-func (r *ImportRepository) GetImportCostsByDateRange(_ context.Context, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	var allCosts []*models.ImportCostTracking
-
-	// Query by daily partitions
-	currentDate := startDate
-	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
-		dateStr := currentDate.Format(common.CompactDateFormat)
-
-		var dailyCosts []*models.ImportCostTracking
-		query := r.db.Model(&models.ImportCostTracking{}).
-			Index("GSI2").
-			Where("GSI2PK", "=", fmt.Sprintf("IMPORT_COSTS#%s", dateStr)).
-			OrderBy("GSI2SK", "DESC").
-			Limit(limit)
-
-		err := query.All(&dailyCosts)
-		if err != nil {
-			r.logger.Warn("failed to get import costs for date",
-				zap.String("date", dateStr),
-				zap.Error(err))
-			// Continue with next date
-		} else {
-			allCosts = append(allCosts, dailyCosts...)
-		}
-
-		// Move to next day
-		currentDate = currentDate.AddDate(0, 0, 1)
-
-		// Break if we have enough results
-		if len(allCosts) >= limit {
-			break
-		}
+func (r *ImportRepository) GetImportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
+	result, err := getCostsByDateRange(r.db, r.logger, ctx, startDate, endDate, limit, "import", &models.ImportCostTracking{})
+	if err != nil {
+		return nil, err
 	}
-
-	// Sort by timestamp (newest first) and limit
-	sort.Slice(allCosts, func(i, j int) bool {
-		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
-	})
-
-	if len(allCosts) > limit {
-		allCosts = allCosts[:limit]
-	}
-
-	return allCosts, nil
+	return result, nil
 }
 
 // GetImportCostSummary calculates cost summary for a user's imports
@@ -448,24 +328,11 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 
 // GetHighCostImports returns import operations that exceed a cost threshold
 func (r *ImportRepository) GetHighCostImports(ctx context.Context, thresholdMicroCents int64, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	// Get all recent costs
-	allCosts, err := r.GetImportCostsByDateRange(ctx, startDate, endDate, limit*10) // Get more to filter
+	result, err := getHighCostOperations(r.db, r.logger, ctx, thresholdMicroCents, startDate, endDate, limit, "import", &models.ImportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
-
-	// Filter by threshold
-	var highCostImports []*models.ImportCostTracking
-	for _, cost := range allCosts {
-		if cost.TotalCostMicroCents >= thresholdMicroCents {
-			highCostImports = append(highCostImports, cost)
-			if len(highCostImports) >= limit {
-				break
-			}
-		}
-	}
-
-	return highCostImports, nil
+	return result, nil
 }
 
 // Budget Management Methods

@@ -13,56 +13,37 @@ import (
 	"go.uber.org/zap"
 )
 
+
+// convertRelationshipResponse converts service relationship to API format
+func (h *Handler) convertRelationshipResponse(ctx *lift.Context, relationship *relationshipsvc.RelationshipData) error {
+	response := models.Relationship{
+		ID:                  relationship.ID,
+		Following:           relationship.Following,
+		ShowingReblogs:      relationship.ShowingReblogs,
+		Notifying:           relationship.Notifying,
+		FollowedBy:          relationship.FollowedBy,
+		Blocking:            relationship.Blocking,
+		BlockedBy:           relationship.BlockedBy,
+		Muting:              relationship.Muting,
+		MutingNotifications: relationship.MutingNotifications,
+		Requested:           relationship.Requested,
+		DomainBlocking:      relationship.DomainBlocking,
+		Endorsed:            relationship.Endorsed,
+		Note:                relationship.Note,
+	}
+	return ctx.JSON(response)
+}
+
 // HandleMuteAccountLift handles POST /api/v1/accounts/:id/mute
 func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		return err
 	}
 
 	// Validation will be handled by the service layer
@@ -97,82 +78,26 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		})
 		if err != nil {
 			h.logger.Error("failed to mute via service", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+			return common.RespondInternalServerError(ctx)
 		}
 
-		// Convert service result to API format
-		relationship := models.Relationship{
-			ID:                  result.Relationship.ID,
-			Following:           result.Relationship.Following,
-			ShowingReblogs:      result.Relationship.ShowingReblogs,
-			Notifying:           result.Relationship.Notifying,
-			FollowedBy:          result.Relationship.FollowedBy,
-			Blocking:            result.Relationship.Blocking,
-			BlockedBy:           result.Relationship.BlockedBy,
-			Muting:              result.Relationship.Muting,
-			MutingNotifications: result.Relationship.MutingNotifications,
-			Requested:           result.Relationship.Requested,
-			DomainBlocking:      result.Relationship.DomainBlocking,
-			Endorsed:            result.Relationship.Endorsed,
-			Note:                result.Relationship.Note,
-		}
-		return ctx.JSON(relationship)
+		return h.convertRelationshipResponse(ctx, result.Relationship)
 	}
 
 	// If we reach here, service is not available - return error
-	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	return common.RespondInternalServerError(ctx)
 }
 
 // HandleUnmuteAccountLift handles POST /api/v1/accounts/:id/unmute
 func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateAccountParamID(accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		return err
 	}
 
 	// Use Relationships service if available
@@ -183,77 +108,21 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 		})
 		if err != nil {
 			h.logger.Error("failed to unmute via service", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+			return common.RespondInternalServerError(ctx)
 		}
 
-		// Convert service result to API format
-		relationship := models.Relationship{
-			ID:                  result.Relationship.ID,
-			Following:           result.Relationship.Following,
-			ShowingReblogs:      result.Relationship.ShowingReblogs,
-			Notifying:           result.Relationship.Notifying,
-			FollowedBy:          result.Relationship.FollowedBy,
-			Blocking:            result.Relationship.Blocking,
-			BlockedBy:           result.Relationship.BlockedBy,
-			Muting:              result.Relationship.Muting,
-			MutingNotifications: result.Relationship.MutingNotifications,
-			Requested:           result.Relationship.Requested,
-			DomainBlocking:      result.Relationship.DomainBlocking,
-			Endorsed:            result.Relationship.Endorsed,
-			Note:                result.Relationship.Note,
-		}
-		return ctx.JSON(relationship)
+		return h.convertRelationshipResponse(ctx, result.Relationship)
 	}
 
 	// If we reach here, service is not available - return error
-	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	return common.RespondInternalServerError(ctx)
 }
 
 // HandleGetMutedAccountsLift handles GET /api/v1/mutes
 func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Check read scope
-		if !claims.HasScope(auth.ScopeRead) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
-		}
-
-		username = claims.Username
+	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeRead)
+	if err != nil {
+		return err
 	}
 
 	// Parse pagination parameters
@@ -297,5 +166,5 @@ func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
 	}
 
 	// If we reach here, service failed - return error
-	return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+	return common.RespondInternalServerError(ctx)
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
@@ -30,8 +31,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -67,34 +66,36 @@ type StreamingHandler struct {
 	storageFactory  core.RepositoryStorage
 }
 
-// Global handler instance initialized at startup
-var handler *StreamingHandler
+// Global variables for standardized Lambda initialization
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+	handler   *StreamingHandler
+)
 
 func init() {
-	// Initialize Lambda with streaming-specific configuration
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName:        "streaming",
-		LambdaType:         common.LambdaTypeBasic,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableTracing:      true,
-		EnableHealthCheck:  false,
-		EnableCostTracking: true,
-		RequestTimeout:     30 * time.Second,
-		RetryMaxAttempts:   3,
+	// Standardized Lambda initialization for streaming API
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "streaming",
+		LambdaType:  common.LambdaTypeAPI, // WebSocket/HTTP streaming endpoints
 	})
-
-	// Initialize DynamORM database connection
-	db, err := dynamorm.GetClient(context.Background())
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with API-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-
-	// Initialize repositories with streaming-specific configuration
-	tableName := lambdaCtx.Config.DynamoTableName
-	if err := common.ValidateRequiredParam("table_name", tableName); err != nil {
-		tableName = "lesser-main"
-	}
+	
+	// Streaming-specific initialization
+	db := lambdaCtx.DynamoDB.(dynamormCore.DB)
+	tableName := cfg.DynamoTableName
 
 	connectionsTable := os.Getenv("CONNECTIONS_TABLE")
 	if err := common.ValidateRequiredParam("connections_table", connectionsTable); err != nil {
@@ -106,49 +107,45 @@ func init() {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
-	userRepo := repositories.NewUserRepository(db, tableName, lambdaCtx.Logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, lambdaCtx.Logger)
+	userRepo := repositories.NewUserRepository(db, tableName, logger)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
 
 	// Initialize WebSocket cost tracking
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, lambdaCtx.Logger)
-	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
+	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
 
 	// Initialize service registry
-	storageFactory, err := factory.NewRepositoryFactory(db, tableName, lambdaCtx.AWSServices.Config, lambdaCtx.Logger)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to create repository factory", zap.Error(err))
-	}
 	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
 	
 	// Convert config to ServiceConfig
 	serviceConfig := &services.ServiceConfig{
-		BaseURL:   lambdaCtx.Config.Domain,
-		JWTSecret: lambdaCtx.Config.JWTSecret,
+		BaseURL:   cfg.Domain,
+		JWTSecret: cfg.JWTSecret,
 	}
 	
 	serviceRegistry, err := services.NewRegistry(
-		services.WithStorage(storageFactory),
+		services.WithStorage(repos),
 		services.WithPublisher(publisher),
-		services.WithLogger(lambdaCtx.Logger),
+		services.WithLogger(logger),
 		services.WithConfig(serviceConfig),
 	)
 	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to create service registry", zap.Error(err))
+		logger.Fatal("failed to create service registry", zap.Error(err))
 	}
 
 	// Initialize command router and register handlers
-	commandRouter := streaming.NewCommandRouter(lambdaCtx.Logger)
+	commandRouter := streaming.NewCommandRouter(logger)
 	
 	// Register command handlers
-	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), lambdaCtx.Logger)
-	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), lambdaCtx.Logger)
-	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), lambdaCtx.Logger)
+	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), logger)
+	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
+	relationshipHandler := handlers.NewRelationshipCommandHandler(serviceRegistry.Relationships(), serviceRegistry.Accounts(), logger)
 	systemHandler := handlers.NewSystemCommandHandler(
 		serviceRegistry.Notes(),
 		serviceRegistry.Lists(),
 		serviceRegistry.Media(),
 		serviceRegistry.Notifications(),
-		lambdaCtx.Logger,
+		logger,
 	)
 	
 	commandRouter.RegisterHandler(statusHandler)
@@ -161,12 +158,12 @@ func init() {
 		userRepo:        userRepo,
 		connectionRepo:  connectionRepo,
 		costTracker:     costTracker,
-		logger:          lambdaCtx.Logger,
-		cfg:             lambdaCtx.Config,
+		logger:          logger,
+		cfg:             cfg,
 		awsConfig:       lambdaCtx.AWSServices.Config,
 		commandRouter:   commandRouter,
 		serviceRegistry: serviceRegistry,
-		storageFactory:  storageFactory,
+		storageFactory:  repos,
 	}
 }
 

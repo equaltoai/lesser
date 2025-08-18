@@ -606,3 +606,86 @@ func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token strin
 	h.logger.Debug("deleted refresh token", zap.String("token", token))
 	return nil
 }
+
+// SaveUserAppConsentGeneric saves user consent for an OAuth app
+func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *storage.UserAppConsent) error {
+	// Create DynamORM model
+	model := &models.UserAppConsent{
+		UserID:    consent.UserID,
+		AppID:     consent.AppID,
+		Scopes:    consent.Scopes,
+		CreatedAt: consent.CreatedAt,
+		UpdatedAt: time.Now(),
+		Active:    true, // Default to active
+	}
+
+	// Set default timestamps if not provided
+	if model.CreatedAt.IsZero() {
+		model.CreatedAt = time.Now()
+	}
+
+	// Update keys
+	model.UpdateKeys()
+
+	// Use upsert logic - try to update first, then create if not exists
+	err := h.db.WithContext(ctx).Model(model).
+		Where("PK", "=", model.PK).
+		Where("SK", "=", model.SK).
+		Update()
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Item doesn't exist, create it
+			err = h.db.WithContext(ctx).Model(model).Create()
+			if err != nil {
+				h.logger.Error("failed to create user app consent", zap.Error(err))
+				return fmt.Errorf("failed to create user app consent: %w", err)
+			}
+		} else {
+			h.logger.Error("failed to update user app consent", zap.Error(err))
+			return fmt.Errorf("failed to update user app consent: %w", err)
+		}
+	}
+
+	h.logger.Debug("saved user app consent",
+		zap.String("user_id", consent.UserID),
+		zap.String("app_id", consent.AppID))
+
+	return nil
+}
+
+// GetUserAppConsentGeneric retrieves user consent for an OAuth app
+func (h *OAuthHelper) GetUserAppConsentGeneric(ctx context.Context, userID, appID string) (*storage.UserAppConsent, error) {
+	// Construct the key using the model's pattern
+	pk := fmt.Sprintf("USER#%s", userID)
+	sk := fmt.Sprintf("CONSENT#%s", appID)
+
+	// Query for the item
+	var model models.UserAppConsent
+	err := h.db.WithContext(ctx).Model(&models.UserAppConsent{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&model)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
+		}
+		h.logger.Error("failed to get user app consent", zap.Error(err))
+		return nil, fmt.Errorf("failed to get user app consent: %w", err)
+	}
+
+	// Convert to storage model
+	result := &storage.UserAppConsent{
+		UserID:    model.UserID,
+		AppID:     model.AppID,
+		Scopes:    model.Scopes,
+		CreatedAt: model.CreatedAt,
+	}
+
+	h.logger.Debug("retrieved user app consent",
+		zap.String("user_id", userID),
+		zap.String("app_id", appID))
+
+	return result, nil
+}

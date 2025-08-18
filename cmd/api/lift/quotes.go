@@ -15,8 +15,8 @@ import (
 // Creates a quote post of an existing status
 func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -27,7 +27,7 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 
 	// Check write scope
 	if !claims.HasScope("write:statuses") {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return common.RespondInsufficientScope(ctx)
 	}
 
 	// Parse request body
@@ -45,42 +45,44 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 
 	// Validate quote content
-	if len(params.Status) > 500 { // Mastodon default limit
-		return ctx.Status(422).JSON(map[string]string{"error": "status text too long"})
+	if params.Status != "" {
+		if err := common.ValidateStatusContent(params.Status); err != nil {
+			return common.RespondValidationError(ctx, err)
+		}
 	}
 
 	// Check if original status exists and is quotable
 	originalStatus, err := h.repos.Status().GetStatus(ctx.Context, statusID)
 	if err != nil {
 		h.logger.Error("failed to get original status", zap.String("status_id", statusID), zap.Error(err))
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return common.RespondStatusNotFound(ctx)
 	}
 
 	if originalStatus == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return common.RespondStatusNotFound(ctx)
 	}
 
 	// Check quote permissions
 	canQuote, err := h.checkQuotePermissions(ctx, claims.Username, originalStatus)
 	if err != nil {
 		h.logger.Error("failed to check quote permissions", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to check permissions"})
+		return common.RespondInternalServerError(ctx, "failed to check permissions")
 	}
 
 	if !canQuote {
-		return ctx.Status(403).JSON(map[string]string{"error": "not authorized to quote this status"})
+		return common.RespondNotAuthorized(ctx, "quote this status")
 	}
 
 	// Create the quote post
 	quotePost, err := h.createQuotePost(ctx, claims.Username, originalStatus, &params)
 	if err != nil {
 		h.logger.Error("failed to create quote post", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to create quote post"})
+		return common.RespondFailedToCreate(ctx, "quote post")
 	}
 
 	// Convert to API format
@@ -93,26 +95,26 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 // Returns a list of quote posts for a given status
 func (h *Handler) HandleGetQuotesOfStatusLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Parse pagination parameters
 	limit, err := common.ParseFollowLimit(ctx.Query("limit"))
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	offset, err := common.ParseAndValidateIntWithBounds("offset", ctx.Query("offset"), -1, 10000, 0)
 	if err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get quote relationships for the status
 	quotes, err := h.getQuotesForStatus(ctx, statusID, limit, offset)
 	if err != nil {
 		h.logger.Error("failed to get quotes", zap.String("status_id", statusID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get quotes"})
+		return common.RespondFailedToGet(ctx, "quotes")
 	}
 
 	// Convert to API format
@@ -130,11 +132,11 @@ func (h *Handler) HandleGetQuotesOfStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 	statusID := ctx.Param("id")
 	quoteID := ctx.Param("quote_id")
-	if err := common.ValidateRequiredParam("status_id", statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+	if err := common.ValidateStatusParamID(statusID); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 	if err := common.ValidateRequiredParam("quote_id", quoteID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Authenticate user
@@ -145,29 +147,29 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 
 	// Check write scope
 	if !claims.HasScope("write:statuses") {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return common.RespondInsufficientScope(ctx)
 	}
 
 	// Verify user owns the quote
 	quote, err := h.getQuoteRelationship(ctx, quoteID, statusID)
 	if err != nil {
 		h.logger.Error("failed to get quote relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get quote"})
+		return common.RespondFailedToGet(ctx, "quote")
 	}
 
 	if quote == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "quote not found"})
+		return common.RespondNotFound(ctx, "quote")
 	}
 
 	if quote.QuoterID != claims.Username {
-		return ctx.Status(403).JSON(map[string]string{"error": "not authorized to delete this quote"})
+		return common.RespondNotAuthorizedToDelete(ctx, "quote")
 	}
 
 	// Delete the quote relationship
 	err = h.deleteQuoteRelationship(ctx, quote)
 	if err != nil {
 		h.logger.Error("failed to delete quote relationship", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to delete quote"})
+		return common.RespondFailedToDelete(ctx, "quote")
 	}
 
 	return ctx.Status(200).JSON(map[string]string{"message": "quote deleted"})
@@ -178,14 +180,14 @@ func (h *Handler) HandleDeleteQuotePostLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetQuotePermissionsLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get quote permissions
 	permissions, err := h.getQuotePermissions(ctx, accountID)
 	if err != nil {
 		h.logger.Error("failed to get quote permissions", zap.String("account_id", accountID), zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get permissions"})
+		return common.RespondFailedToGet(ctx, "permissions")
 	}
 
 	// Convert to API format
@@ -210,7 +212,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 
 	// Check write scope
 	if !claims.HasScope("write:accounts") {
-		return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return common.RespondInsufficientScope(ctx)
 	}
 
 	// Parse request body
@@ -227,7 +229,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 			bodyBytes = ctx.Request.Request.Body
 		}
 		if err2 := common.ParseRequestBody(bodyBytes, &params); err2 != nil {
-			return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+			return common.RespondValidationError(ctx, err)
 		}
 	}
 
@@ -259,7 +261,7 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 	err = h.saveQuotePermissions(ctx, permissions)
 	if err != nil {
 		h.logger.Error("failed to save quote permissions", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to save permissions"})
+		return common.RespondFailedToUpdate(ctx, "permissions")
 	}
 
 	// Return updated permissions
@@ -296,13 +298,13 @@ func (h *Handler) authenticateQuoteRequest(ctx *lift.Context) (*auth.Claims, err
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return nil, ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return nil, common.RespondUnauthorized(ctx)
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return nil, common.RespondUnauthorized(ctx)
 	}
 
 	return claims, nil

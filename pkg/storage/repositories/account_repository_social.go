@@ -20,12 +20,12 @@ import (
 
 // Follow creates a follow relationship between users
 func (r *AccountRepository) Follow(ctx context.Context, followerUsername, followedUsername string) error {
-	// Validate usernames using validation utility
-	if !Utils.Validation.IsValidUsername(followerUsername) {
-		return common.ValidationError{Field: "follower", Message: "invalid username"}
+	// Validate usernames using proper validation functions
+	if err := common.ValidateUsername(followerUsername); err != nil {
+		return common.ValidationError{Field: "follower", Message: err.Error()}
 	}
-	if !Utils.Validation.IsValidUsername(followedUsername) {
-		return common.ValidationError{Field: "followed", Message: "invalid username"}
+	if err := common.ValidateUsername(followedUsername); err != nil {
+		return common.ValidationError{Field: "followed", Message: err.Error()}
 	}
 
 	// Verify both actors exist
@@ -306,36 +306,26 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 }
 
 // GetBlocks retrieves all users blocked by a user
-//
-//nolint:dupl // Social relationship query patterns are shared between repositories
 func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*storage.Block, error) {
-	var blocks []models.Block
-
-	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", username)).
-		Where("SK", "BEGINS_WITH", "BLOCKED#").
-		All(&blocks)
-
-	if err != nil {
-		r.logger.Error("failed to get blocks",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get blocks: %w", err)
-	}
-
-	// Convert to storage type and extract usernames from actor IDs
-	result := make([]*storage.Block, len(blocks))
-	for i, block := range blocks {
-		result[i] = &storage.Block{
-			Actor:     block.Actor,
-			Object:    block.Object,
-			ID:        block.ID,
-			Published: block.Published,
-			CreatedAt: block.CreatedAt,
-		}
-	}
-
-	return result, nil
+	return QueryWithPKAndSKPrefix(
+		&QueryUtils{db: r.db, logger: r.logger},
+		ctx,
+		func() *models.Block { return &models.Block{} },
+		fmt.Sprintf("ACTOR#%s#BLOCKS", username),
+		"BLOCKED#",
+		false, // use Where
+		func(block models.Block) *storage.Block {
+			return &storage.Block{
+				Actor:     block.Actor,
+				Object:    block.Object,
+				ID:        block.ID,
+				Published: block.Published,
+				CreatedAt: block.CreatedAt,
+			}
+		},
+		"get blocks",
+		username,
+	)
 }
 
 // Mute creates a mute relationship

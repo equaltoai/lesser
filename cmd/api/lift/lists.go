@@ -26,7 +26,7 @@ func (h *Handler) HandleGetListsLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get user lists", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to get lists"})
+		return common.RespondFailedToGet(ctx, "lists")
 	}
 
 	return ctx.JSON(result.Lists)
@@ -38,11 +38,21 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 	if err := ctx.ParseRequest(&req); err != nil {
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
+	}
+
+	// Validate list parameters
+	params := map[string]interface{}{
+		"title":          req.Title,
+		"replies_policy": req.RepliesPolicy,
+	}
+	if err := common.ValidateListParams(params); err != nil {
+		h.logger.Info("list validation failed", zap.Error(err))
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -58,7 +68,7 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to create list", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to create list"})
+		return common.RespondFailedToCreate(ctx, "list")
 	}
 
 	return ctx.Status(http.StatusCreated).JSON(result.List)
@@ -68,7 +78,7 @@ func (h *Handler) HandleCreateListLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
@@ -81,7 +91,7 @@ func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 		ViewerID: claims.Username,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "list not found"})
+		return common.RespondNotFound(ctx, "list not found")
 	}
 
 	return ctx.JSON(list)
@@ -91,17 +101,17 @@ func (h *Handler) HandleGetListLift(ctx *lift.Context) error {
 func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	var req models.UpdateListRequest
 	if err := ctx.ParseRequest(&req); err != nil {
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
@@ -118,7 +128,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to update list", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to update list"})
+		return common.RespondInternalServerError(ctx, "failed to update list")
 	}
 
 	return ctx.JSON(result.List)
@@ -128,7 +138,7 @@ func (h *Handler) HandleUpdateListLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
@@ -141,7 +151,7 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 		DeleterID: claims.Username,
 	}); err != nil {
 		h.logger.Error("failed to delete list", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to delete list"})
+		return common.RespondInternalServerError(ctx, "failed to delete list")
 	}
 
 	return ctx.Status(http.StatusOK).JSON(map[string]string{})
@@ -151,7 +161,7 @@ func (h *Handler) HandleDeleteListLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	listID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeRead)
@@ -165,7 +175,7 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 		ViewerID: claims.Username,
 	})
 	if err != nil {
-		return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": "list not found"})
+		return common.RespondNotFound(ctx, "list not found")
 	}
 
 	// Get accounts in the list using service
@@ -176,7 +186,7 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	})
 	if err != nil {
 		h.logger.Error("failed to get list accounts", zap.String("list_id", listID), zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to get list accounts"})
+		return common.RespondInternalServerError(ctx, "failed to get list accounts")
 	}
 
 	// Convert members to Account objects
@@ -194,35 +204,62 @@ func (h *Handler) HandleGetListAccountsLift(ctx *lift.Context) error {
 	return ctx.JSON(accounts)
 }
 
-// HandleAddAccountsToListLift handles POST /api/v1/lists/:id/accounts
-func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
+// parseAccountIDsRequestWithAuth parses account IDs request and validates authentication
+func (h *Handler) parseAccountIDsRequestWithAuth(ctx *lift.Context, requestType string) (string, []string, *auth.Claims, error) {
 	listID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return "", nil, nil, common.RespondBadRequest(ctx, err.Error())
 	}
 
-	var req models.AddAccountsRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+	// Parse request body based on request type
+	var accountIDs []string
+	if requestType == "add" {
+		var req models.AddAccountsRequest
+		if err := ctx.ParseRequest(&req); err != nil {
+			if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+				if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
+					return "", nil, nil, common.RespondBadRequest(ctx, "invalid request body")
+				}
+			} else {
+				return "", nil, nil, common.RespondBadRequest(ctx, "invalid request body")
 			}
-		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
 		}
+		accountIDs = req.AccountIDs
+	} else {
+		var req models.RemoveAccountsRequest
+		if err := ctx.ParseRequest(&req); err != nil {
+			if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
+				if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
+					return "", nil, nil, common.RespondBadRequest(ctx, "invalid request body")
+				}
+			} else {
+				return "", nil, nil, common.RespondBadRequest(ctx, "invalid request body")
+			}
+		}
+		accountIDs = req.AccountIDs
 	}
 
-	if err := common.ValidateSliceNotEmpty("req.AccountIDs", req.AccountIDs); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "account_ids is required"})
+	if err := common.ValidateSliceNotEmpty("req.AccountIDs", accountIDs); err != nil {
+		return "", nil, nil, common.RespondBadRequest(ctx, "account_ids is required")
 	}
 
 	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	return listID, accountIDs, claims, nil
+}
+
+// HandleAddAccountsToListLift handles POST /api/v1/lists/:id/accounts
+func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
+	listID, accountIDs, claims, err := h.parseAccountIDsRequestWithAuth(ctx, "add")
 	if err != nil {
 		return err
 	}
 
 	// Add accounts to list via service (iterating for API compatibility)
-	for _, accountID := range req.AccountIDs {
+	for _, accountID := range accountIDs {
 		_, err := h.registry.Lists().AddToList(ctx.Context, &lists.AddToListCommand{
 			ListID:         listID,
 			MemberUsername: accountID,
@@ -230,7 +267,7 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 		})
 		if err != nil {
 			h.logger.Error("failed to add account to list", zap.String("account_id", accountID), zap.Error(err))
-			return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to add accounts to list"})
+			return common.RespondInternalServerError(ctx, "failed to add accounts to list")
 		}
 	}
 
@@ -239,33 +276,13 @@ func (h *Handler) HandleAddAccountsToListLift(ctx *lift.Context) error {
 
 // HandleRemoveAccountsFromListLift handles DELETE /api/v1/lists/:id/accounts
 func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
-	listID := ctx.Param("id")
-	if err := common.ValidateRequiredParam("listID", listID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
-	}
-
-	var req models.RemoveAccountsRequest
-	if err := ctx.ParseRequest(&req); err != nil {
-		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
-			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
-			}
-		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
-		}
-	}
-
-	if err := common.ValidateSliceNotEmpty("req.AccountIDs", req.AccountIDs); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "account_ids is required"})
-	}
-
-	claims, err := h.authenticateWithScope(ctx, auth.ScopeWrite)
+	listID, accountIDs, claims, err := h.parseAccountIDsRequestWithAuth(ctx, "remove")
 	if err != nil {
 		return err
 	}
 
 	// Remove accounts from list via service (iterating for API compatibility)
-	for _, accountID := range req.AccountIDs {
+	for _, accountID := range accountIDs {
 		_, err := h.registry.Lists().RemoveFromList(ctx.Context, &lists.RemoveFromListCommand{
 			ListID:         listID,
 			MemberUsername: accountID,
@@ -273,7 +290,7 @@ func (h *Handler) HandleRemoveAccountsFromListLift(ctx *lift.Context) error {
 		})
 		if err != nil {
 			h.logger.Error("failed to remove account from list", zap.String("account_id", accountID), zap.Error(err))
-			return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "failed to remove accounts from list"})
+			return common.RespondInternalServerError(ctx, "failed to remove accounts from list")
 		}
 	}
 

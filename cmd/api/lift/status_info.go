@@ -21,7 +21,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 	// Extract status ID from URL parameter
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Support test mode with X-Test-Username header
@@ -45,7 +45,7 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 	// Get the note using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return common.RespondNotFound(ctx, "status not found")
 	}
 	object := result.Note
 
@@ -107,7 +107,7 @@ func (h *Handler) HandleGetStatusHistoryLift(ctx *lift.Context) error {
 func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 	statusID := ctx.Param("id")
 	if err := common.ValidateStatusParamID(statusID); err != nil {
-		return "", ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return "", common.RespondValidationError(ctx, err)
 	}
 	return statusID, nil
 }
@@ -159,7 +159,7 @@ func (h *Handler) fetchObjectForHistory(ctx *lift.Context, objectID string) (any
 	// Get the note using Notes service
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
-		return nil, ctx.Status(404).JSON(map[string]string{"error": "status not found"})
+		return nil, common.RespondNotFound(ctx, "status not found")
 	}
 	return result.Note, nil
 }

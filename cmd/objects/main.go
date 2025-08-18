@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -23,67 +24,57 @@ import (
 	"go.uber.org/zap"
 )
 
-// Handler handles ActivityPub federation object requests
-type Handler struct {
-	db                     interface{} // DynamORM DB interface
-	objectRepo             *repositories.ObjectRepository
-	authorizedFetchService *federation.AuthorizedFetchService
-	repos                  core.RepositoryStorage
-	logger                 *zap.Logger
-	cfg                    interface{} // config.Config interface
-	lambdaCtx              *common.LambdaContext
+var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
+)
+
+func init() {
+	// Standardized Lambda initialization with automatic service detection
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "objects",
+		LambdaType:  common.LambdaTypeAPI,
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with default options for API Lambda type
+	err := lambdaCtx.InitializeWithDefaults()
+	if err != nil {
+		logger.Warn("failed to initialize with defaults, some features may be limited", zap.Error(err))
+	}
 }
 
-// NewHandler creates a new objects handler with standardized initialization
-func NewHandler() (*Handler, error) {
-	// Use standardized Lambda initialization for Basic type (simple object serving)
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
-		ServiceName:        "objects",
-		LambdaType:         common.LambdaTypeBasic,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableHealthCheck:  false,
-		EnableTracing:      false,
-		EnableCostTracking: false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
-	}
+// Handler handles ActivityPub federation object requests
+type Handler struct {
+	objectRepo             *repositories.ObjectRepository
+	authorizedFetchService *federation.AuthorizedFetchService
+}
 
-	// Initialize basic services using default options
-	options := common.DefaultLambdaInitOptions(common.LambdaTypeBasic)
-	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda services: %w", err)
-	}
-
-	// Extract repositories and services from Lambda context
-	repoStorage, ok := lambdaCtx.Repos.(core.RepositoryStorage)
-	if !ok {
-		return nil, fmt.Errorf("failed to get repository storage from Lambda context")
-	}
-
+// NewHandler creates a new objects handler using standardized services
+func NewHandler() *Handler {
 	// Initialize object repository
 	objectRepo := repositories.NewObjectRepository(
-		repoStorage.GetDB(), 
-		repoStorage.GetTableName(), 
-		lambdaCtx.Config.Domain, 
-		lambdaCtx.Logger)
+		repos.GetDB(), 
+		repos.GetTableName(), 
+		cfg.Domain, 
+		logger)
 
 	// Initialize authorized fetch service
 	authorizedFetchService := federation.NewAuthorizedFetchService(
-		repoStorage, 
-		lambdaCtx.Config.Domain, 
-		lambdaCtx.Logger)
+		repos, 
+		cfg.Domain, 
+		logger)
 
 	return &Handler{
-		db:                     lambdaCtx.DynamoDB,
 		objectRepo:             objectRepo,
 		authorizedFetchService: authorizedFetchService,
-		repos:                  repoStorage,
-		logger:                 lambdaCtx.Logger,
-		cfg:                    lambdaCtx.Config,
-		lambdaCtx:              lambdaCtx,
-	}, nil
+	}
 }
 
 // HandleGetObject handles GET requests for ActivityPub objects
@@ -106,7 +97,7 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 		strings.Contains(acceptHeader, "application/json") {
 		// Check if authorized fetch is enabled
 		if h.authorizedFetchService.IsAuthorizedFetchEnabled(ctx.Request.Context()) {
-			h.logger.Debug("authorized fetch enabled, verifying request",
+			logger.Debug("authorized fetch enabled, verifying request",
 				zap.String("object_id", objectID),
 				zap.String("request_id", ctx.GetRequestID()),
 			)
@@ -114,7 +105,7 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 			// Convert lift.Context to http.Request for signature verification
 			httpReq, err := h.convertLiftRequest(ctx)
 			if err != nil {
-				h.logger.Error("failed to convert request for authorized fetch",
+				logger.Error("failed to convert request for authorized fetch",
 					zap.String("object_id", objectID),
 					zap.String("request_id", ctx.GetRequestID()),
 					zap.Error(err),
@@ -127,13 +118,13 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 			if err != nil {
 				// Check if signature is missing vs invalid
 				if strings.Contains(err.Error(), "missing signature") {
-					h.logger.Debug("unauthorized request - missing signature",
+					logger.Debug("unauthorized request - missing signature",
 						zap.String("object_id", objectID),
 						zap.String("request_id", ctx.GetRequestID()),
 					)
 					return lift.NewLiftError("UNAUTHORIZED", "signature required for authorized fetch", 401)
 				}
-				h.logger.Debug("authorized fetch verification failed",
+				logger.Debug("authorized fetch verification failed",
 					zap.String("object_id", objectID),
 					zap.String("request_id", ctx.GetRequestID()),
 					zap.Error(err),
@@ -141,14 +132,14 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 				return lift.NewLiftError("FORBIDDEN", "signature verification failed", 403).WithCause(err)
 			}
 
-			h.logger.Debug("authorized fetch verification successful",
+			logger.Debug("authorized fetch verification successful",
 				zap.String("object_id", objectID),
 				zap.String("request_id", ctx.GetRequestID()),
 			)
 		}
 	}
 
-	h.logger.Info("fetching object",
+	logger.Info("fetching object",
 		zap.String("object_id", objectID),
 		zap.String("request_id", ctx.GetRequestID()),
 	)
@@ -157,13 +148,13 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	objInterface, err := h.objectRepo.GetObject(ctx.Request.Context(), objectID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			h.logger.Debug("object not found",
+			logger.Debug("object not found",
 				zap.String("object_id", objectID),
 				zap.String("request_id", ctx.GetRequestID()),
 			)
 			return lift.NotFound(fmt.Sprintf("object %s not found", objectID))
 		}
-		h.logger.Error("failed to get object",
+		logger.Error("failed to get object",
 			zap.String("object_id", objectID),
 			zap.String("request_id", ctx.GetRequestID()),
 			zap.Error(err),
@@ -173,7 +164,7 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 
 	// Return HTML for browsers
 	if strings.Contains(acceptHeader, "text/html") {
-		h.logger.Debug("returning HTML representation",
+		logger.Debug("returning HTML representation",
 			zap.String("object_id", objectID),
 			zap.String("request_id", ctx.GetRequestID()),
 		)
@@ -183,7 +174,7 @@ func (h *Handler) HandleGetObject(ctx *lift.Context) error {
 	}
 
 	// Return ActivityPub JSON (default)
-	h.logger.Debug("returning ActivityPub JSON representation",
+	logger.Debug("returning ActivityPub JSON representation",
 		zap.String("object_id", objectID),
 		zap.String("request_id", ctx.GetRequestID()),
 	)
@@ -583,11 +574,8 @@ func (h *Handler) convertLiftRequest(ctx *lift.Context) (*http.Request, error) {
 }
 
 func main() {
-	// Initialize handler
-	handler, err := NewHandler()
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize handler: %v", err))
-	}
+	// Initialize handler using standardized services
+	handler := NewHandler()
 
 	// Create Lift application
 	app := lift.New()
@@ -607,14 +595,14 @@ func main() {
 			start := time.Now()
 			err := next.Handle(ctx)
 
-			handler.logger.Info("objects request completed",
+			logger.Info("objects request completed",
 				zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("has_error", err != nil),
 			)
 
 			if err != nil {
-				handler.logger.Error("objects handler error",
+				logger.Error("objects handler error",
 					zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 					zap.Error(err),
 				)
@@ -628,7 +616,7 @@ func main() {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			defer func() {
 				if r := recover(); r != nil {
-					handler.logger.Error("panic recovered in objects handler",
+					logger.Error("panic recovered in objects handler",
 						zap.String("request_id", fmt.Sprintf("%v", ctx.Get("requestID"))),
 						zap.Any("panic", r),
 					)
@@ -640,15 +628,15 @@ func main() {
 
 	// Add federation rate limiting middleware (fourth in chain)
 	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
-		app.Use(ratelimit.FederationRateLimitMiddleware(handler.repos))
-		handler.logger.Info("enabled federation rate limiting middleware for objects service")
+		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
+		logger.Info("enabled federation rate limiting middleware for objects service")
 	}
 
 	// ActivityPub federation endpoint
 	_ = app.GET("/objects/:id", handler.HandleGetObject)
 
 	// Use standardized Lambda handler with observability
-	standardHandler := handler.lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
+	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {
 		return app.HandleRequest(ctx, event)
 	})
 

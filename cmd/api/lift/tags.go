@@ -46,7 +46,12 @@ type FeaturedTag struct {
 func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	tagName := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", tagName); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
+	}
+
+	// Validate hashtag format
+	if err := common.ValidateHashtag(tagName); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get actual tag statistics from storage
@@ -127,56 +132,47 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	return ctx.JSON(tag)
 }
 
-// HandleFollowTagLift follows a hashtag
-func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
-	tagName := ctx.Param("id")
-	if err := common.ValidateRequiredParam("id", tagName); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-	}
+// tagFollowAction represents the type of tag follow action
+type tagFollowAction int
 
+const (
+	tagFollow   tagFollowAction = iota
+	tagUnfollow
+)
+
+// authenticateTagRequest handles authentication for tag operations
+func (h *Handler) authenticateTagRequest(ctx *lift.Context) (string, error) {
 	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
 	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
 	}
 
-	var username string
 	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-		username = claims.Username
+		return testUsername, nil
 	}
 
-	// Normalize the tag name
-	tagName = strings.TrimPrefix(tagName, "#")
-	tagName = strings.ToLower(tagName)
+	// Extract token from Authorization header
+	authHeader := h.getAuthorizationHeader(ctx)
 
-	// Create the follow relationship
-	err := h.repos.Hashtag().FollowHashtag(ctx.Context, username, tagName)
+	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		h.logger.Error("failed to follow hashtag",
-			zap.String("user_id", username),
-			zap.String("tag", tagName),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return "", err
 	}
 
-	// Return the tag with following status
-	response := map[string]any{
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", err
+	}
+
+	return claims.Username, nil
+}
+
+// buildTagResponseWithHistory builds a tag response including history
+func (h *Handler) buildTagResponseWithHistory(ctx *lift.Context, tagName string, following bool) map[string]any {
+	return map[string]any{
 		"name": tagName,
 		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 		"history": func() []struct {
@@ -213,102 +209,65 @@ func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
 				Accounts string `json:"accounts"`
 			}{}
 		}(),
-		"following": true,
+		"following": following,
+	}
+}
+
+// handleTagFollowAction handles both follow and unfollow operations for tags
+func (h *Handler) handleTagFollowAction(ctx *lift.Context, action tagFollowAction) error {
+	tagName := ctx.Param("id")
+	if err := common.ValidateRequiredParam("id", tagName); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
+	// Validate hashtag format
+	if err := common.ValidateHashtag(tagName); err != nil {
+		return common.RespondValidationError(ctx, err)
+	}
+
+	username, err := h.authenticateTagRequest(ctx)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Normalize the tag name
+	tagName = strings.TrimPrefix(tagName, "#")
+	tagName = strings.ToLower(tagName)
+
+	// Perform the action
+	var following bool
+	var logAction string
+	switch action {
+	case tagFollow:
+		err = h.repos.Hashtag().FollowHashtag(ctx.Context, username, tagName)
+		following = true
+		logAction = "follow"
+	case tagUnfollow:
+		err = h.repos.Hashtag().UnfollowHashtag(ctx.Context, username, tagName)
+		following = false
+		logAction = "unfollow"
+	}
+
+	if err != nil {
+		h.logger.Error(fmt.Sprintf("failed to %s hashtag", logAction),
+			zap.String("user_id", username),
+			zap.String("tag", tagName),
+			zap.Error(err))
+		return common.RespondInternalServerError(ctx)
+	}
+
+	response := h.buildTagResponseWithHistory(ctx, tagName, following)
 	return ctx.JSON(response)
+}
+
+// HandleFollowTagLift follows a hashtag
+func (h *Handler) HandleFollowTagLift(ctx *lift.Context) error {
+	return h.handleTagFollowAction(ctx, tagFollow)
 }
 
 // HandleUnfollowTagLift unfollows a hashtag
 func (h *Handler) HandleUnfollowTagLift(ctx *lift.Context) error {
-	tagName := ctx.Param("id")
-	if err := common.ValidateRequiredParam("id", tagName); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
-	}
-
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-		}
-		username = claims.Username
-	}
-
-	// Normalize the tag name
-	tagName = strings.TrimPrefix(tagName, "#")
-	tagName = strings.ToLower(tagName)
-
-	// Remove the follow relationship
-	err := h.repos.Hashtag().UnfollowHashtag(ctx.Context, username, tagName)
-	if err != nil {
-		h.logger.Error("failed to unfollow hashtag",
-			zap.String("user_id", username),
-			zap.String("tag", tagName),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Return the tag with following status
-	response := map[string]any{
-		"name": tagName,
-		"url":  fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
-		"history": func() []struct {
-			Day      string `json:"day"`
-			Uses     string `json:"uses"`
-			Accounts string `json:"accounts"`
-		} {
-			// Get real hashtag statistics
-			if tagStatsRaw, err := h.repos.Hashtag().GetHashtagStats(ctx.Context, tagName); err == nil && tagStatsRaw != nil {
-				if tagStats, ok := tagStatsRaw.(*storage.HashtagStats); ok {
-					history := make([]struct {
-						Day      string `json:"day"`
-						Uses     string `json:"uses"`
-						Accounts string `json:"accounts"`
-					}, len(tagStats.History))
-					for i, entry := range tagStats.History {
-						history[i] = struct {
-							Day      string `json:"day"`
-							Uses     string `json:"uses"`
-							Accounts string `json:"accounts"`
-						}{
-							Day:      entry.Date,
-							Uses:     entry.UsageCount,
-							Accounts: entry.UserCount,
-						}
-					}
-					return history
-				}
-			}
-			// Fallback to empty history
-			return []struct {
-				Day      string `json:"day"`
-				Uses     string `json:"uses"`
-				Accounts string `json:"accounts"`
-			}{}
-		}(),
-		"following": false,
-	}
-
-	return ctx.JSON(response)
+	return h.handleTagFollowAction(ctx, tagUnfollow)
 }
 
 // HandleGetFollowedTagsLift retrieves the list of hashtags the user is following
@@ -316,7 +275,7 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 	// Extract username using authentication
 	username, err := h.extractUsernameFromContextForTags(ctx)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse pagination parameters
@@ -326,7 +285,7 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 	hashtags, nextCursor, err := h.repos.Hashtag().GetFollowedHashtags(ctx.Context, username, paginationParams.limit, paginationParams.cursor)
 	if err != nil {
 		h.logger.Error("failed to get followed hashtags", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to tag models with following set to true
@@ -478,14 +437,14 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 		username = claims.Username
 	}
@@ -494,7 +453,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, username)
 	if err != nil {
 		h.logger.Error("failed to get featured tags", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API models
@@ -534,14 +493,14 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 		username = claims.Username
 	}
@@ -556,15 +515,20 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		// Fall back to manual body parsing for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := common.ParseRequestBody(ctx.Request.Body, &req); err != nil {
-				return ctx.Status(400).JSON(map[string]string{"error": "Invalid request body"})
+				return common.RespondInvalidRequest(ctx)
 			}
 		} else {
-			return ctx.Status(400).JSON(map[string]string{"error": "Invalid request body"})
+			return common.RespondInvalidRequest(ctx)
 		}
 	}
 
 	if err := common.ValidateRequiredParam("name", req.Name); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
+	}
+
+	// Validate hashtag format
+	if err := common.ValidateHashtag(req.Name); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Create featured tag
@@ -579,14 +543,14 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 	if err != nil {
 		// Check if it's a duplicate
 		if err.Error() == "item already exists" {
-			return ctx.Status(422).JSON(map[string]string{"error": "tag already featured"})
+			return common.RespondAlreadyExists(ctx, "featured tag")
 		}
 		// Check if limit reached
 		if err.Error() == "featured tag limit reached" {
-			return ctx.Status(422).JSON(map[string]string{"error": "cannot feature more than 10 tags"})
+			return common.RespondUnprocessableEntity(ctx, "cannot feature more than 10 tags")
 		}
 		h.logger.Error("failed to create featured tag", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return the created featured tag
@@ -610,7 +574,12 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	tagID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", tagID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
+	}
+
+	// Validate tag ID format (could be a hashtag)
+	if err := common.ValidateHashtag(tagID); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Test hook - check for test username header
@@ -628,14 +597,14 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 		username = claims.Username
 	}
@@ -644,10 +613,10 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 	err := h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
 	if err != nil {
 		if err.Error() == "item not found" {
-			return ctx.Status(404).JSON(map[string]string{"error": "featured tag not found"})
+			return common.RespondNotFound(ctx, "featured tag")
 		}
 		h.logger.Error("failed to delete featured tag", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Return empty object on success
@@ -671,14 +640,14 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 		username = claims.Username
 	}
@@ -741,7 +710,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 func (h *Handler) HandleGetAccountFeaturedTagsLift(ctx *lift.Context) error {
 	accountID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("id", accountID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Get featured tags for the account

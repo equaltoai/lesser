@@ -934,7 +934,8 @@ func (p *ImportProcessor) findHideNotificationsIndex(header []string) int {
 // shouldHideNotifications determines if notifications should be hidden for a mute
 func (p *ImportProcessor) shouldHideNotifications(record []string, hideNotificationsIndex int) bool {
 	if hideNotificationsIndex >= 0 && len(record) > hideNotificationsIndex {
-		return record[hideNotificationsIndex] == "true"
+		result, _ := common.ParseAndValidateBoolean(record[hideNotificationsIndex])
+		return result
 	}
 	return false
 }

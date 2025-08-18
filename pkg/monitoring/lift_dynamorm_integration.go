@@ -88,10 +88,15 @@ func NewProductionMonitor(awsConfig aws.Config, config ProductionMetricsConfig, 
 func (pm *ProductionMonitor) LiftMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Attach cost tracker to context for DynamORM integration
+			// Attach cost tracker to context for DynamORM integration - using existing pattern
 			requestID := ctx.RequestID
-			ctxWithCost := cost.WithTracker(ctx.Context, cost.NewWithRequest(requestID, "api"))
+			tracker := cost.NewWithRequest(requestID, "api")
+			ctxWithCost := cost.WithTracker(ctx.Context, tracker)
 			ctx.Context = ctxWithCost
+			
+			// Also attach unified tracker for enhanced cost tracking
+			unifiedTracker := cost.NewUnifiedTracker(nil, pm.logger, ctx.GetUserID(), requestID)
+			ctx.Set("unified_cost_tracker", unifiedTracker)
 
 			startTime := time.Now()
 			lambdaCtx, _ := lambdacontext.FromContext(ctx.Context)
@@ -237,6 +242,19 @@ func (pm *ProductionMonitor) recordColdStartMetrics(_ context.Context, operation
 
 // recordCostMetrics records DynamORM cost tracking metrics
 func (pm *ProductionMonitor) recordCostMetrics(ctx context.Context, operation string) {
+	// Try to get unified tracker from Lift context first, then fall back to regular cost tracker
+	unifiedTracker, _ := ctx.Value("unified_cost_tracker").(*cost.UnifiedTracker)
+	if unifiedTracker != nil {
+		// Process unified tracker costs - simplified for now
+		totalCost := unifiedTracker.GetCurrentCostMicroCents()
+		costBreakdown := unifiedTracker.GetCostBreakdown()
+		pm.logger.Debug("unified cost tracking", 
+			zap.Int64("total_cost_microcents", totalCost),
+			zap.Any("cost_breakdown", costBreakdown))
+		return
+	}
+	
+	// Fall back to existing cost tracker pattern
 	costTracker := cost.FromContext(ctx)
 	if costTracker == nil {
 		return

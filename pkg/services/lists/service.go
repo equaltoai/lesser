@@ -502,17 +502,12 @@ func (s *Service) validateCreateListCommand(_ context.Context, cmd *CreateListCo
 	if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
 		return fmt.Errorf("title is required")
 	}
-	if len(cmd.Title) > 100 {
-		return fmt.Errorf("title too long (max 100 characters)")
+	if err := common.ValidateListTitle(cmd.Title); err != nil {
+		return err
 	}
 	if cmd.RepliesPolicy != "" {
-		validPolicies := map[string]bool{
-			"followed": true,
-			"list":     true,
-			"none":     true,
-		}
-		if !validPolicies[cmd.RepliesPolicy] {
-			return fmt.Errorf("invalid replies policy: %s", cmd.RepliesPolicy)
+		if err := common.ValidateListRepliesPolicy(cmd.RepliesPolicy); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -529,18 +524,13 @@ func (s *Service) validateUpdateListCommand(_ context.Context, cmd *UpdateListCo
 		if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
 			return fmt.Errorf("title cannot be empty")
 		}
-		if len(cmd.Title) > 100 {
-			return fmt.Errorf("title too long (max 100 characters)")
+		if err := common.ValidateListTitle(cmd.Title); err != nil {
+			return err
 		}
 	}
 	if cmd.RepliesPolicy != "" {
-		validPolicies := map[string]bool{
-			"followed": true,
-			"list":     true,
-			"none":     true,
-		}
-		if !validPolicies[cmd.RepliesPolicy] {
-			return fmt.Errorf("invalid replies policy: %s", cmd.RepliesPolicy)
+		if err := common.ValidateListRepliesPolicy(cmd.RepliesPolicy); err != nil {
+			return err
 		}
 	}
 	return nil

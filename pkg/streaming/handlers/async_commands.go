@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -206,35 +207,16 @@ func (ach *AsyncCommandHandler) handleBulkFollow(ctx context.Context, conn *stre
 
 // handleBulkUnfollow handles bulk unfollow operations
 func (ach *AsyncCommandHandler) handleBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+	accountIDs, validationErr := ach.ValidateBulkAccountCommand(conn, cmd, streaming.DefaultBulkAccountConfig())
+	if validationErr != nil {
 		return validationErr, nil
-	}
-
-	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
-	}
-	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Start async processing
 	go ach.processBulkUnfollow(ctx, conn, cmd.ID, accountIDs)
 
 	// Return immediate response indicating processing started
-	data := map[string]interface{}{
-		"operation_id": cmd.ID,
-		"status":       "processing",
-		"total":        len(accountIDs),
-		"processed":    0,
-		"message":      "Bulk unfollow operation started",
-	}
-
-	return ach.CreateSuccessResponse(cmd.ID, data), nil
+	return ach.CreateBulkOperationResponse(cmd.ID, cmd.ID, "processing", len(accountIDs), "Bulk unfollow operation started"), nil
 }
 
 // handleBulkDeleteStatuses handles bulk status deletion
@@ -292,34 +274,24 @@ func (ach *AsyncCommandHandler) handleBulkDeleteStatuses(ctx context.Context, co
 
 // handleGetBulkOperation handles retrieving bulk operation status
 func (ach *AsyncCommandHandler) handleGetBulkOperation(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
+	config := &streaming.CommandHandlerConfig{
+		RequiredFields:  []string{"operation_id"},
+		ParameterName:   "operation_id",
+		ErrorCodePrefix: "GET_OPERATION",
+		OperationName:   "get bulk operation",
+		ResultExtractor: func(result interface{}) interface{} {
+			return result.(*bulk.OperationResult).Operation
+		},
+		ServiceCall: func(ctx context.Context, conn *streaming.ConnectionInfo, operationID string) (interface{}, error) {
+			query := &bulk.GetOperationQuery{
+				OperationID: operationID,
+				Username:    conn.Username,
+			}
+			return ach.bulkService.GetOperation(ctx, query)
+		},
 	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"operation_id"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	operationID := ach.GetString(cmd.Payload, "operation_id", "")
-
-	query := &bulk.GetOperationQuery{
-		OperationID: operationID,
-		Username:    conn.Username,
-	}
-
-	result, err := ach.bulkService.GetOperation(ctx, query)
-	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "GET_OPERATION_FAILED",
-			"Failed to get bulk operation", err.Error()), nil
-	}
-
-	data, err := ach.ConvertToJSON(result.Operation)
-	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
-			"Failed to format response", err.Error()), nil
-	}
-
-	return ach.CreateSuccessResponse(cmd.ID, data), nil
+	
+	return ach.ExecuteStandardCommandFlow(ctx, conn, cmd, config)
 }
 
 // Import/Export Command Handlers
@@ -461,20 +433,9 @@ func (ach *AsyncCommandHandler) handleListExports(ctx context.Context, conn *str
 // Bulk Social Action Command Handlers
 
 func (ach *AsyncCommandHandler) handleBulkMute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+	accountIDs, validationErr := ach.ValidateBulkAccountCommand(conn, cmd, streaming.DefaultBulkAccountConfig())
+	if validationErr != nil {
 		return validationErr, nil
-	}
-
-	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
-	}
-	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Optional parameters
@@ -505,52 +466,22 @@ func (ach *AsyncCommandHandler) handleBulkMute(ctx context.Context, conn *stream
 }
 
 func (ach *AsyncCommandHandler) handleBulkUnmute(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+	accountIDs, validationErr := ach.ValidateBulkAccountCommand(conn, cmd, streaming.DefaultBulkAccountConfig())
+	if validationErr != nil {
 		return validationErr, nil
-	}
-
-	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
-	}
-	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Start async processing
 	go ach.processBulkUnmute(ctx, conn, cmd.ID, accountIDs)
 
 	// Return immediate response indicating processing started
-	data := map[string]interface{}{
-		"operation_id": cmd.ID,
-		"status":       "processing",
-		"total":        len(accountIDs),
-		"processed":    0,
-		"message":      "Bulk unmute operation started",
-	}
-
-	return ach.CreateSuccessResponse(cmd.ID, data), nil
+	return ach.CreateBulkOperationResponse(cmd.ID, cmd.ID, "processing", len(accountIDs), "Bulk unmute operation started"), nil
 }
 
 func (ach *AsyncCommandHandler) handleBulkBlock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+	accountIDs, validationErr := ach.ValidateBulkAccountCommand(conn, cmd, streaming.DefaultBulkAccountConfig())
+	if validationErr != nil {
 		return validationErr, nil
-	}
-
-	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
-	}
-	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Create bulk block command
@@ -577,22 +508,9 @@ func (ach *AsyncCommandHandler) handleBulkBlock(ctx context.Context, conn *strea
 }
 
 func (ach *AsyncCommandHandler) handleBulkUnblock(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	// Validate required fields
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"account_ids"}, cmd.ID); validationErr != nil {
+	accountIDs, validationErr := ach.ValidateBulkAccountCommand(conn, cmd, streaming.DefaultBulkAccountConfig())
+	if validationErr != nil {
 		return validationErr, nil
-	}
-
-	// Extract account IDs from payload
-	accountIDs := ach.GetStringSlice(cmd.Payload, "account_ids")
-	if err := common.ValidateEntityIDsList(accountIDs, "account"); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids", err.Error()), nil
-	}
-	if err := common.ValidateIntRange("account_ids_count", len(accountIDs), 1, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid account_ids count", err.Error()), nil
 	}
 
 	// Create bulk unblock command
@@ -911,21 +829,26 @@ func (ach *AsyncCommandHandler) handleListImports(ctx context.Context, conn *str
 
 // ===== Bulk Social Action Processing Functions =====
 
-// processBulkUnfollow processes bulk unfollow operations with progress tracking
-func (ach *AsyncCommandHandler) processBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, operationID string, accountIDs []string) {
-	total := len(accountIDs)
-	processed := 0
-	successful := 0
-	failed := 0
-	var errors []string
+// processBulkRelationshipOperation processes bulk relationship operations with progress tracking
+func (ach *AsyncCommandHandler) processBulkRelationshipOperation(
+	ctx context.Context,
+	conn *streaming.ConnectionInfo,
+	operationID string,
+	accountIDs []string,
+	operationName string,
+	processAccount func(accountID string) error,
+) {
+	tracker := streaming.NewBulkProcessingTracker(len(accountIDs))
+	config := streaming.DefaultBulkProcessingConfig()
+	progressHelper := streaming.NewProgressUpdateHelper(ach.publisher, ach.logger)
 
 	// Send initial progress update
-	ach.sendProgressUpdate(conn, operationID, "processing", processed, total, "Starting bulk unfollow operation")
+	initialMessage := fmt.Sprintf("Starting bulk %s operation", operationName)
+	progressHelper.SendProgressUpdate(conn, operationID, tracker, initialMessage)
 
 	// Process in batches to manage load
-	batchSize := 10
-	for i := 0; i < len(accountIDs); i += batchSize {
-		end := i + batchSize
+	for i := 0; i < len(accountIDs); i += config.BatchSize {
+		end := i + config.BatchSize
 		if end > len(accountIDs) {
 			end = len(accountIDs)
 		}
@@ -934,176 +857,60 @@ func (ach *AsyncCommandHandler) processBulkUnfollow(ctx context.Context, conn *s
 		for j := i; j < end; j++ {
 			accountID := accountIDs[j]
 			
-			// Create unfollow command
-			unfollowCmd := &relationships.UnfollowCommand{
-				FollowerID:  conn.Username,
-				FollowingID: accountID,
-			}
-
-			// Execute unfollow
-			_, err := ach.relationshipsService.Unfollow(ctx, unfollowCmd)
+			// Execute operation
+			err := processAccount(accountID)
 			if err != nil {
-				failed++
-				errors = append(errors, fmt.Sprintf("Failed to unfollow %s: %v", accountID, err))
+				tracker.AddFailure(err, accountID)
 			} else {
-				successful++
+				tracker.AddSuccess()
 			}
 
-			processed++
-
-			// Send progress update every 5 operations
-			if processed%5 == 0 || processed == total {
-				status := StatusProcessing
-				if processed == total {
-					status = StatusCompleted
-				}
-				message := fmt.Sprintf("Processed %d/%d unfollows (%d successful, %d failed)", processed, total, successful, failed)
-				ach.sendProgressUpdate(conn, operationID, status, processed, total, message)
+			// Send progress update if needed
+			if tracker.ShouldSendProgress(config) {
+				message := fmt.Sprintf("Processed %d/%d %ss (%d successful, %d failed)", tracker.Processed, tracker.Total, operationName, tracker.Successful, tracker.Failed)
+				progressHelper.SendProgressUpdate(conn, operationID, tracker, message)
 			}
 		}
 
 		// Small delay between batches to avoid overwhelming the system
 		if end < len(accountIDs) {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(config.BatchDelay)
 		}
 	}
 
 	// Send final completion update
-	finalMessage := fmt.Sprintf("Bulk unfollow completed: %d successful, %d failed out of %d accounts", successful, failed, total)
-	ach.sendFinalUpdate(conn, operationID, "completed", processed, total, finalMessage, successful, failed, errors)
+	finalMessage := fmt.Sprintf("Bulk %s completed: %d successful, %d failed out of %d accounts", operationName, tracker.Successful, tracker.Failed, tracker.Total)
+	progressHelper.SendFinalUpdate(conn, operationID, tracker, finalMessage)
 }
 
+// processBulkUnfollow processes bulk unfollow operations with progress tracking
+func (ach *AsyncCommandHandler) processBulkUnfollow(ctx context.Context, conn *streaming.ConnectionInfo, operationID string, accountIDs []string) {
+	ach.processBulkRelationshipOperation(ctx, conn, operationID, accountIDs, "unfollow", func(accountID string) error {
+		unfollowCmd := &relationships.UnfollowCommand{
+			FollowerID:  conn.Username,
+			FollowingID: accountID,
+		}
+		_, err := ach.relationshipsService.Unfollow(ctx, unfollowCmd)
+		return err
+	})
+}
 
 // processBulkUnmute processes bulk unmute operations with progress tracking
 func (ach *AsyncCommandHandler) processBulkUnmute(ctx context.Context, conn *streaming.ConnectionInfo, operationID string, accountIDs []string) {
-	total := len(accountIDs)
-	processed := 0
-	successful := 0
-	failed := 0
-	var errors []string
-
-	// Send initial progress update
-	ach.sendProgressUpdate(conn, operationID, "processing", processed, total, "Starting bulk unmute operation")
-
-	// Process in batches to manage load
-	batchSize := 10
-	for i := 0; i < len(accountIDs); i += batchSize {
-		end := i + batchSize
-		if end > len(accountIDs) {
-			end = len(accountIDs)
+	ach.processBulkRelationshipOperation(ctx, conn, operationID, accountIDs, "unmute", func(accountID string) error {
+		unmuteCmd := &relationships.UnmuteCommand{
+			MuterID: conn.Username,
+			MutedID: accountID,
 		}
-
-		// Process batch
-		for j := i; j < end; j++ {
-			accountID := accountIDs[j]
-			
-			// Create unmute command
-			unmuteCmd := &relationships.UnmuteCommand{
-				MuterID: conn.Username,
-				MutedID: accountID,
-			}
-
-			// Execute unmute
-			_, err := ach.relationshipsService.Unmute(ctx, unmuteCmd)
-			if err != nil {
-				failed++
-				errors = append(errors, fmt.Sprintf("Failed to unmute %s: %v", accountID, err))
-			} else {
-				successful++
-			}
-
-			processed++
-
-			// Send progress update every 5 operations
-			if processed%5 == 0 || processed == total {
-				status := StatusProcessing
-				if processed == total {
-					status = StatusCompleted
-				}
-				message := fmt.Sprintf("Processed %d/%d unmutes (%d successful, %d failed)", processed, total, successful, failed)
-				ach.sendProgressUpdate(conn, operationID, status, processed, total, message)
-			}
-		}
-
-		// Small delay between batches to avoid overwhelming the system
-		if end < len(accountIDs) {
-			time.Sleep(100 * time.Millisecond)
-		}
-	}
-
-	// Send final completion update
-	finalMessage := fmt.Sprintf("Bulk unmute completed: %d successful, %d failed out of %d accounts", successful, failed, total)
-	ach.sendFinalUpdate(conn, operationID, "completed", processed, total, finalMessage, successful, failed, errors)
+		_, err := ach.relationshipsService.Unmute(ctx, unmuteCmd)
+		return err
+	})
 }
 
 
 // ===== Helper Functions for Progress Updates =====
 
-// sendProgressUpdate sends a progress update via WebSocket
-func (ach *AsyncCommandHandler) sendProgressUpdate(conn *streaming.ConnectionInfo, operationID, status string, processed, total int, message string) {
-	// Create progress update event
-	event := &streaming.Event{
-		Type:   "operation.progress",
-		Stream: fmt.Sprintf("user:%s", conn.UserID),
-		Payload: map[string]interface{}{
-			"operation_id": operationID,
-			"status":       status,
-			"processed":    processed,
-			"total":        total,
-			"message":      message,
-			"progress":     float64(processed) / float64(total) * 100,
-		},
-		Timestamp: time.Now(),
-	}
-
-	// Attempt to publish the event if publisher is available
-	if ach.publisher != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		
-		if err := ach.publisher.PublishToUser(ctx, conn.UserID, event); err != nil {
-			ach.logger.Warn("failed to send progress update via WebSocket",
-				zap.String("operation_id", operationID),
-				zap.String("user_id", conn.UserID),
-				zap.Error(err))
-		}
-	}
-}
-
-// sendFinalUpdate sends the final completion update with error details
-func (ach *AsyncCommandHandler) sendFinalUpdate(conn *streaming.ConnectionInfo, operationID, finalStatus string, processed, total int, finalMessage string, successful, failed int, errors []string) {
-	// Create final update event
-	event := &streaming.Event{
-		Type:   "operation.completed",
-		Stream: fmt.Sprintf("user:%s", conn.UserID),
-		Payload: map[string]interface{}{
-			"operation_id":   operationID,
-			"status":         finalStatus,
-			"processed":      processed,
-			"total":          total,
-			"message":        finalMessage,
-			"successful":     successful,
-			"failed":         failed,
-			"errors":         errors,
-			"progress":       100.0,
-			"completed_at":   time.Now().Format(time.RFC3339),
-		},
-		Timestamp: time.Now(),
-	}
-
-	// Attempt to publish the event if publisher is available
-	if ach.publisher != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		
-		if err := ach.publisher.PublishToUser(ctx, conn.UserID, event); err != nil {
-			ach.logger.Warn("failed to send final update via WebSocket",
-				zap.String("operation_id", operationID),
-				zap.String("user_id", conn.UserID),
-				zap.Error(err))
-		}
-	}
-}
+// Note: sendProgressUpdate and sendFinalUpdate functions have been replaced by shared helpers in command_helpers.go
 
 // handleBulkDelete handles bulk deletion of multiple posts/content
 func (ach *AsyncCommandHandler) handleBulkDelete(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
@@ -1164,8 +971,15 @@ func (ach *AsyncCommandHandler) handleBulkDelete(ctx context.Context, conn *stre
 	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-// handleBulkArchive handles bulk archiving of multiple posts
-func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+// handleBulkContentOperation handles bulk content operations (archive/restore) with shared logic
+func (ach *AsyncCommandHandler) handleBulkContentOperation(
+	ctx context.Context, 
+	conn *streaming.ConnectionInfo, 
+	cmd *streaming.Command,
+	operationType string,
+	operationFunc func(context.Context, interface{}) (*bulk.OperationResult, error),
+	createCommand func(username string, contentIDs []string, contentType string, dateRange *bulk.DateRange) interface{},
+) (*streaming.CommandResponse, error) {
 	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
 	}
@@ -1201,17 +1015,13 @@ func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *str
 		}
 	}
 
-	bulkCmd := &bulk.ArchiveCommand{
-		Username:    conn.Username,
-		ContentIDs:  contentIDs,
-		ContentType: contentType,
-		DateRange:   dateRange,
-	}
+	bulkCmd := createCommand(conn.Username, contentIDs, contentType, dateRange)
 
-	result, err := ach.bulkService.BulkArchive(ctx, bulkCmd)
+	result, err := operationFunc(ctx, bulkCmd)
 	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "BULK_ARCHIVE_FAILED",
-			"Failed to start bulk archive operation", err.Error()), nil
+		errorCode := fmt.Sprintf("BULK_%s_FAILED", strings.ToUpper(operationType))
+		errorMessage := fmt.Sprintf("Failed to start bulk %s operation", operationType)
+		return ach.CreateErrorResponse(cmd.ID, errorCode, errorMessage, err.Error()), nil
 	}
 
 	data, err := ach.ConvertToJSON(result.Operation)
@@ -1223,63 +1033,38 @@ func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *str
 	return ach.CreateSuccessResponse(cmd.ID, data), nil
 }
 
+// handleBulkArchive handles bulk archiving of multiple posts
+func (ach *AsyncCommandHandler) handleBulkArchive(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
+	return ach.handleBulkContentOperation(ctx, conn, cmd, "archive",
+		func(ctx context.Context, bulkCmd interface{}) (*bulk.OperationResult, error) {
+			return ach.bulkService.BulkArchive(ctx, bulkCmd.(*bulk.ArchiveCommand))
+		},
+		func(username string, contentIDs []string, contentType string, dateRange *bulk.DateRange) interface{} {
+			return &bulk.ArchiveCommand{
+				Username:    username,
+				ContentIDs:  contentIDs,
+				ContentType: contentType,
+				DateRange:   dateRange,
+			}
+		},
+	)
+}
+
 // handleBulkRestore handles bulk restoration of archived posts
 func (ach *AsyncCommandHandler) handleBulkRestore(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
-	if authErr := ach.RequireAuth(conn, cmd.ID); authErr != nil {
-		return authErr, nil
-	}
-
-	if validationErr := ach.ValidatePayload(cmd.Payload, []string{"content_ids"}, cmd.ID); validationErr != nil {
-		return validationErr, nil
-	}
-
-	contentIDs := ach.GetStringSlice(cmd.Payload, "content_ids")
-	if err := common.ValidateSliceNotEmpty("content_ids", contentIDs); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids", err.Error()), nil
-	}
-
-	// Limit batch size to prevent timeouts
-	if err := common.ValidateSliceLength("content_ids", contentIDs, 100); err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "VALIDATION_ERROR", "Invalid content_ids count", err.Error()), nil
-	}
-
-	// Optional parameters
-	contentType := ach.GetString(cmd.Payload, "content_type", "status") // Default to status
-
-	// Parse date range if provided
-	var dateRange *bulk.DateRange
-	if dateRangeData, exists := cmd.Payload["date_range"].(map[string]interface{}); exists {
-		if startStr := ach.GetString(dateRangeData, "start", ""); startStr != "" {
-			if start, err := time.Parse(time.RFC3339, startStr); err == nil {
-				if endStr := ach.GetString(dateRangeData, "end", ""); endStr != "" {
-					if end, err := time.Parse(time.RFC3339, endStr); err == nil {
-						dateRange = &bulk.DateRange{Start: start, End: end}
-					}
-				}
+	return ach.handleBulkContentOperation(ctx, conn, cmd, "restore",
+		func(ctx context.Context, bulkCmd interface{}) (*bulk.OperationResult, error) {
+			return ach.bulkService.BulkRestore(ctx, bulkCmd.(*bulk.RestoreCommand))
+		},
+		func(username string, contentIDs []string, contentType string, dateRange *bulk.DateRange) interface{} {
+			return &bulk.RestoreCommand{
+				Username:    username,
+				ContentIDs:  contentIDs,
+				ContentType: contentType,
+				DateRange:   dateRange,
 			}
-		}
-	}
-
-	bulkCmd := &bulk.RestoreCommand{
-		Username:    conn.Username,
-		ContentIDs:  contentIDs,
-		ContentType: contentType,
-		DateRange:   dateRange,
-	}
-
-	result, err := ach.bulkService.BulkRestore(ctx, bulkCmd)
-	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "BULK_RESTORE_FAILED",
-			"Failed to start bulk restore operation", err.Error()), nil
-	}
-
-	data, err := ach.ConvertToJSON(result.Operation)
-	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
-			"Failed to format response", err.Error()), nil
-	}
-
-	return ach.CreateSuccessResponse(cmd.ID, data), nil
+		},
+	)
 }
 
 // handleBulkExport handles bulk export of user content

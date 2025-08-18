@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"sort"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -77,6 +76,11 @@ func (r *ExportRepository) GetExport(_ context.Context, exportID string) (*model
 
 // UpdateExportStatus updates the status and metadata of an export
 func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, status string, completionData map[string]any, errorMsg string) error {
+	// Validate status using centralized validation
+	if err := common.ValidateStatusState(status); err != nil {
+		return fmt.Errorf("invalid status state: %w", err)
+	}
+
 	export, err := r.GetExport(ctx, exportID)
 	if err != nil {
 		return err
@@ -136,85 +140,21 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 }
 
 // GetExportsForUser retrieves all exports for a user
-func (r *ExportRepository) GetExportsForUser(_ context.Context, username string, limit int, cursor string) ([]*models.Export, string, error) {
-	var exports []*models.Export
-
-	query := r.db.Model(&models.Export{}).
-		Where("Username", "=", username).
-		Limit(limit)
-
-	if cursor != "" {
-		// Add cursor-based pagination
-		query = query.Where("CreatedAt", ">", cursor)
-	}
-
-	err := query.Scan(&exports)
+func (r *ExportRepository) GetExportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Export, string, error) {
+	result, nextCursor, err := getImportExportItemsForUser(r.db, r.logger, ctx, username, limit, cursor, "export", true)
 	if err != nil {
-		r.logger.Error("failed to get exports for user",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get exports for user: %w", err)
+		return nil, "", err
 	}
-
-	// Calculate next cursor
-	var nextCursor string
-	if len(exports) == limit {
-		nextCursor = exports[len(exports)-1].CreatedAt.Format(time.RFC3339)
-	}
-
-	r.logger.Debug("retrieved exports for user",
-		zap.String("username", username),
-		zap.Int("count", len(exports)))
-
-	return exports, nextCursor, nil
+	return result.([]*models.Export), nextCursor, nil
 }
 
 // GetUserExportsByStatus retrieves exports for a user filtered by status
-func (r *ExportRepository) GetUserExportsByStatus(_ context.Context, username string, statuses []string) ([]*models.Export, error) {
-	var exports []*models.Export
-
-	// Query using GSI1
-	query := r.db.Model(&models.Export{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username))
-
-	// Get all exports for the user, then filter by status in memory
-	// This is because DynamORM doesn't support complex OR filters on non-key attributes
-	err := query.All(&exports)
+func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Export, error) {
+	result, err := getImportExportItemsByStatus(r.db, r.logger, ctx, username, statuses, "export", &models.Export{})
 	if err != nil {
-		r.logger.Error("failed to query exports by GSI1",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get exports for user: %w", err)
+		return nil, err
 	}
-
-	// Filter by status if specified
-	if len(statuses) > 0 {
-		statusMap := make(map[string]bool)
-		for _, status := range statuses {
-			statusMap[status] = true
-		}
-
-		filtered := make([]*models.Export, 0)
-		for _, export := range exports {
-			if statusMap[export.Status] {
-				filtered = append(filtered, export)
-			}
-		}
-		exports = filtered
-	}
-
-	// Sort by creation date descending (most recent first)
-	for i, j := 0, len(exports)-1; i < j; i, j = i+1, j-1 {
-		exports[i], exports[j] = exports[j], exports[i]
-	}
-
-	r.logger.Debug("retrieved exports by status",
-		zap.String("username", username),
-		zap.Strings("statuses", statuses),
-		zap.Int("count", len(exports)))
-
-	return exports, nil
+	return result, nil
 }
 
 // Export Cost Tracking Methods
@@ -262,76 +202,21 @@ func (r *ExportRepository) GetExportCostTracking(_ context.Context, exportID str
 }
 
 // GetUserExportCosts retrieves export costs for a user within a date range
-func (r *ExportRepository) GetUserExportCosts(_ context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	var costTrackingRecords []*models.ExportCostTracking
-
-	startSK := fmt.Sprintf("COST#%s", startDate.Format(time.RFC3339))
-	endSK := fmt.Sprintf("COST#%s", endDate.Format(time.RFC3339))
-
-	query := r.db.Model(&models.ExportCostTracking{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
-		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&costTrackingRecords)
+func (r *ExportRepository) GetUserExportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
+	result, err := getUserCosts(r.db, r.logger, ctx, username, startDate, endDate, limit, "export", &models.ExportCostTracking{})
 	if err != nil {
-		r.logger.Error("failed to get user export costs",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user export costs: %w", err)
+		return nil, err
 	}
-
-	return costTrackingRecords, nil
+	return result, nil
 }
 
 // GetExportCostsByDateRange retrieves export costs for all users within a date range
-func (r *ExportRepository) GetExportCostsByDateRange(_ context.Context, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	var allCosts []*models.ExportCostTracking
-
-	// Query by daily partitions
-	currentDate := startDate
-	for currentDate.Before(endDate) || currentDate.Equal(endDate) {
-		dateStr := currentDate.Format(common.CompactDateFormat)
-
-		var dailyCosts []*models.ExportCostTracking
-		query := r.db.Model(&models.ExportCostTracking{}).
-			Index("GSI2").
-			Where("GSI2PK", "=", fmt.Sprintf("EXPORT_COSTS#%s", dateStr)).
-			OrderBy("GSI2SK", "DESC").
-			Limit(limit)
-
-		err := query.All(&dailyCosts)
-		if err != nil {
-			r.logger.Warn("failed to get export costs for date",
-				zap.String("date", dateStr),
-				zap.Error(err))
-			// Continue with next date
-		} else {
-			allCosts = append(allCosts, dailyCosts...)
-		}
-
-		// Move to next day
-		currentDate = currentDate.AddDate(0, 0, 1)
-
-		// Break if we have enough results
-		if len(allCosts) >= limit {
-			break
-		}
+func (r *ExportRepository) GetExportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
+	result, err := getCostsByDateRange(r.db, r.logger, ctx, startDate, endDate, limit, "export", &models.ExportCostTracking{})
+	if err != nil {
+		return nil, err
 	}
-
-	// Sort by timestamp (newest first) and limit
-	sort.Slice(allCosts, func(i, j int) bool {
-		return allCosts[i].Timestamp.After(allCosts[j].Timestamp)
-	})
-
-	if len(allCosts) > limit {
-		allCosts = allCosts[:limit]
-	}
-
-	return allCosts, nil
+	return result, nil
 }
 
 // GetExportCostSummary calculates cost summary for a user's exports
@@ -409,22 +294,9 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 
 // GetHighCostExports returns export operations that exceed a cost threshold
 func (r *ExportRepository) GetHighCostExports(ctx context.Context, thresholdMicroCents int64, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	// Get all recent costs
-	allCosts, err := r.GetExportCostsByDateRange(ctx, startDate, endDate, limit*10) // Get more to filter
+	result, err := getHighCostOperations(r.db, r.logger, ctx, thresholdMicroCents, startDate, endDate, limit, "export", &models.ExportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
-
-	// Filter by threshold
-	var highCostExports []*models.ExportCostTracking
-	for _, cost := range allCosts {
-		if cost.TotalCostMicroCents >= thresholdMicroCents {
-			highCostExports = append(highCostExports, cost)
-			if len(highCostExports) >= limit {
-				break
-			}
-		}
-	}
-
-	return highCostExports, nil
+	return result, nil
 }

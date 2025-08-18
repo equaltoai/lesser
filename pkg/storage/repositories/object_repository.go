@@ -23,6 +23,7 @@ type ObjectRepository struct {
 	domain      string
 	logger      *zap.Logger
 	accountRepo *AccountRepository
+	queryUtils  *QueryUtils
 }
 
 // NewObjectRepository creates a new object repository
@@ -33,6 +34,7 @@ func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logge
 		domain:      domain,
 		logger:      logger,
 		accountRepo: NewAccountRepository(db, tableName, domain, logger),
+		queryUtils:  NewQueryUtils(db, logger),
 	}
 }
 
@@ -606,8 +608,8 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 // GetUpdateHistory retrieves update history for an object
 func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string, limit int) ([]*storage.UpdateHistory, error) {
 	// Validate limit
-	if limit <= 0 || limit > 100 {
-		limit = 10 // default
+	if err := common.ValidateQueryLimit(limit, 100, "update history"); err != nil {
+		limit = 10 // default on validation error
 	}
 
 	// Build the query - query by PK and SK prefix
@@ -658,65 +660,26 @@ func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string
 
 // AddToCollection adds an item to a collection
 func (r *ObjectRepository) AddToCollection(ctx context.Context, collection string, item *storage.CollectionItem) error {
-	collectionItem := models.NewCollectionItem(collection, item.ItemID, item.ItemType, item.AddedBy)
-	collectionItem.Position = item.Position
-
-	if err := r.db.WithContext(ctx).Model(collectionItem).Create(); err != nil {
-		if errors.IsConditionFailed(err) {
-			r.logger.Info("item already in collection",
-				zap.String("collection", collection),
-				zap.String("item_id", item.ItemID))
-			return nil // Not an error to add something already in collection
-		}
-		r.logger.Error("failed to add to collection",
-			zap.String("collection", collection),
-			zap.String("item_id", item.ItemID),
-			zap.Error(err))
-		return fmt.Errorf("failed to add to collection: %w", err)
-	}
-
-	r.logger.Info("added item to collection",
-		zap.String("collection", collection),
-		zap.String("item_id", item.ItemID))
-
-	return nil
+	return r.queryUtils.AddToCollectionHelper(ctx, collection, item, r.db)
 }
 
 // RemoveFromCollection removes an item from a collection
 func (r *ObjectRepository) RemoveFromCollection(ctx context.Context, collection, itemID string) error {
+	pk := fmt.Sprintf("COLLECTION#%s", collection)
+	sk := fmt.Sprintf("ITEM#%s", itemID)
+	
 	collectionItem := &models.CollectionItem{
-		PK: fmt.Sprintf("COLLECTION#%s", collection),
-		SK: fmt.Sprintf("ITEM#%s", itemID),
+		PK: pk,
+		SK: sk,
 	}
 
-	if err := r.db.WithContext(ctx).Model(collectionItem).
-		Where("PK", "=", collectionItem.PK).
-		Where("SK", "=", collectionItem.SK).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("item not in collection",
-				zap.String("collection", collection),
-				zap.String("item_id", itemID))
-			return nil
-		}
-		r.logger.Error("failed to remove from collection",
-			zap.String("collection", collection),
-			zap.String("item_id", itemID),
-			zap.Error(err))
-		return fmt.Errorf("failed to remove from collection: %w", err)
-	}
-
-	r.logger.Info("removed item from collection",
-		zap.String("collection", collection),
-		zap.String("item_id", itemID))
-
-	return nil
+	return r.queryUtils.DeleteWithNotFoundHandling(ctx, pk, sk, collectionItem, "remove from collection", collection, itemID)
 }
 
 // GetCollectionItems retrieves items from a collection with pagination
 func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection string, limit int, cursor string) ([]*storage.CollectionItem, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if err := common.ValidateQueryLimit(limit, 100, "collection items"); err != nil {
+		limit = 20 // default on validation error
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.CollectionItem{}).
@@ -1055,8 +1018,8 @@ func (r *ObjectRepository) GetStatusReplyCount(ctx context.Context, statusID str
 
 // GetReplies retrieves replies to an object with pagination
 func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limit int, cursor string) ([]any, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if err := common.ValidateQueryLimit(limit, 100, "replies"); err != nil {
+		limit = 20 // default on validation error
 	}
 
 	// Ensure we have the full object URL for GSI6 key
@@ -1346,8 +1309,8 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 
 // GetQuotesForNote retrieves quotes for a specific note with pagination
 func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, limit int, cursor string) ([]*storage.QuoteRelationship, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if err := common.ValidateQueryLimit(limit, 100, "note quotes"); err != nil {
+		limit = 20 // default on validation error
 	}
 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<noteID>
@@ -1661,8 +1624,8 @@ func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID s
 
 // GetQuotesOfStatus retrieves quotes of a specific status
 func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID string, limit int) ([]*storage.StatusSearchResult, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
+	if err := common.ValidateQueryLimit(limit, 100, "status quotes"); err != nil {
+		limit = 20 // default on validation error
 	}
 
 	// Use GSI1 to find quotes where GSI1PK = QUOTED#<statusID>
@@ -2288,26 +2251,27 @@ func (r *ObjectRepository) IsTombstoned(ctx context.Context, objectID string) (b
 	return true, nil
 }
 
-// GetTombstonesByActor retrieves all tombstones created by a specific actor
-func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
+// getTombstonesByGSI is a helper function to query tombstones using different GSI patterns
+func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkField, skField, pkValue, logField, logValue string, limit int, cursor string) ([]*models.Tombstone, string, error) {
 	var tombstones []*models.Tombstone
 	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
-		Where("GSI1PK", "=", fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID))
+		Where(pkField, "=", pkValue)
 
 	if cursor != "" {
-		query = query.Where("GSI1SK", ">", cursor)
+		query = query.Where(skField, ">", cursor)
 	}
 
 	if limit > 0 {
 		query = query.Limit(limit + 1) // Get one extra to determine next cursor
 	}
 
-	err := query.Index("GSI1").Scan(&tombstones)
+	err := query.Index(gsiIndex).Scan(&tombstones)
 	if err != nil {
-		r.logger.Error("failed to get tombstones by actor",
-			zap.String("actor_id", actorID),
+		r.logger.Error("failed to get tombstones",
+			zap.String(logField, logValue),
+			zap.String("gsi", gsiIndex),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get tombstones by actor: %w", err)
+		return nil, "", fmt.Errorf("failed to get tombstones: %w", err)
 	}
 
 	var nextCursor string
@@ -2315,45 +2279,29 @@ func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID str
 		// Remove the extra record and set cursor
 		tombstones = tombstones[:limit]
 		if err := common.ValidateSliceNotEmpty("tombstones", tombstones); err == nil {
-			nextCursor = tombstones[len(tombstones)-1].GSI1SK
+			// Get the SK value from the last tombstone
+			switch skField {
+			case "GSI1SK":
+				nextCursor = tombstones[len(tombstones)-1].GSI1SK
+			case "GSI2SK":
+				nextCursor = tombstones[len(tombstones)-1].GSI2SK
+			}
 		}
 	}
 
 	return tombstones, nextCursor, nil
 }
 
+// GetTombstonesByActor retrieves all tombstones created by a specific actor
+func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
+	return r.getTombstonesByGSI(ctx, "GSI1", "GSI1PK", "GSI1SK", 
+		fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID), "actor_id", actorID, limit, cursor)
+}
+
 // GetTombstonesByType retrieves tombstones by their former type
 func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	var tombstones []*models.Tombstone
-	query := r.db.WithContext(ctx).Model(&models.Tombstone{}).
-		Where("GSI2PK", "=", fmt.Sprintf("TOMBSTONE#%s", formerType))
-
-	if cursor != "" {
-		query = query.Where("GSI2SK", ">", cursor)
-	}
-
-	if limit > 0 {
-		query = query.Limit(limit + 1) // Get one extra to determine next cursor
-	}
-
-	err := query.Index("GSI2").Scan(&tombstones)
-	if err != nil {
-		r.logger.Error("failed to get tombstones by type",
-			zap.String("former_type", formerType),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get tombstones by type: %w", err)
-	}
-
-	var nextCursor string
-	if limit > 0 && len(tombstones) > limit {
-		// Remove the extra record and set cursor
-		tombstones = tombstones[:limit]
-		if err := common.ValidateSliceNotEmpty("tombstones", tombstones); err == nil {
-			nextCursor = tombstones[len(tombstones)-1].GSI2SK
-		}
-	}
-
-	return tombstones, nextCursor, nil
+	return r.getTombstonesByGSI(ctx, "GSI2", "GSI2PK", "GSI2SK", 
+		fmt.Sprintf("TOMBSTONE#%s", formerType), "former_type", formerType, limit, cursor)
 }
 
 // CleanupExpiredTombstones removes tombstones that have exceeded their TTL

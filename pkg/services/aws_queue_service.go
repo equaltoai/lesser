@@ -76,20 +76,21 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 	}, nil
 }
 
-// QueueExportJob queues an export job for asynchronous processing
-func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) error {
-	if err := common.ValidateRequiredParam("exportID", exportID); err != nil {
+// queueJobGeneric handles the common pattern for queuing jobs
+func (s *AWSQueueService) queueJobGeneric(ctx context.Context, jobID, jobType string) error {
+	paramName := jobType + "ID"
+	if err := common.ValidateRequiredParam(paramName, jobID); err != nil {
 		return err
 	}
 
 	message := QueueMessage{
-		JobType: "export",
-		JobID:   exportID,
+		JobType: jobType,
+		JobID:   jobID,
 	}
 
 	messageBody, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal export message: %w", err)
+		return fmt.Errorf("failed to marshal %s message: %w", jobType, err)
 	}
 
 	// Add timeout to the context if not already present
@@ -105,11 +106,11 @@ func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) e
 		MessageAttributes: map[string]types.MessageAttributeValue{
 			"JobType": {
 				DataType:    aws.String("String"),
-				StringValue: aws.String("export"),
+				StringValue: aws.String(jobType),
 			},
 			"JobID": {
 				DataType:    aws.String("String"),
-				StringValue: aws.String(exportID),
+				StringValue: aws.String(jobID),
 			},
 			"Timestamp": {
 				DataType:    aws.String("Number"),
@@ -117,83 +118,32 @@ func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) e
 			},
 		},
 		// Add message deduplication for FIFO queues if needed
-		MessageGroupId: aws.String("export-jobs"),
+		MessageGroupId: aws.String(jobType + "-jobs"),
 	}
 
 	result, err := s.client.SendMessage(ctx, input)
 	if err != nil {
-		s.logger.Error("failed to send export message to SQS",
-			zap.String("export_id", exportID),
+		s.logger.Error(fmt.Sprintf("failed to send %s message to SQS", jobType),
+			zap.String(jobType+"_id", jobID),
 			zap.String("queue_url", s.queueURL),
 			zap.Error(err))
-		return fmt.Errorf("failed to send export message to SQS: %w", err)
+		return fmt.Errorf("failed to send %s message to SQS: %w", jobType, err)
 	}
 
-	s.logger.Info("export job queued successfully",
-		zap.String("export_id", exportID),
+	s.logger.Info(fmt.Sprintf("%s job queued successfully", jobType),
+		zap.String(jobType+"_id", jobID),
 		zap.String("message_id", aws.ToString(result.MessageId)),
 		zap.String("queue_url", s.queueURL))
 
 	return nil
 }
 
+// QueueExportJob queues an export job for asynchronous processing
+func (s *AWSQueueService) QueueExportJob(ctx context.Context, exportID string) error {
+	return s.queueJobGeneric(ctx, exportID, "export")
+}
+
 // QueueImportJob queues an import job for asynchronous processing
 func (s *AWSQueueService) QueueImportJob(ctx context.Context, importID string) error {
-	if err := common.ValidateRequiredParam("importID", importID); err != nil {
-		return err
-	}
-
-	message := QueueMessage{
-		JobType: "import",
-		JobID:   importID,
-	}
-
-	messageBody, err := json.Marshal(message)
-	if err != nil {
-		return fmt.Errorf("failed to marshal import message: %w", err)
-	}
-
-	// Add timeout to the context if not already present
-	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-	}
-
-	input := &sqs.SendMessageInput{
-		QueueUrl:    aws.String(s.queueURL),
-		MessageBody: aws.String(string(messageBody)),
-		MessageAttributes: map[string]types.MessageAttributeValue{
-			"JobType": {
-				DataType:    aws.String("String"),
-				StringValue: aws.String("import"),
-			},
-			"JobID": {
-				DataType:    aws.String("String"),
-				StringValue: aws.String(importID),
-			},
-			"Timestamp": {
-				DataType:    aws.String("Number"),
-				StringValue: aws.String(fmt.Sprintf("%d", time.Now().Unix())),
-			},
-		},
-		// Add message deduplication for FIFO queues if needed
-		MessageGroupId: aws.String("import-jobs"),
-	}
-
-	result, err := s.client.SendMessage(ctx, input)
-	if err != nil {
-		s.logger.Error("failed to send import message to SQS",
-			zap.String("import_id", importID),
-			zap.String("queue_url", s.queueURL),
-			zap.Error(err))
-		return fmt.Errorf("failed to send import message to SQS: %w", err)
-	}
-
-	s.logger.Info("import job queued successfully",
-		zap.String("import_id", importID),
-		zap.String("message_id", aws.ToString(result.MessageId)),
-		zap.String("queue_url", s.queueURL))
-
-	return nil
+	return s.queueJobGeneric(ctx, importID, "import")
 }

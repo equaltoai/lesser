@@ -204,15 +204,9 @@ func (h *Handler) HandleModerationQueueLift(ctx *lift.Context) error {
 	}
 
 	// Parse query parameters
-	limit := 20
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if _, err := fmt.Sscanf(limitStr, "%d", &limit); err != nil {
-			// Invalid limit format, use default
-			limit = 20
-		}
-		if limit > 100 {
-			limit = 100
-		}
+	limit, err := common.ParseAndValidateAPILimit(ctx.Query("limit"), 100)
+	if err != nil {
+		limit = 20 // Use default on error
 	}
 
 	cursor := ctx.Query("cursor")
@@ -578,8 +572,13 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 
 	// Get direction parameter (default to outgoing)
 	direction := ctx.Query("direction")
-	if common.ValidateRequiredParam("direction", direction) != nil {
+	if direction == "" {
 		direction = "outgoing"
+	} else if err := common.ValidateEnum("direction", direction, []string{"outgoing", "incoming"}); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{
+			"error": "direction must be 'outgoing' or 'incoming'",
+		})
 	}
 
 	// Get relationships based on direction
@@ -591,11 +590,6 @@ func (h *Handler) HandleGetTrustRelationshipsLift(ctx *lift.Context) error {
 		relationships, nextCursor, err = h.repos.Trust().GetTrustRelationships(ctx.Context, actor.ID, 100, "")
 	case "incoming":
 		relationships, nextCursor, err = h.repos.Trust().GetTrustedByRelationships(ctx.Context, actor.ID, 100, "")
-	default:
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{
-			"error": "direction must be 'outgoing' or 'incoming'",
-		})
 	}
 
 	if err != nil {

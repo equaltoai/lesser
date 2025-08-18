@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -355,6 +356,11 @@ func encodeCursor(lastKey map[string]interface{}) string {
 
 // decodeCursor decodes a cursor string into a DynamoDB exclusive start key
 func decodeCursor(cursor string) (map[string]interface{}, error) {
+	// Validate cursor format first
+	if err := common.ValidateRepositoryCursor(cursor); err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+
 	data, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
 		return nil, fmt.Errorf("invalid cursor format: %w", err)

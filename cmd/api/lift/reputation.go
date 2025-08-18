@@ -18,7 +18,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
 	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Check for test mode
@@ -42,14 +42,14 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 	}
 
@@ -63,7 +63,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get reputation
@@ -73,10 +73,10 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 
 		// Check if it's an actor not found error
 		if strings.Contains(err.Error(), "actor not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": fmt.Sprintf("actor not found: %s", actorID)})
+			return common.RespondActorNotFound(ctx)
 		}
 
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API response
@@ -109,14 +109,14 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		username = claims.Username
@@ -129,14 +129,14 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Export reputation
 	portableRep, err := repService.ExportReputation(ctx.Context, actorID)
 	if err != nil {
 		h.logger.Error("Failed to export reputation", zap.Error(err), zap.String("actor", actorID))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Set JSON-LD content type
@@ -168,14 +168,14 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 	}
 
@@ -187,10 +187,10 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := json.Unmarshal(ctx.Request.Body, &importReq); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
@@ -198,14 +198,14 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Import reputation
 	result, err := repService.ImportReputation(ctx.Context, importReq.Document)
 	if err != nil {
 		h.logger.Error("Failed to import reputation", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(result)
@@ -235,14 +235,14 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		username = claims.Username
@@ -258,19 +258,19 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := json.Unmarshal(ctx.Request.Body, &vouchReq); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
 	// Validate input
 	if err := common.ValidateRequiredParam("vouchTo", vouchReq.To); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing 'to' field"})
+		return common.RespondBadRequest(ctx, "missing 'to' field")
 	}
 	if err := common.ValidateFloatRange("confidence", vouchReq.Confidence, 0, 1); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Get the actor ID for the authenticated user
@@ -280,7 +280,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Create vouch
@@ -288,12 +288,12 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 	if err != nil {
 		h.logger.Error("Failed to create vouch", zap.Error(err))
 		if strings.Contains(err.Error(), "insufficient reputation") {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "insufficient reputation to vouch"})
+			return common.RespondBadRequest(ctx, "insufficient reputation to vouch")
 		}
 		if strings.Contains(err.Error(), "monthly vouch limit") {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "monthly vouch limit reached"})
+			return common.RespondBadRequest(ctx, "monthly vouch limit reached")
 		}
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API response
@@ -307,7 +307,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	// Get actorID from path parameter
 	actorID := ctx.Param("actor_id")
 	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": err.Error()})
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Check for test mode
@@ -331,14 +331,14 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 	}
 
@@ -352,7 +352,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get vouches
@@ -362,10 +362,10 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 
 		// Check if it's an actor not found error
 		if strings.Contains(err.Error(), "actor not found") {
-			return ctx.Status(http.StatusNotFound).JSON(map[string]string{"error": fmt.Sprintf("actor not found: %s", actorID)})
+			return common.RespondActorNotFound(ctx)
 		}
 
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Convert to API response
@@ -382,7 +382,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	// Get vouchID from path parameter
 	vouchID := ctx.Param("vouch_id")
 	if err := common.ValidateRequiredParam("vouchID", vouchID); err != nil {
-		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "missing vouch_id parameter"})
+		return common.RespondBadRequest(ctx, "missing vouch_id parameter")
 	}
 
 	// Check for test mode
@@ -407,14 +407,14 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(http.StatusUnauthorized).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		username = claims.Username
@@ -427,7 +427,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Revoke vouch
@@ -435,9 +435,9 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 	if err != nil {
 		h.logger.Error("Failed to revoke vouch", zap.Error(err))
 		if strings.Contains(err.Error(), "only the voucher can revoke") {
-			return ctx.Status(http.StatusForbidden).JSON(map[string]string{"error": "only the voucher can revoke their vouch"})
+			return common.RespondForbidden(ctx, "only the voucher can revoke their vouch")
 		}
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.Status(http.StatusNoContent).JSON(nil)
@@ -453,10 +453,10 @@ func (h *Handler) HandleVerifyReputationLift(ctx *lift.Context) error {
 		// Fallback for test environments
 		if ctx.Request != nil && ctx.Request.Body != nil && len(ctx.Request.Body) > 0 {
 			if err := json.Unmarshal(ctx.Request.Body, &verifyReq); err != nil {
-				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+				return common.RespondBadRequest(ctx, "invalid request body")
 			}
 		} else {
-			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{"error": "invalid request body"})
+			return common.RespondBadRequest(ctx, "invalid request body")
 		}
 	}
 
@@ -464,14 +464,14 @@ func (h *Handler) HandleVerifyReputationLift(ctx *lift.Context) error {
 	repService, err := h.getReputationService()
 	if err != nil {
 		h.logger.Error("Failed to initialize reputation service", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Verify reputation
 	result, err := repService.VerifyReputation(ctx.Context, verifyReq.Document)
 	if err != nil {
 		h.logger.Error("Failed to verify reputation", zap.Error(err))
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	return ctx.Status(http.StatusOK).JSON(result)
@@ -482,7 +482,7 @@ func (h *Handler) HandleGetReputationKeysLift(ctx *lift.Context) error {
 	// Initialize reputation service
 	repService, err := h.getReputationService()
 	if err != nil {
-		return ctx.Status(http.StatusInternalServerError).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 
 	// Get public key

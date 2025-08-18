@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -371,24 +372,7 @@ func ValidateAcctParameter(acct string) error {
 
 // ParseAndValidateActivityPubLimit parses and validates limits for ActivityPub collections
 func ParseAndValidateActivityPubLimit(limitStr string) (int, error) {
-	if limitStr == "" {
-		return 20, nil // Default for ActivityPub
-	}
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
-		return 0, ValidationError{Field: "limit", Message: "must be a valid number"}
-	}
-
-	if limit < 1 {
-		return 0, ValidationError{Field: "limit", Message: "must be at least 1"}
-	}
-
-	if limit > 100 {
-		return 0, ValidationError{Field: "limit", Message: "cannot be greater than 100"}
-	}
-
-	return limit, nil
+	return ParseAndValidateIntWithBounds("limit", limitStr, 1, 100, 20)
 }
 
 // ValidateAccountIDsParameter validates comma-separated account IDs (used in familiar followers)
@@ -427,24 +411,7 @@ func ValidateStatusParamID(statusID string) error {
 
 // ParseStatusContextLimit parses and validates limits for status context endpoints
 func ParseStatusContextLimit(limitStr string) (int, error) {
-	if limitStr == "" {
-		return 20, nil // Default for status context
-	}
-
-	limit, err := strconv.Atoi(limitStr)
-	if err != nil {
-		return 0, ValidationError{Field: "limit", Message: "must be a valid number"}
-	}
-
-	if limit <= 0 {
-		return 0, ValidationError{Field: "limit", Message: "must be greater than 0"}
-	}
-
-	if limit > 80 {
-		return 0, ValidationError{Field: "limit", Message: "cannot be greater than 80"}
-	}
-
-	return limit, nil
+	return ParseAndValidateIntWithBounds("limit", limitStr, 0, 80, 20)
 }
 
 // ValidateVisibility validates status visibility values
@@ -455,6 +422,11 @@ func ValidateVisibility(visibility string) error {
 
 	allowedValues := []string{"public", "unlisted", "private", "direct"}
 	return ValidateEnum("visibility", visibility, allowedValues)
+}
+
+// IsPubliclyVisible checks if content is visible to public (public or unlisted)
+func IsPubliclyVisible(visibility string) bool {
+	return visibility == "public" || visibility == "unlisted"
 }
 
 // ValidateStatusContent validates status content length and format
@@ -487,46 +459,34 @@ func ValidateLanguageCode(language string) error {
 
 // ParseStatusTimelineLimit parses and validates limits for status timelines (home, public)
 func ParseStatusTimelineLimit(limitStr string) (int, error) {
+	// Special behavior: returns defaults/caps on errors rather than failing
 	if limitStr == "" {
-		return 20, nil // Default for timelines
+		return 20, nil
 	}
-
-	limit, err := strconv.Atoi(limitStr)
+	
+	result, err := ParseAndValidateIntWithBounds("limit", limitStr, 0, 80, 20)
 	if err != nil {
-		return 20, nil // Return default on parse error for timeline endpoints
+		// For timeline endpoints, return default on parse error instead of failing
+		return 20, nil
 	}
-
-	if limit <= 0 {
-		return 20, nil // Return default for invalid values
-	}
-
-	if limit > 80 {
-		return 80, nil // Cap at maximum
-	}
-
-	return limit, nil
+	
+	return result, nil
 }
 
 // ParseAccountStatusesLimit parses and validates limits for account status listings
 func ParseAccountStatusesLimit(limitStr string) (int, error) {
+	// Special behavior: returns defaults/caps on errors rather than failing
 	if limitStr == "" {
-		return 20, nil // Default for account statuses
+		return 20, nil
 	}
-
-	limit, err := strconv.Atoi(limitStr)
+	
+	result, err := ParseAndValidateIntWithBounds("limit", limitStr, 0, 40, 20)
 	if err != nil {
-		return 20, nil // Return default on parse error
+		// For account status endpoints, return default on parse error instead of failing
+		return 20, nil
 	}
-
-	if limit <= 0 {
-		return 20, nil // Return default for invalid values
-	}
-
-	if limit > 40 {
-		return 40, nil // Cap at maximum for account statuses
-	}
-
-	return limit, nil
+	
+	return result, nil
 }
 
 // ValidateFilterParamID validates filter ID from URL parameters
@@ -625,25 +585,18 @@ func ValidateSearchQuery(query string) error {
 
 // ParseSearchOffset parses and validates search offset parameters
 func ParseSearchOffset(offsetStr string) (int, error) {
-	if offsetStr == "" {
-		return 0, nil // Default offset
-	}
+	return ParseAndValidateIntWithBounds("offset", offsetStr, -1, 10000, 0)
+}
 
-	offset, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		return 0, ValidationError{Field: "offset", Message: "must be a valid number"}
+// GetEnvInt gets an integer environment variable with a default value
+// This consolidates the common pattern: strconv.Atoi(os.Getenv(key)); err == nil
+func GetEnvInt(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intValue, err := strconv.Atoi(value); err == nil {
+			return intValue
+		}
 	}
-
-	if offset < 0 {
-		return 0, ValidationError{Field: "offset", Message: "cannot be negative"}
-	}
-
-	// Reasonable maximum offset to prevent abuse
-	if offset > 10000 {
-		return 0, ValidationError{Field: "offset", Message: "cannot be greater than 10000"}
-	}
-
-	return offset, nil
+	return defaultValue
 }
 
 // Repository-specific validation utilities
@@ -872,6 +825,91 @@ func ValidateRepositoryAccess(userID, resourceID string, operation string) error
 	return ValidateEnumField(operation, validOperations, "operation")
 }
 
+// Content-specific validation functions
+
+
+// ValidateDisplayName validates display name length
+func ValidateDisplayName(displayName string) error {
+	if len(displayName) > 30 {
+		return ValidationError{Field: "display_name", Message: "cannot be longer than 30 characters"}
+	}
+	return nil
+}
+
+// ValidateAccountBio validates account bio length
+func ValidateAccountBio(bio string) error {
+	if len(bio) > 500 {
+		return ValidationError{Field: "bio", Message: "cannot be longer than 500 characters"}
+	}
+	return nil
+}
+
+// ValidateBooleanString validates boolean-like strings
+func ValidateBooleanString(value string) bool {
+	return value == "true" || value == "1" || value == "yes"
+}
+
+// ValidateHTTPScheme validates HTTP/HTTPS schemes
+func ValidateHTTPScheme(scheme string) error {
+	if scheme != "http" && scheme != "https" {
+		return ValidationError{Field: "scheme", Message: "must be http or https"}
+	}
+	return nil
+}
+
+// ValidateMediaType validates media attachment types
+func ValidateMediaType(mediaType string) error {
+	validTypes := []string{"Image", "Video", "Document", "Audio"}
+	return ValidateEnumField(mediaType, validTypes, "media_type")
+}
+
+// IsProcessableMediaType checks if media type can be processed (Image, Video, Document)
+func IsProcessableMediaType(mediaType string) bool {
+	return mediaType == "Image" || mediaType == "Video" || mediaType == "Document"
+}
+
+
+// ValidateStatusState validates status states (pending, completed, failed, etc.)
+func ValidateStatusState(status string) error {
+	validStates := []string{"pending", "completed", "failed", "processing", "ready"}
+	return ValidateEnumField(status, validStates, "status")
+}
+
+// ValidateSliceNotEmpty validates that a slice is not empty
+func ValidateSliceNotEmpty(fieldName string, slice interface{}) error {
+	switch s := slice.(type) {
+	case []string:
+		if len(s) == 0 {
+			return ValidationError{Field: fieldName, Message: "cannot be empty"}
+		}
+	case []interface{}:
+		if len(s) == 0 {
+			return ValidationError{Field: fieldName, Message: "cannot be empty"}
+		}
+	default:
+		return ValidationError{Field: fieldName, Message: "unsupported slice type"}
+	}
+	return nil
+}
+
+// ValidateSliceLength validates slice length against bounds
+func ValidateSliceLength(fieldName string, slice interface{}, maxLength int) error {
+	var length int
+	switch s := slice.(type) {
+	case []string:
+		length = len(s)
+	case []interface{}:
+		length = len(s)
+	default:
+		return ValidationError{Field: fieldName, Message: "unsupported slice type"}
+	}
+	
+	if length > maxLength {
+		return ValidationError{Field: fieldName, Message: fmt.Sprintf("cannot contain more than %d items", maxLength)}
+	}
+	return nil
+}
+
 // Repository-specific entity validation
 
 // ValidateUserEntity validates user entity data before repository operations
@@ -1055,43 +1093,6 @@ func ValidateIntRange(field string, value, min, max int) error {
 	return nil
 }
 
-// ValidateSliceNotEmpty validates that a slice is not empty
-func ValidateSliceNotEmpty(field string, slice interface{}) error {
-	if slice == nil {
-		return ValidationError{Field: field, Message: "cannot be nil"}
-	}
-
-	switch v := slice.(type) {
-	case []string:
-		if len(v) == 0 {
-			return ValidationError{Field: field, Message: "cannot be empty"}
-		}
-	case []interface{}:
-		if len(v) == 0 {
-			return ValidationError{Field: field, Message: "cannot be empty"}
-		}
-	default:
-		return ValidationError{Field: field, Message: "unsupported slice type"}
-	}
-
-	return nil
-}
-
-// ValidateSliceLength validates that a slice has the expected length
-func ValidateSliceLength(field string, slice interface{}, maxLength int) error {
-	switch v := slice.(type) {
-	case []string:
-		if len(v) > maxLength {
-			return ValidationError{Field: field, Message: fmt.Sprintf("cannot have more than %d items", maxLength)}
-		}
-	case []interface{}:
-		if len(v) > maxLength {
-			return ValidationError{Field: field, Message: fmt.Sprintf("cannot have more than %d items", maxLength)}
-		}
-	}
-
-	return nil
-}
 
 // ValidateContentOrAttachments validates that either content or attachments are provided
 func ValidateContentOrAttachments(content string, attachmentIds []string) error {

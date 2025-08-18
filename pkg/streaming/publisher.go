@@ -120,45 +120,13 @@ func (p *apiGatewayPublisher) PublishToUser(ctx context.Context, userID string, 
 		return fmt.Errorf("failed to get user connections: %w", err)
 	}
 
-	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
-		p.logger.Debug("no active connections for user",
-			zap.String("user_id", userID))
-		return nil
+	// Use shared helper for connection publishing
+	helper := NewPublishConnectionHelper(p.logger)
+	logContext := map[string]interface{}{
+		"user_id": userID,
+		"stream":  event.Stream,
 	}
-
-	// Set timestamp if not provided
-	if event.Timestamp.IsZero() {
-		event.Timestamp = time.Now()
-	}
-
-	// Publish to each connection
-	var publishErrors []error
-	successCount := 0
-
-	for _, conn := range connections {
-		if err := p.publishToConnection(ctx, conn.ConnectionID, event); err != nil {
-			publishErrors = append(publishErrors, fmt.Errorf("connection %s: %w", conn.ConnectionID, err))
-			p.logger.Warn("failed to publish to connection",
-				zap.String("connection_id", conn.ConnectionID),
-				zap.String("user_id", userID),
-				zap.Error(err))
-		} else {
-			successCount++
-		}
-	}
-
-	p.logger.Info("published event to user connections",
-		zap.String("user_id", userID),
-		zap.String("event_type", event.Type),
-		zap.String("stream", event.Stream),
-		zap.Int("total_connections", len(connections)),
-		zap.Int("successful", successCount),
-		zap.Int("failed", len(publishErrors)))
-
-	// Return error only if all deliveries failed
-	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
-		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
-	}
+	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
 
 	return nil
 }
@@ -189,49 +157,17 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 		return fmt.Errorf("failed to get stream connections: %w", err)
 	}
 
-	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
-		p.logger.Debug("no active connections for stream",
-			zap.String("stream", streamName))
-		return nil
-	}
-
-	// Set timestamp if not provided
-	if event.Timestamp.IsZero() {
-		event.Timestamp = time.Now()
-	}
-
 	// Set stream in event if not provided
 	if err := common.ValidateRequiredParam("event.Stream", event.Stream); err != nil {
 		event.Stream = streamName
 	}
 
-	// Publish to each connection
-	var publishErrors []error
-	successCount := 0
-
-	for _, conn := range connections {
-		if err := p.publishToConnection(ctx, conn.ConnectionID, event); err != nil {
-			publishErrors = append(publishErrors, fmt.Errorf("connection %s: %w", conn.ConnectionID, err))
-			p.logger.Warn("failed to publish to connection",
-				zap.String("connection_id", conn.ConnectionID),
-				zap.String("stream", streamName),
-				zap.Error(err))
-		} else {
-			successCount++
-		}
+	// Use shared helper for connection publishing
+	helper := NewPublishConnectionHelper(p.logger)
+	logContext := map[string]interface{}{
+		"stream": streamName,
 	}
-
-	p.logger.Info("published event to stream connections",
-		zap.String("stream", streamName),
-		zap.String("event_type", event.Type),
-		zap.Int("total_connections", len(connections)),
-		zap.Int("successful", successCount),
-		zap.Int("failed", len(publishErrors)))
-
-	// Return error only if all deliveries failed
-	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
-		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
-	}
+	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
 
 	return nil
 }
@@ -262,44 +198,12 @@ func (p *apiGatewayPublisher) PublishToConversation(ctx context.Context, convers
 		return fmt.Errorf("failed to get conversation connections: %w", err)
 	}
 
-	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
-		p.logger.Debug("no active connections for conversation",
-			zap.String("conversation_id", conversationID))
-		return nil
+	// Use shared helper for connection publishing
+	helper := NewPublishConnectionHelper(p.logger)
+	logContext := map[string]interface{}{
+		"conversation_id": conversationID,
 	}
-
-	// Set timestamp if not provided
-	if event.Timestamp.IsZero() {
-		event.Timestamp = time.Now()
-	}
-
-	// Publish to each connection
-	var publishErrors []error
-	successCount := 0
-
-	for _, conn := range connections {
-		if err := p.publishToConnection(ctx, conn.ConnectionID, event); err != nil {
-			publishErrors = append(publishErrors, fmt.Errorf("connection %s: %w", conn.ConnectionID, err))
-			p.logger.Warn("failed to publish to connection",
-				zap.String("connection_id", conn.ConnectionID),
-				zap.String("conversation_id", conversationID),
-				zap.Error(err))
-		} else {
-			successCount++
-		}
-	}
-
-	p.logger.Info("published event to conversation connections",
-		zap.String("conversation_id", conversationID),
-		zap.String("event_type", event.Type),
-		zap.Int("total_connections", len(connections)),
-		zap.Int("successful", successCount),
-		zap.Int("failed", len(publishErrors)))
-
-	// Return error only if all deliveries failed
-	if err := common.ValidateSliceNotEmpty("publishErrors", publishErrors); err == nil && successCount == 0 {
-		return fmt.Errorf("failed to publish to any connection: %v", publishErrors)
-	}
+	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
 
 	return nil
 }
@@ -437,8 +341,8 @@ func (m *mockPublisher) SetFailAfterN(n int) {
 	m.failAfterN = n
 }
 
-// PublishToUser records the publish call for testing
-func (m *mockPublisher) PublishToUser(_ context.Context, userID string, event *Event) error {
+// publishEvent is a consolidated helper for all publish methods
+func (m *mockPublisher) publishEvent(method, targetID string, event *Event, streamName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -465,95 +369,36 @@ func (m *mockPublisher) PublishToUser(_ context.Context, userID string, event *E
 		eventCopy.Timestamp = time.Now()
 	}
 
+	// Set stream if provided and not already set (for PublishToStream)
+	if streamName != "" {
+		if err := common.ValidateRequiredParam("eventCopy.Stream", eventCopy.Stream); err != nil {
+			eventCopy.Stream = streamName
+		}
+	}
+
 	m.events = append(m.events, MockPublishedEvent{
-		Method:      "PublishToUser",
-		TargetID:    userID,
+		Method:      method,
+		TargetID:    targetID,
 		Event:       &eventCopy,
 		PublishedAt: time.Now(),
 	})
 
 	return nil
+}
+
+// PublishToUser records the publish call for testing
+func (m *mockPublisher) PublishToUser(_ context.Context, userID string, event *Event) error {
+	return m.publishEvent("PublishToUser", userID, event, "")
 }
 
 // PublishToStream records the publish call for testing
 func (m *mockPublisher) PublishToStream(_ context.Context, streamName string, event *Event) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.closed {
-		return fmt.Errorf("publisher is closed")
-	}
-
-	if m.delay > 0 {
-		time.Sleep(m.delay)
-	}
-
-	m.publishCount++
-	if m.failAfterN > 0 && m.publishCount > m.failAfterN {
-		return fmt.Errorf("mock configured to fail after %d publishes", m.failAfterN)
-	}
-
-	if m.shouldError {
-		return fmt.Errorf("mock error: %s", m.errorMessage)
-	}
-
-	// Set timestamp if not provided
-	eventCopy := *event
-	if eventCopy.Timestamp.IsZero() {
-		eventCopy.Timestamp = time.Now()
-	}
-
-	// Set stream if not provided
-	if err := common.ValidateRequiredParam("eventCopy.Stream", eventCopy.Stream); err != nil {
-		eventCopy.Stream = streamName
-	}
-
-	m.events = append(m.events, MockPublishedEvent{
-		Method:      "PublishToStream",
-		TargetID:    streamName,
-		Event:       &eventCopy,
-		PublishedAt: time.Now(),
-	})
-
-	return nil
+	return m.publishEvent("PublishToStream", streamName, event, streamName)
 }
 
 // PublishToConversation records the publish call for testing
 func (m *mockPublisher) PublishToConversation(_ context.Context, conversationID string, event *Event) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.closed {
-		return fmt.Errorf("publisher is closed")
-	}
-
-	if m.delay > 0 {
-		time.Sleep(m.delay)
-	}
-
-	m.publishCount++
-	if m.failAfterN > 0 && m.publishCount > m.failAfterN {
-		return fmt.Errorf("mock configured to fail after %d publishes", m.failAfterN)
-	}
-
-	if m.shouldError {
-		return fmt.Errorf("mock error: %s", m.errorMessage)
-	}
-
-	// Set timestamp if not provided
-	eventCopy := *event
-	if eventCopy.Timestamp.IsZero() {
-		eventCopy.Timestamp = time.Now()
-	}
-
-	m.events = append(m.events, MockPublishedEvent{
-		Method:      "PublishToConversation",
-		TargetID:    conversationID,
-		Event:       &eventCopy,
-		PublishedAt: time.Now(),
-	})
-
-	return nil
+	return m.publishEvent("PublishToConversation", conversationID, event, "")
 }
 
 // Close closes the mock publisher

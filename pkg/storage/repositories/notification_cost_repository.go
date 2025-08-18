@@ -18,14 +18,16 @@ type NotificationCostRepository struct {
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
+	costHelper *CostTrackingQueryHelper
 }
 
 // NewNotificationCostRepository creates a new notification cost repository
 func NewNotificationCostRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationCostRepository {
 	return &NotificationCostRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		db:         db,
+		tableName:  tableName,
+		logger:     logger,
+		costHelper: NewCostTrackingQueryHelper(db, tableName, logger),
 	}
 }
 
@@ -71,48 +73,14 @@ func (r *NotificationCostRepository) GetCostTrackingByNotification(ctx context.C
 
 // GetCostTrackingByUser retrieves cost tracking records for a user within a time range
 func (r *NotificationCostRepository) GetCostTrackingByUser(ctx context.Context, username string, startTime, endTime time.Time, limit int) ([]*models.NotificationCostTracking, error) {
-	var trackingRecords []*models.NotificationCostTracking
-
-	startSK := fmt.Sprintf("COST#%s", startTime.Format(common.CompactTimeFormat))
-	endSK := fmt.Sprintf("COST#%s", endTime.Format(common.CompactTimeFormat))
-
-	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
-		Index("gsi1").
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("GSI1SK", ">=", startSK).
-		Where("GSI1SK", "<=", endSK).
-		OrderBy("GSI1SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&trackingRecords)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cost tracking by user: %w", err)
-	}
-
-	return trackingRecords, nil
+	gsiPKValue := fmt.Sprintf("USER#%s", username)
+	return r.costHelper.GetCostTrackingByTimeRange(ctx, "gsi1", gsiPKValue, "COST", startTime, endTime, limit)
 }
 
 // GetCostTrackingByMethod retrieves cost tracking records by delivery method within a time range
 func (r *NotificationCostRepository) GetCostTrackingByMethod(ctx context.Context, deliveryMethod string, startTime, endTime time.Time, limit int) ([]*models.NotificationCostTracking, error) {
-	var trackingRecords []*models.NotificationCostTracking
-
-	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(common.CompactTimeFormat))
-	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(common.CompactTimeFormat))
-
-	query := r.db.WithContext(ctx).Model(&models.NotificationCostTracking{}).
-		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("METHOD#%s", deliveryMethod)).
-		Where("GSI2SK", ">=", startSK).
-		Where("GSI2SK", "<=", endSK).
-		OrderBy("GSI2SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&trackingRecords)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cost tracking by method: %w", err)
-	}
-
-	return trackingRecords, nil
+	gsiPKValue := fmt.Sprintf("METHOD#%s", deliveryMethod)
+	return r.costHelper.GetCostTrackingByTimeRange(ctx, "gsi2", gsiPKValue, "TIMESTAMP", startTime, endTime, limit)
 }
 
 // GetDailyCostTracking retrieves cost tracking records for a specific date
@@ -324,16 +292,21 @@ func (r *NotificationCostRepository) collectCostRecords(ctx context.Context, del
 	return allCosts
 }
 
-// fetchDailyCosts fetches costs for a specific date
-func (r *NotificationCostRepository) fetchDailyCosts(ctx context.Context, date time.Time) []*models.NotificationCostTracking {
+// fetchDailyCostsWithContext fetches costs for a specific date with context-specific logging
+func (r *NotificationCostRepository) fetchDailyCostsWithContext(ctx context.Context, date time.Time, contextMsg string) []*models.NotificationCostTracking {
 	dailyCosts, err := r.GetDailyCostTracking(ctx, date, 10000)
 	if err != nil {
-		r.logger.Warn("failed to get daily costs for aggregation",
+		r.logger.Warn(contextMsg,
 			zap.Time("date", date),
 			zap.Error(err))
 		return nil
 	}
 	return dailyCosts
+}
+
+// fetchDailyCosts fetches costs for a specific date for aggregation
+func (r *NotificationCostRepository) fetchDailyCosts(ctx context.Context, date time.Time) []*models.NotificationCostTracking {
+	return r.fetchDailyCostsWithContext(ctx, date, "failed to get daily costs for aggregation")
 }
 
 // filterCosts filters costs by delivery method and time range
@@ -604,14 +577,7 @@ func (r *NotificationCostRepository) collectCostsInRange(ctx context.Context, st
 
 // fetchDailySummaryCosts fetches costs for a specific date for summary
 func (r *NotificationCostRepository) fetchDailySummaryCosts(ctx context.Context, date time.Time) []*models.NotificationCostTracking {
-	dailyCosts, err := r.GetDailyCostTracking(ctx, date, 10000)
-	if err != nil {
-		r.logger.Warn("failed to get daily costs for summary",
-			zap.Time("date", date),
-			zap.Error(err))
-		return nil
-	}
-	return dailyCosts
+	return r.fetchDailyCostsWithContext(ctx, date, "failed to get daily costs for summary")
 }
 
 // filterCostsByTimeRange filters costs to only include those within the time range

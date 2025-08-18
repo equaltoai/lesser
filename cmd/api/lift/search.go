@@ -71,7 +71,7 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
 	if err := common.ValidateSearchQuery(params.query); err != nil {
-		return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return nil, common.RespondValidationError(ctx, err)
 	}
 
 	// Parse limit
@@ -83,7 +83,13 @@ func (h *Handler) parseAccountSearchParams(ctx *lift.Context) (*accountSearchPar
 		offsetStr = ctx.Request.Request.QueryParams["offset"]
 	}
 	if offset, err := common.ParseSearchOffset(offsetStr); err == nil {
-		params.offset = offset
+		// Additional validation to ensure offset is non-negative
+		if err := common.ValidateOffset(offset); err != nil {
+			h.logger.Debug("invalid offset value", zap.Error(err))
+			params.offset = 0 // Use default on validation error
+		} else {
+			params.offset = offset
+		}
 	}
 
 	// Parse following filter
@@ -161,7 +167,7 @@ func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly boo
 	// If following filter is requested but no auth, return error
 	if followingOnly {
 		if err := common.ValidateRequiredParam("authenticated_user", authenticatedUser); err != nil {
-			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for following filter"})
+			return "", common.RespondUnauthorized(ctx, "authentication required for following filter")
 		}
 	}
 
@@ -311,7 +317,7 @@ func (h *Handler) HandleGetSearchSuggestionsLift(ctx *lift.Context) error {
 		h.logger.Error("failed to get search suggestions",
 			zap.String("prefix", prefix),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "suggestions lookup failed"})
+		return common.RespondInternalServerError(ctx, "suggestions lookup failed")
 	}
 	suggestions := result.Suggestions
 
@@ -381,7 +387,7 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 	// Extract query
 	params.query = h.extractSearchQuery(ctx)
 	if err := common.ValidateSearchQuery(params.query); err != nil {
-		return nil, ctx.Status(400).JSON(map[string]string{"error": err.Error()})
+		return nil, common.RespondValidationError(ctx, err)
 	}
 
 	// Parse limit
@@ -402,7 +408,7 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 	params.accountID = ctx.Query("account_id")
 
 	// Parse local only filter
-	params.localOnly = ctx.Query("local") == boolTrue
+	params.localOnly = ctx.Query("local") == "true"
 
 	return params, nil
 }
@@ -418,23 +424,23 @@ func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 	// Status search requires authentication for privacy
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+		return "", common.RespondUnauthorized(ctx, "authentication required for status search")
 	}
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid authorization header"})
+		return "", common.RespondUnauthorized(ctx, "invalid authorization header")
 	}
 
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ctx.Status(401).JSON(map[string]string{"error": "invalid access token"})
+		return "", common.RespondUnauthorized(ctx, "invalid access token")
 	}
 
 	// Check read scope
 	if !claims.HasScope(auth.ScopeRead) {
-		return "", ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+		return "", common.RespondInsufficientScope(ctx)
 	}
 
 	return claims.Username, nil

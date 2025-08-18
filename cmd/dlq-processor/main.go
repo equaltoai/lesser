@@ -2,7 +2,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,12 +9,13 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/dlq"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
 
@@ -145,44 +145,41 @@ func (h *DLQProcessorHandler) handleAnalytics(ctx *lift.Context) error {
 	return nil
 }
 
-// Global variables for Lambda lifecycle management
+// Global variables for standardized Lambda initialization
 var (
-	handler    *DLQProcessorHandler
-	lambdaCtx  *common.LambdaContext
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     interface{}
+	handler   *DLQProcessorHandler
 )
 
 func init() {
-	// Use standardized Lambda initialization
-	var err error
-	lambdaCtx, err = common.InitializeLambda(common.LambdaConfig{
-		ServiceName:        "dlq-processor",
-		LambdaType:         common.LambdaTypeProcessor,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableHealthCheck:  false,
-		EnableTracing:      true,
-		EnableCostTracking: true,
+	// Standardized Lambda initialization for background processors
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "dlq-processor",
+		LambdaType:  common.LambdaTypeProcessor, // Background processing
 	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to initialize Lambda", zap.Error(err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.GetClient(context.Background())
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to initialize DynamORM database", zap.Error(err))
-	}
-
-	// Set storage in lambdaCtx for reference
-	lambdaCtx.DynamoDB = db
-
-	// Initialize DLQ processor
-	processor := dlq.NewProcessor(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	
+	// DLQ processor-specific initialization
+	db := lambdaCtx.DynamoDB.(core.DB)
+	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)
 
 	// Initialize handler
-	handler = NewDLQProcessorHandler(processor, lambdaCtx.Logger)
+	handler = NewDLQProcessorHandler(processor, logger)
 
-	lambdaCtx.Logger.Info("DLQ processor initialized successfully")
+	logger.Info("DLQ processor initialized successfully")
 }
 
 func main() {
@@ -225,7 +222,7 @@ func loggingMiddleware() func(lift.Handler) lift.Handler {
 			start := time.Now()
 			requestID := ctx.Get("requestID").(string)
 
-			lambdaCtx.Logger.Info("processing request",
+			logger.Info("processing request",
 				zap.String("request_id", requestID),
 			)
 
@@ -240,13 +237,13 @@ func loggingMiddleware() func(lift.Handler) lift.Handler {
 // logRequestCompletion logs the completion status of a request
 func logRequestCompletion(requestID string, duration time.Duration, err error) {
 	if err != nil {
-		lambdaCtx.Logger.Error("request failed",
+		logger.Error("request failed",
 			zap.String("request_id", requestID),
 			zap.Error(err),
 			zap.Duration("duration", duration),
 		)
 	} else {
-		lambdaCtx.Logger.Info("request completed successfully",
+		logger.Info("request completed successfully",
 			zap.String("request_id", requestID),
 			zap.Duration("duration", duration),
 		)
@@ -268,14 +265,14 @@ func errorHandlingMiddleware() func(lift.Handler) lift.Handler {
 
 // logHandlerError logs handler errors with additional details
 func logHandlerError(ctx *lift.Context, err error) {
-	lambdaCtx.Logger.Error("handler error",
+	logger.Error("handler error",
 		zap.String("request_id", ctx.Get("requestID").(string)),
 		zap.Error(err),
 	)
 
 	// Track error metrics
 	if liftErr, ok := err.(*lift.LiftError); ok {
-		lambdaCtx.Logger.Error("lift error details",
+		logger.Error("lift error details",
 			zap.String("error_code", liftErr.Code),
 			zap.String("error_message", liftErr.Message),
 			zap.Int("status_code", liftErr.StatusCode),
@@ -301,7 +298,7 @@ func costTrackingMiddleware() func(lift.Handler) lift.Handler {
 func trackRequestCost(ctx *lift.Context, duration time.Duration) {
 	processingCostMicroCents := calculateProcessingCost(duration)
 
-	lambdaCtx.Logger.Info("request cost tracking",
+	logger.Info("request cost tracking",
 		zap.String("request_id", ctx.Get("requestID").(string)),
 		zap.Duration("duration", duration),
 		zap.Int64("cost_micro_cents", processingCostMicroCents),

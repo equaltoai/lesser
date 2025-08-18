@@ -477,8 +477,9 @@ func (r *InstanceRepository) GetStorageUsage(ctx context.Context) (any, error) {
 	}, nil
 }
 
-// GetStorageHistory returns storage usage history for the last N days
-func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
+// getMetricHistory is a consolidated helper that retrieves history for different metric types
+func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, metricType, operation string, formatter func(models.InstanceHistory) map[string]interface{}) ([]any, error) {
+	// Direct implementation since we don't have BaseRepository embedded
 	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
 		days = 30 // Default to 30 days
 	}
@@ -487,24 +488,34 @@ func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([
 	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
 	endDate := time.Now().Format("2006-01-02")
 
-	// Query daily storage metrics using GSI1
+	// Query daily metrics using GSI1
 	var histories []models.InstanceHistory
 	err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
 		Index("GSI1").
-		Where("GSI1PK", "=", "METRIC#storage_bytes").
+		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
 		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
 		All(&histories)
 
 	if err != nil {
-		r.logger.Error("Failed to get storage history", zap.Error(err), zap.Int("days", days))
-		return nil, fmt.Errorf("failed to get storage history: %w", err)
+		r.logger.Error(fmt.Sprintf("Failed to get %s", operation), zap.Error(err), zap.Int("days", days))
+		return nil, fmt.Errorf("failed to get %s: %w", operation, err)
 	}
 
-	// Convert to expected format
+	// Convert to expected format using the provided formatter
 	result := make([]any, len(histories))
 	for i, h := range histories {
-		result[i] = map[string]interface{}{
+		result[i] = formatter(h)
+	}
+
+	r.logger.Info(fmt.Sprintf("Retrieved %s", operation), zap.Int("days", days), zap.Int("records", len(result)))
+	return result, nil
+}
+
+// GetStorageHistory returns storage usage history for the last N days
+func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([]any, error) {
+	return r.getMetricHistory(ctx, days, "storage_bytes", "storage history", func(h models.InstanceHistory) map[string]interface{} {
+		return map[string]interface{}{
 			"date":           h.Date,
 			"total_bytes":    h.StorageBytes,
 			"media_bytes":    h.MediaBytes,
@@ -512,40 +523,13 @@ func (r *InstanceRepository) GetStorageHistory(ctx context.Context, days int) ([
 			"delta":          h.Delta,
 			"recorded_at":    h.RecordedAt,
 		}
-	}
-
-	r.logger.Info("Retrieved storage history", zap.Int("days", days), zap.Int("records", len(result)))
-	return result, nil
+	})
 }
 
 // GetUserGrowthHistory returns user growth data for the last N days
 func (r *InstanceRepository) GetUserGrowthHistory(ctx context.Context, days int) ([]any, error) {
-	if err := common.ValidateIntRange("days", days, 1, 365); err != nil {
-		days = 30 // Default to 30 days
-	}
-
-	// Calculate date range
-	startDate := time.Now().AddDate(0, 0, -days).Format("2006-01-02")
-	endDate := time.Now().Format("2006-01-02")
-
-	// Query daily user metrics using GSI1
-	var histories []models.InstanceHistory
-	err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", "METRIC#user_count").
-		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
-		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s", endDate)).
-		All(&histories)
-
-	if err != nil {
-		r.logger.Error("Failed to get user growth history", zap.Error(err), zap.Int("days", days))
-		return nil, fmt.Errorf("failed to get user growth history: %w", err)
-	}
-
-	// Convert to expected format
-	result := make([]any, len(histories))
-	for i, h := range histories {
-		result[i] = map[string]interface{}{
+	return r.getMetricHistory(ctx, days, "user_count", "user growth history", func(h models.InstanceHistory) map[string]interface{} {
+		return map[string]interface{}{
 			"date":         h.Date,
 			"total_users":  h.TotalUsers,
 			"active_users": h.ActiveUsers,
@@ -553,10 +537,7 @@ func (r *InstanceRepository) GetUserGrowthHistory(ctx context.Context, days int)
 			"delta":        h.Delta,
 			"recorded_at":  h.RecordedAt,
 		}
-	}
-
-	r.logger.Info("Retrieved user growth history", zap.Int("days", days), zap.Int("records", len(result)))
-	return result, nil
+	})
 }
 
 // GetDomainStats returns statistics for a specific domain

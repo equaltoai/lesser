@@ -128,6 +128,16 @@ func (i *ImportCostTracking) GetTotalCostDollars() float64 {
 	return float64(i.TotalCostMicroCents) / 1_000_000.0
 }
 
+// GetTimestamp returns the timestamp for cost tracking
+func (i *ImportCostTracking) GetTimestamp() time.Time {
+	return i.Timestamp
+}
+
+// GetTotalCostMicroCents returns the total cost in microcents
+func (i *ImportCostTracking) GetTotalCostMicroCents() int64 {
+	return i.TotalCostMicroCents
+}
+
 // GetSuccessRate calculates the success rate of the import
 func (i *ImportCostTracking) GetSuccessRate() float64 {
 	if i.ProcessedCount == 0 {

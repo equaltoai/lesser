@@ -68,14 +68,11 @@ type DateRange struct {
 
 
 func main() {
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
+	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "export-generator",
 		LambdaType:  common.LambdaTypeProcessor,
 		Version:     "1.0.0",
 	})
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Lambda: %v", err))
-	}
 
 	// Load AWS config
 	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),

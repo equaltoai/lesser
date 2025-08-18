@@ -3,13 +3,11 @@ package patterns
 import (
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SQSHandler is the interface that services must implement to handle SQS events
@@ -63,41 +61,14 @@ func RegisterSQS(app *lift.App, processor *SQSProcessor) {
 
 // ProcessEvent processes an SQS event with proper logging and error handling
 func (sp *SQSProcessor) ProcessEvent(ctx *lift.Context, event events.SQSEvent) error {
-	start := time.Now()
-	requestID := ctx.GetRequestID()
-	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
-		requestID = fmt.Sprintf("%s-%d", sp.queueName, time.Now().UnixNano())
-		ctx.Set("requestID", requestID)
-	}
-
-	sp.logger.Info("processing SQS batch",
-		zap.String("queue", sp.queueName),
-		zap.String("request_id", requestID),
-		zap.Int("message_count", len(event.Records)),
-	)
-
-	// Call the actual handler
-	err := sp.handler.HandleSQS(ctx, event)
-
-	duration := time.Since(start)
-	if err != nil {
-		sp.logger.Error("failed to process SQS batch",
-			zap.String("queue", sp.queueName),
-			zap.String("request_id", requestID),
-			zap.Error(err),
-			zap.Duration("duration", duration),
-		)
-		return err
-	}
-
-	sp.logger.Info("successfully processed SQS batch",
-		zap.String("queue", sp.queueName),
-		zap.String("request_id", requestID),
-		zap.Int("message_count", len(event.Records)),
-		zap.Duration("duration", duration),
-	)
-
-	return nil
+	return ProcessEventWithTiming(ctx, ProcessEventConfig{
+		ProcessorName: sp.queueName,
+		RequestIDKey:  "requestID",
+		RecordCount:   len(event.Records),
+		Logger:        sp.logger,
+	}, func(ctx *lift.Context) error {
+		return sp.handler.HandleSQS(ctx, event)
+	})
 }
 
 // CreateSQSApp creates a standard Lift app configured for SQS

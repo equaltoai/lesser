@@ -5,6 +5,7 @@ import (
 
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -31,24 +32,24 @@ func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
 		// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
 		if authHeader == "" {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Validate token and get claims
 		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
-			return ctx.Status(401).JSON(map[string]string{"error": "unauthorized"})
+			return common.RespondUnauthorized(ctx)
 		}
 
 		// Check read scope
 		if !claims.HasScope(auth.ScopeRead) {
-			return ctx.Status(403).JSON(map[string]string{"error": "insufficient scope"})
+			return common.RespondInsufficientScope(ctx)
 		}
 
 		username = claims.Username
@@ -159,11 +160,11 @@ func (h *Handler) parsePreferencesRequestFallback(ctx *lift.Context, originalErr
 			h.logger.Debug("invalid preferences request",
 				zap.Error(originalErr),
 				zap.Error(jsonErr))
-			return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+			return nil, common.RespondBadRequest(ctx, "invalid request body")
 		}
 		return updateReq, nil
 	}
-	return nil, ctx.Status(400).JSON(map[string]string{"error": "invalid request body"})
+	return nil, common.RespondBadRequest(ctx, "invalid request body")
 }
 
 // getOrCreateUserPreferences gets existing preferences or creates defaults
@@ -257,7 +258,7 @@ func (h *Handler) saveUserPreferences(ctx *lift.Context, username string, prefs 
 	})
 	if err != nil {
 		h.logger.Error("failed to update user preferences", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "internal server error"})
+		return common.RespondInternalServerError(ctx)
 	}
 	return nil
 }

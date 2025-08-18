@@ -54,7 +54,7 @@ func (h *Handler) HandleGetAnnouncementsLift(ctx *lift.Context) error {
 	announcements, err := h.repos.Announcement().GetAnnouncements(ctx.Context, true) // Only active announcements
 	if err != nil {
 		h.logger.Error("failed to get announcements", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Get dismissed announcements for authenticated user
@@ -205,27 +205,27 @@ func (h *Handler) mergeReactions(availableReactions []storage.Reaction, actualRe
 func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	announcementID := ctx.Param("id")
 	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
+		return common.RespondBadRequest(ctx, "Announcement ID is required")
 	}
 
 	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Check if announcement exists
 	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
 	if err != nil || announcement == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
+		return common.RespondNotFound(ctx, "Announcement not found")
 	}
 
 	// Dismiss the announcement
@@ -235,7 +235,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 			zap.String("announcement_id", announcementID),
 			zap.String("username", claims.Username),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	return ctx.JSON(map[string]interface{}{})
@@ -243,92 +243,60 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 
 // HandleAddAnnouncementReactionLift handles PUT /api/v1/announcements/:id/reactions/:name
 func (h *Handler) HandleAddAnnouncementReactionLift(ctx *lift.Context) error {
-	announcementID := ctx.Param("id")
-	reactionName := ctx.Param("name")
-
-	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
-	}
-	if err := common.ValidateRequiredParam("reaction_name", reactionName); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
-	}
-
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
-	}
-
-	// Check if announcement exists
-	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
-	if err != nil || announcement == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
-	}
-
-	// Add reaction
-	err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
-	if err != nil {
-		h.logger.Error("failed to add announcement reaction",
-			zap.String("announcement_id", announcementID),
-			zap.String("username", claims.Username),
-			zap.String("reaction", reactionName),
-			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
-	}
-
-	// Return the announcement with updated reactions
-	return h.HandleGetAnnouncementsLift(ctx)
+	return h.handleAnnouncementReaction(ctx, "add")
 }
 
 // HandleRemoveAnnouncementReactionLift handles DELETE /api/v1/announcements/:id/reactions/:name
 func (h *Handler) HandleRemoveAnnouncementReactionLift(ctx *lift.Context) error {
+	return h.handleAnnouncementReaction(ctx, "remove")
+}
+
+// handleAnnouncementReaction consolidates the common logic for adding/removing announcement reactions
+func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) error {
 	announcementID := ctx.Param("id")
 	reactionName := ctx.Param("name")
 
 	if err := common.ValidateRequiredParam("announcement_id", announcementID); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Announcement ID is required"})
+		return common.RespondBadRequest(ctx, "Announcement ID is required")
 	}
 	if err := common.ValidateRequiredParam("reaction_name", reactionName); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Reaction name is required"})
+		return common.RespondBadRequest(ctx, "Reaction name is required")
 	}
 
 	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return ctx.Status(401).JSON(map[string]string{"error": "Unauthorized"})
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Check if announcement exists
 	announcement, err := h.repos.Announcement().GetAnnouncement(ctx.Context, announcementID)
 	if err != nil || announcement == nil {
-		return ctx.Status(404).JSON(map[string]string{"error": "Announcement not found"})
+		return common.RespondNotFound(ctx, "Announcement not found")
 	}
 
-	// Remove reaction
-	err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
+	// Perform the appropriate action
+	if action == "add" {
+		err = h.repos.Announcement().AddAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
+	} else {
+		err = h.repos.Announcement().RemoveAnnouncementReaction(ctx.Context, announcementID, claims.Username, reactionName)
+	}
+
 	if err != nil {
-		h.logger.Error("failed to remove announcement reaction",
+		h.logger.Error(fmt.Sprintf("failed to %s announcement reaction", action),
 			zap.String("announcement_id", announcementID),
 			zap.String("username", claims.Username),
 			zap.String("reaction", reactionName),
 			zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Internal server error"})
+		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
 
 	// Return the announcement with updated reactions
@@ -341,17 +309,17 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 	var req models.CreateAnnouncementRequest
 	body := ctx.Request.Body
 	if err := json.Unmarshal(body, &req); err != nil {
-		return ctx.Status(400).JSON(map[string]string{"error": "Invalid request body"})
+		return common.RespondBadRequest(ctx, "Invalid request body")
 	}
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("text", req.Text); err != nil {
-		return ctx.Status(422).JSON(map[string]string{"error": "Text is required"})
+		return common.RespondUnprocessableEntity(ctx, "Text is required")
 	}
 
 	// Require admin authentication
 	if _, err := h.requireAdminLift(ctx); err != nil {
-		return ctx.Status(403).JSON(map[string]string{"error": "Admin access required"})
+		return common.RespondForbidden(ctx, "Admin access required")
 	}
 
 	// Create announcement
@@ -366,25 +334,25 @@ func (h *Handler) HandleCreateAnnouncementLift(ctx *lift.Context) error {
 
 	// Parse optional dates
 	if req.StartsAt != "" {
-		startsAt, err := time.Parse(time.RFC3339, req.StartsAt)
-		if err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": "Invalid starts_at format"})
+		if err := common.ValidateTimestamp(req.StartsAt, "starts_at"); err != nil {
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
+		startsAt, _ := time.Parse(time.RFC3339, req.StartsAt) // Validation passed, parse is safe
 		announcement.StartsAt = &startsAt
 	}
 
 	if req.EndsAt != "" {
-		endsAt, err := time.Parse(time.RFC3339, req.EndsAt)
-		if err != nil {
-			return ctx.Status(422).JSON(map[string]string{"error": "Invalid ends_at format"})
+		if err := common.ValidateTimestamp(req.EndsAt, "ends_at"); err != nil {
+			return common.RespondUnprocessableEntity(ctx, err.Error())
 		}
+		endsAt, _ := time.Parse(time.RFC3339, req.EndsAt) // Validation passed, parse is safe
 		announcement.EndsAt = &endsAt
 	}
 
 	// Store announcement
 	if err := h.repos.Announcement().CreateAnnouncement(ctx.Context, announcement); err != nil {
 		h.logger.Error("failed to create announcement", zap.Error(err))
-		return ctx.Status(500).JSON(map[string]string{"error": "Failed to create announcement"})
+		return common.RespondInternalServerError(ctx, "Failed to create announcement")
 	}
 
 	// Return created announcement

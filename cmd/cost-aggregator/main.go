@@ -21,17 +21,18 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
+	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	"github.com/pay-theory/dynamorm/pkg/core"
+	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
 
 // CostAggregator implements the DynamoDBStreamHandler interface for Lift
 type CostAggregator struct {
-	db                     core.DB
+	db                     dynamormCore.DB
 	tableName              string
 	logger                 *zap.Logger
 	costTrackingRepository *repositories.CostTrackingRepository
@@ -40,67 +41,11 @@ type CostAggregator struct {
 	lambdaCtx              *common.LambdaContext
 }
 
-// NewCostAggregator creates a new cost aggregator instance with standardized initialization
-func NewCostAggregator() (*CostAggregator, error) {
-	// Use standardized Lambda initialization with processor configuration
-	lambdaCtx, err := common.InitializeLambda(common.LambdaConfig{
-		ServiceName:        "cost-aggregator",
-		LambdaType:         common.LambdaTypeProcessor,
-		Version:            "1.0.0",
-		EnableMetrics:      true,
-		EnableHealthCheck:  false, // Cost aggregator doesn't need health checks
-		EnableTracing:      true,
-		EnableCostTracking: true, // This service itself tracks costs!
-		CustomServiceConfig: &awsInit.ServiceConfig{
-			RequiresDynamoDB:     true,
-			RequiresS3:           false,
-			RequiresSQS:          true,
-			RequiresCloudWatch:   true,
-			RequiresSecretsManager: false,
-			RequiresComprehend:   false,
-			RequiresMediaConvert: false,
-			RequiresSNS:          true,  // Cost aggregator sends alerts
-			RequiresLambda:       true,  // Cost aggregator invokes other lambdas
-			ServiceName:          "cost-aggregator",
-			RequestTimeout:       2 * time.Minute, // Cost aggregation can take time
-			RetryMaxAttempts:     3,
-		},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda: %w", err)
-	}
-
-	// Get table name from environment or config
-	tableName := lambdaCtx.Config.DynamoTableName
-
-	// Initialize storage independently to avoid import cycles
-	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-	}
-	
-	// Set storage in lambdaCtx for reference
-	lambdaCtx.DynamoDB = db
-
-	// Initialize cost tracking repository
-	costTrackingRepository := repositories.NewCostTrackingRepository(
-		db, 
-		tableName, 
-		lambdaCtx.Logger,
-	)
-
-	return &CostAggregator{
-		db:                     db,
-		tableName:              tableName,
-		logger:                 lambdaCtx.Logger,
-		costTrackingRepository: costTrackingRepository,
-		awsServices:            lambdaCtx.AWSServices,
-		cfg:                    lambdaCtx.Config,
-		lambdaCtx:              lambdaCtx,
-	}, nil
-}
-
 var (
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	logger    *zap.Logger
+	repos     core.RepositoryStorage
 	processor *CostAggregator
 )
 
@@ -140,17 +85,54 @@ type CostAlert struct {
 }
 
 func init() {
-	// Use standardized initialization
-	var err error
-	processor, err = NewCostAggregator()
+	// Standardized Lambda initialization for cost-aggregator function
+	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
+		ServiceName: "cost-aggregator", // cost-aggregator
+		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
+	})
+	
+	// Automatic dependency injection
+	cfg = lambdaCtx.Config
+	logger = lambdaCtx.Logger
+	repos = lambdaCtx.Repos.(core.RepositoryStorage)
+	
+	// Initialize with processor-specific defaults
+	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize cost aggregator: %v", err))
+		logger.Warn("failed to initialize with defaults", zap.Error(err))
+	}
+	
+	// Function-specific initialization only
+	// Get table name from environment or config
+	tableName := cfg.DynamoTableName
+
+	// Initialize storage independently to avoid import cycles
+	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)
+	if err != nil {
+		logger.Fatal("failed to initialize DynamORM", zap.Error(err))
+	}
+
+	// Initialize cost tracking repository
+	costTrackingRepository := repositories.NewCostTrackingRepository(
+		db, 
+		tableName, 
+		logger,
+	)
+
+	processor = &CostAggregator{
+		db:                     db,
+		tableName:              tableName,
+		logger:                 logger,
+		costTrackingRepository: costTrackingRepository,
+		awsServices:            lambdaCtx.AWSServices,
+		cfg:                    cfg,
+		lambdaCtx:              lambdaCtx,
 	}
 }
 
 func main() {
 	// Use Lift DynamoDB stream pattern for primary stream processing  
-	patterns.StartDynamoDBStreamLambda("cost-aggregator", processor, processor.logger)
+	patterns.StartDynamoDBStreamLambda("cost-aggregator", processor, logger)
 }
 
 // HandleStream implements the DynamoDBStreamHandler interface for Lift

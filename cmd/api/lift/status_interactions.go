@@ -12,11 +12,43 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
-// HandleGetStatusFavouritedByLift handles GET /api/v1/statuses/:id/favourited_by
-func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
+// statusInteractionType represents the type of status interaction
+type statusInteractionType int
+
+const (
+	statusFavourites statusInteractionType = iota
+	statusReblogs
+)
+
+// statusInteractionConfig holds configuration for status interaction endpoints
+type statusInteractionConfig struct {
+	endpoint    string
+	errorAction string
+}
+
+// getStatusInteractionConfig returns configuration for interaction type
+func getStatusInteractionConfig(interactionType statusInteractionType) statusInteractionConfig {
+	switch interactionType {
+	case statusFavourites:
+		return statusInteractionConfig{
+			endpoint:    "favourited_by",
+			errorAction: "get likes",
+		}
+	case statusReblogs:
+		return statusInteractionConfig{
+			endpoint:    "reblogged_by", 
+			errorAction: "get reblogs",
+		}
+	default:
+		return statusInteractionConfig{}
+	}
+}
+
+// handleStatusInteractions handles both favourited_by and reblogged_by endpoints
+func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType statusInteractionType) error {
 	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
+	if err := common.ValidateStatusID(statusID); err != nil {
+		return common.RespondValidationError(ctx, err)
 	}
 
 	// Parse pagination parameters
@@ -27,87 +59,80 @@ func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
 	}
 	cursor := ctx.Query("max_id")
 
-	// Call Notes service to get likers
-	result, err := h.registry.Notes().GetLikers(ctx.Context, &notes.GetLikersQuery{
-		StatusID: statusID,
-		Pagination: interfaces.PaginationOptions{
-			Limit:  limit,
-			Cursor: cursor,
-		},
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
-		}
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get likes"})
-	}
+	config := getStatusInteractionConfig(interactionType)
 
-	// Convert storage accounts to API accounts
-	accounts := make([]models.Account, 0, len(result.Users))
-	for _, user := range result.Users {
-		// Convert storage.Account to activitypub.Actor first
-		if user.Actor != nil {
-			account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
-			accounts = append(accounts, account)
+	// Call appropriate Notes service method and handle result
+	var accounts []models.Account
+	var nextCursor string
+
+	switch interactionType {
+	case statusFavourites:
+		result, err := h.registry.Notes().GetLikers(ctx.Context, &notes.GetLikersQuery{
+			StatusID: statusID,
+			Pagination: interfaces.PaginationOptions{
+				Limit:  limit,
+				Cursor: cursor,
+			},
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return common.RespondNotFound(ctx, "status not found")
+			}
+			return common.RespondInternalServerError(ctx, "failed to " + config.errorAction)
 		}
+
+		// Convert storage accounts to API accounts
+		accounts = make([]models.Account, 0, len(result.Users))
+		for _, user := range result.Users {
+			if user.Actor != nil {
+				account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
+				accounts = append(accounts, account)
+			}
+		}
+		nextCursor = result.Pagination.NextCursor
+
+	case statusReblogs:
+		result, err := h.registry.Notes().GetRebloggers(ctx.Context, &notes.GetRebloggersQuery{
+			StatusID: statusID,
+			Pagination: interfaces.PaginationOptions{
+				Limit:  limit,
+				Cursor: cursor,
+			},
+		})
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return common.RespondNotFound(ctx, "status not found")
+			}
+			return common.RespondInternalServerError(ctx, "failed to " + config.errorAction)
+		}
+
+		// Convert storage accounts to API accounts
+		accounts = make([]models.Account, 0, len(result.Users))
+		for _, user := range result.Users {
+			if user.Actor != nil {
+				account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
+				accounts = append(accounts, account)
+			}
+		}
+		nextCursor = result.Pagination.NextCursor
 	}
 
 	// Set pagination header
-	if result.Pagination.NextCursor != "" && len(accounts) > 0 {
-		linkHeader := fmt.Sprintf(`<%s/api/v1/statuses/%s/favourited_by?max_id=%s&limit=%d>; rel="next"`,
-			h.cfg.BaseURL(), statusID, result.Pagination.NextCursor, limit)
+	if nextCursor != "" && len(accounts) > 0 {
+		linkHeader := fmt.Sprintf(`<%s/api/v1/statuses/%s/%s?max_id=%s&limit=%d>; rel="next"`,
+			h.cfg.BaseURL(), statusID, config.endpoint, nextCursor, limit)
 		ctx.Response.Header("Link", linkHeader)
 	}
 
 	return ctx.JSON(accounts)
 }
 
+// HandleGetStatusFavouritedByLift handles GET /api/v1/statuses/:id/favourited_by
+func (h *Handler) HandleGetStatusFavouritedByLift(ctx *lift.Context) error {
+	return h.handleStatusInteractions(ctx, statusFavourites)
+}
+
 // HandleGetStatusRebloggedByLift handles GET /api/v1/statuses/:id/reblogged_by
 func (h *Handler) HandleGetStatusRebloggedByLift(ctx *lift.Context) error {
-	statusID := ctx.Param("id")
-	if statusID == "" {
-		return ctx.Status(400).JSON(map[string]string{"error": "status ID is required"})
-	}
-
-	// Parse pagination parameters
-	limitStr := ctx.Query("limit")
-	limit, err := common.ParseFollowLimit(limitStr)
-	if err != nil {
-		limit = 20
-	}
-	cursor := ctx.Query("max_id")
-
-	// Call Notes service to get rebloggers
-	result, err := h.registry.Notes().GetRebloggers(ctx.Context, &notes.GetRebloggersQuery{
-		StatusID: statusID,
-		Pagination: interfaces.PaginationOptions{
-			Limit:  limit,
-			Cursor: cursor,
-		},
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			return ctx.Status(404).JSON(map[string]string{"error": "status not found"})
-		}
-		return ctx.Status(500).JSON(map[string]string{"error": "failed to get reblogs"})
-	}
-
-	// Convert storage accounts to API accounts
-	accounts := make([]models.Account, 0, len(result.Users))
-	for _, user := range result.Users {
-		// Convert storage.Account to activitypub.Actor first
-		if user.Actor != nil {
-			account := transformations.ActorToAccountBase(user.Actor, h.cfg.BaseURL())
-			accounts = append(accounts, account)
-		}
-	}
-
-	// Set pagination header
-	if result.Pagination.NextCursor != "" && len(accounts) > 0 {
-		linkHeader := fmt.Sprintf(`<%s/api/v1/statuses/%s/reblogged_by?max_id=%s&limit=%d>; rel="next"`,
-			h.cfg.BaseURL(), statusID, result.Pagination.NextCursor, limit)
-		ctx.Response.Header("Link", linkHeader)
-	}
-
-	return ctx.JSON(accounts)
+	return h.handleStatusInteractions(ctx, statusReblogs)
 }
