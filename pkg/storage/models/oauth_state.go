@@ -27,15 +27,26 @@ type OAuthState struct {
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
 }
 
-// UpdateKeys updates the composite keys based on the state
-func (o *OAuthState) UpdateKeys() {
+// GetPK returns the partition key for BaseModel interface
+func (o *OAuthState) GetPK() string {
+	return o.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (o *OAuthState) GetSK() string {
+	return o.SK
+}
+
+// UpdateKeys implements BaseModel interface and updates the composite keys based on the state
+func (o *OAuthState) UpdateKeys() error {
 	if o.State != "" {
 		o.PK = fmt.Sprintf("OAUTH_STATE#%s", o.State)
-		o.SK = SKState
+		o.SK = "STATE"
 	}
 
 	// Set TTL for DynamoDB
 	if !o.ExpiresAt.IsZero() {
 		o.TTL = o.ExpiresAt.Unix()
 	}
+	return nil
 }

@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/aws/aws-xray-sdk-go/xray"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
+	"go.uber.org/zap"
 )
 
 // TracingConfig contains configuration for distributed tracing
@@ -44,12 +45,13 @@ type TracingManager struct {
 // NewTracingManager creates a new tracing manager
 func NewTracingManager(logger *zap.Logger, config *TracingConfig) *TracingManager {
 	if config == nil {
+		cfg := appconfig.Get()
 		config = &TracingConfig{
 			ServiceName:    "lesser-service",
 			ServiceVersion: "1.0.0",
 			SamplingRate:   TracingSampleRatePercent / 100.0, // Convert percentage to decimal
-			Enabled:        os.Getenv("XRAY_TRACING_ENABLED") != "false",
-			LocalTesting:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME") == "",
+			Enabled:        cfg.XRayTracingEnabled,
+			LocalTesting:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME") == "", // AWS Lambda runtime variable
 		}
 	}
 

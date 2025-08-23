@@ -116,7 +116,7 @@ type AICost struct {
 }
 
 // UpdateKeys sets the primary keys for the AICost model
-func (a *AICost) UpdateKeys() {
+func (a *AICost) UpdateKeys() error {
 	timestampStr := a.Timestamp.Format(common.CompactTimeFormat)
 	dateStr := a.Timestamp.Format(common.CompactDateFormat)
 	
@@ -134,6 +134,8 @@ func (a *AICost) UpdateKeys() {
 	// GSI3 for cost analysis - tier based on cost
 	a.GSI3PK = fmt.Sprintf("AI_COST_RANGE#%s", a.CostTier)
 	a.GSI3SK = fmt.Sprintf("COST#%012d#%s", a.TotalCostMicroCents, timestampStr)
+	
+	return nil
 }
 
 // BeforeCreate is called before creating the record
@@ -181,7 +183,9 @@ func (a *AICost) BeforeCreate() error {
 	// Set TTL to 90 days from creation
 	a.TTL = now.AddDate(0, 0, 90).Unix()
 
-	a.UpdateKeys()
+	if err := a.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
+	}
 	a.CalculateTotalCost()
 	return nil
 }
@@ -194,7 +198,9 @@ func (a *AICost) BeforeUpdate() error {
 	}
 	
 	a.calculateEfficiencyMetrics()
-	a.UpdateKeys()
+	if err := a.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
+	}
 	a.CalculateTotalCost()
 	return nil
 }
@@ -348,6 +354,16 @@ func (a *AICost) GetPerformanceMetrics() map[string]interface{} {
 	}
 }
 
+// GetPK returns the partition key
+func (a *AICost) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key
+func (a *AICost) GetSK() string {
+	return a.SK
+}
+
 // TableName returns the DynamoDB table name
 func (a *AICost) TableName() string {
 	return "" // Will be set by the repository
@@ -419,7 +435,7 @@ type AIAggregatedCost struct {
 }
 
 // UpdateKeys sets the primary keys for the AIAggregatedCost model
-func (a *AIAggregatedCost) UpdateKeys() {
+func (a *AIAggregatedCost) UpdateKeys() error {
 	periodStr := a.PeriodStart.Format(common.CompactDateFormat)
 	if a.Period == "hour" {
 		periodStr = a.PeriodStart.Format(common.CompactTimeFormat)[:13] // YYYYMMDDHH
@@ -430,6 +446,8 @@ func (a *AIAggregatedCost) UpdateKeys() {
 	
 	a.GSI1PK = fmt.Sprintf("AI_AGG_TIME#%s", a.Period)
 	a.GSI1SK = fmt.Sprintf("%s#%s#%s", periodStr, a.OperationType, a.ModelName)
+	
+	return nil
 }
 
 // BeforeCreate is called before creating the aggregated record
@@ -465,15 +483,29 @@ func (a *AIAggregatedCost) BeforeCreate() error {
 	// Set TTL to 1 year from creation
 	a.TTL = now.AddDate(1, 0, 0).Unix()
 
-	a.UpdateKeys()
+	if err := a.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
+	}
 	return nil
 }
 
 // BeforeUpdate is called before updating the aggregated record
 func (a *AIAggregatedCost) BeforeUpdate() error {
 	a.UpdatedAt = time.Now()
-	a.UpdateKeys()
+	if err := a.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
+	}
 	return nil
+}
+
+// GetPK returns the partition key
+func (a *AIAggregatedCost) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key
+func (a *AIAggregatedCost) GetSK() string {
+	return a.SK
 }
 
 // TableName returns the DynamoDB table name

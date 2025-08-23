@@ -19,11 +19,11 @@ type TrackingServiceConfig struct {
 	MetricsBatchSize    int
 	MetricsFlushInterval time.Duration
 	EnableDetailedMetrics bool
-	CostThresholds      CostThresholds
+	CostThresholds      Thresholds
 }
 
-// CostThresholds defines cost alert thresholds
-type CostThresholds struct {
+// Thresholds defines cost alert thresholds for various AWS services
+type Thresholds struct {
 	DynamoDBReadWarning   float64 // dollars
 	DynamoDBWriteWarning  float64 // dollars
 	S3OperationWarning    float64 // dollars
@@ -38,7 +38,7 @@ func DefaultTrackingServiceConfig() TrackingServiceConfig {
 		MetricsBatchSize:      20,
 		MetricsFlushInterval:  30 * time.Second,
 		EnableDetailedMetrics: true,
-		CostThresholds: CostThresholds{
+		CostThresholds: Thresholds{
 			DynamoDBReadWarning:     10.0, // $10/day
 			DynamoDBWriteWarning:    50.0, // $50/day
 			S3OperationWarning:      5.0,  // $5/day

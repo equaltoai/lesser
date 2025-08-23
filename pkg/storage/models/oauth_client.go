@@ -33,15 +33,6 @@ func (OAuthClient) TableName() string {
 	return MainTableName
 }
 
-// UpdateKeys updates the DynamoDB keys based on current field values
-func (o *OAuthClient) UpdateKeys() {
-	o.PK = "OAUTH_CLIENT#" + o.ClientID
-	o.SK = "CLIENT"
-	if o.OwnerID != "" {
-		o.GSI1PK = "OWNER#" + o.OwnerID
-		o.GSI1SK = "CLIENT#" + o.ClientID
-	}
-}
 
 // BeforeCreate sets up the keys before creating
 func (o *OAuthClient) BeforeCreate() error {
@@ -59,5 +50,26 @@ func (o *OAuthClient) BeforeCreate() error {
 func (o *OAuthClient) BeforeUpdate() error {
 	o.UpdateKeys()
 	o.UpdatedAt = time.Now()
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (o *OAuthClient) GetPK() string {
+	return o.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (o *OAuthClient) GetSK() string {
+	return o.SK
+}
+
+// UpdateKeys implements BaseModel interface and updates DynamoDB keys
+func (o *OAuthClient) UpdateKeys() error {
+	o.PK = "OAUTH_CLIENT#" + o.ClientID
+	o.SK = "CLIENT"
+	if o.OwnerID != "" {
+		o.GSI1PK = "OWNER#" + o.OwnerID
+		o.GSI1SK = "CLIENT#" + o.ClientID
+	}
 	return nil
 }

@@ -43,7 +43,7 @@ func (AuthRefreshToken) TableName() string {
 }
 
 // UpdateKeys ensures all keys are properly set for DynamoDB operations
-func (a *AuthRefreshToken) UpdateKeys() {
+func (a *AuthRefreshToken) UpdateKeys() error {
 	// Primary key is the token value itself
 	a.PK = a.Token
 	a.SK = SKToken
@@ -56,18 +56,28 @@ func (a *AuthRefreshToken) UpdateKeys() {
 	if a.TTL == 0 && a.ExpiresAt > 0 {
 		a.TTL = a.ExpiresAt
 	}
+	
+	return nil
+}
+
+// GetPK returns the partition key for this model
+func (a *AuthRefreshToken) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key for this model
+func (a *AuthRefreshToken) GetSK() string {
+	return a.SK
 }
 
 // BeforeCreate sets up keys before creating the record
 func (a *AuthRefreshToken) BeforeCreate() error {
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
 }
 
 // BeforeUpdate sets up keys before updating the record
 func (a *AuthRefreshToken) BeforeUpdate() error {
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
 }
 
 // IsExpired checks if the token has expired

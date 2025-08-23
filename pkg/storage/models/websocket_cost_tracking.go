@@ -252,16 +252,44 @@ func (WebSocketCostAggregation) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key for BaseModel interface
+func (w *WebSocketCostRecord) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (w *WebSocketCostRecord) GetSK() string {
+	return w.SK
+}
+
+// UpdateKeys sets up all keys (PK, SK, GSI keys) for the WebSocketCostRecord
+func (w *WebSocketCostRecord) UpdateKeys() error {
+	// Generate ID if not provided
+	if err := common.ValidateRequiredParam("w.ID", w.ID); err != nil {
+		w.ID = uuid.New().String()
+	}
+
+	// Set timestamp if not provided
+	if w.Timestamp.IsZero() {
+		w.Timestamp = time.Now()
+	}
+
+	// Set up primary key
+	w.PK = fmt.Sprintf("WS_COST#%s", w.OperationType)
+	timestamp := w.Timestamp.Format("20060102150405")
+	w.SK = fmt.Sprintf("ts#%s#%s", timestamp, w.ID)
+
+	// Set up GSI keys
+	w.setupGSIKeys()
+
+	return nil
+}
+
 // BeforeCreate sets up the WebSocketCostRecord model before creation
 func (w *WebSocketCostRecord) BeforeCreate() error {
 	now := time.Now()
 	w.CreatedAt = now
 	w.UpdatedAt = now
-
-	// Generate ID if not provided
-	if err := common.ValidateRequiredParam("w.ID", w.ID); err != nil {
-		w.ID = uuid.New().String()
-	}
 
 	// Set timestamp if not provided
 	if w.Timestamp.IsZero() {
@@ -274,13 +302,10 @@ func (w *WebSocketCostRecord) BeforeCreate() error {
 	// Set TTL (30 days for detailed records)
 	w.ExpiresAt = now.Add(30 * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	w.PK = fmt.Sprintf("WS_COST#%s", w.OperationType)
-	timestamp := w.Timestamp.Format("20060102150405")
-	w.SK = fmt.Sprintf("ts#%s#%s", timestamp, w.ID)
-
-	// Set up GSI keys
-	w.setupGSIKeys()
+	// Update all keys
+	if err := w.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return w.Validate()
 }
@@ -324,11 +349,34 @@ func (w *WebSocketCostRecord) Validate() error {
 		return err
 	}
 	if !isValidWebSocketOperationType(w.OperationType) {
-		return fmt.Errorf("invalid operation type: %s", w.OperationType)
+		return fmt.Errorf("%w: %s", ErrInvalidWebSocketOperationType, w.OperationType)
 	}
 	if err := common.ValidateRequiredParam("ConnectionID", w.ConnectionID); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (w *WebSocketCostBudget) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (w *WebSocketCostBudget) GetSK() string {
+	return w.SK
+}
+
+// UpdateKeys sets up all keys (PK, SK, GSI keys) for the WebSocketCostBudget
+func (w *WebSocketCostBudget) UpdateKeys() error {
+	// Set up primary key
+	w.PK = fmt.Sprintf("WS_BUDGET#%s#%s", w.UserID, w.Period)
+	w.SK = fmt.Sprintf("BUDGET#%s", w.Period)
+
+	// Set up GSI keys
+	w.GSI1PK = fmt.Sprintf("WS_USER_BUDGET#%s", w.UserID)
+	w.GSI1SK = fmt.Sprintf("%s#%s", w.Period, w.Status)
 
 	return nil
 }
@@ -365,13 +413,10 @@ func (w *WebSocketCostBudget) BeforeCreate() error {
 	}
 	w.ExpiresAt = now.Add(ttlDuration).Unix()
 
-	// Set up primary key
-	w.PK = fmt.Sprintf("WS_BUDGET#%s#%s", w.UserID, w.Period)
-	w.SK = fmt.Sprintf("BUDGET#%s", w.Period)
-
-	// Set up GSI keys
-	w.GSI1PK = fmt.Sprintf("WS_USER_BUDGET#%s", w.UserID)
-	w.GSI1SK = fmt.Sprintf("%s#%s", w.Period, w.Status)
+	// Update all keys
+	if err := w.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return w.Validate()
 }
@@ -394,8 +439,10 @@ func (w *WebSocketCostBudget) BeforeUpdate() error {
 	// Update status
 	w.updateStatus()
 
-	// Update GSI keys
-	w.GSI1SK = fmt.Sprintf("%s#%s", w.Period, w.Status)
+	// Update keys (including GSI keys)
+	if err := w.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return w.Validate()
 }
@@ -422,19 +469,44 @@ func (w *WebSocketCostBudget) Validate() error {
 		return err
 	}
 	if !isValidWebSocketPeriod(w.Period) {
-		return fmt.Errorf("invalid period: %s", w.Period)
+		return fmt.Errorf("%w: %s", ErrInvalidWebSocketPeriod, w.Period)
 	}
 	if w.BudgetMicroCents < 0 {
-		return fmt.Errorf("BudgetMicroCents cannot be negative")
+		return ErrBudgetMicroCentsNegative
 	}
 	if w.WindowStart.IsZero() {
-		return fmt.Errorf("WindowStart is required")
+		return ErrWebSocketWindowStartRequired
 	}
 	if w.WindowEnd.IsZero() {
-		return fmt.Errorf("WindowEnd is required")
+		return ErrWebSocketWindowEndRequired
 	}
 	if w.WindowEnd.Before(w.WindowStart) {
-		return fmt.Errorf("WindowEnd must be after WindowStart")
+		return ErrWebSocketWindowEndBeforeStart
+	}
+
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (w *WebSocketCostAggregation) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (w *WebSocketCostAggregation) GetSK() string {
+	return w.SK
+}
+
+// UpdateKeys sets up all keys (PK, SK, GSI keys) for the WebSocketCostAggregation
+func (w *WebSocketCostAggregation) UpdateKeys() error {
+	// Set up primary key
+	w.PK = fmt.Sprintf("WS_AGG#%s#%s", w.Period, w.OperationType)
+	w.SK = fmt.Sprintf("window#%s", w.WindowStart.Format(time.RFC3339))
+
+	// Set up GSI keys for user-specific aggregations
+	if w.UserID != "" {
+		w.GSI1PK = fmt.Sprintf("WS_USER_AGG#%s#%s", w.UserID, w.Period)
+		w.GSI1SK = fmt.Sprintf("%s#%s", w.WindowStart.Format(time.RFC3339), w.OperationType)
 	}
 
 	return nil
@@ -482,14 +554,9 @@ func (w *WebSocketCostAggregation) BeforeCreate() error {
 	}
 	w.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	w.PK = fmt.Sprintf("WS_AGG#%s#%s", w.Period, w.OperationType)
-	w.SK = fmt.Sprintf("window#%s", w.WindowStart.Format(time.RFC3339))
-
-	// Set up GSI keys for user-specific aggregations
-	if w.UserID != "" {
-		w.GSI1PK = fmt.Sprintf("WS_USER_AGG#%s#%s", w.UserID, w.Period)
-		w.GSI1SK = fmt.Sprintf("%s#%s", w.WindowStart.Format(time.RFC3339), w.OperationType)
+	// Update all keys
+	if err := w.UpdateKeys(); err != nil {
+		return err
 	}
 
 	return w.Validate()
@@ -539,13 +606,13 @@ func (w *WebSocketCostAggregation) Validate() error {
 		return err
 	}
 	if w.WindowStart.IsZero() {
-		return fmt.Errorf("WindowStart is required")
+		return ErrWebSocketWindowStartRequired
 	}
 	if w.WindowEnd.IsZero() {
-		return fmt.Errorf("WindowEnd is required")
+		return ErrWebSocketWindowEndRequired
 	}
 	if w.WindowEnd.Before(w.WindowStart) {
-		return fmt.Errorf("WindowEnd must be after WindowStart")
+		return ErrWebSocketWindowEndBeforeStart
 	}
 
 	return nil

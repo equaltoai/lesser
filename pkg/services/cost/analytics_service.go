@@ -4,12 +4,13 @@ package cost
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"math"
 	"sort"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	serviceerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -208,7 +209,12 @@ func (s *AnalyticsService) CalculateGrowthTrends(ctx context.Context, metric str
 	case "ai_cost":
 		costs, err := s.aiCostRepo.GetAICostsByTimeRange(ctx, startTime.AddDate(0, 0, -periods), startTime, "", 0)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get AI cost data: %w", err)
+			s.logger.Error("failed to get AI cost data",
+				zap.Error(err),
+				zap.Time("start_time", startTime.AddDate(0, 0, -periods)),
+				zap.Time("end_time", startTime),
+				zap.Int("periods", periods))
+			return nil, errors.Join(serviceerrors.ErrGetAICostData, err)
 		}
 		dataPoints, timestamps = s.extractCostDataPoints(costs, periods, startTime)
 		
@@ -232,7 +238,10 @@ func (s *AnalyticsService) CalculateGrowthTrends(ctx context.Context, metric str
 		}
 		
 	default:
-		return nil, fmt.Errorf("unsupported metric: %s", metric)
+		s.logger.Warn("unsupported metric requested",
+			zap.String("metric", metric),
+			zap.Strings("supported_metrics", []string{"ai_cost", "websocket_cost"}))
+		return nil, serviceerrors.ErrUnsupportedMetric
 	}
 
 	if len(dataPoints) < 3 {
@@ -302,7 +311,10 @@ func (s *AnalyticsService) PredictFutureCosts(_ context.Context, historicalData 
 		zap.Int("forecast_periods", periods))
 
 	if len(historicalData) < 7 {
-		return nil, fmt.Errorf("insufficient historical data for prediction (need at least 7 points)")
+		s.logger.Warn("insufficient historical data for prediction",
+			zap.Int("data_points", len(historicalData)),
+			zap.Int("required_minimum", 7))
+		return nil, serviceerrors.ErrInsufficientHistoricalData
 	}
 
 	prediction := &Prediction{

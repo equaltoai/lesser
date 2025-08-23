@@ -2,12 +2,12 @@ package repositories
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -28,7 +28,7 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 	var cache models.PublicKeyCache
 	cache.ActorURL = actorURL
 	if err := cache.UpdateKeys(); err != nil {
-		return nil, fmt.Errorf("failed to update keys: %w", err)
+		return nil, ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	err := r.db.WithContext(ctx).Model(&models.PublicKeyCache{}).
@@ -37,15 +37,15 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 		First(&cache)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			r.logger.Debug("public key cache miss",
 				zap.String("actor_url", actorURL))
-			return nil, fmt.Errorf("public key cache not found for actor: %s", actorURL)
+			return nil, ErrorHandler.HandleGetError(err, EntityPublicKeyCache, actorURL)
 		}
 		r.logger.Error("failed to get cached public key",
 			zap.Error(err),
 			zap.String("actor_url", actorURL))
-		return nil, fmt.Errorf("failed to get cached public key: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	// Check if cache entry is still valid
@@ -63,7 +63,7 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 					zap.String("actor_url", actorURL))
 			}
 		}()
-		return nil, fmt.Errorf("public key cache expired for actor: %s", actorURL)
+		return nil, ErrorHandler.HandleGetError(errors.New("public key cache expired"), EntityPublicKeyCache, actorURL)
 	}
 
 	r.logger.Debug("public key cache hit",
@@ -83,7 +83,7 @@ func (r *PublicKeyCacheRepository) Store(ctx context.Context, actorURL, keyID, p
 			zap.Error(err),
 			zap.String("actor_url", actorURL),
 			zap.String("key_id", keyID))
-		return nil, fmt.Errorf("failed to store public key cache: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	r.logger.Debug("stored public key in cache",
@@ -99,7 +99,7 @@ func (r *PublicKeyCacheRepository) UpdateStats(ctx context.Context, actorURL str
 	var cache models.PublicKeyCache
 	cache.ActorURL = actorURL
 	if err := cache.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	// First get the current entry
@@ -109,11 +109,11 @@ func (r *PublicKeyCacheRepository) UpdateStats(ctx context.Context, actorURL str
 		First(&cache)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			// Entry doesn't exist, nothing to update
 			return nil
 		}
-		return fmt.Errorf("failed to get cache entry for stats update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	// Update stats
@@ -134,7 +134,7 @@ func (r *PublicKeyCacheRepository) UpdateStats(ctx context.Context, actorURL str
 			zap.Error(err),
 			zap.String("actor_url", actorURL),
 			zap.Bool("success", success))
-		return fmt.Errorf("failed to update cache entry stats: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	r.logger.Debug("updated cache entry stats",
@@ -151,7 +151,7 @@ func (r *PublicKeyCacheRepository) RefreshKey(ctx context.Context, actorURL, key
 	var cache models.PublicKeyCache
 	cache.ActorURL = actorURL
 	if err := cache.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	// Check if entry exists first
@@ -161,12 +161,12 @@ func (r *PublicKeyCacheRepository) RefreshKey(ctx context.Context, actorURL, key
 		First(&cache)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			// Entry doesn't exist, create new one
 			_, err := r.Store(ctx, actorURL, keyID, publicKeyPEM, algorithm)
 			return err
 		}
-		return fmt.Errorf("failed to get existing cache entry: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	// Update the key data
@@ -188,7 +188,7 @@ func (r *PublicKeyCacheRepository) RefreshKey(ctx context.Context, actorURL, key
 			zap.Error(err),
 			zap.String("actor_url", actorURL),
 			zap.String("key_id", keyID))
-		return fmt.Errorf("failed to refresh cached public key: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	r.logger.Debug("refreshed cached public key",
@@ -203,15 +203,15 @@ func (r *PublicKeyCacheRepository) InvalidateCache(ctx context.Context, actorURL
 	var cache models.PublicKeyCache
 	cache.ActorURL = actorURL
 	if err := cache.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	err := r.Delete(ctx, cache.PK, cache.SK)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to invalidate cache",
 			zap.Error(err),
 			zap.String("actor_url", actorURL))
-		return fmt.Errorf("failed to invalidate cache: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityPublicKeyCache, actorURL)
 	}
 
 	r.logger.Debug("invalidated cache entry",

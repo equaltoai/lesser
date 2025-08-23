@@ -5,83 +5,89 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// CircuitBreakerRepository handles circuit breaker state persistence
+// CircuitBreakerRepository handles circuit breaker state persistence with BaseRepository integration
 type CircuitBreakerRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.CircuitBreakerState]
+	eventRepo *BaseRepository[*models.CircuitBreakerEvent]
 }
 
-// NewCircuitBreakerRepository creates a new circuit breaker repository
-func NewCircuitBreakerRepository(db core.DB, tableName string, logger *zap.Logger) *CircuitBreakerRepository {
+// NewCircuitBreakerRepository creates a new circuit breaker repository with cost tracking
+func NewCircuitBreakerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CircuitBreakerRepository {
 	return &CircuitBreakerRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CircuitBreakerState](
+			db, tableName, logger, costService, "circuit_breaker_state",
+		),
+		eventRepo: NewBaseRepositoryWithCostTracking[*models.CircuitBreakerEvent](
+			db, tableName, logger, costService, "circuit_breaker_event",
+		),
+	}
+}
+
+// NewCircuitBreakerRepositoryBasic creates a new circuit breaker repository without cost tracking
+func NewCircuitBreakerRepositoryBasic(db core.DB, tableName string, logger *zap.Logger) *CircuitBreakerRepository {
+	return &CircuitBreakerRepository{
+		BaseRepository: NewBaseRepository[*models.CircuitBreakerState](db, tableName, logger),
+		eventRepo:      NewBaseRepository[*models.CircuitBreakerEvent](db, tableName, logger),
 	}
 }
 
 // GetCircuitState retrieves the current state of a circuit breaker for an instance
+// CIRCUIT BREAKER RESILIENCE: Returns default closed state if not found - critical for system stability
 func (r *CircuitBreakerRepository) GetCircuitState(ctx context.Context, instanceID string) (*models.CircuitBreakerState, error) {
-	var state models.CircuitBreakerState
-	state.InstanceID = instanceID
-	state.UpdateKeys()
+	state := &models.CircuitBreakerState{InstanceID: instanceID}
+	if err := state.UpdateKeys(); err != nil {
+		return nil, ErrorHandler.HandleUpdateError(err, EntityCircuitBreaker, instanceID)
+	}
 
-	err := r.db.WithContext(ctx).Model(&models.CircuitBreakerState{}).
-		Where("PK", "=", state.PK).
-		Where("SK", "=", state.SK).
-		First(&state)
-
+	err := r.Get(ctx, state.PK, state.SK, state)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Return a new closed circuit state if not found
+		// Circuit breaker resilience: Return default closed state if not found
+		if errors.IsNotFound(err) || err.Error() == "item not found: pk="+state.PK+", sk="+state.SK {
 			return &models.CircuitBreakerState{
 				InstanceID:      instanceID,
 				Status:          "closed",
 				LastStateChange: time.Now(),
 			}, nil
 		}
-		return nil, fmt.Errorf("get circuit state: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityCircuitBreaker, instanceID)
 	}
 
-	return &state, nil
+	return state, nil
 }
 
 // SaveCircuitState saves the circuit breaker state atomically
+// CIRCUIT BREAKER RESILIENCE: Maintains atomic create/update semantics to prevent race conditions
 func (r *CircuitBreakerRepository) SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error {
-	// Ensure keys are updated
-	state.UpdateKeys()
-
-	// Use conditional update to prevent race conditions
-	err := r.db.WithContext(ctx).Model(state).Create()
-
+	// Circuit breaker atomicity: Try create first, fallback to update
+	err := r.Create(ctx, state)
 	if err != nil {
-		// If item already exists, update it
+		// If item already exists, update it atomically
 		if errors.IsConditionFailed(err) {
-			// Get the existing state first
-			var existing models.CircuitBreakerState
-			getErr := r.db.WithContext(ctx).Model(&models.CircuitBreakerState{}).
-				Where("PK", "=", state.PK).
-				Where("SK", "=", state.SK).
-				First(&existing)
-			if getErr != nil {
-				return fmt.Errorf("get existing state for update: %w", getErr)
+			// Get existing state for atomic update
+			existing := &models.CircuitBreakerState{InstanceID: state.InstanceID}
+			if keyErr := existing.UpdateKeys(); keyErr != nil {
+				return ErrorHandler.HandleUpdateError(keyErr, EntityCircuitBreaker, state.InstanceID)
 			}
-			// Copy the new data over
-			existing = *state
-			err = r.db.WithContext(ctx).Model(&existing).Update()
+			
+			if getErr := r.Get(ctx, existing.PK, existing.SK, existing); getErr != nil {
+				return ErrorHandler.HandleGetError(getErr, EntityCircuitBreaker, state.InstanceID)
+			}
+			
+			// Preserve atomic state transition by copying all fields
+			*existing = *state
+			err = r.Update(ctx, existing)
 		}
 		if err != nil {
-			return fmt.Errorf("save circuit state: %w", err)
+			return ErrorHandler.HandleUpdateError(err, EntityCircuitBreaker, state.InstanceID)
 		}
 	}
-
 	return nil
 }
 
@@ -95,7 +101,7 @@ func (r *CircuitBreakerRepository) UpdateCircuitState(ctx context.Context, insta
 
 	// Apply the update function
 	if err := updateFn(state); err != nil {
-		return nil, fmt.Errorf("update function failed: %w", err)
+		return nil, ErrorHandler.HandleUpdateError(err, EntityCircuitBreaker, instanceID)
 	}
 
 	// Save the updated state
@@ -107,21 +113,18 @@ func (r *CircuitBreakerRepository) UpdateCircuitState(ctx context.Context, insta
 }
 
 // RecordEvent records a circuit breaker event for debugging and monitoring
+// CIRCUIT BREAKER RESILIENCE: Non-blocking event recording for debugging/monitoring
 func (r *CircuitBreakerRepository) RecordEvent(ctx context.Context, event *models.CircuitBreakerEvent) error {
-	// Ensure keys are updated
-	event.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(event).Create()
-
+	err := r.eventRepo.Create(ctx, event)
 	if err != nil {
-		r.logger.Warn("failed to record circuit breaker event",
+		// Circuit breaker resilience: Event recording failure should not block main operations
+		r.eventRepo.logger.Warn("failed to record circuit breaker event",
 			zap.String("instanceID", event.InstanceID),
 			zap.String("eventType", event.EventType),
 			zap.Error(err))
 		// Don't fail the main operation if event recording fails
 		return nil
 	}
-
 	return nil
 }
 
@@ -158,55 +161,49 @@ func (r *CircuitBreakerRepository) RecordMetric(ctx context.Context, instanceID 
 
 // GetRecentEvents retrieves recent events for an instance (for debugging)
 func (r *CircuitBreakerRepository) GetRecentEvents(ctx context.Context, instanceID string, limit int) ([]*models.CircuitBreakerEvent, error) {
-	var events []*models.CircuitBreakerEvent
-
 	pk := fmt.Sprintf("CIRCUIT#%s", instanceID)
-
-	// Use scan to get all events for this instance
-	err := r.db.WithContext(ctx).Model(&models.CircuitBreakerEvent{}).
-		Where("PK", "=", pk).
-		Where("SK", "begins_with", "EVENT#").
-		Limit(limit).
-		Scan(&events)
-
+	
+	// Use BaseRepository query with SK prefix for events
+	events, err := r.eventRepo.QueryWithSKPrefix(ctx, pk, "EVENT#", limit)
 	if err != nil {
-		return nil, fmt.Errorf("get recent events: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityCircuitBreaker, "events")
 	}
 
-	return events, nil
+	// Convert slice of values to slice of pointers
+	result := make([]*models.CircuitBreakerEvent, len(events))
+	for i := range events {
+		result[i] = events[i]
+	}
+	return result, nil
 }
 
 // DeleteCircuitState removes circuit state for an instance (for cleanup)
 func (r *CircuitBreakerRepository) DeleteCircuitState(ctx context.Context, instanceID string) error {
-	state := &models.CircuitBreakerState{
-		InstanceID: instanceID,
+	state := &models.CircuitBreakerState{InstanceID: instanceID}
+	if err := state.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityCircuitBreaker, instanceID)
 	}
-	state.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(&models.CircuitBreakerState{}).
-		Where("PK", "=", state.PK).
-		Where("SK", "=", state.SK).
-		Delete()
-
+	err := r.Delete(ctx, state.PK, state.SK)
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("delete circuit state: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityCircuitBreaker, instanceID)
 	}
-
 	return nil
 }
 
 // GetAllCircuitStates retrieves all circuit states (for monitoring/debugging)
 func (r *CircuitBreakerRepository) GetAllCircuitStates(ctx context.Context) ([]*models.CircuitBreakerState, error) {
+	// This requires a scan operation since we need all circuit states across different PKs
+	// Using the underlying DB connection for this specialized query
 	var states []*models.CircuitBreakerState
-
-	err := r.db.WithContext(ctx).Model(&models.CircuitBreakerState{}).
+	
+	err := r.GetDB().WithContext(ctx).Model(&models.CircuitBreakerState{}).
 		Where("PK", "begins_with", "CIRCUIT#").
-		Where("SK", "=", "STATE").
+		Where("SK", "=", models.SKState).
 		Scan(&states)
-
+		
 	if err != nil {
-		return nil, fmt.Errorf("get all circuit states: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityCircuitBreaker, "monitoring")
 	}
-
 	return states, nil
 }

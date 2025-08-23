@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -35,41 +36,65 @@ type ModerationMetricsRepository interface {
 	GetAggregatedStats(ctx context.Context, timeRange models.ModerationMetricsTimeRange) (*models.ModerationMetricsStats, error)
 }
 
-// moderationMetricsRepository implements ModerationMetricsRepository
+// moderationMetricsRepository implements moderation metrics operations using BaseRepository patterns
 type moderationMetricsRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	// Embed BaseRepository for different model types - we'll use ModerationMetricsEntry as the primary type
+	*BaseRepository[*models.ModerationMetricsEntry]
+	
+	// Additional repositories for other model types
+	falsePositiveRepo   *BaseRepository[*models.ModerationFalsePositive]
+	decisionSampleRepo  *BaseRepository[*models.ModerationDecisionSample]
+	patternStatsRepo    *BaseRepository[*models.ModerationPatternStats]
 }
 
-// NewModerationMetricsRepository creates a new moderation metrics repository
-func NewModerationMetricsRepository(db core.DB, logger *zap.Logger) ModerationMetricsRepository {
-	return &moderationMetricsRepository{
-		db:     db,
-		logger: logger,
+// NewModerationMetricsRepository creates a new moderation metrics repository with optional cost tracking
+// For backward compatibility, supports both old signature (db, logger) and new signature (db, tableName, logger, costService)
+func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsRepository {
+	var db core.DB
+	var tableName string
+	var logger *zap.Logger
+	var costService *cost.TrackingService
+
+	// Handle different argument signatures for backward compatibility
+	switch len(args) {
+	case 2:
+		// Old signature: (db, logger)
+		db = args[0].(core.DB)
+		logger = args[1].(*zap.Logger)
+		tableName = models.MainTableName // Use default table name
+		costService = nil                // No cost tracking
+	case 4:
+		// New signature: (db, tableName, logger, costService)
+		db = args[0].(core.DB)
+		tableName = args[1].(string)
+		logger = args[2].(*zap.Logger)
+		costService = args[3].(*cost.TrackingService)
+	default:
+		panic("NewModerationMetricsRepository: invalid number of arguments")
+	}
+
+	// Create repositories with or without cost tracking
+	if costService != nil {
+		return &moderationMetricsRepository{
+			BaseRepository:      NewBaseRepositoryWithCostTracking[*models.ModerationMetricsEntry](db, tableName, logger, costService, "moderation_metrics"),
+			falsePositiveRepo:   NewBaseRepositoryWithCostTracking[*models.ModerationFalsePositive](db, tableName, logger, costService, "false_positive"),
+			decisionSampleRepo:  NewBaseRepositoryWithCostTracking[*models.ModerationDecisionSample](db, tableName, logger, costService, "decision_sample"),
+			patternStatsRepo:    NewBaseRepositoryWithCostTracking[*models.ModerationPatternStats](db, tableName, logger, costService, "pattern_stats"),
+		}
+	} else {
+		return &moderationMetricsRepository{
+			BaseRepository:      NewBaseRepository[*models.ModerationMetricsEntry](db, tableName, logger),
+			falsePositiveRepo:   NewBaseRepository[*models.ModerationFalsePositive](db, tableName, logger),
+			decisionSampleRepo:  NewBaseRepository[*models.ModerationDecisionSample](db, tableName, logger),
+			patternStatsRepo:    NewBaseRepository[*models.ModerationPatternStats](db, tableName, logger),
+		}
 	}
 }
 
 // RecordMetricsEntry records a single metrics entry
 func (r *moderationMetricsRepository) RecordMetricsEntry(ctx context.Context, entry *models.ModerationMetricsEntry) error {
-	entry.UpdateKeys()
 	entry.CreatedAt = time.Now()
-
-	err := r.db.WithContext(ctx).Model(entry).Create()
-	if err != nil {
-		r.logger.Error("failed to record metrics entry",
-			zap.String("metric_type", entry.MetricType),
-			zap.Int64("count", entry.Count),
-			zap.Error(err))
-		return fmt.Errorf("record metrics entry: %w", err)
-	}
-
-	r.logger.Debug("recorded metrics entry",
-		zap.String("metric_type", entry.MetricType),
-		zap.Int64("count", entry.Count),
-		zap.String("date", entry.Date),
-		zap.String("hour", entry.Hour))
-
-	return nil
+	return r.Create(ctx, entry)
 }
 
 // RecordMetricsEntries records multiple metrics entries in batch
@@ -78,47 +103,18 @@ func (r *moderationMetricsRepository) RecordMetricsEntries(ctx context.Context, 
 		return nil
 	}
 
-	// Update keys and timestamps for all entries
+	// Update timestamps for all entries
 	for _, entry := range entries {
-		entry.UpdateKeys()
 		entry.CreatedAt = time.Now()
 	}
 
-	// Use DynamORM's efficient BatchCreate - automatically handles chunking
-	err := r.db.WithContext(ctx).Model(&entries[0]).BatchCreate(entries)
-	if err != nil {
-		r.logger.Error("failed to batch create metrics entries",
-			zap.Int("count", len(entries)),
-			zap.Error(err))
-		return fmt.Errorf("batch create metrics entries: %w", err)
-	}
-
-	r.logger.Info("recorded metrics entries batch",
-		zap.Int("count", len(entries)))
-
-	return nil
+	return r.BatchCreate(ctx, entries)
 }
 
-// RecordFalsePositive records a false positive
+// RecordFalsePositive records a false positive using dedicated repository
 func (r *moderationMetricsRepository) RecordFalsePositive(ctx context.Context, fp *models.ModerationFalsePositive) error {
-	fp.UpdateKeys()
 	fp.Timestamp = time.Now()
-
-	err := r.db.WithContext(ctx).Model(fp).Create()
-	if err != nil {
-		r.logger.Error("failed to record false positive",
-			zap.String("content_id", fp.ContentID),
-			zap.String("decision", fp.OriginalDecision),
-			zap.Error(err))
-		return fmt.Errorf("record false positive: %w", err)
-	}
-
-	r.logger.Info("recorded false positive",
-		zap.String("content_id", fp.ContentID),
-		zap.String("decision", fp.OriginalDecision),
-		zap.Float64("confidence", fp.Confidence))
-
-	return nil
+	return r.falsePositiveRepo.Create(ctx, fp)
 }
 
 // GetFalsePositives retrieves false positives within a time range
@@ -126,48 +122,24 @@ func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, tim
 	var results []*models.ModerationFalsePositive
 
 	// Query by GSI1 for efficient time range queries
-	err := r.db.WithContext(ctx).Model(&models.ModerationFalsePositive{}).
+	err := r.falsePositiveRepo.GetDB().WithContext(ctx).Model(&models.ModerationFalsePositive{}).
+		Index("gsi1").
 		Where("GSI1PK", "=", "FALSE_POSITIVES").
 		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
 		Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 		All(&results)
 
 	if err != nil {
-		r.logger.Error("failed to get false positives",
-			zap.Time("start", timeRange.Start),
-			zap.Time("end", timeRange.End),
-			zap.Error(err))
-		return nil, fmt.Errorf("get false positives: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationMetricsFalsePositivesQueryFailed, err)
 	}
-
-	r.logger.Debug("retrieved false positives",
-		zap.Int("count", len(results)),
-		zap.Time("start", timeRange.Start),
-		zap.Time("end", timeRange.End))
 
 	return results, nil
 }
 
-// RecordDecisionSample records a decision sample
+// RecordDecisionSample records a decision sample using dedicated repository
 func (r *moderationMetricsRepository) RecordDecisionSample(ctx context.Context, sample *models.ModerationDecisionSample) error {
-	sample.UpdateKeys()
 	sample.Timestamp = time.Now()
-
-	err := r.db.WithContext(ctx).Model(sample).Create()
-	if err != nil {
-		r.logger.Error("failed to record decision sample",
-			zap.String("content_id", sample.ContentID),
-			zap.String("decision", sample.Decision),
-			zap.Error(err))
-		return fmt.Errorf("record decision sample: %w", err)
-	}
-
-	r.logger.Debug("recorded decision sample",
-		zap.String("content_id", sample.ContentID),
-		zap.String("decision", sample.Decision),
-		zap.Float64("confidence", sample.Confidence))
-
-	return nil
+	return r.decisionSampleRepo.Create(ctx, sample)
 }
 
 // GetDecisionSamples retrieves decision samples within a time range
@@ -176,19 +148,15 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 
 	if decision != "" {
 		// Query by specific decision type using GSI1
-		err := r.db.WithContext(ctx).Model(&models.ModerationDecisionSample{}).
+		err := r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
+			Index("gsi1").
 			Where("GSI1PK", "=", fmt.Sprintf("DECISION#%s", decision)).
 			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
 			Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 			All(&results)
 
 		if err != nil {
-			r.logger.Error("failed to get decision samples by decision type",
-				zap.String("decision", decision),
-				zap.Time("start", timeRange.Start),
-				zap.Time("end", timeRange.End),
-				zap.Error(err))
-			return nil, fmt.Errorf("get decision samples: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrModerationMetricsDecisionSamplesQueryFailed, err)
 		}
 	} else {
 		// Query all decisions by date range using primary key
@@ -198,15 +166,11 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationDecisionSample
 
-			err := r.db.WithContext(ctx).Model(&models.ModerationDecisionSample{}).
+			err := r.decisionSampleRepo.GetDB().WithContext(ctx).Model(&models.ModerationDecisionSample{}).
 				Where("PK", "=", fmt.Sprintf("SAMPLES#%s", dateStr)).
 				All(&dayResults)
 
-			if err != nil {
-				r.logger.Warn("failed to get decision samples for date",
-					zap.String("date", dateStr),
-					zap.Error(err))
-			} else {
+			if err == nil {
 				results = append(results, dayResults...)
 			}
 
@@ -214,35 +178,13 @@ func (r *moderationMetricsRepository) GetDecisionSamples(ctx context.Context, ti
 		}
 	}
 
-	r.logger.Debug("retrieved decision samples",
-		zap.Int("count", len(results)),
-		zap.String("decision", decision),
-		zap.Time("start", timeRange.Start),
-		zap.Time("end", timeRange.End))
-
 	return results, nil
 }
 
-// UpdatePatternStats updates pattern statistics
+// UpdatePatternStats updates pattern statistics using dedicated repository
 func (r *moderationMetricsRepository) UpdatePatternStats(ctx context.Context, stats *models.ModerationPatternStats) error {
-	stats.UpdateKeys()
 	stats.UpdatedAt = time.Now()
-
-	err := r.db.WithContext(ctx).Model(stats).Update()
-
-	if err != nil {
-		r.logger.Error("failed to update pattern stats",
-			zap.String("pattern_id", stats.PatternID),
-			zap.Int64("hit_count", stats.HitCount),
-			zap.Error(err))
-		return fmt.Errorf("update pattern stats: %w", err)
-	}
-
-	r.logger.Debug("updated pattern stats",
-		zap.String("pattern_id", stats.PatternID),
-		zap.Int64("hit_count", stats.HitCount))
-
-	return nil
+	return r.patternStatsRepo.Update(ctx, stats)
 }
 
 // GetTopPatterns retrieves the top patterns by hit count
@@ -250,40 +192,33 @@ func (r *moderationMetricsRepository) GetTopPatterns(ctx context.Context, limit 
 	var results []*models.ModerationPatternStats
 
 	// Query by GSI1 ordered by hit count (descending)
-	err := r.db.WithContext(ctx).Model(&models.ModerationPatternStats{}).
+	err := r.patternStatsRepo.GetDB().WithContext(ctx).Model(&models.ModerationPatternStats{}).
+		Index("gsi1").
 		Where("GSI1PK", "=", "PATTERN_HITS").
 		Limit(limit).
 		All(&results)
 
 	if err != nil {
-		r.logger.Error("failed to get top patterns",
-			zap.Int("limit", limit),
-			zap.Error(err))
-		return nil, fmt.Errorf("get top patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationMetricsTopPatternsQueryFailed, err)
 	}
-
-	r.logger.Debug("retrieved top patterns",
-		zap.Int("count", len(results)),
-		zap.Int("limit", limit))
 
 	return results, nil
 }
 
-// IncrementPatternHit increments the hit count for a pattern
+// IncrementPatternHit increments the hit count for a pattern - preserved business logic
 func (r *moderationMetricsRepository) IncrementPatternHit(ctx context.Context, patternID, patternName string) error {
-	// Try to increment existing record
+	// Try to get existing stats first
 	pk := fmt.Sprintf("PATTERN_STATS#%s", patternID)
 	sk := "STATS"
 
-	// First try to get existing stats
 	var existing models.ModerationPatternStats
-	err := r.db.WithContext(ctx).Model(&models.ModerationPatternStats{}).
+	err := r.patternStatsRepo.GetDB().WithContext(ctx).Model(&models.ModerationPatternStats{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&existing)
 
 	if err != nil {
-		// Create new stats record
+		// Create new stats record using BaseRepository
 		stats := &models.ModerationPatternStats{
 			PatternID:   patternID,
 			PatternName: patternName,
@@ -291,45 +226,19 @@ func (r *moderationMetricsRepository) IncrementPatternHit(ctx context.Context, p
 			LastHit:     time.Now(),
 			CreatedAt:   time.Now(),
 		}
-		stats.UpdateKeys()
 
-		err = r.db.WithContext(ctx).Model(stats).Create()
-		if err != nil {
-			r.logger.Error("failed to create pattern stats",
-				zap.String("pattern_id", patternID),
-				zap.Error(err))
-			return fmt.Errorf("create pattern stats: %w", err)
-		}
-
-		r.logger.Debug("created new pattern stats",
-			zap.String("pattern_id", patternID),
-			zap.String("pattern_name", patternName))
+		return r.patternStatsRepo.Create(ctx, stats)
 	} else {
-		// Update existing record
+		// Update existing record using BaseRepository
 		existing.HitCount++
 		existing.LastHit = time.Now()
 		existing.UpdatedAt = time.Now()
-		existing.UpdateKeys() // Recalculate GSI keys
 
-		err = r.db.WithContext(ctx).Model(&existing).Update()
-
-		if err != nil {
-			r.logger.Error("failed to increment pattern hit count",
-				zap.String("pattern_id", patternID),
-				zap.Int64("new_count", existing.HitCount),
-				zap.Error(err))
-			return fmt.Errorf("increment pattern hit: %w", err)
-		}
-
-		r.logger.Debug("incremented pattern hit count",
-			zap.String("pattern_id", patternID),
-			zap.Int64("new_count", existing.HitCount))
+		return r.patternStatsRepo.Update(ctx, &existing)
 	}
-
-	return nil
 }
 
-// GetMetricsEntries retrieves metrics entries within a time range
+// GetMetricsEntries retrieves metrics entries within a time range - preserved complex business logic
 func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, timeRange models.ModerationMetricsTimeRange, metricTypes []string) ([]*models.ModerationMetricsEntry, error) {
 	var allResults []*models.ModerationMetricsEntry
 
@@ -337,20 +246,16 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 		// Query by specific metric types using GSI1
 		for _, metricType := range metricTypes {
 			var results []*models.ModerationMetricsEntry
-			err := r.db.WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
+			err := r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
+				Index("gsi1").
 				Where("GSI1PK", "=", fmt.Sprintf("METRIC_TYPE#%s", metricType)).
 				Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", timeRange.Start.Format(common.DateFormat))).
 				Where("GSI1SK", "<=", fmt.Sprintf("DATE#%s#Z", timeRange.End.Format(common.DateFormat))).
 				All(&results)
 
-			if err != nil {
-				r.logger.Warn("failed to get metrics entries for type",
-					zap.String("metric_type", metricType),
-					zap.Error(err))
-				continue
+			if err == nil {
+				allResults = append(allResults, results...)
 			}
-
-			allResults = append(allResults, results...)
 		}
 	} else {
 		// Query all metrics by date range using primary key
@@ -359,16 +264,12 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 			dateStr := current.Format(common.DateFormat)
 			var dayResults []*models.ModerationMetricsEntry
 
-			err := r.db.WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
+			err := r.GetDB().WithContext(ctx).Model(&models.ModerationMetricsEntry{}).
 				Where("PK", "=", fmt.Sprintf("METRICS#%s", dateStr)).
 				Where("SK", "begins_with", "STATS#").
 				All(&dayResults)
 
-			if err != nil {
-				r.logger.Warn("failed to get metrics entries for date",
-					zap.String("date", dateStr),
-					zap.Error(err))
-			} else {
+			if err == nil {
 				allResults = append(allResults, dayResults...)
 			}
 
@@ -376,30 +277,24 @@ func (r *moderationMetricsRepository) GetMetricsEntries(ctx context.Context, tim
 		}
 	}
 
-	r.logger.Debug("retrieved metrics entries",
-		zap.Int("count", len(allResults)),
-		zap.Strings("metric_types", metricTypes),
-		zap.Time("start", timeRange.Start),
-		zap.Time("end", timeRange.End))
-
 	return allResults, nil
 }
 
-// GetAggregatedStats retrieves and aggregates statistics within a time range
+// GetAggregatedStats retrieves and aggregates statistics within a time range - preserved complex business logic
 func (r *moderationMetricsRepository) GetAggregatedStats(ctx context.Context, timeRange models.ModerationMetricsTimeRange) (*models.ModerationMetricsStats, error) {
 	// Get all metrics entries for the time range
 	entries, err := r.GetMetricsEntries(ctx, timeRange, nil)
 	if err != nil {
-		return nil, fmt.Errorf("get metrics entries: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationMetricsEntriesQueryFailed, err)
 	}
 
 	// Get false positives
 	falsePositives, err := r.GetFalsePositives(ctx, timeRange)
 	if err != nil {
-		return nil, fmt.Errorf("get false positives: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrModerationMetricsFalsePositivesQueryFailed, err)
 	}
 
-	// Initialize stats
+	// Initialize stats - preserved exact logic
 	stats := &models.ModerationMetricsStats{
 		TimeRange:      timeRange,
 		ActionCounts:   make(map[models.AdvancedModerationAction]int64),
@@ -407,7 +302,7 @@ func (r *moderationMetricsRepository) GetAggregatedStats(ctx context.Context, ti
 		SeverityCounts: make(map[models.AdvancedSeverity]int64),
 	}
 
-	// Aggregate metrics entries
+	// Aggregate metrics entries - preserved exact aggregation logic
 	var totalAnalyzed int64
 	var totalConfidence float64
 	var confidenceCount int64
@@ -444,13 +339,6 @@ func (r *moderationMetricsRepository) GetAggregatedStats(ctx context.Context, ti
 	if confidenceCount > 0 {
 		stats.AverageConfidence = totalConfidence / float64(confidenceCount)
 	}
-
-	r.logger.Debug("aggregated stats",
-		zap.Int64("total_analyzed", stats.TotalAnalyzed),
-		zap.Int64("false_positives", stats.FalsePositives),
-		zap.Float64("avg_confidence", stats.AverageConfidence),
-		zap.Int("action_types", len(stats.ActionCounts)),
-		zap.Int("categories", len(stats.CategoryCounts)))
 
 	return stats, nil
 }

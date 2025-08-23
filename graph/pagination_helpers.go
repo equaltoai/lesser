@@ -3,7 +3,6 @@ package graph
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -37,13 +36,13 @@ func ParsePaginationArgs(first *int, after *model.Cursor, last *int, before *mod
 
 	// Validate that first/after or last/before are used together (not mixed)
 	if (first != nil || after != nil) && (last != nil || before != nil) {
-		return nil, fmt.Errorf("cannot use first/after with last/before")
+		return nil, ErrPaginationMixedParams
 	}
 
 	// Set defaults and limits for forward pagination
 	if first != nil {
 		if *first <= 0 {
-			return nil, fmt.Errorf("first must be positive")
+			return nil, ErrFirstMustBePositive
 		}
 		if *first > 100 {
 			*first = 100 // Enforce maximum
@@ -57,7 +56,7 @@ func ParsePaginationArgs(first *int, after *model.Cursor, last *int, before *mod
 	// Set defaults and limits for backward pagination
 	if last != nil {
 		if *last <= 0 {
-			return nil, fmt.Errorf("last must be positive")
+			return nil, ErrLastMustBePositive
 		}
 		if *last > 100 {
 			*last = 100 // Enforce maximum
@@ -89,13 +88,13 @@ func DecodeGraphQLCursor(cursor model.Cursor) (*CursorData, error) {
 
 	jsonData, err := base64.URLEncoding.DecodeString(string(cursor))
 	if err != nil {
-		return nil, fmt.Errorf("invalid cursor format: %w", err)
+		return nil, ErrInvalidCursorFormatWithContext(err)
 	}
 
 	var data CursorData
 	err = json.Unmarshal(jsonData, &data)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cursor data: %w", err)
+		return nil, ErrInvalidCursorDataWithContext(err)
 	}
 
 	return &data, nil
@@ -134,7 +133,7 @@ func ConvertToDynamORMPagination(opts *PaginationOptions) (*repositories.Paginat
 		if opts.After != nil {
 			cursorData, err := DecodeGraphQLCursor(*opts.After)
 			if err != nil {
-				return nil, fmt.Errorf("invalid after cursor: %w", err)
+				return nil, ErrInvalidAfterCursorWithContext(err)
 			}
 
 			// Convert to DynamORM cursor format
@@ -156,7 +155,7 @@ func ConvertToDynamORMPagination(opts *PaginationOptions) (*repositories.Paginat
 		if opts.Before != nil {
 			cursorData, err := DecodeGraphQLCursor(*opts.Before)
 			if err != nil {
-				return nil, fmt.Errorf("invalid before cursor: %w", err)
+				return nil, ErrInvalidBeforeCursorWithContext(err)
 			}
 
 			// Convert to DynamORM cursor format
@@ -244,7 +243,7 @@ func CreateObjectEdges[T any](
 	for i, item := range items {
 		object, err := convertToObject(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert item %d: %w", i, err)
+			return nil, ErrFailedToConvertItem(i, err)
 		}
 
 		cursor := EncodeGraphQLCursor(&CursorData{
@@ -275,7 +274,7 @@ func CreateNotificationEdges[T any](
 	for i, item := range items {
 		notification, err := convertToNotification(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert notification %d: %w", i, err)
+			return nil, ErrFailedToConvertNotification(i, err)
 		}
 
 		cursor := EncodeGraphQLCursor(&CursorData{
@@ -305,7 +304,7 @@ func CreateHashtagEdges[T any](
 	for i, item := range items {
 		hashtag, err := convertToHashtag(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert hashtag %d: %w", i, err)
+			return nil, ErrFailedToConvertHashtag(i, err)
 		}
 
 		cursor := EncodeGraphQLCursor(&CursorData{
@@ -335,7 +334,7 @@ func CreateSeveredRelationshipEdges[T any](
 	for i, item := range items {
 		relationship, err := convertToSeveredRelationship(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert severed relationship %d: %w", i, err)
+			return nil, ErrFailedToConvertSeveredRelationship(i, err)
 		}
 
 		cursor := EncodeGraphQLCursor(&CursorData{
@@ -365,7 +364,7 @@ func CreateAffectedRelationshipEdges[T any](
 	for i, item := range items {
 		relationship, err := convertToAffectedRelationship(item)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert affected relationship %d: %w", i, err)
+			return nil, ErrFailedToConvertAffectedRelationship(i, err)
 		}
 
 		cursor := EncodeGraphQLCursor(&CursorData{

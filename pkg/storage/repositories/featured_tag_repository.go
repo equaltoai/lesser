@@ -18,19 +18,15 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// FeaturedTagRepository implements featured tag operations using DynamORM
+// FeaturedTagRepository implements featured tag operations using BaseRepository
 type FeaturedTagRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.FeaturedTag]
 }
 
 // NewFeaturedTagRepository creates a new featured tag repository
 func NewFeaturedTagRepository(db core.DB, tableName string, logger *zap.Logger) *FeaturedTagRepository {
 	return &FeaturedTagRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.FeaturedTag](db, tableName, logger),
 	}
 }
 
@@ -43,7 +39,7 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 	// Check if already featured
 	existing, err := r.GetFeaturedTags(ctx, tag.Username)
 	if err != nil {
-		return fmt.Errorf("failed to check existing featured tags: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityFeaturedTag, "existing tags check")
 	}
 
 	for _, existingTag := range existing {
@@ -72,13 +68,10 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 		CreatedAt: time.Now(),
 	}
 
-	// Update keys
-	featuredTagModel.UpdateKeys()
-
-	// Create using DynamORM
-	err = r.db.WithContext(ctx).Model(featuredTagModel).Create()
+	// Create using BaseRepository
+	err = r.Create(ctx, featuredTagModel)
 	if err != nil {
-		return fmt.Errorf("failed to create featured tag: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFeaturedTag, tagName)
 	}
 
 	// Update the original tag with the generated values
@@ -97,7 +90,7 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 	// First, get the featured tag to find its ID
 	featuredTags, err := r.GetFeaturedTags(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get featured tags: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityFeaturedTag, "featured tags lookup")
 	}
 
 	var targetID string
@@ -112,20 +105,15 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 		return storage.ErrNotFound
 	}
 
-	// Create a model with the correct keys for deletion
-	featuredTagModel := &models.FeaturedTag{
-		ID:       targetID,
-		Username: username,
-	}
-	featuredTagModel.UpdateKeys()
-
-	// Delete using DynamORM
-	err = r.db.WithContext(ctx).Model(featuredTagModel).Delete()
+	// Delete using BaseRepository
+	pk := fmt.Sprintf("USER#%s", username)
+	sk := fmt.Sprintf("FEATURED_TAG#%s", targetID)
+	err = r.Delete(ctx, pk, sk)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to delete featured tag: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityFeaturedTag, name)
 	}
 
 	return nil
@@ -133,18 +121,10 @@ func (r *FeaturedTagRepository) DeleteFeaturedTag(ctx context.Context, username,
 
 // GetFeaturedTags returns all featured tags for a user
 func (r *FeaturedTagRepository) GetFeaturedTags(ctx context.Context, username string) ([]*storage.FeaturedTag, error) {
-	var featuredTagModels []models.FeaturedTag
-
-	err := r.db.WithContext(ctx).Model(&models.FeaturedTag{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Filter("SK", "BEGINS_WITH", "FEATURED_TAG#").
-		All(&featuredTagModels)
+	pk := fmt.Sprintf("USER#%s", username)
+	featuredTagModels, err := r.QueryWithSKPrefix(ctx, pk, "FEATURED_TAG#", 0)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Return empty slice when no featured tags found (not an error)
-			return []*storage.FeaturedTag{}, nil
-		}
-		return nil, fmt.Errorf("failed to query featured tags: %w", err)
+		return []*storage.FeaturedTag{}, nil // Return empty slice on not found
 	}
 
 	// Convert models to storage types
@@ -176,7 +156,7 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 	// Get already featured tags to exclude them
 	featuredTags, err := r.GetFeaturedTags(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get featured tags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFeaturedTag, "featured tags lookup")
 	}
 
 	featuredMap := make(map[string]bool)
@@ -186,14 +166,14 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 
 	// Query user's recent statuses using GSI3
 	var statusModels []models.Status
-	err = r.db.WithContext(ctx).Model(&models.Status{}).
+	err = r.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("GSI3").
 		Where("GSI3PK", "=", fmt.Sprintf("USER_STATUS#%s", username)).
 		OrderBy("GSI3SK", "DESC").
 		Limit(100). // Analyze last 100 statuses
 		All(&statusModels)
 	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to query user statuses: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "user statuses for suggestions")
 	}
 
 	// Count tag usage
@@ -243,16 +223,12 @@ func (r *FeaturedTagRepository) GetTagSuggestions(ctx context.Context, username 
 func (r *FeaturedTagRepository) calculateTagStatistics(ctx context.Context, userID string, tagName string) (int, *time.Time) {
 	// Query user's statuses using GSI3 to find those with the tag
 	var statusModels []models.Status
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("GSI3").
 		Where("GSI3PK", "=", fmt.Sprintf("USER_STATUS#%s", userID)).
 		OrderBy("GSI3SK", "DESC"). // Most recent first
 		All(&statusModels)
 	if err != nil {
-		r.logger.Warn("failed to query user statuses for tag statistics",
-			zap.String("user_id", userID),
-			zap.String("tag", tagName),
-			zap.Error(err))
 		return 0, nil
 	}
 

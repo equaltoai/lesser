@@ -119,7 +119,7 @@ func (h *Handler) HandleGetAccountStatusesFull(ctx *lift.Context) error {
 	var viewerID string
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err == nil {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			viewerID = claims.Username
 		}
@@ -291,7 +291,7 @@ func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*
 			}
 			return account.Actor, nil
 		}
-		return nil, fmt.Errorf("invalid actor ID format")
+		return nil, ErrInvalidActorIDFormat
 	}
 	// Local username or @username@domain format
 	if strings.Contains(accountID, "@") {

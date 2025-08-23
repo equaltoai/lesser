@@ -4,6 +4,7 @@ package repositories
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,12 +12,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -38,8 +40,24 @@ type AccountRepository struct {
 
 // NewAccountRepository creates a new unified account repository
 func NewAccountRepository(db core.DB, tableName string, domain string, logger *zap.Logger) *AccountRepository {
+	// Use cost tracking version of BaseRepository
+	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, nil, "AccountRepository")
+	
 	return &AccountRepository{
-		BaseRepository: NewBaseRepository[*models.User](db, tableName, logger),
+		BaseRepository: baseRepo,
+		db:             db,
+		logger:         logger,
+		tableName:      tableName,
+		domain:         domain,
+	}
+}
+
+// NewAccountRepositoryWithCostTracking creates a new account repository with cost tracking
+func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain string, logger *zap.Logger, costService *cost.TrackingService) *AccountRepository {
+	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, costService, "AccountRepository")
+	
+	return &AccountRepository{
+		BaseRepository: baseRepo,
 		db:             db,
 		logger:         logger,
 		tableName:      tableName,
@@ -103,13 +121,13 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 
 	// Create user using BaseRepository
 	if err := r.Create(ctx, userModel); err != nil {
-		if errors.IsConditionFailed(err) {
+		if dynamormErrors.IsConditionFailed(err) {
 			return common.ConflictError{
 				Resource: "user",
 				Message:  fmt.Sprintf("user %s already exists", user.Username),
 			}
 		}
-		return fmt.Errorf("failed to create user: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
 	}
 
 	// Create Actor if provided
@@ -118,11 +136,11 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		privateKey := "" // In real implementation, you'd generate a key
 		if err := r.createActor(ctx, actor, privateKey); err != nil {
 			// Rollback user creation (best effort)
-			pk := Utils.Keys.UserKey(user.Username)
+			pk := fmt.Sprintf("USER#%s", user.Username)
 			if delErr := r.Delete(ctx, pk, "METADATA"); delErr != nil {
 				r.logger.Warn("failed to rollback user creation after actor failure", zap.Error(delErr))
 			}
-			return fmt.Errorf("failed to create actor: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityActor, user.Username)
 		}
 	}
 
@@ -161,7 +179,7 @@ func (r *AccountRepository) GetAccount(ctx context.Context, username string) (*s
 	// Get actor data
 	actor, err := r.GetActor(ctx, username)
 	if err != nil && !isAccountNotFound(err) {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Combine into account
@@ -182,9 +200,10 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 			zap.Error(err))
 	}
 
-	// Delete user using key utilities
-	pk := Utils.Keys.UserKey(username)
-	if err := r.Delete(ctx, pk, SKMetadata); err != nil {
+	// Delete user using consistent key pattern
+	pk := fmt.Sprintf("USER#%s", username)
+	if err := r.Delete(ctx, pk, "METADATA"); err != nil {
+		r.logger.Error("failed to delete user", zap.Error(err), zap.String("username", username))
 		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
 
@@ -198,12 +217,15 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 func (r *AccountRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
 	user := &models.User{}
 
-	// Use key utility for consistent key generation
-	pk := Utils.Keys.UserKey(username)
+	// Use consistent key pattern
+	pk := fmt.Sprintf("USER#%s", username)
 
-	err := r.Get(ctx, pk, SKMetadata, user)
+	err := r.Get(ctx, pk, "METADATA", user)
 	if err != nil {
-		// Use error utility for consistent error handling
+		if dynamormErrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
+		}
+		r.logger.Error("failed to get user", zap.Error(err), zap.String("username", username))
 		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -231,11 +253,14 @@ func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*
 
 // UpdateUser updates user authentication data
 func (r *AccountRepository) UpdateUser(ctx context.Context, username string, updates map[string]interface{}) error {
-	// Get existing user using utilities
+	// Get existing user
 	user := &models.User{}
-	pk := Utils.Keys.UserKey(username)
-	err := r.Get(ctx, pk, SKMetadata, user)
+	pk := fmt.Sprintf("USER#%s", username)
+	err := r.Get(ctx, pk, "METADATA", user)
 	if err != nil {
+		if dynamormErrors.IsNotFound(err) {
+			return ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
+		}
 		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
@@ -314,13 +339,13 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {
-		if errors.IsConditionFailed(err) {
+		if dynamormErrors.IsConditionFailed(err) {
 			return common.ConflictError{
 				Resource: "actor",
 				Message:  fmt.Sprintf("actor %s already exists", username),
 			}
 		}
-		return fmt.Errorf("failed to create actor: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityActor, username)
 	}
 
 	return nil
@@ -439,7 +464,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 	// In production, you'd want a dedicated encryption key
 	jwtSecret := config.Get().JWTSecret
 	if err := common.ValidateRequiredParam("jwt_secret", jwtSecret); err != nil {
-		return nil, fmt.Errorf("no JWT secret available for encryption")
+		return nil, ErrorHandler.HandleGetError(errors.New("not configured"), "JWT secret", "encryption")
 	}
 
 	// Use first 32 bytes of JWT secret as AES key
@@ -456,7 +481,7 @@ func (r *AccountRepository) getEncryptor() (marshalers.Encryptor, error) {
 
 // isAccountNotFound checks if an error is a not found error
 func isAccountNotFound(err error) bool {
-	return errors.IsNotFound(err) || strings.Contains(err.Error(), "not found")
+	return dynamormErrors.IsNotFound(err) || strings.Contains(err.Error(), "not found")
 }
 
 // ===== Account Pin Operations =====
@@ -478,11 +503,11 @@ func (r *AccountRepository) CreateAccountPin(ctx context.Context, pin *storage.A
 
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(pinModel).Create(); err != nil {
-		if errors.IsConditionFailed(err) {
+		if dynamormErrors.IsConditionFailed(err) {
 			// Already pinned, not an error
 			return nil
 		}
-		return fmt.Errorf("failed to create account pin: %w", err)
+		return ErrorHandler.HandleCreateError(err, "account pin", fmt.Sprintf("%s:%s", pin.Username, pin.PinnedActorID))
 	}
 
 	r.logger.Info("created account pin",
@@ -506,7 +531,7 @@ func (r *AccountRepository) DeleteAccountPin(ctx context.Context, username, targ
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete account pin: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "account pin", targetActorID)
 	}
 
 	r.logger.Info("deleted account pin",
@@ -525,10 +550,10 @@ func (r *AccountRepository) IsAccountPinned(ctx context.Context, username, targe
 		First(&pin)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check if account is pinned: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "account pin", "check pinned")
 	}
 
 	return true, nil
@@ -564,21 +589,21 @@ func (r *AccountRepository) CreateAccountNote(ctx context.Context, note *storage
 		Where("SK", "=", noteModel.SK).
 		First(&existing)
 
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to check existing note: %w", err)
+	if err != nil && !dynamormErrors.IsNotFound(err) {
+		return ErrorHandler.HandleQueryError(err, "account note", "check existing")
 	}
 
-	if errors.IsNotFound(err) {
+	if dynamormErrors.IsNotFound(err) {
 		// Create new note
 		if err := r.db.WithContext(ctx).Model(noteModel).Create(); err != nil {
-			return fmt.Errorf("failed to create account note: %w", err)
+			return ErrorHandler.HandleCreateError(err, "account note", note.TargetActorID)
 		}
 	} else {
 		// Update existing note
 		existing.Note = noteModel.Note
 		existing.UpdatedAt = now
 		if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
-			return fmt.Errorf("failed to update account note: %w", err)
+			return ErrorHandler.HandleUpdateError(err, "account note", note.TargetActorID)
 		}
 	}
 
@@ -600,10 +625,10 @@ func (r *AccountRepository) GetPreference(ctx context.Context, username, key str
 		First(&pref)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return "", nil // Return empty string for not found, not an error
 		}
-		return "", fmt.Errorf("failed to get preference: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "preference", key)
 	}
 
 	return pref.Value, nil
@@ -620,10 +645,10 @@ func (r *AccountRepository) GetFollowRequestState(ctx context.Context, requester
 		First(&request)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return "", nil // Return empty string for not found, not an error
 		}
-		return "", fmt.Errorf("failed to get follow request state: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "follow request state", requesterID)
 	}
 
 	return request.State, nil
@@ -640,10 +665,10 @@ func (r *AccountRepository) IsBlockedDomain(ctx context.Context, userID, domain 
 		First(&block)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check if domain is blocked: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "domain block", domain)
 	}
 
 	return true, nil
@@ -660,10 +685,10 @@ func (r *AccountRepository) GetFieldVerification(ctx context.Context, username, 
 		First(&verification)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return nil, nil // Return nil for not found, not an error
 		}
-		return nil, fmt.Errorf("failed to get field verification: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "field verification", username)
 	}
 
 	// Check if verification has expired
@@ -741,9 +766,9 @@ func (r *AccountRepository) GetAccountByURL(ctx context.Context, actorURL string
 
 	if err != nil {
 		if isAccountNotFound(err) {
-			return nil, fmt.Errorf("account not found for URL: %s", actorURL)
+			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, actorURL)
 		}
-		return nil, fmt.Errorf("failed to get account by URL: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityUser, actorURL)
 	}
 
 	// Get the full account using the username
@@ -761,7 +786,7 @@ func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string)
 	// Get actor data
 	actor, err := r.GetActor(ctx, user.Username)
 	if err != nil && !isAccountNotFound(err) {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, user.Username)
 	}
 
 	// Combine into account
@@ -776,7 +801,7 @@ func (r *AccountRepository) GetAccountByEmail(ctx context.Context, email string)
 // UpdateAccount updates account data (updated to match interface)
 func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.Account) error {
 	if account == nil || account.User == nil {
-		return fmt.Errorf("account or user is nil")
+		return ErrorHandler.HandleUpdateError(errors.New("invalid input"), "account", "update")
 	}
 
 	// Convert storage.User to updates map
@@ -1029,21 +1054,21 @@ func (r *AccountRepository) UpdateAccountPreferences(ctx context.Context, userna
 			Where("SK", "=", pref.SK).
 			First(&existing)
 
-		if err != nil && !errors.IsNotFound(err) {
-			return fmt.Errorf("failed to check existing preference: %w", err)
+		if err != nil && !dynamormErrors.IsNotFound(err) {
+			return ErrorHandler.HandleQueryError(err, "preference", "check existing")
 		}
 
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			// Create new preference
 			if err := r.db.WithContext(ctx).Model(pref).Create(); err != nil {
-				return fmt.Errorf("failed to create preference: %w", err)
+				return ErrorHandler.HandleCreateError(err, "preference", key)
 			}
 		} else {
 			// Update existing preference
 			existing.Value = valueStr
 			existing.UpdatedAt = time.Now()
 			if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
-				return fmt.Errorf("failed to update preference: %w", err)
+				return ErrorHandler.HandleUpdateError(err, "preference", key)
 			}
 		}
 	}
@@ -1123,12 +1148,12 @@ func (r *AccountRepository) ValidateCredentials(ctx context.Context, username, p
 
 	// Check if user has a password hash
 	if err := common.ValidateRequiredParam("password_hash", user.PasswordHash); err != nil {
-		return nil, fmt.Errorf("password authentication not available for user")
+		return nil, ErrorHandler.HandleGetError(errors.New("password auth unavailable"), EntityUser, username)
 	}
 
 	// Verify password using bcrypt
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
-		return nil, fmt.Errorf("invalid credentials")
+		return nil, ErrorHandler.HandleGetError(errors.New("authentication failed"), EntityUser, username)
 	}
 
 	// Get the full account
@@ -1186,12 +1211,12 @@ func (r *AccountRepository) GetPasswordReset(ctx context.Context, token string) 
 
 	// Check if expired
 	if time.Now().After(resetModel.ExpiresAt) {
-		return nil, fmt.Errorf("password reset token has expired")
+		return nil, ErrorHandler.HandleGetError(errors.New("token expired"), EntityPasswordReset, token)
 	}
 
 	// Check if already used
 	if resetModel.Used {
-		return nil, fmt.Errorf("password reset token has already been used")
+		return nil, ErrorHandler.HandleGetError(errors.New("token already used"), EntityPasswordReset, token)
 	}
 
 	return &storage.PasswordReset{
@@ -1209,7 +1234,7 @@ func (r *AccountRepository) UsePasswordReset(ctx context.Context, token string) 
 	// Get the reset record first
 	resetModel := &models.PasswordReset{}
 	if err := resetModel.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update reset model keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityPasswordReset, "model keys")
 	}
 	resetModel.Token = token
 
@@ -1250,7 +1275,7 @@ func (r *AccountRepository) RecordLogin(ctx context.Context, attempt *storage.Lo
 	}
 
 	if err := r.db.WithContext(ctx).Model(loginModel).Create(); err != nil {
-		return fmt.Errorf("failed to record login attempt: %w", err)
+		return ErrorHandler.HandleCreateError(err, "login attempt", attempt.Username)
 	}
 
 	return nil

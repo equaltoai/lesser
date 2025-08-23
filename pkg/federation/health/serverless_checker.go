@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync"
@@ -107,7 +108,13 @@ func (c *ServerlessHealthChecker) ProcessHealthCheckEvent(ctx context.Context, e
 
 	// Validate event
 	if err := event.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid health check event: %w", err)
+		c.logger.Error("health check event validation failed",
+			zap.String("event_action", event.Detail.Action),
+			zap.Int("domain_count", len(event.Detail.Domains)),
+			zap.Int("batch_size", event.Detail.BatchSize),
+			zap.String("operation", "serverless_health_check_event_validation"),
+			zap.Error(err))
+		return nil, errors.Join(ErrHealthCheckEventValidationFailed, err)
 	}
 
 	var result *HealthCheckResult
@@ -138,7 +145,11 @@ func (c *ServerlessHealthChecker) ProcessHealthCheckEvent(ctx context.Context, e
 			}
 		}
 	default:
-		err = fmt.Errorf("unknown action: %s", event.Detail.Action)
+		c.logger.Error("unknown health check action",
+			zap.String("event_action", event.Detail.Action),
+			zap.Int("domain_count", len(event.Detail.Domains)),
+			zap.String("operation", "serverless_health_check_action_processing"))
+		err = ErrUnknownAction
 	}
 
 	if err != nil {
@@ -169,7 +180,7 @@ func (c *ServerlessHealthChecker) ProcessHealthCheckEvent(ctx context.Context, e
 // checkInstanceHealth performs health checks on the specified domains
 func (c *ServerlessHealthChecker) checkInstanceHealth(ctx context.Context, domains []string) (*HealthCheckResult, error) {
 	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
-		return nil, fmt.Errorf("no domains specified for health check")
+		return nil, ErrNoDomains
 	}
 
 	result := &HealthCheckResult{
@@ -388,7 +399,7 @@ func (c *ServerlessHealthChecker) convertToHealthModel(result DomainHealthCheckR
 // aggregateHealthSummaries creates aggregated health summaries for domains
 func (c *ServerlessHealthChecker) aggregateHealthSummaries(ctx context.Context, domains []string, windows []string) error {
 	if len(domains) == 0 || len(windows) == 0 {
-		return fmt.Errorf("domains and windows are required for aggregation")
+		return ErrAggregationRequired
 	}
 
 	c.logger.Info("Aggregating health summaries",
@@ -406,7 +417,11 @@ func (c *ServerlessHealthChecker) aggregateHealthSummaries(ctx context.Context, 
 		case "7d":
 			windowDurations[window] = 7 * 24 * time.Hour
 		default:
-			return fmt.Errorf("unsupported window: %s", window)
+			c.logger.Error("unsupported health summary window",
+				zap.String("window", window),
+				zap.Strings("supported_windows", []string{"1h", "24h", "7d"}),
+				zap.String("operation", "serverless_health_summary_aggregation"))
+			return ErrUnsupportedWindow
 		}
 	}
 
@@ -457,7 +472,12 @@ func (c *ServerlessHealthChecker) cleanupOldData(ctx context.Context, retentionD
 	// This is a placeholder for manual cleanup if needed
 	count, err := c.healthRepo.CleanupOldHealthData(ctx, retentionDuration)
 	if err != nil {
-		return 0, fmt.Errorf("cleanup failed: %w", err)
+		c.logger.Error("health data cleanup failed",
+			zap.Int("retention_days", retentionDays),
+			zap.Duration("retention_duration", retentionDuration),
+			zap.String("operation", "serverless_health_data_cleanup"),
+			zap.Error(err))
+		return 0, errors.Join(ErrHealthDataCleanupFailed, err)
 	}
 
 	c.logger.Info("Completed health data cleanup",

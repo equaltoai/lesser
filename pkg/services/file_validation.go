@@ -6,6 +6,7 @@ import (
 	"crypto/md5" //nolint:gosec // MD5 used for file checksums only, not security
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -74,7 +75,7 @@ func NewFileValidationService(logger *zap.Logger) (*FileValidationService, error
 	// Load AWS configuration
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, errors.Join(ErrLoadAWSConfig, err)
 	}
 
 	// Create S3 client (used for advanced scanning if needed)
@@ -149,13 +150,13 @@ func (fv *FileValidationService) validateFileSize(data []byte, config FileValida
 
 	if size == 0 {
 		result.Valid = false
-		result.Errors = append(result.Errors, "file is empty")
+		result.Errors = append(result.Errors, ErrFileEmpty.Error())
 		return nil
 	}
 
 	if size > config.MaxSizeBytes {
 		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("file size (%d bytes) exceeds limit (%d bytes)", size, config.MaxSizeBytes))
+		result.Errors = append(result.Errors, fmt.Sprintf("%v (%d bytes exceeds %d bytes)", ErrFileSizeExceedsLimit, size, config.MaxSizeBytes))
 		return nil
 	}
 
@@ -208,7 +209,7 @@ func (fv *FileValidationService) validateContentType(config FileValidationConfig
 
 	if !allowed {
 		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("content type '%s' is not allowed", result.ContentType))
+		result.Errors = append(result.Errors, fmt.Sprintf("%v: '%s'", ErrContentTypeNotAllowed, result.ContentType))
 	}
 
 	return nil
@@ -230,7 +231,7 @@ func (fv *FileValidationService) validateFormat(data []byte, config FileValidati
 
 	if !allowed {
 		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("format '%s' is not supported (allowed: %v)", result.DetectedFormat, config.RequiredFormats))
+		result.Errors = append(result.Errors, fmt.Sprintf("%v: '%s' (allowed: %v)", ErrFormatNotSupported, result.DetectedFormat, config.RequiredFormats))
 		return nil
 	}
 
@@ -251,7 +252,7 @@ func (fv *FileValidationService) validateJSONFormat(data []byte, result *FileVal
 	var jsonData interface{}
 	if err := fv.parseJSON(data, &jsonData); err != nil {
 		result.Valid = false
-		result.Errors = append(result.Errors, fmt.Sprintf("invalid JSON format: %v", err))
+		result.Errors = append(result.Errors, fmt.Sprintf("%v: %v", ErrInvalidJSONFormat, err))
 		return nil
 	}
 
@@ -277,7 +278,7 @@ func (fv *FileValidationService) validateCSVFormat(data []byte, result *FileVali
 
 	if len(lines) < 1 {
 		result.Valid = false
-		result.Errors = append(result.Errors, "CSV file has no content")
+		result.Errors = append(result.Errors, ErrCSVNoContent.Error())
 		return nil
 	}
 
@@ -285,7 +286,7 @@ func (fv *FileValidationService) validateCSVFormat(data []byte, result *FileVali
 	headerCols := len(strings.Split(lines[0], ","))
 	if headerCols == 0 {
 		result.Valid = false
-		result.Errors = append(result.Errors, "CSV file has no columns")
+		result.Errors = append(result.Errors, ErrCSVNoColumns.Error())
 		return nil
 	}
 
@@ -298,7 +299,7 @@ func (fv *FileValidationService) validateCSVFormat(data []byte, result *FileVali
 		if cols != headerCols {
 			inconsistentRows++
 			if inconsistentRows <= 5 { // Only report first 5 inconsistent rows
-				result.Warnings = append(result.Warnings, fmt.Sprintf("row %d has %d columns, expected %d", i+2, cols, headerCols))
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%v: row %d has %d columns, expected %d", ErrCSVRowInconsistentColumns, i+2, cols, headerCols))
 			}
 		}
 	}
@@ -309,7 +310,7 @@ func (fv *FileValidationService) validateCSVFormat(data []byte, result *FileVali
 
 	if inconsistentRows > len(lines)/2 {
 		result.Valid = false
-		result.Errors = append(result.Errors, "CSV file has too many inconsistent rows")
+		result.Errors = append(result.Errors, ErrCSVTooManyInconsistentRows.Error())
 	}
 
 	return nil
@@ -329,7 +330,7 @@ func (fv *FileValidationService) performVirusScan(data []byte, result *FileValid
 	content := strings.ToLower(string(data))
 	for _, pattern := range suspiciousPatterns {
 		if strings.Contains(content, strings.ToLower(pattern)) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("potentially suspicious content detected: %s", pattern))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%v: %s", ErrSuspiciousContentDetected, pattern))
 		}
 	}
 
@@ -345,7 +346,7 @@ func (fv *FileValidationService) performVirusScan(data []byte, result *FileValid
 		binaryRatio := float64(binaryBytes) / float64(len(data))
 		if binaryRatio > 0.1 { // More than 10% binary content
 			result.Valid = false
-			result.Errors = append(result.Errors, fmt.Sprintf("file contains too much binary content (%.1f%%)", binaryRatio*100))
+			result.Errors = append(result.Errors, fmt.Sprintf("%v (%.1f%%)", ErrFileTooMuchBinaryContent, binaryRatio*100))
 		}
 	}
 
@@ -376,12 +377,12 @@ func (fv *FileValidationService) validateJSONImportStructure(data []byte, result
 	case map[string]interface{}:
 		// Single object - validate it has expected fields
 		if err := common.ValidateSliceNotEmpty("JSON object keys", make([]interface{}, len(v))); err != nil {
-			result.Warnings = append(result.Warnings, "JSON object is empty")
+			result.Warnings = append(result.Warnings, ErrJSONObjectEmpty.Error())
 		}
 	case []interface{}:
 		// Array of objects
 		if err := common.ValidateSliceNotEmpty("JSON array items", v); err != nil {
-			result.Warnings = append(result.Warnings, "JSON array is empty")
+			result.Warnings = append(result.Warnings, ErrJSONArrayEmpty.Error())
 		} else {
 			// Sample first few items to validate structure
 			sampleSize := minInt(5, len(v))
@@ -392,7 +393,7 @@ func (fv *FileValidationService) validateJSONImportStructure(data []byte, result
 			}
 		}
 	default:
-		result.Warnings = append(result.Warnings, "JSON is not an object or array")
+		result.Warnings = append(result.Warnings, ErrJSONNotObjectOrArray.Error())
 	}
 
 	return nil
@@ -404,7 +405,7 @@ func (fv *FileValidationService) validateCSVImportStructure(data []byte, result 
 	lines := strings.Split(content, "\n")
 
 	if len(lines) < 2 {
-		result.Warnings = append(result.Warnings, "CSV file has no data rows")
+		result.Warnings = append(result.Warnings, ErrCSVNoDataRows.Error())
 		return nil
 	}
 
@@ -420,7 +421,7 @@ func (fv *FileValidationService) validateCSVImportStructure(data []byte, result 
 	}
 
 	if foundFields == 0 {
-		result.Warnings = append(result.Warnings, "CSV header does not contain expected fields for import")
+		result.Warnings = append(result.Warnings, ErrCSVHeaderMissingImportFields.Error())
 	}
 
 	return nil
@@ -434,7 +435,7 @@ func (fv *FileValidationService) checkSuspiciousContent(data []byte, result *Fil
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
 		if err := common.ValidateStringLength("line content", line, 0, 100000); err != nil {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("line %d is excessively long (%d characters)", i+1, len(line)))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%v: line %d is excessively long (%d characters)", ErrLineTooLong, i+1, len(line)))
 		}
 	}
 
@@ -443,7 +444,7 @@ func (fv *FileValidationService) checkSuspiciousContent(data []byte, result *Fil
 		depth := fv.calculateJSONDepth(content)
 		if depth > 50 {
 			result.Valid = false
-			result.Errors = append(result.Errors, fmt.Sprintf("JSON structure is too deeply nested (%d levels)", depth))
+			result.Errors = append(result.Errors, fmt.Sprintf("%v (%d levels)", ErrJSONStructureTooDeep, depth))
 		}
 		result.Metadata["json_depth"] = depth
 	}

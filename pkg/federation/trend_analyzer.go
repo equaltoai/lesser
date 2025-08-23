@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -40,7 +41,7 @@ func (ta *TrendAnalyzer) AnalyzeTrends(ctx context.Context, domain string, perio
 	// For now, we'll work with available connection data
 	connections, err := ta.storage.Federation().GetInstanceConnections(ctx, domain, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connections: %w", err)
+		return nil, errors.Join(ErrGetConnectionsFailed, err)
 	}
 
 	// Filter connections within the time period

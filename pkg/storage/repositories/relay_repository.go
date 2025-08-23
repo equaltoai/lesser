@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -17,21 +18,22 @@ import (
 	"go.uber.org/zap"
 )
 
-// RelayRepository implements relay operations using DynamORM
+// RelayRepository implements relay operations using DynamORM with BaseRepository pattern
 type RelayRepository struct {
-	db         core.DB
-	tableName  string
-	logger     *zap.Logger
-	queryUtils *QueryUtils
+	*BaseRepository[*models.Relay]
 }
 
 // NewRelayRepository creates a new relay repository
 func NewRelayRepository(db core.DB, tableName string, logger *zap.Logger) *RelayRepository {
 	return &RelayRepository{
-		db:         db,
-		tableName:  tableName,
-		logger:     logger,
-		queryUtils: NewQueryUtils(db, logger),
+		BaseRepository: NewBaseRepository[*models.Relay](db, tableName, logger),
+	}
+}
+
+// NewRelayRepositoryWithCostTracking creates a new relay repository with cost tracking
+func NewRelayRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelayRepository {
+	return &RelayRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Relay](db, tableName, logger, costService, "relay"),
 	}
 }
 
@@ -52,7 +54,7 @@ func (r *RelayRepository) convertModelToRelayInfo(model *models.Relay) *storage.
 
 // StoreRelayInfo stores relay information
 func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.RelayInfo) error {
-	logger := r.logger.With(zap.String("operation", "StoreRelayInfo"), zap.String("relay_url", relay.URL))
+	logger := r.BaseRepository.logger.With(zap.String("operation", "StoreRelayInfo"), zap.String("relay_url", relay.URL))
 
 	// Extract domain from URL for indexing
 	domain := relayExtractDomainFromURL(relay.URL)
@@ -78,14 +80,11 @@ func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.Rel
 		TTL:        relay.TTL,
 	}
 
-	// Update keys
-	model.UpdateKeys()
-
-	// Store in DynamoDB (Put overwrites existing)
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use BaseRepository Create method
+	err := r.BaseRepository.Create(ctx, model)
 	if err != nil {
 		logger.Error("failed to store relay info", zap.Error(err))
-		return fmt.Errorf("failed to store relay info: %w", err)
+		return ErrorHandler.HandleCreateError(err, "relay", relay.URL)
 	}
 
 	logger.Info("stored relay info successfully")
@@ -94,17 +93,17 @@ func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.Rel
 
 // GetRelayInfo retrieves relay information
 func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*storage.RelayInfo, error) {
-	logger := r.logger.With(zap.String("operation", "GetRelayInfo"), zap.String("relay_url", relayURL))
+	logger := r.BaseRepository.logger.With(zap.String("operation", "GetRelayInfo"), zap.String("relay_url", relayURL))
 
 	var model models.Relay
-	err := r.queryUtils.GetItemByPK(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
+	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("relay not found: %s", relayURL)
+			return nil, ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrRelayNotFound, relayURL), "relay", relayURL)
 		}
 		logger.Error("failed to get relay info", zap.Error(err))
-		return nil, fmt.Errorf("failed to get relay info: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "relay", relayURL)
 	}
 
 	// Convert to storage type
@@ -116,13 +115,13 @@ func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*s
 
 // RemoveRelayInfo removes relay information
 func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) error {
-	logger := r.logger.With(zap.String("operation", "RemoveRelayInfo"), zap.String("relay_url", relayURL))
+	logger := r.BaseRepository.logger.With(zap.String("operation", "RemoveRelayInfo"), zap.String("relay_url", relayURL))
 
-	err := r.queryUtils.DeleteItem(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &models.Relay{})
+	err := r.BaseRepository.Delete(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO")
 
 	if err != nil {
 		logger.Error("failed to remove relay info", zap.Error(err))
-		return fmt.Errorf("failed to remove relay info: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "relay", relayURL)
 	}
 
 	logger.Info("removed relay info successfully")
@@ -131,21 +130,25 @@ func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) 
 
 // GetActiveRelays retrieves all active relays
 func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.RelayInfo, error) {
-	logger := r.logger.With(zap.String("operation", "GetActiveRelays"))
+	logger := r.BaseRepository.logger.With(zap.String("operation", "GetActiveRelays"))
 
-	result, err := r.queryUtils.QueryByGSI(ctx, "GSI1", "ACTIVE_RELAYS", "", &QueryOptions{
-		Limit: 1000, // Reasonable limit for active relays
-	})
+	// Use BaseRepository QueryGSI method to query active relays
+	var relayModels []models.Relay
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.Relay{}).
+		Index("GSI1").
+		Where("GSI1PK", "=", "ACTIVE_RELAYS").
+		Limit(1000).
+		All(&relayModels)
 
 	if err != nil {
 		logger.Error("failed to query active relays", zap.Error(err))
-		return nil, fmt.Errorf("failed to query active relays: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "relay", "active relays")
 	}
 
 	// Convert to storage types
-	results := make([]*storage.RelayInfo, 0, len(result.Items))
-	for _, item := range result.Items {
-		relay := r.mapItemToRelayInfo(item)
+	results := make([]*storage.RelayInfo, 0, len(relayModels))
+	for _, model := range relayModels {
+		relay := r.convertModelToRelayInfo(&model)
 		if relay != nil {
 			results = append(results, relay)
 		}
@@ -157,11 +160,11 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 
 // GetAllRelays retrieves all relays with pagination
 func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
-	logger := r.logger.With(zap.String("operation", "GetAllRelays"))
+	logger := r.BaseRepository.logger.With(zap.String("operation", "GetAllRelays"))
 
 	// Build the query - we need to scan for items where PK starts with "RELAY#"
 	// Since we can't use BEGINS_WITH on PK in main table, we'll use a Filter approach
-	query := r.db.WithContext(ctx).Model(&models.Relay{}).
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.Relay{}).
 		Filter("PK", "BEGINS_WITH", "RELAY#").
 		OrderBy("PK", "ASC")
 
@@ -187,7 +190,7 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 	err := query.All(&relays)
 	if err != nil {
 		logger.Error("failed to query all relays", zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query all relays: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "relay", "all relays")
 	}
 
 	// Generate next cursor
@@ -215,48 +218,31 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 
 // UpdateRelayStatus updates the active status of a relay
 func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string, active bool) error {
-	logger := r.logger.With(zap.String("operation", "UpdateRelayStatus"),
+	logger := r.BaseRepository.logger.With(zap.String("operation", "UpdateRelayStatus"),
 		zap.String("relay_url", relayURL), zap.Bool("active", active))
 
 	// First get the existing relay to update it properly
 	var model models.Relay
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Where("PK", "=", fmt.Sprintf("RELAY#%s", relayURL)).
-		Where("SK", "=", "INFO").
-		First(&model)
+	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("relay not found: %s", relayURL)
+			return ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrRelayNotFound, relayURL), "relay", relayURL)
 		}
 		logger.Error("failed to get relay for update", zap.Error(err))
-		return fmt.Errorf("failed to get relay for update: %w", err)
+		return ErrorHandler.HandleGetError(err, "relay", relayURL)
 	}
 
 	// Update the fields
 	model.Active = active
 	model.LastSeenAt = time.Now()
 
-	// Update keys to reflect new active status
-	model.UpdateKeys()
-
-	// Update in database
-	// Save the updated model
-	err = r.db.WithContext(ctx).Model(&models.Relay{}).
-		Where("PK", "=", model.PK).
-		Where("SK", "=", model.SK).
-		First(&models.Relay{})
-	if err != nil {
-		logger.Error("failed to update relay status", zap.Error(err))
-		return fmt.Errorf("failed to update relay status: %w", err)
-	}
-
-	// Now save with new values
-	err = r.db.WithContext(ctx).Model(&model).Create()
+	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
+	err = r.BaseRepository.Create(ctx, &model)
 
 	if err != nil {
 		logger.Error("failed to update relay status", zap.Error(err))
-		return fmt.Errorf("failed to update relay status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "relay", relayURL)
 	}
 
 	logger.Info("updated relay status successfully")
@@ -280,22 +266,19 @@ func (r *RelayRepository) GetRelay(ctx context.Context, relayURL string) (*stora
 
 // UpdateRelayState updates multiple relay fields beyond just active status
 func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string, state storage.RelayState) error {
-	logger := r.logger.With(zap.String("operation", "UpdateRelayState"),
+	logger := r.BaseRepository.logger.With(zap.String("operation", "UpdateRelayState"),
 		zap.String("relay_url", relayURL))
 
 	// First get the existing relay
 	var model models.Relay
-	err := r.db.WithContext(ctx).Model(&models.Relay{}).
-		Where("PK", "=", fmt.Sprintf("RELAY#%s", relayURL)).
-		Where("SK", "=", "INFO").
-		First(&model)
+	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("relay not found: %s", relayURL)
+			return ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrRelayNotFound, relayURL), "relay", relayURL)
 		}
 		logger.Error("failed to get relay for update", zap.Error(err))
-		return fmt.Errorf("failed to get relay for update: %w", err)
+		return ErrorHandler.HandleGetError(err, "relay", relayURL)
 	}
 
 	// Update the fields from state
@@ -304,14 +287,11 @@ func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string,
 	model.ErrorCount = state.ErrorCount
 	model.LastSeenAt = time.Now()
 
-	// Update keys to reflect new state
-	model.UpdateKeys()
-
-	// Save the updated model
-	err = r.db.WithContext(ctx).Model(&model).Create()
+	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
+	err = r.BaseRepository.Create(ctx, &model)
 	if err != nil {
 		logger.Error("failed to update relay state", zap.Error(err))
-		return fmt.Errorf("failed to update relay state: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "relay", relayURL)
 	}
 
 	logger.Info("updated relay state successfully",
@@ -358,54 +338,19 @@ func encodeCursor(lastKey map[string]interface{}) string {
 func decodeCursor(cursor string) (map[string]interface{}, error) {
 	// Validate cursor format first
 	if err := common.ValidateRepositoryCursor(cursor); err != nil {
-		return nil, fmt.Errorf("invalid cursor: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "relay cursor", "validation")
 	}
 
 	data, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cursor format: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "relay cursor", "decoding")
 	}
 
 	var key map[string]interface{}
 	if err := json.Unmarshal(data, &key); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal cursor: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "relay cursor", "unmarshaling")
 	}
 
 	return key, nil
 }
 
-// mapItemToRelayInfo converts a map[string]interface{} to RelayInfo
-func (r *RelayRepository) mapItemToRelayInfo(item map[string]interface{}) *storage.RelayInfo {
-	relay := &storage.RelayInfo{}
-	
-	// Map fields from the item
-	if url, ok := item["URL"].(string); ok {
-		relay.URL = url
-	}
-	if inboxURL, ok := item["InboxURL"].(string); ok {
-		relay.InboxURL = inboxURL
-	}
-	if active, ok := item["Active"].(bool); ok {
-		relay.Active = active
-	}
-	if createdAt, ok := item["CreatedAt"].(time.Time); ok {
-		relay.CreatedAt = createdAt
-	}
-	if lastSeenAt, ok := item["LastSeenAt"].(time.Time); ok {
-		relay.LastSeenAt = lastSeenAt
-	}
-	if domain, ok := item["Domain"].(string); ok {
-		relay.Domain = domain
-	}
-	if status, ok := item["Status"].(string); ok {
-		relay.Status = status
-	}
-	if errorCount, ok := item["ErrorCount"].(int); ok {
-		relay.ErrorCount = errorCount
-	}
-	if ttl, ok := item["TTL"].(int64); ok {
-		relay.TTL = ttl
-	}
-	
-	return relay
-}

@@ -71,8 +71,18 @@ func (c *CSRFToken) BeforeUpdate() error {
 	return c.Validate()
 }
 
+// GetPK returns the partition key for BaseModel interface
+func (c *CSRFToken) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (c *CSRFToken) GetSK() string {
+	return c.SK
+}
+
 // UpdateKeys configures all GSI partition and sort keys
-func (c *CSRFToken) UpdateKeys() {
+func (c *CSRFToken) UpdateKeys() error {
 	// GSI1 - User CSRF tokens lookup for rate limiting and cleanup
 	if c.UserID != "" {
 		c.GSI1PK = "USER_CSRF#" + c.UserID
@@ -81,24 +91,25 @@ func (c *CSRFToken) UpdateKeys() {
 		c.GSI1PK = ""
 		c.GSI1SK = ""
 	}
+	return nil
 }
 
 // Validate performs validation on the CSRFToken
 func (c *CSRFToken) Validate() error {
 	if err := common.ValidateRequiredParam("strings.TrimSpace(c.Token)", strings.TrimSpace(c.Token)); err != nil {
-		return fmt.Errorf("token is required")
+		return ErrCSRFTokenRequired
 	}
 	if err := common.ValidateRequiredParam("strings.TrimSpace(c.UserID)", strings.TrimSpace(c.UserID)); err != nil {
-		return fmt.Errorf("UserID is required")
+		return ErrCSRFUserIDRequired
 	}
 	if c.ExpiresAt <= 0 {
-		return fmt.Errorf("ExpiresAt must be set")
+		return ErrCSRFExpiresAtRequired
 	}
 	if c.CreatedAt <= 0 {
-		return fmt.Errorf("CreatedAt must be set")
+		return ErrCSRFCreatedAtRequired
 	}
 	if c.ExpiresAt <= c.CreatedAt {
-		return fmt.Errorf("ExpiresAt must be after CreatedAt")
+		return ErrCSRFInvalidTimeRange
 	}
 
 	return nil

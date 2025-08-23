@@ -73,7 +73,7 @@ func (p *PaginationOptions) Validate() error {
 	// Use centralized sort parameter validation
 	allowedSortOrders := []string{string(SearchSortRelevance), string(SearchSortTimeAsc), string(SearchSortTimeDesc)}
 	if err := common.ValidateSortParameters("", string(p.SortOrder), allowedSortOrders); err != nil {
-		return fmt.Errorf("invalid pagination parameters: %w", err)
+		return fmt.Errorf("%w: %w", ErrPaginationParametersInvalid, err)
 	}
 
 	return nil
@@ -106,18 +106,18 @@ func DecodeCursor(cursor string) (*CursorData, error) {
 
 	// Validate cursor format
 	if err := common.ValidateRepositoryCursor(cursor); err != nil {
-		return nil, fmt.Errorf("invalid cursor: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPaginationCursorInvalid, err)
 	}
 
 	jsonData, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cursor format: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPaginationCursorFormat, err)
 	}
 
 	var data CursorData
 	err = json.Unmarshal(jsonData, &data)
 	if err != nil {
-		return nil, fmt.Errorf("invalid cursor data: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPaginationCursorData, err)
 	}
 
 	return &data, nil

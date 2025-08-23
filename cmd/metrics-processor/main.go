@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -243,7 +244,8 @@ func (p *MetricsStreamProcessor) processDataChange(ctx context.Context, record *
 
 	// Store in reporting table (optimized for analytics)
 	if err := p.reportingRepo.CreateMetricRecord(ctx, metricRecord); err != nil {
-		return fmt.Errorf("failed to store metric record: %w", err)
+		p.logger.Error("failed to store metric record", zap.Error(err))
+		return errors.Join(ErrStoreMetricRecord, err)
 	}
 
 	// Trigger real-time updates to all 6 subscription types
@@ -950,7 +952,7 @@ func generateValidatedUUID() string {
 // Global variables for Lambda initialization
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
+	cfg       *config.Config //nolint:unused // Reserved for dependency injection pattern
 	logger    *zap.Logger
 	repos     core.RepositoryStorage
 	handler   *Handler

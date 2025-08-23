@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -20,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -61,12 +61,13 @@ type AWSServices struct {
 // InitializeServices creates AWS service clients based on configuration
 func InitializeServices(ctx context.Context, serviceConfig ServiceConfig, logger *zap.Logger) (*AWSServices, error) {
 	if logger == nil {
-		return nil, fmt.Errorf("logger is required")
+		return nil, ErrLoggerRequired
 	}
 
 	// Set defaults
 	if serviceConfig.Region == "" {
-		serviceConfig.Region = os.Getenv("AWS_REGION")
+		globalCfg := appconfig.Get()
+		serviceConfig.Region = globalCfg.Region
 		if serviceConfig.Region == "" {
 			serviceConfig.Region = "us-east-1"
 		}

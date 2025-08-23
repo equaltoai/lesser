@@ -3,10 +3,11 @@ package testing
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
+	appConfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -226,7 +227,8 @@ func RunIntegrationTest(t *testing.T, config *IntegrationConfig, testFn func(*In
 	}
 
 	// Check if integration tests should run
-	if os.Getenv("INTEGRATION_TESTS") != "true" {
+	appCfg := appConfig.Get()
+	if !appCfg.IntegrationTestsEnabled {
 		t.Skip("Skipping integration test. Set INTEGRATION_TESTS=true to run")
 	}
 
@@ -336,27 +338,27 @@ func (suite *IntegrationTestSuite) RunWorkflow(workflow *TestWorkflow) error {
 	// Setup
 	if workflow.Setup != nil {
 		if err := workflow.Setup(suite); err != nil {
-			return fmt.Errorf("setup failed: %w", err)
+			return fmt.Errorf("%w: %w", lift.ErrTestSetupFailed, err)
 		}
 	}
 
 	// Execute
 	response, err := workflow.Execute(suite)
 	if err != nil {
-		return fmt.Errorf("execution failed: %w", err)
+		return fmt.Errorf("%w: %w", lift.ErrIntegrationTestFailed, err)
 	}
 
 	// Validate
 	if workflow.Validate != nil {
 		if err := workflow.Validate(response); err != nil {
-			return fmt.Errorf("validation failed: %w", err)
+			return fmt.Errorf("%w: %w", lift.ErrTestValidationFailed, err)
 		}
 	}
 
 	// Cleanup
 	if workflow.Cleanup != nil {
 		if err := workflow.Cleanup(suite); err != nil {
-			return fmt.Errorf("cleanup failed: %w", err)
+			return fmt.Errorf("%w: %w", lift.ErrTestCleanupFailed, err)
 		}
 	}
 
@@ -381,7 +383,7 @@ func CreateUserWorkflow(username string) *TestWorkflow {
 		},
 		Validate: func(response *TestResponse) error {
 			if !response.IsSuccess() {
-				return fmt.Errorf("expected success, got %d", response.StatusCode)
+				return fmt.Errorf("%w: got %d", lift.ErrTestExpectedSuccess, response.StatusCode)
 			}
 			return nil
 		},
@@ -416,7 +418,7 @@ func FollowWorkflow(followerID, followeeID string) *TestWorkflow {
 		},
 		Validate: func(response *TestResponse) error {
 			if response.StatusCode != 200 {
-				return fmt.Errorf("expected 200, got %d", response.StatusCode)
+				return fmt.Errorf("%w: expected 200, got %d", lift.ErrTestUnexpectedStatusCode, response.StatusCode)
 			}
 			return nil
 		},

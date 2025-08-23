@@ -49,7 +49,7 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	} else if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Get the user's actor to get their ID
@@ -232,7 +232,7 @@ func (h *Handler) authenticateRealPollVoter(ctx *lift.Context) (*auth.Claims, *s
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)

@@ -35,7 +35,7 @@ type MediaSession struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (m *MediaSession) UpdateKeys() {
+func (m *MediaSession) UpdateKeys() error {
 	// Set primary keys
 	m.PK = fmt.Sprintf(KeyPatternSession, m.SessionID)
 	m.SK = SKMetadata
@@ -43,6 +43,17 @@ func (m *MediaSession) UpdateKeys() {
 	// Set GSI1 keys for user-based queries (most recent first)
 	m.GSI1PK = fmt.Sprintf(KeyPatternUser, m.UserID)
 	m.GSI1SK = fmt.Sprintf(KeyPatternSession, m.StartTime.Format(time.RFC3339))
+	return nil
+}
+
+// GetPK returns the partition key
+func (m *MediaSession) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *MediaSession) GetSK() string {
+	return m.SK
 }
 
 // SetTTL sets the TTL for automatic session cleanup
@@ -66,8 +77,19 @@ type QualityChange struct {
 }
 
 // UpdateKeys sets the keys for quality change tracking
-func (q *QualityChange) UpdateKeys() {
+func (q *QualityChange) UpdateKeys() error {
 	q.PK = fmt.Sprintf("QUALITY#%s", q.SessionID)
 	q.SK = fmt.Sprintf("%d", q.Timestamp.UnixNano())
 	q.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (q *QualityChange) GetPK() string {
+	return q.PK
+}
+
+// GetSK returns the sort key
+func (q *QualityChange) GetSK() string {
+	return q.SK
 }

@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	serviceerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
+
 
 // Service provides list operations
 type Service struct {
@@ -155,12 +157,12 @@ func (s *Service) CreateList(ctx context.Context, cmd *CreateListCommand) (*List
 
 	// Validate the command
 	if err := s.validateCreateListCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, serviceerrors.ErrListValidationFailed
 	}
 
 	// Verify permission (only user can create their own lists)
 	if cmd.Username != cmd.CreatorID {
-		return nil, fmt.Errorf("unauthorized: users can only create their own lists")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedCreate)
 	}
 
 	// Generate a unique list ID
@@ -184,7 +186,7 @@ func (s *Service) CreateList(ctx context.Context, cmd *CreateListCommand) (*List
 
 	// Store the list
 	if err := s.listRepo.CreateList(ctx, list); err != nil {
-		return nil, fmt.Errorf("failed to create list: %w", err)
+		return nil, serviceerrors.ErrListCreateFailed
 	}
 
 	s.logger.Info("created list successfully",
@@ -208,18 +210,18 @@ func (s *Service) UpdateList(ctx context.Context, cmd *UpdateListCommand) (*List
 
 	// Validate the command
 	if err := s.validateUpdateListCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, serviceerrors.ErrListValidationFailed
 	}
 
 	// Get existing list
 	list, err := s.listRepo.GetList(ctx, cmd.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, serviceerrors.ErrListGetFailed
 	}
 
 	// Verify permission (only list owner can update)
 	if list.Username != cmd.UpdaterID {
-		return nil, fmt.Errorf("unauthorized: only the list owner can update the list")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedUpdate)
 	}
 
 	// Update fields that were provided
@@ -247,7 +249,7 @@ func (s *Service) UpdateList(ctx context.Context, cmd *UpdateListCommand) (*List
 
 	// Store the updated list
 	if err := s.listRepo.UpdateList(ctx, list); err != nil {
-		return nil, fmt.Errorf("failed to update list: %w", err)
+		return nil, serviceerrors.ErrListUpdateFailed
 	}
 
 	s.logger.Info("updated list successfully",
@@ -270,23 +272,23 @@ func (s *Service) DeleteList(ctx context.Context, cmd *DeleteListCommand) error 
 
 	// Validate the command
 	if err := s.validateDeleteListCommand(ctx, cmd); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+		return serviceerrors.ErrListValidationFailed
 	}
 
 	// Get existing list
 	list, err := s.listRepo.GetList(ctx, cmd.ListID)
 	if err != nil {
-		return fmt.Errorf("failed to get list: %w", err)
+		return serviceerrors.ErrListGetFailed
 	}
 
 	// Verify permission (only list owner can delete)
 	if list.Username != cmd.DeleterID {
-		return fmt.Errorf("unauthorized: only the list owner can delete the list")
+		return common.ErrForbidden(serviceerrors.ErrListUnauthorizedDelete)
 	}
 
 	// Delete the list
 	if err := s.listRepo.DeleteList(ctx, cmd.ListID); err != nil {
-		return fmt.Errorf("failed to delete list: %w", err)
+		return serviceerrors.ErrListDeleteFailed
 	}
 
 	s.logger.Info("deleted list successfully",
@@ -307,24 +309,24 @@ func (s *Service) AddToList(ctx context.Context, cmd *AddToListCommand) (*Member
 
 	// Validate the command
 	if err := s.validateAddToListCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, serviceerrors.ErrListValidationFailed
 	}
 
 	// Get existing list
 	list, err := s.listRepo.GetList(ctx, cmd.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, serviceerrors.ErrListGetFailed
 	}
 
 	// Verify permission (only list owner can add members)
 	if list.Username != cmd.AdderID {
-		return nil, fmt.Errorf("unauthorized: only the list owner can add members")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedAddMember)
 	}
 
 	// Check if already a member
 	isMember, err := s.listRepo.IsListMember(ctx, cmd.ListID, cmd.MemberUsername)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check membership: %w", err)
+		return nil, serviceerrors.ErrListMembershipCheckFailed
 	}
 
 	if isMember {
@@ -339,7 +341,7 @@ func (s *Service) AddToList(ctx context.Context, cmd *AddToListCommand) (*Member
 
 	// Add member to list
 	if err := s.listRepo.AddListMember(ctx, cmd.ListID, cmd.MemberUsername); err != nil {
-		return nil, fmt.Errorf("failed to add member to list: %w", err)
+		return nil, serviceerrors.ErrListMemberAddFailed
 	}
 
 	s.logger.Info("added member to list successfully",
@@ -364,24 +366,24 @@ func (s *Service) RemoveFromList(ctx context.Context, cmd *RemoveFromListCommand
 
 	// Validate the command
 	if err := s.validateRemoveFromListCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, serviceerrors.ErrListValidationFailed
 	}
 
 	// Get existing list
 	list, err := s.listRepo.GetList(ctx, cmd.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, serviceerrors.ErrListGetFailed
 	}
 
 	// Verify permission (only list owner can remove members)
 	if list.Username != cmd.RemoverID {
-		return nil, fmt.Errorf("unauthorized: only the list owner can remove members")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedRemoveMember)
 	}
 
 	// Check if actually a member
 	isMember, err := s.listRepo.IsListMember(ctx, cmd.ListID, cmd.MemberUsername)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check membership: %w", err)
+		return nil, serviceerrors.ErrListMembershipCheckFailed
 	}
 
 	if !isMember {
@@ -396,7 +398,7 @@ func (s *Service) RemoveFromList(ctx context.Context, cmd *RemoveFromListCommand
 
 	// Remove member from list
 	if err := s.listRepo.RemoveListMember(ctx, cmd.ListID, cmd.MemberUsername); err != nil {
-		return nil, fmt.Errorf("failed to remove member from list: %w", err)
+		return nil, serviceerrors.ErrListMemberRemoveFailed
 	}
 
 	s.logger.Info("removed member from list successfully",
@@ -421,12 +423,12 @@ func (s *Service) GetList(ctx context.Context, query *GetListQuery) (*models.Lis
 	// Get the list
 	list, err := s.listRepo.GetList(ctx, query.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, serviceerrors.ErrListGetFailed
 	}
 
 	// Apply privacy checks - only list owner can view their lists
 	if query.ViewerID != list.Username {
-		return nil, fmt.Errorf("unauthorized: only list owner can view the list")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedView)
 	}
 
 	return list, nil
@@ -440,13 +442,13 @@ func (s *Service) ListUserLists(ctx context.Context, query *ListUserListsQuery) 
 
 	// Privacy check - only users can view their own lists
 	if query.ViewerID != query.Username {
-		return nil, fmt.Errorf("unauthorized: users can only view their own lists")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedViewLists)
 	}
 
 	// Get user's lists
 	result, err := s.listRepo.GetUserLists(ctx, query.Username, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user lists: %w", err)
+		return nil, serviceerrors.ErrGetUserLists
 	}
 
 	return &Result{
@@ -465,18 +467,18 @@ func (s *Service) GetListTimeline(ctx context.Context, query *GetListTimelineQue
 	// Get the list
 	list, err := s.listRepo.GetList(ctx, query.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, serviceerrors.ErrListGetFailed
 	}
 
 	// Verify permission (only list owner can view timeline)
 	if query.ViewerID != list.Username {
-		return nil, fmt.Errorf("unauthorized: only list owner can view the timeline")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedViewTimeline)
 	}
 
 	// Get list timeline
 	result, err := s.listRepo.GetListTimeline(ctx, query.ListID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list timeline: %w", err)
+		return nil, serviceerrors.ErrGetListTimeline
 	}
 
 	return &TimelineResult{
@@ -494,13 +496,13 @@ func (s *Service) generateListID() string {
 
 func (s *Service) validateCreateListCommand(_ context.Context, cmd *CreateListCommand) error {
 	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
-		return fmt.Errorf("username is required")
+		return serviceerrors.ErrListUsernameRequired
 	}
 	if err := common.ValidateRequiredParam("creator_id", cmd.CreatorID); err != nil {
-		return fmt.Errorf("creator_id is required")
+		return serviceerrors.ErrListCreatorIDRequired
 	}
 	if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
-		return fmt.Errorf("title is required")
+		return serviceerrors.ErrListTitleRequired
 	}
 	if err := common.ValidateListTitle(cmd.Title); err != nil {
 		return err
@@ -515,14 +517,14 @@ func (s *Service) validateCreateListCommand(_ context.Context, cmd *CreateListCo
 
 func (s *Service) validateUpdateListCommand(_ context.Context, cmd *UpdateListCommand) error {
 	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
-		return fmt.Errorf("list_id is required")
+		return serviceerrors.ErrListIDRequired
 	}
 	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
-		return fmt.Errorf("updater_id is required")
+		return serviceerrors.ErrListUpdaterIDRequired
 	}
 	if cmd.Title != "" {
 		if err := common.ValidateRequiredParam("title", strings.TrimSpace(cmd.Title)); err != nil {
-			return fmt.Errorf("title cannot be empty")
+			return serviceerrors.ErrListTitleEmpty
 		}
 		if err := common.ValidateListTitle(cmd.Title); err != nil {
 			return err
@@ -538,36 +540,36 @@ func (s *Service) validateUpdateListCommand(_ context.Context, cmd *UpdateListCo
 
 func (s *Service) validateDeleteListCommand(_ context.Context, cmd *DeleteListCommand) error {
 	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
-		return fmt.Errorf("list_id is required")
+		return serviceerrors.ErrListIDRequired
 	}
 	if err := common.ValidateRequiredParam("deleter_id", cmd.DeleterID); err != nil {
-		return fmt.Errorf("deleter_id is required")
+		return serviceerrors.ErrListDeleterIDRequired
 	}
 	return nil
 }
 
 func (s *Service) validateAddToListCommand(_ context.Context, cmd *AddToListCommand) error {
 	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
-		return fmt.Errorf("list_id is required")
+		return serviceerrors.ErrListIDRequired
 	}
 	if err := common.ValidateRequiredParam("member_username", cmd.MemberUsername); err != nil {
-		return fmt.Errorf("member_username is required")
+		return serviceerrors.ErrListMemberUsernameRequired
 	}
 	if err := common.ValidateRequiredParam("adder_id", cmd.AdderID); err != nil {
-		return fmt.Errorf("adder_id is required")
+		return serviceerrors.ErrListAdderIDRequired
 	}
 	return nil
 }
 
 func (s *Service) validateRemoveFromListCommand(_ context.Context, cmd *RemoveFromListCommand) error {
 	if err := common.ValidateRequiredParam("list_id", cmd.ListID); err != nil {
-		return fmt.Errorf("list_id is required")
+		return serviceerrors.ErrListIDRequired
 	}
 	if err := common.ValidateRequiredParam("member_username", cmd.MemberUsername); err != nil {
-		return fmt.Errorf("member_username is required")
+		return serviceerrors.ErrListMemberUsernameRequired
 	}
 	if err := common.ValidateRequiredParam("remover_id", cmd.RemoverID); err != nil {
-		return fmt.Errorf("remover_id is required")
+		return serviceerrors.ErrListRemoverIDRequired
 	}
 	return nil
 }
@@ -682,18 +684,18 @@ func (s *Service) GetListMembers(ctx context.Context, query *GetListMembersQuery
 	// Get the list to verify ownership
 	list, err := s.listRepo.GetList(ctx, query.ListID)
 	if err != nil {
-		return nil, fmt.Errorf("list not found: %w", err)
+		return nil, serviceerrors.ErrListNotFound
 	}
 
 	// Verify permission (only owner can see members)
 	if list.Username != query.ViewerID {
-		return nil, fmt.Errorf("unauthorized: only list owner can view members")
+		return nil, common.ErrForbidden(serviceerrors.ErrListUnauthorizedViewMembers)
 	}
 
 	// Get list members from repository
 	membersResult, err := s.listRepo.GetListMembers(ctx, query.ListID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list members: %w", err)
+		return nil, serviceerrors.ErrGetListMembers
 	}
 
 	return &MembersResult{

@@ -2,12 +2,12 @@ package models
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // Visibility constants
@@ -487,8 +487,19 @@ func (s *Status) IsPrivate() bool {
 }
 
 // UpdateKeys updates the GSI keys for this status (required by DynamORM)
-func (s *Status) UpdateKeys() {
+func (s *Status) UpdateKeys() error {
 	s.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the primary key for BaseRepository interface
+func (s *Status) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key for BaseRepository interface  
+func (s *Status) GetSK() string {
+	return s.SK
 }
 
 // ShouldAppearInTimeline checks if status should appear in a given timeline type
@@ -514,7 +525,8 @@ func (s *Status) ShouldAppearInTimeline(timelineType string, viewerID string) bo
 func (s *Status) isLocalStatus() bool {
 	// This assumes the author ID format includes the domain
 	// Adjust logic based on your actual actor ID format
-	return strings.Contains(s.AuthorID, os.Getenv("DOMAIN_NAME"))
+	cfg := config.Get()
+	return strings.Contains(s.AuthorID, cfg.Domain)
 }
 
 // GetAllRecipients returns all recipients across all addressing fields

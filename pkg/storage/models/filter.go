@@ -31,9 +31,20 @@ func (Filter) TableName() string {
 }
 
 // UpdateKeys updates the DynamORM keys based on filter data
-func (f *Filter) UpdateKeys() {
+func (f *Filter) UpdateKeys() error {
 	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FILTER#%s", f.ID)
+	return nil
+}
+
+// GetPK returns the partition key
+func (f *Filter) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key
+func (f *Filter) GetSK() string {
+	return f.SK
 }
 
 // BeforeCreate hook to set timestamps and update keys
@@ -42,15 +53,13 @@ func (f *Filter) BeforeCreate() error {
 		f.CreatedAt = time.Now()
 	}
 	f.UpdatedAt = f.CreatedAt
-	f.UpdateKeys()
-	return nil
+	return f.UpdateKeys()
 }
 
 // BeforeSave hook to update timestamps and keys
 func (f *Filter) BeforeSave() error {
 	f.UpdatedAt = time.Now()
-	f.UpdateKeys()
-	return nil
+	return f.UpdateKeys()
 }
 
 // FilterKeyword represents a keyword in a filter with DynamORM tags
@@ -76,9 +85,20 @@ func (FilterKeyword) TableName() string {
 }
 
 // UpdateKeys updates the DynamORM keys based on keyword data
-func (fk *FilterKeyword) UpdateKeys() {
+func (fk *FilterKeyword) UpdateKeys() error {
 	fk.PK = fmt.Sprintf("FILTER#%s", fk.FilterID)
 	fk.SK = fmt.Sprintf("KEYWORD#%s", fk.ID)
+	return nil
+}
+
+// GetPK returns the partition key
+func (fk *FilterKeyword) GetPK() string {
+	return fk.PK
+}
+
+// GetSK returns the sort key
+func (fk *FilterKeyword) GetSK() string {
+	return fk.SK
 }
 
 // BeforeCreate hook to set timestamps and update keys
@@ -86,14 +106,12 @@ func (fk *FilterKeyword) BeforeCreate() error {
 	if fk.CreatedAt.IsZero() {
 		fk.CreatedAt = time.Now()
 	}
-	fk.UpdateKeys()
-	return nil
+	return fk.UpdateKeys()
 }
 
 // BeforeSave hook to update keys
 func (fk *FilterKeyword) BeforeSave() error {
-	fk.UpdateKeys()
-	return nil
+	return fk.UpdateKeys()
 }
 
 // FilterStatus represents a status in a filter with DynamORM tags
@@ -115,9 +133,20 @@ func (FilterStatus) TableName() string {
 }
 
 // UpdateKeys updates the DynamORM keys based on status data
-func (fs *FilterStatus) UpdateKeys() {
+func (fs *FilterStatus) UpdateKeys() error {
 	fs.PK = fmt.Sprintf("FILTER#%s", fs.FilterID)
-	fs.SK = fmt.Sprintf(KeyPatternStatus, fs.StatusID)
+	fs.SK = fmt.Sprintf("STATUS#%s", fs.StatusID)
+	return nil
+}
+
+// GetPK returns the partition key
+func (fs *FilterStatus) GetPK() string {
+	return fs.PK
+}
+
+// GetSK returns the sort key
+func (fs *FilterStatus) GetSK() string {
+	return fs.SK
 }
 
 // BeforeCreate hook to set timestamps and update keys
@@ -125,12 +154,10 @@ func (fs *FilterStatus) BeforeCreate() error {
 	if fs.CreatedAt.IsZero() {
 		fs.CreatedAt = time.Now()
 	}
-	fs.UpdateKeys()
-	return nil
+	return fs.UpdateKeys()
 }
 
 // BeforeSave hook to update keys
 func (fs *FilterStatus) BeforeSave() error {
-	fs.UpdateKeys()
-	return nil
+	return fs.UpdateKeys()
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 const (
@@ -25,8 +26,8 @@ const (
 
 // StreamingConnectionRepository handles WebSocket connections using DynamORM
 type StreamingConnectionRepository struct {
-	db                core.DB
-	tableName         string
+	*BaseRepository[*models.WebSocketConnection]
+	subscriptionRepo  *BaseRepository[*models.WebSocketSubscription]
 	subscriptionDB    core.DB
 	subscriptionTable string
 	logger            *zap.Logger
@@ -35,8 +36,19 @@ type StreamingConnectionRepository struct {
 // NewStreamingConnectionRepository creates a new repository instance
 func NewStreamingConnectionRepository(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger) *StreamingConnectionRepository {
 	return &StreamingConnectionRepository{
-		db:                db,
-		tableName:         tableName,
+		BaseRepository:    NewBaseRepository[*models.WebSocketConnection](db, tableName, logger),
+		subscriptionRepo:  NewBaseRepository[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger),
+		subscriptionDB:    subscriptionDB,
+		subscriptionTable: subscriptionTable,
+		logger:            logger,
+	}
+}
+
+// NewStreamingConnectionRepositoryWithCostTracking creates a new repository instance with cost tracking
+func NewStreamingConnectionRepositoryWithCostTracking(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger, costService *cost.TrackingService) *StreamingConnectionRepository {
+	return &StreamingConnectionRepository{
+		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.WebSocketConnection](db, tableName, logger, costService, "StreamingConnection"),
+		subscriptionRepo:  NewBaseRepositoryWithCostTracking[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger, costService, "WebSocketSubscription"),
 		subscriptionDB:    subscriptionDB,
 		subscriptionTable: subscriptionTable,
 		logger:            logger,
@@ -47,7 +59,7 @@ func NewStreamingConnectionRepository(db core.DB, tableName string, subscription
 func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, connectionID, userID, username string, streams []string) error {
 	// Check connection limits before creating new connection
 	if err := r.checkConnectionLimits(ctx, userID); err != nil {
-		return fmt.Errorf("connection limit exceeded: %w", err)
+		return ErrorHandler.HandleCreateError(err, "streaming connection", "connection limit check")
 	}
 
 	now := time.Now()
@@ -75,11 +87,9 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 		},
 	}
 
-	connection.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(connection).Create()
-	if err != nil {
-		return fmt.Errorf("failed to write connection: %w", err)
+	// Use BaseRepository Create method
+	if err := r.BaseRepository.Create(ctx, connection); err != nil {
+		return ErrorHandler.HandleCreateError(err, "streaming connection", connectionID)
 	}
 
 	r.logger.Info("connection created",
@@ -92,30 +102,26 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 
 // GetConnection retrieves a WebSocket connection by connection ID
 func (r *StreamingConnectionRepository) GetConnection(ctx context.Context, connectionID string) (*models.WebSocketConnection, error) {
-	var connection models.WebSocketConnection
+	connection := &models.WebSocketConnection{}
+	pk := fmt.Sprintf("CONN#%s", connectionID)
+	sk := fmt.Sprintf("CONN#%s", connectionID)
 
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
-		Where("PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		Where("SK", "=", fmt.Sprintf("CONN#%s", connectionID)).
-		First(&connection)
-
+	err := r.BaseRepository.Get(ctx, pk, sk, connection)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("connection not found")
+			return nil, ErrorHandler.HandleGetError(ErrStreamingConnectionNotFound, "streaming connection", connectionID)
 		}
-		return nil, fmt.Errorf("failed to get connection: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
-	return &connection, nil
+	return connection, nil
 }
 
 // UpdateConnection updates an existing WebSocket connection
 func (r *StreamingConnectionRepository) UpdateConnection(ctx context.Context, connection *models.WebSocketConnection) error {
-	connection.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(connection).Update()
-	if err != nil {
-		return fmt.Errorf("failed to update connection: %w", err)
+	// Use BaseRepository Update method
+	if err := r.BaseRepository.Update(ctx, connection); err != nil {
+		return ErrorHandler.HandleUpdateError(err, "streaming connection", "update")
 	}
 
 	return nil
@@ -125,7 +131,7 @@ func (r *StreamingConnectionRepository) UpdateConnection(ctx context.Context, co
 func (r *StreamingConnectionRepository) UpdateConnectionState(ctx context.Context, connectionID string, newState models.ConnectionState, reason string) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for state update: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	oldState := connection.State
@@ -135,7 +141,7 @@ func (r *StreamingConnectionRepository) UpdateConnectionState(ctx context.Contex
 	}
 
 	if err := r.UpdateConnection(ctx, connection); err != nil {
-		return fmt.Errorf("failed to update connection state: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "streaming connection", connectionID)
 	}
 
 	r.logger.Info("connection state updated",
@@ -149,14 +155,12 @@ func (r *StreamingConnectionRepository) UpdateConnectionState(ctx context.Contex
 
 // DeleteConnection removes a WebSocket connection
 func (r *StreamingConnectionRepository) DeleteConnection(ctx context.Context, connectionID string) error {
-	connection := &models.WebSocketConnection{
-		ConnectionID: connectionID,
-	}
-	connection.UpdateKeys()
+	pk := fmt.Sprintf("CONN#%s", connectionID)
+	sk := fmt.Sprintf("CONN#%s", connectionID)
 
-	err := r.db.WithContext(ctx).Model(connection).Delete()
-	if err != nil {
-		return fmt.Errorf("failed to delete connection: %w", err)
+	// Use BaseRepository Delete method
+	if err := r.BaseRepository.Delete(ctx, pk, sk); err != nil {
+		return ErrorHandler.HandleDeleteError(err, "streaming connection", connectionID)
 	}
 
 	return nil
@@ -172,11 +176,9 @@ func (r *StreamingConnectionRepository) WriteSubscription(ctx context.Context, c
 		TTL:          time.Now().Add(24 * time.Hour).Unix(),
 	}
 
-	subscription.UpdateKeys()
-
-	err := r.subscriptionDB.WithContext(ctx).Model(subscription).Create()
-	if err != nil {
-		return fmt.Errorf("failed to write subscription: %w", err)
+	// Use subscription BaseRepository Create method
+	if err := r.subscriptionRepo.Create(ctx, subscription); err != nil {
+		return ErrorHandler.HandleCreateError(err, "websocket subscription", connectionID)
 	}
 
 	return nil
@@ -184,15 +186,12 @@ func (r *StreamingConnectionRepository) WriteSubscription(ctx context.Context, c
 
 // DeleteSubscription removes a stream subscription
 func (r *StreamingConnectionRepository) DeleteSubscription(ctx context.Context, connectionID, stream string) error {
-	subscription := &models.WebSocketSubscription{
-		ConnectionID: connectionID,
-		Stream:       stream,
-	}
-	subscription.UpdateKeys()
+	pk := fmt.Sprintf("SUB#%s", stream)
+	sk := fmt.Sprintf("CONN#%s", connectionID)
 
-	err := r.subscriptionDB.WithContext(ctx).Model(subscription).Delete()
-	if err != nil {
-		return fmt.Errorf("failed to delete subscription: %w", err)
+	// Use subscription BaseRepository Delete method
+	if err := r.subscriptionRepo.Delete(ctx, pk, sk); err != nil {
+		return ErrorHandler.HandleDeleteError(err, "websocket subscription", connectionID)
 	}
 
 	return nil
@@ -200,10 +199,11 @@ func (r *StreamingConnectionRepository) DeleteSubscription(ctx context.Context, 
 
 // DeleteAllSubscriptions removes all subscriptions for a connection
 func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Context, connectionID string) error {
-	// Query all subscriptions for this connection
+	// Query all subscriptions for this connection using GSI
 	var subscriptions []models.WebSocketSubscription
 
-	err := r.subscriptionDB.WithContext(ctx).Model(&models.WebSocketSubscription{}).
+	err := r.subscriptionRepo.GetDB().WithContext(ctx).Model(&models.WebSocketSubscription{}).
+		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("CONN#%s", connectionID)).
 		All(&subscriptions)
 
@@ -211,7 +211,7 @@ func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Conte
 		if errors.IsNotFound(err) {
 			return nil // No subscriptions to delete
 		}
-		return fmt.Errorf("failed to query subscriptions: %w", err)
+		return ErrorHandler.HandleQueryError(err, "websocket subscription", "all subscriptions for connection")
 	}
 
 	// Delete each subscription
@@ -232,7 +232,8 @@ func (r *StreamingConnectionRepository) DeleteAllSubscriptions(ctx context.Conte
 func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context, userID string) ([]models.WebSocketConnection, error) {
 	var connections []models.WebSocketConnection
 
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
 		All(&connections)
 
@@ -240,7 +241,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context
 		if errors.IsNotFound(err) {
 			return []models.WebSocketConnection{}, nil
 		}
-		return nil, fmt.Errorf("failed to get connections for user: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "connections by user")
 	}
 
 	return connections, nil
@@ -248,20 +249,21 @@ func (r *StreamingConnectionRepository) GetConnectionsByUser(ctx context.Context
 
 // GetSubscriptionsForStream gets all subscriptions for a specific stream
 func (r *StreamingConnectionRepository) GetSubscriptionsForStream(ctx context.Context, stream string) ([]models.WebSocketSubscription, error) {
-	var subscriptions []models.WebSocketSubscription
-
-	err := r.subscriptionDB.WithContext(ctx).Model(&models.WebSocketSubscription{}).
-		Where("PK", "=", fmt.Sprintf("SUB#%s", stream)).
-		All(&subscriptions)
-
+	pk := fmt.Sprintf("SUB#%s", stream)
+	
+	// Use BaseRepository Query method for partition key queries
+	subscriptions, err := r.subscriptionRepo.Query(ctx, pk, 0) // 0 means no limit
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return []models.WebSocketSubscription{}, nil
-		}
-		return nil, fmt.Errorf("failed to get subscriptions for stream: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "websocket subscription", "subscriptions for stream")
 	}
 
-	return subscriptions, nil
+	// Convert from pointers to values for backward compatibility
+	result := make([]models.WebSocketSubscription, len(subscriptions))
+	for i, sub := range subscriptions {
+		result[i] = *sub
+	}
+
+	return result, nil
 }
 
 // GetIdleConnections gets WebSocket connections that have been idle past the threshold
@@ -272,12 +274,12 @@ func (r *StreamingConnectionRepository) GetIdleConnections(ctx context.Context, 
 	// Strategy: Scan all connections and filter by LastActivity
 	// Note: In production, you might want to implement pagination for large datasets
 	var allConnections []models.WebSocketConnection
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Scan(&allConnections)
 	if err != nil {
 		r.logger.Error("failed to scan WebSocket connections",
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to scan connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "idle connections scan")
 	}
 
 	// Filter connections that are idle (LastActivity before threshold)
@@ -310,7 +312,7 @@ func (r *StreamingConnectionRepository) MarkConnectionsIdle(ctx context.Context,
 	// Get all connected connections
 	connections, err := r.GetConnectionsByState(ctx, models.ConnectionStateConnected)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get connected connections: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "streaming connection", "connected connections")
 	}
 
 	markedCount := 0
@@ -342,7 +344,7 @@ func (r *StreamingConnectionRepository) CloseTimedOutConnections(ctx context.Con
 	// Get all idle connections
 	idleConnections, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get idle connections: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "streaming connection", "idle connections for close timeout")
 	}
 
 	closedCount := 0
@@ -379,21 +381,21 @@ func (r *StreamingConnectionRepository) checkConnectionLimits(ctx context.Contex
 	// Check user connection limit
 	userConnectionCount, err := r.GetActiveConnectionsCount(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user connection count: %w", err)
+		return ErrorHandler.HandleQueryError(err, "streaming connection", "user connection count")
 	}
 
 	if userConnectionCount >= MaxConnectionsPerUser {
-		return fmt.Errorf("user %s has reached maximum connections (%d)", userID, MaxConnectionsPerUser)
+		return ErrorHandler.HandleCreateError(fmt.Errorf("%w: %s (%d)", ErrStreamingConnectionUserLimitReached, userID, MaxConnectionsPerUser), "streaming connection", "user connection limit")
 	}
 
 	// Check global connection limit
 	totalConnections, err := r.GetTotalActiveConnectionsCount(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get total connection count: %w", err)
+		return ErrorHandler.HandleQueryError(err, "streaming connection", "total connection count")
 	}
 
 	if totalConnections >= MaxTotalConnections {
-		return fmt.Errorf("maximum total connections reached (%d)", MaxTotalConnections)
+		return ErrorHandler.HandleCreateError(fmt.Errorf("%w: (%d)", ErrStreamingConnectionGlobalLimitReached, MaxTotalConnections), "streaming connection", "global connection limit")
 	}
 
 	return nil
@@ -420,12 +422,12 @@ func (r *StreamingConnectionRepository) GetTotalActiveConnectionsCount(ctx conte
 func (r *StreamingConnectionRepository) EnforceResourceLimits(ctx context.Context, connectionID string, messageSize int64) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for resource check: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	// Check message size limit
 	if messageSize > connection.MaxMessageSize {
-		return fmt.Errorf("message size %d exceeds limit %d", messageSize, connection.MaxMessageSize)
+		return ErrorHandler.HandleCreateError(fmt.Errorf("%w: %d exceeds limit %d", ErrStreamingConnectionMessageSizeExceeded, messageSize, connection.MaxMessageSize), "streaming connection", "message size limit")
 	}
 
 	// Check rate limit
@@ -437,7 +439,7 @@ func (r *StreamingConnectionRepository) EnforceResourceLimits(ctx context.Contex
 	}
 
 	if connection.CurrentRate >= connection.RateLimit {
-		return fmt.Errorf("rate limit exceeded: %d messages per minute", connection.RateLimit)
+		return ErrorHandler.HandleCreateError(fmt.Errorf("%w: %d messages per minute", ErrStreamingConnectionRateLimitExceeded, connection.RateLimit), "streaming connection", "rate limit")
 	}
 
 	return nil
@@ -486,7 +488,7 @@ func (r *StreamingConnectionRepository) GetConnectionPool(ctx context.Context) (
 func (r *StreamingConnectionRepository) ReclaimIdleConnections(ctx context.Context, maxIdleConnections int) (int, error) {
 	idleConnections, err := r.GetConnectionsByState(ctx, models.ConnectionStateIdle)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get idle connections: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "streaming connection", "idle connections for reclaim")
 	}
 
 	if len(idleConnections) <= maxIdleConnections {
@@ -538,12 +540,12 @@ func (r *StreamingConnectionRepository) GetStaleConnections(ctx context.Context,
 
 	// Strategy: Scan all connections and filter by LastActivity and TTL expiration
 	var allConnections []models.WebSocketConnection
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Scan(&allConnections)
 	if err != nil {
 		r.logger.Error("failed to scan WebSocket connections for stale detection",
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to scan connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "stale connections scan")
 	}
 
 	// Filter connections that are stale (very old LastActivity, expired TTL, or both)
@@ -590,7 +592,7 @@ func (r *StreamingConnectionRepository) UpdateConnectionActivity(ctx context.Con
 	// Get the existing connection first
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for activity update: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	// Update last activity
@@ -609,7 +611,7 @@ func (r *StreamingConnectionRepository) UpdateConnectionActivity(ctx context.Con
 func (r *StreamingConnectionRepository) RecordConnectionMessage(ctx context.Context, connectionID string, sent bool, messageSize int64) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for message recording: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	// Record the message
@@ -635,7 +637,7 @@ func (r *StreamingConnectionRepository) RecordConnectionMessage(ctx context.Cont
 func (r *StreamingConnectionRepository) RecordConnectionError(ctx context.Context, connectionID string, errorMsg string) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for error recording: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	// Record the error
@@ -654,7 +656,7 @@ func (r *StreamingConnectionRepository) RecordConnectionError(ctx context.Contex
 func (r *StreamingConnectionRepository) RecordPing(ctx context.Context, connectionID string) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for ping recording: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	connection.RecordPing()
@@ -665,7 +667,7 @@ func (r *StreamingConnectionRepository) RecordPing(ctx context.Context, connecti
 func (r *StreamingConnectionRepository) RecordPong(ctx context.Context, connectionID string) error {
 	connection, err := r.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for pong recording: %w", err)
+		return ErrorHandler.HandleGetError(err, "streaming connection", connectionID)
 	}
 
 	connection.RecordPong()
@@ -699,7 +701,8 @@ func (r *StreamingConnectionRepository) GetActiveConnectionsCount(ctx context.Co
 func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Context, state models.ConnectionState) ([]models.WebSocketConnection, error) {
 	var connections []models.WebSocketConnection
 
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).   
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
+		Index("gsi2").
 		Where("GSI2PK", "=", fmt.Sprintf("STATE#%s", state)).
 		All(&connections)
 
@@ -707,7 +710,7 @@ func (r *StreamingConnectionRepository) GetConnectionsByState(ctx context.Contex
 		if errors.IsNotFound(err) {
 			return []models.WebSocketConnection{}, nil
 		}
-		return nil, fmt.Errorf("failed to get connections by state: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "streaming connection", "connections by state")
 	}
 
 	return connections, nil
@@ -782,5 +785,5 @@ func (r *StreamingConnectionRepository) CleanupExpiredConnections(_ context.Cont
 
 // GetDB returns the main database connection for direct access
 func (r *StreamingConnectionRepository) GetDB() core.DB {
-	return r.db
+	return r.BaseRepository.GetDB()
 }

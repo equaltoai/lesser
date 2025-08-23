@@ -333,7 +333,7 @@ type NotificationRepository interface {
 
 // LikeRepository defines the interface for like operations
 type LikeRepository interface {
-	CreateLike(ctx context.Context, actor, object string) (*models.Like, error)
+	CreateLike(ctx context.Context, actor, object, statusAuthorID string) (*models.Like, error)
 	DeleteLike(ctx context.Context, actor, object string) error
 	GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*models.Like, string, error)
 	GetActorLikes(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Like, string, error)

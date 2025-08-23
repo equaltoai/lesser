@@ -319,10 +319,10 @@ func (sjcr *ScheduledJobCostRecord) Validate() error {
 		return err
 	}
 	if !isValidScheduledJobStatus(sjcr.Status) {
-		return fmt.Errorf("invalid status: %s", sjcr.Status)
+		return fmt.Errorf("%w: %s", ErrInvalidScheduledJobStatus, sjcr.Status)
 	}
 	if !isValidSchedulePattern(sjcr.Schedule) {
-		return fmt.Errorf("invalid schedule: %s", sjcr.Schedule)
+		return fmt.Errorf("%w: %s", ErrInvalidScheduledJobSchedule, sjcr.Schedule)
 	}
 
 	return nil
@@ -393,16 +393,16 @@ func (sjca *ScheduledJobCostAggregation) Validate() error {
 		return err
 	}
 	if sjca.WindowStart.IsZero() {
-		return fmt.Errorf("WindowStart is required")
+		return ErrScheduledJobWindowStartRequired
 	}
 	if sjca.WindowEnd.IsZero() {
-		return fmt.Errorf("WindowEnd is required")
+		return ErrScheduledJobWindowEndRequired
 	}
 	if sjca.WindowEnd.Before(sjca.WindowStart) {
-		return fmt.Errorf("WindowEnd must be after WindowStart")
+		return ErrScheduledJobWindowEndBeforeStart
 	}
 	if !isValidScheduledJobPeriod(sjca.Period) {
-		return fmt.Errorf("invalid period: %s", sjca.Period)
+		return fmt.Errorf("%w: %s", ErrInvalidScheduledJobPeriod, sjca.Period)
 	}
 
 	return nil
@@ -488,6 +488,39 @@ func isValidScheduledJobPeriod(period string) bool {
 		"year":   true,
 	}
 	return validPeriods[period]
+}
+
+// GetPK returns the partition key for ScheduledJobCostRecord
+func (sjcr *ScheduledJobCostRecord) GetPK() string {
+	return sjcr.PK
+}
+
+// GetSK returns the sort key for ScheduledJobCostRecord
+func (sjcr *ScheduledJobCostRecord) GetSK() string {
+	return sjcr.SK
+}
+
+// UpdateKeys updates the keys - implementation already exists in BeforeCreate/BeforeUpdate
+func (sjcr *ScheduledJobCostRecord) UpdateKeys() error {
+	sjcr.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key for ScheduledJobCostAggregation
+func (sjca *ScheduledJobCostAggregation) GetPK() string {
+	return sjca.PK
+}
+
+// GetSK returns the sort key for ScheduledJobCostAggregation
+func (sjca *ScheduledJobCostAggregation) GetSK() string {
+	return sjca.SK
+}
+
+// UpdateKeys updates the keys for ScheduledJobCostAggregation
+func (sjca *ScheduledJobCostAggregation) UpdateKeys() error {
+	sjca.PK = fmt.Sprintf("SCHEDULED_JOB_AGG#%s#%s", sjca.Period, sjca.JobName)
+	sjca.SK = fmt.Sprintf("WINDOW#%s", sjca.WindowStart.Format(time.RFC3339))
+	return nil
 }
 
 // ScheduledJobCostRecordBuilder helps create scheduled job cost tracking records

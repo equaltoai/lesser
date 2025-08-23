@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -11,27 +12,35 @@ import (
 	"go.uber.org/zap"
 )
 
-// QuoteRepository implements quote operations using DynamORM
+// QuoteRepository implements quote operations using DynamORM with BaseRepository pattern
 type QuoteRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	relationshipRepo *BaseRepository[*models.QuoteRelationship]
+	permissionsRepo  *BaseRepository[*models.QuotePermissions]
+	logger           *zap.Logger
 }
 
 // NewQuoteRepository creates a new quote repository
 func NewQuoteRepository(db core.DB, tableName string, logger *zap.Logger) *QuoteRepository {
 	return &QuoteRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		relationshipRepo: NewBaseRepository[*models.QuoteRelationship](db, tableName, logger),
+		permissionsRepo:  NewBaseRepository[*models.QuotePermissions](db, tableName, logger),
+		logger:           logger,
+	}
+}
+
+// NewQuoteRepositoryWithCostTracking creates a new quote repository with cost tracking
+func NewQuoteRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *QuoteRepository {
+	return &QuoteRepository{
+		relationshipRepo: NewBaseRepositoryWithCostTracking[*models.QuoteRelationship](db, tableName, logger, costService, "quote_relationship"),
+		permissionsRepo:  NewBaseRepositoryWithCostTracking[*models.QuotePermissions](db, tableName, logger, costService, "quote_permissions"),
+		logger:           logger,
 	}
 }
 
 // CreateQuoteRelationship creates a new quote relationship
 func (r *QuoteRepository) CreateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error {
-	relationship.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(relationship).Create(); err != nil {
+	err := r.relationshipRepo.Create(ctx, relationship)
+	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("quote relationship already exists",
 				zap.String("quoter_note_id", relationship.QuoterNoteID),
@@ -42,7 +51,7 @@ func (r *QuoteRepository) CreateQuoteRelationship(ctx context.Context, relations
 			zap.String("quoter_note_id", relationship.QuoterNoteID),
 			zap.String("target_note_id", relationship.TargetNoteID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create quote relationship: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuoteRelationshipCreateFailed, err)
 	}
 
 	r.logger.Info("created quote relationship",
@@ -54,13 +63,11 @@ func (r *QuoteRepository) CreateQuoteRelationship(ctx context.Context, relations
 
 // GetQuoteRelationship retrieves a quote relationship by quoter and target note IDs
 func (r *QuoteRepository) GetQuoteRelationship(ctx context.Context, quoteStatusID, targetStatusID string) (*models.QuoteRelationship, error) {
-	var relationship models.QuoteRelationship
+	relationship := &models.QuoteRelationship{}
+	pk := fmt.Sprintf("QUOTE#%s", quoteStatusID)
+	sk := fmt.Sprintf("QUOTED#%s", targetStatusID)
 
-	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("PK", "=", fmt.Sprintf("QUOTE#%s", quoteStatusID)).
-		Where("SK", "=", fmt.Sprintf("QUOTED#%s", targetStatusID)).
-		First(&relationship)
-
+	err := r.relationshipRepo.Get(ctx, pk, sk, relationship)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -69,22 +76,21 @@ func (r *QuoteRepository) GetQuoteRelationship(ctx context.Context, quoteStatusI
 			zap.String("quote_status_id", quoteStatusID),
 			zap.String("target_status_id", targetStatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get quote relationship: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrQuoteRelationshipGetFailed, err)
 	}
 
-	return &relationship, nil
+	return relationship, nil
 }
 
 // UpdateQuoteRelationship updates an existing quote relationship
 func (r *QuoteRepository) UpdateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error {
-	relationship.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(relationship).Update(); err != nil {
+	err := r.relationshipRepo.Update(ctx, relationship)
+	if err != nil {
 		r.logger.Error("failed to update quote relationship",
 			zap.String("quoter_note_id", relationship.QuoterNoteID),
 			zap.String("target_note_id", relationship.TargetNoteID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update quote relationship: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuoteRelationshipUpdateFailed, err)
 	}
 
 	r.logger.Info("updated quote relationship",
@@ -96,17 +102,16 @@ func (r *QuoteRepository) UpdateQuoteRelationship(ctx context.Context, relations
 
 // DeleteQuoteRelationship deletes a quote relationship
 func (r *QuoteRepository) DeleteQuoteRelationship(ctx context.Context, quoteStatusID, targetStatusID string) error {
-	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
-		Where("PK", "=", fmt.Sprintf("QUOTE#%s", quoteStatusID)).
-		Where("SK", "=", fmt.Sprintf("QUOTED#%s", targetStatusID)).
-		Delete()
+	pk := fmt.Sprintf("QUOTE#%s", quoteStatusID)
+	sk := fmt.Sprintf("QUOTED#%s", targetStatusID)
 
+	err := r.relationshipRepo.Delete(ctx, pk, sk)
 	if err != nil {
 		r.logger.Error("failed to delete quote relationship",
 			zap.String("quote_status_id", quoteStatusID),
 			zap.String("target_status_id", targetStatusID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete quote relationship: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuoteRelationshipDeleteFailed, err)
 	}
 
 	r.logger.Info("deleted quote relationship",
@@ -118,7 +123,8 @@ func (r *QuoteRepository) DeleteQuoteRelationship(ctx context.Context, quoteStat
 
 // getQuotesByGSI is a generic helper for querying quotes by GSI
 func (r *QuoteRepository) getQuotesByGSI(ctx context.Context, gsiKey, gsiValue string, opts interfaces.PaginationOptions, errorContext string) (*interfaces.PaginatedResult[*models.QuoteRelationship], error) {
-	query := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+	db := r.relationshipRepo.GetDB()
+	query := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Where(gsiKey, "=", gsiValue).
 		Limit(opts.Limit)
 
@@ -129,10 +135,10 @@ func (r *QuoteRepository) getQuotesByGSI(ctx context.Context, gsiKey, gsiValue s
 	var quotesData []models.QuoteRelationship
 	err := query.All(&quotesData)
 	if err != nil {
-		r.logger.Error(fmt.Sprintf("failed to %s", errorContext),
+		r.logger.Error("failed to query quote relationships",
 			zap.String("gsi_value", gsiValue),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to %s: %w", errorContext, err)
+		return nil, fmt.Errorf("%w: %w", ErrQuoteRelationshipQueryFailed, err)
 	}
 
 	// Convert to pointer slice and filter out withdrawn quotes
@@ -169,9 +175,8 @@ func (r *QuoteRepository) GetQuotesByUser(ctx context.Context, userID string, op
 
 // CreateQuotePermissions creates new quote permissions for a user
 func (r *QuoteRepository) CreateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error {
-	permissions.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(permissions).Create(); err != nil {
+	err := r.permissionsRepo.Create(ctx, permissions)
+	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("quote permissions already exist",
 				zap.String("username", permissions.Username))
@@ -180,7 +185,7 @@ func (r *QuoteRepository) CreateQuotePermissions(ctx context.Context, permission
 		r.logger.Error("failed to create quote permissions",
 			zap.String("username", permissions.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to create quote permissions: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuotePermissionsCreateFailed, err)
 	}
 
 	r.logger.Info("created quote permissions",
@@ -191,13 +196,11 @@ func (r *QuoteRepository) CreateQuotePermissions(ctx context.Context, permission
 
 // GetQuotePermissions retrieves quote permissions for a user
 func (r *QuoteRepository) GetQuotePermissions(ctx context.Context, username string) (*models.QuotePermissions, error) {
-	var permissions models.QuotePermissions
+	permissions := &models.QuotePermissions{}
+	pk := fmt.Sprintf("USER#%s", username)
+	sk := "QUOTE_PERMISSIONS"
 
-	err := r.db.WithContext(ctx).Model(&models.QuotePermissions{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "=", "QUOTE_PERMISSIONS").
-		First(&permissions)
-
+	err := r.permissionsRepo.Get(ctx, pk, sk, permissions)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -205,21 +208,20 @@ func (r *QuoteRepository) GetQuotePermissions(ctx context.Context, username stri
 		r.logger.Error("failed to get quote permissions",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get quote permissions: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrQuotePermissionsGetFailed, err)
 	}
 
-	return &permissions, nil
+	return permissions, nil
 }
 
 // UpdateQuotePermissions updates existing quote permissions
 func (r *QuoteRepository) UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error {
-	permissions.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(permissions).Update(); err != nil {
+	err := r.permissionsRepo.Update(ctx, permissions)
+	if err != nil {
 		r.logger.Error("failed to update quote permissions",
 			zap.String("username", permissions.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to update quote permissions: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuotePermissionsUpdateFailed, err)
 	}
 
 	r.logger.Info("updated quote permissions",
@@ -230,16 +232,15 @@ func (r *QuoteRepository) UpdateQuotePermissions(ctx context.Context, permission
 
 // DeleteQuotePermissions deletes quote permissions for a user
 func (r *QuoteRepository) DeleteQuotePermissions(ctx context.Context, username string) error {
-	err := r.db.WithContext(ctx).Model(&models.QuotePermissions{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "=", "QUOTE_PERMISSIONS").
-		Delete()
+	pk := fmt.Sprintf("USER#%s", username)
+	sk := "QUOTE_PERMISSIONS"
 
+	err := r.permissionsRepo.Delete(ctx, pk, sk)
 	if err != nil {
 		r.logger.Error("failed to delete quote permissions",
 			zap.String("username", username),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete quote permissions: %w", err)
+		return fmt.Errorf("%w: %w", ErrQuotePermissionsDeleteFailed, err)
 	}
 
 	r.logger.Info("deleted quote permissions",
@@ -250,7 +251,8 @@ func (r *QuoteRepository) DeleteQuotePermissions(ctx context.Context, username s
 
 // GetQuoteCount gets the total number of quotes for a status
 func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (int64, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
+	db := r.relationshipRepo.GetDB()
+	count, err := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Where("GSI1PK", "=", fmt.Sprintf("QUOTED#%s", statusID)).
 		Where("Withdrawn", "=", false).
 		Count()
@@ -259,7 +261,7 @@ func (r *QuoteRepository) GetQuoteCount(ctx context.Context, statusID string) (i
 		r.logger.Error("failed to get quote count",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to get quote count: %w", err)
+		return 0, fmt.Errorf("%w: %w", ErrQuoteCountQueryFailed, err)
 	}
 
 	return count, nil

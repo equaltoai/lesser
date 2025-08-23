@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -393,7 +394,7 @@ func (s *businessLogicService) handleScheduledPost(ctx context.Context, user *Us
 		s.logger.Error("failed to store scheduled status",
 			zap.String("scheduled_status_id", scheduledStatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to store scheduled status: %w", err)
+		return nil, NewInternalError("failed to store scheduled status", errors.Join(ErrStoreScheduledStatus, err))
 	}
 
 	s.logger.Info("stored scheduled status",
@@ -547,7 +548,7 @@ func (s *businessLogicService) processContentAndEmojis(ctx context.Context, note
 		emojiRepo = repos.Emoji()
 	} else {
 		s.logger.Error("emoji repository not available - cannot process emojis")
-		return nil, fmt.Errorf("emoji repository not available")
+		return nil, NewInternalError("emoji repository not available", ErrEmojiRepositoryNotAvailable)
 	}
 
 	// Build emoji tags for found shortcodes with actual URLs

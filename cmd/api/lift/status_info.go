@@ -127,7 +127,7 @@ func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string)
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			_, _ = oauthSvc.ValidateAccessToken(token)
 		}
 	}

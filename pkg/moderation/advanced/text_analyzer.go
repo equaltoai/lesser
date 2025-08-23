@@ -31,6 +31,7 @@ type TextAnalyzer struct {
 // CostTracker interface for tracking AWS costs
 type CostTracker interface {
 	TrackComprehendRequest(operation string, units int)
+	TrackTranscribeRequest(jobName string, estimatedMinutes int)
 }
 
 // NewTextAnalyzer creates a new text analyzer

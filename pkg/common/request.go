@@ -41,7 +41,7 @@ func ReadRequestBody(body io.Reader, maxSize int64) ([]byte, error) {
 
 	// Check if we read more than maxSize (the extra byte)
 	if int64(len(data)) > maxSize {
-		return nil, fmt.Errorf("request body too large: exceeds %d bytes", maxSize)
+		return nil, fmt.Errorf("%w: exceeds %d bytes", ErrRequestBodyTooLarge, maxSize)
 	}
 
 	return data, nil
@@ -85,7 +85,7 @@ func ParseRequestWithFallback(ctx *lift.Context, target interface{}) error {
 		}
 	}
 
-	return fmt.Errorf("failed to parse request body")
+	return ErrFailedToParseRequestBody
 }
 
 // ParseRequestWithValidation combines parsing with common validation responses
@@ -116,7 +116,7 @@ func ParseRequestBodyWithValidation(ctx *lift.Context, target interface{}, field
 
 // Specialized parsing functions for common request types
 
-// ParsePaginationParams extracts common pagination parameters
+// PaginationParams extracts common pagination parameters
 type PaginationParams struct {
 	Limit  int    `json:"limit"`
 	Offset int    `json:"offset"`
@@ -125,14 +125,14 @@ type PaginationParams struct {
 	SinceID string `json:"since_id"`
 }
 
-// ParseTimelineParams extracts timeline-specific parameters
+// TimelineParams extracts timeline-specific parameters
 type TimelineParams struct {
 	PaginationParams
 	Local      bool `json:"local"`
 	OnlyMedia  bool `json:"only_media"`
 }
 
-// ParseFilterParams extracts filter-specific parameters
+// FilterParams extracts filter-specific parameters
 type FilterParams struct {
 	Phrase      string   `json:"phrase"`
 	Context     []string `json:"context"`
@@ -163,6 +163,6 @@ func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) erro
 		}
 	}
 
-	return fmt.Errorf("failed to parse request with complex fallback")
+	return ErrFailedToParseWithComplexFallback
 }
 

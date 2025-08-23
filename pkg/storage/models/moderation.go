@@ -122,8 +122,18 @@ func (ModerationEvent) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the primary partition key
+func (m *ModerationEvent) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the primary sort key
+func (m *ModerationEvent) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *ModerationEvent) UpdateKeys() {
+func (m *ModerationEvent) UpdateKeys() error {
 	// Primary key - events by object
 	m.PK = fmt.Sprintf("EVENT#%s", m.ObjectID)
 	m.SK = fmt.Sprintf("TIME#%s#%s", m.Created.Format(time.RFC3339), m.ID)
@@ -147,6 +157,8 @@ func (m *ModerationEvent) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
+	
+	return nil
 }
 
 // ModerationReview represents a review by a moderator
@@ -283,8 +295,18 @@ func (ModerationPattern) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the primary partition key
+func (p *ModerationPattern) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the primary sort key
+func (p *ModerationPattern) GetSK() string {
+	return p.SK
+}
+
 // UpdateKeys updates the keys based on current field values
-func (p *ModerationPattern) UpdateKeys() {
+func (p *ModerationPattern) UpdateKeys() error {
 	p.PK = fmt.Sprintf("PATTERN#%s", p.PatternID)
 	p.SK = "METADATA"
 
@@ -305,6 +327,8 @@ func (p *ModerationPattern) UpdateKeys() {
 	if p.TTL == 0 {
 		p.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	
+	return nil
 }
 
 // ModerationEvidence contains detailed evidence for the moderation decision

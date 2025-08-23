@@ -73,7 +73,7 @@ func NewEnhancedPatternManager(storage PatternStorage, enhancedRepo EnhancedPatt
 func (pm *PatternManager) CreatePattern(ctx context.Context, pattern *ModerationPattern) error {
 	// Validate pattern
 	if err := pm.validatePattern(pattern); err != nil {
-		return fmt.Errorf("invalid pattern: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidPattern, err)
 	}
 
 	// Set creation metadata
@@ -86,7 +86,7 @@ func (pm *PatternManager) CreatePattern(ctx context.Context, pattern *Moderation
 	// Compile regex if it's a regex pattern
 	if pattern.Type == "regex" {
 		if _, err := regexp.Compile(pattern.Content); err != nil {
-			return fmt.Errorf("invalid regex pattern: %w", err)
+			return fmt.Errorf("%w: %w", ErrInvalidRegexPattern, err)
 		}
 	}
 
@@ -98,7 +98,7 @@ func (pm *PatternManager) CreatePattern(ctx context.Context, pattern *Moderation
 func (pm *PatternManager) GetPatterns(ctx context.Context, active bool, severity string, limit int) ([]*ModerationPattern, error) {
 	patterns, err := pm.storage.GetModerationPatterns(ctx, active, severity, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetPatterns, err)
 	}
 
 	// Filter and enrich patterns
@@ -117,7 +117,7 @@ func (pm *PatternManager) MatchContent(ctx context.Context, content *ContentToMo
 	// Get all active patterns
 	patterns, err := pm.GetPatterns(ctx, true, "", 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetPatterns, err)
 	}
 
 	var matches []*PatternMatch
@@ -130,7 +130,7 @@ func (pm *PatternManager) MatchContent(ctx context.Context, content *ContentToMo
 			// Record the match
 			if err := pm.recordMatch(ctx, pattern.ID, true); err != nil {
 				// Log error but don't fail the matching
-				fmt.Printf("Failed to record pattern match: %v\n", err)
+				zap.L().Error("failed to record pattern match", zap.Error(err))
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func (pm *PatternManager) MatchContent(ctx context.Context, content *ContentToMo
 func (pm *PatternManager) UpdatePatternStats(ctx context.Context, patternID string, wasMatch bool, wasFalsePositive bool) error {
 	pattern, err := pm.storage.GetModerationPattern(ctx, patternID)
 	if err != nil {
-		return fmt.Errorf("failed to get pattern: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToGetPattern, err)
 	}
 
 	if wasMatch {
@@ -162,7 +162,7 @@ func (pm *PatternManager) UpdatePatternStats(ctx context.Context, patternID stri
 func (pm *PatternManager) AnalyzePatternEffectiveness(ctx context.Context) (*PatternEffectivenessReport, error) {
 	patterns, err := pm.GetPatterns(ctx, true, "", 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetPatterns, err)
 	}
 
 	report := &PatternEffectivenessReport{
@@ -229,7 +229,7 @@ func (pm *PatternManager) AnalyzePatternEffectiveness(ctx context.Context) (*Pat
 func (pm *PatternManager) OptimizePatterns(ctx context.Context) ([]*PatternOptimization, error) {
 	patterns, err := pm.GetPatterns(ctx, true, "", 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetPatterns, err)
 	}
 
 	var optimizations []*PatternOptimization
@@ -268,7 +268,7 @@ func (pm *PatternManager) validatePattern(pattern *ModerationPattern) error {
 		}
 	}
 	if !validType {
-		return fmt.Errorf("invalid pattern type: %s", pattern.Type)
+		return fmt.Errorf("%w: %s", ErrInvalidPatternType, pattern.Type)
 	}
 
 	validSeverities := []string{"low", "medium", "high", "critical"}
@@ -280,7 +280,7 @@ func (pm *PatternManager) validatePattern(pattern *ModerationPattern) error {
 		}
 	}
 	if !validSeverity {
-		return fmt.Errorf("invalid severity: %s", pattern.Severity)
+		return fmt.Errorf("%w: %s", ErrInvalidSeverity, pattern.Severity)
 	}
 
 	return nil
@@ -594,18 +594,18 @@ func (pm *PatternManager) matchEnhancedIP(pattern, text, patternType string) (bo
 // CreateEnhancedPattern creates a new enhanced moderation pattern
 func (pm *PatternManager) CreateEnhancedPattern(ctx context.Context, pattern *models.EnhancedModerationPattern) error {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return fmt.Errorf("enhanced patterns not available")
+		return ErrEnhancedPatternsNotAvailable
 	}
 
 	// Validate pattern first
 	if pm.patternValidator != nil {
 		validationResult, err := pm.patternValidator.ValidatePattern(ctx, pattern, DefaultSecurityTestConfig())
 		if err != nil {
-			return fmt.Errorf("pattern validation failed: %w", err)
+			return fmt.Errorf("%w: %w", ErrPatternValidationFailed, err)
 		}
 
 		if !validationResult.Valid {
-			return fmt.Errorf("pattern validation failed: %v", validationResult.Errors)
+			return fmt.Errorf("%w: %v", ErrPatternValidationFailed, validationResult.Errors)
 		}
 
 		// Update pattern with validation results
@@ -619,7 +619,7 @@ func (pm *PatternManager) CreateEnhancedPattern(ctx context.Context, pattern *mo
 // GetEnhancedPattern retrieves an enhanced pattern by ID
 func (pm *PatternManager) GetEnhancedPattern(ctx context.Context, patternID string) (*models.EnhancedModerationPattern, error) {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return nil, fmt.Errorf("enhanced patterns not available")
+		return nil, ErrEnhancedPatternsNotAvailable
 	}
 
 	return pm.enhancedRepo.GetPattern(ctx, patternID)
@@ -628,7 +628,7 @@ func (pm *PatternManager) GetEnhancedPattern(ctx context.Context, patternID stri
 // UpdateEnhancedPattern updates an enhanced pattern
 func (pm *PatternManager) UpdateEnhancedPattern(ctx context.Context, pattern *models.EnhancedModerationPattern) error {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return fmt.Errorf("enhanced patterns not available")
+		return ErrEnhancedPatternsNotAvailable
 	}
 
 	// Re-validate pattern if validator is available
@@ -659,7 +659,7 @@ func (pm *PatternManager) UpdateEnhancedPattern(ctx context.Context, pattern *mo
 // DeleteEnhancedPattern deletes an enhanced pattern
 func (pm *PatternManager) DeleteEnhancedPattern(ctx context.Context, patternID string) error {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return fmt.Errorf("enhanced patterns not available")
+		return ErrEnhancedPatternsNotAvailable
 	}
 
 	// Get pattern to get its details for cache invalidation
@@ -684,7 +684,7 @@ func (pm *PatternManager) DeleteEnhancedPattern(ctx context.Context, patternID s
 // GetActiveEnhancedPatterns retrieves all active enhanced patterns
 func (pm *PatternManager) GetActiveEnhancedPatterns(ctx context.Context, limit int) ([]*models.EnhancedModerationPattern, error) {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return nil, fmt.Errorf("enhanced patterns not available")
+		return nil, ErrEnhancedPatternsNotAvailable
 	}
 
 	return pm.enhancedRepo.GetActivePatterns(ctx, limit)
@@ -693,13 +693,13 @@ func (pm *PatternManager) GetActiveEnhancedPatterns(ctx context.Context, limit i
 // MatchContentEnhanced matches content against enhanced patterns
 func (pm *PatternManager) MatchContentEnhanced(ctx context.Context, content *ContentToModerate) ([]*EnhancedPatternMatch, error) {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return nil, fmt.Errorf("enhanced patterns not available")
+		return nil, ErrEnhancedPatternsNotAvailable
 	}
 
 	// Get active enhanced patterns
 	patterns, err := pm.enhancedRepo.GetActivePatterns(ctx, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get enhanced patterns: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetEnhancedPatterns, err)
 	}
 
 	var matches []*EnhancedPatternMatch
@@ -840,7 +840,7 @@ func (pm *PatternManager) extractAndMatchIPs(ctx context.Context, text string, p
 // ValidateEnhancedPattern validates an enhanced pattern
 func (pm *PatternManager) ValidateEnhancedPattern(ctx context.Context, pattern *models.EnhancedModerationPattern) (*ValidationResult, error) {
 	if !pm.enhancedEnabled || pm.patternValidator == nil {
-		return nil, fmt.Errorf("enhanced pattern validation not available")
+		return nil, ErrEnhancedPatternValidationNotAvailable
 	}
 
 	return pm.patternValidator.ValidatePattern(ctx, pattern, DefaultSecurityTestConfig())
@@ -858,7 +858,7 @@ func (pm *PatternManager) GetCacheStatistics() *CacheStatistics {
 // GetPatternStatistics returns enhanced pattern statistics
 func (pm *PatternManager) GetPatternStatistics(ctx context.Context) (map[string]interface{}, error) {
 	if !pm.enhancedEnabled || pm.enhancedRepo == nil {
-		return nil, fmt.Errorf("enhanced pattern statistics not available")
+		return nil, ErrEnhancedPatternStatisticsNotAvailable
 	}
 
 	return pm.enhancedRepo.GetPatternStatistics(ctx)

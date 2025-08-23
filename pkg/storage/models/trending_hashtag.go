@@ -33,8 +33,19 @@ func (t *TrendingHashtag) TableName() string {
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change
-func (t *TrendingHashtag) UpdateKeys() {
+func (t *TrendingHashtag) UpdateKeys() error {
 	// GSI8 is used for trending queries
 	t.GSI8PK = t.PK
 	t.GSI8SK = t.SK
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (t *TrendingHashtag) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (t *TrendingHashtag) GetSK() string {
+	return t.SK
 }

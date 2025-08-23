@@ -2,7 +2,7 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -71,7 +71,7 @@ func (s *DynamORMCSRFStore) ValidateAndConsume(token string, userID string) erro
 		if err.Error() == "expired CSRF token" {
 			return ErrExpiredCSRF
 		}
-		return fmt.Errorf("CSRF validation failed: %w", err)
+		return errors.Join(ErrCSRFValidationFailed, err)
 	}
 	return nil
 }

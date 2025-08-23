@@ -2,87 +2,137 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamoerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
-// InstanceHealthRepository handles health check data using DynamORM
+// InstanceHealthRepository handles health check data using BaseRepository with DynamORM
 type InstanceHealthRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.InstanceHealth]
+	summaryRepo *BaseRepository[*models.InstanceHealthSummary]
 }
 
-// NewInstanceHealthRepository creates a new instance health repository
+// NewInstanceHealthRepository creates a new instance health repository with cost tracking
 func NewInstanceHealthRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceHealthRepository {
 	return &InstanceHealthRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.InstanceHealth](db, tableName, logger),
+		summaryRepo:    NewBaseRepository[*models.InstanceHealthSummary](db, tableName, logger),
 	}
 }
 
-// SaveHealthCheck stores a health check result
-func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error {
-	health.UpdateKeys()
+// NewInstanceHealthRepositoryWithCostTracking creates a new repository with integrated cost tracking
+func NewInstanceHealthRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceHealthRepository {
+	return &InstanceHealthRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.InstanceHealth](db, tableName, logger, costService, "instance_health"),
+		summaryRepo:    NewBaseRepositoryWithCostTracking[*models.InstanceHealthSummary](db, tableName, logger, costService, "instance_health_summary"),
+	}
+}
 
-	err := r.db.WithContext(ctx).Model(health).Create()
+// SaveHealthCheck stores a health check result with health validation and alerting logic
+func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error {
+	// Validate health check data before saving
+	if health.Domain == "" {
+		return ErrorHandler.HandleCreateError(errors.New("missing domain"), EntityInstanceHealth, "health")
+	}
+	if health.Timestamp.IsZero() {
+		health.Timestamp = time.Now().UTC()
+	}
+
+	// Calculate health score for monitoring
+	healthScore := health.GetHealthScore()
+
+	// Log critical health issues for alerting
+	if health.IsCritical() {
+		r.logger.Warn("Critical health issue detected",
+			zap.String("domain", health.Domain),
+			zap.Bool("reachable", health.Reachable),
+			zap.Int("status_code", health.StatusCode),
+			zap.Float64("error_rate", health.ErrorRate),
+			zap.Float64("health_score", healthScore))
+	}
+
+	// Save using BaseRepository
+	err := r.Create(ctx, health)
 	if err != nil {
 		r.logger.Error("Failed to save health check",
 			zap.String("domain", health.Domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to save health check for %s: %w", health.Domain, err)
+		return ErrorHandler.HandleCreateError(err, EntityInstanceHealth, health.Domain)
 	}
 
 	r.logger.Debug("Saved health check",
 		zap.String("domain", health.Domain),
 		zap.Bool("reachable", health.Reachable),
 		zap.Int("status_code", health.StatusCode),
-		zap.Duration("response_time", health.ResponseTime))
+		zap.Duration("response_time", health.ResponseTime),
+		zap.Float64("health_score", healthScore))
 
 	return nil
 }
 
-// SaveHealthChecks saves multiple health checks in batch
+// SaveHealthChecks saves multiple health checks in batch with health monitoring validation
 func (r *InstanceHealthRepository) SaveHealthChecks(ctx context.Context, healthChecks []*models.InstanceHealth) error {
 	if err := common.ValidateSliceNotEmpty("healthChecks", healthChecks); err != nil {
 		return nil
 	}
 
-	// Update keys for all health checks
+	// Validate and process each health check for monitoring
+	criticalCount := 0
+	healthyCount := 0
 	for _, health := range healthChecks {
-		health.UpdateKeys()
-	}
-
-	// Save health checks one by one (DynamORM batch operations may not be fully implemented)
-	for _, health := range healthChecks {
-		err := r.db.WithContext(ctx).Model(health).Create()
-		if err != nil {
-			r.logger.Error("Failed to save health check in batch",
-				zap.String("domain", health.Domain),
-				zap.Error(err))
-			return fmt.Errorf("failed to save health check for %s: %w", health.Domain, err)
+		if health.Domain == "" {
+			return ErrorHandler.HandleCreateError(errors.New("missing domain"), EntityInstanceHealth, "health")
+		}
+		if health.Timestamp.IsZero() {
+			health.Timestamp = time.Now().UTC()
+		}
+		
+		// Track health status for batch monitoring
+		if health.IsCritical() {
+			criticalCount++
+		} else if health.IsHealthy() {
+			healthyCount++
 		}
 	}
 
+	// Use BaseRepository batch create for efficient operations
+	err := r.BatchCreate(ctx, healthChecks)
+	if err != nil {
+		r.logger.Error("Failed to batch save health checks", zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, EntityInstanceHealth, "batch")
+	}
+
 	r.logger.Info("Batch saved health checks",
-		zap.Int("count", len(healthChecks)))
+		zap.Int("total_count", len(healthChecks)),
+		zap.Int("critical_count", criticalCount),
+		zap.Int("healthy_count", healthyCount))
+
+	// Log alert if too many critical instances
+	if criticalCount > len(healthChecks)/2 {
+		r.logger.Warn("High number of critical instances detected",
+			zap.Int("critical_count", criticalCount),
+			zap.Int("total_count", len(healthChecks)),
+			zap.Float64("critical_percentage", float64(criticalCount)/float64(len(healthChecks))*100))
+	}
 
 	return nil
 }
 
-// GetLatestHealthCheck retrieves the most recent health check for a domain
+// GetLatestHealthCheck retrieves the most recent health check for a domain with health status logging
 func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, domain string) (*models.InstanceHealth, error) {
-	var healthChecks []models.InstanceHealth
+	var healthChecks []*models.InstanceHealth
 
-	err := r.db.WithContext(ctx).Model(&models.InstanceHealth{}).
+	// Use BaseRepository's underlying DB for complex query
+	err := r.GetDB().WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		Where("SK", ">", "HEALTH#").
 		OrderBy("SK", "DESC"). // Descending order for most recent first
@@ -93,22 +143,34 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 		r.logger.Error("Failed to get latest health check",
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get latest health check for %s: %w", domain, err)
+		return nil, ErrorHandler.HandleGetError(err, EntityInstanceHealth, domain)
 	}
 
-	if err := common.ValidateSliceNotEmpty("healthChecks", healthChecks); err != nil {
-		return nil, fmt.Errorf("no health checks found for domain %s", domain)
+	if len(healthChecks) == 0 {
+		return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityInstanceHealth, domain)
 	}
 
-	return &healthChecks[0], nil
+	health := healthChecks[0]
+	
+	// Log health status for monitoring
+	healthScore := health.GetHealthScore()
+	r.logger.Debug("Retrieved latest health check",
+		zap.String("domain", domain),
+		zap.Bool("reachable", health.Reachable),
+		zap.Bool("is_healthy", health.IsHealthy()),
+		zap.Bool("is_critical", health.IsCritical()),
+		zap.Float64("health_score", healthScore),
+		zap.Time("timestamp", health.Timestamp))
+
+	return health, nil
 }
 
-// GetHealthHistory retrieves health history for a domain within a time range
+// GetHealthHistory retrieves health history for a domain within a time range with trend analysis
 func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain string, since time.Time, limit int) ([]*models.InstanceHealth, error) {
-	var healthChecks []models.InstanceHealth
+	var healthChecks []*models.InstanceHealth
 
-	// Build query
-	query := r.db.WithContext(ctx).Model(&models.InstanceHealth{}).
+	// Build query using BaseRepository's DB
+	query := r.GetDB().WithContext(ctx).Model(&models.InstanceHealth{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		OrderBy("SK", "DESC") // Most recent first
 
@@ -132,68 +194,168 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 			zap.Time("since", since),
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get health history for %s: %w", domain, err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityInstanceHealth, "health history")
 	}
 
-	// Convert to pointer slice
-	result := make([]*models.InstanceHealth, len(healthChecks))
-	for i := range healthChecks {
-		result[i] = &healthChecks[i]
+	// Analyze health trends for monitoring
+	if len(healthChecks) > 0 {
+		healthyCount := 0
+		criticalCount := 0
+		totalScore := 0.0
+		
+		for _, health := range healthChecks {
+			if health.IsHealthy() {
+				healthyCount++
+			}
+			if health.IsCritical() {
+				criticalCount++
+			}
+			totalScore += health.GetHealthScore()
+		}
+		
+		avgScore := totalScore / float64(len(healthChecks))
+		healthPercentage := float64(healthyCount) / float64(len(healthChecks)) * 100
+		criticalPercentage := float64(criticalCount) / float64(len(healthChecks)) * 100
+		
+		r.logger.Debug("Health history trend analysis",
+			zap.String("domain", domain),
+			zap.Int("total_checks", len(healthChecks)),
+			zap.Float64("avg_health_score", avgScore),
+			zap.Float64("healthy_percentage", healthPercentage),
+			zap.Float64("critical_percentage", criticalPercentage))
+		
+		// Alert if domain shows concerning trends
+		if criticalPercentage > 25.0 {
+			r.logger.Warn("Domain showing concerning health trends",
+				zap.String("domain", domain),
+				zap.Float64("critical_percentage", criticalPercentage),
+				zap.Float64("avg_health_score", avgScore))
+		}
 	}
 
-	return result, nil
+	return healthChecks, nil
 }
 
-// GetDomainsForHealthCheck retrieves a list of domains that need health checking
-// This queries for all known instances based on recent activity
+// GetDomainsForHealthCheck retrieves a list of domains that need health checking with monitoring prioritization
 func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context, limit int) ([]string, error) {
 	// Query for recent health summaries to get active domains
-	var summaries []models.InstanceHealthSummary
+	var summaries []*models.InstanceHealthSummary
 
-	query := r.db.WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Where("SK", "=", "SUMMARY#24h")
+	// Use BaseRepository's underlying DB for complex query
+	query := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
+		Where("SK", "=", "SUMMARY#24h").
+		OrderBy("PK", "ASC") // Consistent ordering
 
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
 
 	err := query.All(&summaries)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamoerrors.IsNotFound(err) {
 		r.logger.Error("Failed to get domains for health check", zap.Error(err))
-		return nil, fmt.Errorf("failed to get domains for health check: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityInstanceHealth, "health check domains")
 	}
 
-	domains := make([]string, 0, len(summaries))
+	// Prioritize domains based on health status for monitoring efficiency
+	type domainPriority struct {
+		domain      string
+		healthScore float64
+		availability float64
+	}
+	
+	domainPriorities := make([]domainPriority, 0, len(summaries))
 	for _, summary := range summaries {
-		domains = append(domains, summary.Domain)
+		domainPriorities = append(domainPriorities, domainPriority{
+			domain:       summary.Domain,
+			healthScore:  summary.HealthScore,
+			availability: summary.Availability,
+		})
+	}
+	
+	// Sort by health score (lowest first) to prioritize problematic instances
+	sort.Slice(domainPriorities, func(i, j int) bool {
+		return domainPriorities[i].healthScore < domainPriorities[j].healthScore
+	})
+
+	domains := make([]string, 0, len(domainPriorities))
+	lowHealthCount := 0
+	for _, dp := range domainPriorities {
+		domains = append(domains, dp.domain)
+		if dp.healthScore < 80.0 {
+			lowHealthCount++
+		}
+	}
+
+	// Log monitoring status
+	r.logger.Info("Retrieved domains for health checking",
+		zap.Int("total_domains", len(domains)),
+		zap.Int("low_health_domains", lowHealthCount),
+		zap.Int("requested_limit", limit))
+
+	if lowHealthCount > 0 {
+		r.logger.Info("Prioritizing unhealthy domains for monitoring",
+			zap.Int("low_health_count", lowHealthCount),
+			zap.Float64("percentage", float64(lowHealthCount)/float64(len(domains))*100))
 	}
 
 	// If no summaries found, we could fallback to querying known remote actors
-	// For now, return what we have
-	if err := common.ValidateSliceNotEmpty("domains", domains); err != nil {
+	if len(domains) == 0 {
 		r.logger.Info("No domains found for health checking via summaries")
 	}
 
 	return domains, nil
 }
 
-// SaveHealthSummary saves an aggregated health summary
+// SaveHealthSummary saves an aggregated health summary with uptime monitoring alerts
 func (r *InstanceHealthRepository) SaveHealthSummary(ctx context.Context, summary *models.InstanceHealthSummary) error {
-	summary.UpdateKeys()
+	// Validate summary data
+	if summary.Domain == "" {
+		return ErrorHandler.HandleCreateError(errors.New("missing domain"), EntityHealthSummary, "summary")
+	}
+	if summary.LastUpdated.IsZero() {
+		summary.LastUpdated = time.Now().UTC()
+	}
 
-	err := r.db.WithContext(ctx).Model(summary).Create()
+	// Log uptime and availability metrics for monitoring
+	r.logger.Info("Saving health summary",
+		zap.String("domain", summary.Domain),
+		zap.Duration("window", summary.Window),
+		zap.Float64("availability", summary.Availability),
+		zap.Float64("health_score", summary.HealthScore),
+		zap.Int("sample_count", summary.SampleCount),
+		zap.Duration("avg_response_time", summary.AvgResponseTime))
+
+	// Alert on poor availability or health scores
+	if summary.Availability < 0.95 { // Less than 95% availability
+		r.logger.Warn("Low availability detected",
+			zap.String("domain", summary.Domain),
+			zap.Duration("window", summary.Window),
+			zap.Float64("availability", summary.Availability),
+			zap.Float64("uptime_percentage", summary.Availability*100))
+	}
+
+	if summary.HealthScore < 80.0 { // Health score below 80
+		r.logger.Warn("Poor health score detected",
+			zap.String("domain", summary.Domain),
+			zap.Duration("window", summary.Window),
+			zap.Float64("health_score", summary.HealthScore),
+			zap.Float64("error_rate", summary.ErrorRate))
+	}
+
+	// Save using summary repository
+	err := r.summaryRepo.Create(ctx, summary)
 	if err != nil {
 		r.logger.Error("Failed to save health summary",
 			zap.String("domain", summary.Domain),
 			zap.Duration("window", summary.Window),
 			zap.Error(err))
-		return fmt.Errorf("failed to save health summary for %s: %w", summary.Domain, err)
+		return ErrorHandler.HandleCreateError(err, EntityHealthSummary, summary.Domain)
 	}
 
 	return nil
 }
 
-// GetHealthSummary retrieves an aggregated health summary for a domain and time window
+// GetHealthSummary retrieves an aggregated health summary with uptime status reporting
 func (r *InstanceHealthRepository) GetHealthSummary(ctx context.Context, domain string, window time.Duration) (*models.InstanceHealthSummary, error) {
 	// Convert window to string identifier
 	var windowStr string
@@ -208,22 +370,34 @@ func (r *InstanceHealthRepository) GetHealthSummary(ctx context.Context, domain 
 		windowStr = fmt.Sprintf("%ds", int(window.Seconds()))
 	}
 
+	pk := fmt.Sprintf("INSTANCE#%s", domain)
+	sk := fmt.Sprintf("SUMMARY#%s", windowStr)
+	
 	var summary models.InstanceHealthSummary
-	err := r.db.WithContext(ctx).Model(&models.InstanceHealthSummary{}).
-		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
-		Where("SK", "=", fmt.Sprintf("SUMMARY#%s", windowStr)).
-		First(&summary)
-
+	err := r.summaryRepo.Get(ctx, pk, sk, &summary)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamoerrors.IsNotFound(err) {
+			r.logger.Debug("Health summary not found",
+				zap.String("domain", domain),
+				zap.Duration("window", window),
+				zap.String("window_str", windowStr))
 			return nil, nil
 		}
 		r.logger.Error("Failed to get health summary",
 			zap.String("domain", domain),
 			zap.Duration("window", window),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get health summary for %s: %w", domain, err)
+		return nil, ErrorHandler.HandleGetError(err, EntityHealthSummary, domain)
 	}
+
+	// Log current status for uptime monitoring
+	r.logger.Debug("Retrieved health summary",
+		zap.String("domain", domain),
+		zap.Duration("window", window),
+		zap.Float64("availability", summary.Availability),
+		zap.Float64("health_score", summary.HealthScore),
+		zap.Time("last_updated", summary.LastUpdated),
+		zap.Duration("avg_response_time", summary.AvgResponseTime))
 
 	return &summary, nil
 }
@@ -238,7 +412,7 @@ func (r *InstanceHealthRepository) CalculateHealthSummary(ctx context.Context, d
 	}
 
 	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
-		return nil, fmt.Errorf("no health data available for domain %s in the last %v", domain, window)
+		return nil, ErrorHandler.HandleQueryError(errors.New("no data in window"), EntityInstanceHealth, domain)
 	}
 
 	// Create new summary
@@ -340,31 +514,103 @@ func (r *InstanceHealthRepository) CleanupOldHealthData(_ context.Context, older
 	return 0, nil
 }
 
-// GetUnhealthyInstances returns instances that are currently unhealthy
+// GetUnhealthyInstances returns instances that are currently unhealthy with detailed health status analysis
 func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, threshold float64) ([]string, error) {
-	// Query recent summaries and check health scores
-	var summaries []models.InstanceHealthSummary
+	if threshold <= 0 {
+		threshold = 80.0 // Default threshold for unhealthy instances
+	}
 
-	err := r.db.WithContext(ctx).Model(&models.InstanceHealthSummary{}).
+	// Query recent summaries and check health scores
+	var summaries []*models.InstanceHealthSummary
+
+	err := r.GetDB().WithContext(ctx).Model(&models.InstanceHealthSummary{}).
 		Where("SK", "=", "SUMMARY#1h"). // Check hourly summaries
 		All(&summaries)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamoerrors.IsNotFound(err) {
 		r.logger.Error("Failed to get unhealthy instances", zap.Error(err))
-		return nil, fmt.Errorf("failed to get unhealthy instances: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityInstanceHealth, "unhealthy instances")
 	}
 
-	var unhealthy []string
+	type unhealthyInstance struct {
+		domain       string
+		healthScore  float64
+		availability float64
+		errorRate    float64
+	}
+
+	var unhealthyInstances []unhealthyInstance
 	for _, summary := range summaries {
 		if summary.HealthScore < threshold {
-			unhealthy = append(unhealthy, summary.Domain)
+			unhealthyInstances = append(unhealthyInstances, unhealthyInstance{
+				domain:       summary.Domain,
+				healthScore:  summary.HealthScore,
+				availability: summary.Availability,
+				errorRate:    summary.ErrorRate,
+			})
 		}
 	}
 
-	// Sort for consistent results
-	sort.Strings(unhealthy)
+	// Sort by health score (worst first) for monitoring prioritization
+	sort.Slice(unhealthyInstances, func(i, j int) bool {
+		return unhealthyInstances[i].healthScore < unhealthyInstances[j].healthScore
+	})
 
-	return unhealthy, nil
+	// Extract domain names and log detailed unhealthy status
+	unhealthyDomains := make([]string, len(unhealthyInstances))
+	criticalCount := 0
+	lowAvailabilityCount := 0
+	highErrorRateCount := 0
+
+	for i, instance := range unhealthyInstances {
+		unhealthyDomains[i] = instance.domain
+		
+		// Count different types of health issues
+		if instance.healthScore < 50.0 {
+			criticalCount++
+		}
+		if instance.availability < 0.90 {
+			lowAvailabilityCount++
+		}
+		if instance.errorRate > 0.10 {
+			highErrorRateCount++
+		}
+		
+		// Log individual unhealthy instances for monitoring
+		r.logger.Warn("Unhealthy instance detected",
+			zap.String("domain", instance.domain),
+			zap.Float64("health_score", instance.healthScore),
+			zap.Float64("availability", instance.availability),
+			zap.Float64("error_rate", instance.errorRate),
+			zap.Float64("threshold", threshold))
+	}
+
+	// Log summary for alerting and monitoring
+	r.logger.Info("Unhealthy instances summary",
+		zap.Int("total_unhealthy", len(unhealthyDomains)),
+		zap.Int("critical_count", criticalCount),
+		zap.Int("low_availability_count", lowAvailabilityCount),
+		zap.Int("high_error_rate_count", highErrorRateCount),
+		zap.Float64("threshold", threshold))
+
+	// Alert if too many instances are unhealthy
+	if len(unhealthyDomains) > 0 {
+		if criticalCount > 0 {
+			r.logger.Error("Critical instances require immediate attention",
+				zap.Int("critical_count", criticalCount),
+				zap.Strings("critical_domains", unhealthyDomains[:min(criticalCount, 10)])) // Limit to first 10 for logging
+		}
+	}
+
+	return unhealthyDomains, nil
+}
+
+// min helper function
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // Helper functions

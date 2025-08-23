@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Rate limiting errors
@@ -49,20 +51,26 @@ func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress s
 	// Check IP rate limit first (broader protection)
 	ipLimited, ipUnlockTime, err := rl.repos.Account().IsRateLimited(ctx, rl.ipKey(ipAddress))
 	if err != nil {
-		return fmt.Errorf("failed to check IP rate limit: %w", err)
+		return errors.Join(ErrIPRateLimitCheck, err)
 	}
 	if ipLimited {
-		return fmt.Errorf("%w: try again after %s", ErrIPRateLimited, ipUnlockTime.Format(time.RFC3339))
+		zap.L().Error("IP rate limited", 
+			zap.String("ip_address", ipAddress),
+			zap.String("unlock_time", ipUnlockTime.Format(time.RFC3339)))
+		return ErrIPRateLimited
 	}
 
 	// Check account rate limit if username provided
 	if username != "" {
 		accountLimited, accountUnlockTime, err := rl.repos.Account().IsRateLimited(ctx, rl.accountKey(username))
 		if err != nil {
-			return fmt.Errorf("failed to check account rate limit: %w", err)
+			return errors.Join(ErrAccountRateLimitCheck, err)
 		}
 		if accountLimited {
-			return fmt.Errorf("%w: try again after %s", ErrAccountLocked, accountUnlockTime.Format(time.RFC3339))
+			zap.L().Error("Account rate limited", 
+				zap.String("username", username),
+				zap.String("unlock_time", accountUnlockTime.Format(time.RFC3339)))
+			return ErrAccountLocked
 		}
 	}
 
@@ -73,13 +81,13 @@ func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress s
 func (rl *RateLimiter) RecordAttempt(ctx context.Context, username, ipAddress string, success bool) error {
 	// Always record IP attempt
 	if err := rl.repos.Account().RecordLoginAttempt(ctx, rl.ipKey(ipAddress), success); err != nil {
-		return fmt.Errorf("failed to record IP attempt: %w", err)
+		return errors.Join(ErrRecordIPAttempt, err)
 	}
 
 	// Record account attempt if username provided
 	if username != "" {
 		if err := rl.repos.Account().RecordLoginAttempt(ctx, rl.accountKey(username), success); err != nil {
-			return fmt.Errorf("failed to record account attempt: %w", err)
+			return errors.Join(ErrRecordAccountAttempt, err)
 		}
 	}
 
@@ -101,13 +109,13 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 	// Check IP attempts
 	ipAttempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.ipKey(ipAddress), time.Now().Add(-AttemptWindow))
 	if err != nil {
-		return fmt.Errorf("failed to get IP attempt count: %w", err)
+		return errors.Join(ErrGetIPAttemptCount, err)
 	}
 
 	if ipAttempts >= MaxIPAttempts {
 		// Impose IP rate limit
 		if err := rl.imposeLockout(ctx, rl.ipKey(ipAddress), IPLockoutDuration); err != nil {
-			return fmt.Errorf("failed to impose IP lockout: %w", err)
+			return errors.Join(ErrImposeIPLockout, err)
 		}
 		return ErrIPRateLimited
 	}
@@ -116,13 +124,13 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 	if username != "" {
 		accountAttempts, err := rl.repos.Account().GetLoginAttemptCount(ctx, rl.accountKey(username), time.Now().Add(-AttemptWindow))
 		if err != nil {
-			return fmt.Errorf("failed to get account attempt count: %w", err)
+			return errors.Join(ErrGetAccountAttemptCount, err)
 		}
 
 		if accountAttempts >= MaxLoginAttempts {
 			// Impose account lockout
 			if err := rl.imposeLockout(ctx, rl.accountKey(username), AccountLockoutDuration); err != nil {
-				return fmt.Errorf("failed to impose account lockout: %w", err)
+				return errors.Join(ErrImposeAccountLockout, err)
 			}
 			return ErrAccountLocked
 		}
@@ -130,11 +138,14 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 		// Return remaining attempts info
 		remainingAttempts := MaxLoginAttempts - accountAttempts
 		if remainingAttempts <= 2 {
-			return fmt.Errorf("invalid credentials, %d attempts remaining before lockout", remainingAttempts)
+			zap.L().Warn("Low remaining login attempts", 
+				zap.String("username", username),
+				zap.Int("remaining_attempts", remainingAttempts))
+			return ErrInvalidCredentials
 		}
 	}
 
-	return errors.New("invalid credentials")
+	return ErrInvalidCredentials
 }
 
 // imposeLockout creates a rate limit entry

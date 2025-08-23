@@ -4,15 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SearchCostTrackingWrapper wraps a SearchRepository with comprehensive cost tracking
@@ -27,7 +27,8 @@ type SearchCostTrackingWrapper struct {
 
 // NewSearchCostTrackingWrapper creates a new cost tracking wrapper for search operations
 func NewSearchCostTrackingWrapper(searchRepo *SearchRepository, costRepo *SearchCostRepository, costTracker *cost.Tracker, logger *zap.Logger) *SearchCostTrackingWrapper {
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
@@ -110,7 +111,7 @@ func (w *SearchCostTrackingWrapper) searchAccountsWithCostTracking(ctx context.C
 				zap.String("user_id", userID),
 				zap.String("operation", operationType),
 				zap.Error(err))
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -141,7 +142,7 @@ func (w *SearchCostTrackingWrapper) searchAccountsAdvancedWithCostTracking(ctx c
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -169,7 +170,7 @@ func (w *SearchCostTrackingWrapper) searchStatusesWithCostTracking(ctx context.C
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -193,7 +194,7 @@ func (w *SearchCostTrackingWrapper) searchStatusesWithOptionsAndCostTracking(ctx
 	estimatedCost := w.estimateSearchCost(operationType, options.Limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -222,7 +223,7 @@ func (w *SearchCostTrackingWrapper) searchStatusesAdvancedWithCostTracking(ctx c
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -245,7 +246,7 @@ func (w *SearchCostTrackingWrapper) searchAllWithCostTracking(ctx context.Contex
 	estimatedCost := w.estimateSearchCost(operationType, limit*3) // Searches across multiple types
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -270,7 +271,7 @@ func (w *SearchCostTrackingWrapper) searchHashtagsWithCostTracking(ctx context.C
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -293,7 +294,7 @@ func (w *SearchCostTrackingWrapper) searchHashtagsAdvancedWithCostTracking(ctx c
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -316,7 +317,7 @@ func (w *SearchCostTrackingWrapper) getSearchSuggestionsWithCostTracking(ctx con
 	estimatedCost := w.estimateSearchCost(operationType, limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "budget check")
 		}
 	}
 
@@ -340,7 +341,7 @@ func (w *SearchCostTrackingWrapper) searchByEmbeddingWithCostTracking(ctx contex
 	estimatedCost := w.estimateSemanticSearchCost(len(queryEmbedding), limit)
 	if userID != "" {
 		if err := w.costRepo.CheckBudget(ctx, userID, operationType, estimatedCost); err != nil {
-			return nil, fmt.Errorf("semantic search budget exceeded: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "search cost tracking", "semantic budget check")
 		}
 	}
 

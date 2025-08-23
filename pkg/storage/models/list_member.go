@@ -32,13 +32,23 @@ func (lm *ListMember) BeforeCreate() error {
 	lm.PK = fmt.Sprintf("LIST_MEMBERS#%s", lm.ListID)
 	lm.SK = lm.AccountID
 	lm.AddedAt = time.Now()
-	lm.UpdateKeys()
-	return nil
+	return lm.UpdateKeys()
 }
 
 // UpdateKeys updates the GSI keys based on current field values
-func (lm *ListMember) UpdateKeys() {
+func (lm *ListMember) UpdateKeys() error {
 	// Set up GSI1 keys for reverse lookup
 	lm.GSI1PK = fmt.Sprintf("ACCOUNT_LISTS#%s", lm.AccountID)
 	lm.GSI1SK = fmt.Sprintf("%s#%s", lm.ListID, lm.ListUsername)
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (lm *ListMember) GetPK() string {
+	return lm.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (lm *ListMember) GetSK() string {
+	return lm.SK
 }

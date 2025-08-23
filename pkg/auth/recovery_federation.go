@@ -6,11 +6,12 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -25,18 +26,19 @@ type FederationDeliveryService interface {
 
 // RecoveryFederationService handles ActivityPub notifications for recovery
 type RecoveryFederationService struct {
-	repos         StorageProvider
-	fedService    FederationDeliveryService
-	logger        *zap.Logger
-	domain        string
+	repos          StorageProvider
+	fedService     FederationDeliveryService
+	logger         *zap.Logger
+	domain         string
 	secretsManager SecretsManager
+	config         *config.Config
 }
 
 // NewRecoveryFederationService creates a new recovery federation service
-func NewRecoveryFederationService(repos StorageProvider, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
+func NewRecoveryFederationService(cfg *config.Config, repos StorageProvider, fedService FederationDeliveryService, domain string, logger *zap.Logger) *RecoveryFederationService {
 	// Initialize Secrets Manager for system actor keys
 	secretsManager, err := NewAWSSecretsManager(SecretsManagerConfig{
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      cfg.Region,
 		KeyPrefix:   "lesser/system-actor-keys",
 		CacheTTL:    5 * time.Minute,
 		Description: "Lesser system actor private keys for recovery federation",
@@ -53,6 +55,7 @@ func NewRecoveryFederationService(repos StorageProvider, fedService FederationDe
 		domain:         domain,
 		logger:         logger,
 		secretsManager: secretsManager,
+		config:         cfg,
 	}
 }
 
@@ -106,7 +109,11 @@ func (s *RecoveryFederationService) SendTrusteeInvitation(ctx context.Context, f
 	// Get the signing actor
 	signingActor, err := s.repos.Actor().GetActor(ctx, fromUser)
 	if err != nil {
-		return fmt.Errorf("failed to get signing actor: %w", err)
+		s.logger.Error("failed to get signing actor for trustee invitation",
+			zap.Error(err),
+			zap.String("from_user", fromUser),
+			zap.String("trustee_actor_id", trusteeActorID))
+		return errors.Join(ErrSigningActorRetrievalFailed, err)
 	}
 
 	// Send via federation
@@ -200,18 +207,18 @@ func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Contex
 	// Extract recovery request information
 	object, ok := activity.Object.(map[string]any)
 	if !ok {
-		return fmt.Errorf("invalid activity object")
+		return ErrInvalidActivityObject
 	}
 
 	// Look for our custom recovery confirmation
 	recoveryData, ok := object["lesser:recoveryConfirmation"].(map[string]any)
 	if !ok {
-		return fmt.Errorf("not a recovery confirmation activity")
+		return ErrNotRecoveryConfirmationActivity
 	}
 
 	requestID, ok := recoveryData["requestId"].(string)
 	if !ok {
-		return fmt.Errorf("missing request ID")
+		return ErrMissingRequestID
 	}
 
 	trusteeActorID := activity.Actor
@@ -219,7 +226,11 @@ func (s *RecoveryFederationService) HandleTrusteeConfirmation(ctx context.Contex
 	// Process the confirmation
 	socialRecovery := NewSocialRecoveryService(s.repos, s.logger)
 	if err := socialRecovery.ConfirmRecovery(ctx, requestID, trusteeActorID); err != nil {
-		return fmt.Errorf("failed to process recovery confirmation: %w", err)
+		s.logger.Error("failed to process recovery confirmation",
+			zap.Error(err),
+			zap.String("request_id", requestID),
+			zap.String("trustee_actor_id", trusteeActorID))
+		return errors.Join(ErrRecoveryConfirmationFailed, err)
 	}
 
 	s.logger.Info("processed recovery confirmation via federation",
@@ -234,7 +245,10 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 	// Get user's actor
 	actor, err := s.repos.Actor().GetActor(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get actor: %w", err)
+		s.logger.Error("failed to get actor for recovery approval notification",
+			zap.Error(err),
+			zap.String("username", username))
+		return errors.Join(ErrActorRetrievalFailed, err)
 	}
 
 	// If the user has alternative contact methods (like push notifications), use them
@@ -337,8 +351,8 @@ func (s *RecoveryFederationService) SendRecoveryApprovalNotification(ctx context
 
 // getSystemPublicKey returns the system actor's public key PEM
 func (s *RecoveryFederationService) getSystemPublicKey() string {
-	// Try to get from environment first
-	if key := os.Getenv("SYSTEM_ACTOR_PUBLIC_KEY"); key != "" {
+	// Try to get from config first
+	if key := s.config.SystemActorPublicKey; key != "" {
 		return key
 	}
 
@@ -427,7 +441,7 @@ func (s *RecoveryFederationService) derivePublicKeyFromPrivate(privateKeyPEM str
 	// Decode the private key PEM
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
-		return "", fmt.Errorf("failed to decode private key PEM")
+		return "", ErrFailedToDecodePEM
 	}
 
 	// Parse the private key
@@ -436,7 +450,8 @@ func (s *RecoveryFederationService) derivePublicKeyFromPrivate(privateKeyPEM str
 		// Try PKCS1 format
 		privateKey, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
-			return "", fmt.Errorf("failed to parse private key: %w", err)
+			s.logger.Error("failed to parse private key in both PKCS8 and PKCS1 formats", zap.Error(err))
+			return "", errors.Join(ErrPrivateKeyParseFailed, err)
 		}
 	}
 
@@ -446,13 +461,16 @@ func (s *RecoveryFederationService) derivePublicKeyFromPrivate(privateKeyPEM str
 	case *rsa.PrivateKey:
 		publicKey = &priv.PublicKey
 	default:
-		return "", fmt.Errorf("unsupported private key type: %T", privateKey)
+		s.logger.Error("unsupported private key type for system actor",
+			zap.String("type", fmt.Sprintf("%T", privateKey)))
+		return "", ErrUnsupportedPrivateKeyType
 	}
 
 	// Marshal the public key
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
+		s.logger.Error("failed to marshal public key for system actor", zap.Error(err))
+		return "", errors.Join(ErrPublicKeyMarshalFailed, err)
 	}
 
 	// Encode to PEM
@@ -467,13 +485,16 @@ func (s *RecoveryFederationService) derivePublicKeyFromPrivate(privateKeyPEM str
 // GetSystemActorPrivateKey retrieves the system actor's private key from Secrets Manager
 func (s *RecoveryFederationService) GetSystemActorPrivateKey(ctx context.Context) (string, error) {
 	if s.secretsManager == nil {
-		return "", fmt.Errorf("secrets manager not available")
+		return "", ErrSecretsManagerNotAvailable
 	}
 
 	systemKeyID := fmt.Sprintf("system-actor-%s", s.domain)
 	privateKeyPEM, err := s.secretsManager.RetrievePrivateKey(ctx, systemKeyID)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve system actor private key: %w", err)
+		s.logger.Error("failed to retrieve system actor private key",
+			zap.Error(err),
+			zap.String("system_key_id", systemKeyID))
+		return "", errors.Join(ErrSystemActorKeyRetrievalFailed, err)
 	}
 
 	return privateKeyPEM, nil
@@ -482,7 +503,7 @@ func (s *RecoveryFederationService) GetSystemActorPrivateKey(ctx context.Context
 // RotateSystemActorKey rotates the system actor's key pair
 func (s *RecoveryFederationService) RotateSystemActorKey(ctx context.Context) error {
 	if s.secretsManager == nil {
-		return fmt.Errorf("secrets manager not available")
+		return ErrSecretsManagerNotAvailable
 	}
 
 	systemKeyID := fmt.Sprintf("system-actor-%s", s.domain)
@@ -491,7 +512,10 @@ func (s *RecoveryFederationService) RotateSystemActorKey(ctx context.Context) er
 	// Generate new key pair
 	publicKeyPEM, privateKeyPEM, err := s.secretsManager.RotateKey(ctx, systemKeyID)
 	if err != nil {
-		return fmt.Errorf("failed to rotate system actor key: %w", err)
+		s.logger.Error("failed to rotate system actor key",
+			zap.Error(err),
+			zap.String("system_key_id", systemKeyID))
+		return errors.Join(ErrSystemActorKeyRotationFailed, err)
 	}
 
 	// Update the system actor with the new public key

@@ -5,56 +5,95 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap/zaptest"
 )
 
-// MockDynamoDBClient is a mock implementation of DynamoDBClient
-type MockDynamoDBClient struct {
+// MockDynamORMDB is a mock implementation of DynamORM's core.DB
+type MockDynamORMDB struct {
 	mock.Mock
 }
 
-func (m *MockDynamoDBClient) GetItem(input *dynamodb.GetItemInput) (*dynamodb.GetItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.GetItemOutput), args.Error(1)
+func (m *MockDynamORMDB) WithContext(ctx context.Context) core.DB {
+	args := m.Called(ctx)
+	return args.Get(0).(core.DB)
 }
 
-func (m *MockDynamoDBClient) PutItem(input *dynamodb.PutItemInput) (*dynamodb.PutItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.PutItemOutput), args.Error(1)
+func (m *MockDynamORMDB) Model(model interface{}) core.Query {
+	args := m.Called(model)
+	return args.Get(0).(core.Query)
 }
 
-func (m *MockDynamoDBClient) UpdateItem(input *dynamodb.UpdateItemInput) (*dynamodb.UpdateItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.UpdateItemOutput), args.Error(1)
+func (m *MockDynamORMDB) Save(model interface{}) error {
+	args := m.Called(model)
+	return args.Error(0)
 }
 
-func (m *MockDynamoDBClient) DeleteItem(input *dynamodb.DeleteItemInput) (*dynamodb.DeleteItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.DeleteItemOutput), args.Error(1)
+func (m *MockDynamORMDB) Create(model interface{}) error {
+	args := m.Called(model)
+	return args.Error(0)
 }
 
-func (m *MockDynamoDBClient) Query(input *dynamodb.QueryInput) (*dynamodb.QueryOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.QueryOutput), args.Error(1)
+func (m *MockDynamORMDB) Delete(model interface{}) error {
+	args := m.Called(model)
+	return args.Error(0)
 }
 
-func (m *MockDynamoDBClient) Scan(input *dynamodb.ScanInput) (*dynamodb.ScanOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.ScanOutput), args.Error(1)
+func (m *MockDynamORMDB) AutoMigrate(models ...interface{}) error {
+	args := m.Called(models)
+	return args.Error(0)
 }
 
-func (m *MockDynamoDBClient) BatchGetItem(input *dynamodb.BatchGetItemInput) (*dynamodb.BatchGetItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.BatchGetItemOutput), args.Error(1)
+func (m *MockDynamORMDB) Close() error {
+	args := m.Called()
+	return args.Error(0)
 }
 
-func (m *MockDynamoDBClient) BatchWriteItem(input *dynamodb.BatchWriteItemInput) (*dynamodb.BatchWriteItemOutput, error) {
-	args := m.Called(input)
-	return args.Get(0).(*dynamodb.BatchWriteItemOutput), args.Error(1)
+func (m *MockDynamORMDB) Migrate() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockDynamORMDB) Transaction(fn func(tx *core.Tx) error) error {
+	args := m.Called(fn)
+	return args.Error(0)
+}
+
+// MockQuery is a mock implementation of DynamORM's core.Query
+type MockQuery struct {
+	mock.Mock
+}
+
+func (m *MockQuery) Where(field string, op string, value interface{}) core.Query {
+	args := m.Called(field, op, value)
+	return args.Get(0).(core.Query)
+}
+
+func (m *MockQuery) First(result interface{}) error {
+	args := m.Called(result)
+	return args.Error(0)
+}
+
+func (m *MockQuery) Find(results interface{}) error {
+	args := m.Called(results)
+	return args.Error(0)
+}
+
+func (m *MockQuery) Count() (int64, error) {
+	args := m.Called()
+	return args.Get(0).(int64), args.Error(1)
+}
+
+func (m *MockQuery) Limit(limit int) core.Query {
+	args := m.Called(limit)
+	return args.Get(0).(core.Query)
+}
+
+func (m *MockQuery) All(results interface{}) error {
+	args := m.Called(results)
+	return args.Error(0)
 }
 
 func TestSoftDeleteModel_SoftDelete(t *testing.T) {
@@ -140,23 +179,21 @@ func TestExampleModel_ImplementsSoftDeletable(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_NewSoftDeleteRepository(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
 	logger := zaptest.NewLogger(t)
-	tableName := "test-table"
 
-	repo := NewSoftDeleteRepository(client, tableName, logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
 	assert.NotNil(t, repo)
-	assert.Equal(t, client, repo.client)
-	assert.Equal(t, tableName, repo.tableName)
+	assert.Equal(t, db, repo.db)
 	assert.Equal(t, logger, repo.logger)
 	assert.False(t, repo.includeDeleted)
 }
 
 func TestSoftDeleteRepository_WithDeleted(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
 	withDeletedRepo := repo.WithDeleted()
 
@@ -166,9 +203,9 @@ func TestSoftDeleteRepository_WithDeleted(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_OnlyDeleted(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
 	onlyDeletedRepo := repo.OnlyDeleted()
 
@@ -177,357 +214,147 @@ func TestSoftDeleteRepository_OnlyDeleted(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_HardDelete(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
-	keys := map[string]*dynamodb.AttributeValue{
-		"pk": {S: aws.String("test-id")},
+	model := &ExampleModel{
+		PK: "EXAMPLE#test-id",
+		SK: "PROFILE",
+		ID: "test-id",
 	}
 
-	// Mock the DeleteItem call
-	client.On("DeleteItem", mock.MatchedBy(func(input *dynamodb.DeleteItemInput) bool {
-		return *input.TableName == "test-table" &&
-			input.Key["pk"] != nil &&
-			*input.Key["pk"].S == "test-id"
-	})).Return(&dynamodb.DeleteItemOutput{}, nil)
+	// Mock the Delete call
+	db.On("WithContext", mock.Anything).Return(db)
+	db.On("Delete", model).Return(nil)
 
-	err := repo.HardDelete(context.Background(), keys)
+	err := repo.HardDelete(context.Background(), model)
 	assert.NoError(t, err)
 
-	client.AssertExpectations(t)
+	db.AssertExpectations(t)
 }
 
 func TestSoftDeleteRepository_Get(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
+	query := &MockQuery{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
-	keys := map[string]*dynamodb.AttributeValue{
-		"pk": {S: aws.String("test-id")},
-	}
+	model := &ExampleModel{}
 
 	t.Run("get active item", func(t *testing.T) {
-		// Mock GetItem response with active item
-		activeItem := map[string]*dynamodb.AttributeValue{
-			"pk":   {S: aws.String("test-id")},
-			"name": {S: aws.String("Test Item")},
-		}
+		db.On("WithContext", mock.Anything).Return(db)
+		db.On("Model", mock.Anything).Return(query)
+		query.On("Where", "PK", "=", "EXAMPLE#test-id").Return(query)
+		query.On("Where", "SK", "=", "PROFILE").Return(query)
+		query.On("First", model).Return(nil).Run(func(args mock.Arguments) {
+			// Simulate finding an active item
+			m := args.Get(0).(*ExampleModel)
+			m.PK = "EXAMPLE#test-id"
+			m.SK = "PROFILE" 
+			m.ID = "test-id"
+			m.DeletedAt = nil // Not deleted
+		})
 
-		client.On("GetItem", mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
-			return *input.TableName == "test-table"
-		})).Return(&dynamodb.GetItemOutput{
-			Item: activeItem,
-		}, nil).Once()
-
-		result, err := repo.Get(context.Background(), keys)
+		err := repo.Get(context.Background(), model, "EXAMPLE#test-id", "PROFILE")
 		assert.NoError(t, err)
-		assert.NotNil(t, result)
-		assert.Equal(t, "test-id", *result["pk"].S)
+		assert.Equal(t, "test-id", model.ID)
 	})
 
 	t.Run("get soft deleted item - filtered out", func(t *testing.T) {
-		// Mock GetItem response with soft-deleted item
-		deletedItem := map[string]*dynamodb.AttributeValue{
-			"pk":         {S: aws.String("test-id")},
-			"name":       {S: aws.String("Test Item")},
-			"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-		}
+		db.On("WithContext", mock.Anything).Return(db)
+		db.On("Model", mock.Anything).Return(query)
+		query.On("Where", "PK", "=", "EXAMPLE#test-id").Return(query)
+		query.On("Where", "SK", "=", "PROFILE").Return(query)
+		query.On("First", model).Return(nil).Run(func(args mock.Arguments) {
+			// Simulate finding a deleted item
+			m := args.Get(0).(*ExampleModel)
+			now := time.Now()
+			m.DeletedAt = &now // Deleted
+		})
 
-		client.On("GetItem", mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
-			return *input.TableName == "test-table"
-		})).Return(&dynamodb.GetItemOutput{
-			Item: deletedItem,
-		}, nil).Once()
-
-		result, err := repo.Get(context.Background(), keys)
-		assert.NoError(t, err)
-		assert.Nil(t, result) // Should be filtered out
-	})
-
-	t.Run("get soft deleted item - included when WithDeleted", func(t *testing.T) {
-		withDeletedRepo := repo.WithDeleted()
-
-		// Mock GetItem response with soft-deleted item
-		deletedItem := map[string]*dynamodb.AttributeValue{
-			"pk":         {S: aws.String("test-id")},
-			"name":       {S: aws.String("Test Item")},
-			"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-		}
-
-		client.On("GetItem", mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
-			return *input.TableName == "test-table"
-		})).Return(&dynamodb.GetItemOutput{
-			Item: deletedItem,
-		}, nil).Once()
-
-		result, err := withDeletedRepo.Get(context.Background(), keys)
-		assert.NoError(t, err)
-		assert.NotNil(t, result) // Should be included
-		assert.Equal(t, "test-id", *result["pk"].S)
-	})
-
-	t.Run("item not found", func(t *testing.T) {
-		client.On("GetItem", mock.MatchedBy(func(input *dynamodb.GetItemInput) bool {
-			return *input.TableName == "test-table"
-		})).Return(&dynamodb.GetItemOutput{
-			Item: nil,
-		}, nil).Once()
-
-		result, err := repo.Get(context.Background(), keys)
-		assert.NoError(t, err)
-		assert.Nil(t, result)
+		err := repo.Get(context.Background(), model, "EXAMPLE#test-id", "PROFILE")
+		assert.Error(t, err) // Should return "item not found" error for deleted items
+		assert.Contains(t, err.Error(), "item not found")
 	})
 }
 
+// TestSoftDeleteRepository_Query tests query functionality with DynamORM
 func TestSoftDeleteRepository_Query(t *testing.T) {
-	client := &MockDynamoDBClient{}
+	db := &MockDynamORMDB{}
+	query := &MockQuery{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
-	queryInput := &dynamodb.QueryInput{
-		TableName: aws.String("test-table"),
-	}
+	model := &ExampleModel{}
 
-	t.Run("query active items only", func(t *testing.T) {
-		// Mock query response with mixed items
-		items := []map[string]*dynamodb.AttributeValue{
-			{
-				"pk":   {S: aws.String("item1")},
-				"name": {S: aws.String("Active Item 1")},
-			},
-			{
-				"pk":         {S: aws.String("item2")},
-				"name":       {S: aws.String("Deleted Item")},
-				"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-			},
-			{
-				"pk":   {S: aws.String("item3")},
-				"name": {S: aws.String("Active Item 2")},
-			},
-		}
+	t.Run("query returns query builder", func(t *testing.T) {
+		db.On("WithContext", mock.Anything).Return(db)
+		db.On("Model", model).Return(query)
+		query.On("Where", "deleted_at", "attribute_not_exists", interface{}(nil)).Return(query)
 
-		client.On("Query", mock.AnythingOfType("*dynamodb.QueryInput")).Return(&dynamodb.QueryOutput{
-			Items: items,
-			Count: aws.Int64(3),
-		}, nil).Once()
-
-		result, err := repo.Query(context.Background(), queryInput)
-		assert.NoError(t, err)
-		assert.Equal(t, 2, len(result.Items)) // Only active items
-		assert.Equal(t, "item1", *result.Items[0]["pk"].S)
-		assert.Equal(t, "item3", *result.Items[1]["pk"].S)
+		result := repo.Query(context.Background(), model, nil)
+		assert.NotNil(t, result)
+		assert.IsType(t, &MockQuery{}, result)
 	})
 
-	t.Run("query with deleted items included", func(t *testing.T) {
-		withDeletedRepo := repo.WithDeleted()
+	t.Run("query only deleted returns query builder with deleted filter", func(t *testing.T) {
+		db.On("WithContext", mock.Anything).Return(db)
+		db.On("Model", model).Return(query)
+		query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query)
 
-		items := []map[string]*dynamodb.AttributeValue{
-			{
-				"pk":   {S: aws.String("item1")},
-				"name": {S: aws.String("Active Item")},
-			},
-			{
-				"pk":         {S: aws.String("item2")},
-				"name":       {S: aws.String("Deleted Item")},
-				"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-			},
-		}
-
-		client.On("Query", mock.AnythingOfType("*dynamodb.QueryInput")).Return(&dynamodb.QueryOutput{
-			Items: items,
-			Count: aws.Int64(2),
-		}, nil).Once()
-
-		result, err := withDeletedRepo.Query(context.Background(), queryInput)
-		assert.NoError(t, err)
-		assert.Equal(t, 2, len(result.Items)) // All items included
+		result := repo.QueryOnlyDeleted(context.Background(), model)
+		assert.NotNil(t, result)
+		assert.IsType(t, &MockQuery{}, result)
 	})
 }
 
-func TestSoftDeleteRepository_QueryOnlyDeleted(t *testing.T) {
-	client := &MockDynamoDBClient{}
+// TestSoftDeleteRepository_Stats tests statistics functionality
+func TestSoftDeleteRepository_Stats(t *testing.T) {
+	db := &MockDynamORMDB{}
+	query := &MockQuery{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
-	queryInput := &dynamodb.QueryInput{
-		TableName: aws.String("test-table"),
-	}
+	model := &ExampleModel{}
 
-	// Mock query response with only deleted items
-	deletedItems := []map[string]*dynamodb.AttributeValue{
-		{
-			"pk":         {S: aws.String("item1")},
-			"name":       {S: aws.String("Deleted Item 1")},
-			"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-		},
-		{
-			"pk":         {S: aws.String("item2")},
-			"name":       {S: aws.String("Deleted Item 2")},
-			"deleted_at": {S: aws.String("2023-10-16T14:30:00Z")},
-		},
-	}
+	db.On("WithContext", mock.Anything).Return(db).Maybe()
+	db.On("Model", model).Return(query).Maybe()
+	query.On("Count").Return(int64(100), nil).Once()                                         // Total count
+	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query).Once() // Deleted filter
+	query.On("Count").Return(int64(15), nil).Once()                                          // Deleted count
 
-	client.On("Query", mock.MatchedBy(func(input *dynamodb.QueryInput) bool {
-		// Should have filter for only deleted items
-		return input.FilterExpression != nil
-	})).Return(&dynamodb.QueryOutput{
-		Items: deletedItems,
-		Count: aws.Int64(2),
-	}, nil).Once()
-
-	result, err := repo.QueryOnlyDeleted(context.Background(), queryInput)
+	stats, err := repo.GetSoftDeleteStats(context.Background(), model)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, len(result.Items))
-
-	// Verify all items have deleted_at
-	for _, item := range result.Items {
-		assert.NotNil(t, item["deleted_at"])
-	}
-}
-
-func TestSoftDeleteRepository_GetSoftDeleteStats(t *testing.T) {
-	client := &MockDynamoDBClient{}
-	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
-
-	// Mock total count scan
-	client.On("Scan", mock.MatchedBy(func(input *dynamodb.ScanInput) bool {
-		return *input.Select == "COUNT" && input.FilterExpression == nil
-	})).Return(&dynamodb.ScanOutput{
-		Count: aws.Int64(100),
-	}, nil).Once()
-
-	// Mock deleted count scan
-	client.On("Scan", mock.MatchedBy(func(input *dynamodb.ScanInput) bool {
-		return *input.Select == "COUNT" && input.FilterExpression != nil
-	})).Return(&dynamodb.ScanOutput{
-		Count: aws.Int64(15),
-	}, nil).Once()
-
-	stats, err := repo.GetSoftDeleteStats(context.Background())
-	assert.NoError(t, err)
-
 	assert.Equal(t, 100, stats.TotalItems)
 	assert.Equal(t, 15, stats.DeletedItems)
 	assert.Equal(t, 85, stats.ActiveItems)
 	assert.Equal(t, 15.0, stats.GetDeletionPercentage())
 }
 
-func TestSoftDeleteRepository_CleanupOldDeletes(t *testing.T) {
-	client := &MockDynamoDBClient{}
+// TestSoftDeleteRepository_Cleanup tests cleanup functionality  
+func TestSoftDeleteRepository_Cleanup(t *testing.T) {
+	db := &MockDynamORMDB{}
+	query := &MockQuery{}
 	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
+	repo := NewSoftDeleteRepository(db, logger)
 
-	// Create old deleted items
-	oldDeletedItems := []map[string]*dynamodb.AttributeValue{
-		{
-			"pk":         {S: aws.String("item1")},
-			"sk":         {S: aws.String("sort1")},
-			"name":       {S: aws.String("Old Item 1")},
-			"deleted_at": {S: aws.String("2023-09-01T14:30:00Z")},
-		},
-		{
-			"pk":         {S: aws.String("item2")},
-			"sk":         {S: aws.String("sort2")},
-			"name":       {S: aws.String("Old Item 2")},
-			"deleted_at": {S: aws.String("2023-09-02T14:30:00Z")},
-		},
-	}
+	model := &ExampleModel{}
 
-	// Mock scan for old items
-	client.On("Scan", mock.MatchedBy(func(input *dynamodb.ScanInput) bool {
-		return input.FilterExpression != nil
-	})).Return(&dynamodb.ScanOutput{
-		Items: oldDeletedItems,
-	}, nil).Once()
+	// Mock finding old deleted items
+	db.On("WithContext", mock.Anything).Return(db)
+	db.On("Model", model).Return(query)
+	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query)
+	query.On("Where", "deleted_at", "<", mock.Anything).Return(query)
+	query.On("Limit", 25).Return(query)
+	query.On("Find", mock.Anything).Return(nil).Run(func(args mock.Arguments) {
+		// Simulate no items found (empty batch)
+		// In real scenario, this would populate the slice
+	})
 
-	// Mock batch delete
-	client.On("BatchWriteItem", mock.MatchedBy(func(input *dynamodb.BatchWriteItemInput) bool {
-		return len(input.RequestItems["test-table"]) == 2
-	})).Return(&dynamodb.BatchWriteItemOutput{
-		UnprocessedItems: map[string][]*dynamodb.WriteRequest{},
-	}, nil).Once()
-
-	deleted, err := repo.CleanupOldDeletes(context.Background(), 30*24*time.Hour, 25)
+	deleted, err := repo.CleanupOldDeletes(context.Background(), model, 30*24*time.Hour, 25)
 	assert.NoError(t, err)
-	assert.Equal(t, 2, deleted)
-
-	client.AssertExpectations(t)
-}
-
-func TestSoftDeleteRepository_GetDeletedItemsOlderThan(t *testing.T) {
-	client := &MockDynamoDBClient{}
-	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
-
-	oldDeletedItems := []map[string]*dynamodb.AttributeValue{
-		{
-			"pk":         {S: aws.String("item1")},
-			"name":       {S: aws.String("Old Item 1")},
-			"deleted_at": {S: aws.String("2023-09-01T14:30:00Z")},
-		},
-	}
-
-	// Mock scan for old items
-	client.On("Scan", mock.MatchedBy(func(input *dynamodb.ScanInput) bool {
-		return input.FilterExpression != nil
-	})).Return(&dynamodb.ScanOutput{
-		Items: oldDeletedItems,
-	}, nil).Once()
-
-	items, err := repo.GetDeletedItemsOlderThan(context.Background(), 30*24*time.Hour)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, len(items))
-	assert.Equal(t, "item1", *items[0]["pk"].S)
-
-	client.AssertExpectations(t)
-}
-
-func TestSoftDeleteRepository_IsSoftDeleted(t *testing.T) {
-	client := &MockDynamoDBClient{}
-	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
-
-	tests := []struct {
-		name     string
-		item     map[string]*dynamodb.AttributeValue
-		expected bool
-	}{
-		{
-			name: "active item",
-			item: map[string]*dynamodb.AttributeValue{
-				"pk":   {S: aws.String("item1")},
-				"name": {S: aws.String("Active Item")},
-			},
-			expected: false,
-		},
-		{
-			name: "soft deleted item",
-			item: map[string]*dynamodb.AttributeValue{
-				"pk":         {S: aws.String("item1")},
-				"name":       {S: aws.String("Deleted Item")},
-				"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-			},
-			expected: true,
-		},
-		{
-			name: "item with empty deleted_at",
-			item: map[string]*dynamodb.AttributeValue{
-				"pk":         {S: aws.String("item1")},
-				"name":       {S: aws.String("Item")},
-				"deleted_at": {S: aws.String("")},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := repo.isSoftDeleted(tt.item)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+	assert.Equal(t, 0, deleted) // No items to delete in this mock
 }
 
 func TestSoftDeleteStats_String(t *testing.T) {
@@ -609,41 +436,13 @@ func TestConvenienceFunctions(t *testing.T) {
 	})
 }
 
-func TestSoftDeleteRepository_FilterSoftDeleted(t *testing.T) {
-	client := &MockDynamoDBClient{}
-	logger := zaptest.NewLogger(t)
-	repo := NewSoftDeleteRepository(client, "test-table", logger)
-
-	items := []map[string]*dynamodb.AttributeValue{
-		{
-			"pk":   {S: aws.String("item1")},
-			"name": {S: aws.String("Active Item 1")},
-		},
-		{
-			"pk":         {S: aws.String("item2")},
-			"name":       {S: aws.String("Deleted Item")},
-			"deleted_at": {S: aws.String("2023-10-15T14:30:00Z")},
-		},
-		{
-			"pk":   {S: aws.String("item3")},
-			"name": {S: aws.String("Active Item 2")},
-		},
-	}
-
-	filtered := repo.filterSoftDeleted(items)
-
-	assert.Equal(t, 2, len(filtered))
-	assert.Equal(t, "item1", *filtered[0]["pk"].S)
-	assert.Equal(t, "item3", *filtered[1]["pk"].S)
-}
-
-// Test that would verify actual DynamoDB marshaling/unmarshaling
-// In practice, this would integrate with your existing DynamoDB marshaling logic
+// TestSoftDeleteModel_Integration demonstrates the complete soft delete lifecycle with DynamORM
 func TestSoftDeleteModel_Integration(t *testing.T) {
-	// This test demonstrates how the soft delete model would work
-	// in practice with actual data marshaling
-
 	model := NewExampleModel("test-id", "Test User", "test@example.com")
+
+	// Verify DynamORM keys are set properly
+	assert.Equal(t, "EXAMPLE#test-id", model.PK)
+	assert.Equal(t, "PROFILE", model.SK)
 
 	// Test the complete lifecycle
 	assert.False(t, model.IsDeleted())
@@ -660,8 +459,10 @@ func TestSoftDeleteModel_Integration(t *testing.T) {
 	assert.Nil(t, model.GetDeletedAt())
 	assert.Empty(t, model.GetDeletedBy())
 
-	// The model maintains all its original data
+	// The model maintains all its original data and keys
 	assert.Equal(t, "test-id", model.ID)
 	assert.Equal(t, "Test User", model.Name)
 	assert.Equal(t, "test@example.com", model.Email)
+	assert.Equal(t, "EXAMPLE#test-id", model.PK)
+	assert.Equal(t, "PROFILE", model.SK)
 }

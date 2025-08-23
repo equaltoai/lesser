@@ -35,7 +35,7 @@ func AddLinkHeader(headers map[string]string, baseURL string, endpoint string, c
 	queryParams.Set("max_id", cursor)
 
 	for key, value := range params {
-		if value != "" && value != "0" && value != "false" {
+		if value != "" && value != "0" && value != StringFalse {
 			queryParams.Set(key, value)
 		}
 	}

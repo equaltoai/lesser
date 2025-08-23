@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -301,7 +302,7 @@ func sliceContains(slice []string, item string) bool {
 // createEnhancedMediaConvertJob creates a comprehensive MediaConvert job with cost tracking
 func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3InputKey string, event MediaProcessingEvent, plan *TranscodingPlan) (string, error) {
 	if err := common.ValidateRequiredParam("mediaConvertRole", mp.mediaConvertRole); err != nil {
-		return "", fmt.Errorf("MediaConvert role not configured")
+		return "", ErrMediaConvertRoleNotConfigured
 	}
 
 	// Define input and output locations
@@ -413,7 +414,7 @@ func (mp *MediaProcessor) createEnhancedMediaConvertJob(ctx context.Context, s3I
 
 	result, err := mp.mediaConvertClient.CreateJob(ctx, createJobInput)
 	if err != nil {
-		return "", fmt.Errorf("failed to create enhanced MediaConvert job: %w", err)
+		return "", errors.Join(ErrEnhancedMediaConvertJobCreation, err)
 	}
 
 	return aws.ToString(result.Job.Id), nil
@@ -518,10 +519,10 @@ func (mp *MediaProcessor) processAudioWithCostTracking(ctx context.Context, data
 	// Upload original audio
 	audioKey, err := sanitizeS3Key(event.Username, event.MediaID, "audio.mp3")
 	if err != nil {
-		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+		return result, errors.Join(ErrS3KeySanitizationAudio, err)
 	}
 	if err := mp.uploadToS3(ctx, audioKey, data, "audio/mpeg"); err != nil {
-		return result, fmt.Errorf("failed to upload audio: %w", err)
+		return result, errors.Join(ErrAudioUpload, err)
 	}
 
 	// Track costs

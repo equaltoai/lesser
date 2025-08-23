@@ -3,7 +3,7 @@ package health
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 	"github.com/equaltoai/lesser/pkg/common"
 )
@@ -193,19 +193,19 @@ func (e *AggregationEvent) FromJSON(data []byte) error {
 // Validate checks if the health check event is valid
 func (e *HealthCheckEvent) Validate() error {
 	if err := common.ValidateRequiredParam("e.Detail.Action", e.Detail.Action); err != nil {
-		return fmt.Errorf("action is required")
+		return ErrActionRequired
 	}
 
 	if e.Detail.Action == "check_health" && len(e.Detail.Domains) == 0 && len(e.Detail.InstanceIDs) == 0 {
-		return fmt.Errorf("domains or instance_ids required for health check action")
+		return ErrDomainsOrInstanceIDsRequired
 	}
 
 	if e.Detail.BatchSize < 0 {
-		return fmt.Errorf("batch_size must be positive")
+		return ErrBatchSizeMustBePositive
 	}
 
 	if e.Detail.Timeout < 0 {
-		return fmt.Errorf("timeout must be positive")
+		return ErrTimeoutMustBePositive
 	}
 
 	return nil
@@ -214,15 +214,15 @@ func (e *HealthCheckEvent) Validate() error {
 // Validate checks if the aggregation event is valid
 func (e *AggregationEvent) Validate() error {
 	if err := common.ValidateRequiredParam("e.Detail.Action", e.Detail.Action); err != nil {
-		return fmt.Errorf("action is required")
+		return ErrActionRequired
 	}
 
 	if err := common.ValidateSliceNotEmpty("e.Detail.Domains", e.Detail.Domains); err != nil {
-		return fmt.Errorf("domains required for aggregation")
+		return ErrDomainsRequiredForAggregation
 	}
 
 	if err := common.ValidateSliceNotEmpty("e.Detail.Windows", e.Detail.Windows); err != nil {
-		return fmt.Errorf("windows required for aggregation")
+		return ErrWindowsRequiredForAggregation
 	}
 
 	// Validate window formats
@@ -232,7 +232,8 @@ func (e *AggregationEvent) Validate() error {
 
 	for _, window := range e.Detail.Windows {
 		if !validWindows[window] {
-			return fmt.Errorf("invalid window format: %s (must be 1h, 24h, or 7d)", window)
+			return errors.Join(ErrInvalidWindowFormat,
+				errors.New(window+" (must be 1h, 24h, or 7d)"))
 		}
 	}
 

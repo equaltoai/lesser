@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
@@ -48,36 +49,46 @@ type QuotePostResult struct {
 func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteRequest) (*QuotePostResult, error) {
 	// Validate input
 	if err := qs.validateCreateQuoteRequest(req); err != nil {
-		return nil, fmt.Errorf("invalid quote request: %w", err)
+		qs.logger.Error("quote request validation failed", zap.Error(err))
+		return nil, services.ErrInvalidQuoteRequest
 	}
 
 	// Get the target status
 	targetStatus, err := qs.repos.Status().GetStatus(ctx, req.TargetStatusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get target status: %w", err)
+		qs.logger.Error("failed to get target status", zap.String("status_id", req.TargetStatusID), zap.Error(err))
+		return nil, services.ErrGetTargetStatus
 	}
 	if targetStatus == nil {
-		return nil, fmt.Errorf("target status not found")
+		return nil, services.ErrTargetStatusNotFound
 	}
 
 	// Check if target is quotable
 	if !qs.isStatusQuotable(targetStatus) {
-		return nil, fmt.Errorf("target status is not quotable")
+		return nil, services.ErrTargetStatusNotQuotable
 	}
 
 	// Check quote permissions
 	canQuote, err := qs.checkQuotePermissions(ctx, req.QuoterUsername, targetStatus)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check quote permissions: %w", err)
+		qs.logger.Error("failed to check quote permissions", 
+			zap.String("quoter", req.QuoterUsername), 
+			zap.String("target_author", targetStatus.AuthorUsername), 
+			zap.Error(err))
+		return nil, services.ErrCheckQuotePermissions
 	}
 	if !canQuote {
-		return nil, fmt.Errorf("not authorized to quote this status")
+		return nil, services.ErrNotAuthorizedToQuote
 	}
 
 	// Create the quote status
 	quoteStatus, err := qs.createQuoteStatus(ctx, req, targetStatus)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create quote status: %w", err)
+		qs.logger.Error("failed to create quote status", 
+			zap.String("quoter", req.QuoterUsername), 
+			zap.String("target_status_id", req.TargetStatusID), 
+			zap.Error(err))
+		return nil, services.ErrCreateQuoteStatus
 	}
 
 	// Create the quote relationship
@@ -87,7 +98,7 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 		qs.logger.Error("failed to create quote relationship, status may be orphaned",
 			zap.String("quote_status_id", quoteStatus.StatusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create quote relationship: %w", err)
+		return nil, services.ErrCreateQuoteRelationship
 	}
 
 	// Update quote counts
@@ -114,7 +125,8 @@ func (qs *QuoteService) GetQuotesForStatus(ctx context.Context, statusID string,
 	// Get quote relationships for the status
 	relationships, err := qs.getQuoteRelationships(ctx, statusID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get quote relationships: %w", err)
+		qs.logger.Error("failed to get quote relationships", zap.String("status_id", statusID), zap.Error(err))
+		return nil, services.ErrGetQuoteRelationships
 	}
 
 	// Get the quote statuses
@@ -145,21 +157,29 @@ func (qs *QuoteService) DeleteQuotePost(ctx context.Context, quoteStatusID, targ
 	// Get the quote relationship
 	rel, err := qs.getQuoteRelationshipByIDs(ctx, quoteStatusID, targetStatusID)
 	if err != nil {
-		return fmt.Errorf("failed to get quote relationship: %w", err)
+		qs.logger.Error("failed to get quote relationship", 
+			zap.String("quote_status_id", quoteStatusID), 
+			zap.String("target_status_id", targetStatusID), 
+			zap.Error(err))
+		return services.ErrGetQuoteRelationship
 	}
 	if rel == nil {
-		return fmt.Errorf("quote relationship not found")
+		return services.ErrQuoteRelationshipNotFound
 	}
 
 	// Verify ownership
 	if rel.QuoterID != username {
-		return fmt.Errorf("not authorized to delete this quote")
+		return services.ErrNotAuthorizedToDeleteQuote
 	}
 
 	// Mark relationship as withdrawn
 	rel.Withdraw()
 	if err := qs.saveQuoteRelationship(ctx, rel); err != nil {
-		return fmt.Errorf("failed to withdraw quote relationship: %w", err)
+		qs.logger.Error("failed to withdraw quote relationship", 
+			zap.String("quote_status_id", quoteStatusID), 
+			zap.String("target_status_id", targetStatusID), 
+			zap.Error(err))
+		return services.ErrWithdrawQuoteRelationship
 	}
 
 	// Update quote counts
@@ -174,7 +194,8 @@ func (qs *QuoteService) DeleteQuotePost(ctx context.Context, quoteStatusID, targ
 func (qs *QuoteService) GetQuotePermissions(ctx context.Context, username string) (*models.QuotePermissions, error) {
 	permissions, err := qs.getQuotePermissions(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get quote permissions: %w", err)
+		qs.logger.Error("failed to get quote permissions", zap.String("username", username), zap.Error(err))
+		return nil, services.ErrGetQuotePermissions
 	}
 
 	// If no permissions exist, return defaults
@@ -195,7 +216,8 @@ func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions 
 	// Try to get existing permissions first
 	existing, err := qs.repos.Quote().GetQuotePermissions(ctx, permissions.Username)
 	if err != nil {
-		return fmt.Errorf("failed to check existing permissions: %w", err)
+		qs.logger.Error("failed to check existing permissions", zap.String("username", permissions.Username), zap.Error(err))
+		return services.ErrCheckExistingPermissions
 	}
 	
 	if existing == nil {
@@ -207,7 +229,8 @@ func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions 
 	}
 	
 	if err != nil {
-		return fmt.Errorf("failed to save quote permissions: %w", err)
+		qs.logger.Error("failed to save quote permissions", zap.String("username", permissions.Username), zap.Error(err))
+		return services.ErrSaveQuotePermissions
 	}
 	
 	qs.logger.Info("quote permissions updated",
@@ -228,7 +251,7 @@ func (qs *QuoteService) validateCreateQuoteRequest(req *CreateQuoteRequest) erro
 	}
 	if req.Content != "" {
 		if err := common.ValidateStringLength("content", req.Content, 0, 500); err != nil {
-			return fmt.Errorf("quote content too long")
+			return services.ErrQuoteContentTooLong
 		}
 	}
 	return nil

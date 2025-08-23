@@ -63,7 +63,7 @@ func (MediaMetadata) TableName() string {
 }
 
 // UpdateKeys sets the primary and GSI keys based on the media metadata
-func (m *MediaMetadata) UpdateKeys() {
+func (m *MediaMetadata) UpdateKeys() error {
 	// Set primary keys following legacy pattern: MEDIA#{mediaID} / METADATA
 	m.PK = fmt.Sprintf("MEDIA#%s", m.MediaID)
 	m.SK = SKMetadata
@@ -71,6 +71,18 @@ func (m *MediaMetadata) UpdateKeys() {
 	// Set GSI1 keys for status-based queries
 	m.GSI1PK = fmt.Sprintf(KeyPatternStatus, m.Status)
 	m.GSI1SK = fmt.Sprintf("PROCESSED#%s", m.ProcessedAt.Format(time.RFC3339))
+	
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (m *MediaMetadata) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (m *MediaMetadata) GetSK() string {
+	return m.SK
 }
 
 // BeforeCreate sets up the model before creation
@@ -90,7 +102,9 @@ func (m *MediaMetadata) BeforeCreate() error {
 	}
 
 	// Ensure keys are set
-	m.UpdateKeys()
+	if err := m.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return m.Validate()
 }
@@ -105,7 +119,9 @@ func (m *MediaMetadata) BeforeUpdate() error {
 	}
 
 	// Update keys
-	m.UpdateKeys()
+	if err := m.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return m.Validate()
 }
@@ -113,7 +129,7 @@ func (m *MediaMetadata) BeforeUpdate() error {
 // Validate performs validation on the MediaMetadata
 func (m *MediaMetadata) Validate() error {
 	if err := common.ValidateRequiredParam("strings.TrimSpace(m.MediaID)", strings.TrimSpace(m.MediaID)); err != nil {
-		return fmt.Errorf("MediaID is required")
+		return ErrMediaMetadataIDRequired
 	}
 
 	// Validate status
@@ -126,25 +142,25 @@ func (m *MediaMetadata) Validate() error {
 		}
 	}
 	if !isValidStatus {
-		return fmt.Errorf("invalid status: %s", m.Status)
+		return fmt.Errorf("%w: %s", ErrMediaMetadataInvalidStatus, m.Status)
 	}
 
 	// Validate dimensions for video
 	if m.Width < 0 {
-		return fmt.Errorf("width must be non-negative")
+		return ErrMediaMetadataWidthNegative
 	}
 	if m.Height < 0 {
-		return fmt.Errorf("height must be non-negative")
+		return ErrMediaMetadataHeightNegative
 	}
 
 	// Validate duration
 	if m.Duration < 0 {
-		return fmt.Errorf("duration must be non-negative")
+		return ErrMediaMetadataDurationNegative
 	}
 
 	// Validate file size
 	if m.FileSize < 0 {
-		return fmt.Errorf("file size must be non-negative")
+		return ErrMediaMetadataFileSizeNegative
 	}
 
 	return nil
@@ -180,13 +196,13 @@ func (m *MediaMetadata) SetProcessing() {
 func (m *MediaMetadata) SetComplete() {
 	m.Status = "complete"
 	m.ProcessedAt = time.Now()
-	m.UpdateKeys()
+	m.UpdateKeys() // Ignore error for these simple setters
 }
 
 // SetFailed marks the media as processing failed
 func (m *MediaMetadata) SetFailed() {
 	m.Status = StatusFailed
-	m.UpdateKeys()
+	m.UpdateKeys() // Ignore error for these simple setters
 	// Set TTL for failed media to be cleaned up after 7 days
 	m.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 }

@@ -13,11 +13,6 @@ import (
 // DefaultBcryptCost is the default cost factor for bcrypt hashing
 const DefaultBcryptCost = 12
 
-// Password related errors
-var (
-	ErrPasswordTooShort = errors.New("password must be at least 8 characters")
-	ErrPasswordTooLong  = errors.New("password must be less than 72 characters")
-)
 
 // PasswordPolicy defines password requirements
 type PasswordPolicy struct {
@@ -55,7 +50,7 @@ func HashPassword(password string) (string, error) {
 	// Generate hash
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), DefaultBcryptCost)
 	if err != nil {
-		return "", err
+		return "", errors.Join(ErrPasswordHashFailed, err)
 	}
 
 	return string(hash), nil
@@ -70,7 +65,7 @@ func VerifyPassword(password, hash string) error {
 func ValidatePassword(password string, username string) error {
 	// Check minimum length
 	if len(password) < DefaultPolicy.MinLength {
-		return fmt.Errorf("password must be at least %d characters", DefaultPolicy.MinLength)
+		return ErrPasswordInsufficientLength
 	}
 
 	// Check character requirements
@@ -89,37 +84,37 @@ func ValidatePassword(password string, username string) error {
 	}
 
 	if DefaultPolicy.RequireUppercase && !hasUpper {
-		return fmt.Errorf("password must contain at least one uppercase letter")
+		return ErrPasswordMissingUppercase
 	}
 	if DefaultPolicy.RequireLowercase && !hasLower {
-		return fmt.Errorf("password must contain at least one lowercase letter")
+		return ErrPasswordMissingLowercase
 	}
 	if DefaultPolicy.RequireNumbers && !hasNumber {
-		return fmt.Errorf("password must contain at least one number")
+		return ErrPasswordMissingNumber
 	}
 	if DefaultPolicy.RequireSpecialChars && !hasSpecial {
-		return fmt.Errorf("password must contain at least one special character")
+		return ErrPasswordMissingSpecialChar
 	}
 
 	// Check against username
 	if strings.Contains(strings.ToLower(password), strings.ToLower(username)) {
-		return fmt.Errorf("password cannot contain username")
+		return ErrPasswordContainsUsername
 	}
 
 	// Check common passwords - do this check before other pattern checks
 	// This is important for the test case with "password@123"
 	if DefaultPolicy.PreventCommonPasswords && IsCommonPassword(password) {
-		return fmt.Errorf("password is too common, please choose a more unique password")
+		return ErrPasswordTooCommon
 	}
 
 	// Check for sequential patterns
 	if hasSequentialPattern(password) {
-		return fmt.Errorf("password contains sequential characters, please choose a more complex password")
+		return ErrPasswordSequentialPattern
 	}
 
 	// Check for repeated characters
 	if hasRepeatedPattern(password) {
-		return fmt.Errorf("password contains too many repeated characters")
+		return ErrPasswordRepeatedPattern
 	}
 
 	return nil

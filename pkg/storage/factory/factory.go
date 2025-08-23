@@ -4,9 +4,10 @@ package factory
 import (
 	"context"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -19,7 +20,9 @@ type RepositoryFactory struct {
 	tableName string
 	logger    *zap.Logger
 	cfg       *config.Config
-	awsConfig aws.Config
+
+	// Storage adapter for unified interface access
+	storageAdapter *dynamorm.StorageAdapter
 
 	// Repository instances (initialize once)
 	accountRepo           *repositories.AccountRepository
@@ -49,7 +52,7 @@ type RepositoryFactory struct {
 	analyticsRepo         *repositories.TrendingRepository
 	socialRepo            *repositories.SocialRepository
 	statusRepo            *repositories.StatusRepository
-	costRepo              *repositories.CostTrackingRepository
+	costRepo              *repositories.TrackingRepository
 	webSocketCostRepo     *repositories.WebSocketCostRepository
 	searchRepo            *repositories.SearchRepository
 	relayRepo             *repositories.RelayRepository
@@ -68,10 +71,12 @@ type RepositoryFactory struct {
 	publicKeyCacheRepo        *repositories.PublicKeyCacheRepository
 	auditRepo                 *repositories.AuditRepository
 	oauthRepo                 *repositories.OAuthRepository
+	dnsCacheRepo              *repositories.DNSCacheRepository
+	filterRepo                *repositories.FilterRepository
 }
 
 // NewRepositoryFactory creates a new repository factory with all repositories initialized
-func NewRepositoryFactory(db dynamormCore.DB, tableName string, awsConfig aws.Config, logger *zap.Logger) (*RepositoryFactory, error) {
+func NewRepositoryFactory(db dynamormCore.DB, tableName string, logger *zap.Logger) (*RepositoryFactory, error) {
 	cfg := config.Get()
 
 	factory := &RepositoryFactory{
@@ -79,7 +84,6 @@ func NewRepositoryFactory(db dynamormCore.DB, tableName string, awsConfig aws.Co
 		tableName: tableName,
 		logger:    logger,
 		cfg:       cfg,
-		awsConfig: awsConfig,
 	}
 
 	// Initialize all repositories
@@ -87,6 +91,9 @@ func NewRepositoryFactory(db dynamormCore.DB, tableName string, awsConfig aws.Co
 
 	// Set up dependencies after all repositories are created
 	factory.setupDependencies()
+
+	// Initialize storage adapter with factory as RepositoryStorage
+	factory.storageAdapter = dynamorm.NewStorageAdapter(factory)
 
 	return factory, nil
 }
@@ -104,6 +111,7 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.notificationRepo = repositories.NewNotificationRepository(f.db, f.tableName, f.logger)
 	f.likeRepo = repositories.NewLikeRepository(f.db, f.tableName, f.logger)
 	f.moderationRepo = repositories.NewModerationRepository(f.db, f.tableName, f.logger)
+	f.filterRepo = repositories.NewFilterRepository(f.db, f.logger, nil)
 	f.listRepo = repositories.NewListRepository(f.db, f.tableName, f.logger)
 	f.mediaRepo = repositories.NewMediaRepository(f.db, f.tableName, f.logger)
 	f.pollRepo = repositories.NewPollRepository(f.db, f.tableName, f.logger)
@@ -114,14 +122,14 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.domainBlockRepo = repositories.NewDomainBlockRepository(f.db, f.tableName, f.logger)
 	f.relationshipRepo = repositories.NewRelationshipRepository(f.db, f.tableName, f.logger)
 	f.instanceRepo = repositories.NewInstanceRepository(f.db, f.tableName, f.logger)
-	f.federationRepo = repositories.NewFederationRepository(f.db, f.logger)
+	f.federationRepo = repositories.NewFederationRepository(f.db, f.logger, f.cfg)
 	f.recoveryRepo = repositories.NewRecoveryRepository(f.db, f.tableName, f.logger)
-	f.analyticsRepo = repositories.NewTrendingRepository(f.db, f.logger)
+	f.analyticsRepo = repositories.NewTrendingRepository(f.db, f.logger, nil)
 	f.socialRepo = repositories.NewSocialRepository(f.db, f.logger)
 	f.statusRepo = repositories.NewStatusRepository(f.db, f.tableName, f.logger)
-	f.costRepo = repositories.NewCostTrackingRepository(f.db, f.tableName, f.logger)
+	f.costRepo = repositories.NewTrackingRepository(f.db, f.tableName, f.logger)
 	f.webSocketCostRepo = repositories.NewWebSocketCostRepository(f.db, f.tableName, f.logger)
-	f.trustRepo = repositories.NewTrustRepository(f.db, f.logger)
+	f.trustRepo = repositories.NewTrustRepository(f.db, f.tableName, f.logger)
 	f.searchRepo = repositories.NewSearchRepository(f.db, f.logger)
 	f.relayRepo = repositories.NewRelayRepository(f.db, f.tableName, f.logger)
 	f.communityNoteRepo = repositories.NewCommunityNoteRepository(f.db, f.tableName, f.logger)
@@ -133,13 +141,14 @@ func (f *RepositoryFactory) initializeRepositories() {
 	f.exportRepo = repositories.NewExportRepository(f.db, f.tableName, f.logger)
 	f.importRepo = repositories.NewImportRepository(f.db, f.tableName, f.logger)
 	f.auditRepo = repositories.NewAuditRepository(f.db, f.logger)
-	f.dlqRepo = repositories.NewDLQRepository(f.db, f.tableName, f.logger)
+	f.dlqRepo = repositories.NewDLQRepositorySimple(f.db, f.tableName, f.logger)
 	f.metricRecordRepo = repositories.NewMetricRecordRepository(f.db, f.tableName, f.logger)
-	f.cloudWatchMetricsRepo = repositories.NewCloudWatchMetricsRepository(f.awsConfig, "Lesser/Production", "prod", f.logger)
-	f.streamingCloudWatchRepo = repositories.NewStreamingCloudWatchRepository(f.db, f.logger)
+	f.cloudWatchMetricsRepo = repositories.NewCloudWatchMetricsRepository("Lesser/Production", "prod", f.logger)
+	f.streamingCloudWatchRepo = repositories.NewStreamingCloudWatchRepository(f.db, f.tableName, f.logger)
 	f.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(f.db, f.tableName, f.logger)
-	f.mediaMetadataRepo = repositories.NewMediaMetadataRepository(f.db, f.logger)
+	f.mediaMetadataRepo = repositories.NewMediaMetadataRepository(f.db, f.tableName, f.logger, nil)
 	f.oauthRepo = repositories.NewOAuthRepository(f.db, f.logger)
+	f.dnsCacheRepo = repositories.NewDNSCacheRepository(f.db, f.tableName, f.logger)
 
 	// All other repositories are nil until needed/implemented
 	// This allows the factory to be created without breaking the application
@@ -333,7 +342,7 @@ func (f *RepositoryFactory) Status() *repositories.StatusRepository {
 }
 
 // Cost returns the Cost repository instance
-func (f *RepositoryFactory) Cost() *repositories.CostTrackingRepository {
+func (f *RepositoryFactory) Cost() *repositories.TrackingRepository {
 	return f.costRepo
 }
 
@@ -422,8 +431,39 @@ func (f *RepositoryFactory) OAuth() *repositories.OAuthRepository {
 	return f.oauthRepo
 }
 
+// DNSCache returns the DNSCache repository instance
+func (f *RepositoryFactory) DNSCache() *repositories.DNSCacheRepository {
+	return f.dnsCacheRepo
+}
+
+// Filter returns the Filter repository instance
+func (f *RepositoryFactory) Filter() *repositories.FilterRepository {
+	return f.filterRepo
+}
+
 // Additional repositories can be added here as needed
 // For now, only the core repositories that are actually used are exposed
+
+// GetStorageAdapter returns the unified storage interface
+// This provides access to both repository methods AND legacy storage operations
+func (f *RepositoryFactory) GetStorageAdapter() interfaces.Storage {
+	if f.storageAdapter == nil {
+		f.storageAdapter = dynamorm.NewStorageAdapter(f)
+	}
+	return f.storageAdapter
+}
+
+// AsStorage returns this factory as a Storage interface
+// This enables the factory to be used anywhere Storage is expected
+func (f *RepositoryFactory) AsStorage() interfaces.Storage {
+	return f.GetStorageAdapter()
+}
+
+// ResetStorageAdapter recreates the storage adapter
+// Useful for testing and when repository dependencies change
+func (f *RepositoryFactory) ResetStorageAdapter() {
+	f.storageAdapter = dynamorm.NewStorageAdapter(f)
+}
 
 // Ensure RepositoryFactory implements RepositoryStorage interface
 var _ core.RepositoryStorage = (*RepositoryFactory)(nil)

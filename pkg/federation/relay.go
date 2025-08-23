@@ -3,6 +3,7 @@ package federation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -84,7 +86,8 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	if err != nil {
 		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("invalid URL: %v", err))
-		return fmt.Errorf("invalid relay URL: %w", err)
+		r.logger.Error("invalid relay URL", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrInvalidRelayURL, err)
 	}
 
 	// Get relay actor information
@@ -92,7 +95,8 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	if err != nil {
 		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("fetch actor failed: %v", err))
-		return fmt.Errorf("failed to fetch relay actor: %w", err)
+		r.logger.Error("failed to fetch relay actor", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrFetchRelayActorFailed, err)
 	}
 
 	// Get subscribing actor
@@ -100,7 +104,8 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	if err != nil {
 		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", "",
 			start, operationID, false, fmt.Sprintf("get actor failed: %v", err))
-		return fmt.Errorf("failed to get actor: %w", err)
+		r.logger.Error("failed to get actor", zap.String("actor_username", actorUsername), zap.Error(err))
+		return errors.Join(ErrGetActorFailed, err)
 	}
 
 	// Create Follow activity
@@ -128,15 +133,17 @@ func (r *RelayService) SubscribeToRelay(ctx context.Context, relayURL string, ac
 	if err := r.storeRelayInfo(ctx, relayInfo); err != nil {
 		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
 			start, operationID, false, fmt.Sprintf("store relay info failed: %v", err))
-		return fmt.Errorf("failed to store relay info: %w", err)
+		r.logger.Error("failed to store relay info", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrStoreRelayInfoFailed, err)
 	}
 
 	// Send follow activity to relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
 	if err := deliverySvc.DeliverActivity(ctx, followActivity, relayActor.Inbox, actor); err != nil {
 		r.trackRelayCost(ctx, relayURL, "subscription", "outbound", followActivity.Type,
 			start, operationID, false, fmt.Sprintf("delivery failed: %v", err))
-		return fmt.Errorf("failed to deliver follow activity: %w", err)
+		r.logger.Error("failed to deliver follow activity", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrDeliverFollowActivityFailed, err)
 	}
 
 	r.logger.Info("successfully sent follow request to relay",
@@ -155,13 +162,15 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	// Get relay info
 	relayInfo, err := r.getRelayInfo(ctx, relayURL)
 	if err != nil {
-		return fmt.Errorf("relay not found: %w", err)
+		r.logger.Error("relay not found", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrRelayNotFound, err)
 	}
 
 	// Get actor
 	actor, err := r.store.Actor().GetActorByUsername(ctx, actorUsername)
 	if err != nil {
-		return fmt.Errorf("failed to get actor: %w", err)
+		r.logger.Error("failed to get actor for unsubscribe", zap.String("actor_username", actorUsername), zap.Error(err))
+		return errors.Join(ErrGetActorFailed, err)
 	}
 
 	// Create Undo Follow activity
@@ -182,7 +191,7 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 	}
 
 	// Send undo activity to relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
 	if err := deliverySvc.DeliverActivity(ctx, undoActivity, relayInfo.InboxURL, actor); err != nil {
 		r.logger.Error("failed to deliver undo activity",
 			zap.String("relay_url", relayURL),
@@ -192,7 +201,8 @@ func (r *RelayService) UnsubscribeFromRelay(ctx context.Context, relayURL string
 
 	// Remove relay info
 	if err := r.removeRelayInfo(ctx, relayURL); err != nil {
-		return fmt.Errorf("failed to remove relay info: %w", err)
+		r.logger.Error("failed to remove relay info", zap.String("relay_url", relayURL), zap.Error(err))
+		return errors.Join(ErrRemoveRelayInfoFailed, err)
 	}
 
 	r.logger.Info("successfully unsubscribed from relay",
@@ -223,7 +233,8 @@ func (r *RelayService) HandleRelayActivity(ctx context.Context, activity *activi
 		errMsg := fmt.Sprintf("activity from unknown or inactive relay: %s", relayURL)
 		r.trackRelayCost(ctx, relayURL, "processing", "inbound", activity.Type,
 			start, operationID, false, errMsg)
-		return fmt.Errorf("%s", errMsg)
+		r.logger.Error("activity from unknown or inactive relay", zap.String("relay_url", relayURL), zap.Bool("relay_active", relayInfo != nil && relayInfo.Active))
+		return ErrUnknownInactiveRelay
 	}
 
 	// Update last seen timestamp
@@ -305,7 +316,7 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 	}
 
 	// Send to each relay
-	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store))
+	deliverySvc := NewDeliveryService(NewRepositoryStorageAdapter(r.store), config.Get())
 	var errors []error
 	successCount := 0
 
@@ -366,7 +377,8 @@ func (r *RelayService) ForwardToRelays(ctx context.Context, activity *activitypu
 		zap.Duration("total_duration", totalDuration))
 
 	if len(errors) > 0 {
-		return fmt.Errorf("failed to forward to %d relays", len(errors))
+		r.logger.Error("failed to forward to some relays", zap.Int("failed_count", len(errors)), zap.String("operation_id", operationID))
+		return ErrRelayForwardingFailed
 	}
 
 	return nil
@@ -390,7 +402,8 @@ func (r *RelayService) fetchRelayActor(ctx context.Context, relayURL string) (*a
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch relay actor: status %d", resp.StatusCode)
+		r.logger.Error("failed to fetch relay actor: non-OK status", zap.String("relay_url", relayURL), zap.Int("status_code", resp.StatusCode))
+		return nil, ErrFetchRelayActorHTTPFailed
 	}
 
 	var actor activitypub.Actor
@@ -400,7 +413,8 @@ func (r *RelayService) fetchRelayActor(ctx context.Context, relayURL string) (*a
 
 	// Verify it's a relay actor
 	if actor.Type != "Application" && actor.Type != "Service" {
-		return nil, fmt.Errorf("not a relay actor: type %s", actor.Type)
+		r.logger.Error("not a relay actor", zap.String("relay_url", relayURL), zap.String("actor_type", actor.Type))
+		return nil, ErrNotRelayActor
 	}
 
 	return &actor, nil
@@ -437,13 +451,16 @@ func (r *RelayService) handleRelayAnnounce(ctx context.Context, activity *activi
 		// Convert map to activity
 		data, err := json.Marshal(obj)
 		if err != nil {
-			return fmt.Errorf("failed to marshal announced object: %w", err)
+			r.logger.Error("failed to marshal announced object", zap.String("relay_url", relay.URL), zap.Error(err))
+			return errors.Join(ErrMarshalAnnouncedObjectFailed, err)
 		}
 		if err := json.Unmarshal(data, &announcedActivity); err != nil {
-			return fmt.Errorf("failed to unmarshal announced activity: %w", err)
+			r.logger.Error("failed to unmarshal announced activity", zap.String("relay_url", relay.URL), zap.Error(err))
+			return errors.Join(ErrUnmarshalAnnouncedActivityFailed, err)
 		}
 	default:
-		return fmt.Errorf("invalid announced object type: %T", obj)
+		r.logger.Error("invalid announced object type", zap.String("relay_url", relay.URL), zap.String("object_type", fmt.Sprintf("%T", obj)))
+		return ErrInvalidAnnouncedObjectType
 	}
 
 	r.logger.Debug("processing relayed activity",
@@ -634,19 +651,19 @@ func (r *RelayService) doTrackRelayCost(ctx context.Context, relayURL, operation
 // extractDomainFromRelayURL extracts domain from relay URL
 func extractDomainFromRelayURL(relayURL string) string {
 	if err := common.ValidateRequiredParam("relayURL", relayURL); err != nil {
-		return "unknown"
+		return keyTypeUnknown
 	}
 
 	// Validate URL format
 	if err := common.ValidateURL(relayURL, "relay_url"); err != nil {
-		return "unknown"
+		return keyTypeUnknown
 	}
 
 	// Parse URL to extract domain
 	parsedURL, err := url.Parse(relayURL)
 	if err != nil {
 		// Should not happen after ValidateURL, but fallback anyway
-		return "unknown"
+		return keyTypeUnknown
 	}
 
 	return parsedURL.Hostname()
@@ -702,8 +719,8 @@ func (r *RelayService) checkRelayBudget(ctx context.Context, relayURL string, es
 
 	// Check if adding this cost would exceed budget
 	if budget.CurrentUsageMicroCents+estimatedCostMicroCents > budget.LimitMicroCents {
-		return fmt.Errorf("relay operation would exceed daily budget: current %d + estimated %d > limit %d microcents",
-			budget.CurrentUsageMicroCents, estimatedCostMicroCents, budget.LimitMicroCents)
+		r.logger.Error("relay operation would exceed daily budget", zap.String("relay_url", relayURL), zap.Int64("current_usage", budget.CurrentUsageMicroCents), zap.Int64("estimated_cost", estimatedCostMicroCents), zap.Int64("limit", budget.LimitMicroCents))
+		return ErrRelayBudgetExceeded
 	}
 
 	// Check for warning threshold

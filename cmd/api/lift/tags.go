@@ -112,7 +112,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				// Check if following
@@ -161,7 +161,7 @@ func (h *Handler) authenticateTagRequest(ctx *lift.Context) (string, error) {
 	}
 
 	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", err
@@ -315,7 +315,7 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 	}
 
 	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", err
@@ -441,7 +441,7 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -497,7 +497,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -601,7 +601,7 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -644,7 +644,7 @@ func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err := oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)

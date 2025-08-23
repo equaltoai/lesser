@@ -53,22 +53,27 @@ func NewSimpleStatusExecutor(
 	}
 }
 
+// RequiresAuth returns whether this command requires authentication
 func (e *SimpleStatusExecutor) RequiresAuth() bool {
 	return e.requiresAuth
 }
 
+// RequiredFields returns the list of required fields for validation
 func (e *SimpleStatusExecutor) RequiredFields() []string {
 	return e.requiredFields
 }
 
+// BuildCommand builds the service command from the WebSocket command payload
 func (e *SimpleStatusExecutor) BuildCommand(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
 	return e.commandBuilder(conn, payload)
 }
 
+// Execute executes the service command and returns the result
 func (e *SimpleStatusExecutor) Execute(ctx context.Context, serviceCmd interface{}) (interface{}, error) {
 	return e.executor(ctx, serviceCmd)
 }
 
+// FormatResponse formats the service result for WebSocket response
 func (e *SimpleStatusExecutor) FormatResponse(result interface{}) (map[string]interface{}, error) {
 	// If responseKey is empty, return the result as-is (for custom responses)
 	if err := common.ValidateRequiredParam("responseKey", e.responseKey); err != nil {

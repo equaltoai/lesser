@@ -47,3 +47,15 @@ const (
 	VideoWEBM      = "video/webm"
 	VideoQuickTime = "video/quicktime"
 )
+
+// String literals commonly used in parameter processing
+const (
+	StringFalse = "false"
+	StringTrue  = "true"
+)
+
+// URL schemes
+const (
+	SchemeHTTPS = "https"
+	SchemeHTTP  = "http"
+)

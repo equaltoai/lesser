@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
 )
@@ -56,13 +58,13 @@ func (h *RecoveryActivityHandler) handleTrusteeConfirmation(ctx context.Context,
 	// Verify request ID is present
 	_, ok := recoveryData["requestId"].(string)
 	if !ok {
-		return fmt.Errorf("missing request ID in recovery confirmation")
+		return federation.ErrMissingRequestIDInConfirmation
 	}
 
 	// Verify the activity is signed by the trustee
 	trusteeActorID := activity.Actor
 	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
-		return fmt.Errorf("missing actor in recovery confirmation")
+		return federation.ErrMissingActorInConfirmation
 	}
 
 	// Process the confirmation
@@ -73,12 +75,12 @@ func (h *RecoveryActivityHandler) handleTrusteeConfirmation(ctx context.Context,
 func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, activity *activitypub.Activity, inviteData map[string]any) error {
 	inviterUsername, ok := inviteData["inviterUsername"].(string)
 	if !ok {
-		return fmt.Errorf("missing inviter username in trustee acceptance")
+		return federation.ErrMissingInviterUsername
 	}
 
 	trusteeActorID := activity.Actor
 	if err := common.ValidateRequiredParam("trusteeActorID", trusteeActorID); err != nil {
-		return fmt.Errorf("missing actor in trustee acceptance")
+		return federation.ErrMissingActorInAcceptance
 	}
 
 	// Update the trustee confirmation status
@@ -88,7 +90,7 @@ func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, a
 			zap.String("inviter", inviterUsername),
 			zap.String("trustee", trusteeActorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update trustee confirmation: %w", err)
+		return errors.Join(ErrUpdateTrusteeConfirmation, err)
 	}
 
 	h.logger.Info("trustee accepted invitation",

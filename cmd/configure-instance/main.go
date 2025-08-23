@@ -13,8 +13,8 @@ import (
 	"os"
 	"strings"
 
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -45,13 +45,7 @@ func main() {
 		Version:     "1.0.0",
 	})
 
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(lambdaCtx.Config.Region),
-	)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
+	// AWS config no longer needed - DynamORM handles configuration internally
 
 	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())
@@ -59,7 +53,7 @@ func main() {
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -118,7 +112,7 @@ func showCurrentConfiguration(appCtx *appContext) {
 func showInstanceRules(appCtx *appContext) {
 	rules, err := appCtx.repos.Instance().GetInstanceRules(appCtx.ctx)
 	if err != nil {
-		log.Printf("Failed to get rules: %v", err)
+		appCtx.logger.Error("failed to get rules", zap.Error(err))
 		return
 	}
 
@@ -135,7 +129,7 @@ func showInstanceRules(appCtx *appContext) {
 func showExtendedDescription(appCtx *appContext) {
 	desc, updatedAt, err := appCtx.repos.Instance().GetExtendedDescription(appCtx.ctx)
 	if err != nil {
-		log.Printf("Failed to get extended description: %v", err)
+		appCtx.logger.Error("failed to get extended description", zap.Error(err))
 		return
 	}
 	fmt.Printf("\nExtended Description (updated %s):\n%s\n", updatedAt.Format(common.DateFormat), desc)
@@ -203,9 +197,10 @@ func encodeKeys(privateKey *ecdsa.PrivateKey) (string, string) {
 	return publicKeyBase64, privateKeyBase64
 }
 
-// getDomain gets the domain from environment or prompts the user
+// getDomain gets the domain from centralized config or prompts the user
 func getDomain() string {
-	domain := os.Getenv("DOMAIN")
+	cfg := config.Get()
+	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		fmt.Print("Enter your instance domain (e.g., example.com): ")
 		if _, err := fmt.Scanln(&domain); err != nil {

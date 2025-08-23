@@ -54,7 +54,7 @@ func (m *LambdaResourceMonitor) CheckResources(operation string) error {
 	// Check duration
 	elapsed := time.Since(m.startTime)
 	if elapsed.Milliseconds() > int64(m.maxDurationMS) {
-		return fmt.Errorf("operation %s approaching Lambda timeout: %v", operation, elapsed)
+		return fmt.Errorf("%w: operation %s, elapsed %v", ErrLambdaTimeoutApproaching, operation, elapsed)
 	}
 
 	// Check memory
@@ -69,8 +69,8 @@ func (m *LambdaResourceMonitor) CheckResources(operation string) error {
 		usedMB = memStats.Alloc / 1024 / 1024
 
 		if usedMB > m.maxMemoryMB {
-			return fmt.Errorf("memory limit exceeded for %s: %dMB > %dMB",
-				operation, usedMB, m.maxMemoryMB)
+			return fmt.Errorf("%w: operation %s, used %dMB > limit %dMB",
+				ErrMemoryLimitExceeded, operation, usedMB, m.maxMemoryMB)
 		}
 	}
 

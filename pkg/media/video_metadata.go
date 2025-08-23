@@ -3,7 +3,6 @@ package media
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -138,7 +137,7 @@ func (p *VideoMetadataParser) parseAtoms(metadata *VideoMetadata) error {
 		case "moov":
 			foundMoov = true
 			if err := p.parseMoovAtom(atom.Data, metadata); err != nil {
-				return fmt.Errorf("failed to parse moov atom: %w", err)
+				return fmt.Errorf("%w: %w", ErrMoovAtomParseFailed, err)
 			}
 		case "mdat":
 			// Skip media data atom
@@ -153,7 +152,7 @@ func (p *VideoMetadataParser) parseAtoms(metadata *VideoMetadata) error {
 	}
 
 	if !foundMoov {
-		return errors.New("moov atom not found")
+		return ErrMoovAtomNotFound
 	}
 
 	return nil
@@ -176,13 +175,13 @@ func (p *VideoMetadataParser) readAtom() (*MP4Atom, error) {
 	headerSize := 8
 	if size == 1 {
 		if p.offset+16 > len(p.data) {
-			return nil, errors.New("incomplete extended size atom")
+			return nil, ErrExtendedSizeIncomplete
 		}
 		// Extended size is next 8 bytes
 		size64 := binary.BigEndian.Uint64(p.data[p.offset+8 : p.offset+16])
 		if size64 > 0xFFFFFFFF {
 			// Size too large for uint32
-			return nil, fmt.Errorf("atom size too large: %d", size64)
+			return nil, fmt.Errorf("%w: %d", ErrAtomSizeTooLarge, size64)
 		}
 		size = uint32(size64) // #nosec G115 - checked for overflow above
 		headerSize = 16
@@ -190,12 +189,12 @@ func (p *VideoMetadataParser) readAtom() (*MP4Atom, error) {
 
 	// Validate size
 	if int(size) < headerSize || headerSize < 0 {
-		return nil, fmt.Errorf("invalid atom size: %d", size)
+		return nil, fmt.Errorf("%w: %d", ErrInvalidAtomSize, size)
 	}
 
 	dataSize := int(size) - headerSize
 	if p.offset+int(size) > len(p.data) {
-		return nil, fmt.Errorf("atom extends beyond file: size=%d, available=%d", size, len(p.data)-p.offset)
+		return nil, fmt.Errorf("%w: size=%d, available=%d", ErrAtomExtendsFile, size, len(p.data)-p.offset)
 	}
 
 	// Read atom data
@@ -228,7 +227,7 @@ func (p *VideoMetadataParser) parseMoovAtom(data []byte, metadata *VideoMetadata
 		switch string(atom.Type[:]) {
 		case "mvhd":
 			if err := parseMvhdAtom(atom.Data, metadata); err != nil {
-				return fmt.Errorf("failed to parse mvhd: %w", err)
+				return fmt.Errorf("%w: %w", ErrMvhdAtomParseFailed, err)
 			}
 		case "trak":
 			if err := p.parseTrakAtom(atom.Data, metadata); err != nil {
@@ -244,7 +243,7 @@ func (p *VideoMetadataParser) parseMoovAtom(data []byte, metadata *VideoMetadata
 // parseMvhdAtom parses the movie header atom
 func parseMvhdAtom(data []byte, metadata *VideoMetadata) error {
 	if len(data) < 32 {
-		return errors.New("mvhd atom too small")
+		return ErrMvhdAtomTooSmall
 	}
 
 	// Version (1 byte) + flags (3 bytes)
@@ -257,7 +256,7 @@ func parseMvhdAtom(data []byte, metadata *VideoMetadata) error {
 	case 0:
 		// Version 0: 32-bit values
 		if len(data) < 32 {
-			return errors.New("mvhd v0 atom incomplete")
+			return ErrMvhdV0AtomIncomplete
 		}
 		creationTime = binary.BigEndian.Uint32(data[4:8])
 		modificationTime = binary.BigEndian.Uint32(data[8:12])
@@ -266,7 +265,7 @@ func parseMvhdAtom(data []byte, metadata *VideoMetadata) error {
 	case 1:
 		// Version 1: 64-bit values
 		if len(data) < 44 {
-			return errors.New("mvhd v1 atom incomplete")
+			return ErrMvhdV1AtomIncomplete
 		}
 		// Handle 64-bit creation time with overflow check
 		time64 := binary.BigEndian.Uint64(data[4:12])
@@ -292,7 +291,7 @@ func parseMvhdAtom(data []byte, metadata *VideoMetadata) error {
 			duration = uint32(dur64) // #nosec G115 - checked for overflow above
 		}
 	default:
-		return fmt.Errorf("unsupported mvhd version: %d", version)
+		return fmt.Errorf("%w: %d", ErrUnsupportedMvhdVersion, version)
 	}
 
 	metadata.Timescale = timescale
@@ -324,7 +323,7 @@ func (p *VideoMetadataParser) parseTrakAtom(data []byte, metadata *VideoMetadata
 		switch string(atom.Type[:]) {
 		case "tkhd":
 			if err := parseTkhdAtom(atom.Data, metadata); err != nil {
-				return fmt.Errorf("failed to parse tkhd: %w", err)
+				return fmt.Errorf("%w: %w", ErrTkhdAtomParseFailed, err)
 			}
 		case "mdia":
 			if err := p.parseMdiaAtom(atom.Data, metadata); err != nil {
@@ -340,7 +339,7 @@ func (p *VideoMetadataParser) parseTrakAtom(data []byte, metadata *VideoMetadata
 // parseTkhdAtom parses the track header atom (this is the main focus of the requirement)
 func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 	if len(data) < 32 {
-		return errors.New("tkhd atom too small")
+		return ErrTkhdAtomTooSmall
 	}
 
 	// Version (1 byte) + flags (3 bytes)
@@ -353,7 +352,7 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 	case 0:
 		// Version 0: 32-bit values
 		if len(data) < 84 {
-			return errors.New("tkhd v0 atom incomplete")
+			return ErrTkhdV0AtomIncomplete
 		}
 
 		// Skip creation/modification time (8 bytes)
@@ -368,7 +367,7 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 	case 1:
 		// Version 1: 64-bit values
 		if len(data) < 96 {
-			return errors.New("tkhd v1 atom incomplete")
+			return ErrTkhdV1AtomIncomplete
 		}
 
 		// Skip 64-bit creation/modification time (16 bytes)
@@ -387,7 +386,7 @@ func parseTkhdAtom(data []byte, metadata *VideoMetadata) error {
 		height = binary.BigEndian.Uint32(data[92:96]) >> 16 // Convert from 16.16 fixed point
 
 	default:
-		return fmt.Errorf("unsupported tkhd version: %d", version)
+		return fmt.Errorf("%w: %d", ErrUnsupportedTkhdVersion, version)
 	}
 
 	// Only update dimensions if they seem reasonable and we haven't found video dimensions yet
@@ -490,7 +489,7 @@ func (p *VideoMetadataParser) parseStblAtom(data []byte, metadata *VideoMetadata
 // parseHdlrAtom parses the handler reference atom to determine track type
 func parseHdlrAtom(data []byte, metadata *VideoMetadata) error {
 	if len(data) < 24 {
-		return errors.New("hdlr atom too small")
+		return ErrHdlrAtomTooSmall
 	}
 
 	// Handler type is at offset 8-12
@@ -509,7 +508,7 @@ func parseHdlrAtom(data []byte, metadata *VideoMetadata) error {
 // parseStsdAtom parses the sample description atom to get codec information
 func parseStsdAtom(data []byte, metadata *VideoMetadata) error {
 	if len(data) < 16 {
-		return errors.New("stsd atom too small")
+		return ErrStsdAtomTooSmall
 	}
 
 	// Skip version/flags (4 bytes) and entry count (4 bytes)
@@ -520,7 +519,7 @@ func parseStsdAtom(data []byte, metadata *VideoMetadata) error {
 
 	// First sample description starts at offset 8
 	if len(data) < 24 {
-		return errors.New("stsd entry incomplete")
+		return ErrStsdEntryIncomplete
 	}
 
 	// Sample description size (4 bytes) + codec type (4 bytes)
@@ -641,7 +640,7 @@ func (p *VideoMetadataParser) fallbackMetadata(metadata *VideoMetadata) (*VideoM
 
 	// Return populated fallback metadata with error indicating parsing failed
 	// Callers should use the returned metadata even when error is non-nil
-	return metadata, errors.New("video metadata parsing failed, populated with fallback values")
+	return metadata, ErrVideoMetadataParsingFailed
 }
 
 // IsVideoCodecExported is an exported version of isVideoCodec for testing/demo purposes

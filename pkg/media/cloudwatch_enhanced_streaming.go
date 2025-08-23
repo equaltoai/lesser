@@ -130,7 +130,7 @@ func (s *CloudWatchEnhancedStreamingService) fetchQualityMetricsFromCloudWatch(c
 	}
 
 	if err := common.ValidateSliceNotEmpty("quality_metrics", result); err != nil {
-		return nil, fmt.Errorf("no quality metrics available")
+		return nil, ErrNoQualityMetrics
 	}
 
 	return result, nil
@@ -215,7 +215,7 @@ func (s *CloudWatchEnhancedStreamingService) fetchGeographicMetricsFromCloudWatc
 	}
 
 	if err := common.ValidateSliceNotEmpty("geographic_metrics", result); err != nil {
-		return nil, fmt.Errorf("no geographic metrics available")
+		return nil, ErrNoGeographicMetrics
 	}
 
 	return result, nil
@@ -327,11 +327,11 @@ func (s *CloudWatchEnhancedStreamingService) getMetricValue(ctx context.Context,
 
 	result, err := s.cloudWatch.GetMetricStatistics(ctx, input)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get metric %s: %w", metricName, err)
+		return 0, fmt.Errorf("%w: %s: %w", ErrGetMetric, metricName, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("datapoints", result.Datapoints); err != nil {
-		return 0, fmt.Errorf("no data points for metric %s", metricName)
+		return 0, fmt.Errorf("%w: %s", ErrNoDataPoints, metricName)
 	}
 
 	// Get the most recent datapoint
@@ -385,11 +385,11 @@ func (s *CloudWatchEnhancedStreamingService) getMetricValueWithDimension(ctx con
 
 	result, err := s.cloudWatch.GetMetricStatistics(ctx, input)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get metric %s with dimension %s=%s: %w", metricName, dimensionName, dimensionValue, err)
+		return 0, fmt.Errorf("%w: %s with dimension %s=%s: %w", ErrGetMetricWithDim, metricName, dimensionName, dimensionValue, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("datapoints", result.Datapoints); err != nil {
-		return 0, fmt.Errorf("no data points for metric %s with dimension %s=%s", metricName, dimensionName, dimensionValue)
+		return 0, fmt.Errorf("%w: %s with dimension %s=%s", ErrNoDataPointsWithDim, metricName, dimensionName, dimensionValue)
 	}
 
 	// Get latest value
@@ -420,9 +420,9 @@ func (s *CloudWatchEnhancedStreamingService) getMetricValueWithDimension(ctx con
 
 // getMetricsWithCaching provides a generic caching pattern for CloudWatch metrics
 func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
-	ctx context.Context, 
+	_ context.Context, 
 	mediaID string, 
-	totalViews int64, 
+	_ int64, 
 	metricType string,
 	getCached func() (interface{}, error),
 	fetchFromCloudWatch func() (interface{}, error),

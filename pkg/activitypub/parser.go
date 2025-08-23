@@ -12,17 +12,17 @@ import (
 func ParseActivity(data []byte) (*Activity, error) {
 	// Validate JSON before parsing
 	if err := common.ValidateJSONField(string(data), "activitypub_activity"); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
 
 	var activity Activity
 	if err := json.Unmarshal(data, &activity); err != nil {
-		return nil, fmt.Errorf("failed to parse activity: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrParseActivity, err)
 	}
 
 	// Validate the parsed activity
 	if err := ValidateActivity(&activity); err != nil {
-		return nil, fmt.Errorf("invalid activity: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidActivity, err)
 	}
 
 	return &activity, nil
@@ -32,17 +32,17 @@ func ParseActivity(data []byte) (*Activity, error) {
 func ParseActor(data []byte) (*Actor, error) {
 	// Validate JSON before parsing
 	if err := common.ValidateJSONField(string(data), "activitypub_actor"); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
 
 	var actor Actor
 	if err := json.Unmarshal(data, &actor); err != nil {
-		return nil, fmt.Errorf("failed to parse actor: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrParseActor, err)
 	}
 
 	// Validate the parsed actor
 	if err := ValidateActor(&actor); err != nil {
-		return nil, fmt.Errorf("invalid actor: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidActor, err)
 	}
 
 	return &actor, nil
@@ -52,17 +52,17 @@ func ParseActor(data []byte) (*Actor, error) {
 func ParseNote(data []byte) (*Note, error) {
 	// Validate JSON before parsing
 	if err := common.ValidateJSONField(string(data), "activitypub_note"); err != nil {
-		return nil, fmt.Errorf("invalid JSON: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidJSON, err)
 	}
 
 	var note Note
 	if err := json.Unmarshal(data, &note); err != nil {
-		return nil, fmt.Errorf("failed to parse note: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrParseNote, err)
 	}
 
 	// Validate the parsed note
 	if err := ValidateNote(&note); err != nil {
-		return nil, fmt.Errorf("invalid note: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidNote, err)
 	}
 
 	return &note, nil

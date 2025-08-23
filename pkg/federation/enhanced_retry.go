@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -76,7 +77,8 @@ func (p *EnhancedRetryProcessor) QueueForEnhancedRetry(ctx context.Context, acti
 	// Serialize message
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal enhanced retry message: %w", err)
+		p.logger.Error("retry message marshal failed", zap.Error(err))
+		return errors.Join(ErrRetryMessageMarshalFailed, err)
 	}
 
 	// Calculate delay for first retry
@@ -104,7 +106,8 @@ func (p *EnhancedRetryProcessor) QueueForEnhancedRetry(ctx context.Context, acti
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("failed to queue for enhanced retry: %w", err)
+			p.logger.Error("retry queue failed", zap.Error(err))
+			return errors.Join(ErrRetryQueueFailed, err)
 		}
 	}
 
@@ -234,7 +237,8 @@ func (p *EnhancedRetryProcessor) requeueForRetry(ctx context.Context, message *E
 	// Serialize updated message
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal retry message: %w", err)
+		p.logger.Error("message marshal failed", zap.Error(err))
+		return errors.Join(ErrMessageMarshalFailed, err)
 	}
 
 	// Requeue with delay
@@ -255,7 +259,8 @@ func (p *EnhancedRetryProcessor) requeueForRetry(ctx context.Context, message *E
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("failed to requeue for retry: %w", err)
+			p.logger.Error("message requeue failed", zap.Error(err))
+			return errors.Join(ErrMessageRequeueFailed, err)
 		}
 	}
 

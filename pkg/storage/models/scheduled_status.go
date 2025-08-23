@@ -35,9 +35,20 @@ type ScheduledStatus struct {
 }
 
 // UpdateKeys updates the DynamoDB keys based on the current field values
-func (s *ScheduledStatus) UpdateKeys() {
+func (s *ScheduledStatus) UpdateKeys() error {
 	s.PK = fmt.Sprintf("USER#%s#SCHEDULED", s.Username)
 	s.SK = fmt.Sprintf("ID#%s", s.ID)
 	s.GSI1PK = "SCHEDULED#DUE"
 	s.GSI1SK = fmt.Sprintf("TIME#%s#ID#%s", s.ScheduledAt.Format(time.RFC3339Nano), s.ID)
+	return nil
+}
+
+// GetPK returns the partition key
+func (s *ScheduledStatus) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key
+func (s *ScheduledStatus) GetSK() string {
+	return s.SK
 }

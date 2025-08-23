@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -265,7 +265,8 @@ func (h *IntegrationTestHarness) cleanup() {
 // Note: config parameter will be used for table configuration and test isolation settings
 func initTestDynamoDB(t *testing.T, config *TestConfig) *mocks.EnhancedMockStorage { //nolint:revive,unused // config will be used for DynamoDB setup, function used in integration tests
 	// Check for test environment
-	if os.Getenv("CI") == "" && os.Getenv("INTEGRATION_TEST") == "" {
+	appCfg := appConfig.Get()
+	if !appCfg.CIEnvironment && !appCfg.IntegrationTestMode {
 		t.Skip("Integration tests require CI=true or INTEGRATION_TEST=true")
 	}
 

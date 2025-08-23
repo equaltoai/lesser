@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -43,7 +44,12 @@ func (rbs *RelayBudgetService) CreateRelayBudget(ctx context.Context, relayURL, 
 
 	err := rbs.store.Cost().CreateRelayBudget(ctx, budget)
 	if err != nil {
-		return fmt.Errorf("failed to create relay budget: %w", err)
+		rbs.logger.Error("failed to create relay budget",
+			zap.String("relay_url", relayURL),
+			zap.String("period", period),
+			zap.Int64("limit_micro_cents", limitMicroCents),
+			zap.Error(err))
+		return errors.Join(ErrRelayBudgetCreationFailed, err)
 	}
 
 	rbs.logger.Info("created relay budget",
@@ -140,16 +146,31 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 		rbs.logger.Debug("failed to get daily budget status", zap.Error(err))
 	} else if dailyStatus.HasBudget {
 		if dailyStatus.BudgetExceeded {
-			return fmt.Errorf("daily budget already exceeded for relay %s", relayURL)
+			rbs.logger.Error("daily budget already exceeded for relay",
+				zap.String("relay_url", relayURL),
+				zap.String("period", "daily"),
+				zap.Int64("current_usage_micro_cents", dailyStatus.CurrentUsageMicroCents),
+				zap.Int64("limit_micro_cents", dailyStatus.LimitMicroCents))
+			return ErrRelayBudgetAlreadyExceeded
 		}
 
 		if dailyStatus.CurrentUsageMicroCents+estimatedCostMicroCents > dailyStatus.LimitMicroCents {
-			return fmt.Errorf("operation would exceed daily budget: current %d + estimated %d > limit %d microcents",
-				dailyStatus.CurrentUsageMicroCents, estimatedCostMicroCents, dailyStatus.LimitMicroCents)
+			rbs.logger.Error("operation would exceed daily budget",
+				zap.String("relay_url", relayURL),
+				zap.String("period", "daily"),
+				zap.Int64("current_usage_micro_cents", dailyStatus.CurrentUsageMicroCents),
+				zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
+				zap.Int64("limit_micro_cents", dailyStatus.LimitMicroCents),
+				zap.String("operation", "budget_check"))
+			return ErrRelayBudgetExceeded
 		}
 
 		if dailyStatus.PauseRelay {
-			return fmt.Errorf("relay operations paused due to budget limit")
+			rbs.logger.Warn("relay operations paused due to budget limit",
+				zap.String("relay_url", relayURL),
+				zap.String("period", "daily"),
+				zap.Float64("usage_percent", dailyStatus.UsagePercent))
+			return ErrRelayOperationsPaused
 		}
 	}
 
@@ -159,12 +180,23 @@ func (rbs *RelayBudgetService) CheckRelayBudget(ctx context.Context, relayURL st
 		rbs.logger.Debug("failed to get monthly budget status", zap.Error(err))
 	} else if monthlyStatus.HasBudget {
 		if monthlyStatus.BudgetExceeded {
-			return fmt.Errorf("monthly budget already exceeded for relay %s", relayURL)
+			rbs.logger.Error("monthly budget already exceeded for relay",
+				zap.String("relay_url", relayURL),
+				zap.String("period", "monthly"),
+				zap.Int64("current_usage_micro_cents", monthlyStatus.CurrentUsageMicroCents),
+				zap.Int64("limit_micro_cents", monthlyStatus.LimitMicroCents))
+			return ErrRelayBudgetAlreadyExceeded
 		}
 
 		if monthlyStatus.CurrentUsageMicroCents+estimatedCostMicroCents > monthlyStatus.LimitMicroCents {
-			return fmt.Errorf("operation would exceed monthly budget: current %d + estimated %d > limit %d microcents",
-				monthlyStatus.CurrentUsageMicroCents, estimatedCostMicroCents, monthlyStatus.LimitMicroCents)
+			rbs.logger.Error("operation would exceed monthly budget",
+				zap.String("relay_url", relayURL),
+				zap.String("period", "monthly"),
+				zap.Int64("current_usage_micro_cents", monthlyStatus.CurrentUsageMicroCents),
+				zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents),
+				zap.Int64("limit_micro_cents", monthlyStatus.LimitMicroCents),
+				zap.String("operation", "budget_check"))
+			return ErrRelayBudgetExceeded
 		}
 	}
 
@@ -217,7 +249,13 @@ func (rbs *RelayBudgetService) GetRelayBudgetRecommendations(ctx context.Context
 
 	summary, err := rbs.store.Cost().GetRelayCostSummary(ctx, relayURL, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get relay cost summary: %w", err)
+		rbs.logger.Error("failed to get relay cost summary",
+			zap.String("relay_url", relayURL),
+			zap.Time("start_time", startTime),
+			zap.Time("end_time", endTime),
+			zap.String("operation", "cost_analysis"),
+			zap.Error(err))
+		return nil, errors.Join(ErrRelayCostSummaryFailed, err)
 	}
 
 	recommendations := &RelayBudgetRecommendations{

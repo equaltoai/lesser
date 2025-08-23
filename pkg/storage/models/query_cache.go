@@ -24,7 +24,7 @@ type QueryCacheEntry struct {
 }
 
 // UpdateKeys ensures keys are properly set before saving
-func (q *QueryCacheEntry) UpdateKeys() {
+func (q *QueryCacheEntry) UpdateKeys() error {
 	q.PK = fmt.Sprintf("CACHE#%s", q.CacheKey)
 	q.SK = SKEntry
 
@@ -35,6 +35,17 @@ func (q *QueryCacheEntry) UpdateKeys() {
 	if q.CreatedAt.IsZero() {
 		q.CreatedAt = time.Now()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (q *QueryCacheEntry) GetPK() string {
+	return q.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (q *QueryCacheEntry) GetSK() string {
+	return q.SK
 }
 
 // IsExpired checks if the cache entry has expired
@@ -58,7 +69,7 @@ type BatchGetKeys struct {
 }
 
 // UpdateKeys ensures keys are properly set for batch keys
-func (b *BatchGetKeys) UpdateKeys() {
+func (b *BatchGetKeys) UpdateKeys() error {
 	b.PK = fmt.Sprintf("BATCH#%s", b.BatchType)
 	b.SK = fmt.Sprintf("KEY#%s", b.Key)
 
@@ -68,4 +79,15 @@ func (b *BatchGetKeys) UpdateKeys() {
 	if b.CreatedAt.IsZero() {
 		b.CreatedAt = time.Now()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (b *BatchGetKeys) GetPK() string {
+	return b.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (b *BatchGetKeys) GetSK() string {
+	return b.SK
 }

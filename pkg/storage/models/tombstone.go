@@ -66,7 +66,7 @@ func (t *Tombstone) BeforeCreate() error {
 }
 
 // UpdateKeys updates GSI keys for the tombstone
-func (t *Tombstone) UpdateKeys() {
+func (t *Tombstone) UpdateKeys() error {
 	// GSI1: Query tombstones by actor
 	if t.DeletedBy != "" {
 		t.GSI1PK = fmt.Sprintf("ACTOR#%s#TOMBSTONES", t.DeletedBy)
@@ -78,6 +78,17 @@ func (t *Tombstone) UpdateKeys() {
 		t.GSI2PK = fmt.Sprintf("TOMBSTONE#%s", t.FormerType)
 		t.GSI2SK = fmt.Sprintf("DELETED#%d", t.Deleted.Unix())
 	}
+	return nil
+}
+
+// GetPK returns the primary key for BaseRepository interface
+func (t *Tombstone) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key for BaseRepository interface
+func (t *Tombstone) GetSK() string {
+	return t.SK
 }
 
 // IsTombstone always returns true for tombstone objects

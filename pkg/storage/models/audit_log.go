@@ -73,7 +73,7 @@ func (a *AuthAuditLog) TableName() string {
 }
 
 // UpdateKeys updates the DynamoDB keys before saving
-func (a *AuthAuditLog) UpdateKeys() {
+func (a *AuthAuditLog) UpdateKeys() error {
 	// Primary key - partitioned by date for efficient querying
 	if a.Timestamp.IsZero() {
 		a.Timestamp = time.Now().UTC()
@@ -114,10 +114,21 @@ func (a *AuthAuditLog) UpdateKeys() {
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
+	
+	return nil
 }
 
 // BeforeSave is called before saving to DynamoDB
 func (a *AuthAuditLog) BeforeSave() error {
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
+}
+
+// GetPK returns the partition key
+func (a *AuthAuditLog) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key
+func (a *AuthAuditLog) GetSK() string {
+	return a.SK
 }

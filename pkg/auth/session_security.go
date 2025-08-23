@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -21,16 +22,16 @@ type SessionSecurityManager struct {
 
 // AdvancedSessionSecurityConfig holds advanced security configuration
 type AdvancedSessionSecurityConfig struct {
-	EnableIPBinding           bool          // Bind sessions to IP addresses
+	EnableIPBinding            bool          // Bind sessions to IP addresses
 	EnableDeviceFingerprinting bool          // Use device fingerprinting
-	EnableGeoValidation       bool          // Validate geographic location
-	MaxConcurrentSessions     int           // Max sessions per user
-	SessionFixationPrevention bool          // Prevent session fixation attacks
-	CSRFProtection           bool          // Enable CSRF token validation
-	SecureCookiesOnly        bool          // Only use secure cookies
-	StrictSameSite           bool          // Use strict SameSite policy
-	SessionTimeout           time.Duration // Auto-logout timeout
-	GracePeriod              time.Duration // Token rotation grace period
+	EnableGeoValidation        bool          // Validate geographic location
+	MaxConcurrentSessions      int           // Max sessions per user
+	SessionFixationPrevention  bool          // Prevent session fixation attacks
+	CSRFProtection             bool          // Enable CSRF token validation
+	SecureCookiesOnly          bool          // Only use secure cookies
+	StrictSameSite             bool          // Use strict SameSite policy
+	SessionTimeout             time.Duration // Auto-logout timeout
+	GracePeriod                time.Duration // Token rotation grace period
 }
 
 // Security action constants
@@ -41,16 +42,16 @@ const (
 // DefaultAdvancedSessionSecurityConfig provides secure defaults
 func DefaultAdvancedSessionSecurityConfig() *AdvancedSessionSecurityConfig {
 	return &AdvancedSessionSecurityConfig{
-		EnableIPBinding:           true,
+		EnableIPBinding:            true,
 		EnableDeviceFingerprinting: true,
-		EnableGeoValidation:       false, // Disabled by default (requires external service)
-		MaxConcurrentSessions:     10,
-		SessionFixationPrevention: true,
-		CSRFProtection:           true,
-		SecureCookiesOnly:        true,
-		StrictSameSite:           true,
-		SessionTimeout:           24 * time.Hour,
-		GracePeriod:              1 * time.Hour,
+		EnableGeoValidation:        false, // Disabled by default (requires external service)
+		MaxConcurrentSessions:      10,
+		SessionFixationPrevention:  true,
+		CSRFProtection:             true,
+		SecureCookiesOnly:          true,
+		StrictSameSite:             true,
+		SessionTimeout:             24 * time.Hour,
+		GracePeriod:                1 * time.Hour,
 	}
 }
 
@@ -67,31 +68,31 @@ func NewSessionSecurityManager(logger *zap.Logger, config *AdvancedSessionSecuri
 
 // DeviceFingerprint represents a device fingerprint
 type DeviceFingerprint struct {
-	UserAgent    string `json:"user_agent"`
-	IPAddress    string `json:"ip_address"`
-	AcceptLang   string `json:"accept_language,omitempty"`
-	Timezone     string `json:"timezone,omitempty"`
-	ScreenRes    string `json:"screen_resolution,omitempty"`
-	ColorDepth   string `json:"color_depth,omitempty"`
-	Platform     string `json:"platform,omitempty"`
-	Fingerprint  string `json:"fingerprint"` // SHA256 hash of combined factors
+	UserAgent   string `json:"user_agent"`
+	IPAddress   string `json:"ip_address"`
+	AcceptLang  string `json:"accept_language,omitempty"`
+	Timezone    string `json:"timezone,omitempty"`
+	ScreenRes   string `json:"screen_resolution,omitempty"`
+	ColorDepth  string `json:"color_depth,omitempty"`
+	Platform    string `json:"platform,omitempty"`
+	Fingerprint string `json:"fingerprint"` // SHA256 hash of combined factors
 }
 
 // SecurityValidationResult represents the result of security validation
 type SecurityValidationResult struct {
-	Valid              bool     `json:"valid"`
-	TrustScore         float64  `json:"trust_score"`      // 0.0 - 1.0
-	RiskFactors        []string `json:"risk_factors"`
-	RequiresChallenge  bool     `json:"requires_challenge"`
-	RecommendedAction  string   `json:"recommended_action"`
+	Valid             bool     `json:"valid"`
+	TrustScore        float64  `json:"trust_score"` // 0.0 - 1.0
+	RiskFactors       []string `json:"risk_factors"`
+	RequiresChallenge bool     `json:"requires_challenge"`
+	RecommendedAction string   `json:"recommended_action"`
 }
 
 // SessionAnomalyFlags represents detected anomalies
 type SessionAnomalyFlags struct {
-	IPChanged         bool `json:"ip_changed"`
-	DeviceChanged     bool `json:"device_changed"`
-	LocationChanged   bool `json:"location_changed"`
-	UnusualTiming     bool `json:"unusual_timing"`
+	IPChanged          bool `json:"ip_changed"`
+	DeviceChanged      bool `json:"device_changed"`
+	LocationChanged    bool `json:"location_changed"`
+	UnusualTiming      bool `json:"unusual_timing"`
 	ConcurrentSessions bool `json:"concurrent_sessions"`
 	SuspiciousActivity bool `json:"suspicious_activity"`
 }
@@ -100,7 +101,7 @@ type SessionAnomalyFlags struct {
 func (ssm *SessionSecurityManager) GenerateCSRFToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate CSRF token: %w", err)
+		return "", errors.Join(ErrCSRFTokenGeneration, err)
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -118,11 +119,11 @@ func (ssm *SessionSecurityManager) ValidateCSRFToken(provided, expected string) 
 func (ssm *SessionSecurityManager) GenerateDeviceFingerprint(userAgent, ipAddress, acceptLang string) *DeviceFingerprint {
 	// Create fingerprint from available data
 	combined := fmt.Sprintf("%s|%s|%s", userAgent, ipAddress, acceptLang)
-	
+
 	// Generate SHA256 hash
 	hash := sha256.Sum256([]byte(combined))
 	fingerprint := hex.EncodeToString(hash[:])
-	
+
 	return &DeviceFingerprint{
 		UserAgent:   userAgent,
 		IPAddress:   ipAddress,
@@ -134,9 +135,9 @@ func (ssm *SessionSecurityManager) GenerateDeviceFingerprint(userAgent, ipAddres
 // ValidateSessionSecurity performs comprehensive session security validation
 func (ssm *SessionSecurityManager) ValidateSessionSecurity(_ context.Context, session *Session, currentFingerprint *DeviceFingerprint) (*SecurityValidationResult, error) {
 	result := &SecurityValidationResult{
-		Valid:      true,
-		TrustScore: 1.0,
-		RiskFactors: []string{},
+		Valid:             true,
+		TrustScore:        1.0,
+		RiskFactors:       []string{},
 		RequiresChallenge: false,
 		RecommendedAction: "allow",
 	}
@@ -225,7 +226,7 @@ func (ssm *SessionSecurityManager) isIPInSameSubnet(ip1, ip2 string) bool {
 	// Parse IP addresses
 	parsedIP1 := net.ParseIP(ip1)
 	parsedIP2 := net.ParseIP(ip2)
-	
+
 	if parsedIP1 == nil || parsedIP2 == nil {
 		return false
 	}
@@ -234,8 +235,8 @@ func (ssm *SessionSecurityManager) isIPInSameSubnet(ip1, ip2 string) bool {
 	if parsedIP1.To4() != nil && parsedIP2.To4() != nil {
 		// IPv4 - check /24 subnet
 		return parsedIP1.To4()[0] == parsedIP2.To4()[0] &&
-			   parsedIP1.To4()[1] == parsedIP2.To4()[1] &&
-			   parsedIP1.To4()[2] == parsedIP2.To4()[2]
+			parsedIP1.To4()[1] == parsedIP2.To4()[1] &&
+			parsedIP1.To4()[2] == parsedIP2.To4()[2]
 	}
 
 	// For IPv6 or other cases, be more strict
@@ -251,15 +252,15 @@ func (ssm *SessionSecurityManager) PreventSessionFixation(oldSessionID string) (
 	// Generate new session ID
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate new session ID: %w", err)
+		return "", errors.Join(ErrSessionIDGeneration, err)
 	}
-	
+
 	newSessionID := hex.EncodeToString(b)
-	
+
 	ssm.logger.Debug("session ID regenerated for fixation prevention",
 		zap.String("oldSessionID", oldSessionID),
 		zap.String("newSessionID", newSessionID))
-	
+
 	return newSessionID, nil
 }
 
@@ -268,45 +269,45 @@ func (ssm *SessionSecurityManager) GenerateSecureSessionCookie(sessionID, userna
 	// Create session cookie payload
 	timestamp := time.Now().Unix()
 	payload := fmt.Sprintf("%s|%s|%d", sessionID, username, timestamp)
-	
+
 	// Add entropy
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate cookie entropy: %w", err)
+		return "", errors.Join(ErrCookieEntropyGeneration, err)
 	}
 	entropy := hex.EncodeToString(b)
-	
+
 	// Combine and hash
 	combined := fmt.Sprintf("%s|%s", payload, entropy)
 	hash := sha256.Sum256([]byte(combined))
-	
+
 	return hex.EncodeToString(hash[:]), nil
 }
 
 // ValidateSecurityHeaders validates important security headers
 func (ssm *SessionSecurityManager) ValidateSecurityHeaders(headers map[string]string) []string {
 	var missingHeaders []string
-	
+
 	// Check for important security headers
 	requiredHeaders := map[string]string{
 		"X-Content-Type-Options": "nosniff",
 		"X-Frame-Options":        "DENY",
 		"X-XSS-Protection":       "1; mode=block",
 	}
-	
+
 	for header, expectedValue := range requiredHeaders {
 		if value, exists := headers[header]; !exists || value != expectedValue {
 			missingHeaders = append(missingHeaders, header)
 		}
 	}
-	
+
 	return missingHeaders
 }
 
 // CalculateSessionRisk calculates an overall risk score for a session
 func (ssm *SessionSecurityManager) CalculateSessionRisk(_ *Session, anomalies *SessionAnomalyFlags, validationResult *SecurityValidationResult) float64 {
 	baseRisk := 0.0
-	
+
 	// Add risk based on anomalies
 	if anomalies.IPChanged {
 		baseRisk += 0.3
@@ -323,15 +324,15 @@ func (ssm *SessionSecurityManager) CalculateSessionRisk(_ *Session, anomalies *S
 	if anomalies.ConcurrentSessions {
 		baseRisk += 0.15
 	}
-	
+
 	// Factor in validation result
 	baseRisk += (1.0 - validationResult.TrustScore) * 0.5
-	
+
 	// Cap at 1.0
 	if baseRisk > 1.0 {
 		baseRisk = 1.0
 	}
-	
+
 	return baseRisk
 }
 
@@ -341,12 +342,12 @@ func (ssm *SessionSecurityManager) ShouldRequire2FA(riskScore float64, session *
 	if riskScore >= 0.7 {
 		return true
 	}
-	
+
 	// Require 2FA for privileged sessions older than threshold
 	if time.Since(session.CreatedAt) > 7*24*time.Hour && riskScore >= 0.4 {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -359,12 +360,12 @@ func (ssm *SessionSecurityManager) LogSecurityEvent(eventType, sessionID, userna
 		zap.String("description", description),
 		zap.Time("timestamp", time.Now()),
 	}
-	
+
 	// Add metadata fields
 	for key, value := range metadata {
 		fields = append(fields, zap.Any(key, value))
 	}
-	
+
 	ssm.logger.Info("security event", fields...)
 }
 
@@ -376,14 +377,14 @@ func (ssm *SessionSecurityManager) IsHighRiskUserAgent(userAgent string) bool {
 		"curl", "wget", "python-requests",
 		"postman", "insomnia",
 	}
-	
+
 	userAgentLower := strings.ToLower(userAgent)
 	for _, pattern := range suspiciousPatterns {
 		if strings.Contains(userAgentLower, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -392,14 +393,14 @@ func (ssm *SessionSecurityManager) RotateSessionSecrets(session *Session) error 
 	// Generate new CSRF token
 	newCSRFToken, err := ssm.GenerateCSRFToken()
 	if err != nil {
-		return fmt.Errorf("failed to rotate CSRF token: %w", err)
+		return errors.Join(ErrCSRFTokenRotation, err)
 	}
-	
+
 	// Update session with new secrets
 	// This would typically update the session in storage
 	ssm.logger.Debug("session secrets rotated",
 		zap.String("sessionID", session.SessionID),
 		zap.String("newCSRFToken", newCSRFToken))
-	
+
 	return nil
 }

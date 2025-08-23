@@ -73,19 +73,19 @@ func (d *SafeJSONDecoder) Decode(v any) error {
 // validateJSON recursively validates JSON structure
 func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 	if depth > MaxJSONDepth {
-		return fmt.Errorf("JSON depth exceeds maximum of %d", MaxJSONDepth)
+		return fmt.Errorf("%w: depth %d exceeds maximum %d", ErrJSONDepthExceedsMaximum, depth, MaxJSONDepth)
 	}
 
 	switch val := v.(type) {
 	case map[string]any:
 		// Use len check directly for JSON object keys count
 		if len(val) > MaxJSONKeys {
-			return fmt.Errorf("JSON object has %d keys, maximum is %d", len(val), MaxJSONKeys)
+			return fmt.Errorf("%w: %d keys, maximum is %d", ErrJSONObjectTooManyKeys, len(val), MaxJSONKeys)
 		}
 
 		for key, value := range val {
 			if err := ValidateStringLength("JSON key", key, 0, MaxJSONStringLength); err != nil {
-				return fmt.Errorf("JSON key too long: %d bytes", len(key))
+				return fmt.Errorf("%w: %d bytes", ErrJSONKeyTooLong, len(key))
 			}
 			if err := d.validateJSON(value, depth+1); err != nil {
 				return err
@@ -94,7 +94,7 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 
 	case []any:
 		if err := ValidateSliceLength("JSON array", val, MaxJSONArrayLength); err != nil {
-			return fmt.Errorf("JSON array has %d elements, maximum is %d", len(val), MaxJSONArrayLength)
+			return fmt.Errorf("%w: %d elements, maximum is %d", ErrJSONArrayTooManyElements, len(val), MaxJSONArrayLength)
 		}
 
 		for _, item := range val {
@@ -105,14 +105,14 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 
 	case string:
 		if err := ValidateStringLength("JSON string", val, 0, MaxJSONStringLength); err != nil {
-			return fmt.Errorf("JSON string too long: %d bytes", len(val))
+			return fmt.Errorf("%w: %d bytes", ErrJSONStringTooLong, len(val))
 		}
 
 	case float64, bool, nil:
 		// These are safe
 
 	default:
-		return fmt.Errorf("unexpected JSON type: %T", v)
+		return fmt.Errorf("%w: %T", ErrUnexpectedJSONType, v)
 	}
 
 	return nil
@@ -121,7 +121,7 @@ func (d *SafeJSONDecoder) validateJSON(v any, depth int) error {
 // SafeUnmarshalJSON is a convenience function for safe JSON unmarshaling
 func SafeUnmarshalJSON(data []byte, v any) error {
 	if err := ValidateSliceLength("JSON data", data, MaxJSONSize); err != nil {
-		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
+		return fmt.Errorf("%w: %d bytes exceeds maximum %d", ErrJSONSizeExceedsMaximum, len(data), MaxJSONSize)
 	}
 
 	decoder := NewSafeJSONDecoder(bytes.NewReader(data))
@@ -132,7 +132,7 @@ func SafeUnmarshalJSON(data []byte, v any) error {
 // Use this for ActivityPub objects which may have extensions
 func SafeUnmarshalJSONWithoutUnknownFields(data []byte, v any) error {
 	if err := ValidateSliceLength("JSON data", data, MaxJSONSize); err != nil {
-		return fmt.Errorf("JSON size %d exceeds maximum %d", len(data), MaxJSONSize)
+		return fmt.Errorf("%w: %d bytes exceeds maximum %d", ErrJSONSizeExceedsMaximum, len(data), MaxJSONSize)
 	}
 
 	// First validate the structure
@@ -156,12 +156,12 @@ func DetectJSONBomb(data []byte) error {
 
 	// Check for excessive repetition (compression bomb indicator)
 	if detectRepetition(dataStr) {
-		return fmt.Errorf("possible JSON bomb: excessive repetition detected")
+		return ErrJSONBombRepetitionDetected
 	}
 
 	// Check for exponential expansion patterns
 	if strings.Count(dataStr, "[") > 100 || strings.Count(dataStr, "{") > 100 {
-		return fmt.Errorf("possible JSON bomb: excessive nesting detected")
+		return ErrJSONBombNestingDetected
 	}
 
 	return nil

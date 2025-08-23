@@ -3,12 +3,14 @@ package cost
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -227,7 +229,7 @@ func (s *RealtimeAggregationService) ProcessDynamoDBStreamEvent(ctx context.Cont
 		zap.Duration("processing_time", processingTime))
 
 	if len(errors) > 0 {
-		return fmt.Errorf("stream processing completed with %d errors", len(errors))
+		return services.ErrStreamProcessingErrors
 	}
 
 	return nil
@@ -296,7 +298,7 @@ func (p *StreamProcessor) ProcessRecords(ctx context.Context, records []events.D
 	}
 
 	if failed > 0 {
-		return fmt.Errorf("failed to process %d of %d records", failed, len(records))
+		return services.ErrRecordProcessingFailed
 	}
 
 	return nil
@@ -308,7 +310,7 @@ func (s *RealtimeAggregationService) processAICostStream(ctx context.Context, re
 		switch record.EventName {
 		case EventInsert, EventModify:
 			if err := s.processAICostRecord(ctx, record); err != nil {
-				return fmt.Errorf("failed to process AI cost record: %w", err)
+				return errors.Join(services.ErrProcessAICostRecord, err)
 			}
 		case EventRemove:
 			// Handle record deletion if needed
@@ -324,7 +326,7 @@ func (s *RealtimeAggregationService) processWebSocketCostStream(ctx context.Cont
 		switch record.EventName {
 		case EventInsert, EventModify:
 			if err := s.processWebSocketCostRecord(ctx, record); err != nil {
-				return fmt.Errorf("failed to process WebSocket cost record: %w", err)
+				return errors.Join(services.ErrProcessWebSocketCostRecord, err)
 			}
 		case EventRemove:
 			s.logger.Debug("WebSocket cost record removed", zap.String("event_name", record.EventName))
@@ -339,7 +341,7 @@ func (s *RealtimeAggregationService) processFederationCostStream(ctx context.Con
 		switch record.EventName {
 		case EventInsert, EventModify:
 			if err := s.processFederationCostRecord(ctx, record); err != nil {
-				return fmt.Errorf("failed to process federation cost record: %w", err)
+				return errors.Join(services.ErrProcessFederationCostRecord, err)
 			}
 		case EventRemove:
 			s.logger.Debug("Federation cost record removed", zap.String("event_name", record.EventName))
@@ -353,7 +355,7 @@ func (s *RealtimeAggregationService) processAICostRecord(ctx context.Context, re
 	// Extract AI cost data from DynamoDB record
 	var aiCost models.AICost
 	if err := s.unmarshalDynamoDBRecord(record, &aiCost); err != nil {
-		return fmt.Errorf("failed to unmarshal AI cost record: %w", err)
+		return errors.Join(services.ErrUnmarshalAICostRecord, err)
 	}
 
 	// Update real-time aggregations
@@ -380,7 +382,7 @@ func (s *RealtimeAggregationService) processWebSocketCostRecord(_ context.Contex
 	// Extract WebSocket cost data from DynamoDB record
 	var wsCost models.WebSocketCostRecord
 	if err := s.unmarshalDynamoDBRecord(record, &wsCost); err != nil {
-		return fmt.Errorf("failed to unmarshal WebSocket cost record: %w", err)
+		return errors.Join(services.ErrUnmarshalWebSocketCostRecord, err)
 	}
 
 	// Update real-time aggregations
@@ -400,7 +402,7 @@ func (s *RealtimeAggregationService) processFederationCostRecord(_ context.Conte
 	// Extract federation cost data from DynamoDB record
 	var fedCost models.FederationCostTracking
 	if err := s.unmarshalDynamoDBRecord(record, &fedCost); err != nil {
-		return fmt.Errorf("failed to unmarshal federation cost record: %w", err)
+		return errors.Join(services.ErrUnmarshalFederationCostRecord, err)
 	}
 
 	// Update real-time aggregations
@@ -425,7 +427,7 @@ func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.Dynam
 	case "REMOVE":
 		recordData = record.Change.OldImage
 	default:
-		return fmt.Errorf("unsupported event type: %s", record.EventName)
+		return services.ErrUnsupportedEventType
 	}
 
 	// Convert DynamoDB attribute values to JSON
@@ -437,11 +439,11 @@ func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.Dynam
 	// Marshal to JSON then unmarshal to target struct
 	jsonBytes, err := json.Marshal(jsonData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal to JSON: %w", err)
+		return errors.Join(services.ErrMarshalToJSON, err)
 	}
 
 	if err := json.Unmarshal(jsonBytes, target); err != nil {
-		return fmt.Errorf("failed to unmarshal to target: %w", err)
+		return errors.Join(services.ErrUnmarshalToTarget, err)
 	}
 
 	return nil
@@ -513,14 +515,14 @@ func (s *RealtimeAggregationService) createOrUpdateAIAggregation(ctx context.Con
 	// Create hourly aggregation
 	hourlyAgg := s.createHourlyAIAggregation(aiCost)
 	if err := s.aiCostRepo.CreateOrUpdateAggregatedCost(ctx, hourlyAgg); err != nil {
-		return fmt.Errorf("failed to create hourly aggregation: %w", err)
+		return errors.Join(services.ErrCreateHourlyAggregation, err)
 	}
 
 	// Create daily aggregation if it's the first operation of the day
 	if s.shouldCreateDailyAggregation(aiCost.Timestamp) {
 		dailyAgg := s.createDailyAIAggregation(aiCost)
 		if err := s.aiCostRepo.CreateOrUpdateAggregatedCost(ctx, dailyAgg); err != nil {
-			return fmt.Errorf("failed to create daily aggregation: %w", err)
+			return errors.Join(services.ErrCreateDailyAggregation, err)
 		}
 	}
 

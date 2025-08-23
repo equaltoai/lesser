@@ -66,7 +66,7 @@ func (r *AccountRepository) Follow(ctx context.Context, followerUsername, follow
 			zap.String("follower", followerUsername),
 			zap.String("followed", followedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to create follow: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, fmt.Sprintf("%s following %s", followerUsername, followedUsername))
 	}
 
 	// Update follower/followed counts
@@ -88,7 +88,7 @@ func (r *AccountRepository) Unfollow(ctx context.Context, followerUsername, foll
 			zap.String("follower", followerUsername),
 			zap.String("followed", followedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to unfollow: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unfollowing %s", followerUsername, followedUsername))
 	}
 
 	// Update follower/followed counts
@@ -114,7 +114,7 @@ func (r *AccountRepository) IsFollowing(ctx context.Context, followerUsername, f
 			zap.String("follower", followerUsername),
 			zap.String("followed", followedUsername),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check follow: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("follow check %s->%s", followerUsername, followedUsername))
 	}
 
 	return follow.State == models.FollowStateAccepted, nil
@@ -139,7 +139,7 @@ func (r *AccountRepository) GetFollowers(ctx context.Context, username string, l
 		r.logger.Error("failed to get followers",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get followers: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("followers for %s", username))
 	}
 
 	// Get actor details for each follower
@@ -186,7 +186,7 @@ func (r *AccountRepository) GetFollowing(ctx context.Context, username string, l
 		r.logger.Error("failed to get following",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get following: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("following for %s", username))
 	}
 
 	// Get actor details for each followed user
@@ -219,11 +219,11 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 	// Get actor IDs
 	blocker, err := r.GetActor(ctx, blockerUsername)
 	if err != nil {
-		return fmt.Errorf("blocker not found: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, blockerUsername)
 	}
 	blocked, err := r.GetActor(ctx, blockedUsername)
 	if err != nil {
-		return fmt.Errorf("blocked user not found: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, blockedUsername)
 	}
 
 	// Create block using model fields
@@ -244,7 +244,7 @@ func (r *AccountRepository) Block(ctx context.Context, blockerUsername, blockedU
 			zap.String("blocker", blockerUsername),
 			zap.String("blocked", blockedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to create block: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, fmt.Sprintf("%s blocking %s", blockerUsername, blockedUsername))
 	}
 
 	// Remove any existing follow relationships in both directions
@@ -276,7 +276,7 @@ func (r *AccountRepository) Unblock(ctx context.Context, blockerUsername, blocke
 			zap.String("blocker", blockerUsername),
 			zap.String("blocked", blockedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to unblock: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unblocking %s", blockerUsername, blockedUsername))
 	}
 
 	return nil
@@ -299,7 +299,7 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 			zap.String("blocker", blockerUsername),
 			zap.String("blocked", blockedUsername),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check block: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("block check %s->%s", blockerUsername, blockedUsername))
 	}
 
 	return true, nil
@@ -308,8 +308,8 @@ func (r *AccountRepository) IsBlocked(ctx context.Context, blockerUsername, bloc
 // GetBlocks retrieves all users blocked by a user
 func (r *AccountRepository) GetBlocks(ctx context.Context, username string) ([]*storage.Block, error) {
 	return QueryWithPKAndSKPrefix(
-		&QueryUtils{db: r.db, logger: r.logger},
 		ctx,
+		&QueryUtils{db: r.db, logger: r.logger},
 		func() *models.Block { return &models.Block{} },
 		fmt.Sprintf("ACTOR#%s#BLOCKS", username),
 		"BLOCKED#",
@@ -333,11 +333,11 @@ func (r *AccountRepository) Mute(ctx context.Context, muterUsername, mutedUserna
 	// Get actor IDs
 	muter, err := r.GetActor(ctx, muterUsername)
 	if err != nil {
-		return fmt.Errorf("muter not found: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, muterUsername)
 	}
 	muted, err := r.GetActor(ctx, mutedUsername)
 	if err != nil {
-		return fmt.Errorf("muted user not found: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, mutedUsername)
 	}
 
 	mute := &models.Mute{
@@ -358,7 +358,7 @@ func (r *AccountRepository) Mute(ctx context.Context, muterUsername, mutedUserna
 			zap.String("muter", muterUsername),
 			zap.String("muted", mutedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to create mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, fmt.Sprintf("%s muting %s", muterUsername, mutedUsername))
 	}
 
 	return nil
@@ -376,7 +376,7 @@ func (r *AccountRepository) Unmute(ctx context.Context, muterUsername, mutedUser
 			zap.String("muter", muterUsername),
 			zap.String("muted", mutedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to unmute: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unmuting %s", muterUsername, mutedUsername))
 	}
 
 	return nil
@@ -399,7 +399,7 @@ func (r *AccountRepository) IsMuted(ctx context.Context, muterUsername, mutedUse
 			zap.String("muter", muterUsername),
 			zap.String("muted", mutedUsername),
 			zap.Error(err))
-		return false, false, fmt.Errorf("failed to check mute: %w", err)
+		return false, false, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("mute check %s->%s", muterUsername, mutedUsername))
 	}
 
 	return true, mute.HideNotifications, nil
@@ -418,7 +418,7 @@ func (r *AccountRepository) GetMutes(ctx context.Context, username string) ([]*s
 		r.logger.Error("failed to get mutes",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get mutes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("mutes for %s", username))
 	}
 
 	// Convert to storage type and extract usernames from actor IDs
@@ -458,7 +458,7 @@ func (r *AccountRepository) AddBookmark(ctx context.Context, username, objectID 
 			zap.String("username", username),
 			zap.String("objectID", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add bookmark: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, fmt.Sprintf("%s bookmark %s", username, objectID))
 	}
 
 	return nil
@@ -477,7 +477,7 @@ func (r *AccountRepository) RemoveBookmark(ctx context.Context, username, object
 			zap.String("username", username),
 			zap.String("objectID", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to remove bookmark: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unbookmark %s", username, objectID))
 	}
 
 	return nil
@@ -500,7 +500,7 @@ func (r *AccountRepository) GetBookmarks(ctx context.Context, username string, l
 		r.logger.Error("failed to get bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get bookmarks: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("bookmarks for %s", username))
 	}
 
 	// Convert to storage type
@@ -528,7 +528,7 @@ func (r *AccountRepository) GetBookmarkedStatuses(ctx context.Context, username 
 	// Check if statusRepo dependency is available
 	if r.statusRepo == nil {
 		r.logger.Error("statusRepo dependency not set for GetBookmarkedStatuses")
-		return nil, fmt.Errorf("statusRepo dependency not available")
+		return nil, ErrorHandler.HandleQueryError(nil, EntityUser, "statusRepo dependency")
 	}
 
 	// Get bookmark records first using the existing method
@@ -537,7 +537,7 @@ func (r *AccountRepository) GetBookmarkedStatuses(ctx context.Context, username 
 		r.logger.Error("failed to get bookmarks for bookmarked statuses",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get bookmarks: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("bookmarked statuses for %s", username))
 	}
 
 	// If no bookmarks found, return empty result
@@ -570,7 +570,7 @@ func (r *AccountRepository) GetBookmarkedStatuses(ctx context.Context, username 
 			zap.String("username", username),
 			zap.Strings("status_ids", statusIDs),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get statuses: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("status lookup for %s", username))
 	}
 
 	// Create a map for efficient lookup and maintain bookmark order
@@ -634,7 +634,7 @@ func (r *AccountRepository) UnpinAccount(ctx context.Context, username, pinnedUs
 			zap.String("username", username),
 			zap.String("pinnedUsername", pinnedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to unpin account: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, fmt.Sprintf("%s unpin %s", username, pinnedUsername))
 	}
 
 	return nil
@@ -683,7 +683,7 @@ func (r *AccountRepository) GetAccountPins(ctx context.Context, username string)
 		r.logger.Error("failed to get account pins",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get account pins: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, fmt.Sprintf("account pins for %s", username))
 	}
 
 	// Convert to storage type
@@ -717,7 +717,7 @@ func (r *AccountRepository) GetAccountPin(ctx context.Context, username, targetA
 			zap.String("username", username),
 			zap.String("targetActorID", targetActorID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get account pin: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityUser, fmt.Sprintf("%s pin %s", username, targetActorID))
 	}
 
 	return &storage.AccountPin{
@@ -740,7 +740,7 @@ func (r *AccountRepository) updateMute(ctx context.Context, muterUsername, muted
 		First(&mute)
 
 	if err != nil {
-		return fmt.Errorf("failed to get existing mute: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityUser, fmt.Sprintf("existing mute %s->%s", muterUsername, mutedUsername))
 	}
 
 	// Update fields
@@ -752,7 +752,7 @@ func (r *AccountRepository) updateMute(ctx context.Context, muterUsername, muted
 			zap.String("muter", muterUsername),
 			zap.String("muted", mutedUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to update mute: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityUser, fmt.Sprintf("%s mute update %s", muterUsername, mutedUsername))
 	}
 
 	return nil

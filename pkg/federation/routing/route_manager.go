@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -201,7 +202,7 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 	// Get all routes for destination
 	routes, err := m.GetRoutes(destination)
 	if err != nil {
-		return nil, fmt.Errorf("get routes: %w", err)
+		return nil, errors.Join(ErrGetRoutesFailed, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
@@ -211,7 +212,8 @@ func (m *Manager) SelectRoute(destination string, messageType types.MessageType)
 	// Filter by message type support
 	supportedRoutes := m.filterByMessageType(routes, messageType)
 	if err := common.ValidateSliceNotEmpty("supportedRoutes", supportedRoutes); err != nil {
-		return nil, fmt.Errorf("no routes support message type: %s", messageType)
+		m.logger.Error("no routes support message type", zap.String("messageType", string(messageType)))
+		return nil, ErrNoMessageTypeSupport
 	}
 
 	// Filter by circuit breaker status
@@ -306,7 +308,7 @@ func (m *Manager) buildRoutesForDestination(destination string) ([]*types.Route,
 	// Get instances for domain
 	instances, err := m.getInstancesForDomain(destination)
 	if err != nil {
-		return nil, fmt.Errorf("get instances: %w", err)
+		return nil, errors.Join(ErrGetInstancesFailed, err)
 	}
 
 	// Build routes from instances
@@ -405,7 +407,7 @@ func (m *Manager) populateHealthStatus(cachedData *cachedRoutes, routes []*types
 // RegisterInstance registers a new federated instance
 func (m *Manager) RegisterInstance(instance *types.Instance) error {
 	if err := m.registry.RegisterInstance(context.Background(), instance); err != nil {
-		return fmt.Errorf("register instance: %w", err)
+		return errors.Join(ErrRegisterInstanceFailed, err)
 	}
 
 	// Start health monitoring
@@ -437,13 +439,16 @@ func (m *Manager) RegisterInstance(instance *types.Instance) error {
 func (m *Manager) UpdateInstanceHealth(instanceID string, health *types.HealthStatus) error {
 	// Update registry
 	if err := m.registry.UpdateInstanceHealth(context.Background(), instanceID, health); err != nil {
-		return fmt.Errorf("update health: %w", err)
+		return errors.Join(ErrUpdateHealthFailed, err)
 	}
 
 	// Update circuit breaker based on health
 	if !health.Reachable || health.ErrorRate > 0.5 {
-		if err := m.circuitBreaker.RecordFailure(instanceID, fmt.Errorf("unhealthy: reachable=%v, errorRate=%.2f",
-			health.Reachable, health.ErrorRate)); err != nil {
+		m.logger.Warn("instance unhealthy - recording circuit breaker failure",
+			zap.String("instanceID", instanceID),
+			zap.Bool("reachable", health.Reachable),
+			zap.Float64("errorRate", health.ErrorRate))
+		if err := m.circuitBreaker.RecordFailure(instanceID, ErrInstanceUnhealthy); err != nil {
 			m.logger.Error("failed to record circuit breaker failure", zap.Error(err))
 		}
 	} else {
@@ -478,7 +483,7 @@ func (m *Manager) OptimizeRoutes() error {
 	// Get all active routes
 	instances, err := m.ListHealthyInstances()
 	if err != nil {
-		return fmt.Errorf("list instances: %w", err)
+		return errors.Join(ErrListInstancesFailed, err)
 	}
 
 	optimizedCount := 0
@@ -519,7 +524,8 @@ func (m *Manager) GetRouteMetrics(destination string) (*types.RouteMetrics, erro
 	}
 
 	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
-		return nil, fmt.Errorf("no routes for destination: %s", destination)
+		m.logger.Warn("no routes available for destination", zap.String("destination", destination))
+		return nil, ErrNoRoutesForDestination
 	}
 
 	// Aggregate metrics from all routes
@@ -565,7 +571,7 @@ func (m *Manager) PerformHealthCheck(instanceID string) (*types.HealthStatus, er
 	// Get instance information
 	instance, err := m.GetInstance(instanceID)
 	if err != nil {
-		return nil, fmt.Errorf("get instance: %w", err)
+		return nil, errors.Join(ErrGetInstanceFailed, err)
 	}
 
 	// Check if circuit breaker allows health check
@@ -596,8 +602,11 @@ func (m *Manager) PerformHealthCheck(instanceID string) (*types.HealthStatus, er
 				m.logger.Error("failed to record circuit breaker success", zap.Error(cbErr))
 			}
 		} else {
-			cbErr := m.circuitBreaker.RecordFailure(instanceID, fmt.Errorf("health check failed: reachable=%v, status=%d",
-				health.Reachable, health.StatusCode))
+			m.logger.Warn("health check failed - recording circuit breaker failure",
+				zap.String("instanceID", instanceID),
+				zap.Bool("reachable", health.Reachable),
+				zap.Int("statusCode", health.StatusCode))
+			cbErr := m.circuitBreaker.RecordFailure(instanceID, ErrHealthCheckFailed)
 			if cbErr != nil {
 				m.logger.Error("failed to record circuit breaker failure", zap.Error(cbErr))
 			}
@@ -614,7 +623,7 @@ func (m *Manager) PerformHealthCheck(instanceID string) (*types.HealthStatus, er
 func (m *Manager) MonitorInstanceHealth() error {
 	instances, err := m.ListHealthyInstances()
 	if err != nil {
-		return fmt.Errorf("list instances: %w", err)
+		return errors.Join(ErrListInstancesFailed, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("instances", instances); err != nil {
@@ -664,13 +673,13 @@ func (m *Manager) MonitorInstanceHealth() error {
 // DetectUnhealthyInstances identifies instances that should be removed from rotation
 func (m *Manager) DetectUnhealthyInstances() ([]string, error) {
 	if m.healthChecker.healthRepo == nil {
-		return nil, fmt.Errorf("health repository not available")
+		return nil, ErrHealthRepositoryNotAvailable
 	}
 
 	// Get unhealthy instances with 40% health score threshold
 	unhealthy, err := m.healthChecker.healthRepo.GetUnhealthyInstances(context.Background(), 40.0)
 	if err != nil {
-		return nil, fmt.Errorf("get unhealthy instances: %w", err)
+		return nil, errors.Join(ErrGetUnhealthyInstancesFailed, err)
 	}
 
 	// Cross-reference with circuit breaker status
@@ -701,7 +710,7 @@ func (m *Manager) RecoverInstances() error {
 	// Get instances that might be recoverable (half-open circuits)
 	instances, err := m.ListHealthyInstances()
 	if err != nil {
-		return fmt.Errorf("list instances: %w", err)
+		return errors.Join(ErrListInstancesFailed, err)
 	}
 
 	recoverableCount := 0
@@ -732,7 +741,7 @@ func (m *Manager) RecoverInstances() error {
 func (m *Manager) GetHealthSummary() (*HealthSummary, error) {
 	instances, err := m.ListHealthyInstances()
 	if err != nil {
-		return nil, fmt.Errorf("list instances: %w", err)
+		return nil, errors.Join(ErrListInstancesFailed, err)
 	}
 
 	summary := &HealthSummary{
@@ -866,7 +875,7 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 	}
 
 	if err := common.ValidateSliceNotEmpty("routeMap", routeMap); err != nil {
-		return nil, fmt.Errorf("no routes available for any target")
+		return nil, ErrNoRoutesAvailable
 	}
 
 	// Group targets by route for batch delivery
@@ -915,7 +924,11 @@ func (m *Manager) DeliverMessage(ctx context.Context, message *types.FederationM
 					m.logger.Error("failed to record circuit breaker success", zap.Error(err))
 				}
 			} else {
-				if err := m.circuitBreaker.RecordFailure(route.InstanceID, fmt.Errorf("%s", result.ErrorMessage)); err != nil {
+				m.logger.Error("HTTP delivery failed - recording circuit breaker failure",
+					zap.String("routeID", route.ID),
+					zap.String("instanceID", route.InstanceID),
+					zap.String("errorMessage", result.ErrorMessage))
+				if err := m.circuitBreaker.RecordFailure(route.InstanceID, ErrHTTPDeliveryFailed); err != nil {
 					m.logger.Error("failed to record circuit breaker failure", zap.Error(err))
 				}
 			}
@@ -1026,7 +1039,7 @@ func (m *Manager) createRouteFromInstance(instance *types.Instance) (*types.Rout
 	if err != nil {
 		endpoint, err = url.Parse(instance.InboxURL)
 		if err != nil {
-			return nil, fmt.Errorf("invalid inbox URLs")
+			return nil, ErrInvalidInboxURLs
 		}
 	}
 
@@ -1247,7 +1260,7 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 	// Get all routes (including degraded ones)
 	routes, err := m.GetRoutes(destination)
 	if err != nil {
-		return nil, fmt.Errorf("get routes in emergency mode: %w", err)
+		return nil, errors.Join(ErrGetRoutesInEmergencyMode, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("routes", routes); err != nil {
@@ -1275,12 +1288,16 @@ func (m *Manager) selectRouteInEmergencyMode(destination string, messageType typ
 			switch rule.Action {
 			case "queue_if_below_threshold":
 				if healthRatio < rule.Threshold {
-					return nil, fmt.Errorf("message queued due to emergency backpressure (health ratio: %.2f < %.2f)", healthRatio, rule.Threshold)
+					m.logger.Warn("message queued due to backpressure",
+						zap.Float64("healthRatio", healthRatio),
+						zap.Float64("threshold", rule.Threshold),
+						zap.String("messageType", string(messageType)))
+					return nil, ErrMessageQueuedBackpressure
 				}
 			case "queue":
-				return nil, fmt.Errorf("message queued due to emergency mode")
+				return nil, ErrMessageQueuedEmergency
 			case "drop":
-				return nil, fmt.Errorf("message dropped due to emergency mode")
+				return nil, ErrMessageDroppedEmergency
 			}
 		}
 	}
@@ -1307,7 +1324,7 @@ func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types
 			// Get the signing actor
 			signingActor, err := m.getSigningActor(ctx, message.Actor)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to get signing actor: %w", err)
+				return nil, nil, errors.Join(ErrGetSigningActorFailed, err)
 			}
 			return &activity, signingActor, nil
 		}
@@ -1337,7 +1354,7 @@ func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types
 	// Get the signing actor
 	signingActor, err := m.getSigningActor(ctx, message.Actor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get signing actor: %w", err)
+		return nil, nil, errors.Join(ErrGetSigningActorFailed, err)
 	}
 
 	return activity, signingActor, nil
@@ -1346,19 +1363,21 @@ func (m *Manager) prepareActivityForDelivery(ctx context.Context, message *types
 // getSigningActor retrieves the actor for signing the request
 func (m *Manager) getSigningActor(ctx context.Context, actorID string) (*activitypub.Actor, error) {
 	if m.federationStore == nil {
-		return nil, fmt.Errorf("federation store not configured")
+		return nil, ErrFederationStoreNotConfigured
 	}
 
 	// Extract username from actor ID
 	username := extractUsernameFromActorID(actorID)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, fmt.Errorf("could not extract username from actor ID: %s", actorID)
+		m.logger.Error("could not extract username from actor ID", zap.String("actorID", actorID))
+		return nil, ErrExtractUsernameFromActorID
 	}
 
 	// Get actor from storage
 	actor, err := m.federationStore.GetActor(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor %s: %w", username, err)
+		m.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
+		return nil, errors.Join(ErrGetActorFailed, err)
 	}
 
 	return actor, nil
@@ -1369,13 +1388,13 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 	// Serialize the activity
 	body, err := json.Marshal(activity)
 	if err != nil {
-		return fmt.Errorf("failed to marshal activity: %w", err)
+		return errors.Join(ErrMarshalActivityFailed, err)
 	}
 
 	// Create the request
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetInbox, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.Join(ErrCreateRequestFailed, err)
 	}
 
 	// Set headers
@@ -1385,30 +1404,30 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 
 	// Get the actor's private key from storage
 	if m.federationStore == nil {
-		return fmt.Errorf("federation store not configured for signing")
+		return ErrFederationStoreNotConfiguredForSigning
 	}
 
 	privateKeyPEM, err := m.federationStore.GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
-		return fmt.Errorf("failed to get private key: %w", err)
+		return errors.Join(ErrGetPrivateKeyFailed, err)
 	}
 
 	// Parse the private key
 	privateKey, err := federation.ParsePrivateKeyPEM([]byte(privateKeyPEM))
 	if err != nil {
-		return fmt.Errorf("failed to parse private key: %w", err)
+		return errors.Join(ErrParsePrivateKeyFailed, err)
 	}
 
 	// Sign the request
 	keyID := signingActor.PublicKey.ID
 	if err := federation.SignHTTPRequest(req, privateKey, keyID); err != nil {
-		return fmt.Errorf("failed to sign request: %w", err)
+		return errors.Join(ErrSignRequestFailed, err)
 	}
 
 	// Send the request
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
+		return errors.Join(ErrSendRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1433,7 +1452,11 @@ func (m *Manager) performHTTPDelivery(ctx context.Context, activity *activitypub
 		zap.Int("statusCode", resp.StatusCode),
 		zap.String("response", string(respBody)))
 
-	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	m.logger.Error("HTTP delivery failed",
+		zap.String("targetInbox", targetInbox),
+		zap.Int("statusCode", resp.StatusCode),
+		zap.String("responseBody", string(respBody)))
+	return ErrHTTPDeliveryFailed
 }
 
 // isRetryableError determines if an HTTP status code indicates a retryable error

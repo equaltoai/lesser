@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -28,7 +29,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -40,7 +40,7 @@ type NotificationProcessor struct {
 	logger                    *zap.Logger
 	notificationRepo          *repositories.NotificationRepository
 	userRepo                  *repositories.UserRepository
-	costTrackingRepo          *repositories.CostTrackingRepository
+	costTrackingRepo          *repositories.TrackingRepository
 	notificationCostRepo      *repositories.NotificationCostRepository
 	webSocketSubscriptionRepo *repositories.WebSocketSubscriptionManagerRepository
 	snsClient                 *sns.Client
@@ -93,7 +93,10 @@ type RetryableError struct {
 }
 
 func (r *RetryableError) Error() string {
-	return fmt.Sprintf("retryable error: %s (retry after: %v)", r.OriginalError.Error(), r.RetryAfter)
+	if r.OriginalError != nil {
+		return "retryable error: " + r.OriginalError.Error()
+	}
+	return "retryable error"
 }
 
 // RetryPolicy defines the retry configuration
@@ -130,14 +133,15 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 	// Initialize repositories
 	notificationRepo := repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger)
 	userRepo := repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
-	costTrackingRepo := repositories.NewCostTrackingRepository(db, cfg.DynamoTableName, logger)
+	costTrackingRepo := repositories.NewTrackingRepository(db, cfg.DynamoTableName, logger)
 	notificationCostRepo := repositories.NewNotificationCostRepository(db, cfg.DynamoTableName, logger)
 	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
 
-	// Get configuration from environment
-	webSocketEndpoint := os.Getenv("WEBSOCKET_ENDPOINT")
-	retryQueueURL := os.Getenv("NOTIFICATION_RETRY_QUEUE_URL")
-	deadLetterQueueURL := os.Getenv("NOTIFICATION_DLQ_URL")
+	// Get configuration from centralized config
+	appCfg := config.Get()
+	webSocketEndpoint := appCfg.WebSocketEndpoint
+	retryQueueURL := appCfg.NotificationRetryQueueURL
+	deadLetterQueueURL := appCfg.NotificationDLQURL
 
 	return &NotificationProcessor{
 		db:                        db,
@@ -197,9 +201,10 @@ func (np *NotificationProcessor) HandleSQS(ctx *lift.Context, event events.SQSEv
 	wg.Wait()
 
 	if len(errors) > 0 {
-		return lift.NewLiftError("PARTIAL_BATCH_FAILURE",
-			fmt.Sprintf("partial batch failure: %d of %d messages failed", len(errors), len(event.Records)),
-			500)
+		np.logger.Error("partial batch failure",
+			zap.Int("failed_count", len(errors)),
+			zap.Int("total_count", len(event.Records)))
+		return ErrPartialBatchFailure
 	}
 
 	return nil
@@ -209,7 +214,10 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 	// Parse the delivery request
 	var request NotificationDeliveryRequest
 	if err := json.Unmarshal([]byte(record.Body), &request); err != nil {
-		return fmt.Errorf("failed to unmarshal delivery request: %w", err)
+		np.logger.Error("failed to unmarshal delivery request",
+			zap.String("message_id", record.MessageId),
+			zap.Error(err))
+		return errors.Join(ErrUnmarshalDeliveryRequest, err)
 	}
 
 	np.logger.Info("processing notification delivery",
@@ -232,7 +240,10 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 	// Get the notification
 	notification, err := np.notificationRepo.GetNotification(ctx, request.NotificationID)
 	if err != nil {
-		return fmt.Errorf("failed to get notification: %w", err)
+		np.logger.Error("failed to get notification",
+			zap.String("notification_id", request.NotificationID),
+			zap.Error(err))
+		return errors.Join(ErrGetNotification, err)
 	}
 
 	// Get user preferences
@@ -274,7 +285,7 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 			zap.String("notification_id", request.NotificationID),
 			zap.String("user_id", request.UserID),
 			zap.Int64("estimated_cost_micro_cents", estimatedCostMicroCents))
-		return fmt.Errorf("notification delivery blocked: user budget exceeded")
+		return ErrNotificationBudgetExceeded
 	}
 
 	// Attempt delivery on each requested channel
@@ -286,7 +297,10 @@ func (np *NotificationProcessor) processMessage(ctx context.Context, record even
 		deliveryResults = append(deliveryResults, result)
 
 		if !result.Success {
-			lastError = fmt.Errorf("delivery failed on channel %s: %s", channel, result.Error)
+			np.logger.Error("delivery failed on channel",
+				zap.String("channel", channel),
+				zap.String("error", result.Error))
+			lastError = ErrDeliveryChannelFailed
 		}
 	}
 
@@ -411,7 +425,9 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 		}
 
 	default:
-		result.Error = fmt.Sprintf("unsupported delivery channel: %s (only push and websocket are supported)", channel)
+		np.logger.Error("unsupported delivery channel",
+			zap.String("channel", channel))
+		result.Error = "unsupported delivery channel: only push and websocket are supported"
 		costBuilder.WithError(result.Error)
 	}
 
@@ -477,7 +493,7 @@ func (np *NotificationProcessor) deliverToChannel(ctx context.Context, notificat
 
 func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *models.Notification, _ *UserPreferences) error {
 	if np.snsClient == nil {
-		return fmt.Errorf("SNS client not initialized")
+		return ErrSNSClientNotInitialized
 	}
 
 	// Build push notification payload
@@ -494,7 +510,10 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal push payload: %w", err)
+		np.logger.Error("failed to marshal push payload",
+			zap.String("notification_id", notification.ID),
+			zap.Error(err))
+		return errors.Join(ErrMarshalPushPayload, err)
 	}
 
 	// Send push notification via SNS to FCM/APNS
@@ -504,7 +523,7 @@ func (np *NotificationProcessor) deliverPush(ctx context.Context, notification *
 			zap.String("notification_id", notification.ID),
 			zap.String("user_id", notification.UserID),
 			zap.Error(err))
-		return fmt.Errorf("failed to send push notification: %w", err)
+		return errors.Join(ErrSendPushNotification, err)
 	}
 
 	np.logger.Info("push notification delivered successfully",
@@ -538,7 +557,10 @@ func (np *NotificationProcessor) deliverWebSocket(ctx context.Context, notificat
 	// Get active WebSocket connections for the user
 	connections, err := np.getActiveWebSocketConnections(ctx, notification.UserID)
 	if err != nil {
-		return fmt.Errorf("failed to get websocket connections: %w", err)
+		np.logger.Error("failed to get websocket connections",
+			zap.String("user_id", notification.UserID),
+			zap.Error(err))
+		return errors.Join(ErrGetWebSocketConnections, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("connections", connections); err != nil {
@@ -565,7 +587,11 @@ func (np *NotificationProcessor) deliverWebSocket(ctx context.Context, notificat
 	}
 
 	if successCount == 0 && lastError != nil {
-		return fmt.Errorf("failed to deliver to any websocket connections: %w", lastError)
+		np.logger.Error("failed to deliver to any websocket connections",
+			zap.String("notification_id", notification.ID),
+			zap.String("user_id", notification.UserID),
+			zap.Error(lastError))
+		return errors.Join(ErrDeliverWebSocketMessage, lastError)
 	}
 
 	np.logger.Info("websocket notification delivered",
@@ -580,12 +606,15 @@ func (np *NotificationProcessor) deliverWebSocket(ctx context.Context, notificat
 
 func (np *NotificationProcessor) sendWebSocketMessage(ctx context.Context, connectionID string, message WebSocketMessage) error {
 	if np.apiGatewayClient == nil {
-		return fmt.Errorf("API Gateway client not initialized")
+		return ErrAPIGatewayClientNotInitialized
 	}
 
 	messageBytes, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal websocket message: %w", err)
+		np.logger.Error("failed to marshal websocket message",
+			zap.String("connection_id", connectionID),
+			zap.Error(err))
+		return errors.Join(ErrMarshalWebSocketMessage, err)
 	}
 
 	_, err = np.apiGatewayClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
@@ -658,10 +687,11 @@ func (np *NotificationProcessor) sendPushNotification(ctx context.Context, userI
 	// Create SNS message for push notification
 	message := string(payload)
 
-	// Get push notification topic from environment
-	pushTopicArn := os.Getenv("PUSH_NOTIFICATION_TOPIC_ARN")
+	// Get push notification topic from configuration
+	appCfg := config.Get()
+	pushTopicArn := appCfg.PushNotificationTopicArn
 	if err := common.ValidateRequiredParam("pushTopicArn", pushTopicArn); err != nil {
-		return fmt.Errorf("PUSH_NOTIFICATION_TOPIC_ARN not configured")
+		return ErrPushTopicNotConfigured
 	}
 
 	// Publish to SNS topic for push notifications
@@ -682,7 +712,11 @@ func (np *NotificationProcessor) sendPushNotification(ctx context.Context, userI
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to publish push notification to SNS: %w", err)
+		np.logger.Error("failed to publish to SNS",
+			zap.String("user_id", userID),
+			zap.String("topic_arn", pushTopicArn),
+			zap.Error(err))
+		return errors.Join(ErrPublishToSNS, err)
 	}
 
 	return nil
@@ -720,9 +754,6 @@ func (np *NotificationProcessor) updateDeliveryStatus(ctx context.Context, notif
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
-	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage
 	processor *NotificationProcessor
 )
 
@@ -740,15 +771,12 @@ func init() {
 		},
 	})
 	
-	// Automatic dependency injection
-	cfg = lambdaCtx.Config
-	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+	// Automatic dependency injection handled by processor initialization
 	
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
-		logger.Warn("failed to initialize with defaults", zap.Error(err))
+		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
 	
 	// Initialize processor
@@ -973,10 +1001,10 @@ func (np *NotificationProcessor) checkNotificationBudget(ctx context.Context, us
 // requeueScheduledNotification requeues a notification for future delivery
 func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Context, request NotificationDeliveryRequest) error {
 	if np.sqsClient == nil {
-		return fmt.Errorf("SQS client not initialized")
+		return ErrSQSClientNotInitialized
 	}
 	if err := common.ValidateRequiredParam("retryQueueURL", np.retryQueueURL); err != nil {
-		return fmt.Errorf("retry queue URL not configured")
+		return ErrRetryQueueNotConfigured
 	}
 
 	// Calculate delay until scheduled time
@@ -995,7 +1023,10 @@ func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Contex
 	// Serialize request
 	messageBody, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("failed to marshal scheduled notification request: %w", err)
+		np.logger.Error("failed to marshal scheduled request",
+			zap.String("notification_id", request.NotificationID),
+			zap.Error(err))
+		return errors.Join(ErrMarshalScheduledRequest, err)
 	}
 
 	// Send to retry queue with delay
@@ -1016,7 +1047,11 @@ func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Contex
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to requeue scheduled notification: %w", err)
+		np.logger.Error("failed to requeue notification",
+			zap.String("notification_id", request.NotificationID),
+			zap.String("queue_url", np.retryQueueURL),
+			zap.Error(err))
+		return errors.Join(ErrRequeueNotification, err)
 	}
 
 	np.logger.Info("requeued scheduled notification",
@@ -1030,7 +1065,7 @@ func (np *NotificationProcessor) requeueScheduledNotification(ctx context.Contex
 // scheduleRetry schedules a retry for a failed notification with exponential backoff
 func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request NotificationDeliveryRequest, originalError error) error {
 	if np.sqsClient == nil || common.ValidateRequiredParam("retryQueueURL", np.retryQueueURL) != nil {
-		return fmt.Errorf("SQS client or retry queue URL not configured")
+		return ErrSQSConfigurationIncomplete
 	}
 
 	retryPolicy := DefaultRetryPolicy()
@@ -1045,7 +1080,11 @@ func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request Noti
 	// Serialize request
 	messageBody, err := json.Marshal(retryRequest)
 	if err != nil {
-		return fmt.Errorf("failed to marshal retry request: %w", err)
+		np.logger.Error("failed to marshal retry request",
+			zap.String("notification_id", request.NotificationID),
+			zap.Int("retry_count", retryRequest.RetryCount),
+			zap.Error(err))
+		return errors.Join(ErrMarshalRetryRequest, err)
 	}
 
 	// Calculate SQS delay (max 15 minutes)
@@ -1080,7 +1119,12 @@ func (np *NotificationProcessor) scheduleRetry(ctx context.Context, request Noti
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed to schedule retry: %w", err)
+		np.logger.Error("failed to schedule retry",
+			zap.String("notification_id", request.NotificationID),
+			zap.Int("retry_count", retryRequest.RetryCount),
+			zap.String("queue_url", np.retryQueueURL),
+			zap.Error(err))
+		return errors.Join(ErrScheduleRetry, err)
 	}
 
 	np.logger.Info("scheduled notification retry",

@@ -274,6 +274,26 @@ func (ct *DynamORMCostTracker) TrackComprehendRequest(operation string, units in
 	// and $0.001 per unit for entity recognition
 }
 
+// TrackTranscribeRequest tracks AWS Transcribe API requests for cost tracking
+func (ct *DynamORMCostTracker) TrackTranscribeRequest(jobName string, estimatedMinutes int) {
+	// Track as a generic AWS service request
+	// Transcribe pricing is typically per minute of audio
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+
+	// Log the Transcribe request for cost tracking
+	if ct.logger != nil {
+		ct.logger.Debug("transcribe_request_tracked",
+			zap.String("job_name", jobName),
+			zap.Int("estimated_minutes", estimatedMinutes),
+		)
+	}
+
+	// You could extend the Tracker to have specific Transcribe metrics
+	// For now, we'll track it as a generic operation
+	// Transcribe costs approximately $0.024 per minute for standard transcription
+}
+
 // TrackingQuery wraps core.Query with enhanced cost tracking
 type TrackingQuery struct {
 	query             core.Query

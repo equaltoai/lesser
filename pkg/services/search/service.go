@@ -9,12 +9,14 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
@@ -175,21 +177,24 @@ func (s *Service) Search(ctx context.Context, query *Query) (*Result, error) {
 	case "accounts":
 		accounts, err := s.searchAccounts(ctx, query)
 		if err != nil {
-			return nil, fmt.Errorf("failed to search accounts: %w", err)
+			s.logger.Error("account search failed", zap.Error(err), zap.String("query", query.Query))
+			return nil, errors.Join(pkgerrors.ErrSearchAccounts, err)
 		}
 		result.Accounts = accounts
 
 	case "hashtags":
 		hashtags, err := s.searchHashtags(ctx, query)
 		if err != nil {
-			return nil, fmt.Errorf("failed to search hashtags: %w", err)
+			s.logger.Error("hashtag search failed", zap.Error(err), zap.String("query", query.Query))
+			return nil, errors.Join(pkgerrors.ErrSearchHashtags, err)
 		}
 		result.Hashtags = hashtags
 
 	case "statuses":
 		statuses, err := s.searchStatuses(ctx, query)
 		if err != nil {
-			return nil, fmt.Errorf("failed to search statuses: %w", err)
+			s.logger.Error("status search failed", zap.Error(err), zap.String("query", query.Query))
+			return nil, errors.Join(pkgerrors.ErrSearchStatuses, err)
 		}
 		result.Statuses = statuses
 
@@ -226,7 +231,8 @@ func (s *Service) GetDirectory(ctx context.Context, query *DirectoryQuery) (*Dir
 	// Get discoverable accounts
 	actors, err := s.searchRepo.SearchAccounts(ctx, "", query.Limit*2, false, query.Offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get directory: %w", err)
+		s.logger.Error("directory retrieval failed", zap.Error(err), zap.String("order", query.Order), zap.Int("limit", query.Limit))
+		return nil, errors.Join(pkgerrors.ErrGetDirectory, err)
 	}
 
 	// Convert to account results
@@ -266,7 +272,8 @@ func (s *Service) GetSuggestions(ctx context.Context, query *SuggestionsQuery) (
 	// Get suggestions using the actor repository
 	actors, err := s.actorRepo.GetAccountSuggestions(ctx, query.Username, query.Limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get suggestions: %w", err)
+		s.logger.Error("suggestions retrieval failed", zap.Error(err), zap.String("username", query.Username), zap.Int("limit", query.Limit))
+		return nil, errors.Join(pkgerrors.ErrGetSuggestions, err)
 	}
 
 	// Convert to suggestion items
@@ -301,7 +308,8 @@ func (s *Service) RemoveSuggestion(ctx context.Context, cmd *RemoveSuggestionCom
 
 	// Remove the suggestion
 	if err := s.actorRepo.RemoveAccountSuggestion(ctx, cmd.Username, cmd.AccountID); err != nil {
-		return fmt.Errorf("failed to remove suggestion: %w", err)
+		s.logger.Error("suggestion removal failed", zap.Error(err), zap.String("username", cmd.Username), zap.String("account_id", cmd.AccountID))
+		return errors.Join(pkgerrors.ErrRemoveSuggestion, err)
 	}
 
 	// Emit event for real-time updates

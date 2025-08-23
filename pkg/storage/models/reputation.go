@@ -29,34 +29,34 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 	// Extract username from actorID using the same logic as legacy
 	username := extractUsernameFromActorID(actorID)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return fmt.Errorf("invalid actorID format: %s", actorID)
+		return fmt.Errorf("%w: %s", ErrInvalidActorIDFormat, actorID)
 	}
 
 	// Marshal reputation to JSON first to access fields
 	repJSON, err := json.Marshal(reputation)
 	if err != nil {
-		return fmt.Errorf("failed to marshal reputation: %w", err)
+		return fmt.Errorf("%w: %w", ErrReputationMarshalFailed, err)
 	}
 
 	// Validate JSON before unmarshaling
 	if err := common.ValidateJSONField(string(repJSON), "reputation"); err != nil {
-		return fmt.Errorf("invalid reputation JSON: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidReputationJSON, err)
 	}
 
 	// Unmarshal to a map to access fields
 	var repMap map[string]interface{}
 	if err := json.Unmarshal(repJSON, &repMap); err != nil {
-		return fmt.Errorf("failed to unmarshal reputation to map: %w", err)
+		return fmt.Errorf("%w: %w", ErrReputationUnmarshalFailed, err)
 	}
 
 	// Get calculatedAt and convert to time
 	calculatedAtStr, ok := repMap["calculatedAt"].(string)
 	if !ok {
-		return fmt.Errorf("calculatedAt field not found or not a string")
+		return ErrCalculatedAtFieldMissing
 	}
 	calculatedAt, err := time.Parse(time.RFC3339, calculatedAtStr)
 	if err != nil {
-		return fmt.Errorf("failed to parse calculatedAt: %w", err)
+		return fmt.Errorf("%w: %w", ErrCalculatedAtParseFailed, err)
 	}
 
 	// Get totalScore
@@ -86,12 +86,12 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 func (r *Reputation) ToStorageReputation() (interface{}, error) {
 	// Validate JSON before unmarshaling
 	if err := common.ValidateJSONField(r.ReputationData, "reputation_data"); err != nil {
-		return nil, fmt.Errorf("invalid reputation data JSON: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidReputationDataJSON, err)
 	}
 
 	var reputation map[string]interface{}
 	if err := json.Unmarshal([]byte(r.ReputationData), &reputation); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal reputation data: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrReputationDataUnmarshalFailed, err)
 	}
 	return reputation, nil
 }

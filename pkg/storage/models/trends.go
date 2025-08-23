@@ -25,7 +25,7 @@ type HashtagTrend struct {
 }
 
 // UpdateKeys updates the GSI keys for hashtag trend
-func (h *HashtagTrend) UpdateKeys() {
+func (h *HashtagTrend) UpdateKeys() error {
 	timeBucket := h.UpdatedAt.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", h.TrendScore*1000)
 
@@ -40,6 +40,17 @@ func (h *HashtagTrend) UpdateKeys() {
 	if h.TTL == 0 {
 		h.TTL = h.UpdatedAt.Add(7 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (h *HashtagTrend) GetPK() string {
+	return h.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (h *HashtagTrend) GetSK() string {
+	return h.SK
 }
 
 // StatusTrend represents a trending status
@@ -60,7 +71,7 @@ type StatusTrend struct {
 }
 
 // UpdateKeys updates the GSI keys for status trend
-func (s *StatusTrend) UpdateKeys() {
+func (s *StatusTrend) UpdateKeys() error {
 	timeBucket := s.UpdatedAt.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", s.TrendScore*1000)
 
@@ -75,6 +86,8 @@ func (s *StatusTrend) UpdateKeys() {
 	if s.TTL == 0 {
 		s.TTL = s.UpdatedAt.Add(7 * 24 * time.Hour).Unix()
 	}
+	
+	return nil
 }
 
 // LinkTrend represents a trending link
@@ -96,7 +109,7 @@ type LinkTrend struct {
 }
 
 // UpdateKeys updates the GSI keys for link trend
-func (l *LinkTrend) UpdateKeys() {
+func (l *LinkTrend) UpdateKeys() error {
 	timeBucket := l.UpdatedAt.Format(common.DateFormat)
 	paddedScore := fmt.Sprintf("%010.0f", l.TrendScore*1000)
 
@@ -111,6 +124,8 @@ func (l *LinkTrend) UpdateKeys() {
 	if l.TTL == 0 {
 		l.TTL = l.UpdatedAt.Add(7 * 24 * time.Hour).Unix()
 	}
+	
+	return nil
 }
 
 // SearchQuery represents a search query for analytics
@@ -125,7 +140,7 @@ type SearchQuery struct {
 }
 
 // UpdateKeys updates the GSI keys for search query
-func (s *SearchQuery) UpdateKeys() {
+func (s *SearchQuery) UpdateKeys() error {
 	// User search history
 	s.PK = fmt.Sprintf(KeyPatternUser, s.UserID)
 	s.SK = fmt.Sprintf("SEARCH#%s", s.SearchedAt.Format(time.RFC3339Nano))
@@ -134,6 +149,17 @@ func (s *SearchQuery) UpdateKeys() {
 	if s.TTL == 0 {
 		s.TTL = s.SearchedAt.Add(30 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (s *SearchQuery) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (s *SearchQuery) GetSK() string {
+	return s.SK
 }
 
 // PopularQueryCounter represents an atomic counter for popular search queries
@@ -159,7 +185,7 @@ type PopularQueryCounter struct {
 }
 
 // UpdateKeys updates the GSI keys for popular query counter
-func (p *PopularQueryCounter) UpdateKeys() {
+func (p *PopularQueryCounter) UpdateKeys() error {
 	// Primary keys for atomic operations
 	p.PK = fmt.Sprintf("POPULAR_QUERY#%s", p.QueryHash)
 	p.SK = fmt.Sprintf("COUNTER#%s", p.TimeBucket)
@@ -184,4 +210,15 @@ func (p *PopularQueryCounter) UpdateKeys() {
 			p.TTL = p.UpdatedAt.Add(30 * 24 * time.Hour).Unix() // Default 30 days
 		}
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (p *PopularQueryCounter) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (p *PopularQueryCounter) GetSK() string {
+	return p.SK
 }

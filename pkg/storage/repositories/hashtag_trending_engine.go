@@ -227,7 +227,7 @@ func (te *TrendingEngine) CalculateTrending(ctx context.Context, since time.Time
 	// Step 1: Get candidate hashtags
 	candidates, err := te.getCandidateHashtags(ctx, since)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get candidate hashtags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "trending candidates")
 	}
 
 	if err := common.ValidateSliceNotEmpty("candidates", candidates); err != nil {
@@ -391,7 +391,7 @@ func (te *TrendingEngine) getCandidateHashtags(ctx context.Context, since time.T
 		All(&candidates)
 
 	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get candidate hashtags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "candidate retrieval")
 	}
 
 	te.logger.Debug("retrieved candidate hashtags",
@@ -465,7 +465,7 @@ func (te *TrendingEngine) calculateWindowMetrics(ctx context.Context, hashtag st
 		All(&usageRecords)
 
 	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get usage records: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "usage records")
 	}
 
 	// Calculate metrics from usage records

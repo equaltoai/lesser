@@ -16,7 +16,7 @@ func ExampleUsage() {
 	// Example 1: Basic transformation
 	stringToIntTransformer := NewBaseTransformer(
 		"string_to_int",
-		func(ctx context.Context, source string) (int, error) {
+		func(_ context.Context, source string) (int, error) {
 			// Simplified conversion for example
 			switch source {
 			case "one":
@@ -26,7 +26,7 @@ func ExampleUsage() {
 			case "three":
 				return 3, nil
 			default:
-				return 0, fmt.Errorf("unknown number: %s", source)
+				return 0, fmt.Errorf("%w: %s", ErrUnknownNumber, source)
 			}
 		},
 		logger,
@@ -38,7 +38,7 @@ func ExampleUsage() {
 	// Example 2: Cached transformation
 	expensiveTransformer := NewBaseTransformer(
 		"expensive_operation",
-		func(ctx context.Context, source string) (string, error) {
+		func(_ context.Context, source string) (string, error) {
 			// Simulate expensive operation
 			time.Sleep(time.Millisecond * 100)
 			return fmt.Sprintf("processed_%s", source), nil
@@ -66,7 +66,7 @@ func ExampleUsage() {
 	// Example 3: Batch transformation
 	batchTransformer := NewBatchTransformer(
 		"batch_processor",
-		func(ctx context.Context, source int) (string, error) {
+		func(_ context.Context, source int) (string, error) {
 			return fmt.Sprintf("item_%d", source), nil
 		},
 		nil, // No custom batch function
@@ -80,10 +80,10 @@ func ExampleUsage() {
 	// Example 4: Conditional transformation
 	conditionalTransformer := NewConditionalTransformer(
 		"positive_only",
-		func(ctx context.Context, source int) (string, error) {
+		func(_ context.Context, source int) (string, error) {
 			return fmt.Sprintf("positive_%d", source), nil
 		},
-		func(ctx context.Context, source int) bool {
+		func(_ context.Context, source int) bool {
 			return source > 0 // Only transform positive numbers
 		},
 		logger,
@@ -116,8 +116,14 @@ func ExampleUsage() {
 
 	// Example 6: Registry usage
 	registry := NewTransformationRegistry(logger)
-	registry.Register("string_to_int", stringToIntTransformer)
-	registry.Register("expensive", expensiveTransformer)
+	if err := registry.Register("string_to_int", stringToIntTransformer); err != nil {
+		fmt.Printf("Failed to register string_to_int transformer: %v\n", err)
+		return
+	}
+	if err := registry.Register("expensive", expensiveTransformer); err != nil {
+		fmt.Printf("Failed to register expensive transformer: %v\n", err)
+		return
+	}
 
 	// Retrieve and use from registry
 	if retrieved, exists := registry.Get("string_to_int"); exists {
@@ -173,7 +179,7 @@ func DomainSpecificExample() {
 
 	actorToAccountTransformer := NewBaseTransformer(
 		"actor_to_account",
-		func(ctx context.Context, actor ActivityPubActor) (MastodonAccount, error) {
+		func(_ context.Context, actor ActivityPubActor) (MastodonAccount, error) {
 			return MastodonAccount{
 				ID:             actor.ID,
 				Username:       actor.PreferredUsername,
@@ -207,11 +213,11 @@ func PerformanceOptimizedExample() {
 	// Create a high-performance batch transformer with caching
 	transformer := NewBatchTransformer(
 		"optimized_processor",
-		func(ctx context.Context, source string) (string, error) {
+		func(_ context.Context, source string) (string, error) {
 			// Simulate processing
 			return fmt.Sprintf("processed_%s", source), nil
 		},
-		func(ctx context.Context, sources []string) ([]string, error) {
+		func(_ context.Context, sources []string) ([]string, error) {
 			// Custom batch function for better performance
 			results := make([]string, len(sources))
 			for i, source := range sources {

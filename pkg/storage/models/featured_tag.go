@@ -23,7 +23,18 @@ type FeaturedTag struct {
 }
 
 // UpdateKeys sets the PK and SK based on the username and ID
-func (f *FeaturedTag) UpdateKeys() {
+func (f *FeaturedTag) UpdateKeys() error {
 	f.PK = fmt.Sprintf(KeyPatternUser, f.Username)
 	f.SK = fmt.Sprintf("FEATURED_TAG#%s", f.ID)
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (f *FeaturedTag) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (f *FeaturedTag) GetSK() string {
+	return f.SK
 }

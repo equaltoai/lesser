@@ -36,7 +36,7 @@ type CircuitBreakerState struct {
 }
 
 // UpdateKeys sets the DynamoDB keys
-func (c *CircuitBreakerState) UpdateKeys() {
+func (c *CircuitBreakerState) UpdateKeys() error {
 	c.PK = fmt.Sprintf("CIRCUIT#%s", c.InstanceID)
 	c.SK = SKState
 
@@ -46,6 +46,17 @@ func (c *CircuitBreakerState) UpdateKeys() {
 	} else {
 		c.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *CircuitBreakerState) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *CircuitBreakerState) GetSK() string {
+	return c.SK
 }
 
 // GetBackoffDuration returns the backoff duration as time.Duration
@@ -82,7 +93,7 @@ type CircuitBreakerEvent struct {
 }
 
 // UpdateKeys sets the DynamoDB keys for events
-func (e *CircuitBreakerEvent) UpdateKeys() {
+func (e *CircuitBreakerEvent) UpdateKeys() error {
 	e.PK = fmt.Sprintf("CIRCUIT#%s", e.InstanceID)
 
 	if e.Timestamp.IsZero() {
@@ -93,6 +104,17 @@ func (e *CircuitBreakerEvent) UpdateKeys() {
 
 	// Set TTL to 7 days from now
 	e.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (e *CircuitBreakerEvent) GetPK() string {
+	return e.PK
+}
+
+// GetSK returns the sort key
+func (e *CircuitBreakerEvent) GetSK() string {
+	return e.SK
 }
 
 // CircuitBreakerConfig represents the configuration for circuit breaker behavior

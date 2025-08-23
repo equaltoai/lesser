@@ -99,7 +99,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	authHeader := h.getAuthHeader(ctx)
 	if authHeader != "" {
 		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 				username = claims.Username
 			}
@@ -413,7 +413,7 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 	}
 
 	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)

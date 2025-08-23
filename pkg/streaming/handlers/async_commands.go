@@ -831,7 +831,7 @@ func (ach *AsyncCommandHandler) handleListImports(ctx context.Context, conn *str
 
 // processBulkRelationshipOperation processes bulk relationship operations with progress tracking
 func (ach *AsyncCommandHandler) processBulkRelationshipOperation(
-	ctx context.Context,
+	_ context.Context,
 	conn *streaming.ConnectionInfo,
 	operationID string,
 	accountIDs []string,

@@ -7,9 +7,9 @@ package graph
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	neturl "net/url"
-	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,7 +22,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	mediaStreaming "github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/moderation"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/conversations"
@@ -31,7 +33,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/media"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
-	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/services/scheduled"
 	"github.com/equaltoai/lesser/pkg/services/search"
@@ -40,7 +41,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	mediaStreaming "github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/equaltoai/lesser/pkg/trust"
 	"go.uber.org/zap"
@@ -69,7 +69,7 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 			Username: *username,
 		}
 	} else {
-		return nil, fmt.Errorf("either id or username must be provided")
+		return nil, ErrEitherIDOrUsernameRequired
 	}
 
 	// Get account using service
@@ -77,14 +77,14 @@ func (r *queryResolver) Actor(ctx context.Context, id *string, username *string)
 	if err := common.ValidateRequiredParam("username", query.Username); err == nil {
 		usernameToLookup = query.Username
 	}
-	
+
 	account, err := r.Registry.Accounts().GetAccount(ctx, usernameToLookup)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, nil
 		}
 		r.Logger.Error("Failed to get actor", zap.Error(err))
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, errors.Join(errors.New("failed to get actor"), err)
 	}
 
 	return r.convertAccountToActor(account), nil
@@ -101,7 +101,7 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 		r.Logger.Error("Failed to get object",
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get object: %w", err)
+		return nil, errors.Join(errors.New("failed to get object"), err)
 	}
 
 	return r.convertStatusToObject(ctx, note), nil
@@ -110,7 +110,7 @@ func (r *queryResolver) Object(ctx context.Context, id string) (*model.Object, e
 // Timeline is the resolver for the timeline field.
 func (r *queryResolver) Timeline(ctx context.Context, timelineType model.TimelineType, hashtag *string, listID *string, first *int, after *model.Cursor) (*model.ObjectConnection, error) {
 	username := r.optionalAuth(ctx)
-	
+
 	// Build pagination
 	pagination := interfaces.PaginationOptions{
 		Limit: 20,
@@ -134,7 +134,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 	switch timelineType {
 	case model.TimelineTypeHome:
 		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, fmt.Errorf("authentication required for home timeline")
+			return nil, ErrAuthRequiredForHome
 		}
 		query.TimelineType = "home"
 	case model.TimelineTypePublic:
@@ -143,30 +143,30 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		query.TimelineType = "local"
 	case model.TimelineTypeHashtag:
 		if hashtag == nil {
-			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
+			return nil, ErrHashtagParameterRequired
 		}
 		if err := common.ValidateRequiredParam("hashtag", *hashtag); err != nil {
-			return nil, fmt.Errorf("hashtag parameter required for hashtag timeline")
+			return nil, ErrHashtagParameterRequired
 		}
 		query.TimelineType = TimelineTypeHashtag
 		query.Hashtag = *hashtag
 	case model.TimelineTypeList:
 		if listID == nil {
-			return nil, fmt.Errorf("listId parameter required for list timeline")
+			return nil, ErrListIDParameterRequired
 		}
 		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
-			return nil, fmt.Errorf("listId parameter required for list timeline")
+			return nil, ErrListIDParameterRequired
 		}
 		query.TimelineType = TimelineTypeList
 		// List timeline is handled differently - need to get list members
 		// and fetch their posts
 	case model.TimelineTypeDirect:
 		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return nil, fmt.Errorf("authentication required for direct timeline")
+			return nil, ErrAuthRequiredForDirect
 		}
 		query.TimelineType = TimelineTypeDirect
 	default:
-		return nil, fmt.Errorf("unsupported timeline type: %v", timelineType)
+		return nil, ErrUnsupportedTimelineTypeWithValue(timelineType)
 	}
 
 	// Get timeline using service
@@ -175,7 +175,7 @@ func (r *queryResolver) Timeline(ctx context.Context, timelineType model.Timelin
 		r.Logger.Error("Failed to get timeline",
 			zap.String("type", string(timelineType)),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get timeline: %w", err)
+		return nil, errors.Join(errors.New("failed to get timeline"), err)
 	}
 
 	// Convert to GraphQL connection
@@ -239,7 +239,7 @@ func (r *queryResolver) Notifications(ctx context.Context, types []string, exclu
 		r.Logger.Error("Failed to list notifications",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to list notifications: %w", err)
+		return nil, errors.Join(errors.New("failed to list notifications"), err)
 	}
 
 	// Convert to GraphQL connection
@@ -294,7 +294,7 @@ func (r *queryResolver) Conversations(ctx context.Context, first *int, after *mo
 		r.Logger.Error("Failed to list conversations",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to list conversations: %w", err)
+		return nil, errors.Join(errors.New("failed to list conversations"), err)
 	}
 
 	var convos []*model.Conversation
@@ -327,7 +327,7 @@ func (r *queryResolver) Conversation(ctx context.Context, id string) (*model.Con
 			zap.String("user", username),
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
+		return nil, errors.Join(errors.New("failed to get conversation"), err)
 	}
 
 	isParticipant := false
@@ -338,7 +338,7 @@ func (r *queryResolver) Conversation(ctx context.Context, id string) (*model.Con
 		}
 	}
 	if !isParticipant {
-		return nil, fmt.Errorf("access denied")
+		return nil, ErrAccessDenied
 	}
 
 	return r.convertConversationToGraphQL(ctx, result.Conversation), nil
@@ -359,7 +359,7 @@ func (r *queryResolver) Lists(ctx context.Context) ([]*model.List, error) {
 		r.Logger.Error("Failed to get lists",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get lists: %w", err)
+		return nil, errors.Join(errors.New("failed to get lists"), err)
 	}
 
 	gqlLists := make([]*model.List, len(result.Lists))
@@ -389,7 +389,7 @@ func (r *queryResolver) List(ctx context.Context, id string) (*model.List, error
 			zap.String("user", username),
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, errors.Join(errors.New("failed to get list"), err)
 	}
 
 	return r.convertListToGraphQL(ctx, list), nil
@@ -411,7 +411,7 @@ func (r *queryResolver) ListAccounts(ctx context.Context, id string) ([]*activit
 			zap.String("user", username),
 			zap.String("listId", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get list members: %w", err)
+		return nil, errors.Join(errors.New("failed to get list members"), err)
 	}
 
 	actors := make([]*activitypub.Actor, len(result.Members))
@@ -437,7 +437,7 @@ func (r *queryResolver) Media(ctx context.Context, id string) (*model.Media, err
 		r.Logger.Error("Failed to get media",
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get media: %w", err)
+		return nil, errors.Join(errors.New("failed to get media"), err)
 	}
 
 	return r.convertMediaToGraphQL(result), nil
@@ -450,7 +450,7 @@ func (r *queryResolver) CustomEmojis(ctx context.Context) ([]*model.CustomEmoji,
 	})
 	if err != nil {
 		r.Logger.Error("Failed to list emojis", zap.Error(err))
-		return nil, fmt.Errorf("failed to list emojis: %w", err)
+		return nil, errors.Join(errors.New("failed to list emojis"), err)
 	}
 
 	emojis := make([]*model.CustomEmoji, len(result.Emojis))
@@ -486,7 +486,7 @@ func (r *queryResolver) ScheduledStatuses(ctx context.Context, first *int, after
 		r.Logger.Error("Failed to list scheduled statuses",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to list scheduled statuses: %w", err)
+		return nil, errors.Join(errors.New("failed to list scheduled statuses"), err)
 	}
 
 	statuses := make([]*model.ScheduledStatus, len(result.ScheduledStatuses))
@@ -516,7 +516,7 @@ func (r *queryResolver) ScheduledStatus(ctx context.Context, id string) (*model.
 			zap.String("user", username),
 			zap.String("id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get scheduled status: %w", err)
+		return nil, errors.Join(errors.New("failed to get scheduled status"), err)
 	}
 
 	return r.convertScheduledStatusToGraphQL(ctx, result.ScheduledStatus), nil
@@ -535,7 +535,7 @@ func (r *queryResolver) Relationship(ctx context.Context, id string) (*model.Rel
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get relationship: %w", err)
+		return nil, errors.Join(errors.New("failed to get relationship"), err)
 	}
 
 	return r.convertRelationshipToGraphQL(relationship), nil
@@ -603,7 +603,7 @@ func (r *queryResolver) ProfileDirectory(ctx context.Context, filters *model.Dir
 	result, err := r.Registry.Search().GetDirectory(ctx, query)
 	if err != nil {
 		r.Logger.Error("Failed to get directory", zap.Error(err))
-		return nil, fmt.Errorf("failed to get directory: %w", err)
+		return nil, errors.Join(errors.New("failed to get directory"), err)
 	}
 
 	actors := make([]*activitypub.Actor, len(result.Accounts))
@@ -635,7 +635,7 @@ func (r *queryResolver) Suggestions(ctx context.Context, limit *int) ([]*model.A
 	})
 	if err != nil {
 		r.Logger.Error("Failed to get suggestions", zap.Error(err))
-		return nil, fmt.Errorf("failed to get suggestions: %w", err)
+		return nil, errors.Join(errors.New("failed to get suggestions"), err)
 	}
 
 	suggestions := make([]*model.AccountSuggestion, len(result.Suggestions))
@@ -667,7 +667,7 @@ func (r *queryResolver) RemoveSuggestion(ctx context.Context, accountID string) 
 			zap.String("user", username),
 			zap.String("account", accountID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to remove suggestion: %w", err)
+		return false, errors.Join(errors.New("failed to remove suggestion"), err)
 	}
 
 	return true, nil
@@ -700,7 +700,7 @@ func (r *queryResolver) Search(ctx context.Context, query string, searchType *st
 		r.Logger.Error("Failed to search",
 			zap.String("query", query),
 			zap.Error(err))
-		return nil, fmt.Errorf("search failed: %w", err)
+		return nil, errors.Join(errors.New("search failed"), err)
 	}
 
 	accounts := make([]*activitypub.Actor, len(result.Accounts))
@@ -779,7 +779,7 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 		r.Logger.Error("Failed to create note",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create note: %w", err)
+		return nil, errors.Join(errors.New("failed to create note"), err)
 	}
 
 	// Track costs
@@ -804,9 +804,9 @@ func (r *mutationResolver) CreateNote(ctx context.Context, input model.CreateNot
 			Object: result.Note,
 		},
 		Cost: &model.CostUpdate{
-			OperationCost:     100, // 100 microcents = $0.001 for object creation
-			DailyTotal:        0.10,   // Estimated daily total
-			MonthlyProjection: 3.00,   // Estimated monthly projection
+			OperationCost:     100,  // 100 microcents = $0.001 for object creation
+			DailyTotal:        0.10, // Estimated daily total
+			MonthlyProjection: 3.00, // Estimated monthly projection
 		},
 	}, nil
 }
@@ -828,7 +828,7 @@ func (r *mutationResolver) DeleteObject(ctx context.Context, id string) (bool, e
 			zap.String("user", username),
 			zap.String("object", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to delete object: %w", err)
+		return false, errors.Join(errors.New("failed to delete object"), err)
 	}
 
 	// Track costs
@@ -901,7 +901,7 @@ func (r *mutationResolver) FollowActor(ctx context.Context, id string) (*activit
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to follow actor: %w", err)
+		return nil, errors.Join(errors.New("failed to follow actor"), err)
 	}
 
 	// Track costs
@@ -938,7 +938,7 @@ func (r *mutationResolver) UnfollowActor(ctx context.Context, id string) (bool, 
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to unfollow actor: %w", err)
+		return false, errors.Join(errors.New("failed to unfollow actor"), err)
 	}
 
 	// Track costs
@@ -964,7 +964,7 @@ func (r *mutationResolver) BookmarkObject(ctx context.Context, id string) (*mode
 			zap.String("user", username),
 			zap.String("object", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to bookmark: %w", err)
+		return nil, errors.Join(errors.New("failed to bookmark"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -988,7 +988,7 @@ func (r *mutationResolver) UnbookmarkObject(ctx context.Context, id string) (boo
 			zap.String("user", username),
 			zap.String("object", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to unbookmark: %w", err)
+		return false, errors.Join(errors.New("failed to unbookmark"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1012,7 +1012,7 @@ func (r *mutationResolver) PinObject(ctx context.Context, id string) (*model.Obj
 			zap.String("user", username),
 			zap.String("object", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to pin: %w", err)
+		return nil, errors.Join(errors.New("failed to pin"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1036,7 +1036,7 @@ func (r *mutationResolver) UnpinObject(ctx context.Context, id string) (bool, er
 			zap.String("user", username),
 			zap.String("object", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to unpin: %w", err)
+		return false, errors.Join(errors.New("failed to unpin"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1061,7 +1061,7 @@ func (r *mutationResolver) BlockActor(ctx context.Context, id string) (*model.Re
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to block: %w", err)
+		return nil, errors.Join(errors.New("failed to block"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1085,7 +1085,7 @@ func (r *mutationResolver) UnblockActor(ctx context.Context, id string) (bool, e
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to unblock: %w", err)
+		return false, errors.Join(errors.New("failed to unblock"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1117,7 +1117,7 @@ func (r *mutationResolver) MuteActor(ctx context.Context, id string, muteNotific
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to mute: %w", err)
+		return nil, errors.Join(errors.New("failed to mute"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1141,7 +1141,7 @@ func (r *mutationResolver) UnmuteActor(ctx context.Context, id string) (bool, er
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to unmute: %w", err)
+		return false, errors.Join(errors.New("failed to unmute"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1181,7 +1181,7 @@ func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, in
 			zap.String("user", username),
 			zap.String("target", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to update relationship: %w", err)
+		return nil, errors.Join(errors.New("failed to update relationship"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1216,7 +1216,7 @@ func (r *mutationResolver) CreateList(ctx context.Context, input model.CreateLis
 			zap.String("user", username),
 			zap.String("title", input.Title),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create list: %w", err)
+		return nil, errors.Join(errors.New("failed to create list"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1250,7 +1250,7 @@ func (r *mutationResolver) UpdateList(ctx context.Context, id string, input mode
 			zap.String("user", username),
 			zap.String("list", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to update list: %w", err)
+		return nil, errors.Join(errors.New("failed to update list"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1274,7 +1274,7 @@ func (r *mutationResolver) DeleteList(ctx context.Context, id string) (bool, err
 			zap.String("user", username),
 			zap.String("list", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to delete list: %w", err)
+		return false, errors.Join(errors.New("failed to delete list"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1320,7 +1320,7 @@ func (r *mutationResolver) MarkConversationAsRead(ctx context.Context, id string
 			zap.String("user", username),
 			zap.String("conversation", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to mark as read: %w", err)
+		return nil, errors.Join(errors.New("failed to mark as read"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1344,7 +1344,7 @@ func (r *mutationResolver) DeleteConversation(ctx context.Context, id string) (b
 			zap.String("user", username),
 			zap.String("conversation", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to delete conversation: %w", err)
+		return false, errors.Join(errors.New("failed to delete conversation"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1379,7 +1379,7 @@ func (r *mutationResolver) UpdateMedia(ctx context.Context, id string, input mod
 			zap.String("user", username),
 			zap.String("media", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to update media: %w", err)
+		return nil, errors.Join(errors.New("failed to update media"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1403,7 +1403,7 @@ func (r *mutationResolver) DismissNotification(ctx context.Context, id string) (
 			zap.String("user", username),
 			zap.String("notification", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to dismiss notification: %w", err)
+		return false, errors.Join(errors.New("failed to dismiss notification"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1426,7 +1426,7 @@ func (r *mutationResolver) ClearNotifications(ctx context.Context) (bool, error)
 		r.Logger.Error("Failed to clear notifications",
 			zap.String("user", username),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to clear notifications: %w", err)
+		return false, errors.Join(errors.New("failed to clear notifications"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1443,10 +1443,10 @@ func (r *mutationResolver) ScheduleStatus(ctx context.Context, input model.Sched
 
 	scheduledTime := time.Time(input.ScheduledAt)
 	if scheduledTime.Before(time.Now().Add(5 * time.Minute)) {
-		return nil, fmt.Errorf("scheduled time must be at least 5 minutes in the future")
+		return nil, ErrScheduledTimeMinimum
 	}
 	if scheduledTime.After(time.Now().AddDate(1, 0, 0)) {
-		return nil, fmt.Errorf("scheduled time cannot be more than 1 year in the future")
+		return nil, ErrScheduledTimeMaximum
 	}
 
 	cmd := &scheduled.CreateScheduledStatusCommand{
@@ -1496,7 +1496,7 @@ func (r *mutationResolver) ScheduleStatus(ctx context.Context, input model.Sched
 			zap.String("user", username),
 			zap.Time("scheduledAt", scheduledTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to schedule status: %w", err)
+		return nil, errors.Join(errors.New("failed to schedule status"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1513,10 +1513,10 @@ func (r *mutationResolver) UpdateScheduledStatus(ctx context.Context, id string,
 
 	scheduledTime := time.Time(input.ScheduledAt)
 	if scheduledTime.Before(time.Now().Add(5 * time.Minute)) {
-		return nil, fmt.Errorf("scheduled time must be at least 5 minutes in the future")
+		return nil, ErrScheduledTimeMinimum
 	}
 	if scheduledTime.After(time.Now().AddDate(1, 0, 0)) {
-		return nil, fmt.Errorf("scheduled time cannot be more than 1 year in the future")
+		return nil, ErrScheduledTimeMaximum
 	}
 
 	result, err := r.Registry.Scheduled().UpdateScheduledStatus(ctx, &scheduled.UpdateScheduledStatusCommand{
@@ -1530,7 +1530,7 @@ func (r *mutationResolver) UpdateScheduledStatus(ctx context.Context, id string,
 			zap.String("id", id),
 			zap.Time("newTime", scheduledTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to update scheduled status: %w", err)
+		return nil, errors.Join(errors.New("failed to update scheduled status"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1554,7 +1554,7 @@ func (r *mutationResolver) CancelScheduledStatus(ctx context.Context, id string)
 			zap.String("user", username),
 			zap.String("id", id),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to cancel scheduled status: %w", err)
+		return false, errors.Join(errors.New("failed to cancel scheduled status"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1590,7 +1590,7 @@ func (r *mutationResolver) CreateEmoji(ctx context.Context, input model.CreateEm
 			zap.String("admin", username),
 			zap.String("shortcode", input.Shortcode),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create emoji: %w", err)
+		return nil, errors.Join(errors.New("failed to create emoji"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1625,7 +1625,7 @@ func (r *mutationResolver) UpdateEmoji(ctx context.Context, shortcode string, in
 			zap.String("admin", username),
 			zap.String("shortcode", shortcode),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to update emoji: %w", err)
+		return nil, errors.Join(errors.New("failed to update emoji"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1648,7 +1648,7 @@ func (r *mutationResolver) DeleteEmoji(ctx context.Context, shortcode string) (b
 			zap.String("admin", username),
 			zap.String("shortcode", shortcode),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to delete emoji: %w", err)
+		return false, errors.Join(errors.New("failed to delete emoji"), err)
 	}
 
 	// Track cost using centralized tracker
@@ -1663,32 +1663,32 @@ func (r *mutationResolver) DeleteEmoji(ctx context.Context, shortcode string) (b
 // ActivityStream is the resolver for the activityStream field.
 func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error) {
 	username := r.optionalAuth(ctx)
-	
+
 	// Create channel for streaming
 	ch := make(chan *activitypub.Activity, 100)
-	
+
 	r.Logger.Info("Activity stream subscription started",
 		zap.String("user", username),
 		zap.Int("typeCount", len(types)))
-	
+
 	// Get internal EventBus from registry for advanced filtering
 	// We need direct access to set up custom filters
 	registryEventBus := r.Registry.EventBus()
 	if registryEventBus == nil {
 		r.Logger.Error("EventBus not available for ActivityStream subscription")
 		close(ch)
-		return ch, fmt.Errorf("event bus not available")
+		return ch, ErrEventBusUnavailable
 	}
-	
+
 	// Access the internal event bus through the adapter
 	// This is a bit of a hack but allows us to set up advanced filtering
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available or not running")
 		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return ch, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to activity events
 	var streamNames []string
 	if username != "" {
@@ -1697,7 +1697,7 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 	}
 	// Always include public stream
 	streamNames = append(streamNames, "public")
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeStatus,
@@ -1706,15 +1706,15 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 		},
 		Streams: streamNames,
 	}
-	
+
 	// Subscribe to internal event bus
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("activity_%s_%d", username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for ActivityStream", zap.Error(err))
 		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -1723,14 +1723,14 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to ActivityPub Activity
 				activity := r.convertEventToActivity(event)
 				if activity != nil {
@@ -1743,7 +1743,7 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 						r.Logger.Warn("Dropping activity event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -1751,36 +1751,36 @@ func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model
 			}
 		}
 	}()
-	
+
 	return ch, nil
 }
 
 // TimelineUpdates is the resolver for the timelineUpdates field.
 func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType model.TimelineType, listID *string) (<-chan *model.Object, error) {
 	username := r.optionalAuth(ctx)
-	
+
 	if err := r.validateTimelineRequest(timelineType, username, listID); err != nil {
 		return nil, err
 	}
-	
+
 	ch := make(chan *model.Object, 100)
 	r.Logger.Info("Timeline updates subscription started",
 		zap.String("user", username),
 		zap.String("type", string(timelineType)))
-	
+
 	internalEventBus, err := r.getEventBusForTimeline()
 	if err != nil {
 		close(ch)
 		return ch, err
 	}
-	
+
 	filter := r.createTimelineFilter(timelineType, username, listID)
 	subscriber, err := r.subscribeToTimelineEvents(internalEventBus, timelineType, username, filter)
 	if err != nil {
 		close(ch)
 		return ch, err
 	}
-	
+
 	r.startTimelineEventForwarding(ctx, ch, subscriber)
 	return ch, nil
 }
@@ -1789,15 +1789,15 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 func (r *subscriptionResolver) validateTimelineRequest(timelineType model.TimelineType, username string, listID *string) error {
 	if timelineType == model.TimelineTypeHome {
 		if err := common.ValidateRequiredParam("username", username); err != nil {
-			return fmt.Errorf("authentication required for home timeline")
+			return ErrAuthRequiredForHome
 		}
 	}
 	if timelineType == model.TimelineTypeList {
 		if listID == nil {
-			return fmt.Errorf("listId required for list timeline")
+			return ErrListIDParameterRequired
 		}
 		if err := common.ValidateRequiredParam("listID", *listID); err != nil {
-			return fmt.Errorf("listId required for list timeline")
+			return ErrListIDParameterRequired
 		}
 	}
 	return nil
@@ -1808,22 +1808,22 @@ func (r *subscriptionResolver) getEventBusForTimeline() (*streaming.EventBus, er
 	registryEventBus := r.Registry.EventBus()
 	if registryEventBus == nil {
 		r.Logger.Error("EventBus not available for TimelineUpdates subscription")
-		return nil, fmt.Errorf("event bus not available")
+		return nil, ErrEventBusUnavailable
 	}
-	
+
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available or not running")
-		return nil, fmt.Errorf("internal event bus not available")
+		return nil, ErrInternalEventBusUnavailable
 	}
-	
+
 	return internalEventBus, nil
 }
 
 // createTimelineFilter creates the event filter for timeline subscriptions
 func (r *subscriptionResolver) createTimelineFilter(timelineType model.TimelineType, username string, listID *string) *streaming.EventFilter {
 	streamNames := r.getStreamNamesForTimeline(timelineType, username, listID)
-	
+
 	return &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeStatus,
@@ -1859,7 +1859,7 @@ func (r *subscriptionResolver) subscribeToTimelineEvents(eventBus *streaming.Eve
 	subscriber, err := eventBus.Subscribe(fmt.Sprintf("timeline_%s_%s_%d", string(timelineType), username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for TimelineUpdates", zap.Error(err))
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return nil, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
 	return subscriber, nil
 }
@@ -1873,19 +1873,19 @@ func (r *subscriptionResolver) startTimelineEventForwarding(ctx context.Context,
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				object := r.convertEventToObject(ctx, event)
 				if object != nil {
 					r.sendTimelineObject(ctx, ch, object, event.ID)
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -1912,25 +1912,25 @@ func (r *subscriptionResolver) NotificationStream(ctx context.Context, types []s
 	if err != nil {
 		return nil, err
 	}
-	
+
 	ch := make(chan *model.Notification, 100)
 	r.Logger.Info("Notification stream subscription started",
 		zap.String("user", username),
 		zap.Int("typeCount", len(types)))
-	
+
 	internalEventBus, err := r.getEventBusForNotifications()
 	if err != nil {
 		close(ch)
 		return ch, err
 	}
-	
+
 	filter := r.createNotificationFilter(username)
 	subscriber, err := r.subscribeToNotificationEvents(internalEventBus, username, filter)
 	if err != nil {
 		close(ch)
 		return ch, err
 	}
-	
+
 	r.startNotificationEventForwarding(ctx, ch, subscriber, types)
 	return ch, nil
 }
@@ -1940,15 +1940,15 @@ func (r *subscriptionResolver) getEventBusForNotifications() (*streaming.EventBu
 	registryEventBus := r.Registry.EventBus()
 	if registryEventBus == nil {
 		r.Logger.Error("EventBus not available for NotificationStream subscription")
-		return nil, fmt.Errorf("event bus not available")
+		return nil, ErrEventBusUnavailable
 	}
-	
+
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available or not running")
-		return nil, fmt.Errorf("internal event bus not available")
+		return nil, ErrInternalEventBusUnavailable
 	}
-	
+
 	return internalEventBus, nil
 }
 
@@ -1968,7 +1968,7 @@ func (r *subscriptionResolver) subscribeToNotificationEvents(eventBus *streaming
 	subscriber, err := eventBus.Subscribe(fmt.Sprintf("notifications_%s_%d", username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for NotificationStream", zap.Error(err))
-		return nil, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return nil, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
 	return subscriber, nil
 }
@@ -1982,19 +1982,19 @@ func (r *subscriptionResolver) startNotificationEventForwarding(ctx context.Cont
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				notification := r.convertEventToNotification(ctx, event)
 				if notification != nil && r.shouldSendNotification(notification, types) {
 					r.sendNotification(ctx, ch, notification, event.ID)
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -2026,21 +2026,21 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Create channel for streaming
 	ch := make(chan *model.Conversation, 100)
-	
+
 	r.Logger.Info("Conversation updates subscription started",
 		zap.String("user", username))
-	
+
 	// Get internal EventBus for real-time conversation updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for ConversationUpdates")
 		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return ch, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to conversation events for this user
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
@@ -2050,14 +2050,14 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 		Streams: []string{fmt.Sprintf("user:%s", username)},
 		ActorID: username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("conv_%s_%d", username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for ConversationUpdates", zap.Error(err))
 		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -2066,14 +2066,14 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to Conversation
 				conversation := r.convertEventToConversation(ctx, event)
 				if conversation != nil {
@@ -2086,7 +2086,7 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 						r.Logger.Warn("Dropping conversation event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -2094,7 +2094,7 @@ func (r *subscriptionResolver) ConversationUpdates(ctx context.Context) (<-chan 
 			}
 		}
 	}()
-	
+
 	return ch, nil
 }
 
@@ -2104,31 +2104,31 @@ func (r *subscriptionResolver) ListUpdates(ctx context.Context, listID string) (
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Verify list ownership
 	result, err := r.Registry.Lists().GetList(ctx, &lists.GetListQuery{
 		ViewerID: username,
 		ListID:   listID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list not found or access denied")
+		return nil, ErrListNotFoundOrAccessDenied
 	}
-	
+
 	// Create channel for streaming
 	ch := make(chan *model.ListUpdate, 100)
-	
+
 	r.Logger.Info("List updates subscription started",
 		zap.String("user", username),
 		zap.String("list", result.ID))
-	
+
 	// Get internal EventBus for real-time list updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for ListUpdates")
 		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return ch, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to list events for this specific list
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
@@ -2139,14 +2139,14 @@ func (r *subscriptionResolver) ListUpdates(ctx context.Context, listID string) (
 		Streams: []string{fmt.Sprintf("list:%s", listID)},
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("list_%s_%s_%d", listID, username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for ListUpdates", zap.Error(err))
 		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -2155,14 +2155,14 @@ func (r *subscriptionResolver) ListUpdates(ctx context.Context, listID string) (
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to ListUpdate
 				listUpdate := r.convertEventToListUpdate(ctx, event)
 				if listUpdate != nil {
@@ -2175,7 +2175,7 @@ func (r *subscriptionResolver) ListUpdates(ctx context.Context, listID string) (
 						r.Logger.Warn("Dropping list update event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -2183,7 +2183,7 @@ func (r *subscriptionResolver) ListUpdates(ctx context.Context, listID string) (
 			}
 		}
 	}()
-	
+
 	return ch, nil
 }
 
@@ -2193,21 +2193,21 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Create channel for streaming
 	ch := make(chan *model.RelationshipUpdate, 100)
-	
+
 	r.Logger.Info("Relationship updates subscription started",
 		zap.String("user", username))
-	
+
 	// Get internal EventBus for real-time relationship updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for RelationshipUpdates")
 		close(ch)
-		return ch, fmt.Errorf("internal event bus not available")
+		return ch, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Determine stream target - either specific actor or user's relationships
 	var streamTarget string
 	if actorID != nil && *actorID != "" {
@@ -2215,25 +2215,25 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 	} else {
 		streamTarget = username
 	}
-	
+
 	// Subscribe to relationship events
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			"relationship.create",
-			"relationship.update", 
+			"relationship.update",
 			"relationship.delete",
 		},
 		Streams: []string{fmt.Sprintf("user:%s", username)},
 		ActorID: streamTarget,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("rel_%s_%s_%d", username, streamTarget, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for RelationshipUpdates", zap.Error(err))
 		close(ch)
-		return ch, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -2242,14 +2242,14 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to RelationshipUpdate
 				relationshipUpdate := r.convertEventToRelationshipUpdate(ctx, event)
 				if relationshipUpdate != nil {
@@ -2262,7 +2262,7 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 						r.Logger.Warn("Dropping relationship update event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -2270,7 +2270,7 @@ func (r *subscriptionResolver) RelationshipUpdates(ctx context.Context, actorID 
 			}
 		}
 	}()
-	
+
 	return ch, nil
 }
 
@@ -2283,7 +2283,7 @@ func (r *queryResolver) InstanceMetrics(_ context.Context) (*model.InstanceMetri
 	// Get actual metrics from storage
 	var activeUsers int
 	var storageUsed float64
-	
+
 	// Try to get metrics from repository
 	if r.Storage != nil {
 		// In production, these would query actual metrics
@@ -2306,12 +2306,12 @@ func (r *queryResolver) InstanceMetrics(_ context.Context) (*model.InstanceMetri
 	}
 
 	return &model.InstanceMetrics{
-		ActiveUsers:        activeUsers,
-		RequestsPerMinute:  0, // Would need actual request tracking
-		AverageLatencyMs:   0, // Would need actual latency tracking
-		StorageUsedGb:      storageUsed,
+		ActiveUsers:          activeUsers,
+		RequestsPerMinute:    0, // Would need actual request tracking
+		AverageLatencyMs:     0, // Would need actual latency tracking
+		StorageUsedGb:        storageUsed,
 		EstimatedMonthlyCost: estimatedCost,
-		LastUpdated:        model.Time(time.Now()),
+		LastUpdated:          model.Time(time.Now()),
 	}, nil
 }
 
@@ -2321,11 +2321,11 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 	if period != nil {
 		p = *period
 	}
-	
+
 	// Get actual cost breakdown from cost tracker
 	var totalCost, dynamoDBCost, s3Cost, lambdaCost, transferCost float64
 	var dbReads, dbWrites, s3Gets, s3Puts, lambdaInvocations int64
-	
+
 	if r.CostTracker != nil {
 		// Calculate costs from current tracker data
 		costData := r.CostTracker.CalculateCost()
@@ -2336,11 +2336,11 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 			s3Gets = costData.S3Gets
 			s3Puts = costData.S3Puts
 			lambdaInvocations = costData.LambdaInvocations
-			
+
 			// Calculate individual service costs in dollars
 			// DynamoDB costs
 			if dbReads > 0 || dbWrites > 0 {
-				dynamoDBCost = float64(dbReads*25 + dbWrites*125) / 1000000.0
+				dynamoDBCost = float64(dbReads*25+dbWrites*125) / 1000000.0
 			}
 			// Lambda costs
 			if lambdaInvocations > 0 {
@@ -2350,7 +2350,7 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 			}
 			// S3 costs
 			if s3Gets > 0 || s3Puts > 0 {
-				s3Cost = float64(s3Gets*40/1000 + s3Puts*500/1000) / 1000000.0
+				s3Cost = float64(s3Gets*40/1000+s3Puts*500/1000) / 1000000.0
 			}
 			// Data transfer costs
 			if costData.DataTransferBytes > 0 {
@@ -2360,7 +2360,7 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 			totalCost = dynamoDBCost + s3Cost + lambdaCost + transferCost
 		}
 	}
-	
+
 	// Create detailed breakdown items
 	breakdownItems := []*model.CostItem{}
 	if dynamoDBCost > 0 {
@@ -2391,7 +2391,7 @@ func (r *queryResolver) CostBreakdown(_ context.Context, period *model.Period) (
 			Cost:      transferCost,
 		})
 	}
-	
+
 	return &model.CostBreakdown{
 		Period:           p,
 		TotalCost:        totalCost,
@@ -2417,13 +2417,13 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 
 	// Validate inputs
 	if err := common.ValidateRequiredParam("targetActorID", input.TargetActorID); err != nil {
-		return nil, fmt.Errorf("trustee_id is required")
+		return nil, ErrTrusteeIDRequired
 	}
 	if input.Score < -1.0 || input.Score > 1.0 {
-		return nil, fmt.Errorf("trust score must be between -1.0 and 1.0")
+		return nil, ErrTrustScoreRange
 	}
 	if username == input.TargetActorID {
-		return nil, fmt.Errorf("cannot create trust relationship with yourself")
+		return nil, ErrCannotTrustYourself
 	}
 
 	// Convert category from input
@@ -2454,7 +2454,7 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 	err = trustRepo.CreateTrustRelationship(ctx, relationship)
 	if err != nil {
 		r.Logger.Error("Failed to create trust relationship", zap.Error(err))
-		return nil, fmt.Errorf("failed to create trust relationship: %w", err)
+		return nil, errors.Join(errors.New("failed to create trust relationship"), err)
 	}
 
 	// Create trust edge for response
@@ -2473,14 +2473,14 @@ func (r *mutationResolver) UpdateTrust(ctx context.Context, input model.TrustInp
 			"score":    input.Score,
 			"category": string(category),
 		}
-		
+
 		event := &streaming.Event{
 			Type:      "trust.updated",
 			Stream:    fmt.Sprintf("user:%s", username),
 			Payload:   eventData,
 			Timestamp: time.Now(),
 		}
-		
+
 		if err := publisher.PublishToStream(ctx, "trust", event); err != nil {
 			r.Logger.Warn("Failed to publish trust update event", zap.Error(err))
 		}
@@ -2504,10 +2504,10 @@ func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput
 
 	// Validate input
 	if err := common.ValidateRequiredParam("objectID", input.ObjectID); err != nil {
-		return nil, fmt.Errorf("objectId is required")
+		return nil, ErrObjectIDRequired
 	}
 	if err := common.ValidateRequiredParam("reason", input.Reason); err != nil {
-		return nil, fmt.Errorf("reason is required")
+		return nil, ErrReasonRequired
 	}
 
 	// Generate unique flag ID
@@ -2534,11 +2534,11 @@ func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput
 	// Store the flag using storage
 	moderationRepo := r.Storage.Moderation()
 	if err := moderationRepo.CreateFlag(ctx, flag); err != nil {
-		r.Logger.Error("failed to create moderation flag", 
+		r.Logger.Error("failed to create moderation flag",
 			zap.String("object_id", input.ObjectID),
 			zap.String("flagger", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create flag: %w", err)
+		return nil, errors.Join(errors.New("failed to create flag"), err)
 	}
 
 	// Convert evidence from []string to []any
@@ -2564,13 +2564,13 @@ func (r *mutationResolver) FlagObject(ctx context.Context, input model.FlagInput
 
 	// Store moderation event
 	if err := moderationRepo.CreateModerationEvent(ctx, event); err != nil {
-		r.Logger.Warn("failed to create moderation event", 
+		r.Logger.Warn("failed to create moderation event",
 			zap.String("flag_id", flagID),
 			zap.Error(err))
 		// Don't fail the whole operation if event creation fails
 	}
 
-	r.Logger.Info("content flagged for moderation", 
+	r.Logger.Info("content flagged for moderation",
 		zap.String("flag_id", flagID),
 		zap.String("object_id", input.ObjectID),
 		zap.String("flagger", username),
@@ -2594,13 +2594,13 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 	object, err := r.Registry.Notes().GetNote(ctx, input.ObjectID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("object not found")
+			return nil, ErrObjectNotFound
 		}
 		r.Logger.Error("Failed to get object for community note",
 			zap.String("objectID", input.ObjectID),
 			zap.String("authorID", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to validate object: %w", err)
+		return nil, errors.Join(errors.New("failed to validate object"), err)
 	}
 
 	// Create community note
@@ -2609,7 +2609,7 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 		ObjectType:       "status", // For ActivityPub objects
 		AuthorID:         username,
 		Content:          input.Content,
-		Language:         "en", // Default language, could be detected
+		Language:         "en",      // Default language, could be detected
 		VisibilityStatus: "pending", // Start as pending, becomes visible based on votes
 		Score:            0.0,
 		HelpfulVotes:     0,
@@ -2623,7 +2623,7 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 			zap.String("objectID", input.ObjectID),
 			zap.String("authorID", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create community note: %w", err)
+		return nil, errors.Join(errors.New("failed to create community note"), err)
 	}
 
 	// Get the author actor for response
@@ -2632,7 +2632,7 @@ func (r *mutationResolver) AddCommunityNote(ctx context.Context, input model.Com
 		r.Logger.Error("Failed to get author for community note response",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get author: %w", err)
+		return nil, errors.Join(errors.New("failed to get author"), err)
 	}
 
 	// Convert to GraphQL model
@@ -2671,18 +2671,18 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 	note, err := r.Storage.CommunityNote().GetCommunityNote(ctx, id)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("community note not found")
+			return nil, ErrCommunityNoteNotFound
 		}
 		r.Logger.Error("Failed to get community note for voting",
 			zap.String("noteID", id),
 			zap.String("voterID", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get community note: %w", err)
+		return nil, errors.Join(errors.New("failed to get community note"), err)
 	}
 
 	// Prevent authors from voting on their own notes
 	if note.AuthorID == username {
-		return nil, fmt.Errorf("authors cannot vote on their own notes")
+		return nil, ErrAuthorsCannotVote
 	}
 
 	// Create or update vote
@@ -2706,7 +2706,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 			zap.String("noteID", id),
 			zap.String("voterID", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to check existing votes: %w", err)
+		return nil, errors.Join(errors.New("failed to check existing votes"), err)
 	}
 
 	// Store the vote
@@ -2717,7 +2717,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 			zap.String("voterID", username),
 			zap.String("voteType", voteType),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create vote: %w", err)
+		return nil, errors.Join(errors.New("failed to create vote"), err)
 	}
 
 	// Recalculate note score and update vote counts
@@ -2730,7 +2730,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 		// Update note with new vote counts
 		helpfulCount := 0
 		notHelpfulCount := 0
-		
+
 		for _, v := range allVotes {
 			switch v.VoteType {
 			case VoteTypeHelpful:
@@ -2743,7 +2743,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 		// Calculate basic score (helpful - not_helpful)
 		// In a real system, this could be more sophisticated
 		score := float64(helpfulCount - notHelpfulCount)
-		
+
 		// Determine visibility based on score
 		visibilityStatus := "pending"
 		if score >= 3 {
@@ -2777,7 +2777,7 @@ func (r *mutationResolver) VoteCommunityNote(ctx context.Context, id string, hel
 		r.Logger.Error("Failed to get author for community note response",
 			zap.String("authorID", note.AuthorID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get author: %w", err)
+		return nil, errors.Join(errors.New("failed to get author"), err)
 	}
 
 	r.Logger.Info("Voted on community note",
@@ -2806,7 +2806,7 @@ func (r *Resolver) requireAuth(ctx context.Context) (string, error) {
 	username := getUsernameFromContext(ctx)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		r.Logger.Warn("Unauthenticated GraphQL request")
-		return "", fmt.Errorf("authentication required")
+		return "", ErrAuthenticationRequired
 	}
 	return username, nil
 }
@@ -2822,19 +2822,19 @@ func (r *Resolver) requireAdmin(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Check admin status using accounts service
 	account, err := r.Registry.Accounts().GetAccount(ctx, username)
 	if err != nil {
-		return "", fmt.Errorf("failed to verify admin status: %w", err)
+		return "", errors.Join(errors.New("failed to verify admin status"), err)
 	}
-	
+
 	if account.User.Role != "admin" {
 		r.Logger.Warn("Non-admin attempted admin operation",
 			zap.String("username", username))
-		return "", fmt.Errorf("admin privileges required")
+		return "", ErrAdminPrivilegesRequired
 	}
-	
+
 	return username, nil
 }
 
@@ -2926,7 +2926,7 @@ func (r *Resolver) convertListToGraphQL(ctx context.Context, list *models.List) 
 
 	accountCount := 0
 	accounts := []*activitypub.Actor{}
-	
+
 	if list.ID != "" {
 		result, err := r.Registry.Lists().GetListMembers(ctx, &lists.GetListMembersQuery{
 			ViewerID: getUsernameFromContext(ctx),
@@ -3052,7 +3052,7 @@ func (r *Resolver) convertScheduledStatusToGraphQL(ctx context.Context, ss *stor
 			// Log error but continue - this is a conversion function
 			r.Logger.Warn("invalid poll parameters in scheduled status", zap.Error(err))
 		}
-		
+
 		// Poll is stored as map[string]any, need to extract fields
 		pollParams := &model.PollParams{}
 		if options, ok := ss.Poll["options"].([]string); ok {
@@ -3137,20 +3137,20 @@ func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.
 			Published: &user.CreatedAt,
 			Updated:   &user.UpdatedAt,
 		},
-		PreferredUsername: user.Username,
-		Name:              user.DisplayName,
-		Summary:           user.Note,
-		URL:               user.URL,
-		Inbox:             fmt.Sprintf("%s/inbox", user.URL),
-		Outbox:            fmt.Sprintf("%s/outbox", user.URL),
-		Followers:         fmt.Sprintf("%s/followers", user.URL),
-		Following:         fmt.Sprintf("%s/following", user.URL),
-		PublicKey:         nil,
-		Endpoints:         nil,
+		PreferredUsername:         user.Username,
+		Name:                      user.DisplayName,
+		Summary:                   user.Note,
+		URL:                       user.URL,
+		Inbox:                     fmt.Sprintf("%s/inbox", user.URL),
+		Outbox:                    fmt.Sprintf("%s/outbox", user.URL),
+		Followers:                 fmt.Sprintf("%s/followers", user.URL),
+		Following:                 fmt.Sprintf("%s/following", user.URL),
+		PublicKey:                 nil,
+		Endpoints:                 nil,
 		ManuallyApprovesFollowers: user.Locked,
 		Discoverable:              user.Discoverable,
 	}
-	
+
 	// Set icon if avatar URL exists
 	if user.Avatar != "" {
 		actor.Icon = &activitypub.Image{
@@ -3160,7 +3160,7 @@ func (r *Resolver) convertAccountToActor(account *storage.Account) *activitypub.
 			URL: user.Avatar,
 		}
 	}
-	
+
 	// Set image if header URL exists
 	if user.Header != "" {
 		actor.Image = &activitypub.Image{
@@ -3234,14 +3234,14 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 		tags[i] = &tag
 	}
 
-	// Create inReplyTo object if exists  
+	// Create inReplyTo object if exists
 	var inReplyToObj *model.Object
 	if note.InReplyTo != "" {
 		// Fetch the actual reply object using Notes service
 		replyNote, err := r.Registry.Notes().GetNote(ctx, note.InReplyTo)
 		if err != nil {
-			r.Logger.Debug("failed to fetch reply object", 
-				zap.String("reply_id", note.InReplyTo), 
+			r.Logger.Debug("failed to fetch reply object",
+				zap.String("reply_id", note.InReplyTo),
 				zap.Error(err))
 			// Continue without reply object instead of failing
 			inReplyToObj = nil
@@ -3250,26 +3250,26 @@ func (r *Resolver) convertNoteToObject(ctx context.Context, note *activitypub.No
 			inReplyToObj = r.convertStatusToObject(ctx, replyNote)
 		}
 	}
-	
+
 	return &model.Object{
-		ID:           note.ID,
-		Type:         objectType,
-		Actor:        actor,
-		Content:      note.Content,
-		ContentMap:   r.extractContentMaps(note.Content), // Enhanced: extract content maps with language detection
-		InReplyTo:    inReplyToObj,
-		Visibility:   visibility,
-		Sensitive:    note.Sensitive,
-		SpoilerText:  &note.Summary, // Map Summary to SpoilerText
-		Attachments:  attachments,
-		Tags:         tags,
-		Mentions:     r.extractMentionsFromNote(note), // Enhanced: extract mentions from note tags
-		CreatedAt:    model.Time(*note.Published),
-		UpdatedAt:    model.Time(*note.Updated),
-		RepliesCount: r.getReplyCount(ctx, note.ID), // Use efficient count method
-		LikesCount:   0,
-		SharesCount:  0,
-		EstimatedCost: 0,
+		ID:             note.ID,
+		Type:           objectType,
+		Actor:          actor,
+		Content:        note.Content,
+		ContentMap:     r.extractContentMaps(note.Content), // Enhanced: extract content maps with language detection
+		InReplyTo:      inReplyToObj,
+		Visibility:     visibility,
+		Sensitive:      note.Sensitive,
+		SpoilerText:    &note.Summary, // Map Summary to SpoilerText
+		Attachments:    attachments,
+		Tags:           tags,
+		Mentions:       r.extractMentionsFromNote(note), // Enhanced: extract mentions from note tags
+		CreatedAt:      model.Time(*note.Published),
+		UpdatedAt:      model.Time(*note.Updated),
+		RepliesCount:   r.getReplyCount(ctx, note.ID), // Use efficient count method
+		LikesCount:     0,
+		SharesCount:    0,
+		EstimatedCost:  0,
 		CommunityNotes: r.getCommunityNotesForObject(ctx, note.ID),
 	}
 }
@@ -3281,7 +3281,7 @@ func (r *Resolver) getCommunityNotesForObject(ctx context.Context, objectID stri
 		r.Logger.Error("failed to get community notes", zap.String("objectID", objectID), zap.Error(err))
 		return []*model.CommunityNote{} // Return empty on error rather than failing the request
 	}
-	
+
 	// Convert storage.CommunityNote to model.CommunityNote
 	result := make([]*model.CommunityNote, len(notes))
 	for i, note := range notes {
@@ -3297,7 +3297,7 @@ func (r *Resolver) getCommunityNotesForObject(ctx context.Context, objectID stri
 				PreferredUsername: note.AuthorID, // Simplified - would extract username properly
 			}
 		}
-		
+
 		result[i] = &model.CommunityNote{
 			ID:         note.ID,
 			Author:     author,
@@ -3328,7 +3328,7 @@ func (r *Resolver) extractContentMaps(content string) []*model.ContentMap {
 
 	// Detect language using simple heuristics (similar to activity processor)
 	language := r.detectContentLanguage(content)
-	
+
 	return []*model.ContentMap{
 		{
 			Language: language,
@@ -3345,7 +3345,7 @@ func (r *Resolver) detectContentLanguage(content string) string {
 
 	// Convert to lowercase for analysis
 	text := strings.ToLower(content)
-	
+
 	// Strip HTML tags for cleaner analysis
 	text = r.stripHTMLTags(text)
 
@@ -3379,7 +3379,7 @@ func (r *Resolver) hasJapaneseCharacters(text string) bool {
 	for _, r := range text {
 		if (r >= 0x3040 && r <= 0x309F) || // Hiragana
 			(r >= 0x30A0 && r <= 0x30FF) || // Katakana
-			(r >= 0x4E00 && r <= 0x9FAF) {  // CJK Ideographs (includes Kanji)
+			(r >= 0x4E00 && r <= 0x9FAF) { // CJK Ideographs (includes Kanji)
 			return true
 		}
 	}
@@ -3390,7 +3390,7 @@ func (r *Resolver) hasJapaneseCharacters(text string) bool {
 func (r *Resolver) hasChineseCharacters(text string) bool {
 	for _, r := range text {
 		if (r >= 0x4E00 && r <= 0x9FAF) || // CJK Ideographs
-			(r >= 0x3400 && r <= 0x4DBF) {  // CJK Extension A
+			(r >= 0x3400 && r <= 0x4DBF) { // CJK Extension A
 			return true
 		}
 	}
@@ -3424,7 +3424,7 @@ func (r *Resolver) extractMentionsFromNote(note *activitypub.Note) []*model.Ment
 	}
 
 	mentions := []*model.Mention{}
-	
+
 	for _, tag := range note.Tag {
 		if tag.Type == "Mention" && tag.Href != "" {
 			// Extract username and domain from mention URL
@@ -3458,11 +3458,11 @@ func (r *Resolver) parseMentionURL(url string) (username string, domain *string)
 
 	// Extract domain
 	domainPart := parts[2] // e.g., "example.com"
-	
+
 	// Extract username (last part of URL, removing @ if present)
 	usernamePart := parts[len(parts)-1]
 	usernamePart = strings.TrimPrefix(usernamePart, "@")
-	
+
 	if err := common.ValidateRequiredParam("usernamePart", usernamePart); err != nil {
 		return "", nil
 	}
@@ -3569,9 +3569,9 @@ func (r *Resolver) convertStatusToObject(ctx context.Context, status *models.Sta
 		LikesCount:       status.LikeCount,
 		SharesCount:      status.ReblogCount,
 		CommunityNotes:   []*model.CommunityNote{},
-		Quoteable:         true,
-		QuotePermissions:  model.QuotePermissionEveryone,
-		QuoteCount:        0,
+		Quoteable:        true,
+		QuotePermissions: model.QuotePermissionEveryone,
+		QuoteCount:       0,
 		EstimatedCost:    1,
 	}
 
@@ -3603,28 +3603,27 @@ var moderationFilterExtensions = struct {
 
 func (r *Resolver) setModerationFilterExtension(_ context.Context, obj *moderation.ModerationFilter, field string, value interface{}) {
 	objectID := fmt.Sprintf("%p", obj) // Use pointer address as unique identifier
-	
+
 	moderationFilterExtensions.Lock()
 	defer moderationFilterExtensions.Unlock()
-	
+
 	if moderationFilterExtensions.data[objectID] == nil {
 		moderationFilterExtensions.data[objectID] = make(map[string]interface{})
 	}
 	moderationFilterExtensions.data[objectID][field] = value
 }
 
-
 // fetchActorFromStorage attempts to fetch an actor from storage repositories
 func (r *Resolver) fetchActorFromStorage(ctx context.Context, actorID string) *activitypub.Actor {
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return nil
 	}
-	
+
 	// Try to fetch from accounts first (for local accounts)
 	if account, err := r.Registry.Accounts().GetAccount(ctx, actorID); err == nil && account != nil {
 		return r.convertAccountToActor(account)
 	}
-	
+
 	// Try to fetch from actors repository (for remote actors)
 	storage := r.Storage
 	if storage != nil {
@@ -3647,13 +3646,13 @@ func (r *Resolver) fetchActorFromStorage(ctx context.Context, actorID string) *a
 			}
 		}
 	}
-	
+
 	// If not found, return a minimal actor with proper domain-based URL structure
 	domain := r.Registry.GetConfig().BaseURL
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "https://localhost"
 	}
-	
+
 	return &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
 			ID:   fmt.Sprintf("%s/users/%s", domain, actorID),
@@ -3703,7 +3702,7 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 
 	// Validate inputs
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
-		return nil, fmt.Errorf("actorID is required")
+		return nil, ErrActorIDRequired
 	}
 
 	trustRepo := r.Registry.GetStorage().Trust()
@@ -3712,14 +3711,14 @@ func (r *queryResolver) TrustGraph(ctx context.Context, actorID string, category
 	incomingRels, _, err := trustRepo.GetTrustedByRelationships(ctx, actorID, 100, "")
 	if err != nil && err != storage.ErrNotFound {
 		r.Logger.Error("Failed to get incoming trust relationships", zap.Error(err))
-		return nil, fmt.Errorf("failed to fetch trust relationships: %w", err)
+		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}
 
 	// Get relationships where this actor trusts others (outgoing trust)
 	outgoingRels, _, err := trustRepo.GetTrustRelationships(ctx, actorID, 100, "")
 	if err != nil && err != storage.ErrNotFound {
 		r.Logger.Error("Failed to get outgoing trust relationships", zap.Error(err))
-		return nil, fmt.Errorf("failed to fetch trust relationships: %w", err)
+		return nil, errors.Join(errors.New("failed to fetch trust relationships"), err)
 	}
 
 	// Combine all relationships
@@ -3762,7 +3761,7 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 	// Get moderation repository from service registry
 	moderationRepo := r.Registry.GetStorage().Moderation()
 	if moderationRepo == nil {
-		return nil, fmt.Errorf("moderation service not available")
+		return nil, ErrModerationUnavailable
 	}
 
 	// Set default limit and extract cursor
@@ -3784,7 +3783,7 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 	queueItems, _, err := moderationRepo.GetModerationQueuePaginated(ctx, limit, cursor)
 	if err != nil {
 		r.Logger.Error("Failed to get moderation queue", zap.Error(err))
-		return nil, fmt.Errorf("failed to retrieve moderation queue: %w", err)
+		return nil, errors.Join(errors.New("failed to retrieve moderation queue"), err)
 	}
 
 	// Convert storage.ModerationQueueItem to moderation.ModerationDecision
@@ -3796,13 +3795,13 @@ func (r *queryResolver) ModerationQueue(ctx context.Context, first *int, after *
 
 		// Create moderation decision from queue item and event
 		decision := &moderation.ModerationDecision{
-			ID:             item.ID,
-			EventID:        item.Event.ID,
-			ObjectID:       item.Event.ObjectID,
-			Action:         moderation.ActionTypeNone, // Default action for pending items
-			ReviewerCount:  item.ReviewCount,
-			Reviews:        []*moderation.Review{}, // Empty for queue items
-			Decided:        item.CreatedAt,
+			ID:            item.ID,
+			EventID:       item.Event.ID,
+			ObjectID:      item.Event.ObjectID,
+			Action:        moderation.ActionTypeNone, // Default action for pending items
+			ReviewerCount: item.ReviewCount,
+			Reviews:       []*moderation.Review{}, // Empty for queue items
+			Decided:       item.CreatedAt,
 		}
 
 		// Set reason from event or item
@@ -3828,7 +3827,7 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 	// Get object repository from storage
 	objectRepo := r.Registry.GetStorage().Object()
 	if objectRepo == nil {
-		return nil, fmt.Errorf("object repository not available")
+		return nil, ErrObjectRepositoryUnavailable
 	}
 
 	// Retrieve the object from storage
@@ -3837,19 +3836,19 @@ func (r *queryResolver) ExplainObject(ctx context.Context, id string) (*model.Ob
 		r.Logger.Error("failed to get object for explanation",
 			zap.String("object_id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("object not found: %w", err)
+		return nil, errors.Join(errors.New("object not found"), err)
 	}
 
 	// Convert to GraphQL model object
 	modelObject := r.convertObjectToModel(obj)
 	if modelObject == nil {
-		return nil, fmt.Errorf("unable to convert object to GraphQL model")
+		return nil, ErrUnableToConvertObject
 	}
 
 	// Get AI service for content analysis
 	aiSvc := r.Registry.AI()
 	var explanation *model.ObjectExplanation
-	
+
 	if aiSvc != nil {
 		// AI-powered analysis
 		explanation = r.generateAIExplanation(ctx, aiSvc, id, modelObject, obj)
@@ -3875,13 +3874,13 @@ func (r *queryResolver) convertObjectToModel(obj any) *model.Object {
 	switch o := obj.(type) {
 	case *activitypub.Note:
 		return &model.Object{
-			ID:          o.ID,
-			Type:        model.ObjectTypeNote,
-			Content:     o.Content,
-			CreatedAt:   model.Time(*o.Published),
-			UpdatedAt:   model.Time(time.Now()),
-			Sensitive:   o.Sensitive,
-			Visibility:  r.mapActivityPubVisibility(o.Visibility),
+			ID:         o.ID,
+			Type:       model.ObjectTypeNote,
+			Content:    o.Content,
+			CreatedAt:  model.Time(*o.Published),
+			UpdatedAt:  model.Time(time.Now()),
+			Sensitive:  o.Sensitive,
+			Visibility: r.mapActivityPubVisibility(o.Visibility),
 		}
 	case *activitypub.Article:
 		return &model.Object{
@@ -3900,7 +3899,7 @@ func (r *queryResolver) convertObjectToModel(obj any) *model.Object {
 				CreatedAt: model.Time(time.Now()),
 				UpdatedAt: model.Time(time.Now()),
 			}
-			
+
 			// Map ActivityPub types to GraphQL types
 			switch strings.ToLower(objType) {
 			case ContentTypeNote:
@@ -3914,7 +3913,7 @@ func (r *queryResolver) convertObjectToModel(obj any) *model.Object {
 			default:
 				modelObj.Type = model.ObjectTypeNote // Default fallback
 			}
-			
+
 			return modelObj
 		}
 	}
@@ -3926,7 +3925,7 @@ func (r *queryResolver) generateAIExplanation(ctx context.Context, aiSvc *aiServ
 	// Try to get existing AI analysis
 	if result, err := aiSvc.GetAnalysis(ctx, &aiService.GetAnalysisQuery{ObjectID: objectID}); err == nil && result.Analysis != nil {
 		analysis := result.Analysis
-		
+
 		// Create explanation with AI insights
 		explanation := &model.ObjectExplanation{
 			Object:          modelObject,
@@ -3935,14 +3934,14 @@ func (r *queryResolver) generateAIExplanation(ctx context.Context, aiSvc *aiServ
 			StorageCost:     r.estimateStorageCost(obj),
 			AccessPattern:   []*model.AccessLog{},
 		}
-		
+
 		// Add AI analysis access log
 		explanation.AccessPattern = append(explanation.AccessPattern, &model.AccessLog{
 			Timestamp: model.Time(analysis.AnalyzedAt),
 			Operation: "AI_Analysis",
 			Cost:      5, // Estimated cost for AI analysis
 		})
-		
+
 		return explanation
 	}
 
@@ -3982,7 +3981,7 @@ func (r *queryResolver) enrichWithStorageAnalysis(ctx context.Context, explanati
 		if activityCost, err := costRepo.GetActivityCost(ctx, objectID); err == nil && activityCost != nil {
 			// Use real cost data if available (TotalCostMicroCents converted to dollars)
 			explanation.StorageCost = float64(activityCost.TotalCostMicroCents) / 1000000.0
-			
+
 			// Add access logs from cost tracking
 			explanation.AccessPattern = append(explanation.AccessPattern, &model.AccessLog{
 				Timestamp: model.Time(activityCost.Timestamp),
@@ -3991,7 +3990,7 @@ func (r *queryResolver) enrichWithStorageAnalysis(ctx context.Context, explanati
 			})
 		}
 	}
-	
+
 	// Add synthetic access pattern for demonstration
 	if err := common.ValidateSliceNotEmpty("access_pattern", explanation.AccessPattern); err != nil {
 		explanation.AccessPattern = []*model.AccessLog{
@@ -4048,18 +4047,18 @@ func (r *queryResolver) estimateStorageCost(obj any) float64 {
 // calculateDetailedFederationCostBreakdown calculates detailed cost breakdown with data transfer
 func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models.FederationCost) *model.CostBreakdown {
 	// Calculate individual service costs using the cost tracker constants and formulas
-	
+
 	// Data Transfer Costs - Calculate from actual ingress/egress bytes
 	totalTransferBytes := fedCost.IngressBytes + fedCost.EgressBytes
 	transferGB := float64(totalTransferBytes) / (1024 * 1024 * 1024)
 	dataTransferCost := transferGB * 0.09 // $0.09 per GB data transfer out (S3DataTransferPerGB constant converted to dollars)
-	
+
 	// DynamoDB Costs - Estimate based on request count and typical read/write ratio
 	// Assume 70% reads, 30% writes for federation activities
 	reads := int64(float64(fedCost.RequestCount) * 0.7)
 	writes := int64(float64(fedCost.RequestCount) * 0.3)
-	dynamoDBCost := float64(reads*25 + writes*125) / 1000000.0 // Convert from microcents to dollars
-	
+	dynamoDBCost := float64(reads*25+writes*125) / 1000000.0 // Convert from microcents to dollars
+
 	// Lambda Costs - Estimate based on request count and typical Lambda execution
 	// Assume average 200ms execution time and 512MB memory per federation request
 	lambdaInvocations := fedCost.RequestCount
@@ -4069,19 +4068,19 @@ func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models
 	gbSeconds := float64(avgDurationMs*avgMemoryMB*lambdaInvocations) / (1000 * 1024)
 	lambdaComputeCost := gbSeconds * 0.0000166667 // GB-second cost using cost.LambdaGBSecondCost
 	lambdaCost := lambdaRequestCost + lambdaComputeCost
-	
+
 	// S3 Storage Costs - Minimal for federation (mostly metadata)
-	// Estimate based on request count and average object sizes  
-	estimatedS3Gets := fedCost.RequestCount / 2 // Assume half are GET operations
-	estimatedS3Puts := fedCost.RequestCount / 10 // Assume 10% are PUT operations
-	s3Cost := float64(estimatedS3Gets*40/1000 + estimatedS3Puts*500/1000) / 1000000.0 // Using cost tracker constants
-	
+	// Estimate based on request count and average object sizes
+	estimatedS3Gets := fedCost.RequestCount / 2                                     // Assume half are GET operations
+	estimatedS3Puts := fedCost.RequestCount / 10                                    // Assume 10% are PUT operations
+	s3Cost := float64(estimatedS3Gets*40/1000+estimatedS3Puts*500/1000) / 1000000.0 // Using cost tracker constants
+
 	// Total cost calculation
 	totalCost := dataTransferCost + dynamoDBCost + lambdaCost + s3Cost
-	
+
 	// Create detailed breakdown items
 	breakdownItems := []*model.CostItem{}
-	
+
 	if dynamoDBCost > 0 {
 		breakdownItems = append(breakdownItems, &model.CostItem{
 			Operation: "DynamoDB Operations",
@@ -4089,7 +4088,7 @@ func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models
 			Cost:      dynamoDBCost,
 		})
 	}
-	
+
 	if lambdaCost > 0 {
 		breakdownItems = append(breakdownItems, &model.CostItem{
 			Operation: "Lambda Execution",
@@ -4097,7 +4096,7 @@ func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models
 			Cost:      lambdaCost,
 		})
 	}
-	
+
 	if s3Cost > 0 {
 		breakdownItems = append(breakdownItems, &model.CostItem{
 			Operation: "S3 Operations",
@@ -4105,7 +4104,7 @@ func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models
 			Cost:      s3Cost,
 		})
 	}
-	
+
 	if dataTransferCost > 0 {
 		breakdownItems = append(breakdownItems, &model.CostItem{
 			Operation: "Data Transfer",
@@ -4113,7 +4112,7 @@ func (r *queryResolver) calculateDetailedFederationCostBreakdown(fedCost *models
 			Cost:      dataTransferCost,
 		})
 	}
-	
+
 	return &model.CostBreakdown{
 		Period:           model.PeriodMonth,
 		TotalCost:        totalCost,
@@ -4156,7 +4155,7 @@ func (r *queryResolver) FederationStatus(ctx context.Context, domain string) (*m
 	// Get federation repository for metrics and analytics
 	federationRepo := r.Registry.GetStorage().Federation()
 	if federationRepo == nil {
-		return nil, fmt.Errorf("federation repository not available")
+		return nil, ErrFederationRepositoryUnavailable
 	}
 
 	// Initialize the federation status response
@@ -4196,7 +4195,7 @@ func (r *queryResolver) getDomainHealthScore(ctx context.Context, federationRepo
 	})
 	healthScore, err := repo.GetDomainHealthScore(ctx, domain)
 	if err != nil {
-		r.Logger.Debug("no health score found for domain", 
+		r.Logger.Debug("no health score found for domain",
 			zap.String("domain", domain),
 			zap.Error(err))
 		return 0.0
@@ -4320,7 +4319,7 @@ func (r *queryResolver) handleMissingInstanceInfo(status *model.FederationStatus
 
 	r.Logger.Debug("no cached instance information available",
 		zap.String("domain", domain))
-	
+
 	// For GraphQL queries, we don't want to trigger expensive network operations
 	// Conservative approach: assume not reachable if no cached data
 	if domain != "" {
@@ -4333,7 +4332,7 @@ func (r *queryResolver) AiAnalysis(ctx context.Context, objectID string) (*model
 	// Get AI service from registry
 	aiSvc := r.Registry.AI()
 	if aiSvc == nil {
-		return nil, fmt.Errorf("AI service not initialized")
+		return nil, ErrAIServiceUnavailable
 	}
 
 	// Retrieve analysis from storage
@@ -4341,7 +4340,7 @@ func (r *queryResolver) AiAnalysis(ctx context.Context, objectID string) (*model
 		ObjectID: objectID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AI analysis: %w", err)
+		return nil, errors.Join(errors.New("failed to get AI analysis"), err)
 	}
 
 	if result.Analysis == nil {
@@ -4378,17 +4377,17 @@ func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*mode
 	if aiSvc == nil {
 		// Return zeros if AI service not available
 		return &model.AIStats{
-			Period:          string(period),
-			TotalAnalyses:   0,
-			ToxicContent:    0,
-			SpamDetected:    0,
-			AiGenerated:     0,
-			NsfwContent:     0,
-			PiiDetected:     0,
-			ToxicityRate:    0,
-			SpamRate:        0,
-			AiContentRate:   0,
-			NsfwRate:        0,
+			Period:        string(period),
+			TotalAnalyses: 0,
+			ToxicContent:  0,
+			SpamDetected:  0,
+			AiGenerated:   0,
+			NsfwContent:   0,
+			PiiDetected:   0,
+			ToxicityRate:  0,
+			SpamRate:      0,
+			AiContentRate: 0,
+			NsfwRate:      0,
 			ModerationActions: &model.ModerationActionCounts{
 				None:      0,
 				Flag:      0,
@@ -4409,13 +4408,13 @@ func (r *queryResolver) AiStats(ctx context.Context, period model.Period) (*mode
 			zap.String("user", username),
 			zap.String("period", string(period)),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get AI stats: %w", err)
+		return nil, errors.Join(errors.New("failed to get AI stats"), err)
 	}
 
 	// Convert service stats to GraphQL model
 	stats, ok := result.Stats.(*ai.AIStats)
 	if !ok {
-		return nil, fmt.Errorf("unexpected stats type from AI service")
+		return nil, ErrUnexpectedStatsType
 	}
 
 	// Convert moderation actions map to struct
@@ -4497,7 +4496,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 	// Get AI service from registry
 	aiSvc := r.Registry.AI()
 	if aiSvc == nil {
-		return nil, fmt.Errorf("AI service not initialized")
+		return nil, ErrAIServiceUnavailable
 	}
 
 	// Default values
@@ -4521,7 +4520,7 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 			zap.String("user", username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to queue AI analysis: %w", err)
+		return nil, errors.Join(errors.New("failed to queue AI analysis"), err)
 	}
 
 	// Create request ID (not used in simplified response)
@@ -4543,10 +4542,10 @@ func (r *mutationResolver) RequestAIAnalysis(ctx context.Context, objectID strin
 func (r *mutationResolver) OptimizeFederationCosts(_ context.Context, targetAmount float64) (*model.CostOptimizationResult, error) {
 	// Run optimization logic
 	// This would analyze current federation costs and find optimizations
-	
+
 	// Return optimization result
 	return &model.CostOptimizationResult{
-		Optimized:       5, // Number of optimizations applied
+		Optimized:       5,                   // Number of optimizations applied
 		SavedMonthlyUsd: targetAmount * 0.15, // 15% savings
 		Actions: []*model.OptimizationAction{
 			{
@@ -4610,7 +4609,7 @@ func (r *mutationResolver) ResumeFederation(_ context.Context, domain string) (*
 func (r *queryResolver) FederationFlow(_ context.Context, _ model.TimePeriod) (*model.FederationFlow, error) {
 	// Get federation flow data for the period
 	// This would query federation activity statistics
-	
+
 	// For now, return empty result
 	return &model.FederationFlow{
 		TopSources:      []*model.FlowNode{},
@@ -4624,7 +4623,7 @@ func (r *queryResolver) FederationFlow(_ context.Context, _ model.TimePeriod) (*
 func (r *queryResolver) FederationHealth(_ context.Context, _ *float64) ([]*model.FederationManagementStatus, error) {
 	// Check health of federated instances
 	// This would monitor federation connectivity and performance
-	
+
 	// For now, return empty result
 	return []*model.FederationManagementStatus{}, nil
 }
@@ -4635,7 +4634,7 @@ func (r *queryResolver) FederationLimits(_ context.Context, _ *bool, first *int,
 	// This would retrieve configured limits with pagination
 	_ = first
 	_ = after
-	
+
 	// For now, return empty result
 	return []*model.FederationLimit{}, nil
 }
@@ -4653,7 +4652,7 @@ func (r *queryResolver) Hashtag(_ context.Context, name string) (*model.Hashtag,
 func (r *queryResolver) HashtagTimeline(_ context.Context, _ string, _ *int, _ *string) (*model.PostConnection, error) {
 	// Get posts with the specified hashtag
 	return &model.PostConnection{
-		Edges:    []*model.PostEdge{},
+		Edges: []*model.PostEdge{},
 		PageInfo: &model.PageInfo{
 			HasNextPage:     false,
 			HasPreviousPage: false,
@@ -4665,7 +4664,7 @@ func (r *queryResolver) HashtagTimeline(_ context.Context, _ string, _ *int, _ *
 func (r *queryResolver) MultiHashtagTimeline(_ context.Context, _ []string, _ model.HashtagMode, _ *int, _ *string) (*model.PostConnection, error) {
 	// Get posts with multiple hashtags
 	return &model.PostConnection{
-		Edges:    []*model.PostEdge{},
+		Edges: []*model.PostEdge{},
 		PageInfo: &model.PageInfo{
 			HasNextPage:     false,
 			HasPreviousPage: false,
@@ -4689,7 +4688,7 @@ func (r *queryResolver) FollowedHashtags(ctx context.Context, _ *int, _ *string)
 	// Get followed hashtags for the user
 	_ = username
 	return &model.HashtagConnection{
-		Edges:    []*model.HashtagEdge{},
+		Edges: []*model.HashtagEdge{},
 		PageInfo: &model.PageInfo{
 			HasNextPage:     false,
 			HasPreviousPage: false,
@@ -4702,14 +4701,14 @@ func (r *queryResolver) InfrastructureHealth(ctx context.Context) (*model.Infras
 	// Use analytics service to get real infrastructure metrics
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
-		return nil, fmt.Errorf("analytics service not available")
+		return nil, ErrAnalyticsUnavailable
 	}
 
 	// Get health data from analytics service
 	healthData, err := analytics.GetInfrastructureHealth(ctx)
 	if err != nil {
 		r.Logger.Error("Failed to get infrastructure health", zap.Error(err))
-		return nil, fmt.Errorf("failed to get infrastructure health: %w", err)
+		return nil, errors.Join(errors.New("failed to get infrastructure health"), err)
 	}
 
 	return healthData, nil
@@ -4720,7 +4719,7 @@ func (r *queryResolver) InstanceRelationships(ctx context.Context, domain string
 	// Use federation service to get real instance relationships
 	federation := r.Registry.Federation()
 	if federation == nil {
-		return nil, fmt.Errorf("federation service not available")
+		return nil, ErrFederationUnavailable
 	}
 
 	// Get relationships from federation service
@@ -4729,7 +4728,7 @@ func (r *queryResolver) InstanceRelationships(ctx context.Context, domain string
 		r.Logger.Error("Failed to get instance relationships",
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance relationships: %w", err)
+		return nil, errors.Join(errors.New("failed to get instance relationships"), err)
 	}
 
 	return relationships, nil
@@ -4740,7 +4739,7 @@ func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]
 	// Use analytics service to get real budget data
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
-		return nil, fmt.Errorf("analytics service not available")
+		return nil, ErrAnalyticsUnavailable
 	}
 
 	// Get budget data from analytics service
@@ -4749,7 +4748,7 @@ func (r *queryResolver) InstanceBudgets(ctx context.Context, exceeded *bool) ([]
 		r.Logger.Error("Failed to get instance budgets",
 			zap.Bool("exceeded_only", exceeded != nil && *exceeded),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance budgets: %w", err)
+		return nil, errors.Join(errors.New("failed to get instance budgets"), err)
 	}
 
 	return budgets, nil
@@ -4760,7 +4759,7 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 	// Use analytics service to get real health report
 	analytics := r.Registry.Analytics()
 	if analytics == nil {
-		return nil, fmt.Errorf("analytics service not available")
+		return nil, ErrAnalyticsUnavailable
 	}
 
 	// Get health report from analytics service
@@ -4769,7 +4768,7 @@ func (r *queryResolver) InstanceHealthReport(ctx context.Context, domain string)
 		r.Logger.Error("Failed to get instance health report",
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance health report: %w", err)
+		return nil, errors.Join(errors.New("failed to get instance health report"), err)
 	}
 
 	return report, nil
@@ -4780,7 +4779,7 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 	// Use media service to get streaming URL
 	mediaService := r.Registry.Media()
 	if mediaService == nil {
-		return nil, fmt.Errorf("media service not available")
+		return nil, ErrMediaServiceUnavailable
 	}
 
 	// Get media streaming information
@@ -4789,7 +4788,7 @@ func (r *queryResolver) MediaStreamURL(ctx context.Context, mediaID string) (*mo
 		r.Logger.Error("Failed to get media streaming URL",
 			zap.String("media_id", mediaID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get media streaming URL: %w", err)
+		return nil, errors.Join(errors.New("failed to get media streaming URL"), err)
 	}
 
 	return stream, nil
@@ -4805,7 +4804,7 @@ func (r *queryResolver) SlowQueries(_ context.Context, _ model.Duration) ([]*mod
 func (r *queryResolver) FederationMap(_ context.Context, _ *int) (*model.FederationGraph, error) {
 	// Generate a map of federation connections
 	// This would analyze federation relationships
-	
+
 	// For now, return empty graph
 	return &model.FederationGraph{
 		Nodes:    []*model.InstanceNode{},
@@ -4870,7 +4869,7 @@ func (r *Resolver) convertToImageAnalysis(results map[string]interface{}) *moder
 	if !ok {
 		return nil
 	}
-	
+
 	analysis := &moderation.ImageAnalysis{}
 	r.extractModerationLabels(imageData, analysis)
 	r.extractDetectedText(imageData, analysis)
@@ -4883,7 +4882,7 @@ func (r *Resolver) extractModerationLabels(imageData map[string]interface{}, ana
 	if !ok {
 		return
 	}
-	
+
 	for _, label := range labels {
 		if modLabel := r.convertToModerationLabel(label); modLabel != nil {
 			analysis.ModerationLabels = append(analysis.ModerationLabels, modLabel)
@@ -4897,7 +4896,7 @@ func (r *Resolver) convertToModerationLabel(label interface{}) *moderation.Moder
 	if !ok {
 		return nil
 	}
-	
+
 	modLabel := &moderation.ModerationLabel{}
 	if name, ok := labelMap["name"].(string); ok {
 		modLabel.Name = name
@@ -4917,7 +4916,7 @@ func (r *Resolver) extractDetectedText(imageData map[string]interface{}, analysi
 	if !ok {
 		return
 	}
-	
+
 	for _, text := range detectedText {
 		if textStr, ok := text.(string); ok {
 			analysis.DetectedText = append(analysis.DetectedText, textStr)
@@ -4944,7 +4943,7 @@ func (r *Resolver) convertToSpamAnalysis(results map[string]interface{}) *model.
 	if !ok {
 		return nil
 	}
-	
+
 	analysis := &model.SpamAnalysis{}
 	r.extractSpamScore(spamData, analysis)
 	r.extractSpamIndicators(spamData, analysis)
@@ -4965,7 +4964,7 @@ func (r *Resolver) extractSpamIndicators(spamData map[string]interface{}, analys
 	if !ok {
 		return
 	}
-	
+
 	for _, indicator := range indicators {
 		if spamInd := r.convertToSpamIndicator(indicator); spamInd != nil {
 			analysis.SpamIndicators = append(analysis.SpamIndicators, spamInd)
@@ -4979,7 +4978,7 @@ func (r *Resolver) convertToSpamIndicator(indicator interface{}) *model.SpamIndi
 	if !ok {
 		return nil
 	}
-	
+
 	spamInd := &model.SpamIndicator{}
 	if indType, ok := indMap["type"].(string); ok {
 		spamInd.Type = indType
@@ -5020,13 +5019,13 @@ func (r *Resolver) getBudgetAlertLevel(currentSpend, budgetLimit float64) model.
 	if budgetLimit <= 0 {
 		return model.AlertLevelInfo
 	}
-	
+
 	percentage := (currentSpend / budgetLimit) * 100
 	switch {
 	case percentage >= 100:
 		return model.AlertLevelCritical
 	case percentage >= 90:
-		return model.AlertLevelCritical  // Use Critical for 90%+ as well
+		return model.AlertLevelCritical // Use Critical for 90%+ as well
 	case percentage >= 80:
 		return model.AlertLevelWarning
 	default:
@@ -5039,10 +5038,10 @@ func (r *Resolver) getBudgetAlertMessage(currentSpend, budgetLimit float64) stri
 	if budgetLimit <= 0 {
 		return fmt.Sprintf("Current spend: $%.2f (no budget limit set)", currentSpend)
 	}
-	
+
 	percentage := (currentSpend / budgetLimit) * 100
 	remaining := budgetLimit - currentSpend
-	
+
 	switch {
 	case percentage >= 100:
 		return fmt.Sprintf("BUDGET EXCEEDED: $%.2f spent, $%.2f over budget", currentSpend, -remaining)
@@ -5060,7 +5059,7 @@ func (r *Resolver) convertQualityBandwidth(metrics map[string]interface{}) []*mo
 	if metrics == nil {
 		return []*model.QualityBandwidth{}
 	}
-	
+
 	result := make([]*model.QualityBandwidth, 0)
 	for qualityStr, data := range metrics {
 		if bandwidthData, ok := data.(map[string]interface{}); ok {
@@ -5080,22 +5079,22 @@ func (r *Resolver) convertQualityBandwidth(metrics map[string]interface{}) []*mo
 			default:
 				quality = model.StreamQualityAuto
 			}
-			
+
 			qb := &model.QualityBandwidth{
 				Quality: quality,
 			}
-			
+
 			if totalGB, ok := bandwidthData["total_gb"].(float64); ok {
 				qb.TotalGb = totalGB
 			}
 			if percentage, ok := bandwidthData["percentage"].(float64); ok {
 				qb.Percentage = percentage
 			}
-			
+
 			result = append(result, qb)
 		}
 	}
-	
+
 	return result
 }
 
@@ -5104,12 +5103,12 @@ func (r *Resolver) convertHourlyBandwidth(metrics []interface{}) []*model.Hourly
 	if metrics == nil {
 		return []*model.HourlyBandwidth{}
 	}
-	
+
 	result := make([]*model.HourlyBandwidth, 0, len(metrics))
 	for _, item := range metrics {
 		if hourData, ok := item.(map[string]interface{}); ok {
 			hb := &model.HourlyBandwidth{}
-			
+
 			if hour, ok := hourData["hour"].(string); ok {
 				if t, err := time.Parse(time.RFC3339, hour); err == nil {
 					hb.Hour = model.Time(t)
@@ -5122,11 +5121,11 @@ func (r *Resolver) convertHourlyBandwidth(metrics []interface{}) []*model.Hourly
 			if peakMbps, ok := hourData["peak_mbps"].(float64); ok {
 				hb.PeakMbps = peakMbps
 			}
-			
+
 			result = append(result, hb)
 		}
 	}
-	
+
 	return result
 }
 
@@ -5135,12 +5134,12 @@ func (r *queryResolver) ModerationDashboard(ctx context.Context, _ *moderation.M
 	// Get moderation repository from storage
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	moderationRepo := storage.Moderation()
 	if moderationRepo == nil {
-		return nil, fmt.Errorf("moderation repository not available")
+		return nil, ErrModerationRepositoryUnavailable
 	}
 
 	// Calculate time ranges for analytics
@@ -5213,17 +5212,17 @@ func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, modera
 	// Get recent moderation events
 	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, limit*2, "") // Get more to filter for decisions
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation events: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}
 
 	var decisions []*moderation.ModerationDecision
-	
+
 	// Convert events to decisions format and filter for actual decisions
 	for _, event := range events {
 		if event == nil {
 			continue
 		}
-		
+
 		// Get any decision for this event
 		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
 		if err != nil || decision == nil {
@@ -5232,16 +5231,16 @@ func (r *queryResolver) getRecentModerationDecisions(ctx context.Context, modera
 
 		// Convert storage decision to moderation decision
 		moderationDecision := &moderation.ModerationDecision{
-			ID:        decision.ID,
-			EventID:   decision.EventID,
-			ObjectID:  decision.ObjectID,
-			Action:    moderation.ActionType(decision.Action),
-			Reason:    decision.Reason,
-			Decided:   decision.Decided,
+			ID:       decision.ID,
+			EventID:  decision.EventID,
+			ObjectID: decision.ObjectID,
+			Action:   moderation.ActionType(decision.Action),
+			Reason:   decision.Reason,
+			Decided:  decision.Decided,
 		}
 
 		decisions = append(decisions, moderationDecision)
-		
+
 		if len(decisions) >= limit {
 			break
 		}
@@ -5261,7 +5260,7 @@ func (r *queryResolver) calculateAverageResponseTime(ctx context.Context, modera
 
 	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 100, "")
 	if err != nil {
-		return 0, fmt.Errorf("failed to get moderation events: %w", err)
+		return 0, errors.Join(errors.New("failed to get moderation events"), err)
 	}
 
 	var totalResponseTime time.Duration
@@ -5298,7 +5297,7 @@ func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderation
 	// Get active moderation patterns
 	patterns, err := moderationRepo.(*repositories.ModerationRepository).GetModerationPatterns(ctx, true, "", limit*2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation patterns: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation patterns"), err)
 	}
 
 	var patternStats []*model.PatternStats
@@ -5324,7 +5323,7 @@ func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderation
 
 		// Calculate statistics (simplified - real implementation would track actual matches)
 		matchCount := int(pattern.MatchCount)
-		
+
 		// Calculate accuracy based on pattern age and matches (simplified heuristic)
 		accuracy := 0.85 // Default accuracy
 		if pattern.MatchCount > 10 {
@@ -5359,7 +5358,7 @@ func (r *queryResolver) getTopModerationPatterns(ctx context.Context, moderation
 		}
 
 		patternStats = append(patternStats, stat)
-		
+
 		if len(patternStats) >= limit {
 			break
 		}
@@ -5379,7 +5378,7 @@ func (r *queryResolver) calculateFalsePositiveRate(ctx context.Context, moderati
 
 	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 200, "")
 	if err != nil {
-		return 0, fmt.Errorf("failed to get moderation events: %w", err)
+		return 0, errors.Join(errors.New("failed to get moderation events"), err)
 	}
 
 	var totalDecisions int
@@ -5416,10 +5415,10 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 	// Get the pattern to verify it exists
 	pattern, err := moderationRepo.(*repositories.ModerationRepository).GetModerationPattern(ctx, patternID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation pattern: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation pattern"), err)
 	}
 	if pattern == nil {
-		return nil, fmt.Errorf("moderation pattern not found: %s", patternID)
+		return nil, ErrModerationPatternNotFoundWithID(patternID)
 	}
 
 	// Get moderation events in the time period
@@ -5430,7 +5429,7 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 
 	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 1000, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation events: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}
 
 	// Calculate effectiveness metrics
@@ -5444,7 +5443,7 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 
 		// Check if this event would match the pattern (simplified check)
 		patternMatched := r.wouldPatternMatch(event, pattern)
-		
+
 		// Get actual moderation decision for this event
 		decision, err := moderationRepo.(*repositories.ModerationRepository).GetModerationDecision(ctx, event.ObjectID)
 		if err != nil {
@@ -5470,15 +5469,15 @@ func (r *queryResolver) calculatePatternEffectiveness(ctx context.Context, moder
 
 	// Calculate derived metrics
 	var precision, recall, f1Score float64
-	
+
 	if matchCount > 0 {
 		precision = float64(truePositives) / float64(matchCount)
 	}
-	
+
 	if (truePositives + missedCount) > 0 {
-		recall = float64(truePositives) / float64(truePositives + missedCount)
+		recall = float64(truePositives) / float64(truePositives+missedCount)
 	}
-	
+
 	if (precision + recall) > 0 {
 		f1Score = 2 * (precision * recall) / (precision + recall)
 	}
@@ -5532,26 +5531,26 @@ func (r *queryResolver) isEventTypeCompatible(event *storage.ModerationEvent, pa
 	switch pattern.Type {
 	case ContentType, TextType:
 		// Content patterns match content-related events
-		return event.EventType == EventTypeFlagged || 
-			   event.EventType == "rejected" ||
-			   event.EventType == "content_violation"
+		return event.EventType == EventTypeFlagged ||
+			event.EventType == "rejected" ||
+			event.EventType == "content_violation"
 	case "user", AccountType:
-		// User patterns match user-related events  
+		// User patterns match user-related events
 		return event.EventType == "suspended" ||
-			   event.EventType == "warned" ||
-			   event.EventType == "account_flagged"
+			event.EventType == "warned" ||
+			event.EventType == "account_flagged"
 	case "spam":
 		// Spam patterns match spam-related events
 		return event.EventType == EventTypeFlagged ||
-			   event.Category == "spam"
+			event.Category == "spam"
 	case "harassment":
 		// Harassment patterns
 		return event.EventType == EventTypeFlagged ||
-			   event.Category == "harassment"
+			event.Category == "harassment"
 	case "hate_speech":
 		// Hate speech patterns
 		return event.EventType == EventTypeFlagged ||
-			   event.Category == "hate_speech"
+			event.Category == "hate_speech"
 	default:
 		// Unknown pattern types match flagged events by default
 		return event.EventType == "flagged"
@@ -5756,11 +5755,11 @@ func (r *queryResolver) mapEventSeverity(event *storage.ModerationEvent) model.M
 			return r.stringToSeverity(sev)
 		}
 	}
-	
+
 	if event.Severity != "" {
 		return r.stringToSeverity(event.Severity)
 	}
-	
+
 	return model.ModerationSeverityMedium // Default
 }
 
@@ -5781,7 +5780,7 @@ func (r *queryResolver) stringToSeverity(sev string) model.ModerationSeverity {
 // buildThreatCounts processes events and builds threat count map
 func (r *queryResolver) buildThreatCounts(events []*storage.ModerationEvent) map[string]map[model.ModerationSeverity]int {
 	threatCounts := make(map[string]map[model.ModerationSeverity]int)
-	
+
 	for _, event := range events {
 		if event == nil {
 			continue
@@ -5799,7 +5798,7 @@ func (r *queryResolver) buildThreatCounts(events []*storage.ModerationEvent) map
 		}
 		threatCounts[category][severity]++
 	}
-	
+
 	return threatCounts
 }
 
@@ -5839,7 +5838,7 @@ func (r *queryResolver) convertToTrends(threatCounts map[string]map[model.Modera
 			trends = append(trends, trend)
 		}
 	}
-	
+
 	return trends
 }
 
@@ -5854,12 +5853,12 @@ func (r *queryResolver) getThreatTrends(ctx context.Context, moderationRepo inte
 
 	events, _, err := moderationRepo.(*repositories.ModerationRepository).GetModerationEvents(ctx, filter, 500, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get moderation events: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation events"), err)
 	}
 
 	// Process events into threat counts
 	threatCounts := r.buildThreatCounts(events)
-	
+
 	// Convert to trend format
 	trends := r.convertToTrends(threatCounts)
 
@@ -5880,12 +5879,12 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 	// Get moderation repository from storage
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	moderationRepo := storage.Moderation()
 	if moderationRepo == nil {
-		return nil, fmt.Errorf("moderation repository not available")
+		return nil, ErrModerationRepositoryUnavailable
 	}
 
 	// Calculate time range based on period
@@ -5907,7 +5906,7 @@ func (r *queryResolver) ModerationEffectiveness(ctx context.Context, patternID s
 	// Calculate effectiveness metrics for the specific pattern
 	patternStats, err := r.calculatePatternEffectiveness(ctx, moderationRepo, patternID, startTime, now)
 	if err != nil {
-		r.Logger.Warn("Failed to calculate pattern effectiveness", 
+		r.Logger.Warn("Failed to calculate pattern effectiveness",
 			zap.String("pattern_id", patternID),
 			zap.Error(err))
 		// Return zeroed metrics instead of failing
@@ -5933,7 +5932,7 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 	if activeOnly != nil {
 		isActiveOnly = *activeOnly
 	}
-	
+
 	resultLimit := 50
 	if limit != nil {
 		limitStr := fmt.Sprintf("%d", *limit)
@@ -5941,7 +5940,7 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 			resultLimit = parsedLimit
 		}
 	}
-	
+
 	severityStr := ""
 	if severity != nil {
 		// Convert model.ModerationSeverity to string
@@ -5956,24 +5955,24 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 			severityStr = "critical"
 		}
 	}
-	
+
 	// Get patterns from moderation repository
 	storagePatterns, err := r.Storage.Moderation().GetModerationPatterns(ctx, isActiveOnly, severityStr, resultLimit)
 	if err != nil {
 		r.Logger.Error("failed to get moderation patterns", zap.Error(err))
 		return []*moderation.ModerationPattern{}, nil // Return empty instead of error
 	}
-	
+
 	// Convert storage patterns to moderation patterns
 	result := make([]*moderation.ModerationPattern, 0, len(storagePatterns))
 	for _, storagePattern := range storagePatterns {
 		if storagePattern == nil {
 			continue
 		}
-		
+
 		// Filter by category if specified (storage.ModerationPattern doesn't have Category field)
 		// For now, we'll skip category filtering since it's not available in the storage type
-		
+
 		moderationPattern := &moderation.ModerationPattern{
 			ID:                 storagePattern.ID,
 			Name:               storagePattern.Name,
@@ -5983,19 +5982,19 @@ func (r *queryResolver) ModerationPatterns(ctx context.Context, activeOnly *bool
 			Severity:           storagePattern.Severity,
 			Action:             "flag", // Default action since not available in storage type
 			Active:             storagePattern.Active,
-			MatchCount:         0,  // Not available in storage type
-			FalsePositiveCount: 0,  // Not available in storage type
-			Effectiveness:      0.0, // Not available in storage type
+			MatchCount:         0,           // Not available in storage type
+			FalsePositiveCount: 0,           // Not available in storage type
+			Effectiveness:      0.0,         // Not available in storage type
 			LastMatch:          time.Time{}, // Not available in storage type
 			CreatedAt:          storagePattern.CreatedAt,
 			CreatedBy:          "", // Not available in storage type
 			UpdatedAt:          storagePattern.UpdatedAt,
 			Tags:               []string{}, // Not available in storage type
 		}
-		
+
 		result = append(result, moderationPattern)
 	}
-	
+
 	return result, nil
 }
 
@@ -6004,9 +6003,9 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	// Calculate time range based on period
 	now := time.Now()
 	var startTime time.Time
@@ -6022,40 +6021,40 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 	default:
 		startTime = now.Add(-24 * time.Hour)
 	}
-	
+
 	// Fetch moderation events for this moderator from moderation repository
 	// Note: GetModerationEventsByActor gets events by actor, which includes the moderator's actions
 	events, _, err := storage.Moderation().GetModerationEventsByActor(ctx, moderatorID, 1000, "")
 	if err != nil {
-		r.Logger.Error("failed to get moderator decisions", 
+		r.Logger.Error("failed to get moderator decisions",
 			zap.String("moderator_id", moderatorID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get moderator decisions: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderator decisions"), err)
 	}
-	
+
 	// Filter events by time period and calculate statistics
 	decisionCount := 0
 	var totalResponseTime int64
 	var overturnedCount int
 	categoryMap := make(map[string]int)
-	
+
 	for _, event := range events {
 		// Only count events within the time period
 		if event.Created.Before(startTime) || event.Created.After(now) {
 			continue
 		}
-		
+
 		decisionCount++
-		
+
 		// Calculate actual response time based on event data
 		responseTime := r.calculateResponseTime(ctx, event, storage)
 		totalResponseTime += responseTime
-		
+
 		// Count by category
 		if event.Category != "" {
 			categoryMap[event.Category]++
 		}
-		
+
 		// Check severity for overturned estimation (high severity less likely to be overturned)
 		// Convert severity string to numeric value for comparison
 		if event.Severity == SeverityLow || event.Severity == SeverityMedium {
@@ -6063,19 +6062,19 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 			overturnedCount++
 		}
 	}
-	
+
 	// Calculate average response time
 	avgResponseTime := int64(0)
 	if decisionCount > 0 {
 		avgResponseTime = totalResponseTime / int64(decisionCount)
 	}
-	
+
 	// Calculate accuracy (decisions not overturned)
 	accuracy := 0.0
 	if decisionCount > 0 {
 		accuracy = float64(decisionCount-overturnedCount) / float64(decisionCount)
 	}
-	
+
 	// Convert category map to CategoryStats
 	categories := make([]*model.CategoryStats, 0, len(categoryMap))
 	for category, count := range categoryMap {
@@ -6089,12 +6088,12 @@ func (r *queryResolver) ModeratorActivity(ctx context.Context, moderatorID strin
 			Accuracy: percentage / 100.0, // Convert percentage to decimal
 		})
 	}
-	
+
 	// Sort categories by count (descending)
 	sort.Slice(categories, func(i, j int) bool {
 		return categories[i].Count > categories[j].Count
 	})
-	
+
 	return &model.ModeratorStats{
 		ModeratorID:     moderatorID,
 		Period:          period,
@@ -6111,12 +6110,12 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	// Calculate period for metrics
 	period := 24 * time.Hour // Last 24 hours for daily metrics
-	
+
 	// Fetch real performance metrics from CloudWatch metrics repository
 	// We use CloudWatchMetrics repository which provides service metrics
 	cwMetricsRepo := storage.CloudWatchMetrics()
@@ -6133,10 +6132,10 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 			Period:     model.TimePeriodDay,
 		}, nil
 	}
-	
+
 	metrics, err := cwMetricsRepo.GetServiceMetrics(ctx, string(service), period)
 	if err != nil {
-		r.Logger.Error("failed to get service metrics", 
+		r.Logger.Error("failed to get service metrics",
 			zap.String("service", string(service)),
 			zap.Error(err))
 		// Return empty metrics on error rather than failing
@@ -6151,13 +6150,13 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 			Period:     model.TimePeriodDay,
 		}, nil
 	}
-	
+
 	// Extract metrics from CloudWatch response
 	var requestCount int64
 	var errorCount int64
 	var coldStarts int64
 	latencies := make([]int64, 0)
-	
+
 	// Use the CloudWatch metrics data
 	if metrics != nil {
 		// Use latency percentiles directly from ServiceMetrics
@@ -6170,7 +6169,7 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 		if metrics.LatencyP99Ms > 0 {
 			latencies = append(latencies, int64(metrics.LatencyP99Ms))
 		}
-		
+
 		// Use request and error counts
 		if metrics.RequestCount > 0 {
 			requestCount = metrics.RequestCount
@@ -6178,30 +6177,30 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 		if metrics.ErrorCount > 0 {
 			errorCount = metrics.ErrorCount
 		}
-		
+
 		// Note: Average latency could be calculated from P50 if needed
-		
+
 		// Note: ColdStarts is not tracked in ServiceMetrics
 		// We'd need to get this from Lambda-specific metrics
 		coldStarts = 0
 	}
-	
+
 	// Calculate average latency (not used in current model)
 	// avgLatency := int64(0)
 	// if requestCount > 0 {
 	// 	avgLatency = totalLatency / requestCount
 	// }
-	
+
 	// Calculate throughput (requests per second)
 	duration := period.Seconds()
 	throughput := float64(requestCount) / duration
-	
+
 	// Calculate error rate
 	errorRate := 0.0
 	if requestCount > 0 {
 		errorRate = float64(errorCount) / float64(requestCount)
 	}
-	
+
 	// Get percentile values directly from CloudWatch metrics if available
 	var p50, p95, p99 int64
 	if metrics != nil {
@@ -6210,9 +6209,9 @@ func (r *queryResolver) PerformanceMetrics(ctx context.Context, service model.Se
 		p99 = int64(metrics.LatencyP99Ms)
 	} else if err := common.ValidateSliceNotEmpty("latencies", latencies); err == nil {
 		// Fallback to calculating from sample latencies if we have them
-		p50, _, p95, p99 = calculatePercentiles(latencies) 
+		p50, _, p95, p99 = calculatePercentiles(latencies)
 	}
-	
+
 	return &model.PerformanceReport{
 		Service:    service,
 		P50Latency: model.Duration(p50),
@@ -6230,19 +6229,19 @@ func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
 	if err := common.ValidateSliceNotEmpty("latencies", latencies); err != nil {
 		return 0, 0, 0, 0
 	}
-	
+
 	// Sort latencies
 	sort.Slice(latencies, func(i, j int) bool {
 		return latencies[i] < latencies[j]
 	})
-	
+
 	// Calculate percentile indices
 	n := len(latencies)
 	p50Index := (n * 50) / 100
 	p90Index := (n * 90) / 100
 	p95Index := (n * 95) / 100
 	p99Index := (n * 99) / 100
-	
+
 	// Ensure indices are within bounds
 	if p50Index >= n {
 		p50Index = n - 1
@@ -6256,7 +6255,7 @@ func calculatePercentiles(latencies []int64) (p50, p90, p95, p99 int64) {
 	if p99Index >= n {
 		p99Index = n - 1
 	}
-	
+
 	return latencies[p50Index], latencies[p90Index], latencies[p95Index], latencies[p99Index]
 }
 
@@ -6265,9 +6264,9 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	// Set default limit
 	limit := 20
 	if first != nil && *first > 0 {
@@ -6276,28 +6275,28 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 			limit = 100 // Cap at 100
 		}
 	}
-	
+
 	// Parse cursor
 	cursor := ""
 	if after != nil {
 		cursor = *after
 	}
-	
+
 	// Get instance name
 	instanceName := ""
 	if instance != nil {
 		instanceName = *instance
 	}
-	
+
 	// Fetch severed relationships from federation repository
 	relationships, nextCursor, err := storage.Federation().GetSeveredRelationships(ctx, instanceName, limit, cursor)
 	if err != nil {
-		r.Logger.Error("failed to get severed relationships", 
+		r.Logger.Error("failed to get severed relationships",
 			zap.String("instance", instanceName),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get severed relationships: %w", err)
+		return nil, errors.Join(errors.New("failed to get severed relationships"), err)
 	}
-	
+
 	// Convert to GraphQL model
 	edges := make([]*model.SeveredRelationshipEdge, 0, len(relationships))
 	for _, rel := range relationships {
@@ -6315,7 +6314,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 				affectedFollowing++
 			}
 		}
-		
+
 		// Convert reason from storage model to GraphQL model
 		var graphqlReason model.SeveranceReason
 		switch string(rel.Reason) {
@@ -6330,7 +6329,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 		default:
 			graphqlReason = model.SeveranceReasonOther
 		}
-		
+
 		// Create severance details if we have details
 		var details *model.SeveranceDetails
 		if rel.Details != "" {
@@ -6340,7 +6339,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 				AutoDetected: false,
 			}
 		}
-		
+
 		edge := &model.SeveredRelationshipEdge{
 			Node: &model.SeveredRelationship{
 				ID:                rel.ID,
@@ -6357,11 +6356,11 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 		}
 		edges = append(edges, edge)
 	}
-	
+
 	// Determine pagination info
 	hasNextPage := nextCursor != ""
 	hasPreviousPage := cursor != ""
-	
+
 	var startCursor, endCursor *model.Cursor
 	if err := common.ValidateSliceNotEmpty("edges", edges); err == nil {
 		sc := edges[0].Cursor
@@ -6369,7 +6368,7 @@ func (r *queryResolver) SeveredRelationships(ctx context.Context, instance *stri
 		startCursor = &sc
 		endCursor = &ec
 	}
-	
+
 	return &model.SeveredRelationshipConnection{
 		Edges: edges,
 		PageInfo: &model.PageInfo{
@@ -6389,29 +6388,29 @@ func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *st
 	if first > 0 && first <= 100 {
 		limit = first
 	}
-	
+
 	// For now, we'll implement popular streams by getting trending statuses with media attachments
 	// This represents popular streaming content until a dedicated streaming analytics service is implemented
 	trendingStatuses, err := r.Storage.Analytics().GetTrendingStatuses(ctx, time.Now().Add(-24*time.Hour), limit)
 	if err != nil {
 		r.Logger.Error("failed to get trending statuses for popular streams", zap.Error(err))
 		return &model.StreamConnection{
-			Edges:      []*model.StreamEdge{},
-			PageInfo:   &model.PageInfo{
+			Edges: []*model.StreamEdge{},
+			PageInfo: &model.PageInfo{
 				HasNextPage:     false,
 				HasPreviousPage: false,
 			},
 			TotalCount: 0,
 		}, nil
 	}
-	
+
 	// Convert trending statuses to stream edges (simplified for now)
 	edges := make([]*model.StreamEdge, 0, len(trendingStatuses))
 	for _, status := range trendingStatuses {
 		if status == nil {
 			continue
 		}
-		
+
 		// Create a stream representation based on the trending status
 		// Using repository analytics to calculate streaming metrics
 		stream := &model.Stream{
@@ -6419,23 +6418,23 @@ func (r *queryResolver) PopularStreams(ctx context.Context, first int, after *st
 			Title:     r.truncateText(status.Content, 100), // Use content as title, truncated
 			CreatedAt: model.Time(status.CreatedAt),
 		}
-		
+
 		edge := &model.StreamEdge{
 			Cursor: model.Cursor(fmt.Sprintf("stream_%s", status.ID)),
 			Node:   stream,
 		}
-		
+
 		edges = append(edges, edge)
-		
+
 		// Stop if we have enough results
 		if len(edges) >= limit {
 			break
 		}
 	}
-	
+
 	// Determine if there are more pages
 	hasNextPage := len(trendingStatuses) == limit
-	
+
 	return &model.StreamConnection{
 		Edges: edges,
 		PageInfo: &model.PageInfo{
@@ -6459,16 +6458,16 @@ func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID stri
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	// Fetch the actual pattern
 	pattern, err := storage.Moderation().GetModerationPattern(ctx, patternID)
 	if err != nil {
 		r.Logger.Error("failed to get moderation pattern", zap.String("pattern_id", patternID), zap.Error(err))
-		return nil, fmt.Errorf("failed to get moderation pattern: %w", err)
+		return nil, errors.Join(errors.New("failed to get moderation pattern"), err)
 	}
-	
+
 	// Convert storage pattern to GraphQL model
 	var graphQLPattern *moderation.ModerationPattern
 	if pattern != nil {
@@ -6484,21 +6483,21 @@ func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID stri
 			UpdatedAt:   pattern.UpdatedAt,
 		}
 	}
-	
+
 	// Get moderation events that used this pattern to calculate statistics
 	// We'll fetch recent events and analyze them for match count and accuracy
 	// Note: We don't have a PatternID field in ModerationEventFilter, so we get all events
 	// and filter in memory (not ideal but works for now)
 	events, _, err := storage.Moderation().GetModerationEvents(ctx, nil, 100, "") // Get last 100 events
-	
+
 	matchCount := 0
 	truePositives := 0
 	falsePositives := 0
 	var lastMatchTime time.Time
-	
+
 	if err == nil && len(events) > 0 {
 		matchCount = len(events)
-		
+
 		// Analyze events for accuracy based on event type and confidence
 		// High confidence events that weren't appealed are considered true positives
 		for _, event := range events {
@@ -6508,20 +6507,20 @@ func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID stri
 			} else if event.ConfidenceScore < 0.5 {
 				falsePositives++
 			}
-			
+
 			// Track last match time
 			if event.CreatedAt.After(lastMatchTime) {
 				lastMatchTime = event.CreatedAt
 			}
 		}
 	}
-	
+
 	// Calculate accuracy
 	accuracy := 0.0
-	if matchCount > 0 && (truePositives + falsePositives) > 0 {
-		accuracy = float64(truePositives) / float64(truePositives + falsePositives)
+	if matchCount > 0 && (truePositives+falsePositives) > 0 {
+		accuracy = float64(truePositives) / float64(truePositives+falsePositives)
 	}
-	
+
 	// Determine trend based on recent activity (simple heuristic)
 	trend := model.TrendStable
 	if matchCount > 0 && time.Since(lastMatchTime) < 24*time.Hour {
@@ -6529,12 +6528,12 @@ func (r *queryResolver) PatternEffectiveness(ctx context.Context, patternID stri
 	} else if matchCount > 0 && time.Since(lastMatchTime) > 7*24*time.Hour {
 		trend = model.TrendDecreasing // No activity in last week
 	}
-	
+
 	// Use actual last match time or current time if no matches
 	if lastMatchTime.IsZero() {
 		lastMatchTime = time.Now()
 	}
-	
+
 	return &model.PatternStats{
 		Pattern:    graphQLPattern,
 		MatchCount: matchCount,
@@ -6549,18 +6548,18 @@ func (r *queryResolver) SupportedBitrates(_ context.Context, mediaID string) ([]
 	// Import the streaming package's quality information
 	qualityLevels := []mediaStreaming.Quality{
 		mediaStreaming.Quality4K,
-		mediaStreaming.Quality1080p, 
+		mediaStreaming.Quality1080p,
 		mediaStreaming.Quality720p,
 		mediaStreaming.Quality480p,
 		mediaStreaming.Quality360p,
 		mediaStreaming.Quality240p,
 	}
-	
+
 	bitrates := make([]*model.Bitrate, 0, len(qualityLevels))
-	
+
 	for _, quality := range qualityLevels {
 		qualityInfo := mediaStreaming.GetQualityInfo(quality)
-		
+
 		bitrate := &model.Bitrate{
 			Quality:       model.StreamQuality(qualityInfo.Quality),
 			BitsPerSecond: qualityInfo.Bitrate * 1000, // Convert kbps to bps
@@ -6568,14 +6567,14 @@ func (r *queryResolver) SupportedBitrates(_ context.Context, mediaID string) ([]
 			Height:        qualityInfo.Height,
 			Codec:         "h264", // Default codec
 		}
-		
+
 		bitrates = append(bitrates, bitrate)
 	}
-	
-	r.Logger.Debug("returned supported bitrates", 
+
+	r.Logger.Debug("returned supported bitrates",
 		zap.String("media_id", mediaID),
 		zap.Int("bitrate_count", len(bitrates)))
-	
+
 	return bitrates, nil
 }
 
@@ -6583,33 +6582,33 @@ func (r *queryResolver) SupportedBitrates(_ context.Context, mediaID string) ([]
 func (r *queryResolver) ThreadContext(ctx context.Context, noteID string) (*model.ThreadContext, error) {
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	statusRepo := storage.Status()
 	if statusRepo == nil {
-		return nil, fmt.Errorf("status repository not available")
+		return nil, ErrStatusRepositoryUnavailable
 	}
-	
+
 	status, err := statusRepo.GetStatus(ctx, noteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, errors.Join(errors.New("failed to get status"), err)
 	}
-	
+
 	replies, err := r.getThreadReplies(ctx, statusRepo, noteID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	engagement, err := r.calculateEngagementMetrics(ctx, storage, noteID)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	threadMetrics := r.calculateThreadMetrics(ctx, statusRepo, status, replies)
 	rootNote := r.createRootNoteObject(status, replies, engagement)
 	syncStatus := r.determineSyncStatus(replies)
-	
+
 	return &model.ThreadContext{
 		RootNote:         rootNote,
 		ReplyCount:       len(replies),
@@ -6640,13 +6639,13 @@ func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo *reposi
 		Limit:  100,
 		Cursor: "",
 	}
-	
+
 	repliesResult, err := statusRepo.GetReplies(ctx, noteID, paginationOpts)
 	if err != nil {
 		r.Logger.Warn("failed to get replies", zap.String("note_id", noteID), zap.Error(err))
 		return []*models.Status{}, nil
 	}
-	
+
 	return repliesResult.Items, nil
 }
 
@@ -6654,7 +6653,7 @@ func (r *queryResolver) getThreadReplies(ctx context.Context, statusRepo *reposi
 func (r *queryResolver) calculateEngagementMetrics(ctx context.Context, storage core.RepositoryStorage, noteID string) (*engagementMetrics, error) {
 	likeRepo := storage.Like()
 	engagement := &engagementMetrics{}
-	
+
 	if likeRepo != nil {
 		if count, err := likeRepo.GetLikeCount(ctx, noteID); err == nil {
 			engagement.likeCount = count
@@ -6663,7 +6662,7 @@ func (r *queryResolver) calculateEngagementMetrics(ctx context.Context, storage 
 			engagement.reblogCount = int(count)
 		}
 	}
-	
+
 	return engagement, nil
 }
 
@@ -6674,26 +6673,26 @@ func (r *queryResolver) calculateThreadMetrics(ctx context.Context, statusRepo *
 	missingPosts := 0
 	replyIDs := make(map[string]bool)
 	maxDepth := 0
-	
+
 	// Process original status
 	r.processOriginalStatus(status, participants, &lastActivity)
-	
+
 	// Check for missing parent
 	if status.InReplyToID != "" {
 		missingPosts += r.checkMissingParent(ctx, statusRepo, status.InReplyToID)
 	}
-	
+
 	// Process replies
 	for _, reply := range replies {
 		r.processReply(ctx, statusRepo, reply, participants, &lastActivity, &maxDepth, replyIDs, &missingPosts, status.StatusID)
 	}
-	
+
 	// Convert participants map to slice
 	participantList := make([]string, 0, len(participants))
 	for p := range participants {
 		participantList = append(participantList, p)
 	}
-	
+
 	return &threadMetrics{
 		participants: participantList,
 		lastActivity: lastActivity,
@@ -6724,20 +6723,20 @@ func (r *queryResolver) checkMissingParent(ctx context.Context, statusRepo *repo
 // processReply processes a single reply for metrics calculation
 func (r *queryResolver) processReply(ctx context.Context, statusRepo *repositories.StatusRepository, reply *models.Status, participants map[string]bool, lastActivity *time.Time, maxDepth *int, replyIDs map[string]bool, missingPosts *int, noteID string) {
 	replyIDs[reply.StatusID] = true
-	
+
 	if reply.AuthorUsername != "" {
 		participants[reply.AuthorUsername] = true
 	}
-	
+
 	if reply.PublishedAt.After(*lastActivity) {
 		*lastActivity = reply.PublishedAt
 	}
-	
+
 	// Calculate depth for direct replies
 	if reply.InReplyToID == noteID && 1 > *maxDepth {
 		*maxDepth = 1
 	}
-	
+
 	// Check for missing referenced replies
 	if reply.InReplyToID != "" && reply.InReplyToID != noteID {
 		if !replyIDs[reply.InReplyToID] {
@@ -6781,17 +6780,17 @@ func (r *queryResolver) createRootNoteObject(status *models.Status, replies []*m
 			Inbox:             fmt.Sprintf("https://%s/users/%s/inbox", "localhost", status.AuthorUsername),
 			Outbox:            fmt.Sprintf("https://%s/users/%s/outbox", "localhost", status.AuthorUsername),
 		},
-		CreatedAt:     model.Time(status.PublishedAt),
-		UpdatedAt:     model.Time(status.UpdatedAt),
-		RepliesCount:  len(replies),
-		LikesCount:    int(engagement.likeCount),
-		SharesCount:   engagement.reblogCount,
-		Visibility:    model.VisibilityPublic,
-		Sensitive:     false,
-		Attachments:   []*activitypub.Attachment{},
-		Tags:          []*activitypub.Tag{},
-		Mentions:      mentions, // Enhanced: processed mentions with domain detection
-		ContentMap:    r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
+		CreatedAt:    model.Time(status.PublishedAt),
+		UpdatedAt:    model.Time(status.UpdatedAt),
+		RepliesCount: len(replies),
+		LikesCount:   int(engagement.likeCount),
+		SharesCount:  engagement.reblogCount,
+		Visibility:   model.VisibilityPublic,
+		Sensitive:    false,
+		Attachments:  []*activitypub.Attachment{},
+		Tags:         []*activitypub.Tag{},
+		Mentions:     mentions,                             // Enhanced: processed mentions with domain detection
+		ContentMap:   r.extractContentMaps(status.Content), // Enhanced: extract content maps with language detection
 	}
 }
 
@@ -6808,19 +6807,19 @@ func (r *queryResolver) StreamingAnalytics(ctx context.Context, mediaID string) 
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
-	
+
 	// Get analytics repository
 	analyticsRepo := storage.Analytics()
 	if analyticsRepo == nil {
-		return nil, fmt.Errorf("analytics repository not available")
+		return nil, ErrAnalyticsRepositoryUnavailable
 	}
 
 	// Get real streaming analytics data
 	analyticsData, err := analyticsRepo.GetStreamingAnalytics(ctx, mediaID)
 	if err != nil {
-		r.Logger.Warn("Failed to get streaming analytics", 
+		r.Logger.Warn("Failed to get streaming analytics",
 			zap.String("mediaID", mediaID),
 			zap.Error(err))
 		// Return empty analytics instead of error to maintain API compatibility
@@ -6908,42 +6907,42 @@ type moderationFilterResolver struct{ *Resolver }
 // extractMediaIDFromURL extracts the media ID from a media URL
 func (r *attachmentResolver) extractMediaIDFromURL(url string) (string, error) {
 	if err := common.ValidateRequiredParam("url", url); err != nil {
-		return "", fmt.Errorf("empty URL")
+		return "", ErrEmptyURL
 	}
-	
+
 	// Parse the URL
 	parsedURL, err := neturl.Parse(url)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
+		return "", errors.Join(errors.New("invalid URL"), err)
 	}
-	
+
 	// Extract path and split into segments
 	path := parsedURL.Path
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	
+
 	// Expected format: /media/{username}/{uuid}/{filename}
 	// We need at least 3 segments: media, username, uuid
 	if len(segments) < 3 {
-		return "", fmt.Errorf("invalid media URL format: not enough path segments")
+		return "", ErrInvalidMediaURLSegments
 	}
-	
+
 	// Check if the first segment is "media"
 	if segments[0] != "media" {
-		return "", fmt.Errorf("invalid media URL format: missing 'media' prefix")
+		return "", ErrInvalidMediaURLMissingPrefix
 	}
-	
+
 	// The UUID should be the third segment
 	if len(segments) < 3 {
-		return "", fmt.Errorf("invalid media URL format: missing media ID")
+		return "", ErrInvalidMediaURLMissingID
 	}
-	
+
 	mediaID := segments[2]
-	
+
 	// Validate it looks like a UUID (basic check)
 	if len(mediaID) < 32 {
-		return "", fmt.Errorf("invalid media ID format")
+		return "", ErrInvalidMediaIDFormat
 	}
-	
+
 	return mediaID, nil
 }
 
@@ -7031,13 +7030,13 @@ func (r *actorResolver) UpdatedAt(_ context.Context, actor *activitypub.Actor) (
 		t := model.Time(*actor.Updated)
 		return &t, nil
 	}
-	
+
 	// Fallback to creation time if updated time is not set
 	if actor.Published != nil {
 		t := model.Time(*actor.Published)
 		return &t, nil
 	}
-	
+
 	// Last fallback to current time if neither is available
 	t := model.Time(time.Now())
 	return &t, nil
@@ -7048,7 +7047,7 @@ func (r *actorResolver) Fields(_ context.Context, obj *activitypub.Actor) ([]*mo
 	if err := common.ValidateSliceNotEmpty("attachment", obj.Attachment); err != nil {
 		return []*model.Field{}, nil
 	}
-	
+
 	fields := make([]*model.Field, 0)
 	for _, attachment := range obj.Attachment {
 		if attachment.Type == "PropertyValue" {
@@ -7121,7 +7120,7 @@ func (r *actorResolver) Vouches(ctx context.Context, actor *activitypub.Actor) (
 	if actor == nil || common.ValidateRequiredParam("preferredUsername", actor.PreferredUsername) != nil {
 		return []*model.Vouch{}, nil
 	}
-	
+
 	// Get trust relationships for this actor (relationships where this actor is trusted by others)
 	// This represents vouches from other actors
 	trustRepo := r.Storage.Trust()
@@ -7129,44 +7128,44 @@ func (r *actorResolver) Vouches(ctx context.Context, actor *activitypub.Actor) (
 		r.Logger.Debug("trust repository not available for vouches")
 		return []*model.Vouch{}, nil
 	}
-	
+
 	// Get relationships where this actor is the trustee (people who vouch for them)
 	trustRelationships, _, err := trustRepo.GetTrustedByRelationships(ctx, actor.PreferredUsername, 20, "")
 	if err != nil {
-		r.Logger.Error("failed to get trust relationships for vouches", 
-			zap.String("actor", actor.PreferredUsername), 
+		r.Logger.Error("failed to get trust relationships for vouches",
+			zap.String("actor", actor.PreferredUsername),
 			zap.Error(err))
 		return []*model.Vouch{}, nil
 	}
-	
+
 	// Convert trust relationships to vouches
 	vouches := make([]*model.Vouch, 0, len(trustRelationships))
 	for _, trustRel := range trustRelationships {
 		if trustRel == nil || trustRel.Score <= 0 {
 			continue // Only include positive trust relationships
 		}
-		
+
 		// Create a vouch based on the trust relationship
 		vouch := &model.Vouch{
 			ID:                fmt.Sprintf("%s_vouches_%s", trustRel.TrusterID, trustRel.TrusteeID),
 			Confidence:        trustRel.Score,
 			Context:           string(trustRel.Category),
-			VoucherReputation: 50, // Default reputation score
-			CreatedAt:         model.Time(time.Now()), // Use current time since CreatedAt not available
+			VoucherReputation: 50,                                               // Default reputation score
+			CreatedAt:         model.Time(time.Now()),                           // Use current time since CreatedAt not available
 			ExpiresAt:         model.Time(time.Now().Add(365 * 24 * time.Hour)), // Expire in 1 year
-			Active:            trustRel.Score > 0.5, // Consider active if score is above threshold
+			Active:            trustRel.Score > 0.5,                             // Consider active if score is above threshold
 		}
-		
+
 		// Set From and To actors if possible (would need to fetch actor data)
 		// For now, leaving them as nil since we don't have actor conversion here
-		
+
 		vouches = append(vouches, vouch)
 	}
-	
-	r.Logger.Debug("retrieved vouches for actor", 
+
+	r.Logger.Debug("retrieved vouches for actor",
 		zap.String("actor", actor.PreferredUsername),
 		zap.Int("vouch_count", len(vouches)))
-	
+
 	return vouches, nil
 }
 
@@ -7235,7 +7234,7 @@ func (r *attachmentResolver) Blurhash(ctx context.Context, attachment *activityp
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
 
 	// Extract media ID from attachment URL
@@ -7271,7 +7270,7 @@ func (r *attachmentResolver) Duration(ctx context.Context, attachment *activityp
 	// Get storage from resolver
 	storage := r.Storage
 	if storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageUnavailable
 	}
 
 	// Extract media ID from attachment URL
@@ -7363,12 +7362,12 @@ func (r *imageAnalysisResolver) TextToxicity(_ context.Context, _ *moderation.Im
 		r.Logger.Debug("AI service not available for text toxicity analysis")
 		return 0.0, nil
 	}
-	
+
 	// For now, return a default toxicity score since the ImageAnalysis struct
 	// doesn't have TextDetections field available
 	// This would need to be implemented when the proper ImageAnalysis structure
 	// with text detection capabilities is available
-	
+
 	return 0.0, nil
 }
 
@@ -7382,7 +7381,7 @@ func (r *imageAnalysisResolver) CelebrityFaces(_ context.Context, _ *moderation.
 func (r *imageAnalysisResolver) DeepfakeScore(_ context.Context, obj *moderation.ImageAnalysis) (float64, error) {
 	// Check if deepfake-related labels exist
 	for _, label := range obj.ModerationLabels {
-		if label != nil && (strings.Contains(strings.ToLower(label.Name), "deepfake") || 
+		if label != nil && (strings.Contains(strings.ToLower(label.Name), "deepfake") ||
 			strings.Contains(strings.ToLower(label.Name), "manipulated")) {
 			return float64(label.Confidence), nil
 		}
@@ -7410,7 +7409,7 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 					id, _ := objMap["id"].(string)
 					objType, _ := objMap["type"].(string)
 					content, _ := objMap["content"].(string)
-					
+
 					// Convert type string to ObjectType
 					var objectType model.ObjectType
 					switch strings.ToUpper(objType) {
@@ -7429,7 +7428,7 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 					default:
 						objectType = model.ObjectTypeNote
 					}
-					
+
 					return &model.Object{
 						ID:      id,
 						Type:    objectType,
@@ -7440,12 +7439,12 @@ func (r *moderationDecisionResolver) Object(ctx context.Context, obj *moderation
 			}
 		}
 	}
-	
+
 	// Return minimal object if fetch fails
 	return &model.Object{
 		ID:      obj.ObjectID,
 		Type:    "Note",
-		Content: "", // Content not available
+		Content: "",  // Content not available
 		Actor:   nil, // Actor not available
 	}, nil
 }
@@ -7476,7 +7475,7 @@ func (r *moderationDecisionResolver) Reviewers(ctx context.Context, obj *moderat
 	if obj == nil || len(obj.Reviews) == 0 {
 		return []*activitypub.Actor{}, nil
 	}
-	
+
 	// Extract unique reviewer IDs
 	reviewerIDSet := make(map[string]bool)
 	for _, review := range obj.Reviews {
@@ -7484,36 +7483,36 @@ func (r *moderationDecisionResolver) Reviewers(ctx context.Context, obj *moderat
 			reviewerIDSet[review.ReviewerID] = true
 		}
 	}
-	
+
 	// Convert reviewer IDs to Actor objects
 	actors := make([]*activitypub.Actor, 0, len(reviewerIDSet))
 	accountsService := r.Registry.Accounts()
-	
+
 	for reviewerID := range reviewerIDSet {
 		// Fetch account information for the reviewer
 		account, err := accountsService.GetAccount(ctx, reviewerID)
 		if err != nil {
-			r.Logger.Debug("failed to get reviewer account", 
-				zap.String("reviewer_id", reviewerID), 
+			r.Logger.Debug("failed to get reviewer account",
+				zap.String("reviewer_id", reviewerID),
 				zap.Error(err))
 			continue // Skip this reviewer if we can't find their account
 		}
-		
+
 		if account == nil {
 			continue
 		}
-		
+
 		// Convert account to actor
 		actor := r.convertAccountToActor(account)
 		if actor != nil {
 			actors = append(actors, actor)
 		}
 	}
-	
+
 	r.Logger.Debug("retrieved reviewers for moderation decision",
 		zap.String("decision_id", obj.ID),
 		zap.Int("reviewer_count", len(actors)))
-	
+
 	return actors, nil
 }
 
@@ -7632,7 +7631,7 @@ func (r *quoteContextResolver) OriginalNote(ctx context.Context, obj *activitypu
 		r.Logger.Error("Failed to get original note for quote context",
 			zap.String("note_id", obj.OriginalNoteID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get original note: %w", err)
+		return nil, errors.Join(errors.New("failed to get original note"), err)
 	}
 
 	return r.convertStatusToObject(ctx, note), nil
@@ -7788,13 +7787,13 @@ func (r *trustEdgeResolver) From(ctx context.Context, edge *trust.TrustEdge) (*a
 	// Get actor repository from registry
 	actorRepo := r.Registry.GetStorage().Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryUnavailable
 	}
 
 	// Fetch the actor from storage
 	actor, err := actorRepo.GetActor(ctx, edge.From)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor %s: %w", edge.From, err)
+		return nil, errors.Join(errors.New(fmt.Sprintf("failed to get actor %s", edge.From)), err)
 	}
 
 	return actor, nil
@@ -7809,13 +7808,13 @@ func (r *trustEdgeResolver) To(ctx context.Context, edge *trust.TrustEdge) (*act
 	// Get actor repository from registry
 	actorRepo := r.Registry.GetStorage().Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryUnavailable
 	}
 
 	// Fetch the actor from storage
 	actor, err := actorRepo.GetActor(ctx, edge.To)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor %s: %w", edge.To, err)
+		return nil, errors.Join(errors.New(fmt.Sprintf("failed to get actor %s", edge.To)), err)
 	}
 
 	return actor, nil
@@ -7830,13 +7829,13 @@ func (r *trustEdgeResolver) UpdatedAt(ctx context.Context, edge *trust.TrustEdge
 	// Get trust repository from registry
 	trustRepo := r.Registry.GetStorage().Trust()
 	if trustRepo == nil {
-		return nil, fmt.Errorf("trust repository not available")
+		return nil, ErrTrustRepositoryUnavailable
 	}
 
 	// Fetch the trust relationship to get the updated time
 	relationship, err := trustRepo.GetTrustRelationship(ctx, edge.From, edge.To, string(edge.Category))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get trust relationship: %w", err)
+		return nil, errors.Join(errors.New("failed to get trust relationship"), err)
 	}
 
 	if relationship == nil {
@@ -7930,7 +7929,7 @@ func (r *mutationResolver) AcknowledgeSeverance(ctx context.Context, id string) 
 		SeveranceID: id,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to acknowledge severance: %w", err)
+		return nil, errors.Join(errors.New("failed to acknowledge severance"), err)
 	}
 
 	return &model.AcknowledgePayload{
@@ -7967,12 +7966,12 @@ func (r *mutationResolver) CreateQuoteNote(ctx context.Context, input model.Crea
 
 	result, err := r.Registry.Notes().CreateNote(ctx, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create quote note: %w", err)
+		return nil, errors.Join(errors.New("failed to create quote note"), err)
 	}
 
 	// Convert result to GraphQL model
 	if result.Note == nil {
-		return nil, fmt.Errorf("note creation returned no note")
+		return nil, ErrNoteCreationReturnedNoNote
 	}
 
 	return &model.CreateNotePayload{
@@ -8068,11 +8067,11 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 			LocalInstance:     "local", // Current instance
 			RemoteInstance:    fmt.Sprintf("Multiple domains (%d total)", len(severedRels)),
 			Reason:            model.SeveranceReasonDefederation, // Generic reason for bulk operation
-			AffectedFollowers: 0, // Would need additional queries to compute
+			AffectedFollowers: 0,                                 // Would need additional queries to compute
 			AffectedFollowing: reconnectedCount + failedCount,
 			Timestamp:         model.Time(time.Now()),
 			Reversible:        true,
-			Details:          nil,
+			Details:           nil,
 		}
 
 		reconResult = &model.ReconnectionPayload{
@@ -8105,11 +8104,11 @@ func (r *mutationResolver) AttemptReconnection(ctx context.Context, id string) (
 			LocalInstance:     "local", // Current instance
 			RemoteInstance:    id,
 			Reason:            model.SeveranceReasonDefederation, // Generic reason for reconnection
-			AffectedFollowers: 0, // Would need additional queries to compute
+			AffectedFollowers: 0,                                 // Would need additional queries to compute
 			AffectedFollowing: 1,
 			Timestamp:         model.Time(time.Now()),
 			Reversible:        true,
-			Details:          nil,
+			Details:           nil,
 		}
 
 		reconResult = &model.ReconnectionPayload{
@@ -8141,13 +8140,13 @@ func (r *mutationResolver) DeleteModerationPattern(ctx context.Context, id strin
 	// Get moderation repository
 	modRepo := r.Registry.GetStorage().Moderation()
 	if modRepo == nil {
-		return false, fmt.Errorf("moderation not available")
+		return false, ErrModerationUnavailable
 	}
 
 	// Delete the pattern
 	err = modRepo.DeleteModerationPattern(ctx, id)
 	if err != nil {
-		return false, fmt.Errorf("failed to delete moderation pattern: %w", err)
+		return false, errors.Join(errors.New("failed to delete moderation pattern"), err)
 	}
 
 	r.Logger.Info("Deleted moderation pattern",
@@ -8167,13 +8166,13 @@ func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string
 	// Get object repository
 	objectRepo := r.Registry.GetStorage().Object()
 	if objectRepo == nil {
-		return nil, fmt.Errorf("object repository not available")
+		return nil, ErrObjectRepositoryUnavailable
 	}
 
 	// Get the status/object to verify ownership and get details
 	statusObj, err := objectRepo.GetStatus(ctx, noteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, errors.Join(errors.New("failed to get status"), err)
 	}
 
 	// Convert to ActivityPub note to check ownership
@@ -8181,7 +8180,7 @@ func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string
 	if n, ok := statusObj.(*activitypub.Note); ok {
 		note = n
 	} else {
-		return nil, fmt.Errorf("status is not a note")
+		return nil, ErrStatusIsNotNote
 	}
 
 	// Verify ownership - extract username from AttributedTo
@@ -8189,16 +8188,16 @@ func (r *mutationResolver) WithdrawFromQuotes(ctx context.Context, noteID string
 		parts := strings.Split(note.AttributedTo, "/")
 		statusUsername := parts[len(parts)-1]
 		if statusUsername != username {
-			return nil, fmt.Errorf("you can only withdraw your own posts from quotes")
+			return nil, ErrOwnerOnlyOperation
 		}
 	} else {
-		return nil, fmt.Errorf("cannot determine status ownership")
+		return nil, ErrCannotDetermineOwnership
 	}
 
 	// Withdraw the status from quotes
 	err = objectRepo.WithdrawStatusFromQuotes(ctx, noteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to withdraw status from quotes: %w", err)
+		return nil, errors.Join(errors.New("failed to withdraw status from quotes"), err)
 	}
 
 	// Get the actual count of withdrawn quotes
@@ -8233,13 +8232,13 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 	// Get object repository
 	objectRepo := r.Registry.GetStorage().Object()
 	if objectRepo == nil {
-		return nil, fmt.Errorf("object repository not available")
+		return nil, ErrObjectRepositoryUnavailable
 	}
 
 	// Get the status/object to verify ownership and get details
 	statusObj, err := objectRepo.GetStatus(ctx, noteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, errors.Join(errors.New("failed to get status"), err)
 	}
 
 	// Convert to ActivityPub note to check ownership
@@ -8247,7 +8246,7 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 	if n, ok := statusObj.(*activitypub.Note); ok {
 		note = n
 	} else {
-		return nil, fmt.Errorf("status is not a note")
+		return nil, ErrStatusIsNotNote
 	}
 
 	// Verify ownership - extract username from AttributedTo
@@ -8255,10 +8254,10 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 		parts := strings.Split(note.AttributedTo, "/")
 		statusUsername := parts[len(parts)-1]
 		if statusUsername != username {
-			return nil, fmt.Errorf("you can only update quote permissions for your own posts")
+			return nil, ErrOwnerOnlyOperation
 		}
 	} else {
-		return nil, fmt.Errorf("cannot determine status ownership")
+		return nil, ErrCannotDetermineOwnership
 	}
 
 	// Convert GraphQL permission enum to storage permissions
@@ -8286,7 +8285,7 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 	// Update quote permissions
 	err = objectRepo.UpdateQuotePermissions(ctx, noteID, permissions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to update quote permissions: %w", err)
+		return nil, errors.Join(errors.New("failed to update quote permissions"), err)
 	}
 
 	// Convert the note to GraphQL object for response
@@ -8306,7 +8305,7 @@ func (r *mutationResolver) UpdateQuotePermissions(ctx context.Context, noteID st
 			zap.String("note_id", noteID),
 			zap.Error(err))
 	}
-	
+
 	return &model.UpdateQuotePermissionsPayload{
 		Success:        true,
 		Note:           noteObject,
@@ -8332,7 +8331,7 @@ func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, _ 
 			Success: false,
 			Hashtag: &model.Hashtag{
 				Name: hashtag,
-				URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+				URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 			},
 		}, err
 	}
@@ -8341,7 +8340,7 @@ func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, _ 
 		Success: true,
 		Hashtag: &model.Hashtag{
 			Name: hashtag,
-			URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+			URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 		},
 	}, nil
 }
@@ -8364,7 +8363,7 @@ func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) 
 			Success: false,
 			Hashtag: &model.Hashtag{
 				Name: hashtag,
-				URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+				URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 			},
 		}, err
 	}
@@ -8373,7 +8372,7 @@ func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) 
 		Success: true,
 		Hashtag: &model.Hashtag{
 			Name: hashtag,
-			URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+			URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 		},
 	}, nil
 }
@@ -8400,7 +8399,7 @@ func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hasht
 			Success: false,
 			Hashtag: &model.Hashtag{
 				Name: hashtag,
-				URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+				URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 			},
 			Settings: &model.HashtagNotificationSettings{
 				Level:      settings.Level,
@@ -8415,7 +8414,7 @@ func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hasht
 		Success: true,
 		Hashtag: &model.Hashtag{
 			Name: hashtag,
-			URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+			URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 		},
 		Settings: &model.HashtagNotificationSettings{
 			Level:      settings.Level,
@@ -8444,7 +8443,7 @@ func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, unti
 			Success: false,
 			Hashtag: &model.Hashtag{
 				Name: hashtag,
-				URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+				URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 			},
 			MutedUntil: until,
 		}, err
@@ -8454,7 +8453,7 @@ func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, unti
 		Success: true,
 		Hashtag: &model.Hashtag{
 			Name: hashtag,
-			URL:  fmt.Sprintf("https://%s/tags/%s", os.Getenv("DOMAIN_NAME"), hashtag),
+			URL:  fmt.Sprintf("https://%s/tags/%s", config.Get().Domain, hashtag),
 		},
 		MutedUntil: until,
 	}, nil
@@ -8506,7 +8505,7 @@ func (r *mutationResolver) SyncThread(ctx context.Context, noteURL string, depth
 
 	// Extract note ID from URL for local lookup
 	noteID := r.extractNoteIDFromURL(noteURL)
-	
+
 	// Try to get the note locally first
 	var conversationID string
 	localObj, err := objectRepo.GetObject(ctx, noteID)
@@ -8637,10 +8636,10 @@ func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string
 	objectRepo := r.Storage.Object()
 	if objectRepo == nil {
 		return &model.SyncRepliesPayload{
-			Success:      false,
+			Success:       false,
 			SyncedReplies: 0,
-			Thread:       nil,
-		}, fmt.Errorf("object repository not available")
+			Thread:        nil,
+		}, ErrObjectRepositoryUnavailable
 	}
 
 	// Get current missing replies for this note
@@ -8648,10 +8647,10 @@ func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string
 	if err != nil {
 		r.Logger.Error("failed to get missing replies", zap.Error(err), zap.String("note_id", noteID))
 		return &model.SyncRepliesPayload{
-			Success:      false,
+			Success:       false,
 			SyncedReplies: 0,
-			Thread:       nil,
-		}, fmt.Errorf("failed to get missing replies: %w", err)
+			Thread:        nil,
+		}, errors.Join(errors.New("failed to get missing replies"), err)
 	}
 
 	r.Logger.Info("found missing replies to sync",
@@ -8663,14 +8662,14 @@ func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string
 	if err != nil {
 		r.Logger.Error("failed to sync missing replies", zap.Error(err), zap.String("note_id", noteID))
 		return &model.SyncRepliesPayload{
-			Success:      false,
+			Success:       false,
 			SyncedReplies: 0,
-			Thread:       nil,
-		}, fmt.Errorf("failed to sync missing replies: %w", err)
+			Thread:        nil,
+		}, errors.Join(errors.New("failed to sync missing replies"), err)
 	}
 
 	syncedCount := len(syncedReplies)
-	
+
 	r.Logger.Info("missing replies sync completed",
 		zap.String("note_id", noteID),
 		zap.Int("original_missing", len(missingReplies)),
@@ -8708,9 +8707,9 @@ func (r *mutationResolver) SyncMissingReplies(ctx context.Context, noteID string
 	success := syncedCount > 0 || len(missingReplies) == 0
 
 	return &model.SyncRepliesPayload{
-		Success:      success,
+		Success:       success,
 		SyncedReplies: syncedCount,
-		Thread:       threadContext,
+		Thread:        threadContext,
 	}, nil
 }
 
@@ -8723,18 +8722,18 @@ func extractUsernameFromActorID(actorID string) string {
 	if len(parts) >= 2 && parts[len(parts)-2] == "users" {
 		return parts[len(parts)-1]
 	}
-	
+
 	// Try alternative format like https://domain.com/@username
 	if len(parts) >= 1 && strings.HasPrefix(parts[len(parts)-1], "@") {
 		return strings.TrimPrefix(parts[len(parts)-1], "@")
 	}
-	
+
 	// Fallback: extract the last path segment
 	parts = strings.Split(strings.TrimSuffix(actorID, "/"), "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
-	
+
 	return ""
 }
 
@@ -8750,20 +8749,20 @@ func convertToInterfaceSlice(input []map[string]interface{}) []interface{} {
 // extractDomainFromURL extracts the domain from an ActivityPub note URL
 func (r *mutationResolver) extractDomainFromURL(url string) (string, error) {
 	if len(url) < 8 || !strings.HasPrefix(url, "https://") {
-		return "", fmt.Errorf("invalid URL format: %s", url)
+		return "", ErrInvalidURLFormatWithValue(url)
 	}
-	
+
 	// Find the domain part
 	start := 8 // Skip "https://"
 	end := start
 	for end < len(url) && url[end] != '/' {
 		end++
 	}
-	
+
 	if end == start {
-		return "", fmt.Errorf("no domain found in URL: %s", url)
+		return "", ErrNoDomainFoundInURL(url)
 	}
-	
+
 	return url[start:end], nil
 }
 
@@ -8782,7 +8781,7 @@ func (r *mutationResolver) extractNoteIDFromURL(url string) string {
 func (r *mutationResolver) buildThreadContextForSync(ctx context.Context, noteID, _ string) (*model.ThreadContext, error) {
 	objectRepo := r.Storage.Object()
 	if objectRepo == nil {
-		return nil, fmt.Errorf("object repository not available")
+		return nil, ErrObjectRepositoryUnavailable
 	}
 
 	// Try to get the root note
@@ -8794,7 +8793,7 @@ func (r *mutationResolver) buildThreadContextForSync(ctx context.Context, noteID
 
 	// Get reply count
 	replyCount, _ := objectRepo.CountReplies(ctx, noteID)
-	
+
 	// Get missing posts count
 	missingReplies, _ := objectRepo.GetMissingReplies(ctx, noteID)
 	missingCount := len(missingReplies)
@@ -8820,13 +8819,13 @@ func (r *mutationResolver) convertToModelObject(obj any) *model.Object {
 	if note, ok := obj.(*activitypub.Note); ok {
 		// Convert ActivityPub Note to GraphQL Object
 		return &model.Object{
-			ID:          note.ID,
-			Type:        model.ObjectTypeNote,
-			Content:     note.Content,
-			CreatedAt:   model.Time(*note.Published),
-			UpdatedAt:   model.Time(time.Now()),
-			Sensitive:   note.Sensitive,
-			Visibility:  r.mapVisibility(note.Visibility),
+			ID:         note.ID,
+			Type:       model.ObjectTypeNote,
+			Content:    note.Content,
+			CreatedAt:  model.Time(*note.Published),
+			UpdatedAt:  model.Time(time.Now()),
+			Sensitive:  note.Sensitive,
+			Visibility: r.mapVisibility(note.Visibility),
 			// Actor and other fields would need proper conversion
 		}
 	}
@@ -8916,14 +8915,14 @@ func (c *threadSyncFederationClient) fetchObject(ctx context.Context, url string
 		noteID := c.extractNoteIDFromURL(url)
 		result, err := objectRepo.SyncThreadFromRemote(ctx, noteID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to sync thread from remote: %w", err)
+			return nil, errors.Join(errors.New("failed to sync thread from remote"), err)
 		}
 		return result, nil
 	}
-	return nil, fmt.Errorf("object repository not available")
+	return nil, ErrObjectRepositoryUnavailable
 }
 
-// fetchReplies implements federation client interface  
+// fetchReplies implements federation client interface
 func (c *threadSyncFederationClient) fetchReplies(ctx context.Context, noteURL string) ([]*activitypub.Note, error) {
 	// Use object repository to get replies
 	if objectRepo := c.storage.Object(); objectRepo != nil {
@@ -8932,7 +8931,7 @@ func (c *threadSyncFederationClient) fetchReplies(ctx context.Context, noteURL s
 		if err != nil {
 			return nil, err
 		}
-		
+
 		var notes []*activitypub.Note
 		for _, reply := range replies {
 			if note, ok := reply.(*activitypub.Note); ok {
@@ -8941,14 +8940,14 @@ func (c *threadSyncFederationClient) fetchReplies(ctx context.Context, noteURL s
 		}
 		return notes, nil
 	}
-	return nil, fmt.Errorf("federation fetch replies not available")
+	return nil, ErrFederationFetchRepliesUnavailable
 }
 
 // fetchContext implements federation client interface
 func (c *threadSyncFederationClient) fetchContext(_ context.Context, noteURL string) (*threadContext, error) {
 	// Build thread context from available information
 	noteID := c.extractNoteIDFromURL(noteURL)
-	
+
 	return &threadContext{
 		ConversationID: noteID,
 		RootURL:        noteURL,
@@ -8976,7 +8975,7 @@ type simpleThreadCache struct {
 // getThread implements cache interface
 func (c *simpleThreadCache) getThread(_ context.Context, _ string) (*thread, error) {
 	// Simple implementation - would use actual cache in production
-	return nil, fmt.Errorf("cache miss")
+	return nil, ErrCacheMiss
 }
 
 // setThread implements cache interface
@@ -8991,18 +8990,18 @@ func (ts *threadSyncer) syncThread(ctx context.Context, req threadSyncRequest) e
 	if objectRepo := ts.storage.Object(); objectRepo != nil {
 		// Extract note ID from conversation
 		noteID := req.ConversationID
-		
+
 		// Sync the thread from remote
 		_, err := objectRepo.SyncThreadFromRemote(ctx, noteID)
 		if err != nil {
-			return fmt.Errorf("failed to sync thread: %w", err)
+			return errors.Join(errors.New("failed to sync thread"), err)
 		}
-		
+
 		// Mark as synced
 		return objectRepo.MarkThreadAsSynced(ctx, noteID)
 	}
-	
-	return fmt.Errorf("object repository not available")
+
+	return ErrObjectRepositoryUnavailable
 }
 
 // RequestStreamingURL implements MutationResolver
@@ -9015,7 +9014,7 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 	// Get media service from registry
 	mediaSvc := r.Registry.Media()
 	if mediaSvc == nil {
-		return nil, fmt.Errorf("media service not available")
+		return nil, ErrMediaServiceUnavailable
 	}
 
 	// Get streaming URL from media service
@@ -9025,7 +9024,7 @@ func (r *mutationResolver) RequestStreamingURL(ctx context.Context, mediaID stri
 			zap.String("user", username),
 			zap.String("media_id", mediaID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get streaming URL: %w", err)
+		return nil, errors.Join(errors.New("failed to get streaming URL"), err)
 	}
 
 	// Filter bitrates by requested quality if specified
@@ -9059,13 +9058,13 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 	// Get media service from registry
 	mediaSvc := r.Registry.Media()
 	if mediaSvc == nil {
-		return nil, fmt.Errorf("media service not available")
+		return nil, ErrMediaServiceUnavailable
 	}
 
 	// Preload media for faster streaming
 	var streams []*model.MediaStream
-	var errors []error
-	
+	var preloadErrors []error
+
 	for _, mediaID := range mediaIDs {
 		// Get streaming URL for each media
 		stream, err := mediaSvc.GetStreamingURL(ctx, mediaID)
@@ -9074,7 +9073,7 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 				zap.String("user", username),
 				zap.String("media_id", mediaID),
 				zap.Error(err))
-			errors = append(errors, err)
+			preloadErrors = append(preloadErrors, err)
 			// Continue processing other media items
 			continue
 		}
@@ -9083,16 +9082,16 @@ func (r *mutationResolver) PreloadMedia(ctx context.Context, mediaIDs []string) 
 
 	// If all preloads failed, return error
 	streamsEmpty := common.ValidateSliceNotEmpty("streams", streams) != nil
-	errorsNotEmpty := common.ValidateSliceNotEmpty("errors", errors) == nil
+	errorsNotEmpty := common.ValidateSliceNotEmpty("errors", preloadErrors) == nil
 	if streamsEmpty && errorsNotEmpty {
-		return nil, fmt.Errorf("failed to preload any media: %w", errors[0])
+		return nil, errors.Join(errors.New("failed to preload any media"), preloadErrors[0])
 	}
 
 	r.Logger.Info("media preloaded",
 		zap.String("user", username),
 		zap.Int("requested", len(mediaIDs)),
 		zap.Int("loaded", len(streams)),
-		zap.Int("failed", len(errors)))
+		zap.Int("failed", len(preloadErrors)))
 
 	return streams, nil
 }
@@ -9107,12 +9106,12 @@ func (r *mutationResolver) ReportStreamingQuality(ctx context.Context, input mod
 	// Get media service to record quality metrics
 	mediaSvc := r.Registry.Media()
 	if mediaSvc == nil {
-		return nil, fmt.Errorf("media service not available")
+		return nil, ErrMediaServiceUnavailable
 	}
 
 	// Record the quality report (would be stored in metrics repository)
 	reportID := fmt.Sprintf("sqr-%s-%s", input.MediaID, generateID()[:8])
-	
+
 	// Log the quality report for monitoring
 	r.Logger.Info("streaming quality reported",
 		zap.String("user", username),
@@ -9190,7 +9189,7 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 	// Get moderation repository
 	modRepo := r.Registry.GetStorage().Moderation()
 	if modRepo == nil {
-		return nil, fmt.Errorf("moderation service not available")
+		return nil, ErrModerationUnavailable
 	}
 
 	// Convert severity to float value for storage
@@ -9243,14 +9242,14 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 	}
 	err = modRepo.CreateModerationPattern(ctx, storagePattern)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create moderation pattern: %w", err)
+		return nil, errors.Join(errors.New("failed to create moderation pattern"), err)
 	}
 
 	// We don't need the account here since we already have the username
 
 	// Convert to moderation.ModerationPattern
 	severityStr := SeverityMedium
-	// input.Severity is not a pointer, it's a string type  
+	// input.Severity is not a pointer, it's a string type
 	switch input.Severity {
 	case model.ModerationSeverityLow:
 		severityStr = SeverityLow
@@ -9259,7 +9258,7 @@ func (r *mutationResolver) CreateModerationPattern(ctx context.Context, input mo
 	case model.ModerationSeverityCritical:
 		severityStr = HealthStatusCritical
 	}
-	
+
 	return &moderation.ModerationPattern{
 		ID:                 patternID,
 		Name:               pattern.Name,
@@ -9291,7 +9290,7 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 		SeveredRelationshipID: severedRelationshipID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get affected relationships: %w", err)
+		return nil, errors.Join(errors.New("failed to get affected relationships"), err)
 	}
 
 	// Convert service results to GraphQL model
@@ -9302,11 +9301,11 @@ func (r *queryResolver) AffectedRelationships(ctx context.Context, severedRelati
 			User: &rel.AffectedUser,
 		}
 		actor := r.convertAccountToActor(account)
-		
+
 		// Since AffectedRelationship doesn't have CreatedAt, use a default
 		// In production, this would be fetched from the actual relationship record
 		establishedAt := time.Now().Add(-7 * 24 * time.Hour) // Default to 1 week ago
-		
+
 		edges[i] = &model.AffectedRelationshipEdge{
 			Node: &model.AffectedRelationship{
 				Actor:            actor,
@@ -9335,7 +9334,7 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 	// Get bandwidth data from cost tracking repository
 	costRepo := r.Registry.GetStorage().Cost()
 	if costRepo == nil {
-		return nil, fmt.Errorf("cost tracking not available")
+		return nil, ErrCostTrackingUnavailable
 	}
 
 	// Convert period to time range
@@ -9373,7 +9372,7 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 		}, nil
 	}
 
-	// Get real bandwidth data from media repository  
+	// Get real bandwidth data from media repository
 	mediaRepo := r.Registry.GetStorage().Media()
 	if mediaRepo == nil {
 		// Fallback to cost-based estimation if media repo unavailable
@@ -9406,8 +9405,8 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 
 	// Create realistic quality breakdown based on actual usage
 	if totalBytes > 0 {
-		qualityBreakdown["high"] = int64(float64(totalBytes) * 0.4)   // 40% high quality
-		qualityBreakdown["medium"] = int64(float64(totalBytes) * 0.45) // 45% medium quality  
+		qualityBreakdown["high"] = int64(float64(totalBytes) * 0.4)    // 40% high quality
+		qualityBreakdown["medium"] = int64(float64(totalBytes) * 0.45) // 45% medium quality
 		qualityBreakdown["low"] = int64(float64(totalBytes) * 0.15)    // 15% low quality
 	}
 
@@ -9423,7 +9422,7 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 	}
 
 	bytesPerHour := totalBytes / int64(hoursInPeriod)
-	for i := 0; i < hoursInPeriod; i += hoursInPeriod/8 { // 8 data points max
+	for i := 0; i < hoursInPeriod; i += hoursInPeriod / 8 { // 8 data points max
 		hourTime := startTime.Add(time.Duration(i) * time.Hour)
 		hourlyBreakdown = append(hourlyBreakdown, map[string]interface{}{
 			"hour":  hourTime.Format(time.RFC3339),
@@ -9433,14 +9432,14 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 
 	// Convert to GB and calculate speeds
 	totalGB := float64(totalBytes) / (1024 * 1024 * 1024)
-	
+
 	// Calculate realistic peak and average based on total usage
 	peakMbps := float64(0)
 	avgMbps := float64(0)
 	if totalGB > 0 {
 		hoursFloat := float64(hoursInPeriod)
-		avgMbps = (totalGB * 8 * 1024) / hoursFloat     // Convert GB to Mbps average
-		peakMbps = avgMbps * 2.5                        // Peak is typically 2.5x average
+		avgMbps = (totalGB * 8 * 1024) / hoursFloat // Convert GB to Mbps average
+		peakMbps = avgMbps * 2.5                    // Peak is typically 2.5x average
 	}
 
 	// Convert quality breakdown to GraphQL format
@@ -9464,16 +9463,16 @@ func (r *queryResolver) BandwidthUsage(ctx context.Context, period model.TimePer
 // Helper functions for cost calculation and analysis
 
 // calculateCurrentCostsFromRecent calculates current costs from recent cost records as fallback
-func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, costRepo interface{}, startTime, endTime time.Time) (float64, []*model.CostDriver, []string) {
-	repo, ok := costRepo.(*repositories.CostTrackingRepository)
+func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, costRepo interface{}, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
+	repo, ok := costRepo.(*repositories.TrackingRepository)
 	if !ok {
-		return 0.0, []*model.CostDriver{}, []string{"Cost repository not available"}
+		return 0.0, []*model.Driver{}, []string{"Cost repository not available"}
 	}
 
 	// Get recent cost records
 	costRecords, err := repo.GetCostsByDateRange(ctx, startTime, endTime)
 	if err != nil || len(costRecords) == 0 {
-		return 0.0, []*model.CostDriver{}, []string{"Enable detailed cost tracking"}
+		return 0.0, []*model.Driver{}, []string{"Enable detailed cost tracking"}
 	}
 
 	var totalCost float64
@@ -9482,12 +9481,12 @@ func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, cos
 
 	for _, record := range costRecords {
 		totalCost += record.EstimatedCostDollars
-		
+
 		// Track by service
 		if record.ServiceName != "" {
 			serviceCosts[record.ServiceName] += record.EstimatedCostDollars
 		}
-		
+
 		// Track by operation
 		if record.OperationType != "" {
 			operationCosts[record.OperationType] += record.EstimatedCostDollars
@@ -9501,39 +9500,39 @@ func (r *queryResolver) calculateCurrentCostsFromRecent(ctx context.Context, cos
 	return totalCost, drivers, recommendations
 }
 
-// buildCostDriversFromDaily builds cost drivers from daily aggregate data
-func (r *queryResolver) buildCostDriversFromDaily(daily *repositories.DailyAggregate) []*model.CostDriver {
+// buildDriversFromDaily builds cost drivers from daily aggregate data
+func (r *queryResolver) buildDriversFromDaily(daily *repositories.DailyAggregate) []*model.Driver {
 	return r.createReadWriteDrivers(daily.TotalReads, daily.TotalWrites, daily.TotalCostDollars)
 }
 
-// buildCostDriversFromMonthly builds cost drivers from monthly aggregate data
-func (r *queryResolver) buildCostDriversFromMonthly(monthly *repositories.MonthlyAggregate) []*model.CostDriver {
+// buildDriversFromMonthly builds cost drivers from monthly aggregate data
+func (r *queryResolver) buildDriversFromMonthly(monthly *repositories.MonthlyAggregate) []*model.Driver {
 	return r.createReadWriteDrivers(monthly.TotalReads, monthly.TotalWrites, monthly.TotalCostDollars)
 }
 
 // buildWeeklyDriversFromDaily builds cost drivers from weekly daily aggregates
-func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.DailyAggregate) []*model.CostDriver {
+func (r *queryResolver) buildWeeklyDriversFromDaily(dailies []*repositories.DailyAggregate) []*model.Driver {
 	var totalReads, totalWrites int64
 	var totalCost float64
-	
+
 	for _, daily := range dailies {
 		totalReads += daily.TotalReads
 		totalWrites += daily.TotalWrites
 		totalCost += daily.TotalCostDollars
 	}
-	
+
 	return r.createReadWriteDrivers(totalReads, totalWrites, totalCost)
 }
 
 // buildDriversFromCostMaps builds drivers from service and operation cost maps
-func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts map[string]float64, totalCost float64) []*model.CostDriver {
-	drivers := []*model.CostDriver{}
-	
+func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts map[string]float64, totalCost float64) []*model.Driver {
+	drivers := []*model.Driver{}
+
 	// Add service-based drivers
 	for service, cost := range serviceCosts {
 		if cost > 0 && totalCost > 0 {
 			percentage := (cost / totalCost) * 100
-			drivers = append(drivers, &model.CostDriver{
+			drivers = append(drivers, &model.Driver{
 				Type:           fmt.Sprintf("%s Service", service),
 				Cost:           cost,
 				PercentOfTotal: percentage,
@@ -9541,12 +9540,12 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 			})
 		}
 	}
-	
+
 	// Add operation-based drivers
 	for operation, cost := range operationCosts {
 		if cost > 0 && totalCost > 0 {
 			percentage := (cost / totalCost) * 100
-			drivers = append(drivers, &model.CostDriver{
+			drivers = append(drivers, &model.Driver{
 				Type:           fmt.Sprintf("%s Operations", operation),
 				Cost:           cost,
 				PercentOfTotal: percentage,
@@ -9555,40 +9554,40 @@ func (r *queryResolver) buildDriversFromCostMaps(serviceCosts, operationCosts ma
 		}
 	}
 
-	return r.buildAndSortCostDrivers(drivers)
+	return r.buildAndSortDrivers(drivers)
 }
 
 // Recommendation generation functions
 
 func (r *queryResolver) generateDailyRecommendations(daily *repositories.DailyAggregate) []string {
 	recommendations := []string{}
-	
+
 	if daily.TotalCostDollars > 1.0 {
 		recommendations = append(recommendations, "Daily costs are high - review today's activity")
 	}
-	
+
 	if daily.TotalReads > daily.TotalWrites*10 {
 		recommendations = append(recommendations, "High read-to-write ratio - consider caching")
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Costs are within normal range")
 	}
-	
+
 	return recommendations
 }
 
 func (r *queryResolver) generateWeeklyRecommendations(dailies []*repositories.DailyAggregate) []string {
 	recommendations := []string{}
-	
+
 	if err := common.ValidateSliceNotEmpty("dailies", dailies); err != nil {
 		return []string{"No weekly data available"}
 	}
-	
+
 	var totalCost float64
 	var maxDailyCost float64
 	var totalReads, totalWrites int64
-	
+
 	for _, daily := range dailies {
 		totalCost += daily.TotalCostDollars
 		totalReads += daily.TotalReads
@@ -9597,92 +9596,92 @@ func (r *queryResolver) generateWeeklyRecommendations(dailies []*repositories.Da
 			maxDailyCost = daily.TotalCostDollars
 		}
 	}
-	
+
 	if totalCost > 5.0 {
 		recommendations = append(recommendations, "Weekly costs are elevated - review usage patterns")
 	}
-	
+
 	if maxDailyCost > totalCost/float64(len(dailies))*2 {
 		recommendations = append(recommendations, "Significant daily cost variation detected")
 	}
-	
+
 	if totalReads > totalWrites*15 {
 		recommendations = append(recommendations, "Very high read volume - implement aggressive caching")
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Weekly costs are stable")
 	}
-	
+
 	return recommendations
 }
 
 func (r *queryResolver) generateMonthlyRecommendations(monthly *repositories.MonthlyAggregate) []string {
 	recommendations := []string{}
-	
+
 	if monthly.TotalCostDollars > 20.0 {
 		recommendations = append(recommendations, "Monthly costs are significant - consider optimization")
 	}
-	
+
 	if monthly.TotalReads > monthly.TotalWrites*20 {
 		recommendations = append(recommendations, "Read-heavy workload - optimize with caching and CDN")
 	}
-	
+
 	if monthly.TotalCostDollars > 0 {
 		costPerRequest := monthly.TotalCostDollars / float64(monthly.TotalRequests)
 		if costPerRequest > 0.001 {
 			recommendations = append(recommendations, "Cost per request is high - optimize operations")
 		}
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Monthly costs are within acceptable range")
 	}
-	
+
 	return recommendations
 }
 
 func (r *queryResolver) generateMonthlyRecommendationsFromDaily(dailies []*repositories.DailyAggregate) []string {
 	recommendations := []string{}
-	
+
 	if err := common.ValidateSliceNotEmpty("dailies", dailies); err != nil {
 		return []string{"No monthly data available"}
 	}
-	
+
 	var totalCost float64
 	var totalRequests int64
 	for _, daily := range dailies {
 		totalCost += daily.TotalCostDollars
 		totalRequests += daily.TotalRequests
 	}
-	
+
 	// Project monthly cost based on current trend
 	daysElapsed := len(dailies)
 	projectedMonthlyCost := totalCost * (30.0 / float64(daysElapsed))
-	
+
 	if projectedMonthlyCost > 25.0 {
 		recommendations = append(recommendations, "Projected monthly cost is high - implement cost controls")
 	} else if projectedMonthlyCost > 10.0 {
 		recommendations = append(recommendations, "Monitor monthly cost trends closely")
 	}
-	
+
 	if totalRequests > 0 {
 		avgCostPerRequest := totalCost / float64(totalRequests)
 		if avgCostPerRequest > 0.0008 {
 			recommendations = append(recommendations, "Average cost per request is elevated")
 		}
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Cost trends are healthy")
 	}
-	
+
 	return recommendations
 }
 
 func (r *queryResolver) generateRecommendationsFromCosts(serviceCosts, operationCosts map[string]float64, totalCost float64) []string {
 	recommendations := []string{}
-	
+
 	// Find the most expensive service
 	maxServiceCost := 0.0
 	mostExpensiveService := ""
@@ -9692,28 +9691,28 @@ func (r *queryResolver) generateRecommendationsFromCosts(serviceCosts, operation
 			mostExpensiveService = service
 		}
 	}
-	
+
 	if mostExpensiveService != "" && maxServiceCost > totalCost*0.5 {
-		recommendations = append(recommendations, 
+		recommendations = append(recommendations,
 			fmt.Sprintf("High costs from %s service - review optimization opportunities", mostExpensiveService))
 	}
-	
+
 	// Check for expensive operations
 	for operation, cost := range operationCosts {
 		if cost > totalCost*0.3 {
-			recommendations = append(recommendations, 
+			recommendations = append(recommendations,
 				fmt.Sprintf("High costs from %s operations - consider optimization", operation))
 		}
 	}
-	
+
 	if totalCost > 0.10 { // More than 10 cents
 		recommendations = append(recommendations, "Monitor cost trends and set up budget alerts")
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Costs are minimal - maintain current patterns")
 	}
-	
+
 	return recommendations
 }
 
@@ -9726,7 +9725,7 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 
 	costRepo := r.Registry.GetStorage().Cost()
 	if costRepo == nil {
-		return nil, fmt.Errorf("cost tracking not available")
+		return nil, ErrCostTrackingUnavailable
 	}
 
 	// Try to get existing projection first
@@ -9739,7 +9738,7 @@ func (r *queryResolver) CostProjections(ctx context.Context, period model.Period
 }
 
 // getExistingCostProjection attempts to retrieve an existing cost projection
-func (r *queryResolver) getExistingCostProjection(ctx context.Context, costRepo *repositories.CostTrackingRepository, period model.Period) *model.CostProjection {
+func (r *queryResolver) getExistingCostProjection(ctx context.Context, costRepo *repositories.TrackingRepository, period model.Period) *model.CostProjection {
 	periodStr := strings.ToLower(period.String())
 	existingProjection, err := costRepo.GetCostProjections(ctx, periodStr)
 	if err != nil || existingProjection == nil {
@@ -9751,34 +9750,34 @@ func (r *queryResolver) getExistingCostProjection(ctx context.Context, costRepo 
 
 // convertStorageProjectionToModel converts storage projection to GraphQL model
 func (r *queryResolver) convertStorageProjectionToModel(storageProjection *storage.CostProjection, period model.Period) *model.CostProjection {
-	topDrivers := make([]*model.CostDriver, 0, len(storageProjection.TopDrivers))
+	topDrivers := make([]*model.Driver, 0, len(storageProjection.TopDrivers))
 	for _, driver := range storageProjection.TopDrivers {
-		topDrivers = append(topDrivers, &model.CostDriver{
+		topDrivers = append(topDrivers, &model.Driver{
 			Type:           driver.Type,
 			Cost:           driver.Cost,
 			PercentOfTotal: driver.PercentOfTotal,
 			Trend:          model.TrendStable, // Default to stable
 		})
 	}
-	
+
 	return &model.CostProjection{
 		Period:          period,
 		CurrentCost:     storageProjection.CurrentCost,
 		ProjectedCost:   storageProjection.ProjectedCost,
 		Variance:        storageProjection.Variance,
-		TopCostDrivers:  topDrivers,
+		TopDrivers:      topDrivers,
 		Recommendations: storageProjection.Recommendations,
 	}
 }
 
 // calculateNewCostProjection calculates a new cost projection
-func (r *queryResolver) calculateNewCostProjection(ctx context.Context, costRepo *repositories.CostTrackingRepository, period model.Period, username string) (*model.CostProjection, error) {
+func (r *queryResolver) calculateNewCostProjection(ctx context.Context, costRepo *repositories.TrackingRepository, period model.Period, username string) (*model.CostProjection, error) {
 	now := time.Now()
 	startTime, multiplier := r.calculateProjectionParameters(now, period)
-	
+
 	// Calculate current costs based on period
 	currentCost, topDrivers, recommendations := r.getCurrentCostData(ctx, costRepo, period, now, startTime)
-	
+
 	// Handle case with no cost data
 	if currentCost == 0.0 {
 		return r.createMinimalProjection(period, username), nil
@@ -9787,16 +9786,16 @@ func (r *queryResolver) calculateNewCostProjection(ctx context.Context, costRepo
 	// Calculate projections and variance
 	projectedCost := currentCost * multiplier
 	variance := r.calculateVariance(currentCost, projectedCost)
-	
+
 	// Add variance-based recommendations
 	recommendations = r.addVarianceRecommendations(recommendations, variance)
-	
+
 	return &model.CostProjection{
 		Period:          period,
 		CurrentCost:     currentCost,
 		ProjectedCost:   projectedCost,
 		Variance:        variance,
-		TopCostDrivers:  topDrivers,
+		TopDrivers:      topDrivers,
 		Recommendations: recommendations,
 	}, nil
 }
@@ -9819,12 +9818,12 @@ func (r *queryResolver) calculateProjectionParameters(now time.Time, period mode
 func (r *queryResolver) calculateDayProjectionParams(now time.Time) (time.Time, float64) {
 	startTime := now.Truncate(24 * time.Hour)
 	hoursElapsed := now.Sub(startTime).Hours()
-	
+
 	multiplier := 1.0
 	if hoursElapsed > 0 {
 		multiplier = 24.0 / hoursElapsed
 	}
-	
+
 	return startTime, multiplier
 }
 
@@ -9833,12 +9832,12 @@ func (r *queryResolver) calculateWeekProjectionParams(now time.Time) (time.Time,
 	weekday := int(now.Weekday())
 	startTime := now.AddDate(0, 0, -weekday).Truncate(24 * time.Hour)
 	daysElapsed := now.Sub(startTime).Hours() / 24.0
-	
+
 	multiplier := 1.0
 	if daysElapsed > 0 {
 		multiplier = 7.0 / daysElapsed
 	}
-	
+
 	return startTime, multiplier
 }
 
@@ -9847,17 +9846,17 @@ func (r *queryResolver) calculateMonthProjectionParams(now time.Time) (time.Time
 	startTime := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	daysInMonth := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, now.Location()).Day()
 	daysElapsed := now.Day()
-	
+
 	multiplier := 1.0
 	if daysElapsed > 0 {
 		multiplier = float64(daysInMonth) / float64(daysElapsed)
 	}
-	
+
 	return startTime, multiplier
 }
 
 // getCurrentCostData retrieves current cost data based on period
-func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *repositories.CostTrackingRepository, period model.Period, now, startTime time.Time) (float64, []*model.CostDriver, []string) {
+func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *repositories.TrackingRepository, period model.Period, now, startTime time.Time) (float64, []*model.Driver, []string) {
 	switch period {
 	case model.PeriodDay:
 		return r.getDailyCostData(ctx, costRepo, startTime, now)
@@ -9871,42 +9870,42 @@ func (r *queryResolver) getCurrentCostData(ctx context.Context, costRepo *reposi
 }
 
 // getDailyCostData retrieves daily cost data
-func (r *queryResolver) getDailyCostData(ctx context.Context, costRepo *repositories.CostTrackingRepository, startTime, endTime time.Time) (float64, []*model.CostDriver, []string) {
+func (r *queryResolver) getDailyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, startTime, endTime)
 	if err == nil && len(dailyAggregates) > 0 {
 		return dailyAggregates[0].TotalCostDollars,
-			   r.buildCostDriversFromDaily(dailyAggregates[0]),
-			   r.generateDailyRecommendations(dailyAggregates[0])
+			r.buildDriversFromDaily(dailyAggregates[0]),
+			r.generateDailyRecommendations(dailyAggregates[0])
 	}
-	
+
 	return r.calculateCurrentCostsFromRecent(ctx, costRepo, startTime, endTime)
 }
 
 // getWeeklyCostData retrieves weekly cost data
-func (r *queryResolver) getWeeklyCostData(ctx context.Context, costRepo *repositories.CostTrackingRepository, startTime, endTime time.Time) (float64, []*model.CostDriver, []string) {
+func (r *queryResolver) getWeeklyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, startTime, endTime time.Time) (float64, []*model.Driver, []string) {
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, startTime, endTime)
 	if err != nil {
 		return r.calculateCurrentCostsFromRecent(ctx, costRepo, startTime, endTime)
 	}
-	
+
 	var currentCost float64
 	for _, daily := range dailyAggregates {
 		currentCost += daily.TotalCostDollars
 	}
-	
+
 	return currentCost,
-		   r.buildWeeklyDriversFromDaily(dailyAggregates),
-		   r.generateWeeklyRecommendations(dailyAggregates)
+		r.buildWeeklyDriversFromDaily(dailyAggregates),
+		r.generateWeeklyRecommendations(dailyAggregates)
 }
 
 // getMonthlyCostData retrieves monthly cost data
-func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *repositories.CostTrackingRepository, now, startTime time.Time) (float64, []*model.CostDriver, []string) {
+func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*model.Driver, []string) {
 	// Try monthly aggregate first
 	monthlyAggregate, err := costRepo.GetMonthlyAggregate(ctx, now.Year(), int(now.Month()))
 	if err == nil && monthlyAggregate != nil {
 		return monthlyAggregate.TotalCostDollars,
-			   r.buildCostDriversFromMonthly(monthlyAggregate),
-			   r.generateMonthlyRecommendations(monthlyAggregate)
+			r.buildDriversFromMonthly(monthlyAggregate),
+			r.generateMonthlyRecommendations(monthlyAggregate)
 	}
 
 	// Fallback to daily aggregates
@@ -9914,21 +9913,21 @@ func (r *queryResolver) getMonthlyCostData(ctx context.Context, costRepo *reposi
 }
 
 // getMonthlyCostDataFromDaily retrieves monthly cost data from daily aggregates
-func (r *queryResolver) getMonthlyCostDataFromDaily(ctx context.Context, costRepo *repositories.CostTrackingRepository, now, startTime time.Time) (float64, []*model.CostDriver, []string) {
+func (r *queryResolver) getMonthlyCostDataFromDaily(ctx context.Context, costRepo *repositories.TrackingRepository, now, startTime time.Time) (float64, []*model.Driver, []string) {
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	dailyAggregates, err := costRepo.GetDailyAggregates(ctx, monthStart, now)
 	if err != nil {
 		return r.calculateCurrentCostsFromRecent(ctx, costRepo, startTime, now)
 	}
-	
+
 	var currentCost float64
 	for _, daily := range dailyAggregates {
 		currentCost += daily.TotalCostDollars
 	}
-	
+
 	return currentCost,
-		   r.buildWeeklyDriversFromDaily(dailyAggregates), // Reuse weekly logic
-		   r.generateMonthlyRecommendationsFromDaily(dailyAggregates)
+		r.buildWeeklyDriversFromDaily(dailyAggregates), // Reuse weekly logic
+		r.generateMonthlyRecommendationsFromDaily(dailyAggregates)
 }
 
 // createMinimalProjection creates a minimal projection when no cost data is available
@@ -9936,13 +9935,13 @@ func (r *queryResolver) createMinimalProjection(period model.Period, username st
 	r.Logger.Warn("No cost data available, returning minimal projection",
 		zap.String("period", period.String()),
 		zap.String("username", username))
-	
+
 	return &model.CostProjection{
 		Period:          period,
 		CurrentCost:     0.0,
 		ProjectedCost:   0.0,
 		Variance:        0.0,
-		TopCostDrivers:  []*model.CostDriver{},
+		TopDrivers:      []*model.Driver{},
 		Recommendations: []string{"Enable cost tracking", "Monitor usage patterns"},
 	}
 }
@@ -9993,17 +9992,17 @@ func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string,
 				}
 			}
 		}
-		
+
 		// Fallback: Estimate based on current page size and time range
 		// Assume roughly uniform distribution over time
 		dayRange := int(endTime.Sub(startTime).Hours() / 24)
 		if dayRange > 0 && currentPageSize > 0 {
 			// Estimate based on current page density
 			recordsPerDay := float64(currentPageSize) / float64(dayRange) * 30.0 // 30 days total
-			return int(recordsPerDay * 1.2) // Add 20% buffer for variability
+			return int(recordsPerDay * 1.2)                                      // Add 20% buffer for variability
 		}
 	}
-	
+
 	// Strategy 2: For subsequent pages, use cumulative estimation
 	if offset > 0 {
 		if currentPageSize < limit {
@@ -10015,12 +10014,12 @@ func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string,
 		estimatedRemaining := currentPageSize * 2 // Conservative estimate
 		return offset + currentPageSize + estimatedRemaining
 	}
-	
+
 	// Strategy 3: If we have partial data, estimate minimum count
 	if currentPageSize > 0 {
 		// At least as many as we've seen, plus buffer for unseen data
 		baseCount := offset + currentPageSize
-		
+
 		// Add estimation buffer based on federation activity patterns
 		// Active federations typically have more historical data
 		activityMultiplier := 1.5
@@ -10028,10 +10027,10 @@ func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string,
 		if currentPageSize >= fillRateThreshold { // High page fill rate suggests more data
 			activityMultiplier = 2.0
 		}
-		
+
 		return int(float64(baseCount) * activityMultiplier)
 	}
-	
+
 	// Strategy 4: Fallback to repository-based estimation
 	federationRepo := r.Registry.Federation()
 	if federationRepo != nil {
@@ -10044,12 +10043,12 @@ func (r *queryResolver) estimateFederationCostCount(_ context.Context, _ string,
 			return estimatedCosts
 		}
 	}
-	
+
 	// Final fallback: Use current page size as minimum
 	if currentPageSize > 0 {
 		return currentPageSize * 3 // Conservative 3x multiplier
 	}
-	
+
 	return 0
 }
 
@@ -10062,7 +10061,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 	// Get federation repository to get real cost data
 	federationRepo := r.Registry.GetStorage().Federation()
 	if federationRepo == nil {
-		return nil, fmt.Errorf("federation repository not available")
+		return nil, ErrFederationRepositoryUnavailable
 	}
 
 	// Set default limit
@@ -10089,12 +10088,12 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 	federationCosts, err := federationRepo.GetFederationCostsByUser(ctx, username, startTime, now, limit, offset)
 	if err != nil {
 		r.Logger.Error("failed to get federation costs", zap.Error(err))
-		return nil, fmt.Errorf("failed to retrieve federation costs: %w", err)
+		return nil, errors.Join(errors.New("failed to retrieve federation costs"), err)
 	}
-	
+
 	// Convert storage federation costs to GraphQL model
 	edges := make([]*model.FederationCostEdge, 0, len(federationCosts))
-	
+
 	for i, fedCost := range federationCosts {
 		// Convert storage.FederationCost to model.FederationCost using REAL data
 		edge := &model.FederationCostEdge{
@@ -10107,7 +10106,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 				MonthlyCostUsd: fedCost.EstimatedCostUSD,
 				HealthScore:    0.0, // Will need to fetch separately
 				LastUpdated:    model.Time(fedCost.LastUpdated),
-				Breakdown: r.calculateDetailedFederationCostBreakdown(fedCost),
+				Breakdown:      r.calculateDetailedFederationCostBreakdown(fedCost),
 			},
 			Cursor: model.Cursor(fmt.Sprintf("cursor_%d", offset+i)),
 		}
@@ -10116,7 +10115,7 @@ func (r *queryResolver) FederationCosts(ctx context.Context, first *int, after *
 
 	hasNextPage := len(federationCosts) >= limit
 	hasPreviousPage := offset > 0
-	
+
 	// Implement efficient count estimation instead of exact count for performance
 	totalCount := r.estimateFederationCostCount(ctx, username, startTime, now, len(federationCosts), offset, limit)
 
@@ -10147,7 +10146,7 @@ func (r *activityResolver) Actor(ctx context.Context, obj *activitypub.Activity)
 	if obj.Actor != "" {
 		account, err := r.Registry.Accounts().GetAccount(ctx, obj.Actor)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get activity actor: %w", err)
+			return nil, errors.Join(errors.New("failed to get activity actor"), err)
 		}
 
 		return r.convertAccountToActor(account), nil
@@ -10164,7 +10163,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 		// No alternative context available
 		r.Logger.Debug("No cost tracker available from context")
 	}
-	
+
 	if costTracker == nil {
 		// No cost tracking available - query from storage
 		costRepo := r.Registry.GetStorage().Cost()
@@ -10179,7 +10178,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 				return int(activityCost.TotalCostMicroCents), nil
 			}
 		}
-		
+
 		// No cost data available
 		return 0, nil
 	}
@@ -10189,7 +10188,7 @@ func (r *activityResolver) Cost(ctx context.Context, obj *activitypub.Activity) 
 	if costCalc == nil {
 		return 0, nil
 	}
-	
+
 	// Convert to microcents
 	return int(costCalc.TotalCostMicroCents), nil
 }
@@ -10242,7 +10241,7 @@ func (r *subscriptionResolver) AiAnalysisUpdates(ctx context.Context, objectID *
 	eventChan, err := aiSvc.SubscribeToAnalysisEvents(ctx, username, objectID)
 	if err != nil {
 		close(updatesChan)
-		return nil, fmt.Errorf("failed to subscribe to AI analysis events: %w", err)
+		return nil, errors.Join(errors.New("failed to subscribe to AI analysis events"), err)
 	}
 
 	// Start goroutine to convert service events to GraphQL model
@@ -10310,7 +10309,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 	// Use EventBus for real-time budget alerts - NO POLLING, REAL EVENTS ONLY
 	eventBus := r.Registry.EventBus()
 	if eventBus == nil {
-		return nil, fmt.Errorf("event bus not available for real-time budget alerts")
+		return nil, ErrEventBusUnavailable
 	}
 
 	// Subscribe to budget alert events via EventBus
@@ -10323,7 +10322,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 
 	eventChan, err := eventBus.Subscribe(ctx, streamName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to budget alerts: %w", err)
+		return nil, errors.Join(errors.New("failed to subscribe to budget alerts"), err)
 	}
 
 	// Forward events to GraphQL channel
@@ -10345,7 +10344,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 						alert.AlertLevel = r.getBudgetAlertLevel(alert.SpentUsd, alert.BudgetUsd)
 						// Update percentage for consistency
 						alert.PercentUsed = (alert.SpentUsd / alert.BudgetUsd) * 100
-						
+
 						// Generate descriptive message using helper function
 						alertMessage := r.getBudgetAlertMessage(alert.SpentUsd, alert.BudgetUsd)
 						r.Logger.Info("Processing budget alert",
@@ -10353,7 +10352,7 @@ func (r *subscriptionResolver) BudgetAlerts(ctx context.Context, domain *string)
 							zap.String("alert_level", string(alert.AlertLevel)),
 							zap.String("message", alertMessage))
 					}
-					
+
 					select {
 					case alertsChan <- alert:
 					case <-ctx.Done():
@@ -10384,14 +10383,14 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 	// Use EventBus to subscribe to cost events - NO POLLING, REAL EVENTS ONLY
 	eventBus := r.Registry.EventBus()
 	if eventBus == nil {
-		return nil, fmt.Errorf("event bus not available for real-time cost alerts")
+		return nil, ErrEventBusUnavailable
 	}
 
 	// Subscribe to cost events via EventBus
 	streamName := fmt.Sprintf("cost_events:%s", username)
 	eventChan, err := eventBus.Subscribe(ctx, streamName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to cost alerts: %w", err)
+		return nil, errors.Join(errors.New("failed to subscribe to cost alerts"), err)
 	}
 
 	// Forward events to GraphQL channel
@@ -10417,7 +10416,7 @@ func (r *subscriptionResolver) CostAlerts(ctx context.Context, thresholdUSD floa
 							Amount:    costPayload.CostUSD,
 							Threshold: thresholdUSD,
 							Domain:    stringPtr(costPayload.TenantID),
-							Message:   fmt.Sprintf("Cost alert for %s: $%.2f exceeded threshold $%.2f", 
+							Message: fmt.Sprintf("Cost alert for %s: $%.2f exceeded threshold $%.2f",
 								costPayload.Service, costPayload.CostUSD, thresholdUSD),
 							Timestamp: model.Time(costPayload.Timestamp),
 						}
@@ -10449,16 +10448,16 @@ func (r *subscriptionResolver) CostUpdates(ctx context.Context, _ *int) (<-chan 
 
 	updatesChan := make(chan *model.CostUpdate, 100)
 	eventBus := r.Registry.EventBus()
-	
+
 	if eventBus == nil {
 		r.startFallbackCostTracking(ctx, updatesChan)
 		return updatesChan, nil
 	}
-	
+
 	if err := r.startEventBusCostTracking(ctx, eventBus, username, updatesChan); err != nil {
 		return nil, err
 	}
-	
+
 	r.Logger.Info("Started cost updates subscription", zap.String("user", username))
 	return updatesChan, nil
 }
@@ -10495,7 +10494,7 @@ func (r *subscriptionResolver) createCostUpdateFromTracker(ctx context.Context) 
 	if summary == nil {
 		return nil
 	}
-	
+
 	costDollars := float64(summary.TotalCostMicroCents) / 1_000_000.0
 	return &model.CostUpdate{
 		OperationCost:     int(summary.TotalCostMicroCents),
@@ -10509,7 +10508,7 @@ func (r *subscriptionResolver) startEventBusCostTracking(ctx context.Context, ev
 	streamName := fmt.Sprintf("cost_updates:%s", username)
 	eventChan, err := eventBus.Subscribe(ctx, streamName)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to cost updates: %w", err)
+		return errors.Join(errors.New("failed to subscribe to cost updates"), err)
 	}
 
 	go func() {
@@ -10522,7 +10521,7 @@ func (r *subscriptionResolver) startEventBusCostTracking(ctx context.Context, ev
 				if !ok {
 					return
 				}
-				
+
 				update := r.convertEventToCostUpdate(event)
 				if update != nil {
 					r.sendCostUpdate(ctx, updatesChan, update)
@@ -10530,7 +10529,7 @@ func (r *subscriptionResolver) startEventBusCostTracking(ctx context.Context, ev
 			}
 		}
 	}()
-	
+
 	return nil
 }
 
@@ -10540,10 +10539,10 @@ func (r *subscriptionResolver) convertEventToCostUpdate(event interface{}) *mode
 	if !ok {
 		return nil
 	}
-	
+
 	dailyTotal := costPayload.CostUSD * 100 // Estimate 100 operations per day
 	monthlyProjection := dailyTotal * 30    // Project for 30 days
-	
+
 	return &model.CostUpdate{
 		OperationCost:     int(costPayload.CostUSD * 1000000), // Convert to microcents
 		DailyTotal:        dailyTotal,
@@ -10623,19 +10622,19 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 	}
 
 	updateChan := make(chan *model.FederationHealthUpdate, 100)
-	
+
 	r.Logger.Info("Started federation health subscription",
 		zap.String("user", username),
 		zap.Bool("filtered", domain != nil))
-	
+
 	// Get internal EventBus for real-time federation health updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for FederationHealthUpdates")
 		close(updateChan)
-		return updateChan, fmt.Errorf("internal event bus not available")
+		return updateChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to federation health events
 	var streamNames []string
 	if domain != nil && *domain != "" {
@@ -10643,7 +10642,7 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 	} else {
 		streamNames = []string{"federation:health"}
 	}
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeFederationHealthUpdate,
@@ -10653,14 +10652,14 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 		Streams: streamNames,
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("fedhealth_%s_%d", username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for FederationHealthUpdates", zap.Error(err))
 		close(updateChan)
-		return updateChan, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return updateChan, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -10669,14 +10668,14 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to FederationHealthUpdate
 				healthUpdate := r.convertEventToFederationHealthUpdate(event)
 				if healthUpdate != nil {
@@ -10689,7 +10688,7 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 						r.Logger.Warn("Dropping federation health update event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -10697,7 +10696,7 @@ func (r *subscriptionResolver) FederationHealthUpdates(ctx context.Context, doma
 			}
 		}
 	}()
-	
+
 	return updateChan, nil
 }
 
@@ -10709,21 +10708,21 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 	}
 
 	eventChan := make(chan *moderation.ModerationDecision, 100)
-	
+
 	// Get internal EventBus for real-time moderation events
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for ModerationEvents")
 		close(eventChan)
-		return eventChan, fmt.Errorf("internal event bus not available")
+		return eventChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Build filter for moderation events
 	streams := []string{"moderation:global"}
 	if actorID != nil && *actorID != "" {
 		streams = append(streams, fmt.Sprintf("actor:%s", *actorID))
 	}
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeModeration,
@@ -10734,20 +10733,20 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 		Streams: streams,
 		UserID:  username,
 	}
-	
+
 	if actorID != nil {
 		filter.ActorID = *actorID
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(
 		fmt.Sprintf("moderation_%s_%d", username, time.Now().UnixNano()),
 		filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to moderation events", zap.Error(err))
 		close(eventChan)
-		return eventChan, fmt.Errorf("failed to subscribe: %w", err)
+		return eventChan, errors.Join(errors.New("failed to subscribe"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -10756,14 +10755,14 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert event payload to ModerationDecision
 				decision := r.convertEventToModerationDecision(event)
 				if decision != nil {
@@ -10773,16 +10772,16 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 						return
 					}
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	r.Logger.Info("Started moderation events subscription",
 		zap.String("user", username))
-	
+
 	return eventChan, nil
 }
 
@@ -10794,19 +10793,19 @@ func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string)
 	}
 
 	updateChan := make(chan *trust.TrustEdge, 100)
-	
+
 	r.Logger.Info("Started trust updates subscription",
 		zap.String("user", username),
 		zap.String("actor", actorID))
-	
+
 	// Get internal EventBus for real-time trust updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for TrustUpdates")
 		close(updateChan)
-		return updateChan, fmt.Errorf("internal event bus not available")
+		return updateChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to trust events for the specified actor
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
@@ -10818,14 +10817,14 @@ func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string)
 		ActorID: actorID,
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("trust_%s_%s_%d", actorID, username, time.Now().UnixNano()), filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to event bus for TrustUpdates", zap.Error(err))
 		close(updateChan)
-		return updateChan, fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return updateChan, errors.Join(errors.New("failed to subscribe to event bus"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -10834,14 +10833,14 @@ func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string)
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert internal event to TrustEdge
 				trustEdge := r.convertEventToTrustEdge(event)
 				if trustEdge != nil {
@@ -10854,7 +10853,7 @@ func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string)
 						r.Logger.Warn("Dropping trust update event - channel full", zap.String("event_id", event.ID))
 					}
 				}
-				
+
 			case <-subscriber.Quit:
 				return
 			case <-ctx.Done():
@@ -10862,7 +10861,7 @@ func (r *subscriptionResolver) TrustUpdates(ctx context.Context, actorID string)
 			}
 		}
 	}()
-	
+
 	return updateChan, nil
 }
 
@@ -10874,15 +10873,15 @@ func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string)
 	}
 
 	activityChan := make(chan *model.QuoteActivityUpdate, 100)
-	
+
 	// Get internal EventBus for real-time quote activity
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for QuoteActivity")
 		close(activityChan)
-		return activityChan, fmt.Errorf("internal event bus not available")
+		return activityChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Subscribe to status events for the specific note
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
@@ -10897,16 +10896,16 @@ func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string)
 		},
 		UserID: username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(
 		fmt.Sprintf("quotes_%s_%s_%d", noteID, username, time.Now().UnixNano()),
 		filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to quote activity", zap.Error(err))
 		close(activityChan)
-		return activityChan, fmt.Errorf("failed to subscribe: %w", err)
+		return activityChan, errors.Join(errors.New("failed to subscribe"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -10915,14 +10914,14 @@ func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string)
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert event to QuoteActivityUpdate
 				update := r.convertEventToQuoteActivity(event, noteID)
 				if update != nil {
@@ -10932,17 +10931,17 @@ func (r *subscriptionResolver) QuoteActivity(ctx context.Context, noteID string)
 						return
 					}
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	r.Logger.Info("Started quote activity subscription",
 		zap.String("user", username),
 		zap.String("note", noteID))
-	
+
 	return activityChan, nil
 }
 
@@ -10954,21 +10953,21 @@ func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []s
 	}
 
 	activityChan := make(chan *model.HashtagActivityUpdate, 100)
-	
+
 	// Get internal EventBus for real-time hashtag activity
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for HashtagActivity")
 		close(activityChan)
-		return activityChan, fmt.Errorf("internal event bus not available")
+		return activityChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	// Build streams for each hashtag
 	streams := []string{"hashtags:global"}
 	for _, tag := range hashtags {
 		streams = append(streams, fmt.Sprintf("hashtag:%s", strings.ToLower(tag)))
 	}
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeHashtagTrend,
@@ -10978,16 +10977,16 @@ func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []s
 		Streams: streams,
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(
 		fmt.Sprintf("hashtags_%s_%d", username, time.Now().UnixNano()),
 		filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to hashtag activity", zap.Error(err))
 		close(activityChan)
-		return activityChan, fmt.Errorf("failed to subscribe: %w", err)
+		return activityChan, errors.Join(errors.New("failed to subscribe"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -10996,14 +10995,14 @@ func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []s
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert event to HashtagActivityUpdate
 				update := r.convertEventToHashtagActivity(event, hashtags)
 				if update != nil {
@@ -11013,17 +11012,17 @@ func (r *subscriptionResolver) HashtagActivity(ctx context.Context, hashtags []s
 						return
 					}
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	r.Logger.Info("Started hashtag activity subscription",
 		zap.String("user", username),
 		zap.Int("hashtag_count", len(hashtags)))
-	
+
 	return activityChan, nil
 }
 
@@ -11035,17 +11034,17 @@ func (r *subscriptionResolver) MetricsUpdates(ctx context.Context, _ []string, _
 	}
 
 	updateChan := make(chan *model.MetricsUpdate, 100)
-	
+
 	// For now, return empty channel
 	// This would be implemented with real metrics streaming
 	go func() {
 		<-ctx.Done()
 		close(updateChan)
 	}()
-	
+
 	r.Logger.Info("Started metrics updates subscription",
 		zap.String("user", username))
-	
+
 	return updateChan, nil
 }
 
@@ -11057,15 +11056,15 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 	}
 
 	alertChan := make(chan *model.ModerationAlert, 100)
-	
+
 	// Get internal EventBus for real-time moderation alerts
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for ModerationAlerts")
 		close(alertChan)
-		return alertChan, fmt.Errorf("internal event bus not available")
+		return alertChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeModerationFlag,
@@ -11075,16 +11074,16 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 		Streams: []string{"moderation:alerts", fmt.Sprintf("user:%s:alerts", username)},
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(
 		fmt.Sprintf("mod_alerts_%s_%d", username, time.Now().UnixNano()),
 		filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to moderation alerts", zap.Error(err))
 		close(alertChan)
-		return alertChan, fmt.Errorf("failed to subscribe: %w", err)
+		return alertChan, errors.Join(errors.New("failed to subscribe"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -11093,14 +11092,14 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert event to ModerationAlert
 				alert := r.convertEventToModerationAlert(event, severity)
 				if alert != nil {
@@ -11110,16 +11109,16 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 						return
 					}
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	r.Logger.Info("Started moderation alerts subscription",
 		zap.String("user", username))
-	
+
 	return alertChan, nil
 }
 
@@ -11131,20 +11130,20 @@ func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priori
 	}
 
 	updateChan := make(chan *model.ModerationItem, 100)
-	
+
 	// Get internal EventBus for real-time moderation queue updates
 	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
 	if internalEventBus == nil || !internalEventBus.IsRunning() {
 		r.Logger.Error("Internal EventBus not available for ModerationQueueUpdate")
 		close(updateChan)
-		return updateChan, fmt.Errorf("internal event bus not available")
+		return updateChan, ErrInternalEventBusUnavailable
 	}
-	
+
 	streams := []string{"moderation:queue"}
 	if priority != nil {
 		streams = append(streams, fmt.Sprintf("moderation:priority:%s", *priority))
 	}
-	
+
 	filter := &streaming.EventFilter{
 		Types: []streaming.EventType{
 			streaming.EventTypeModerationFlag,
@@ -11154,16 +11153,16 @@ func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priori
 		Streams: streams,
 		UserID:  username,
 	}
-	
+
 	subscriber, err := internalEventBus.Subscribe(
 		fmt.Sprintf("mod_queue_%s_%d", username, time.Now().UnixNano()),
 		filter, 100)
 	if err != nil {
 		r.Logger.Error("Failed to subscribe to moderation queue", zap.Error(err))
 		close(updateChan)
-		return updateChan, fmt.Errorf("failed to subscribe: %w", err)
+		return updateChan, errors.Join(errors.New("failed to subscribe"), err)
 	}
-	
+
 	// Start forwarding events
 	go func() {
 		defer func() {
@@ -11172,14 +11171,14 @@ func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priori
 				subscriber.Close()
 			}
 		}()
-		
+
 		for {
 			select {
 			case event := <-subscriber.Channel:
 				if event == nil {
 					return
 				}
-				
+
 				// Convert event to ModerationItem
 				item := r.convertEventToModerationItem(event, priority)
 				if item != nil {
@@ -11189,16 +11188,16 @@ func (r *subscriptionResolver) ModerationQueueUpdate(ctx context.Context, priori
 						return
 					}
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	r.Logger.Info("Started moderation queue subscription",
 		zap.String("user", username))
-	
+
 	return updateChan, nil
 }
 
@@ -11210,17 +11209,17 @@ func (r *subscriptionResolver) ThreatIntelligence(ctx context.Context) (<-chan *
 	}
 
 	alertChan := make(chan *model.ThreatAlert, 100)
-	
+
 	// For now, return empty channel
 	// This would be implemented with real threat intelligence streaming
 	go func() {
 		<-ctx.Done()
 		close(alertChan)
 	}()
-	
+
 	r.Logger.Info("Started threat intelligence subscription",
 		zap.String("user", username))
-	
+
 	return alertChan, nil
 }
 
@@ -11232,18 +11231,18 @@ func (r *subscriptionResolver) PerformanceAlert(ctx context.Context, severity mo
 	}
 
 	alertChan := make(chan *model.PerformanceAlert, 100)
-	
+
 	// For now, return empty channel
 	// This would be implemented with real performance monitoring
 	go func() {
 		<-ctx.Done()
 		close(alertChan)
 	}()
-	
+
 	r.Logger.Info("Started performance alerts subscription",
 		zap.String("user", username),
 		zap.String("severity", string(severity)))
-	
+
 	return alertChan, nil
 }
 
@@ -11255,17 +11254,17 @@ func (r *subscriptionResolver) InfrastructureEvent(ctx context.Context) (<-chan 
 	}
 
 	eventChan := make(chan *model.InfrastructureEvent, 100)
-	
+
 	// For now, return empty channel
 	// This would be implemented with real infrastructure event streaming
 	go func() {
 		<-ctx.Done()
 		close(eventChan)
 	}()
-	
+
 	r.Logger.Info("Started infrastructure events subscription",
 		zap.String("user", username))
-	
+
 	return eventChan, nil
 }
 
@@ -11292,30 +11291,30 @@ func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Objec
 		if baseObj.Updated != nil {
 			updatedAt = *baseObj.Updated
 		}
-		
+
 		return &model.Object{
-			ID:          baseObj.ID,
-			Type:        model.ObjectTypeNote, // Default to Note
-			Content:     "", // BaseObject doesn't have content
-			Sensitive:   false,
-			CreatedAt:   model.Time(createdAt),
-			UpdatedAt:   model.Time(updatedAt),
-			Visibility:  model.VisibilityPublic, // Default visibility
+			ID:         baseObj.ID,
+			Type:       model.ObjectTypeNote, // Default to Note
+			Content:    "",                   // BaseObject doesn't have content
+			Sensitive:  false,
+			CreatedAt:  model.Time(createdAt),
+			UpdatedAt:  model.Time(updatedAt),
+			Visibility: model.VisibilityPublic, // Default visibility
 		}
 	}
-	
+
 	// Convert from storage Object
 	createdAt := storageObj.CreatedAt
 	updatedAt := storageObj.Updated
-	
+
 	modelObj := &model.Object{
-		ID:          storageObj.ID,
-		Type:        model.ObjectTypeNote, // Default to Note
-		Content:     storageObj.Content,
-		Sensitive:   storageObj.Sensitive,
-		CreatedAt:   model.Time(createdAt),
-		UpdatedAt:   model.Time(updatedAt),
-		Visibility:  model.VisibilityPublic, // Default visibility
+		ID:         storageObj.ID,
+		Type:       model.ObjectTypeNote, // Default to Note
+		Content:    storageObj.Content,
+		Sensitive:  storageObj.Sensitive,
+		CreatedAt:  model.Time(createdAt),
+		UpdatedAt:  model.Time(updatedAt),
+		Visibility: model.VisibilityPublic, // Default visibility
 	}
 
 	// Set type based on storage Object type
@@ -11375,9 +11374,9 @@ func (r *Resolver) convertActivityPubObjectToModel(obj interface{}) *model.Objec
 	}
 
 	// Set counts - these would need to be fetched from separate queries in real implementation
-	modelObj.RepliesCount = 0 // Would need to query replies
-	modelObj.LikesCount = 0   // Would need to query likes
-	modelObj.SharesCount = 0  // Would need to query shares
+	modelObj.RepliesCount = 0  // Would need to query replies
+	modelObj.LikesCount = 0    // Would need to query likes
+	modelObj.SharesCount = 0   // Would need to query shares
 	modelObj.EstimatedCost = 0 // Could calculate from cost tracking
 
 	return modelObj
@@ -11407,7 +11406,7 @@ func (r *subscriptionResolver) convertEventToActivity(event *streaming.InternalE
 				Published: &publishedTime,
 			},
 		}
-		
+
 		// Extract actor if available
 		if actorData, ok := data["actor"]; ok {
 			if actorStr, ok := actorData.(string); ok {
@@ -11416,12 +11415,12 @@ func (r *subscriptionResolver) convertEventToActivity(event *streaming.InternalE
 		} else if event.ActorID != "" {
 			activity.Actor = event.ActorID
 		}
-		
+
 		// Extract object if available
 		if objectData, ok := data["object"]; ok {
 			activity.Object = objectData
 		}
-		
+
 		return activity
 	default:
 		// Create a generic activity from event metadata
@@ -11433,15 +11432,15 @@ func (r *subscriptionResolver) convertEventToActivity(event *streaming.InternalE
 				Published: &publishedTime,
 			},
 		}
-		
+
 		if event.ActorID != "" {
 			activity.Actor = event.ActorID
 		}
-		
+
 		if event.TargetID != "" {
 			activity.Object = event.TargetID
 		}
-		
+
 		return activity
 	}
 }
@@ -11467,18 +11466,18 @@ func (r *subscriptionResolver) convertEventToObject(ctx context.Context, event *
 			CreatedAt: model.Time(event.Timestamp),
 			UpdatedAt: model.Time(event.Timestamp),
 		}
-		
+
 		// Extract content if available
 		if content, ok := data["content"].(string); ok {
 			obj.Content = content
 		}
-		
+
 		// Extract actor if available
 		if actorID, ok := data["actor_id"].(string); ok {
 			// Fetch actor from storage repositories
 			obj.Actor = r.fetchActorFromStorage(ctx, actorID)
 		}
-		
+
 		return obj
 	default:
 		// Create a basic object from event metadata
@@ -11488,11 +11487,11 @@ func (r *subscriptionResolver) convertEventToObject(ctx context.Context, event *
 			CreatedAt: model.Time(event.Timestamp),
 			UpdatedAt: model.Time(event.Timestamp),
 		}
-		
+
 		if event.ActorID != "" {
 			obj.Actor = r.fetchActorFromStorage(ctx, event.ActorID)
 		}
-		
+
 		return obj
 	}
 }
@@ -11513,7 +11512,7 @@ func (r *subscriptionResolver) convertEventToNotification(ctx context.Context, e
 			Type:      data.Type,
 			Read:      data.Read,
 			CreatedAt: model.Time(data.CreatedAt),
-			Account: r.fetchActorFromStorage(ctx, data.ActorID),
+			Account:   r.fetchActorFromStorage(ctx, data.ActorID),
 		}
 	case map[string]interface{}:
 		// If the data is a map, try to construct a Notification
@@ -11522,7 +11521,7 @@ func (r *subscriptionResolver) convertEventToNotification(ctx context.Context, e
 			CreatedAt: model.Time(event.Timestamp),
 			Read:      false,
 		}
-		
+
 		// Extract type if available
 		if notType, ok := data["type"].(string); ok {
 			notification.Type = notType
@@ -11539,14 +11538,14 @@ func (r *subscriptionResolver) convertEventToNotification(ctx context.Context, e
 				notification.Type = "mention"
 			}
 		}
-		
+
 		// Extract actor if available
 		if actorID, ok := data["actor_id"].(string); ok {
 			notification.Account = r.fetchActorFromStorage(ctx, actorID)
 		} else if event.ActorID != "" {
 			notification.Account = r.fetchActorFromStorage(ctx, event.ActorID)
 		}
-		
+
 		return notification
 	default:
 		// Create a basic notification from event metadata
@@ -11556,11 +11555,11 @@ func (r *subscriptionResolver) convertEventToNotification(ctx context.Context, e
 			Read:      false,
 			CreatedAt: model.Time(event.Timestamp),
 		}
-		
+
 		if event.ActorID != "" {
 			notification.Account = r.fetchActorFromStorage(ctx, event.ActorID)
 		}
-		
+
 		return notification
 	}
 }
@@ -11570,13 +11569,13 @@ func (r *subscriptionResolver) notificationMatchesTypes(notification *model.Noti
 	if err := common.ValidateSliceNotEmpty("types", types); err != nil {
 		return true
 	}
-	
+
 	for _, t := range types {
 		if notification.Type == t {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -11593,11 +11592,11 @@ func (r *subscriptionResolver) convertEventToConversation(ctx context.Context, e
 	case map[string]interface{}:
 		// If the data is a map, try to construct a Conversation
 		conv := &model.Conversation{
-			ID:       event.TargetID,
-			Unread:   true, // New conversations are unread by default
+			ID:        event.TargetID,
+			Unread:    true, // New conversations are unread by default
 			UpdatedAt: model.Time(event.Timestamp),
 		}
-		
+
 		// Extract last status if available
 		if lastStatusID, ok := data["last_status_id"].(string); ok && lastStatusID != "" {
 			// Fetch the actual status from storage
@@ -11608,23 +11607,23 @@ func (r *subscriptionResolver) convertEventToConversation(ctx context.Context, e
 					}
 				}
 			}
-			
+
 			// Fallback to minimal object if fetch fails or repo unavailable
 			if conv.LastStatus == nil {
 				conv.LastStatus = &model.Object{
-					ID: lastStatusID,
-					Type: model.ObjectTypeNote,
+					ID:        lastStatusID,
+					Type:      model.ObjectTypeNote,
 					CreatedAt: model.Time(event.Timestamp),
 				}
 			}
 		}
-		
+
 		return conv
 	default:
 		// Create a minimal conversation from event metadata
 		return &model.Conversation{
-			ID:       event.TargetID,
-			Unread:   true,
+			ID:        event.TargetID,
+			Unread:    true,
 			UpdatedAt: model.Time(event.Timestamp),
 		}
 	}
@@ -11645,7 +11644,7 @@ func (r *subscriptionResolver) convertEventToListUpdate(ctx context.Context, eve
 		update := &model.ListUpdate{
 			Timestamp: model.Time(event.Timestamp),
 		}
-		
+
 		// Set type based on event type
 		switch event.Type {
 		case streaming.EventTypeAccountUpdate:
@@ -11655,12 +11654,12 @@ func (r *subscriptionResolver) convertEventToListUpdate(ctx context.Context, eve
 		default:
 			update.Type = "updated"
 		}
-		
+
 		// Create minimal list object
 		update.List = &model.List{
 			ID: event.TargetID,
 		}
-		
+
 		// Extract account if available
 		if accountID, ok := data["account_id"].(string); ok && accountID != "" {
 			// Fetch the actual account from storage
@@ -11672,7 +11671,7 @@ func (r *subscriptionResolver) convertEventToListUpdate(ctx context.Context, eve
 					}
 				}
 			}
-			
+
 			// Fallback to minimal actor if fetch fails or repo unavailable
 			if update.Account == nil {
 				update.Account = &activitypub.Actor{
@@ -11683,7 +11682,7 @@ func (r *subscriptionResolver) convertEventToListUpdate(ctx context.Context, eve
 				}
 			}
 		}
-		
+
 		return update
 	default:
 		// Create a minimal list update from event metadata
@@ -11710,7 +11709,7 @@ func (r *subscriptionResolver) convertEventToRelationshipUpdate(ctx context.Cont
 		update := &model.RelationshipUpdate{
 			Timestamp: model.Time(event.Timestamp),
 		}
-		
+
 		// Determine type from event type
 		switch event.Type {
 		case streaming.EventTypeAccountFollow:
@@ -11720,17 +11719,17 @@ func (r *subscriptionResolver) convertEventToRelationshipUpdate(ctx context.Cont
 		default:
 			update.Type = "update"
 		}
-		
+
 		// Set actor if available
 		if event.ActorID != "" {
 			update.Actor = r.fetchActorFromStorage(ctx, event.ActorID)
 		}
-		
+
 		// Extract relationship data if available
 		if relationshipData, ok := data["relationship"]; ok {
 			if relMap, ok := relationshipData.(map[string]interface{}); ok {
 				rel := &model.Relationship{}
-				
+
 				if following, ok := relMap[RelationshipFollowing].(bool); ok {
 					rel.Following = following
 				}
@@ -11743,11 +11742,11 @@ func (r *subscriptionResolver) convertEventToRelationshipUpdate(ctx context.Cont
 				if muting, ok := relMap["muting"].(bool); ok {
 					rel.Muting = muting
 				}
-				
+
 				update.Relationship = rel
 			}
 		}
-		
+
 		return update
 	default:
 		// Create a minimal relationship update from event metadata
@@ -11755,11 +11754,11 @@ func (r *subscriptionResolver) convertEventToRelationshipUpdate(ctx context.Cont
 			Type:      "update",
 			Timestamp: model.Time(event.Timestamp),
 		}
-		
+
 		if event.ActorID != "" {
 			update.Actor = r.fetchActorFromStorage(ctx, event.ActorID)
 		}
-		
+
 		return update
 	}
 }
@@ -11781,11 +11780,11 @@ func (r *subscriptionResolver) convertEventToFederationHealthUpdate(event *strea
 			Timestamp: model.Time(event.Timestamp),
 			Issues:    []*model.HealthIssue{},
 		}
-		
+
 		// Determine status from event type
 		previousStatus := model.InstanceHealthStatusHealthy
 		currentStatus := model.InstanceHealthStatusHealthy
-		
+
 		switch event.Type {
 		case streaming.EventTypeFederationFailure:
 			previousStatus = model.InstanceHealthStatusHealthy
@@ -11809,10 +11808,10 @@ func (r *subscriptionResolver) convertEventToFederationHealthUpdate(event *strea
 				currentStatus = model.InstanceHealthStatusWarning
 			}
 		}
-		
+
 		update.PreviousStatus = previousStatus
 		update.CurrentStatus = currentStatus
-		
+
 		return update
 	default:
 		// Create a minimal federation health update from event metadata
@@ -11842,14 +11841,14 @@ func (r *subscriptionResolver) convertEventToTrustEdge(event *streaming.Internal
 			From: event.ActorID,
 			To:   event.TargetID,
 		}
-		
+
 		// Extract score if available
 		if score, ok := data["score"].(float64); ok {
 			edge.Score = score
 		} else {
 			edge.Score = 0.5 // Default neutral score
 		}
-		
+
 		// Extract category if available
 		if category, ok := data["category"].(string); ok {
 			edge.Category = trust.TrustCategory(category)
@@ -11860,7 +11859,7 @@ func (r *subscriptionResolver) convertEventToTrustEdge(event *streaming.Internal
 		// Set confidence and weight
 		edge.Confidence = 1.0 // Default confidence
 		edge.Weight = edge.Score * edge.Confidence
-		
+
 		return edge
 	default:
 		// Create a minimal trust edge from event metadata
@@ -11998,9 +11997,9 @@ func (r *Resolver) convertImageAnalysisToModeration(analysis *ai.ImageAnalysis) 
 	if analysis.DeepfakeScore > 0 {
 		maxScore = mathMax(maxScore, analysis.DeepfakeScore)
 	}
-	
+
 	result.ModerationScore = maxScore
-	
+
 	// Determine risk level
 	if maxScore > 0.8 {
 		result.RiskLevel = SeverityHigh
@@ -12055,13 +12054,13 @@ func (r *Resolver) convertSpamAnalysis(analysis *ai.SpamAnalysis) *model.SpamAna
 	}
 
 	return &model.SpamAnalysis{
-		SpamScore:        analysis.SpamScore,
-		SpamIndicators:   indicators,
-		PostingVelocity:  analysis.PostingVelocity,
-		RepetitionScore:  analysis.RepetitionScore,
-		LinkDensity:      analysis.LinkDensity,
-		FollowerRatio:    analysis.FollowerRatio,
-		InteractionRate:  analysis.InteractionRate,
+		SpamScore:       analysis.SpamScore,
+		SpamIndicators:  indicators,
+		PostingVelocity: analysis.PostingVelocity,
+		RepetitionScore: analysis.RepetitionScore,
+		LinkDensity:     analysis.LinkDensity,
+		FollowerRatio:   analysis.FollowerRatio,
+		InteractionRate: analysis.InteractionRate,
 	}
 }
 
@@ -12102,12 +12101,12 @@ func (r *subscriptionResolver) convertEventToModerationDecision(event *streaming
 	case map[string]interface{}:
 		// Construct ModerationDecision from map
 		decision := &moderation.ModerationDecision{
-			ID:        fmt.Sprintf("mod_%d", time.Now().UnixNano()),
-			EventID:   event.ID,
-			ObjectID:  event.TargetID,
-			Decided:   event.Timestamp,
+			ID:       fmt.Sprintf("mod_%d", time.Now().UnixNano()),
+			EventID:  event.ID,
+			ObjectID: event.TargetID,
+			Decided:  event.Timestamp,
 		}
-		
+
 		if action, ok := data["action"].(string); ok {
 			// Convert string to ActionType
 			switch strings.ToLower(action) {
@@ -12163,7 +12162,7 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 				}
 			}
 		}
-		
+
 		if quoterID, ok := data["quoter_id"].(string); ok {
 			// Create minimal actor for quoter
 			update.Quoter = &activitypub.Actor{
@@ -12176,7 +12175,7 @@ func (r *subscriptionResolver) convertEventToQuoteActivity(event *streaming.Inte
 				Outbox:            fmt.Sprintf("%s/outbox", quoterID),
 			}
 		}
-		
+
 		if eventType, ok := data["type"].(string); ok {
 			update.Type = eventType
 		}
@@ -12202,7 +12201,7 @@ func (r *subscriptionResolver) convertEventToHashtagActivity(event *streaming.In
 		if tag, ok := data["hashtag"].(string); ok {
 			update.Hashtag = tag
 		}
-		
+
 		// Extract post if available
 		if postObj, ok := data["post"]; ok {
 			if postMap, ok := postObj.(map[string]interface{}); ok {
@@ -12213,7 +12212,7 @@ func (r *subscriptionResolver) convertEventToHashtagActivity(event *streaming.In
 				}
 			}
 		}
-		
+
 		// Extract author if available
 		if authorID, ok := data["author_id"].(string); ok {
 			update.Author = &activitypub.Actor{
@@ -12259,12 +12258,12 @@ func (r *subscriptionResolver) convertEventToModerationAlert(event *streaming.In
 				alert.Severity = model.ModerationSeverityCritical
 			}
 		}
-		
+
 		// Filter by severity if specified
 		if severity != nil && alert.Severity != *severity {
 			return nil
 		}
-		
+
 		if matchedText, ok := data["matched_text"].(string); ok {
 			alert.MatchedText = matchedText
 		}
@@ -12307,16 +12306,16 @@ func (r *subscriptionResolver) convertEventToModerationItem(event *streaming.Int
 				item.Priority = model.PriorityCritical
 			}
 		}
-		
+
 		// Filter by priority if specified
 		if priority != nil && item.Priority != *priority {
 			return nil
 		}
-		
+
 		if reportCount, ok := data["report_count"].(int); ok {
 			item.ReportCount = reportCount
 		}
-		
+
 		// Set severity based on priority
 		switch item.Priority {
 		case model.PriorityCritical:
@@ -12341,10 +12340,10 @@ func (r *subscriptionResolver) convertEventToModerationItem(event *streaming.Int
 func (r *actorResolver) calculateFreshReputation(ctx context.Context, obj *activitypub.Actor) (*model.Reputation, error) {
 	// Get basic metrics
 	postCount, followerCount := r.getActorMetrics(ctx, obj.PreferredUsername)
-	
+
 	// Calculate account age in days
 	accountAge := r.getAccountAge(obj)
-	
+
 	// Get trust score
 	trustScore, err := r.getTrustScore(ctx, obj.PreferredUsername)
 	if err != nil {
@@ -12353,13 +12352,13 @@ func (r *actorResolver) calculateFreshReputation(ctx context.Context, obj *activ
 
 	// Calculate activity score based on posts and followers
 	activityScore := r.calculateActivityScore(postCount, followerCount, accountAge)
-	
+
 	// Get moderation score based on history
 	moderationScore := r.getModerationScore(ctx, obj.PreferredUsername)
-	
+
 	// Get community score based on interactions and vouches
 	communityScore := r.getCommunityScore(ctx, obj.PreferredUsername)
-	
+
 	// Calculate total score (weighted average)
 	totalScore := r.calculateTotalScore(trustScore, activityScore, moderationScore, communityScore)
 
@@ -12439,7 +12438,7 @@ func (r *actorResolver) buildReputationEvidence(ctx context.Context, obj *activi
 		accountAge = r.getAccountAge(obj)
 		vouchCount = r.getVouchCount(ctx, obj.PreferredUsername)
 		trustingActors = r.getTrustingActorsCount(ctx, obj.PreferredUsername)
-		
+
 		trustScore, err := r.getTrustScore(ctx, obj.PreferredUsername)
 		if err != nil {
 			averageTrustScore = 0.5
@@ -12513,8 +12512,8 @@ func (r *actorResolver) calculateActivityScore(posts, followers, accountAge int)
 	}
 
 	// Activity score (0.0 to 1.0)
-	activityScore := (postsPerDay/5.0*0.6) + (followersPerDay/10.0*0.4)
-	
+	activityScore := (postsPerDay / 5.0 * 0.6) + (followersPerDay / 10.0 * 0.4)
+
 	if activityScore > 1.0 {
 		activityScore = 1.0
 	}
@@ -12538,13 +12537,13 @@ func (r *actorResolver) getModerationScore(ctx context.Context, username string)
 	totalPenalty := 0.0
 	for _, event := range events {
 		penalty := r.calculateEventPenalty(event)
-		
+
 		// Reduce penalty over time (events older than 30 days have less impact)
 		daysSince := time.Since(event.Created).Hours() / 24
 		if daysSince > 30 {
 			penalty *= (1.0 - minFloat(daysSince/365, 0.8)) // Reduce by up to 80% over a year
 		}
-		
+
 		totalPenalty += penalty
 	}
 
@@ -12556,7 +12555,7 @@ func (r *actorResolver) getModerationScore(ctx context.Context, username string)
 // calculateEventPenalty calculates penalty for a moderation event
 func (r *actorResolver) calculateEventPenalty(event *storage.ModerationEvent) float64 {
 	basePenalty := 0.1
-	
+
 	// Adjust based on severity
 	switch event.Severity {
 	case SeverityLow, "1":
@@ -12645,8 +12644,7 @@ func (r *actorResolver) extractInstance(actorID string) string {
 	return "unknown"
 }
 
-
-// maxFloat returns the maximum of two float64 values  
+// maxFloat returns the maximum of two float64 values
 func maxFloat(a, b float64) float64 {
 	if a > b {
 		return a

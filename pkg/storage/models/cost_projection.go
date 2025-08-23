@@ -16,7 +16,7 @@ type CostProjection struct {
 	CurrentCost     float64      `json:"current_cost"`
 	ProjectedCost   float64      `json:"projected_cost"`
 	Variance        float64      `json:"variance"`
-	TopDrivers      []CostDriver `json:"top_drivers"`
+	TopDrivers      []Driver `json:"top_drivers"`
 	Recommendations []string     `json:"recommendations"`
 
 	// Additional metadata
@@ -41,7 +41,7 @@ func NewCostProjection(period string) *CostProjection {
 		Period:          period,
 		Timestamp:       now,
 		CalculatedAt:    now,
-		TopDrivers:      []CostDriver{},
+		TopDrivers:      []Driver{},
 		Recommendations: []string{},
 	}
 	projection.UpdateKeys()
@@ -76,7 +76,7 @@ func (c *CostProjection) CalculateVariance() {
 }
 
 // AddDriver adds a cost driver and sorts by cost
-func (c *CostProjection) AddDriver(driver CostDriver) {
+func (c *CostProjection) AddDriver(driver Driver) {
 	c.TopDrivers = append(c.TopDrivers, driver)
 
 	// Sort by cost descending and keep top 10

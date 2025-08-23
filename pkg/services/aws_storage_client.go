@@ -3,8 +3,8 @@ package services
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -34,19 +35,25 @@ func NewAWSS3StorageClient(ctx context.Context, logger *zap.Logger) (*AWSS3Stora
 		logger = zap.NewNop()
 	}
 
+	// Get configuration from centralized config
+	appCfg := appconfig.Get()
+	
 	// Check for bucket name first - if not set, we can't function
-	bucketName := os.Getenv("S3_MEDIA_BUCKET")
+	bucketName := appCfg.S3MediaBucket
+	if bucketName == "" {
+		bucketName = appCfg.MediaBucketName // Fallback to alternative field
+	}
 	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
-		return nil, fmt.Errorf("S3_MEDIA_BUCKET environment variable is required")
+		return nil, ErrS3BucketConfigRequired
 	}
 
 	// Load AWS configuration with retry and region settings
 	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(os.Getenv("AWS_REGION")),
+		config.WithRegion(appCfg.Region),
 		config.WithRetryMaxAttempts(3),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, errors.Join(ErrAWSConfigLoadFailed, err)
 	}
 
 	client := s3.NewFromConfig(cfg)
@@ -59,7 +66,10 @@ func NewAWSS3StorageClient(ctx context.Context, logger *zap.Logger) (*AWSS3Stora
 		Bucket: aws.String(bucketName),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to access S3 bucket %s: %w", bucketName, err)
+		logger.Error("failed to access S3 bucket",
+			zap.String("bucket", bucketName),
+			zap.Error(err))
+		return nil, errors.Join(ErrS3BucketAccessFailed, err)
 	}
 
 	uploader := manager.NewUploader(client, func(u *manager.Uploader) {
@@ -100,7 +110,7 @@ func (s *AWSS3StorageClient) GeneratePresignedURL(ctx context.Context, key strin
 			zap.String("key", key),
 			zap.Duration("expiry", expiry),
 			zap.Error(err))
-		return "", fmt.Errorf("failed to create presigned URL: %w", err)
+		return "", errors.Join(ErrPresignedURLCreationFailed, err)
 	}
 
 	s.logger.Debug("generated presigned URL",
@@ -117,7 +127,7 @@ func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []
 		return err
 	}
 	if err := common.ValidateSliceNotEmpty("data", data); err != nil {
-		return fmt.Errorf("cannot upload empty data")
+		return ErrCannotUploadEmptyData
 	}
 
 	// Add timeout to the context if not already present
@@ -157,7 +167,7 @@ func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []
 			zap.String("key", key),
 			zap.Int("size", len(data)),
 			zap.Error(err))
-		return fmt.Errorf("failed to upload file to S3: %w", err)
+		return errors.Join(ErrS3UploadFailed, err)
 	}
 
 	s.logger.Info("file uploaded successfully to S3",
@@ -199,7 +209,7 @@ func (s *AWSS3StorageClient) GetFile(ctx context.Context, key string) ([]byte, e
 			zap.String("bucket", s.bucketName),
 			zap.String("key", key),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to download file from S3: %w", err)
+		return nil, errors.Join(ErrS3DownloadFailed, err)
 	}
 
 	if numBytes == 0 {

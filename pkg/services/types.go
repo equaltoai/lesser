@@ -7,12 +7,14 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // ServiceConfig holds configuration for all services
 type ServiceConfig struct {
 	BaseURL   string
 	JWTSecret string
+	Config    *config.Config // Add reference to full config
 }
 
 // ServiceDependencies provides access to repositories and external services

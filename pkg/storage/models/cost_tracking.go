@@ -144,6 +144,39 @@ func (DynamoDBCostAggregation) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (ct *DynamoDBCostRecord) GetPK() string {
+	return ct.PK
+}
+
+// GetSK returns the sort key
+func (ct *DynamoDBCostRecord) GetSK() string {
+	return ct.SK
+}
+
+// UpdateKeys sets up all the keys for the record
+func (ct *DynamoDBCostRecord) UpdateKeys() error {
+	// Generate ID if not provided
+	if strings.TrimSpace(ct.ID) == "" {
+		ct.ID = uuid.New().String()
+	}
+
+	// Set timestamp if not provided
+	if ct.Timestamp.IsZero() {
+		ct.Timestamp = time.Now()
+	}
+
+	// Set up primary key
+	ct.PK = fmt.Sprintf("cost#%s", ct.OperationType)
+	timestamp := ct.Timestamp.Format("20060102150405")
+	ct.SK = fmt.Sprintf("ts#%s#%s", timestamp, ct.ID)
+
+	// Set up GSI keys
+	ct.setupGSIKeys()
+
+	return nil
+}
+
 // BeforeCreate sets up the model before creation
 func (ct *DynamoDBCostRecord) BeforeCreate() error {
 	now := time.Now()
@@ -170,13 +203,10 @@ func (ct *DynamoDBCostRecord) BeforeCreate() error {
 	}
 	ct.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	ct.PK = fmt.Sprintf("cost#%s", ct.OperationType)
-	timestamp := ct.Timestamp.Format("20060102150405")
-	ct.SK = fmt.Sprintf("ts#%s#%s", timestamp, ct.ID)
-
-	// Set up GSI keys
-	ct.setupGSIKeys()
+	// Update keys using the new method
+	if err := ct.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return ct.Validate()
 }
@@ -219,12 +249,30 @@ func (ct *DynamoDBCostRecord) Validate() error {
 		return err
 	}
 	if !isValidOperationType(ct.OperationType) {
-		return fmt.Errorf("invalid operation type: %s", ct.OperationType)
+		return fmt.Errorf("%w: %s", ErrInvalidOperationType, ct.OperationType)
 	}
 	if ct.Period != "" && !isValidPeriod(ct.Period) {
-		return fmt.Errorf("invalid period: %s", ct.Period)
+		return fmt.Errorf("%w: %s", ErrInvalidCostPeriod, ct.Period)
 	}
 
+	return nil
+}
+
+// GetPK returns the partition key
+func (act *DynamoDBCostAggregation) GetPK() string {
+	return act.PK
+}
+
+// GetSK returns the sort key
+func (act *DynamoDBCostAggregation) GetSK() string {
+	return act.SK
+}
+
+// UpdateKeys sets up all the keys for the aggregation record
+func (act *DynamoDBCostAggregation) UpdateKeys() error {
+	// Set up primary key
+	act.PK = fmt.Sprintf("cost_agg#%s#%s", act.Period, act.OperationType)
+	act.SK = fmt.Sprintf("window#%s", act.WindowStart.Format(time.RFC3339))
 	return nil
 }
 
@@ -249,9 +297,10 @@ func (act *DynamoDBCostAggregation) BeforeCreate() error {
 	}
 	act.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	act.PK = fmt.Sprintf("cost_agg#%s#%s", act.Period, act.OperationType)
-	act.SK = fmt.Sprintf("window#%s", act.WindowStart.Format(time.RFC3339))
+	// Update keys using the new method
+	if err := act.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return act.Validate()
 }
@@ -278,13 +327,13 @@ func (act *DynamoDBCostAggregation) Validate() error {
 		return err
 	}
 	if act.WindowStart.IsZero() {
-		return fmt.Errorf("WindowStart is required")
+		return ErrCostWindowStartRequired
 	}
 	if act.WindowEnd.IsZero() {
-		return fmt.Errorf("WindowEnd is required")
+		return ErrCostWindowEndRequired
 	}
 	if act.WindowEnd.Before(act.WindowStart) {
-		return fmt.Errorf("WindowEnd must be after WindowStart")
+		return ErrCostWindowEndBeforeStart
 	}
 
 	return nil
@@ -331,6 +380,7 @@ func isValidOperationType(opType string) bool {
 	}
 	return validTypes[opType]
 }
+
 
 // DynamoDBCostRecordBuilder helps create cost tracking records
 type DynamoDBCostRecordBuilder struct {

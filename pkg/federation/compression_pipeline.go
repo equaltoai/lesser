@@ -5,7 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -36,15 +36,24 @@ func (c *CompressionPipeline) CompressOldData(ctx context.Context) error {
 	// Level 1: Compress 24h old 5-minute data (GZIP_JSON)
 	cutoff24h := now.Add(-24 * time.Hour)
 	if err := c.compressTimeSeriesData(ctx, "5min", cutoff24h, "GZIP_JSON"); err != nil {
-		c.logger.Error("Failed to compress 24h old data", zap.Error(err))
-		return fmt.Errorf("failed to compress 24h old data: %w", err)
+		c.logger.Error("Failed to compress 24h old data",
+			zap.String("period", "5min"),
+			zap.String("compression_method", "GZIP_JSON"),
+			zap.Time("cutoff", cutoff24h),
+			zap.String("operation", "compress_24h_old"),
+			zap.Error(err))
+		return errors.Join(ErrCompressionFailed, err)
 	}
 
 	// Level 2: Archive 7-day old data to S3 (would integrate with S3 in production)
 	cutoff7d := now.Add(-7 * 24 * time.Hour)
 	if err := c.archiveToS3(ctx, cutoff7d); err != nil {
-		c.logger.Error("Failed to archive 7d old data", zap.Error(err))
-		return fmt.Errorf("failed to archive 7d old data: %w", err)
+		c.logger.Error("Failed to archive 7d old data",
+			zap.Time("cutoff", cutoff7d),
+			zap.String("operation", "archive_7d_old"),
+			zap.String("storage_target", "s3"),
+			zap.Error(err))
+		return errors.Join(ErrDataArchivalFailed, err)
 	}
 
 	c.logger.Info("Compression pipeline completed",
@@ -63,7 +72,14 @@ func (c *CompressionPipeline) compressTimeSeriesData(ctx context.Context, period
 	// Get data by period across all domains
 	oldMetrics, err := c.federationRepo.GetDetailedMetricsByPeriod(ctx, period, startTime, endTime, 1000)
 	if err != nil {
-		return fmt.Errorf("failed to get old metrics: %w", err)
+		c.logger.Error("Failed to get old metrics",
+			zap.String("period", period),
+			zap.Time("start_time", startTime),
+			zap.Time("end_time", endTime),
+			zap.Int("limit", 1000),
+			zap.String("operation", "get_old_metrics"),
+			zap.Error(err))
+		return errors.Join(ErrOldMetricsRetrievalFailed, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("oldMetrics", oldMetrics); err != nil {
@@ -124,7 +140,12 @@ func (c *CompressionPipeline) gzipCompress(metric *models.FederationAnalyticsTim
 	// Convert to JSON
 	jsonData, err := json.Marshal(metric)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal metric: %w", err)
+		c.logger.Error("Failed to marshal metric",
+			zap.String("domain", metric.Domain),
+			zap.Time("timestamp", metric.Timestamp),
+			zap.String("operation", "marshal_for_compression"),
+			zap.Error(err))
+		return nil, errors.Join(ErrMetricMarshalFailed, err)
 	}
 
 	// Compress with GZIP
@@ -132,11 +153,22 @@ func (c *CompressionPipeline) gzipCompress(metric *models.FederationAnalyticsTim
 	gzWriter := gzip.NewWriter(&buf)
 
 	if _, err := gzWriter.Write(jsonData); err != nil {
-		return nil, fmt.Errorf("failed to write gzip data: %w", err)
+		c.logger.Error("Failed to write gzip data",
+			zap.String("domain", metric.Domain),
+			zap.Int("data_size", len(jsonData)),
+			zap.String("compression_algorithm", "gzip"),
+			zap.String("operation", "gzip_write"),
+			zap.Error(err))
+		return nil, errors.Join(ErrGzipWriteFailed, err)
 	}
 
 	if err := gzWriter.Close(); err != nil {
-		return nil, fmt.Errorf("failed to close gzip writer: %w", err)
+		c.logger.Error("Failed to close gzip writer",
+			zap.String("domain", metric.Domain),
+			zap.String("compression_algorithm", "gzip"),
+			zap.String("operation", "gzip_close"),
+			zap.Error(err))
+		return nil, errors.Join(ErrGzipCloseFailed, err)
 	}
 
 	compressionRatio := float64(len(jsonData)) / float64(buf.Len())

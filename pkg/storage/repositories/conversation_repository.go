@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -18,19 +19,31 @@ import (
 
 // ConversationRepository handles conversation-related database operations
 type ConversationRepository struct {
-	db     core.DB
+	*BaseRepository[*models.Conversation]
 	logger *zap.Logger
 }
 
 // NewConversationRepository creates a new conversation repository
 func NewConversationRepository(db core.DB, logger *zap.Logger) *ConversationRepository {
 	return &ConversationRepository{
-		db:     db,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Conversation](
+			db, "Conversations", logger, nil, "conversation",
+		),
 		logger: logger,
 	}
 }
 
-// CreateConversation creates a new conversation with participants
+// NewConversationRepositoryWithCostTracking creates a new conversation repository with cost tracking
+func NewConversationRepositoryWithCostTracking(db core.DB, logger *zap.Logger, costService *cost.TrackingService) *ConversationRepository {
+	return &ConversationRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Conversation](
+			db, "Conversations", logger, costService, "conversation",
+		),
+		logger: logger,
+	}
+}
+
+// CreateConversation creates a new conversation with participants (KEEP - Complex conversation business logic)
 func (r *ConversationRepository) CreateConversation(ctx context.Context, conversation *models.Conversation, participants []string) error {
 	log := r.logger.With(zap.String("conversation_id", conversation.ID))
 
@@ -54,16 +67,16 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 
 	if err := conversation.BeforeCreate(); err != nil {
 		log.Error("failed to prepare conversation", zap.Error(err))
-		return fmt.Errorf("failed to prepare conversation: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	// Create main conversation record
-	if err := r.db.Model(conversation).WithContext(ctx).Create(); err != nil {
+	// Create main conversation record using BaseRepository
+	if err := r.Create(ctx, conversation); err != nil {
 		log.Error("failed to create conversation", zap.Error(err))
-		return fmt.Errorf("failed to create conversation: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	// Create participant records for each participant
+	// Create participant records for each participant (KEEP - Conversation threading logic)
 	for _, participantID := range conversation.Participants {
 		participantRecord := &models.ConversationParticipantRecord{
 			Conversation: conversation,
@@ -76,7 +89,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 			continue
 		}
 
-		if err := r.db.Model(participantRecord).WithContext(ctx).Create(); err != nil {
+		if err := r.GetDB().Model(participantRecord).WithContext(ctx).Create(); err != nil {
 			log.Error("failed to create participant record",
 				zap.String("participant_id", participantID),
 				zap.Error(err))
@@ -84,7 +97,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		}
 	}
 
-	// Create participant lookup key if needed (for GetConversationByParticipants)
+	// Create participant lookup key if needed (for GetConversationByParticipants) - KEEP - Conversation search logic
 	sortedParticipants := make([]string, len(conversation.Participants))
 	copy(sortedParticipants, conversation.Participants)
 	sort.Strings(sortedParticipants)
@@ -97,7 +110,7 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		ConversationID: conversation.ID,
 	}
 
-	if err := r.db.Model(lookupKey).WithContext(ctx).Create(); err != nil {
+	if err := r.GetDB().Model(lookupKey).WithContext(ctx).Create(); err != nil {
 		log.Warn("failed to create participant lookup key", zap.Error(err))
 		// Don't fail the operation if lookup key creation fails
 	}
@@ -106,35 +119,32 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 	return nil
 }
 
-// GetConversation retrieves a conversation by ID
+// GetConversation retrieves a conversation by ID (REPLACE with BaseRepository)
 func (r *ConversationRepository) GetConversation(ctx context.Context, id string) (*models.Conversation, error) {
 	log := r.logger.With(zap.String("conversation_id", id))
 
 	var conv models.Conversation
-	err := r.db.Model(&models.Conversation{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", id)).
-		Where("SK", "=", "METADATA").
-		First(&conv)
+	err := r.Get(ctx, fmt.Sprintf("CONVERSATION#%s", id), "METADATA", &conv)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("conversation not found")
+		if strings.Contains(err.Error(), "not found") {
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, id)
 		}
 		log.Error("failed to get conversation", zap.Error(err))
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityConversation, id)
 	}
 
 	return &conv, nil
 }
 
-// UpdateConversation updates a conversation
+// UpdateConversation updates a conversation (KEEP - Complex conversation update logic)
 func (r *ConversationRepository) UpdateConversation(ctx context.Context, conversation *models.Conversation) error {
 	// For updating, we recreate all records (matching legacy behavior)
 	// This ensures participant records are updated with new timestamps
 	return r.CreateConversation(ctx, conversation, conversation.Participants)
 }
 
-// DeleteConversation deletes a conversation by ID
+// DeleteConversation deletes a conversation by ID (KEEP - Complex cleanup logic)
 func (r *ConversationRepository) DeleteConversation(ctx context.Context, id string) error {
 	log := r.logger.With(zap.String("conversation_id", id))
 
@@ -145,21 +155,18 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 		// Continue with deletion even if we can't get the conversation
 	}
 
-	// Delete main record
-	err = r.db.Model(&models.Conversation{}).WithContext(ctx).
-		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", id)).
-		Where("SK", "=", "METADATA").
-		Delete()
+	// Delete main record using BaseRepository
+	err = r.Delete(ctx, fmt.Sprintf("CONVERSATION#%s", id), "METADATA")
 	if err != nil {
 		log.Error("failed to delete conversation", zap.Error(err))
-		return fmt.Errorf("failed to delete conversation: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityConversation, id)
 	}
 
-	// Delete participant records
+	// Delete participant records (KEEP - Conversation cleanup logic)
 	if conv != nil {
 		for _, participantID := range conv.Participants {
 			// Delete participant record
-			err = r.db.Model(&models.ConversationParticipantRecord{}).WithContext(ctx).
+			err = r.GetDB().Model(&models.ConversationParticipantRecord{}).WithContext(ctx).
 				Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)).
 				Where("SK", "=", fmt.Sprintf("%s#%s", conv.UpdatedAt.Format(time.RFC3339), id)).
 				Delete()
@@ -172,15 +179,15 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 		}
 	}
 
-	// Delete all status records for this conversation
+	// Delete all status records for this conversation (KEEP - Conversation cleanup logic)
 	var statuses []models.ConversationStatus
-	err = r.db.Model(&models.ConversationStatus{}).WithContext(ctx).
+	err = r.GetDB().Model(&models.ConversationStatus{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", id)).
 		Scan(&statuses)
 
 	if err == nil {
 		for _, status := range statuses {
-			err := r.db.Model(&status).WithContext(ctx).Delete()
+			err := r.GetDB().Model(&status).WithContext(ctx).Delete()
 			if err != nil {
 				log.Warn("failed to delete status record", zap.Error(err))
 			}
@@ -190,7 +197,7 @@ func (r *ConversationRepository) DeleteConversation(ctx context.Context, id stri
 	return nil
 }
 
-// GetUserConversations retrieves conversations for a user with pagination
+// GetUserConversations retrieves conversations for a user with pagination (KEEP - Complex pagination logic)
 func (r *ConversationRepository) GetUserConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(
 		zap.String("user_id", userID),
@@ -198,7 +205,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 		zap.String("cursor", opts.Cursor),
 	)
 
-	query := r.db.WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.ConversationParticipantRecord{}).
 		Where("PK", "=", fmt.Sprintf("USER_CONVERSATIONS#%s", userID))
 
 	// Add cursor condition if provided
@@ -213,7 +220,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 	err := query.Scan(&records)
 	if err != nil {
 		log.Error("failed to query user conversations", zap.Error(err))
-		return nil, fmt.Errorf("failed to query user conversations: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "user conversations")
 	}
 
 	conversations := make([]*models.Conversation, 0, len(records))
@@ -242,7 +249,7 @@ func (r *ConversationRepository) GetUserConversations(ctx context.Context, userI
 	}, nil
 }
 
-// GetConversationByParticipants finds a conversation with exact participants
+// GetConversationByParticipants finds a conversation with exact participants (KEEP - Complex participant search logic)
 func (r *ConversationRepository) GetConversationByParticipants(ctx context.Context, participants []string) (*models.Conversation, error) {
 	log := r.logger.With(zap.Any("participants", participants))
 
@@ -263,7 +270,7 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 
 	// Query by participant key using GSI1
 	var record models.ConversationParticipantKey
-	err := r.db.Model(&models.ConversationParticipantKey{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationParticipantKey{}).WithContext(ctx).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("CONVERSATION_PARTICIPANTS#%s", participantKey)).
 		Limit(1).
@@ -271,17 +278,17 @@ func (r *ConversationRepository) GetConversationByParticipants(ctx context.Conte
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("conversation not found")
+			return nil, ErrorHandler.HandleGetError(err, EntityConversation, "participants")
 		}
 		log.Error("failed to query conversation by participants", zap.Error(err))
-		return nil, fmt.Errorf("failed to query conversation: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "participants")
 	}
 
 	// Get the full conversation
 	return r.GetConversation(ctx, record.ConversationID)
 }
 
-// MarkConversationRead marks a conversation as read for a user
+// MarkConversationRead marks a conversation as read for a user (KEEP - Read receipt business logic)
 func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conversationID, username string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -297,19 +304,19 @@ func (r *ConversationRepository) MarkConversationRead(ctx context.Context, conve
 
 	if err := status.BeforeCreate(); err != nil {
 		log.Error("failed to prepare status", zap.Error(err))
-		return fmt.Errorf("failed to prepare status: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
 	}
 
-	err := r.db.Model(status).WithContext(ctx).Create()
+	err := r.GetDB().Model(status).WithContext(ctx).Create()
 	if err != nil {
 		log.Error("failed to mark conversation as read", zap.Error(err))
-		return fmt.Errorf("failed to mark conversation as read: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
 	}
 
 	return nil
 }
 
-// GetUnreadConversationCount gets the count of unread conversations for a user
+// GetUnreadConversationCount gets the count of unread conversations for a user (KEEP - Complex count logic)
 func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context, username string) (int, error) {
 	log := r.logger.With(zap.String("username", username))
 
@@ -324,7 +331,7 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 	for _, conv := range result.Items {
 		// Check if conversation has unread status
 		var status models.ConversationStatus
-		err := r.db.WithContext(ctx).Model(&models.ConversationStatus{}).
+		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
 			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
 			Where("SK", "=", fmt.Sprintf("USER#%s", username)).
 			First(&status)
@@ -338,7 +345,7 @@ func (r *ConversationRepository) GetUnreadConversationCount(ctx context.Context,
 	return unreadCount, nil
 }
 
-// AddStatusToConversation adds a status/message to a conversation
+// AddStatusToConversation adds a status/message to a conversation (KEEP - Complex message threading logic)
 func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, conversationID, statusID, senderUsername string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -356,13 +363,13 @@ func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, co
 
 	if err := message.BeforeCreate(); err != nil {
 		log.Error("failed to prepare conversation message", zap.Error(err))
-		return fmt.Errorf("failed to prepare conversation message: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
 	}
 
 	// Create the message record
-	if err := r.db.Model(message).WithContext(ctx).Create(); err != nil {
+	if err := r.GetDB().Model(message).WithContext(ctx).Create(); err != nil {
 		log.Error("failed to create conversation message", zap.Error(err))
-		return fmt.Errorf("failed to create conversation message: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
 	}
 
 	// Get conversation to update count and last message info
@@ -385,7 +392,7 @@ func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, co
 		}
 	}
 
-	// Mark conversation as unread for all participants except sender
+	// Mark conversation as unread for all participants except sender (KEEP - Notification logic)
 	if conv != nil {
 		for _, participantID := range conv.Participants {
 			if participantID != senderUsername {
@@ -402,7 +409,7 @@ func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, co
 	return nil
 }
 
-// GetConversationStatuses retrieves messages in a conversation with pagination
+// GetConversationStatuses retrieves messages in a conversation with pagination (KEEP - Complex message retrieval)
 func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, conversationID string, limit int, cursor string) ([]*storage.ConversationStatus, string, error) {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -415,7 +422,7 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 	// STATUS# records under CONVERSATION# keys. This implementation follows the
 	// instructions but may need adjustment based on actual usage.
 
-	query := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+	query := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
 
 	if cursor != "" {
@@ -428,7 +435,7 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 	err := query.Scan(&messages)
 	if err != nil {
 		log.Error("failed to query conversation statuses", zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query conversation statuses: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "statuses")
 	}
 
 	// Convert to storage.ConversationStatus
@@ -458,7 +465,7 @@ func (r *ConversationRepository) GetConversationStatuses(ctx context.Context, co
 	return statuses, nextCursor, nil
 }
 
-// RemoveStatusFromConversation removes a status from a conversation
+// RemoveStatusFromConversation removes a status from a conversation (KEEP - Complex message removal logic)
 func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Context, conversationID, statusID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -467,21 +474,21 @@ func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Contex
 
 	// Find and delete the message record
 	var messages []models.ConversationMessage
-	err := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
 		Scan(&messages)
 
 	if err != nil {
 		log.Error("failed to query messages for deletion", zap.Error(err))
-		return fmt.Errorf("failed to query messages: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityConversation, "messages")
 	}
 
 	var messageDeleted bool
 	for _, msg := range messages {
 		if msg.StatusID == statusID {
-			if err := r.db.Model(&msg).WithContext(ctx).Delete(); err != nil {
+			if err := r.GetDB().Model(&msg).WithContext(ctx).Delete(); err != nil {
 				log.Error("failed to delete message", zap.Error(err))
-				return fmt.Errorf("failed to delete message: %w", err)
+				return ErrorHandler.HandleDeleteError(err, EntityConversation, statusID)
 			}
 			messageDeleted = true
 			log.Debug("deleted conversation message")
@@ -512,7 +519,7 @@ func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Contex
 	if conv.LastStatusID == statusID {
 		// Get remaining messages to find the most recent one
 		var remainingMessages []models.ConversationMessage
-		err = r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+		err = r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 			Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
 			Limit(1). // Get the most recent
 			Scan(&remainingMessages)
@@ -538,13 +545,13 @@ func (r *ConversationRepository) RemoveStatusFromConversation(ctx context.Contex
 	return nil
 }
 
-// MarkStatusRead marks a specific status as read by a user
+// MarkStatusRead marks a specific status as read by a user (KEEP - Read receipt logic)
 func (r *ConversationRepository) MarkStatusRead(ctx context.Context, conversationID, _, username string) error {
 	// Mark the entire conversation as read (matching typical behavior)
 	return r.MarkConversationRead(ctx, conversationID, username)
 }
 
-// GetUnreadStatusCount gets the count of unread statuses in a conversation for a user
+// GetUnreadStatusCount gets the count of unread statuses in a conversation for a user (KEEP - Complex counting logic)
 func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conversationID, username string) (int, error) {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -553,7 +560,7 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 
 	// Get the conversation status to find last read time
 	var status models.ConversationStatus
-	err := r.db.Model(&models.ConversationStatus{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationStatus{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conversationID)).
 		Where("SK", "=", fmt.Sprintf("USER#%s", username)).
 		First(&status)
@@ -565,7 +572,7 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 		lastReadTime = time.Time{} // Zero time
 	} else if err != nil {
 		log.Error("failed to get conversation status", zap.Error(err))
-		return 0, fmt.Errorf("failed to get conversation status: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, EntityConversation, conversationID)
 	} else {
 		if !status.Unread {
 			// Conversation is marked as read
@@ -578,13 +585,13 @@ func (r *ConversationRepository) GetUnreadStatusCount(ctx context.Context, conve
 	return r.countMessagesAfterTime(ctx, conversationID, lastReadTime)
 }
 
-// LeaveConversation removes a participant from a conversation
+// LeaveConversation removes a participant from a conversation (KEEP - Complex participant management)
 func (r *ConversationRepository) LeaveConversation(ctx context.Context, conversationID, username string) error {
 	// This delegates to RemoveParticipant
 	return r.RemoveParticipant(ctx, conversationID, username)
 }
 
-// AddParticipant adds a participant to a conversation
+// AddParticipant adds a participant to a conversation (KEEP - Complex participant management)
 func (r *ConversationRepository) AddParticipant(ctx context.Context, conversationID, participantID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -613,7 +620,7 @@ func (r *ConversationRepository) AddParticipant(ctx context.Context, conversatio
 	return r.CreateConversation(ctx, conv, conv.Participants)
 }
 
-// GetConversationParticipants retrieves the list of participants in a conversation
+// GetConversationParticipants retrieves the list of participants in a conversation (KEEP - Participant retrieval logic)
 func (r *ConversationRepository) GetConversationParticipants(ctx context.Context, conversationID string) ([]string, error) {
 	conv, err := r.GetConversation(ctx, conversationID)
 	if err != nil {
@@ -622,7 +629,7 @@ func (r *ConversationRepository) GetConversationParticipants(ctx context.Context
 	return conv.Participants, nil
 }
 
-// UpdateConversationLastStatus updates the last status in a conversation
+// UpdateConversationLastStatus updates the last status in a conversation (KEEP - Conversation state update logic)
 func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Context, id, lastStatusID string) error {
 	// Get current conversation
 	conv, err := r.GetConversation(ctx, id)
@@ -638,7 +645,7 @@ func (r *ConversationRepository) UpdateConversationLastStatus(ctx context.Contex
 	return r.UpdateConversation(ctx, conv)
 }
 
-// RemoveParticipant removes a participant from a conversation
+// RemoveParticipant removes a participant from a conversation (KEEP - Complex participant management)
 func (r *ConversationRepository) RemoveParticipant(ctx context.Context, conversationID, participantID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -671,7 +678,7 @@ func (r *ConversationRepository) RemoveParticipant(ctx context.Context, conversa
 	return r.CreateConversation(ctx, conv, conv.Participants)
 }
 
-// CreateConversationMute creates a new conversation mute
+// CreateConversationMute creates a new conversation mute (KEEP - Mute business logic)
 func (r *ConversationRepository) CreateConversationMute(ctx context.Context, mute *storage.ConversationMute) error {
 	model := &models.ConversationMute{
 		Username:       mute.Username,
@@ -681,34 +688,34 @@ func (r *ConversationRepository) CreateConversationMute(ctx context.Context, mut
 	}
 
 	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, mute.ConversationID)
 	}
 
-	if err := r.db.Model(model).WithContext(ctx).Create(); err != nil {
-		return fmt.Errorf("failed to create conversation mute: %w", err)
+	if err := r.GetDB().Model(model).WithContext(ctx).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityConversation, model.ConversationID)
 	}
 
 	return nil
 }
 
-// DeleteConversationMute removes a conversation mute
+// DeleteConversationMute removes a conversation mute (REPLACE with BaseRepository pattern)
 func (r *ConversationRepository) DeleteConversationMute(ctx context.Context, username, conversationID string) error {
-	err := r.db.Model(&models.ConversationMute{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("CONVERSATION_MUTE#%s", conversationID)).
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete conversation mute: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityConversation, conversationID)
 	}
 
 	return nil
 }
 
-// IsConversationMuted checks if a conversation is muted by a user
+// IsConversationMuted checks if a conversation is muted by a user (KEEP - Mute check logic with expiration)
 func (r *ConversationRepository) IsConversationMuted(ctx context.Context, username, conversationID string) (bool, error) {
 	var mute models.ConversationMute
-	err := r.db.Model(&models.ConversationMute{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Where("SK", "=", fmt.Sprintf("CONVERSATION_MUTE#%s", conversationID)).
 		First(&mute)
@@ -717,7 +724,7 @@ func (r *ConversationRepository) IsConversationMuted(ctx context.Context, userna
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check conversation mute: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityConversation, conversationID)
 	}
 
 	// Check if mute has expired
@@ -730,15 +737,15 @@ func (r *ConversationRepository) IsConversationMuted(ctx context.Context, userna
 	return true, nil
 }
 
-// GetMutedConversations retrieves all muted conversations for a user
+// GetMutedConversations retrieves all muted conversations for a user (KEEP - Complex mute retrieval with expiration cleanup)
 func (r *ConversationRepository) GetMutedConversations(ctx context.Context, username string) ([]string, error) {
 	var mutes []models.ConversationMute
-	err := r.db.Model(&models.ConversationMute{}).WithContext(ctx).
+	err := r.GetDB().Model(&models.ConversationMute{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
 		Scan(&mutes)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query muted conversations: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "muted")
 	}
 
 	conversationIDs := make([]string, 0, len(mutes))
@@ -757,7 +764,7 @@ func (r *ConversationRepository) GetMutedConversations(ctx context.Context, user
 	return conversationIDs, nil
 }
 
-// MarkConversationUnread marks a conversation as unread for a user
+// MarkConversationUnread marks a conversation as unread for a user (KEEP - Unread notification logic)
 func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, conversationID, userID string) error {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -773,19 +780,19 @@ func (r *ConversationRepository) MarkConversationUnread(ctx context.Context, con
 
 	if err := status.BeforeCreate(); err != nil {
 		log.Error("failed to prepare status", zap.Error(err))
-		return fmt.Errorf("failed to prepare status: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
 	}
 
-	err := r.db.Model(status).WithContext(ctx).Create()
+	err := r.GetDB().Model(status).WithContext(ctx).Create()
 	if err != nil {
 		log.Error("failed to mark conversation as unread", zap.Error(err))
-		return fmt.Errorf("failed to mark conversation as unread: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityConversation, conversationID)
 	}
 
 	return nil
 }
 
-// GetUnreadConversations retrieves unread conversations for a user
+// GetUnreadConversations retrieves unread conversations for a user (KEEP - Complex filtering logic)
 func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(zap.String("user_id", userID))
 
@@ -800,7 +807,7 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 	for _, conv := range allResult.Items {
 		// Check if conversation has unread status
 		var status models.ConversationStatus
-		err := r.db.WithContext(ctx).Model(&models.ConversationStatus{}).
+		err := r.GetDB().WithContext(ctx).Model(&models.ConversationStatus{}).
 			Where("PK", "=", fmt.Sprintf("CONVERSATION_STATUS#%s", conv.ID)).
 			Where("SK", "=", fmt.Sprintf("USER#%s", userID)).
 			First(&status)
@@ -820,7 +827,7 @@ func (r *ConversationRepository) GetUnreadConversations(ctx context.Context, use
 	}, nil
 }
 
-// SearchConversations searches conversations for a user by query
+// SearchConversations searches conversations for a user by query (KEEP - Search logic with filtering)
 func (r *ConversationRepository) SearchConversations(ctx context.Context, userID, query string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Conversation], error) {
 	log := r.logger.With(
 		zap.String("user_id", userID),
@@ -858,7 +865,7 @@ func (r *ConversationRepository) SearchConversations(ctx context.Context, userID
 	}, nil
 }
 
-// GetConversationMessageCount gets the total number of messages in a conversation
+// GetConversationMessageCount gets the total number of messages in a conversation (KEEP - Complex counting with caching)
 func (r *ConversationRepository) GetConversationMessageCount(ctx context.Context, conversationID string) (int64, error) {
 	log := r.logger.With(zap.String("conversation_id", conversationID))
 
@@ -871,13 +878,13 @@ func (r *ConversationRepository) GetConversationMessageCount(ctx context.Context
 
 	// If no cached count, count messages directly
 	var messages []models.ConversationMessage
-	err = r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+	err = r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID)).
 		Scan(&messages)
 
 	if err != nil {
 		log.Error("failed to count conversation messages", zap.Error(err))
-		return 0, fmt.Errorf("failed to count conversation messages: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityConversation, "message count")
 	}
 
 	count := int64(len(messages))
@@ -895,7 +902,7 @@ func (r *ConversationRepository) GetConversationMessageCount(ctx context.Context
 	return count, nil
 }
 
-// GetUnreadMessageCount gets the count of unread messages for a user across all conversations
+// GetUnreadMessageCount gets the count of unread messages for a user across all conversations (KEEP - Complex aggregation logic)
 func (r *ConversationRepository) GetUnreadMessageCount(ctx context.Context, username string) (int64, error) {
 	log := r.logger.With(zap.String("username", username))
 
@@ -923,14 +930,14 @@ func (r *ConversationRepository) GetUnreadMessageCount(ctx context.Context, user
 	return totalUnreadCount, nil
 }
 
-// countMessagesAfterTime counts messages in a conversation after a specific time
+// countMessagesAfterTime counts messages in a conversation after a specific time (KEEP - Complex time-based counting)
 func (r *ConversationRepository) countMessagesAfterTime(ctx context.Context, conversationID string, afterTime time.Time) (int, error) {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
 		zap.Time("after_time", afterTime),
 	)
 
-	query := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+	query := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
 
 	// If afterTime is not zero, filter for messages after that time
@@ -944,7 +951,7 @@ func (r *ConversationRepository) countMessagesAfterTime(ctx context.Context, con
 	err := query.Scan(&messages)
 	if err != nil {
 		log.Error("failed to count messages after time", zap.Error(err))
-		return 0, fmt.Errorf("failed to count messages after time: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityConversation, "messages after time")
 	}
 
 	count := len(messages)
@@ -952,7 +959,7 @@ func (r *ConversationRepository) countMessagesAfterTime(ctx context.Context, con
 	return count, nil
 }
 
-// GetConversationMessagesByTimeRange gets messages in a conversation within a time range
+// GetConversationMessagesByTimeRange gets messages in a conversation within a time range (KEEP - Complex time range queries)
 func (r *ConversationRepository) GetConversationMessagesByTimeRange(ctx context.Context, conversationID string, startTime, endTime time.Time, limit int) ([]*models.ConversationMessage, error) {
 	log := r.logger.With(
 		zap.String("conversation_id", conversationID),
@@ -961,7 +968,7 @@ func (r *ConversationRepository) GetConversationMessagesByTimeRange(ctx context.
 		zap.Int("limit", limit),
 	)
 
-	query := r.db.Model(&models.ConversationMessage{}).WithContext(ctx).
+	query := r.GetDB().Model(&models.ConversationMessage{}).WithContext(ctx).
 		Where("PK", "=", fmt.Sprintf("CONVERSATION#%s", conversationID))
 
 	// Add time range filters using SK (STATUS#timestamp#statusID format)
@@ -982,7 +989,7 @@ func (r *ConversationRepository) GetConversationMessagesByTimeRange(ctx context.
 	err := query.Scan(&messages)
 	if err != nil {
 		log.Error("failed to get messages by time range", zap.Error(err))
-		return nil, fmt.Errorf("failed to get messages by time range: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "messages by time range")
 	}
 
 	// Convert to pointers
@@ -995,7 +1002,7 @@ func (r *ConversationRepository) GetConversationMessagesByTimeRange(ctx context.
 	return result, nil
 }
 
-// generateRandomString generates a random string of specified length
+// generateRandomString generates a random string of specified length (KEEP - Utility function)
 func (r *ConversationRepository) generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, length)

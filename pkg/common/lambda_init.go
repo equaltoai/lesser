@@ -17,11 +17,17 @@ import (
 type LambdaType string
 
 const (
+	// LambdaTypeAPI represents the API Lambda function type
 	LambdaTypeAPI         LambdaType = "api"
+	// LambdaTypeProcessor represents the processor Lambda function type
 	LambdaTypeProcessor   LambdaType = "processor"
+	// LambdaTypeMedia represents the media Lambda function type
 	LambdaTypeMedia       LambdaType = "media"
+	// LambdaTypeFederation represents the federation Lambda function type
 	LambdaTypeFederation  LambdaType = "federation"
+	// LambdaTypeAI represents the AI Lambda function type
 	LambdaTypeAI          LambdaType = "ai"
+	// LambdaTypeBasic represents the basic Lambda function type
 	LambdaTypeBasic       LambdaType = "basic"
 )
 
@@ -114,11 +120,11 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 	
 	// Apply feature flag defaults
 	if !lambdaConfig.EnableMetrics {
-		lambdaConfig.EnableMetrics = os.Getenv("DISABLE_METRICS") != "true"
+		lambdaConfig.EnableMetrics = !cfg.DisableMetrics
 	}
 	
 	if !lambdaConfig.EnableTracing {
-		lambdaConfig.EnableTracing = os.Getenv("XRAY_TRACING_ENABLED") != "false"
+		lambdaConfig.EnableTracing = cfg.XRayTracingEnabled
 	}
 	
 	if !lambdaConfig.EnableHealthCheck {
@@ -126,7 +132,7 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 	}
 	
 	if !lambdaConfig.EnableCostTracking {
-		lambdaConfig.EnableCostTracking = os.Getenv("DISABLE_COST_TRACKING") != "true"
+		lambdaConfig.EnableCostTracking = !cfg.DisableCostTracking
 	}
 
 	logger.Info("initializing Lambda function",

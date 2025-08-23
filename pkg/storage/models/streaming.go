@@ -48,7 +48,7 @@ type StreamingPreferences struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (s *StreamingPreferences) UpdateKeys() {
+func (s *StreamingPreferences) UpdateKeys() error {
 	// Set primary keys
 	s.PK = fmt.Sprintf("STREAMING_PREFS#%s", s.Username)
 
@@ -61,18 +61,30 @@ func (s *StreamingPreferences) UpdateKeys() {
 		s.GSI2PK = fmt.Sprintf(KeyPatternDevice, s.DeviceID)
 		s.GSI2SK = fmt.Sprintf("STREAMING_PREFS#%s", s.Username)
 	}
+	
+	return nil
+}
+
+// GetPK returns the partition key
+func (s *StreamingPreferences) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key
+func (s *StreamingPreferences) GetSK() string {
+	return s.SK
 }
 
 // SetCurrentPreference sets this as the current preference for a user
 func (s *StreamingPreferences) SetCurrentPreference() {
 	s.SK = SKCurrent
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetVersionedPreference sets this as a versioned preference in history
 func (s *StreamingPreferences) SetVersionedPreference() {
 	s.SK = fmt.Sprintf("VERSION#%d#%s", s.Version, s.UpdatedAt.Format(time.RFC3339))
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Set TTL to 30 days for version history
 	s.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
@@ -82,13 +94,13 @@ func (s *StreamingPreferences) SetVersionedPreference() {
 func (s *StreamingPreferences) SetDevicePreference(deviceID string) {
 	s.DeviceID = deviceID
 	s.SK = fmt.Sprintf(KeyPatternDevice, deviceID)
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetBackupPreference sets this as a backup before migration
 func (s *StreamingPreferences) SetBackupPreference() {
 	s.SK = fmt.Sprintf("BACKUP#%s", time.Now().Format(time.RFC3339))
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Set TTL to 90 days for backups
 	s.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()

@@ -167,28 +167,28 @@ func (d *DLQMessage) setupGSIKeys() {
 // Validate performs validation on the DLQMessage using centralized validation
 func (d *DLQMessage) Validate() error {
 	if err := common.ValidateRequiredParam("ID", strings.TrimSpace(d.ID)); err != nil {
-		return fmt.Errorf("ID is required")
+		return ErrDLQIDRequired
 	}
 	if err := common.ValidateRequiredParam("OriginalMessageID", strings.TrimSpace(d.OriginalMessageID)); err != nil {
-		return fmt.Errorf("OriginalMessageID is required")
+		return ErrDLQOriginalMessageIDRequired
 	}
 	if err := common.ValidateRequiredParam("Service", strings.TrimSpace(d.Service)); err != nil {
-		return fmt.Errorf("service is required")
+		return ErrDLQServiceRequired
 	}
 	if err := common.ValidateRequiredParam("MessageBody", strings.TrimSpace(d.MessageBody)); err != nil {
-		return fmt.Errorf("MessageBody is required")
+		return ErrDLQMessageBodyRequired
 	}
 	if err := common.ValidateRequiredParam("ErrorType", strings.TrimSpace(d.ErrorType)); err != nil {
-		return fmt.Errorf("ErrorType is required")
+		return ErrDLQErrorTypeRequired
 	}
 	if err := common.ValidateRequiredParam("ErrorMessage", strings.TrimSpace(d.ErrorMessage)); err != nil {
-		return fmt.Errorf("ErrorMessage is required")
+		return ErrDLQErrorMessageRequired
 	}
 	if !isValidDLQStatus(d.Status) {
-		return fmt.Errorf("invalid status: %s", d.Status)
+		return fmt.Errorf("%w: %s", ErrDLQInvalidStatus, d.Status)
 	}
 	if !isValidPriority(d.Priority) {
-		return fmt.Errorf("invalid priority: %s", d.Priority)
+		return fmt.Errorf("%w: %s", ErrDLQInvalidPriority, d.Priority)
 	}
 
 	return nil
@@ -472,9 +472,20 @@ func (b *DLQMessageBuilder) Build() *DLQMessage {
 	return b.message
 }
 
+// GetPK returns the partition key (required by BaseModel interface)
+func (d *DLQMessage) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key (required by BaseModel interface)
+func (d *DLQMessage) GetSK() string {
+	return d.SK
+}
+
 // UpdateKeys updates the GSI keys for this DLQ message (required by DynamORM)
-func (d *DLQMessage) UpdateKeys() {
+func (d *DLQMessage) UpdateKeys() error {
 	d.setupGSIKeys()
+	return nil
 }
 
 // Convenience functions for creating DLQ messages

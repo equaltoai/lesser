@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // MockRepos implements the repository interface for testing
@@ -64,7 +65,8 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 	testJWTSecret := "test_jwt_secret"
 	logger := zap.NewNop()
 	auditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
-	oauthService := auth.NewOAuthService(testJWTSecret, nil, auditLogger)
+	testConfig := &config.Config{Stage: "test"}
+	oauthService := auth.NewOAuthService(testJWTSecret, testConfig, nil, auditLogger)
 
 	ctx := context.Background()
 	// Create a valid token for testing
@@ -73,7 +75,7 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 
 	// Create an invalid token with wrong signature
 	wrongAuditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
-	wrongOAuthService := auth.NewOAuthService("wrong_secret", nil, wrongAuditLogger)
+	wrongOAuthService := auth.NewOAuthService("wrong_secret", testConfig, nil, wrongAuditLogger)
 	invalidToken, _, _ := wrongOAuthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	invalidAuthHeader := "Bearer " + invalidToken
 

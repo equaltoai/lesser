@@ -22,7 +22,7 @@ type WeeklyActivity struct {
 }
 
 // UpdateKeys updates the DynamoDB keys based on the activity data
-func (w *WeeklyActivity) UpdateKeys() {
+func (w *WeeklyActivity) UpdateKeys() error {
 	if w.UserID != "" {
 		// User-specific weekly activity
 		w.PK = fmt.Sprintf(KeyPatternUser, w.UserID)
@@ -35,6 +35,17 @@ func (w *WeeklyActivity) UpdateKeys() {
 		weekStart := time.Unix(w.Week, 0).Format(common.DateFormat)
 		w.SK = fmt.Sprintf("ACTIVITY#WEEK#%s", weekStart)
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (w *WeeklyActivity) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WeeklyActivity) GetSK() string {
+	return w.SK
 }
 
 // NewWeeklyActivity creates a new weekly activity entry

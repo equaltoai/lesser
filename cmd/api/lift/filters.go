@@ -17,7 +17,7 @@ func (h *Handler) HandleGetFiltersLift(ctx *lift.Context) error {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -63,7 +63,7 @@ func (h *Handler) HandleGetFilterLift(ctx *lift.Context) error {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -102,7 +102,7 @@ func (h *Handler) HandleCreateFilterLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -161,70 +161,8 @@ type createFilterParams struct {
 	KeywordsAttributes []map[string]any `json:"keywords_attributes"`
 }
 
-// parseCreateFilterRequest parses and validates the filter creation request
-func (h *Handler) parseCreateFilterRequest(ctx *lift.Context) (*createFilterParams, error) {
-	var params createFilterParams
 
-	// Parse request body
-	if err := h.parseFilterRequestBody(ctx, &params); err != nil {
-		return nil, err
-	}
 
-	// Validate required fields
-	if err := h.validateFilterRequiredFields(ctx, &params); err != nil {
-		return nil, err
-	}
-
-	// Context validation is already handled in validateFilterRequiredFields
-
-	// Validate and set filter action
-	if err := h.validateFilterAction(ctx, &params); err != nil {
-		return nil, err
-	}
-
-	return &params, nil
-}
-
-// parseFilterRequestBody parses the request body
-func (h *Handler) parseFilterRequestBody(ctx *lift.Context, params *createFilterParams) error {
-	if err := ctx.ParseRequest(params); err != nil {
-		// Fallback to common.ParseRequestBody for test environments
-		bodyBytes := ctx.Request.Body
-		if err := common.ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			bodyBytes = ctx.Request.Request.Body
-		}
-		if err2 := common.ParseRequestBody(bodyBytes, params); err2 != nil {
-			return common.RespondValidationError(ctx, err)
-		}
-	}
-	return nil
-}
-
-// validateFilterRequiredFields validates required fields
-func (h *Handler) validateFilterRequiredFields(ctx *lift.Context, params *createFilterParams) error {
-	if err := common.ValidateFilterTitle(params.Title); err != nil {
-		return h.respondUnprocessableEntity(ctx, err.Error())
-	}
-	if err := common.ValidateFilterContext(params.Context); err != nil {
-		return h.respondUnprocessableEntity(ctx, err.Error())
-	}
-	return nil
-}
-
-// validateFilterAction validates and sets default filter action
-func (h *Handler) validateFilterAction(ctx *lift.Context, params *createFilterParams) error {
-	// Set default if not provided
-	if err := common.ValidateRequiredParam("filterAction", params.FilterAction); err != nil {
-		params.FilterAction = "warn"
-	}
-
-	// Validate filter action
-	if err := common.ValidateFilterAction(params.FilterAction); err != nil {
-		return h.respondUnprocessableEntity(ctx, err.Error())
-	}
-
-	return nil
-}
 
 // buildFilterFromParams builds a Filter object from request parameters
 func (h *Handler) buildFilterFromParams(username string, params *createFilterParams) *storage.Filter {
@@ -351,7 +289,7 @@ func (h *Handler) HandleUpdateFilterLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -535,7 +473,7 @@ func (h *Handler) HandleDeleteFilterLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -571,7 +509,7 @@ func (h *Handler) HandleGetFilterKeywordsLift(ctx *lift.Context) error {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -618,7 +556,7 @@ func (h *Handler) HandleGetFilterStatusesLift(ctx *lift.Context) error {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -664,7 +602,7 @@ func (h *Handler) HandleAddFilterKeywordLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -737,7 +675,7 @@ func (h *Handler) HandleDeleteFilterKeywordLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -773,7 +711,7 @@ func (h *Handler) HandleAddFilterStatusLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -843,7 +781,7 @@ func (h *Handler) HandleDeleteFilterStatusLift(ctx *lift.Context) error {
 	// Authenticate user with write:filters scope
 	username, err := h.authenticateUser(ctx, []string{"write:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)
@@ -875,7 +813,7 @@ func (h *Handler) HandleTestFilterLift(ctx *lift.Context) error {
 	// Authenticate user with read:filters scope
 	username, err := h.authenticateUser(ctx, []string{"read:filters"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return h.respondInsufficientScope(ctx)
 		}
 		return h.respondUnauthorized(ctx)

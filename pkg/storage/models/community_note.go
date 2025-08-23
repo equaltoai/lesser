@@ -45,7 +45,7 @@ type CommunityNote struct {
 }
 
 // UpdateKeys updates the GSI keys based on the current field values
-func (n *CommunityNote) UpdateKeys() {
+func (n *CommunityNote) UpdateKeys() error {
 	n.PK = fmt.Sprintf(KeyPatternNote, n.ID)
 	n.SK = SKMetadata
 
@@ -60,6 +60,18 @@ func (n *CommunityNote) UpdateKeys() {
 	// GSI3: Query by author, sorted by creation time
 	n.GSI3PK = fmt.Sprintf("AUTHOR#%s#NOTES", n.AuthorID)
 	n.GSI3SK = fmt.Sprintf("%s#%s", n.CreatedAt.Format(time.RFC3339), n.ID)
+	
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (n *CommunityNote) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (n *CommunityNote) GetSK() string {
+	return n.SK
 }
 
 // CommunityNoteVote represents a vote on a community note
@@ -81,7 +93,18 @@ type CommunityNoteVote struct {
 }
 
 // UpdateKeys updates the keys based on the current field values
-func (v *CommunityNoteVote) UpdateKeys() {
+func (v *CommunityNoteVote) UpdateKeys() error {
 	v.PK = fmt.Sprintf(KeyPatternNote, v.NoteID)
 	v.SK = fmt.Sprintf("VOTE#%s", v.VoterID)
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (v *CommunityNoteVote) GetPK() string {
+	return v.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (v *CommunityNoteVote) GetSK() string {
+	return v.SK
 }

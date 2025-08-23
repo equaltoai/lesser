@@ -337,7 +337,7 @@ func TestService_UploadMedia_RepositoryError(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock repository error
-	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(fmt.Errorf("database error"))
+	mediaRepo.On("CreateMedia", ctx, mock.AnythingOfType("*models.Media")).Return(ErrDatabaseOperation)
 
 	// Execute
 	result, err := service.UploadMedia(ctx, cmd)
@@ -443,7 +443,7 @@ func TestService_UpdateMedia_NotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Mock media not found
-	mediaRepo.On("GetMedia", ctx, cmd.MediaID).Return((*models.Media)(nil), fmt.Errorf("media not found"))
+	mediaRepo.On("GetMedia", ctx, cmd.MediaID).Return((*models.Media)(nil), ErrMediaNotFound)
 
 	// Execute
 	result, err := service.UpdateMedia(ctx, cmd)

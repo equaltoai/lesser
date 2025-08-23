@@ -19,19 +19,17 @@ import (
 	"go.uber.org/zap"
 )
 
-// ModerationRepository implements moderation operations using DynamORM
+
+// ModerationRepository implements moderation operations using DynamORM with BaseRepository pattern
 type ModerationRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.ModerationEvent]
 }
 
 // NewModerationRepository creates a new moderation repository
 func NewModerationRepository(db core.DB, tableName string, logger *zap.Logger) *ModerationRepository {
 	return &ModerationRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ModerationEvent](
+			db, tableName, logger, nil, "ModerationRepository"),
 	}
 }
 
@@ -53,7 +51,7 @@ func generateRandomString() string {
 	return string(result)
 }
 
-// CreateModerationEvent creates a new moderation event
+// CreateModerationEvent creates a new moderation event using BaseRepository
 func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event *storage.ModerationEvent) error {
 	if common.ValidateRequiredParam(event.ID, "event.ID") != nil {
 		event.ID = fmt.Sprintf("evt_%s", generateRandomString())
@@ -66,7 +64,7 @@ func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event 
 		event.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
 
-	// Create model and update keys
+	// Create model
 	model := &models.ModerationEvent{
 		ID:              event.ID,
 		EventType:       event.EventType,
@@ -84,15 +82,14 @@ func (r *ModerationRepository) CreateModerationEvent(ctx context.Context, event 
 		TTL:             event.TTL,
 		CreatedAt:       event.Created,
 	}
-	model.UpdateKeys()
 
-	// Create the event
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+	// Use BaseRepository Create method (automatically calls UpdateKeys and tracks cost)
+	if err := r.Create(ctx, model); err != nil {
 		r.logger.Error("Failed to create moderation event",
 			zap.Error(err),
 			zap.String("event_id", event.ID),
 			zap.String("object_id", event.ObjectID))
-		return fmt.Errorf("failed to create moderation event: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityModerationEvent, event.ID)
 	}
 
 	r.logger.Debug("Created moderation event",
@@ -115,9 +112,9 @@ func (r *ModerationRepository) GetModerationEvent(ctx context.Context, eventID s
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("moderation event not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityModerationEvent, eventID)
 		}
-		return nil, fmt.Errorf("failed to get moderation event: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityModerationEvent, eventID)
 	}
 
 	// Convert model to storage.ModerationEvent
@@ -155,7 +152,7 @@ func (r *ModerationRepository) GetModerationQueue(ctx context.Context, filter *s
 		Limit(limit)
 
 	if err := query.All(&models); err != nil {
-		return nil, fmt.Errorf("failed to query moderation queue: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityModerationEvent, "queue")
 	}
 
 	items := make([]*storage.ModerationQueueItem, 0, len(models))
@@ -237,7 +234,7 @@ func (r *ModerationRepository) GetModerationQueuePaginated(ctx context.Context, 
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query moderation queue: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "queue paginated")
 	}
 
 	items := make([]*storage.ModerationQueueItem, 0, len(models))
@@ -328,7 +325,7 @@ func (r *ModerationRepository) GetModerationEventsByObject(ctx context.Context, 
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query moderation events: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "by object")
 	}
 
 	// Generate next cursor
@@ -381,7 +378,7 @@ func (r *ModerationRepository) GetModerationEventsByActor(ctx context.Context, a
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query moderation events by actor: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "by actor")
 	}
 
 	// Generate next cursor
@@ -449,7 +446,7 @@ func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *
 			zap.Error(err),
 			zap.String("review_id", review.ID),
 			zap.String("event_id", review.EventID))
-		return fmt.Errorf("failed to add review: %w", err)
+		return ErrorHandler.HandleCreateError(err, "moderation review", review.ID)
 	}
 
 	r.logger.Debug("Added moderation review",
@@ -469,7 +466,7 @@ func (r *ModerationRepository) GetModerationReviews(ctx context.Context, eventID
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query reviews: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "moderation review", "query")
 	}
 
 	reviews := make([]*storage.ModerationReview, 0, len(models))
@@ -527,7 +524,7 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 			zap.Error(err),
 			zap.String("decision_id", decision.ID),
 			zap.String("object_id", decision.ObjectID))
-		return fmt.Errorf("failed to create decision: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityModerationDecision, decision.ID)
 	}
 
 	r.logger.Info("Created moderation decision",
@@ -547,14 +544,14 @@ func (r *ModerationRepository) GetModerationDecision(ctx context.Context, object
 	err := r.db.WithContext(ctx).Model(&model).
 		Index("gsi1").
 		Where("GSI1PK", "=", "ACTIVE_DECISIONS").
-		Where("GSI1SK", "=", fmt.Sprintf("OBJECT#%s", objectID)).
+		Where(gsi1SKField, "=", fmt.Sprintf("OBJECT#%s", objectID)).
 		First(&model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil // No decision yet
 		}
-		return nil, fmt.Errorf("failed to get moderation decision: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityModerationDecision, objectID)
 	}
 
 	return &storage.ModerationDecision{
@@ -582,12 +579,12 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 	// Get the current decision for the content
 	currentDecision, err := r.GetModerationDecision(ctx, contentID)
 	if err != nil {
-		return fmt.Errorf("failed to get current moderation decision: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityModerationDecision, "current")
 	}
 
 	// If no decision exists, we cannot update it
 	if currentDecision == nil {
-		return fmt.Errorf("no moderation decision exists for content ID: %s", contentID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityModerationDecision, contentID)
 	}
 
 	// Create a new moderation decision based on the review
@@ -607,7 +604,7 @@ func (r *ModerationRepository) UpdateModerationDecision(ctx context.Context, con
 
 	// Create the updated decision
 	if err := r.CreateModerationDecision(ctx, newDecision); err != nil {
-		return fmt.Errorf("failed to create updated moderation decision: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityModerationDecision, contentID)
 	}
 
 	r.logger.Info("Updated moderation decision",
@@ -631,7 +628,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 			Limit(limit).
 			All(&patternModels)
 		if err != nil {
-			return nil, fmt.Errorf("failed to query moderation patterns: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
 		}
 	} else if active {
 		// Query by active status only using GSI1
@@ -641,7 +638,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 			Limit(limit).
 			All(&patternModels)
 		if err != nil {
-			return nil, fmt.Errorf("failed to query moderation patterns: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "query")
 		}
 	} else {
 		// Scan for all patterns (less efficient)
@@ -651,7 +648,7 @@ func (r *ModerationRepository) GetModerationPatterns(ctx context.Context, active
 			Limit(limit * 2). // Get extra to account for filtering
 			All(&patternModels)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan moderation patterns: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "scan")
 		}
 
 		// Filter to only moderation patterns
@@ -725,7 +722,7 @@ func (r *ModerationRepository) UpdateModerationPattern(ctx context.Context, patt
 
 	// Update the pattern
 	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
-		return fmt.Errorf("failed to update moderation pattern: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityModerationPattern, pattern.ID)
 	}
 
 	return nil
@@ -742,7 +739,7 @@ func (r *ModerationRepository) DeleteModerationPattern(ctx context.Context, patt
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to delete moderation pattern: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityModerationPattern, patternID)
 	}
 
 	return nil
@@ -812,7 +809,7 @@ func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, patt
 
 	// Create the pattern
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to create moderation pattern: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityModerationPattern, pattern.ID)
 	}
 
 	return nil
@@ -831,7 +828,7 @@ func (r *ModerationRepository) GetModerationPattern(ctx context.Context, pattern
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get moderation pattern: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityModerationPattern, patternID)
 	}
 
 	// Convert to storage pattern
@@ -1030,7 +1027,7 @@ func (r *ModerationRepository) executeGSI2Query(ctx context.Context, gsi2pk stri
 	}
 
 	if err := query.All(&models); err != nil {
-		return nil, fmt.Errorf("failed to query moderation events: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityModerationEvent, "escalation query")
 	}
 
 	return models, nil
@@ -1102,7 +1099,7 @@ func (r *ModerationRepository) scanAllModerationEvents(ctx context.Context, filt
 	query = query.Limit((limit * 2) + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to scan moderation events: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityModerationEvent, "escalation scan")
 	}
 
 	events := make([]*storage.ModerationEvent, 0, limit)
@@ -1188,13 +1185,13 @@ func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID st
 
 	// Add the review
 	if err := r.AddModerationReview(ctx, review); err != nil {
-		return fmt.Errorf("failed to add admin review: %w", err)
+		return ErrorHandler.HandleCreateError(err, "admin review", review.ID)
 	}
 
 	// Get the event to get the object ID
 	event, err := r.GetModerationEvent(ctx, eventID)
 	if err != nil {
-		return fmt.Errorf("failed to get moderation event: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityModerationEvent, eventID)
 	}
 
 	// Immediately create a decision based on the admin action
@@ -1224,7 +1221,7 @@ func (r *ModerationRepository) CreateAdminReview(ctx context.Context, eventID st
 
 	// Create the decision
 	if err := r.CreateModerationDecision(ctx, decision); err != nil {
-		return fmt.Errorf("failed to create admin decision: %w", err)
+		return ErrorHandler.HandleCreateError(err, "admin decision", decision.ID)
 	}
 
 	r.logger.Info("Admin override created",
@@ -1275,7 +1272,7 @@ func (r *ModerationRepository) GetReviewerStats(ctx context.Context, reviewerID 
 		All(&reviews)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan reviews: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "admin review", "scan")
 	}
 
 	var lastReviewTime time.Time
@@ -1342,7 +1339,7 @@ func (r *ModerationRepository) RecordPatternMatch(_ context.Context, patternID s
 			zap.String("pattern_id", patternID),
 			zap.Bool("matched", matched),
 			zap.Error(err))
-		return fmt.Errorf("failed to record pattern match: %w", err)
+		return ErrorHandler.HandleCreateError(err, "pattern match", "pattern match")
 	}
 
 	return nil
@@ -1381,7 +1378,7 @@ func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage
 			zap.Error(err),
 			zap.String("filter_id", filter.ID),
 			zap.String("username", filter.Username))
-		return fmt.Errorf("failed to create filter: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFilter, filter.ID)
 	}
 
 	r.logger.Debug("Created filter",
@@ -1403,7 +1400,7 @@ func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query filter: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "by name")
 	}
 
 	// Find the matching filter
@@ -1422,7 +1419,7 @@ func (r *ModerationRepository) GetFilter(ctx context.Context, filterID string) (
 		}
 	}
 
-	return nil, fmt.Errorf("filter not found")
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilter, "not found")
 }
 
 // GetFiltersForUser retrieves all filters for a user
@@ -1436,7 +1433,7 @@ func (r *ModerationRepository) GetFiltersForUser(ctx context.Context, username s
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query filters for user: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFilter, "query")
 	}
 
 	filters := make([]*storage.Filter, len(models))
@@ -1461,7 +1458,7 @@ func (r *ModerationRepository) UpdateFilter(ctx context.Context, filterID string
 	// First get the existing filter to find the username
 	filter, err := r.GetFilter(ctx, filterID)
 	if err != nil {
-		return fmt.Errorf("failed to find filter for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFilter, filterID)
 	}
 
 	// Apply updates
@@ -1498,7 +1495,7 @@ func (r *ModerationRepository) UpdateFilter(ctx context.Context, filterID string
 		r.logger.Error("Failed to update filter",
 			zap.Error(err),
 			zap.String("filter_id", filterID))
-		return fmt.Errorf("failed to update filter: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityFilter, filterID)
 	}
 
 	r.logger.Debug("Updated filter",
@@ -1513,13 +1510,13 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 	// First get the filter to find the username
 	filter, err := r.GetFilter(ctx, filterID)
 	if err != nil {
-		return fmt.Errorf("failed to find filter for deletion: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFilter, filterID)
 	}
 
 	// Delete all keywords first
 	keywords, err := r.GetFilterKeywords(ctx, filterID)
 	if err != nil {
-		return fmt.Errorf("failed to get filter keywords for deletion: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFilterKeyword, "deletion")
 	}
 	for _, keyword := range keywords {
 		if err := r.DeleteFilterKeyword(ctx, keyword.ID); err != nil {
@@ -1533,7 +1530,7 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 	// Delete all statuses
 	statuses, err := r.GetFilterStatuses(ctx, filterID)
 	if err != nil {
-		return fmt.Errorf("failed to get filter statuses for deletion: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFilterStatus, "deletion")
 	}
 	for _, status := range statuses {
 		if err := r.DeleteFilterStatus(ctx, status.StatusID); err != nil {
@@ -1555,7 +1552,7 @@ func (r *ModerationRepository) DeleteFilter(ctx context.Context, filterID string
 			zap.Error(err),
 			zap.String("filter_id", filterID),
 			zap.String("username", filter.Username))
-		return fmt.Errorf("failed to delete filter: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityFilter, filterID)
 	}
 
 	r.logger.Debug("Deleted filter",
@@ -1593,7 +1590,7 @@ func (r *ModerationRepository) AddFilterKeyword(ctx context.Context, filterID st
 			zap.String("filter_id", filterID),
 			zap.String("keyword_id", keyword.ID),
 			zap.String("keyword", keyword.Keyword))
-		return fmt.Errorf("failed to add filter keyword: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFilterKeyword, keyword.ID)
 	}
 
 	r.logger.Debug("Added filter keyword",
@@ -1616,7 +1613,7 @@ func (r *ModerationRepository) GetFilterKeywords(ctx context.Context, filterID s
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query filter keywords: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "query")
 	}
 
 	keywords := make([]*storage.FilterKeyword, len(models))
@@ -1645,9 +1642,9 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 
 	if err != nil || len(existingModels) == 0 {
 		if errors.IsNotFound(err) || len(existingModels) == 0 {
-			return fmt.Errorf("filter keyword not found")
+			return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilterKeyword, keywordID)
 		}
-		return fmt.Errorf("failed to find filter keyword: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFilterKeyword, keywordID)
 	}
 
 	existing := existingModels[0]
@@ -1662,7 +1659,7 @@ func (r *ModerationRepository) UpdateFilterKeyword(ctx context.Context, keywordI
 
 	// Update the keyword
 	if err := r.db.WithContext(ctx).Model(&existing).Update(); err != nil {
-		return fmt.Errorf("failed to update filter keyword: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityFilterKeyword, keywordID)
 	}
 
 	return nil
@@ -1679,9 +1676,9 @@ func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID,
 
 	if err != nil || len(existingModels) == 0 {
 		if errors.IsNotFound(err) || len(existingModels) == 0 {
-			return fmt.Errorf("filter %s not found", strings.ToLower(entityType))
+			return ErrorHandler.HandleGetError(storage.ErrNotFound, "filter entity", entityID)
 		}
-		return fmt.Errorf("failed to find filter %s: %w", strings.ToLower(entityType), err)
+		return ErrorHandler.HandleGetError(err, "filter entity", entityID)
 	}
 
 	// Extract FilterID - this assumes both models have a FilterID field
@@ -1692,7 +1689,7 @@ func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID,
 	case models.FilterStatus:
 		filterID = entity.FilterID
 	default:
-		return fmt.Errorf("unsupported filter entity type")
+		return ErrorHandler.HandleGetError(storage.ErrInvalidInput, "filter entity", entityID)
 	}
 
 	// Delete the entity
@@ -1702,7 +1699,7 @@ func (r *ModerationRepository) deleteFilterEntity(ctx context.Context, entityID,
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete filter %s: %w", strings.ToLower(entityType), err)
+		return ErrorHandler.HandleDeleteError(err, "filter entity", entityID)
 	}
 
 	return nil
@@ -1740,7 +1737,7 @@ func (r *ModerationRepository) AddFilterStatus(ctx context.Context, filterID str
 			zap.String("filter_id", filterID),
 			zap.String("status_filter_id", status.ID),
 			zap.String("status_id", status.StatusID))
-		return fmt.Errorf("failed to add filter status: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFilterStatus, status.ID)
 	}
 
 	r.logger.Debug("Added filter status",
@@ -1763,7 +1760,7 @@ func (r *ModerationRepository) GetFilterStatuses(ctx context.Context, filterID s
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query filter statuses: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFilterStatus, "query")
 	}
 
 	statuses := make([]*storage.FilterStatus, len(models))
@@ -1840,7 +1837,7 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 	// First get the existing report
 	report, err := r.GetReport(ctx, reportID)
 	if err != nil {
-		return fmt.Errorf("failed to get report for assignment: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityReport, reportID)
 	}
 
 	// Update the fields
@@ -1884,7 +1881,7 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 			zap.Error(err),
 			zap.String("report_id", reportID),
 			zap.String("assigned_to", assignedTo))
-		return fmt.Errorf("failed to assign report: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityReport, reportID)
 	}
 
 	r.logger.Debug("Assigned report",
@@ -1899,7 +1896,7 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 	// First get the existing report
 	report, err := r.GetReport(ctx, reportID)
 	if err != nil {
-		return fmt.Errorf("failed to get report for unassignment: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityReport, reportID)
 	}
 
 	// Update the fields
@@ -1942,7 +1939,7 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 		r.logger.Error("Failed to unassign report",
 			zap.Error(err),
 			zap.String("report_id", reportID))
-		return fmt.Errorf("failed to unassign report: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityReport, reportID)
 	}
 
 	r.logger.Debug("Unassigned report",
@@ -1979,9 +1976,9 @@ func (r *ModerationRepository) GetReportedStatuses(ctx context.Context, reportID
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("report not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityReport, reportID)
 		}
-		return nil, fmt.Errorf("failed to get report: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityReport, reportID)
 	}
 
 	// Convert string slice to []any to match interface
@@ -2033,7 +2030,7 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 			zap.Error(err),
 			zap.String("flag_id", flag.ID),
 			zap.String("actor", flag.Actor))
-		return fmt.Errorf("failed to create flag: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFlag, flag.ID)
 	}
 
 	r.logger.Debug("Created flag",
@@ -2054,7 +2051,7 @@ func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query flag: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFlag, "query")
 	}
 
 	// Find the matching flag
@@ -2075,7 +2072,7 @@ func (r *ModerationRepository) GetFlag(ctx context.Context, id string) (*storage
 		}
 	}
 
-	return nil, fmt.Errorf("flag not found")
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFlag, id)
 }
 
 // GetFlagsByObject retrieves all flags for a specific object
@@ -2094,7 +2091,7 @@ func (r *ModerationRepository) GetFlagsByObject(ctx context.Context, objectID st
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query flags by object: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityFlag, "by object")
 	}
 
 	// Generate next cursor
@@ -2141,7 +2138,7 @@ func (r *ModerationRepository) GetFlagsByActor(ctx context.Context, actorID stri
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query flags by actor: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityFlag, "by actor")
 	}
 
 	// Generate next cursor
@@ -2188,7 +2185,7 @@ func (r *ModerationRepository) GetPendingFlags(ctx context.Context, limit int, c
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query pending flags: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityFlag, "pending")
 	}
 
 	// Generate next cursor
@@ -2223,7 +2220,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 	// First find the flag to get its primary key
 	flag, err := r.GetFlag(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to find flag: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFlag, id)
 	}
 
 	// Update the fields
@@ -2255,7 +2252,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 			zap.Error(err),
 			zap.String("flag_id", id),
 			zap.String("status", string(status)))
-		return fmt.Errorf("failed to update flag status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityFlag, id)
 	}
 
 	r.logger.Debug("Updated flag status",
@@ -2288,7 +2285,7 @@ func (r *ModerationRepository) DeleteFlag(ctx context.Context, id string) error 
 	// First find the flag to get its primary key information
 	flag, err := r.GetFlag(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to find flag: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityFlag, id)
 	}
 
 	// Convert to model to get correct keys
@@ -2312,7 +2309,7 @@ func (r *ModerationRepository) DeleteFlag(ctx context.Context, id string) error 
 			zap.Error(err),
 			zap.String("flag_id", id),
 			zap.String("actor", flag.Actor))
-		return fmt.Errorf("failed to delete flag: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityFlag, id)
 	}
 
 	r.logger.Debug("Deleted flag",
@@ -2377,7 +2374,7 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 			zap.Error(err),
 			zap.String("report_id", report.ID),
 			zap.String("reporter_id", report.ReporterID))
-		return fmt.Errorf("failed to create report: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityReport, report.ID)
 	}
 
 	r.logger.Debug("Created report",
@@ -2399,9 +2396,9 @@ func (r *ModerationRepository) GetReport(ctx context.Context, id string) (*stora
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("report not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityReport, id)
 		}
-		return nil, fmt.Errorf("failed to get report: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityReport, id)
 	}
 
 	return &storage.Report{
@@ -2447,7 +2444,7 @@ func (r *ModerationRepository) GetUserReports(ctx context.Context, username stri
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query user reports: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityReport, "user reports")
 	}
 
 	// Generate next cursor
@@ -2494,7 +2491,7 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 	// First get the existing report
 	report, err := r.GetReport(ctx, id)
 	if err != nil {
-		return fmt.Errorf("failed to get report for status update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityReport, id)
 	}
 
 	// Update the fields
@@ -2545,7 +2542,7 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 			zap.Error(err),
 			zap.String("report_id", id),
 			zap.String("status", string(status)))
-		return fmt.Errorf("failed to update report status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityReport, id)
 	}
 
 	r.logger.Debug("Updated report status",
@@ -2573,7 +2570,7 @@ func (r *ModerationRepository) GetReportsByTarget(ctx context.Context, targetAcc
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query reports by target: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityReport, "by target")
 	}
 
 	reports := make([]*storage.Report, len(models))
@@ -2638,7 +2635,7 @@ func (r *ModerationRepository) GetReportsByStatus(ctx context.Context, status st
 	query = query.Limit(limit + 1)
 
 	if err := query.All(&models); err != nil {
-		return nil, "", fmt.Errorf("failed to query reports by status: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityReport, "by status")
 	}
 
 	reports := make([]*storage.Report, len(models))
@@ -2705,7 +2702,7 @@ func (r *ModerationRepository) GetReportStats(ctx context.Context, username stri
 				LastReportAt:    nil,
 			}, nil
 		}
-		return nil, fmt.Errorf("failed to get report stats: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "report stats", username)
 	}
 
 	return &storage.ReportStats{
@@ -2723,7 +2720,7 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 	// Try to get existing stats
 	existingStats, err := r.GetReportStats(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get existing report stats: %w", err)
+		return ErrorHandler.HandleGetError(err, "report stats", username)
 	}
 
 	// Use the existing LastReportAt pointer
@@ -2750,7 +2747,7 @@ func (r *ModerationRepository) IncrementFalseReports(ctx context.Context, userna
 			r.logger.Error("Failed to increment false reports",
 				zap.Error(err),
 				zap.String("username", username))
-			return fmt.Errorf("failed to increment false reports: %w", err)
+			return ErrorHandler.HandleUpdateError(err, "report stats", username)
 		}
 	}
 
@@ -2794,7 +2791,7 @@ func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *sto
 			zap.String("audit_id", auditLog.ID),
 			zap.String("admin_id", auditLog.AdminID),
 			zap.String("action", auditLog.Action))
-		return fmt.Errorf("failed to create audit log entry: %w", err)
+		return ErrorHandler.HandleCreateError(err, "audit log", auditLog.ID)
 	}
 
 	r.logger.Debug("Created audit log entry",
@@ -2822,7 +2819,7 @@ func (r *ModerationRepository) GetAuditLogs(ctx context.Context, limit int, curs
 		r.logger.Error("Failed to get audit logs",
 			zap.Error(err),
 			zap.Int("limit", limit))
-		return nil, "", fmt.Errorf("failed to get audit logs: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "audit log", "query")
 	}
 
 	// Convert models to storage types
@@ -2876,7 +2873,7 @@ func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, 
 			zap.Error(err),
 			zap.String(fmt.Sprintf("%s_id", logContext), id),
 			zap.Int("limit", limit))
-		return nil, "", fmt.Errorf("failed to get audit logs by %s: %w", logContext, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "audit log", logContext)
 	}
 
 	// Convert models to storage types using our helper method
@@ -2888,7 +2885,7 @@ func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, 
 	// Get next cursor - use the last item's SK field if we got results
 	nextCursor := ""
 	if common.ValidateSliceNotEmpty("models", models) == nil {
-		if skField == "GSI1SK" {
+		if skField == gsi1SKField {
 			nextCursor = models[len(models)-1].GSI1SK
 		} else {
 			nextCursor = models[len(models)-1].GSI2SK
@@ -2905,7 +2902,7 @@ func (r *ModerationRepository) getAuditLogsByGSI(ctx context.Context, gsiIndex, 
 
 // GetAuditLogsByAdmin retrieves audit log entries for a specific admin
 func (r *ModerationRepository) GetAuditLogsByAdmin(ctx context.Context, adminID string, limit int, cursor string) ([]*storage.AuditLog, string, error) {
-	return r.getAuditLogsByGSI(ctx, "gsi1", "GSI1PK", "GSI1SK", "ADMIN", adminID, limit, cursor, "admin")
+	return r.getAuditLogsByGSI(ctx, "gsi1", "GSI1PK", gsi1SKField, "ADMIN", adminID, limit, cursor, "admin")
 }
 
 // GetAuditLogsByTarget retrieves audit log entries for a specific target
@@ -2983,7 +2980,7 @@ func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysis
 	// Extract required fields
 	contentID, ok := analysisData["content_id"].(string)
 	if !ok {
-		return fmt.Errorf("content_id must be a string")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, "analysis result", "validation")
 	}
 	if err := common.ValidateRequiredParam("content_id", contentID); err != nil {
 		return err
@@ -2991,7 +2988,7 @@ func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysis
 
 	authorID, ok := analysisData["author_id"].(string)
 	if !ok {
-		return fmt.Errorf("author_id must be a string")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, "analysis result", "validation")
 	}
 	if err := common.ValidateRequiredParam("author_id", authorID); err != nil {
 		return err
@@ -3047,7 +3044,7 @@ func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysis
 		r.logger.Error("Failed to store analysis result",
 			zap.Error(err),
 			zap.String("content_id", contentID))
-		return fmt.Errorf("failed to store analysis result: %w", err)
+		return ErrorHandler.HandleCreateError(err, "analysis result", model.ID)
 	}
 
 	r.logger.Debug("Successfully stored analysis result",
@@ -3066,7 +3063,7 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 	// Extract required fields
 	contentID, ok := decisionData["content_id"].(string)
 	if !ok {
-		return fmt.Errorf("content_id must be a string")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityModerationDecision, "validation")
 	}
 	if err := common.ValidateRequiredParam("content_id", contentID); err != nil {
 		return err
@@ -3074,7 +3071,7 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 
 	action, ok := decisionData["action"].(string)
 	if !ok {
-		return fmt.Errorf("action must be a string")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityModerationDecision, "validation")
 	}
 	if err := common.ValidateRequiredParam("action", action); err != nil {
 		return err
@@ -3129,7 +3126,7 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 		r.logger.Error("Failed to store decision",
 			zap.Error(err),
 			zap.String("content_id", contentID))
-		return fmt.Errorf("failed to store decision: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityModerationDecision, model.ID)
 	}
 
 	// Add to review queue if requires review
@@ -3153,7 +3150,7 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 func (r *ModerationRepository) GetReviewQueue(ctx context.Context, filters map[string]interface{}) ([]*models.ModerationReviewQueue, error) {
 	// Validate filters using centralized validation
 	if err := common.ValidateQueryFilters(filters); err != nil {
-		return nil, fmt.Errorf("invalid query filters: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "review queue", "validation")
 	}
 
 	status := StatusPending
@@ -3185,7 +3182,7 @@ func (r *ModerationRepository) GetReviewQueue(ctx context.Context, filters map[s
 		r.logger.Error("Failed to get review queue",
 			zap.Error(err),
 			zap.String("status", status))
-		return nil, fmt.Errorf("failed to get review queue: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "review queue", "query")
 	}
 
 	r.logger.Debug("Retrieved review queue items",
@@ -3214,7 +3211,7 @@ func (r *ModerationRepository) GetDecisionHistory(ctx context.Context, contentID
 		r.logger.Error("Failed to get decision history",
 			zap.Error(err),
 			zap.String("content_id", contentID))
-		return nil, fmt.Errorf("failed to get decision history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityModerationDecision, "history")
 	}
 
 	r.logger.Debug("Retrieved decision history",
@@ -3242,7 +3239,7 @@ func (r *ModerationRepository) UpdateEnforcementStatus(ctx context.Context, cont
 		r.logger.Error("No decision found to update enforcement status",
 			zap.Error(err),
 			zap.String("content_id", contentID))
-		return fmt.Errorf("no decision found for content_id: %s", contentID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityModerationDecision, contentID)
 	}
 
 	decision := decisions[0]
@@ -3267,7 +3264,7 @@ func (r *ModerationRepository) UpdateEnforcementStatus(ctx context.Context, cont
 		r.logger.Error("Failed to update enforcement status",
 			zap.Error(err),
 			zap.String("content_id", contentID))
-		return fmt.Errorf("failed to update enforcement status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityModerationDecision, contentID)
 	}
 
 	r.logger.Debug("Successfully updated enforcement status",
@@ -3318,7 +3315,7 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 	queueItem.UpdateKeys()
 
 	if err := r.db.WithContext(ctx).Model(queueItem).Create(); err != nil {
-		return fmt.Errorf("failed to add to review queue: %w", err)
+		return ErrorHandler.HandleCreateError(err, "review queue", queueItem.ID)
 	}
 
 	return nil
@@ -3340,7 +3337,7 @@ func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Con
 	}
 	
 	if err := query.All(&reviews); err != nil {
-		return nil, fmt.Errorf("failed to get reviews by moderator %s: %w", moderatorUsername, err)
+		return nil, ErrorHandler.HandleQueryError(err, "moderation review", moderatorUsername)
 	}
 	
 	return reviews, nil

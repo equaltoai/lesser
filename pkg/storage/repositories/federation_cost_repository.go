@@ -6,43 +6,50 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
+	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 )
 
-// FederationCostRepository handles federation cost tracking operations using DynamORM
+// FederationCostRepository handles federation cost tracking operations using DynamORM with BaseRepository
 type FederationCostRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.FederationCostTracking]
+	budgetRepo *BaseRepository[*models.FederationBudget]
 }
 
 // NewFederationCostRepository creates a new federation cost repository
-func NewFederationCostRepository(db core.DB, tableName string, logger *zap.Logger) *FederationCostRepository {
+func NewFederationCostRepository(baseRepo *BaseRepository[*models.FederationCostTracking], budgetRepo *BaseRepository[*models.FederationBudget]) *FederationCostRepository {
 	return &FederationCostRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: baseRepo,
+		budgetRepo:     budgetRepo,
 	}
 }
 
-// RecordFederationCost records a federation cost tracking entry
-func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cost *models.FederationCostTracking) error {
-	// Ensure keys are properly initialized
-	if cost.PK == "" || cost.SK == "" {
-		cost.UpdateKeys()
+// NewFederationCostRepositoryWithCostTracking creates a new federation cost repository with integrated cost tracking
+func NewFederationCostRepositoryWithCostTracking(baseRepo *BaseRepository[*models.FederationCostTracking], budgetRepo *BaseRepository[*models.FederationBudget], costService *cost.TrackingService) *FederationCostRepository {
+	// Set cost service on base repositories
+	baseRepo.SetCostService(costService)
+	baseRepo.SetRepoName("federation_cost")
+	budgetRepo.SetCostService(costService)
+	budgetRepo.SetRepoName("federation_budget")
+	
+	return &FederationCostRepository{
+		BaseRepository: baseRepo,
+		budgetRepo:     budgetRepo,
 	}
+}
 
-	err := r.db.WithContext(ctx).Model(cost).Create()
+// RecordFederationCost records a federation cost tracking entry using BaseRepository
+func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cost *models.FederationCostTracking) error {
+	err := r.Create(ctx, cost)
 	if err != nil {
 		r.logger.Error("Failed to record federation cost",
 			zap.String("domain", cost.Domain),
 			zap.String("activity_type", cost.ActivityType),
 			zap.String("activity_id", cost.ActivityID),
 			zap.Error(err))
-		return fmt.Errorf("failed to record federation cost: %w", err)
+		return fmt.Errorf("%w: %w", ErrFederationCostRecordFailed, err)
 	}
 
 	r.logger.Debug("Recorded federation cost",
@@ -55,6 +62,7 @@ func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cos
 }
 
 // GetFederationCosts retrieves federation costs for a domain within a time range
+// PRESERVED: Critical cost tracking business logic - time-based GSI queries with domain filtering
 func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
 	var costs []*models.FederationCostTracking
 
@@ -62,7 +70,7 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 	startDate := startTime.Format(common.CompactDateFormat)
 	endDate := endTime.Format(common.CompactDateFormat)
 
-	query := r.db.WithContext(ctx).Model(&models.FederationCostTracking{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI1").
 		Where("GSI1PK", ">=", fmt.Sprintf("FED_COSTS#%s", startDate)).
 		Where("GSI1PK", "<=", fmt.Sprintf("FED_COSTS#%s", endDate)).
@@ -76,13 +84,14 @@ func (r *FederationCostRepository) GetFederationCosts(ctx context.Context, domai
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get federation costs: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFederationCostQueryFailed, err)
 	}
 
 	return costs, nil
 }
 
 // GetFederationCostsByActivityType retrieves federation costs by activity type within a time range
+// PRESERVED: Critical cost tracking business logic - activity type GSI queries for cost analysis
 func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationCostTracking, error) {
 	var costs []*models.FederationCostTracking
 
@@ -90,7 +99,7 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 	timestampStart := startTime.Format(common.CompactTimeFormat)
 	timestampEnd := endTime.Format(common.CompactTimeFormat)
 
-	query := r.db.WithContext(ctx).Model(&models.FederationCostTracking{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.FederationCostTracking{}).
 		Index("GSI2").
 		Where("GSI2PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
 		Where("GSI2SK", ">=", fmt.Sprintf("DOMAIN#%s", timestampStart)).
@@ -104,13 +113,14 @@ func (r *FederationCostRepository) GetFederationCostsByActivityType(ctx context.
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get federation costs by activity type: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFederationCostActivityQueryFailed, err)
 	}
 
 	return costs, nil
 }
 
 // GetDailyCostSummary retrieves daily cost summary for a domain
+// PRESERVED: Critical cost tracking business logic - complex cost aggregation and analytics
 func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, domain string, date time.Time) (*DailyCostSummary, error) {
 	// Get all costs for the domain on the specific date
 	startTime := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
@@ -180,15 +190,15 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 	return summary, nil
 }
 
-// CreateOrUpdateBudget creates or updates a federation budget for a domain
+// CreateOrUpdateBudget creates or updates a federation budget for a domain using BaseRepository
 func (r *FederationCostRepository) CreateOrUpdateBudget(ctx context.Context, budget *models.FederationBudget) error {
-	err := r.db.WithContext(ctx).Model(budget).Create()
+	err := r.budgetRepo.Create(ctx, budget)
 	if err != nil {
 		r.logger.Error("Failed to create/update federation budget",
 			zap.String("domain", budget.Domain),
 			zap.String("period", budget.Period),
 			zap.Error(err))
-		return fmt.Errorf("failed to create/update federation budget: %w", err)
+		return fmt.Errorf("%w: %w", ErrFederationBudgetCreateFailed, err)
 	}
 
 	r.logger.Info("Created/updated federation budget",
@@ -199,36 +209,36 @@ func (r *FederationCostRepository) CreateOrUpdateBudget(ctx context.Context, bud
 	return nil
 }
 
-// GetBudget retrieves a federation budget for a domain and period
+// GetBudget retrieves a federation budget for a domain and period using BaseRepository
 func (r *FederationCostRepository) GetBudget(ctx context.Context, domain, period string) (*models.FederationBudget, error) {
-	var budget models.FederationBudget
+	budget := &models.FederationBudget{}
+	pk := fmt.Sprintf("FED_BUDGET#%s#%s", domain, period)
+	sk := models.SKConfig
 
-	err := r.db.WithContext(ctx).Model(&models.FederationBudget{}).
-		Where("PK", "=", fmt.Sprintf("FED_BUDGET#%s#%s", domain, period)).
-		Where("SK", "=", "CONFIG").
-		First(&budget)
-
+	err := r.budgetRepo.Get(ctx, pk, sk, budget)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("budget not found for domain %s period %s", domain, period)
+		if dynamormErrors.IsNotFound(err) {
+			return nil, fmt.Errorf("%w: domain %s period %s", ErrFederationBudgetNotFound, domain, period)
 		}
 		r.logger.Error("Failed to get federation budget",
 			zap.String("domain", domain),
 			zap.String("period", period),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get federation budget: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFederationBudgetQueryFailed, err)
 	}
 
-	return &budget, nil
+	return budget, nil
 }
 
 // UpdateBudgetUsage updates the usage for a federation budget
+// PRESERVED: Critical budget enforcement logic - cost attribution, limit checking, status updates
 func (r *FederationCostRepository) UpdateBudgetUsage(ctx context.Context, domain, period, activityType, direction string, cost int64) error {
 	// Get existing budget
 	budget, err := r.GetBudget(ctx, domain, period)
 	if err != nil {
 		// If budget doesn't exist, create a default one
-		if err.Error() == fmt.Sprintf("budget not found for domain %s period %s", domain, period) {
+		// Check if it's a "not found" error by looking for our ErrFederationBudgetNotFound
+		if fmt.Sprintf("%v", err) == fmt.Sprintf("%s: domain %s period %s", ErrFederationBudgetNotFound.Error(), domain, period) {
 			budget = r.createDefaultBudget(domain, period)
 		} else {
 			return err
@@ -252,10 +262,11 @@ func (r *FederationCostRepository) UpdateBudgetUsage(ctx context.Context, domain
 }
 
 // GetActiveBudgets retrieves all active budgets
+// PRESERVED: Critical budget monitoring - GSI queries for active budget tracking
 func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit int) ([]*models.FederationBudget, error) {
 	var budgets []*models.FederationBudget
 
-	query := r.db.WithContext(ctx).Model(&models.FederationBudget{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.FederationBudget{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "ACTIVE_BUDGETS").
 		Filter("IsActive", "=", true).
@@ -264,13 +275,14 @@ func (r *FederationCostRepository) GetActiveBudgets(ctx context.Context, limit i
 	err := query.All(&budgets)
 	if err != nil {
 		r.logger.Error("Failed to get active budgets", zap.Error(err))
-		return nil, fmt.Errorf("failed to get active budgets: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrActiveBudgetsQueryFailed, err)
 	}
 
 	return budgets, nil
 }
 
 // GetBudgetsOverLimit retrieves budgets that are over their limits
+// PRESERVED: Critical budget monitoring - budget limit violation detection for cost control
 func (r *FederationCostRepository) GetBudgetsOverLimit(ctx context.Context, limit int) ([]*models.FederationBudget, error) {
 	budgets, err := r.GetActiveBudgets(ctx, 1000) // Get all active budgets
 	if err != nil {
@@ -288,6 +300,7 @@ func (r *FederationCostRepository) GetBudgetsOverLimit(ctx context.Context, limi
 }
 
 // GetBudgetsNeedingAlerts retrieves budgets that need alerts sent
+// PRESERVED: Critical budget monitoring - alert threshold detection for cost management
 func (r *FederationCostRepository) GetBudgetsNeedingAlerts(ctx context.Context, limit int) ([]*models.FederationBudget, error) {
 	budgets, err := r.GetActiveBudgets(ctx, 1000) // Get all active budgets
 	if err != nil {
@@ -305,11 +318,13 @@ func (r *FederationCostRepository) GetBudgetsNeedingAlerts(ctx context.Context, 
 }
 
 // CheckBudgetLimits checks if an activity would exceed budget limits
+// PRESERVED: CRITICAL budget enforcement logic - this is the core cost control mechanism for federation
 func (r *FederationCostRepository) CheckBudgetLimits(ctx context.Context, domain, period, activityType, _ string, estimatedCost int64) (*BudgetCheckResult, error) {
 	budget, err := r.GetBudget(ctx, domain, period)
 	if err != nil {
 		// If no budget exists, allow the activity but warn
-		if err.Error() == fmt.Sprintf("budget not found for domain %s period %s", domain, period) {
+		// Check if it's a "not found" error by looking for our ErrFederationBudgetNotFound
+		if fmt.Sprintf("%v", err) == fmt.Sprintf("%s: domain %s period %s", ErrFederationBudgetNotFound.Error(), domain, period) {
 			return &BudgetCheckResult{
 				Allowed:      true,
 				WarningLevel: "info",
@@ -380,6 +395,7 @@ func (r *FederationCostRepository) CheckBudgetLimits(ctx context.Context, domain
 }
 
 // ResetPeriodBudgets resets budget usage for a new period
+// PRESERVED: Critical budget lifecycle management - period reset functionality for cost control cycles
 func (r *FederationCostRepository) ResetPeriodBudgets(ctx context.Context, period string, newPeriodStart, newPeriodEnd time.Time) error {
 	budgets, err := r.GetActiveBudgets(ctx, 10000) // Get all active budgets
 	if err != nil {
@@ -411,10 +427,11 @@ func (r *FederationCostRepository) ResetPeriodBudgets(ctx context.Context, perio
 }
 
 // createDefaultBudget creates a default budget for a domain and period
+// PRESERVED: Critical budget initialization logic - default cost limits aligned with <$0.01 per user per month target
 func (r *FederationCostRepository) createDefaultBudget(domain, period string) *models.FederationBudget {
 	now := time.Now()
 
-	// Default limits (in microcents) - these are conservative defaults
+	// Default limits (in microcents) - these are conservative defaults aligned with cost target
 	var inboundLimit, outboundLimit, combinedLimit int64
 	var periodStart, periodEnd time.Time
 
@@ -462,7 +479,7 @@ func (r *FederationCostRepository) createDefaultBudget(domain, period string) *m
 		BlockOnLimitExceeded:    false, // Don't block by default
 		RateLimitOnThreshold:    true,  // Rate limit at threshold
 		IsActive:                true,
-		Status:                  "active",
+		Status:                  models.StatusActive,
 		ActivityTypeLimits:      make(map[string]int64),
 		ActivityTypeUsage:       make(map[string]int64),
 	}

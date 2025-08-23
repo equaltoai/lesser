@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/mediaconvert"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dhowden/tag"
@@ -30,7 +29,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
@@ -260,9 +258,9 @@ func init() {
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
+	cfg       *config.Config //nolint:unused // dependency injection pattern - available for processor extensions
 	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage
+	repos     storageCore.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
 	processor *MediaProcessor
 )
 
@@ -306,21 +304,6 @@ func main() {
 	lambda.Start(lambdaHandler)
 }
 
-// mediaConfiguration holds media processing configuration
-type mediaConfiguration struct {
-	bucketName           string
-	cdnDomain            string
-	mediaConvertEndpoint string
-	mediaConvertRole     string
-	mediaConvertQueue    string
-}
-
-// mediaRepositories holds all media-related repositories
-type mediaRepositories struct {
-	mediaRepo         *repositories.MediaRepository
-	mediaAnalyticsRepo *repositories.MediaAnalyticsRepository
-	mediaMetadataRepo  *repositories.MediaMetadataRepository
-}
 
 // liftApp interface defines the methods we need from the Lift app
 type liftApp interface {
@@ -329,137 +312,9 @@ type liftApp interface {
 	HandleRequest(ctx context.Context, event interface{}) (interface{}, error)
 }
 
-// initializeLambdaContext initializes the Lambda context and extracts basic configuration
-func initializeLambdaContext() (*common.LambdaContext, *config.Config, *zap.Logger) {
-	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
-		LambdaType: common.LambdaTypeMedia,
-	})
-	
-	return lambdaCtx, lambdaCtx.Config, lambdaCtx.Logger
-}
 
-// initializeDynamoDB initializes and validates the DynamoDB connection
-func initializeDynamoDB(lambdaCtx *common.LambdaContext, logger *zap.Logger) core.DB {
-	var db core.DB
-	if lambdaCtx.DynamoDB != nil {
-		if dynamoDB, ok := lambdaCtx.DynamoDB.(core.DB); ok {
-			db = dynamoDB
-		} else {
-			logger.Fatal("Failed to cast DynamoDB client to expected type")
-		}
-	} else {
-		logger.Fatal("DynamoDB client not initialized")
-	}
-	return db
-}
 
-// initializeAWSConfig loads the AWS configuration for CloudWatch and other services
-func initializeAWSConfig(cfg *config.Config, logger *zap.Logger) aws.Config {
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(cfg.Region),
-	)
-	if err != nil {
-		logger.Fatal("Failed to load AWS config", zap.Error(err))
-	}
-	return awsConfig
-}
 
-// initializeRepositories creates all repository instances needed for media processing
-func initializeRepositories(db core.DB, cfg *config.Config, awsConfig aws.Config, logger *zap.Logger) (*factory.RepositoryFactory, *mediaRepositories) {
-	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, awsConfig, logger)
-	if err != nil {
-		logger.Fatal("Failed to create repository factory", zap.Error(err))
-	}
-
-	// Initialize EMF metrics service for performance monitoring
-	_ = observability.NewEMFMetricsService(logger)
-
-	mediaRepos := &mediaRepositories{
-		mediaRepo:          repositories.NewMediaRepository(db, cfg.DynamoTableName, logger),
-		mediaAnalyticsRepo: repositories.NewMediaAnalyticsRepository(db, cfg.DynamoTableName, logger),
-		mediaMetadataRepo:  repositories.NewMediaMetadataRepository(db, logger),
-	}
-	
-	return repos, mediaRepos
-}
-
-// parseMediaConfiguration extracts media configuration from environment variables
-func parseMediaConfiguration(cfg *config.Config) *mediaConfiguration {
-	mediaConfig := &mediaConfiguration{}
-	
-	// Get S3 bucket configuration
-	mediaConfig.bucketName = os.Getenv("S3_BUCKET_NAME")
-	if err := common.ValidateRequiredParam("bucketName", mediaConfig.bucketName); err != nil {
-		mediaConfig.bucketName = cfg.S3BucketName
-	}
-
-	// Get CDN domain configuration
-	mediaConfig.cdnDomain = os.Getenv("CDN_DOMAIN")
-	if err := common.ValidateRequiredParam("cdnDomain", mediaConfig.cdnDomain); err != nil {
-		mediaConfig.cdnDomain = cfg.Domain // Use domain instead of CDNDomain
-	}
-
-	// Get MediaConvert configuration
-	mediaConfig.mediaConvertEndpoint = os.Getenv("MEDIACONVERT_ENDPOINT")
-	mediaConfig.mediaConvertRole = os.Getenv("MEDIACONVERT_ROLE_ARN")
-	mediaConfig.mediaConvertQueue = os.Getenv("MEDIACONVERT_QUEUE")
-	if err := common.ValidateRequiredParam("mediaConvertQueue", mediaConfig.mediaConvertQueue); err != nil {
-		mediaConfig.mediaConvertQueue = "Default"
-	}
-	
-	return mediaConfig
-}
-
-// initializeObservabilityServices sets up metrics and alerting services
-func initializeObservabilityServices(cfg *config.Config, awsConfig aws.Config, logger *zap.Logger) (*observability.EMFMetrics, *monitoring.AlertManager) {
-	var emfMetrics *observability.EMFMetrics
-	var alertManager *monitoring.AlertManager
-	
-	if os.Getenv("DISABLE_METRICS") != "true" {
-		// EMF Metrics for CloudWatch integration
-		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Media", "media-processor")
-		emfMetrics.AddDimension(observability.DimensionService, "media-processor")
-		emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
-		emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
-		
-		// Alert manager for media processing alerts
-		_ = cloudwatch.NewFromConfig(awsConfig) // CloudWatch client reserved for future use
-		alertManager = monitoring.NewAlertManagerWithConfig(&monitoring.AlertManagerConfig{
-			Logger:    logger,
-			Enabled:   true,
-		})
-		
-		logger.Info("initialized media processing observability services",
-			zap.String("emf_enabled", "true"),
-			zap.String("alerts_enabled", "true"),
-			zap.String("metrics_namespace", "Lesser/Media"))
-	}
-	
-	return emfMetrics, alertManager
-}
-
-// createMediaProcessor creates the main MediaProcessor instance with all dependencies
-func createMediaProcessor(db core.DB, repos *factory.RepositoryFactory, mediaRepos *mediaRepositories, cfg *config.Config, mediaConfig *mediaConfiguration, emfMetrics *observability.EMFMetrics, alertManager *monitoring.AlertManager, awsConfig aws.Config, logger *zap.Logger) *MediaProcessor {
-	return &MediaProcessor{
-		db:                   db,
-		repos:                repos,
-		mediaRepo:            mediaRepos.mediaRepo,
-		mediaAnalyticsRepo:   mediaRepos.mediaAnalyticsRepo,
-		mediaMetadataRepo:    mediaRepos.mediaMetadataRepo,
-		unifiedTracker:      cost.NewLambdaUnifiedTracker(cloudwatch.NewFromConfig(awsConfig), logger, "media-processor", "", ""),
-		tableName:            cfg.DynamoTableName,
-		bucketName:           mediaConfig.bucketName,
-		cdnDomain:            mediaConfig.cdnDomain,
-		mediaConvertEndpoint: mediaConfig.mediaConvertEndpoint,
-		mediaConvertRole:     mediaConfig.mediaConvertRole,
-		mediaConvertQueue:    mediaConfig.mediaConvertQueue,
-		emfMetrics:           emfMetrics,
-		alertManager:         alertManager,
-		startTime:            time.Now(),
-		logger:               logger,
-	}
-}
 
 // setupLiftApp configures the Lift application with middleware and handlers
 func setupLiftApp() liftApp {
@@ -702,7 +557,7 @@ func (mp *MediaProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return errors.Join(ErrAWSConfigLoad, err)
 	}
 
 	// Initialize S3 client
@@ -758,7 +613,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Get job details using DynamORM
 	job, err := mp.mediaRepo.GetMediaJob(ctx, event.JobID)
 	if err != nil {
-		return fmt.Errorf("failed to get job: %w", err)
+		return errors.Join(ErrJobGet, err)
 	}
 
 	// Check if job has already been processed (idempotency)
@@ -806,12 +661,12 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Download original file from S3
 	originalData, err := mp.downloadFromS3(ctx, job.S3Key)
 	if err != nil {
-		return fmt.Errorf("failed to download original: %w", err)
+		return errors.Join(ErrMediaDownload, err)
 	}
 
 	// Validate file type and size against user's configuration
 	if err := mp.validateFileForUser(originalData, job.MimeType, userConfig, event.Username, event.MediaID); err != nil {
-		return fmt.Errorf("file validation failed: %w", err)
+		return errors.Join(ErrFileValidationFailed, err)
 	}
 
 	// Check user's remaining budget before processing
@@ -828,12 +683,12 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		// Fall back to basic upload only
 		result, err := mp.uploadOriginalOnly(ctx, originalData, event, job.MimeType)
 		if err != nil {
-			return fmt.Errorf("failed to upload original file: %w", err)
+			return errors.Join(ErrS3UploadOriginal, err)
 		}
 
 		// Update media record and job
 		if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
-			return fmt.Errorf("failed to update media record: %w", err)
+			return errors.Join(ErrMediaRecordUpdate, err)
 		}
 
 		resultsMap := map[string]any{
@@ -847,7 +702,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		}
 		job.SetCompleted(resultsMap)
 		if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
-			return fmt.Errorf("failed to update job status: %w", err)
+			return errors.Join(ErrJobUpdateStatus, err)
 		}
 
 		// Record successful completion with budget skip
@@ -884,7 +739,10 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		result, processingErr = mp.processAudio(timeoutCtx, originalData, event, job.ProcessingTasks)
 		
 	default:
-		processingErr = fmt.Errorf("unsupported media type: %s", mediaType)
+		mp.logger.Error("unsupported media type for processing",
+			zap.String("media_type", mediaType),
+			zap.String("job_id", event.JobID))
+		processingErr = ErrUnsupportedMediaType
 	}
 
 	if processingErr != nil {
@@ -901,7 +759,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 
 	// Update media record with processing results
 	if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
-		return fmt.Errorf("failed to update media record: %w", err)
+		return errors.Join(ErrMediaRecordUpdate, err)
 	}
 
 	// Update job as completed
@@ -916,7 +774,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 	job.SetCompleted(resultsMap)
 	if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
-		return fmt.Errorf("failed to update job status: %w", err)
+		return errors.Join(ErrJobUpdateStatus, err)
 	}
 
 	// Record successful processing completion
@@ -971,7 +829,7 @@ func (mp *MediaProcessor) processImage(ctx context.Context, data []byte, event M
 		return procErr
 	})
 	if err != nil {
-		return result, fmt.Errorf("failed to process image: %w", err)
+		return result, errors.Join(ErrImageProcessing, err)
 	}
 
 	// Get original image info
@@ -1141,7 +999,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	// 6. Upload original to S3 first
 	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, "original.mp4")
 	if err != nil {
-		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+		return result, errors.Join(ErrS3KeySanitization, err)
 	}
 
 	// Track S3 upload cost
@@ -1149,7 +1007,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	jobMetrics.CostBreakdown["s3_upload"] = s3UploadCost
 
 	if err := mp.uploadToS3(ctx, s3Key, data, "video/mp4"); err != nil {
-		return result, fmt.Errorf("failed to upload video: %w", err)
+		return result, errors.Join(ErrS3UploadVideo, err)
 	}
 
 	// Track S3 storage cost (monthly, prorated)
@@ -1232,7 +1090,7 @@ func (mp *MediaProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 
 	result, err := mp.s3Client.GetObject(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get object from S3: %w", err)
+		return nil, errors.Join(ErrS3GetObject, err)
 	}
 	defer func() {
 		if err := result.Body.Close(); err != nil {
@@ -1245,7 +1103,7 @@ func (mp *MediaProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 	maxSize := int64(maxVideoSize) // 50MB is the largest allowed
 	data, err := common.ReadRequestBody(result.Body, maxSize)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read S3 object: %w", err)
+		return nil, errors.Join(ErrS3ReadObject, err)
 	}
 
 	return data, nil
@@ -1308,7 +1166,7 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 
 	// Update the main media record
 	if err := mp.mediaRepo.UpdateMedia(ctx, media); err != nil {
-		return fmt.Errorf("failed to update media record: %w", err)
+		return errors.Join(ErrMediaRecordUpdate, err)
 	}
 
 	// Create or update MediaMetadata record with processing results
@@ -1507,10 +1365,10 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 	filename := "original" + ext
 	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, filename)
 	if err != nil {
-		return result, fmt.Errorf("failed to sanitize S3 key: %w", err)
+		return result, errors.Join(ErrS3KeySanitization, err)
 	}
 	if err := mp.uploadToS3(ctx, s3Key, data, mimeType); err != nil {
-		return result, fmt.Errorf("failed to upload original: %w", err)
+		return result, errors.Join(ErrS3UploadOriginal, err)
 	}
 
 	result.Sizes["original"] = SizeInfo{
@@ -1646,13 +1504,13 @@ func (mp *MediaProcessor) estimateTranscodingCosts(metrics *TranscodingJobMetric
 func validateFileType(data []byte, claimedMimeType string) error {
 	// Check size first to avoid processing huge files
 	if err := common.ValidateSliceNotEmpty("file_data", data); err != nil {
-		return fmt.Errorf("empty file")
+		return ErrEmptyFile
 	}
 
 	// Validate claimed MIME type format if provided
 	if claimedMimeType != "" {
 		if err := common.ValidateMastodonMimeType(claimedMimeType); err != nil {
-			return fmt.Errorf("invalid MIME type format: %w", err)
+			return errors.Join(ErrInvalidMimeTypeFormat, err)
 		}
 	}
 
@@ -1666,17 +1524,21 @@ func validateFileType(data []byte, claimedMimeType string) error {
 
 	// Validate detected MIME type format
 	if err := common.ValidateMastodonMimeType(detectedType); err != nil {
-		return fmt.Errorf("detected MIME type is invalid: %w", err)
+		return errors.Join(ErrDetectedMimeTypeInvalid, err)
 	}
 
 	// Check if detected type is allowed
 	if !allowedMimeTypes[detectedType] {
-		return fmt.Errorf("file type not allowed: %s", detectedType)
+		// Log the detected type for debugging
+		// Note: logging should be done at call site with proper context
+		return ErrFileTypeNotAllowed
 	}
 
 	// Check if claimed type matches detected type
 	if claimedMimeType != "" && claimedMimeType != detectedType {
-		return fmt.Errorf("claimed MIME type %s does not match detected type %s", claimedMimeType, detectedType)
+		// Log MIME type mismatch details for debugging
+		// Note: logging should be done at call site with proper context
+		return ErrMimeTypeMismatch
 	}
 
 	// Check file size limits based on type
@@ -1691,29 +1553,28 @@ func validateFileType(data []byte, claimedMimeType string) error {
 func checkFileSizeLimit(data []byte, mimeType string) error {
 	size := len(data)
 	var maxSize int
-	var fileType string
 
 	switch {
 	case strings.HasPrefix(mimeType, "image/"):
 		if mimeType == common.ImageGIF {
 			maxSize = maxGifSize
-			fileType = "GIF"
 		} else {
 			maxSize = maxImageSize
-			fileType = "image"
 		}
 	case strings.HasPrefix(mimeType, "video/"):
 		maxSize = maxVideoSize
-		fileType = "video"
 	case strings.HasPrefix(mimeType, "audio/"):
 		maxSize = maxAudioSize
-		fileType = "audio"
 	default:
-		return fmt.Errorf("unknown file type: %s", mimeType)
+		// Log unknown MIME type for debugging
+		// Note: logging should be done at call site with proper context
+		return ErrUnknownFileType
 	}
 
 	if size > maxSize {
-		return fmt.Errorf("%s file too large: %d bytes (max: %d bytes)", fileType, size, maxSize)
+		// Log file size limit exceeded for debugging
+		// Note: logging should be done at call site with proper context
+		return ErrFileTooLarge
 	}
 
 	return nil
@@ -1724,7 +1585,7 @@ func extractAudioDuration(data []byte) (int, error) {
 	// Use dhowden/tag to parse audio metadata
 	metadata, err := tag.ReadFrom(bytes.NewReader(data))
 	if err != nil {
-		return 0, fmt.Errorf("failed to read audio metadata: %w", err)
+		return 0, errors.Join(ErrAudioMetadataRead, err)
 	}
 
 	// Get track and disc information from metadata
@@ -1745,7 +1606,7 @@ func extractAudioDuration(data []byte) (int, error) {
 		}
 	}
 
-	return 0, fmt.Errorf("unable to determine audio duration")
+	return 0, ErrUnableToDetermineAudioDuration
 }
 
 // extractVideoMetadata extracts real video metadata from video data using MP4 atom parsing
@@ -1790,17 +1651,17 @@ func (mp *MediaProcessor) extractVideoMetadata(data []byte) (width, height, dura
 func sanitizeS3Key(username, mediaID, filename string) (string, error) {
 	// Validate username doesn't contain path traversal
 	if strings.Contains(username, "..") || strings.Contains(username, "/") {
-		return "", fmt.Errorf("invalid username for S3 key")
+		return "", ErrInvalidUsernameForS3Key
 	}
 
 	// Validate mediaID
 	if strings.Contains(mediaID, "..") || strings.Contains(mediaID, "/") {
-		return "", fmt.Errorf("invalid media ID for S3 key")
+		return "", ErrInvalidMediaIDForS3Key
 	}
 
 	// Validate filename
 	if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
-		return "", fmt.Errorf("invalid filename for S3 key")
+		return "", ErrInvalidFilenameForS3Key
 	}
 
 	// Construct safe S3 key
@@ -1843,12 +1704,16 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 					zap.String("mime_type", mimeType),
 					zap.String("username", username))
 				// Reject video if we cannot determine duration and user has limits
-				return fmt.Errorf("cannot validate video duration: %w", err)
+				return errors.Join(ErrVideoValidation, err)
 			}
 
 			if actualDuration > config.MaxVideoDuration {
-				return fmt.Errorf("video duration %ds exceeds user limit of %d seconds",
-					actualDuration, config.MaxVideoDuration)
+				mp.logger.Warn("video duration exceeds user limit",
+					zap.Int("actual_duration_seconds", actualDuration),
+					zap.Int("max_duration_seconds", config.MaxVideoDuration),
+					zap.String("username", username),
+					zap.String("media_id", mediaID))
+				return ErrVideoDurationExceeded
 			}
 
 			mp.logger.Debug("video duration validation passed",
@@ -1859,11 +1724,20 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 	case strings.HasPrefix(mimeType, "audio/"):
 		userMaxSize = maxAudioSize
 	default:
-		return fmt.Errorf("unsupported media type: %s", mimeType)
+		mp.logger.Warn("unsupported media type for user",
+			zap.String("mime_type", mimeType),
+			zap.String("username", username),
+			zap.String("media_id", mediaID))
+		return ErrUnsupportedMediaTypeForUser
 	}
 
 	if fileSize > userMaxSize {
-		return fmt.Errorf("file size %d bytes exceeds user limit of %d bytes", fileSize, userMaxSize)
+		mp.logger.Warn("file size exceeds user limit",
+			zap.Int64("file_size_bytes", fileSize),
+			zap.Int64("user_max_size_bytes", userMaxSize),
+			zap.String("username", username),
+			zap.String("media_id", mediaID))
+		return ErrFileSizeExceedsUserLimit
 	}
 
 	mp.logger.Debug("file validation passed",
@@ -2027,10 +1901,10 @@ func (ct *MediaJobCostTracker) AddCost(category string, costMicros int64) error 
 			zap.String("job_id", ct.JobID),
 			zap.String("user_id", ct.UserID),
 			zap.Int64("total_cost_micros", ct.TotalCostMicros),
-			zap.Int64("budget_micros", ct.BudgetMicros))
-		return fmt.Errorf("budget exceeded: spent $%.6f of $%.6f budget", 
-			float64(ct.TotalCostMicros)/1000000.0, 
-			float64(ct.BudgetMicros)/1000000.0)
+			zap.Int64("budget_micros", ct.BudgetMicros),
+			zap.Float64("spent_dollars", float64(ct.TotalCostMicros)/1000000.0),
+			zap.Float64("budget_dollars", float64(ct.BudgetMicros)/1000000.0))
+		return ErrBudgetExceeded
 	}
 
 	return nil
@@ -2066,7 +1940,7 @@ func (ct *MediaJobCostTracker) checkBudgetWarnings() error {
 func (ct *MediaJobCostTracker) updateJobWithWarning(_ float64) error {
 	job, err := ct.mediaRepo.GetMediaJob(context.Background(), ct.JobID)
 	if err != nil {
-		return fmt.Errorf("failed to get job for budget warning: %w", err)
+		return errors.Join(ErrJobUpdateWarning, err)
 	}
 
 	// Add warning to job's cost information

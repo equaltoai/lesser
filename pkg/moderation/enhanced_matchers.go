@@ -138,7 +138,7 @@ func (m *EnhancedURLMatcher) CompileURLPattern(pattern string, patternType URLPa
 	case URLPatternRegex:
 		return m.compileRegexURLPattern(pattern, compiled)
 	default:
-		return fmt.Errorf("unsupported URL pattern type: %s", patternType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedURLPatternType, patternType)
 	}
 }
 
@@ -162,7 +162,7 @@ func (m *EnhancedIPMatcher) CompileIPPattern(pattern string, patternType IPPatte
 	case IPPatternRegex:
 		return m.compileRegexIPPattern(pattern, compiled)
 	default:
-		return fmt.Errorf("unsupported IP pattern type: %s", patternType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedIPPatternType, patternType)
 	}
 }
 
@@ -171,12 +171,12 @@ func (m *EnhancedURLMatcher) MatchURL(urlStr string, patterns []string) (bool, s
 	// Normalize URL first
 	normalizedURL, err := m.normalizeURL(urlStr)
 	if err != nil {
-		return false, "", fmt.Errorf("failed to normalize URL: %w", err)
+		return false, "", fmt.Errorf("%w: %w", ErrFailedToNormalizeURL, err)
 	}
 
 	parsedURL, err := url.Parse(normalizedURL)
 	if err != nil {
-		return false, "", fmt.Errorf("failed to parse URL: %w", err)
+		return false, "", fmt.Errorf("%w: %w", ErrFailedToParseURL, err)
 	}
 
 	for _, pattern := range patterns {
@@ -202,7 +202,7 @@ func (m *EnhancedIPMatcher) MatchIP(ipStr string, patterns []string) (bool, stri
 	// Parse IP address
 	ip := net.ParseIP(strings.TrimSpace(ipStr))
 	if ip == nil {
-		return false, "", fmt.Errorf("invalid IP address: %s", ipStr)
+		return false, "", fmt.Errorf("%w: %s", ErrInvalidIPAddress, ipStr)
 	}
 
 	for _, pattern := range patterns {
@@ -291,7 +291,7 @@ func (m *EnhancedURLMatcher) normalizeURL(urlStr string) (string, error) {
 func (m *EnhancedURLMatcher) compileExactURLPattern(pattern string, compiled *compiledURLPattern) error {
 	normalizedPattern, err := m.normalizeURL(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to normalize pattern: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToNormalizePattern, err)
 	}
 
 	compiled.exact = true
@@ -309,7 +309,7 @@ func (m *EnhancedURLMatcher) compileDomainPattern(pattern string, compiled *comp
 	if strings.Contains(domain, "://") {
 		parsedURL, err := url.Parse(domain)
 		if err != nil {
-			return fmt.Errorf("invalid domain pattern: %w", err)
+			return fmt.Errorf("%w: %w", ErrInvalidDomainPattern, err)
 		}
 		domain = parsedURL.Host
 		compiled.scheme = parsedURL.Scheme
@@ -330,7 +330,7 @@ func (m *EnhancedURLMatcher) compileDomainPattern(pattern string, compiled *comp
 	
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile domain regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompileDomainRegex, err)
 	}
 
 	compiled.domainPattern = regex
@@ -362,7 +362,7 @@ func (m *EnhancedURLMatcher) compileSubdomainPattern(pattern string, compiled *c
 
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile subdomain regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompileSubdomainRegex, err)
 	}
 
 	compiled.domainPattern = regex
@@ -385,7 +385,7 @@ func (m *EnhancedURLMatcher) compilePathPattern(pattern string, compiled *compil
 
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile path regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompilePathRegex, err)
 	}
 
 	compiled.pathPattern = regex
@@ -407,7 +407,7 @@ func (m *EnhancedURLMatcher) compileQueryPattern(pattern string, compiled *compi
 
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile query regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompileQueryRegex, err)
 	}
 
 	compiled.queryPattern = regex
@@ -419,7 +419,7 @@ func (m *EnhancedURLMatcher) compileQueryPattern(pattern string, compiled *compi
 func (m *EnhancedURLMatcher) compileRegexURLPattern(pattern string, compiled *compiledURLPattern) error {
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile URL regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompileURLRegex, err)
 	}
 
 	compiled.domainPattern = regex // Store in domainPattern for full URL matching
@@ -492,7 +492,7 @@ func (m *EnhancedURLMatcher) matchCompiledURL(parsedURL *url.URL, compiled *comp
 func (m *EnhancedIPMatcher) compileSingleIPPattern(pattern string, compiled *compiledIPPattern) error {
 	ip := net.ParseIP(strings.TrimSpace(pattern))
 	if ip == nil {
-		return fmt.Errorf("invalid IP address: %s", pattern)
+		return fmt.Errorf("%w: %s", ErrInvalidIPAddress, pattern)
 	}
 
 	compiled.singleIP = ip
@@ -507,7 +507,7 @@ func (m *EnhancedIPMatcher) compileSingleIPPattern(pattern string, compiled *com
 func (m *EnhancedIPMatcher) compileCIDRPattern(pattern string, compiled *compiledIPPattern) error {
 	_, network, err := net.ParseCIDR(strings.TrimSpace(pattern))
 	if err != nil {
-		return fmt.Errorf("invalid CIDR block: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidCIDRBlock, err)
 	}
 
 	compiled.network = network
@@ -523,26 +523,26 @@ func (m *EnhancedIPMatcher) compileCIDRPattern(pattern string, compiled *compile
 func (m *EnhancedIPMatcher) compileRangePattern(pattern string, compiled *compiledIPPattern) error {
 	parts := strings.Split(strings.TrimSpace(pattern), "-")
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid IP range format, expected start-end: %s", pattern)
+		return fmt.Errorf("%w: %s", ErrInvalidIPRangeFormat, pattern)
 	}
 
 	startIP := net.ParseIP(strings.TrimSpace(parts[0]))
 	endIP := net.ParseIP(strings.TrimSpace(parts[1]))
 
 	if startIP == nil || endIP == nil {
-		return fmt.Errorf("invalid IP addresses in range: %s", pattern)
+		return fmt.Errorf("%w: %s", ErrInvalidIPAddressesInRange, pattern)
 	}
 
 	// Ensure both IPs are same version
 	startV4 := startIP.To4() != nil
 	endV4 := endIP.To4() != nil
 	if startV4 != endV4 {
-		return fmt.Errorf("IP range must use same IP version: %s", pattern)
+		return fmt.Errorf("%w: %s", ErrIPRangeMixedVersions, pattern)
 	}
 
 	// Validate range order
 	if compareIPs(startIP, endIP) > 0 {
-		return fmt.Errorf("invalid IP range, start must be <= end: %s", pattern)
+		return fmt.Errorf("%w: %s", ErrInvalidIPRangeOrder, pattern)
 	}
 
 	compiled.rangeStart = startIP
@@ -572,13 +572,13 @@ func (m *EnhancedIPMatcher) compileRegexIPPattern(pattern string, compiled *comp
 	
 	for _, dangerous := range dangerousPatterns {
 		if strings.Contains(pattern, dangerous) {
-			return fmt.Errorf("potentially unsafe regex pattern detected")
+			return ErrUnsafeRegexPattern
 		}
 	}
 
 	_, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("failed to compile IP regex: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToCompileIPRegex, err)
 	}
 
 	// Store pattern string for matching (we'll compile it during match)
@@ -642,7 +642,7 @@ func ValidateURLPattern(pattern string, patternType URLPatternType) error {
 
 	// Check for potentially malicious patterns
 	if strings.Count(pattern, "*") > 10 {
-		return fmt.Errorf("too many wildcards in pattern")
+		return ErrTooManyWildcards
 	}
 
 	// Validate based on pattern type
@@ -659,7 +659,7 @@ func ValidateURLPattern(pattern string, patternType URLPatternType) error {
 	case URLPatternRegex:
 		return validateRegexPattern(pattern)
 	default:
-		return fmt.Errorf("unsupported pattern type: %s", patternType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedPatternType, patternType)
 	}
 }
 
@@ -676,7 +676,7 @@ func ValidateIPPattern(pattern string, patternType IPPatternType) error {
 	switch patternType {
 	case IPPatternSingle:
 		if net.ParseIP(strings.TrimSpace(pattern)) == nil {
-			return fmt.Errorf("invalid IP address: %s", pattern)
+			return fmt.Errorf("%w: %s", ErrInvalidIPAddress, pattern)
 		}
 	case IPPatternCIDR:
 		_, _, err := net.ParseCIDR(strings.TrimSpace(pattern))
@@ -684,15 +684,15 @@ func ValidateIPPattern(pattern string, patternType IPPatternType) error {
 	case IPPatternRange:
 		parts := strings.Split(pattern, "-")
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid range format, expected start-end")
+			return ErrInvalidIPRangeFormat
 		}
 		if net.ParseIP(strings.TrimSpace(parts[0])) == nil || net.ParseIP(strings.TrimSpace(parts[1])) == nil {
-			return fmt.Errorf("invalid IP addresses in range")
+			return ErrInvalidIPAddressesInRange
 		}
 	case IPPatternRegex:
 		return validateRegexPattern(pattern)
 	default:
-		return fmt.Errorf("unsupported pattern type: %s", patternType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedPatternType, patternType)
 	}
 
 	return nil
@@ -706,7 +706,7 @@ func validateDomainPattern(pattern string) error {
 	if strings.Contains(domain, "://") {
 		parsedURL, err := url.Parse(domain)
 		if err != nil {
-			return fmt.Errorf("invalid URL in domain pattern: %w", err)
+			return fmt.Errorf("%w: %w", ErrInvalidURLInDomainPattern, err)
 		}
 		domain = parsedURL.Host
 	}
@@ -718,7 +718,7 @@ func validateDomainPattern(pattern string) error {
 	if strings.Contains(domain, ":") {
 		host, _, err := net.SplitHostPort(domain)
 		if err != nil {
-			return fmt.Errorf("invalid host:port format: %w", err)
+			return fmt.Errorf("%w: %w", ErrInvalidHostPortFormat, err)
 		}
 		domain = host
 	}
@@ -731,7 +731,7 @@ func validateDomainPattern(pattern string) error {
 	// Check for valid characters
 	for _, r := range domain {
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' && r != '-' {
-			return fmt.Errorf("invalid character in domain: %c", r)
+			return fmt.Errorf("%w: %c", ErrInvalidCharacterInDomain, r)
 		}
 	}
 
@@ -742,7 +742,7 @@ func validateDomainPattern(pattern string) error {
 			return err
 		}
 		if strings.HasPrefix(part, "-") || strings.HasSuffix(part, "-") {
-			return fmt.Errorf("domain part cannot start or end with hyphen")
+			return ErrDomainPartHyphenRule
 		}
 	}
 
@@ -752,12 +752,12 @@ func validateDomainPattern(pattern string) error {
 // validatePathPattern validates a path pattern
 func validatePathPattern(pattern string) error {
 	if !strings.HasPrefix(pattern, "/") {
-		return fmt.Errorf("path pattern must start with /")
+		return ErrPathMustStartWithSlash
 	}
 
 	// Check for path traversal attempts
 	if strings.Contains(pattern, "..") {
-		return fmt.Errorf("path traversal not allowed in patterns")
+		return ErrPathTraversalNotAllowed
 	}
 
 	return nil
@@ -770,7 +770,7 @@ func validateQueryPattern(pattern string) error {
 
 	// Basic validation - ensure it looks like query parameters
 	if strings.Contains(pattern, " ") {
-		return fmt.Errorf("spaces not allowed in query patterns")
+		return ErrSpacesNotAllowedInQuery
 	}
 
 	return nil
@@ -794,14 +794,14 @@ func validateRegexPattern(pattern string) error {
 	
 	for _, dangerous := range dangerousPatterns {
 		if strings.Contains(pattern, dangerous) {
-			return fmt.Errorf("potentially unsafe regex pattern detected")
+			return ErrUnsafeRegexPattern
 		}
 	}
 
 	// Try to compile to validate syntax
 	_, err := regexp.Compile(pattern)
 	if err != nil {
-		return fmt.Errorf("invalid regex pattern: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidRegexPattern, err)
 	}
 
 	return nil

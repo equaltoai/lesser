@@ -46,3 +46,20 @@ func (a *AuthorizationCode) BeforeCreate() error {
 
 	return nil
 }
+
+// GetPK returns the partition key for BaseModel interface
+func (a *AuthorizationCode) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (a *AuthorizationCode) GetSK() string {
+	return a.SK
+}
+
+// UpdateKeys implements BaseModel interface and updates DynamoDB keys
+func (a *AuthorizationCode) UpdateKeys() error {
+	a.PK = "AUTHCODE#" + a.Code
+	a.SK = "CODE"
+	return nil
+}

@@ -31,7 +31,7 @@ type RouteDeliveryResult struct {
 }
 
 // UpdateKeys updates the GSI keys based on the current data
-func (r *RouteDeliveryResult) UpdateKeys() {
+func (r *RouteDeliveryResult) UpdateKeys() error {
 	r.PK = fmt.Sprintf("ROUTE#%s", r.RouteID)
 	r.SK = fmt.Sprintf("RESULT#%d", r.Timestamp.UnixNano())
 	r.GSI1PK = "RESULTS"
@@ -39,6 +39,17 @@ func (r *RouteDeliveryResult) UpdateKeys() {
 
 	// Set TTL for 30 days from now
 	r.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (r *RouteDeliveryResult) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key
+func (r *RouteDeliveryResult) GetSK() string {
+	return r.SK
 }
 
 // OptimizationDecision represents a route optimization decision record
@@ -58,10 +69,21 @@ type OptimizationDecision struct {
 }
 
 // UpdateKeys updates the keys based on the current data
-func (o *OptimizationDecision) UpdateKeys() {
+func (o *OptimizationDecision) UpdateKeys() error {
 	o.PK = "OPTIMIZATION"
 	o.SK = fmt.Sprintf("DECISION#%d", o.Timestamp.UnixNano())
 
 	// Set TTL for 7 days from now
 	o.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (o *OptimizationDecision) GetPK() string {
+	return o.PK
+}
+
+// GetSK returns the sort key
+func (o *OptimizationDecision) GetSK() string {
+	return o.SK
 }

@@ -99,7 +99,7 @@ type StreamingPerformanceMetrics struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (s *StreamingCloudWatchMetrics) UpdateKeys() {
+func (s *StreamingCloudWatchMetrics) UpdateKeys() error {
 	// Set GSI1 keys for time-based queries
 	s.GSI1PK = fmt.Sprintf("METRIC_TIME#%s", s.Date)
 	s.GSI1SK = fmt.Sprintf("%s#%s", s.MetricType, s.Timestamp.Format(time.RFC3339))
@@ -107,6 +107,17 @@ func (s *StreamingCloudWatchMetrics) UpdateKeys() {
 	// Set GSI2 keys for media-specific queries
 	s.GSI2PK = fmt.Sprintf("MEDIA#%s", s.MediaID)
 	s.GSI2SK = fmt.Sprintf("%s#%s", s.MetricType, s.Timestamp.Format(time.RFC3339))
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (s *StreamingCloudWatchMetrics) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (s *StreamingCloudWatchMetrics) GetSK() string {
+	return s.SK
 }
 
 // SetQualityBreakdown configures this record for quality breakdown metrics

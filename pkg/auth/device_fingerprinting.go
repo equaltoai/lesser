@@ -4,8 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,20 +23,20 @@ type DeviceFingerprintManager struct {
 
 // DeviceFingerprintConfig holds device fingerprinting configuration
 type DeviceFingerprintConfig struct {
-	EnableFingerprinting    bool          // Enable device fingerprinting
-	StrictFingerprinting    bool          // Strict fingerprint matching
-	FingerprintTTL         time.Duration // How long to keep fingerprints
-	TrustNewDevices        bool          // Automatically trust new devices
-	RequireDeviceApproval  bool          // Require manual device approval
-	MaxDevicesPerUser      int           // Maximum devices per user
-	DeviceTrustThreshold   time.Duration // Time before device becomes trusted
+	EnableFingerprinting  bool          // Enable device fingerprinting
+	StrictFingerprinting  bool          // Strict fingerprint matching
+	FingerprintTTL        time.Duration // How long to keep fingerprints
+	TrustNewDevices       bool          // Automatically trust new devices
+	RequireDeviceApproval bool          // Require manual device approval
+	MaxDevicesPerUser     int           // Maximum devices per user
+	DeviceTrustThreshold  time.Duration // Time before device becomes trusted
 }
 
 // DefaultDeviceFingerprintConfig provides secure defaults
 func DefaultDeviceFingerprintConfig() *DeviceFingerprintConfig {
 	return &DeviceFingerprintConfig{
-		EnableFingerprinting:   true,
-		StrictFingerprinting:   false,
+		EnableFingerprinting:  true,
+		StrictFingerprinting:  false,
 		FingerprintTTL:        90 * 24 * time.Hour, // 90 days
 		TrustNewDevices:       false,
 		RequireDeviceApproval: false,
@@ -47,32 +48,32 @@ func DefaultDeviceFingerprintConfig() *DeviceFingerprintConfig {
 // EnhancedDeviceFingerprint represents a comprehensive device fingerprint
 type EnhancedDeviceFingerprint struct {
 	// Basic identifiers
-	UserAgent     string `json:"user_agent"`
-	IPAddress     string `json:"ip_address"`
-	AcceptLang    string `json:"accept_language,omitempty"`
+	UserAgent      string `json:"user_agent"`
+	IPAddress      string `json:"ip_address"`
+	AcceptLang     string `json:"accept_language,omitempty"`
 	AcceptEncoding string `json:"accept_encoding,omitempty"`
-	
+
 	// Browser fingerprinting
 	Timezone      string `json:"timezone,omitempty"`
 	ScreenRes     string `json:"screen_resolution,omitempty"`
 	ColorDepth    string `json:"color_depth,omitempty"`
 	Platform      string `json:"platform,omitempty"`
 	CookieEnabled string `json:"cookie_enabled,omitempty"`
-	
+
 	// Network fingerprinting
-	IPVersion     string `json:"ip_version"`      // IPv4 or IPv6
-	ASN           string `json:"asn,omitempty"`   // Autonomous System Number
-	ISP           string `json:"isp,omitempty"`   // Internet Service Provider
-	Country       string `json:"country,omitempty"`
-	Region        string `json:"region,omitempty"`
-	
+	IPVersion string `json:"ip_version"`    // IPv4 or IPv6
+	ASN       string `json:"asn,omitempty"` // Autonomous System Number
+	ISP       string `json:"isp,omitempty"` // Internet Service Provider
+	Country   string `json:"country,omitempty"`
+	Region    string `json:"region,omitempty"`
+
 	// Behavioral fingerprinting
 	RequestTiming time.Duration `json:"request_timing,omitempty"`
 	RequestOrder  []string      `json:"request_order,omitempty"`
-	
+
 	// Computed values
-	BasicFingerprint    string `json:"basic_fingerprint"`    // Hash of basic attributes
-	ExtendedFingerprint string `json:"extended_fingerprint"` // Hash of all attributes
+	BasicFingerprint    string  `json:"basic_fingerprint"`    // Hash of basic attributes
+	ExtendedFingerprint string  `json:"extended_fingerprint"` // Hash of all attributes
 	FingerprintEntropy  float64 `json:"fingerprint_entropy"`  // Uniqueness score
 }
 
@@ -94,14 +95,14 @@ type DeviceInfo struct {
 
 // DeviceValidationResult represents device validation results
 type DeviceValidationResult struct {
-	IsKnownDevice       bool     `json:"is_known_device"`
-	DeviceID           string   `json:"device_id"`
-	TrustLevel         string   `json:"trust_level"`
-	MatchConfidence    float64  `json:"match_confidence"`
-	RequiresChallenge  bool     `json:"requires_challenge"`
-	RequiresApproval   bool     `json:"requires_approval"`
-	ChangedAttributes  []string `json:"changed_attributes"`
-	RiskScore          float64  `json:"risk_score"`
+	IsKnownDevice     bool     `json:"is_known_device"`
+	DeviceID          string   `json:"device_id"`
+	TrustLevel        string   `json:"trust_level"`
+	MatchConfidence   float64  `json:"match_confidence"`
+	RequiresChallenge bool     `json:"requires_challenge"`
+	RequiresApproval  bool     `json:"requires_approval"`
+	ChangedAttributes []string `json:"changed_attributes"`
+	RiskScore         float64  `json:"risk_score"`
 }
 
 // NewDeviceFingerprintManager creates a new device fingerprint manager
@@ -109,7 +110,7 @@ func NewDeviceFingerprintManager(repos StorageProvider, logger *zap.Logger, conf
 	if config == nil {
 		config = DefaultDeviceFingerprintConfig()
 	}
-	
+
 	return &DeviceFingerprintManager{
 		repos:  repos,
 		logger: logger,
@@ -166,7 +167,10 @@ func (dfm *DeviceFingerprintManager) ValidateDevice(ctx context.Context, usernam
 	// Get user's known devices
 	devices, err := dfm.repos.Account().GetUserDevices(ctx, username)
 	if err != nil {
-		return result, fmt.Errorf("failed to get user devices: %w", err)
+		dfm.logger.Error("failed to retrieve user devices",
+			zap.String("username", username),
+			zap.Error(err))
+		return result, errors.Join(ErrUserDevicesRetrieval, err)
 	}
 
 	// Find best matching device
@@ -192,13 +196,13 @@ func (dfm *DeviceFingerprintManager) ValidateDevice(ctx context.Context, usernam
 		result.DeviceID = bestMatch.DeviceID
 		result.TrustLevel = bestMatch.TrustLevel
 		result.MatchConfidence = bestConfidence
-		
+
 		// Check for changes in device attributes
 		result.ChangedAttributes = dfm.detectDeviceChanges(bestMatch, fingerprint)
-		
+
 		// Calculate risk score based on changes
 		result.RiskScore = dfm.calculateDeviceRiskScore(bestMatch, fingerprint, result.ChangedAttributes)
-		
+
 		// Determine if challenges/approvals are needed
 		result.RequiresChallenge = result.RiskScore > 0.5 || len(result.ChangedAttributes) > 2
 		result.RequiresApproval = result.RiskScore > 0.8 && dfm.config.RequireDeviceApproval
@@ -237,20 +241,25 @@ func (dfm *DeviceFingerprintManager) RegisterNewDevice(ctx context.Context, user
 
 	// Create device record
 	device := &storage.Device{
-		DeviceID:       deviceID,
-		Username:       username,
-		DeviceName:     deviceName,
-		DeviceType:     dfm.detectDeviceType(fingerprint.UserAgent),
-		LastIPAddress:  fingerprint.IPAddress,
-		LastUserAgent:  fingerprint.UserAgent,
-		CreatedAt:      time.Now(),
-		LastSeenAt:     time.Now(),
-		TrustLevel:     trustLevel,
+		DeviceID:      deviceID,
+		Username:      username,
+		DeviceName:    deviceName,
+		DeviceType:    dfm.detectDeviceType(fingerprint.UserAgent),
+		LastIPAddress: fingerprint.IPAddress,
+		LastUserAgent: fingerprint.UserAgent,
+		CreatedAt:     time.Now(),
+		LastSeenAt:    time.Now(),
+		TrustLevel:    trustLevel,
 	}
 
 	err := dfm.repos.Account().CreateDevice(ctx, device)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create device: %w", err)
+		dfm.logger.Error("failed to create device record",
+			zap.String("username", username),
+			zap.String("deviceID", deviceID),
+			zap.String("deviceType", device.DeviceType),
+			zap.Error(err))
+		return nil, errors.Join(ErrDeviceCreation, err)
 	}
 
 	deviceInfo := &DeviceInfo{
@@ -304,16 +313,15 @@ func (dfm *DeviceFingerprintManager) UpdateDeviceFingerprint(ctx context.Context
 
 // generateBasicFingerprint creates a hash from basic device attributes
 func (dfm *DeviceFingerprintManager) generateBasicFingerprint(fp *EnhancedDeviceFingerprint) string {
-	combined := fmt.Sprintf("%s|%s|%s", fp.UserAgent, fp.IPAddress, fp.AcceptLang)
+	combined := fp.UserAgent + "|" + fp.IPAddress + "|" + fp.AcceptLang
 	hash := sha256.Sum256([]byte(combined))
 	return hex.EncodeToString(hash[:])
 }
 
 // generateExtendedFingerprint creates a hash from all device attributes
 func (dfm *DeviceFingerprintManager) generateExtendedFingerprint(fp *EnhancedDeviceFingerprint) string {
-	combined := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s|%s",
-		fp.UserAgent, fp.IPAddress, fp.AcceptLang, fp.AcceptEncoding,
-		fp.Timezone, fp.ScreenRes, fp.ColorDepth, fp.Platform)
+	combined := fp.UserAgent + "|" + fp.IPAddress + "|" + fp.AcceptLang + "|" + fp.AcceptEncoding + "|" +
+		fp.Timezone + "|" + fp.ScreenRes + "|" + fp.ColorDepth + "|" + fp.Platform
 	hash := sha256.Sum256([]byte(combined))
 	return hex.EncodeToString(hash[:])
 }
@@ -322,7 +330,7 @@ func (dfm *DeviceFingerprintManager) generateExtendedFingerprint(fp *EnhancedDev
 func (dfm *DeviceFingerprintManager) calculateFingerprintEntropy(fp *EnhancedDeviceFingerprint) float64 {
 	// Simple entropy calculation based on available attributes
 	entropy := 0.0
-	
+
 	if fp.UserAgent != "" {
 		entropy += 2.0 // User agents are fairly unique
 	}
@@ -338,7 +346,7 @@ func (dfm *DeviceFingerprintManager) calculateFingerprintEntropy(fp *EnhancedDev
 	if fp.ColorDepth != "" {
 		entropy += 0.3 // Color depth adds minimal uniqueness
 	}
-	
+
 	// Normalize to 0-1 scale
 	maxEntropy := 5.3
 	return entropy / maxEntropy
@@ -476,7 +484,7 @@ func (dfm *DeviceFingerprintManager) detectDeviceType(userAgent string) string {
 
 func (dfm *DeviceFingerprintManager) generateDeviceID(fingerprint *EnhancedDeviceFingerprint) string {
 	// Generate device ID from fingerprint
-	combined := fmt.Sprintf("%s_%d", fingerprint.ExtendedFingerprint, time.Now().UnixNano())
+	combined := fingerprint.ExtendedFingerprint + "_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	hash := sha256.Sum256([]byte(combined))
 	return hex.EncodeToString(hash[:])[:16] // Use first 16 chars
 }
@@ -486,11 +494,11 @@ func (dfm *DeviceFingerprintManager) isUserAgentSimilar(ua1, ua2 string) bool {
 	if len(ua1) == 0 || len(ua2) == 0 {
 		return false
 	}
-	
+
 	// Extract browser and major version
 	browser1 := dfm.extractBrowserFromUA(ua1)
 	browser2 := dfm.extractBrowserFromUA(ua2)
-	
+
 	return browser1 == browser2
 }
 
@@ -514,18 +522,18 @@ func (dfm *DeviceFingerprintManager) isIPInSameNetwork(ip1, ip2 string) bool {
 	// Check if IPs are in same /24 network for IPv4
 	parsedIP1 := net.ParseIP(ip1)
 	parsedIP2 := net.ParseIP(ip2)
-	
+
 	if parsedIP1 == nil || parsedIP2 == nil {
 		return false
 	}
-	
+
 	if parsedIP1.To4() != nil && parsedIP2.To4() != nil {
 		// IPv4 - check /24 subnet
 		return parsedIP1.To4()[0] == parsedIP2.To4()[0] &&
-			   parsedIP1.To4()[1] == parsedIP2.To4()[1] &&
-			   parsedIP1.To4()[2] == parsedIP2.To4()[2]
+			parsedIP1.To4()[1] == parsedIP2.To4()[1] &&
+			parsedIP1.To4()[2] == parsedIP2.To4()[2]
 	}
-	
+
 	return false
 }
 
@@ -542,7 +550,7 @@ func (dfm *DeviceFingerprintManager) isHighRiskUserAgentChange(oldUA, newUA stri
 	// Check for suspicious user agent changes
 	oldBrowser := dfm.extractBrowserFromUA(oldUA)
 	newBrowser := dfm.extractBrowserFromUA(newUA)
-	
+
 	// Different browsers is suspicious
 	return oldBrowser != newBrowser
 }
@@ -552,14 +560,14 @@ func (dfm *DeviceFingerprintManager) isSuspiciousUserAgent(userAgent string) boo
 		"bot", "crawler", "spider", "scraper",
 		"curl", "wget", "python", "postman",
 	}
-	
+
 	userAgentLower := strings.ToLower(userAgent)
 	for _, pattern := range suspiciousPatterns {
 		if strings.Contains(userAgentLower, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -574,10 +582,14 @@ func (dfm *DeviceFingerprintManager) enforceDeviceLimits(ctx context.Context, us
 	if err != nil {
 		return err
 	}
-	
+
 	if len(devices) >= dfm.config.MaxDevicesPerUser {
-		return fmt.Errorf("maximum number of devices (%d) exceeded", dfm.config.MaxDevicesPerUser)
+		dfm.logger.Warn("user has exceeded maximum device limit",
+			zap.String("username", username),
+			zap.Int("currentDevices", len(devices)),
+			zap.Int("maxDevices", dfm.config.MaxDevicesPerUser))
+		return ErrMaxDevicesExceeded
 	}
-	
+
 	return nil
 }

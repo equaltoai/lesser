@@ -245,12 +245,12 @@ func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
 }
 
 // Cost returns a mock cost repository for testing
-func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository {
+func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.CostTrackingRepository)
+	return args.Get(0).(*repositories.TrackingRepository)
 }
 
 // WebSocketCost returns a mock WebSocket cost repository for testing
@@ -446,4 +446,22 @@ func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingClo
 		return nil
 	}
 	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
+}
+
+// DNSCache returns a mock dnscache repository for testing
+func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.DNSCacheRepository)
+}
+
+// Filter returns a mock filter repository for testing
+func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.FilterRepository)
 }

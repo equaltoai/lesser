@@ -21,7 +21,18 @@ type SearchEmbedding struct {
 }
 
 // UpdateKeys updates the partition and sort keys based on the model's attributes
-func (s *SearchEmbedding) UpdateKeys() {
+func (s *SearchEmbedding) UpdateKeys() error {
 	s.PK = fmt.Sprintf("EMBEDDING#%s", s.ContentID)
 	s.SK = "VECTOR"
+	return nil
+}
+
+// GetPK returns the partition key
+func (s *SearchEmbedding) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key
+func (s *SearchEmbedding) GetSK() string {
+	return s.SK
 }

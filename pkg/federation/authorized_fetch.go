@@ -4,13 +4,13 @@ package federation
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
@@ -46,7 +46,8 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 	// Create request
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, objectURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		f.logger.Error("failed to create HTTP request", zap.String("url", objectURL), zap.Error(err))
+		return nil, errors.Join(ErrRequestCreationFailed, err)
 	}
 
 	// Set headers
@@ -55,47 +56,57 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 
 	// Validate repository access for private key retrieval
 	if err := common.ValidateRepositoryAccess(signingActor.PreferredUsername, signingActor.ID, "GetActorPrivateKey"); err != nil {
-		return nil, fmt.Errorf("repository access validation failed: %w", err)
+		f.logger.Error("repository access validation failed", zap.String("username", signingActor.PreferredUsername), zap.Error(err))
+		return nil, errors.Join(ErrRepositoryAccessValidationFailed, err)
 	}
 
 	// Get the actor's private key
 	privateKeyPEM, err := f.store.Actor().GetActorPrivateKey(ctx, signingActor.PreferredUsername)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get private key: %w", err)
+		f.logger.Error("failed to get private key", zap.String("username", signingActor.PreferredUsername), zap.Error(err))
+		return nil, errors.Join(ErrPrivateKeyRetrievalFailed, err)
 	}
 
 	// Parse the private key
 	privateKey, err := ParsePrivateKeyPEM([]byte(privateKeyPEM))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
+		f.logger.Error("failed to parse private key", zap.Error(err))
+		return nil, errors.Join(ErrPrivateKeyParseFailed, err)
 	}
 
 	// Sign the request
 	if err := SignHTTPRequest(req, privateKey, signingActor.PublicKey.ID); err != nil {
-		return nil, fmt.Errorf("failed to sign request: %w", err)
+		f.logger.Error("failed to sign request", zap.String("key_id", signingActor.PublicKey.ID), zap.Error(err))
+		return nil, errors.Join(ErrRequestSigningFailed, err)
 	}
 
 	// Send the request
 	resp, err := f.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		f.logger.Error("failed to send request", zap.String("url", objectURL), zap.Error(err))
+		return nil, errors.Join(ErrHTTPRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch object: status %d", resp.StatusCode)
+		f.logger.Error("object fetch failed with non-2xx status", 
+			zap.String("url", objectURL), 
+			zap.Int("status_code", resp.StatusCode))
+		return nil, ErrFetchObjectHTTPFailed
 	}
 
 	// Decode the response
 	var result map[string]any
 	if err := common.ParseHTTPResponse(resp.Body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		f.logger.Error("failed to decode response", zap.String("url", objectURL), zap.Error(err))
+		return nil, errors.Join(ErrResponseDecodeFailed, err)
 	}
 
 	// Validate the object
 	if err := f.validateObject(result, objectURL); err != nil {
-		return nil, fmt.Errorf("object validation failed: %w", err)
+		f.logger.Error("object validation failed", zap.String("url", objectURL), zap.Error(err))
+		return nil, errors.Join(ErrObjectValidationFailed, err)
 	}
 
 	return result, nil
@@ -116,18 +127,20 @@ func (f *AuthorizedFetchService) FetchActor(ctx context.Context, actorURL string
 	// Convert to Actor
 	objMap, ok := obj.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid actor object type")
+		return nil, ErrInvalidActorObjectType
 	}
 
 	// Marshal to JSON then unmarshal to Actor
 	data, err := json.Marshal(objMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal actor data: %w", err)
+		f.logger.Error("failed to marshal actor data", zap.Error(err))
+		return nil, errors.Join(ErrActorDataMarshalFailed, err)
 	}
 
 	var actor activitypub.Actor
 	if err := common.ParseActivityPubObject(data, &actor); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal actor: %w", err)
+		f.logger.Error("failed to unmarshal actor", zap.Error(err))
+		return nil, errors.Join(ErrActorUnmarshalFailed, err)
 	}
 
 	// Validate actor type
@@ -136,7 +149,8 @@ func (f *AuthorizedFetchService) FetchActor(ctx context.Context, actorURL string
 		activitypub.OrganizationType, activitypub.ApplicationType:
 		// Valid actor types
 	default:
-		return nil, fmt.Errorf("not an actor object: type %s", actor.Type)
+		f.logger.Error("invalid actor type", zap.String("type", actor.Type))
+		return nil, ErrNotActorObject
 	}
 
 	return &actor, nil
@@ -151,19 +165,21 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 	// Extract signature from headers
 	signature := req.Header.Get("Signature")
 	if err := common.ValidateRequiredParam("signature", signature); err != nil {
-		return nil, fmt.Errorf("missing signature header")
+		return nil, ErrMissingSignatureHeader
 	}
 
 	// Parse the signature
 	sig, err := ParseSignatureHeader(signature)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse signature: %w", err)
+		f.logger.Error("failed to parse signature", zap.String("signature", signature), zap.Error(err))
+		return nil, errors.Join(ErrSignatureParseFailed, err)
 	}
 
 	// Extract actor ID from keyId
 	actorID := extractActorIDFromKeyID(sig.KeyID)
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
-		return nil, fmt.Errorf("failed to extract actor ID from keyId: %s", sig.KeyID)
+		f.logger.Error("failed to extract actor ID from keyId", zap.String("key_id", sig.KeyID))
+		return nil, ErrExtractActorIDFailed
 	}
 
 	// Fetch the actor to get their public key
@@ -172,18 +188,21 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 	// or maintain a cache of known actors
 	actor, err := f.fetchActorWithoutAuth(ctx, actorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch actor: %w", err)
+		f.logger.Error("failed to fetch actor", zap.String("actor_id", actorID), zap.Error(err))
+		return nil, errors.Join(ErrFetchRemoteActorFailed, err)
 	}
 
 	// Parse the public key
 	publicKey, err := ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		f.logger.Error("failed to parse public key", zap.String("actor_id", actor.ID), zap.Error(err))
+		return nil, errors.Join(ErrPublicKeyParseFailed, err)
 	}
 
 	// Verify the signature
 	if err := VerifyHTTPSignature(req, publicKey); err != nil {
-		return nil, fmt.Errorf("signature verification failed: %w", err)
+		f.logger.Error("signature verification failed", zap.String("actor_id", actor.ID), zap.Error(err))
+		return nil, errors.Join(ErrSignatureVerificationFailed, err)
 	}
 
 	return actor, nil
@@ -191,12 +210,13 @@ func (f *AuthorizedFetchService) VerifyAuthorizedFetch(ctx context.Context, req 
 
 // IsAuthorizedFetchEnabled checks if authorized fetch is enabled
 func (f *AuthorizedFetchService) IsAuthorizedFetchEnabled(ctx context.Context) bool {
-	// Check environment variable first
-	if envValue := os.Getenv("AUTHORIZED_FETCH_ENABLED"); envValue != "" {
-		return envValue == "true" || envValue == "1"
+	// Check centralized configuration first
+	cfg := config.Get()
+	if cfg.AuthorizedFetchEnabled {
+		return true
 	}
 
-	// Check instance configuration from storage
+	// Fall back to checking instance configuration from storage
 	rules, err := f.store.Instance().GetInstanceRules(ctx)
 	if err != nil {
 		f.logger.Debug("failed to get instance rules, defaulting authorized fetch to disabled",
@@ -221,12 +241,13 @@ func (f *AuthorizedFetchService) validateObject(obj map[string]any, expectedID s
 	// Verify the object ID matches what we requested
 	id, ok := obj["id"].(string)
 	if !ok || id != expectedID {
-		return fmt.Errorf("object ID mismatch: expected %s, got %s", expectedID, id)
+		f.logger.Error("object ID mismatch", zap.String("expected", expectedID), zap.String("got", id))
+		return ErrObjectIDMismatch
 	}
 
 	// Verify the object has a type
 	if _, ok := obj["type"].(string); !ok {
-		return fmt.Errorf("object missing type field")
+		return ErrObjectMissingType
 	}
 
 	return nil
@@ -250,7 +271,10 @@ func (f *AuthorizedFetchService) fetchActorWithoutAuth(ctx context.Context, acto
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
+		f.logger.Error("actor fetch failed with non-2xx status", 
+			zap.String("url", actorURL), 
+			zap.Int("status_code", resp.StatusCode))
+		return nil, ErrFetchActorHTTPFailed
 	}
 
 	var actor activitypub.Actor

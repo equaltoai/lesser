@@ -184,6 +184,29 @@ func (fa *FederationActivity) GetProperty(key string) (interface{}, bool) {
 	return value, exists
 }
 
+// GetPK returns the partition key for BaseRepository compatibility
+func (fa *FederationActivity) GetPK() string {
+	return fa.PK
+}
+
+// GetSK returns the sort key for BaseRepository compatibility
+func (fa *FederationActivity) GetSK() string {
+	return fa.SK
+}
+
+// UpdateKeys updates all keys (primary and GSI) for the federation activity
+func (fa *FederationActivity) UpdateKeys() error {
+	// Set up primary key
+	fa.PK = "fed_activity#" + fa.Domain
+	timestamp := fa.Timestamp.Format("20060102150405")
+	fa.SK = fmt.Sprintf("activity#%s#%s", timestamp, fa.ID)
+
+	// Set up GSI keys
+	fa.setupGSIKeys()
+
+	return nil
+}
+
 // SetHeader sets a header value
 func (fa *FederationActivity) SetHeader(key, value string) {
 	if fa.Headers == nil {

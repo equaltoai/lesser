@@ -3,51 +3,51 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/types"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// CostTracker interface for tracking DynamoDB operation costs
-type CostTracker interface {
-	TrackDynamoRead(units int)
-	TrackDynamoWrite(units int)
-}
-
-// MediaSessionRepository implements session management using DynamORM
+// MediaSessionRepository implements session management using DynamORM with BaseRepository
 type MediaSessionRepository struct {
-	db               core.DB
-	logger           *zap.Logger
-	costTracker      CostTracker
-	unifiedTracker   *cost.UnifiedTracker
-	tableName        string
-	sessionTTL       time.Duration
+	*BaseRepository[*models.MediaSession]
+	qualityChangeRepo *BaseRepository[*models.QualityChange]
+	sessionTTL        time.Duration
 }
 
 // NewMediaSessionRepository creates a new MediaSessionRepository
-func NewMediaSessionRepository(db core.DB, logger *zap.Logger, costTracker CostTracker) *MediaSessionRepository {
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+func NewMediaSessionRepository(db core.DB, logger *zap.Logger, costTracker interface{}) *MediaSessionRepository {
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
 	
-	// Create unified tracker for centralized cost tracking
-	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "MediaSessionRepository", "", "")
+	// Create cost service from legacy cost tracker if provided
+	var costService *cost.TrackingService
+	// Note: For now, pass nil cost service; can be enhanced later with proper cost tracking
 	
 	return &MediaSessionRepository{
-		db:               db,
-		logger:           logger,
-		costTracker:      costTracker,
-		unifiedTracker:   unifiedTracker,
-		tableName:        tableName,
-		sessionTTL:       24 * time.Hour, // Default TTL for streaming sessions
+		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository"),
+		qualityChangeRepo: NewBaseRepositoryWithCostTracking[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository"),
+		sessionTTL:        24 * time.Hour, // Default TTL for streaming sessions
+	}
+}
+
+// NewMediaSessionRepositoryWithCostTracking creates a new MediaSessionRepository with cost tracking
+func NewMediaSessionRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaSessionRepository {
+	return &MediaSessionRepository{
+		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository"),
+		qualityChangeRepo: NewBaseRepositoryWithCostTracking[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository"),
+		sessionTTL:        24 * time.Hour, // Default TTL for streaming sessions
 	}
 }
 
@@ -56,7 +56,192 @@ func (r *MediaSessionRepository) SetSessionTTL(ttl time.Duration) {
 	r.sessionTTL = ttl
 }
 
-// CreateSession creates a new streaming session
+// ====================================================================================
+// STREAMING SESSION BUSINESS LOGIC - PRESERVED FROM LEGACY
+// ====================================================================================
+
+// StartStreamingSession creates and initializes a new streaming session with validation
+func (r *MediaSessionRepository) StartStreamingSession(ctx context.Context, userID, mediaID string, format types.MediaFormat, quality types.Quality) (*types.StreamingSession, error) {
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, "invalid userID")
+	}
+	if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, "invalid mediaID")
+	}
+
+	// Generate unique session ID
+	sessionID := fmt.Sprintf("%s_%s_%d", userID, mediaID, time.Now().UnixNano())
+	
+	// Initialize streaming session with proper defaults
+	session := &types.StreamingSession{
+		SessionID:        sessionID,
+		UserID:           userID,
+		MediaID:          mediaID,
+		Format:           format,
+		CurrentQuality:   quality,
+		StartTime:        time.Now(),
+		LastSegmentIndex: 0,
+		BytesTransferred: 0,
+		BufferHealth:     1.0, // Start with full buffer health
+		LastActivityTime: time.Now(),
+		DurationWatched:  0,
+	}
+
+	// Convert to model and create
+	model := &models.MediaSession{
+		SessionID:        session.SessionID,
+		UserID:           session.UserID,
+		MediaID:          session.MediaID,
+		Format:           string(session.Format),
+		CurrentQuality:   string(session.CurrentQuality),
+		StartTime:        session.StartTime,
+		LastSegmentIndex: session.LastSegmentIndex,
+		BytesTransferred: session.BytesTransferred,
+		BufferHealth:     session.BufferHealth,
+		Active:           true,
+	}
+
+	// Set keys and TTL
+	if err := model.UpdateKeys(); err != nil {
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, "update keys")
+	}
+	model.SetTTL(r.sessionTTL)
+
+	// Create using BaseRepository
+	if err := r.Create(ctx, model); err != nil {
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
+	}
+
+	return session, nil
+}
+
+// UpdateStreamingMetrics updates session metrics with bandwidth optimization
+func (r *MediaSessionRepository) UpdateStreamingMetrics(ctx context.Context, sessionID string, segmentIndex int, bytesTransferred int64, bufferHealth float64, currentQuality types.Quality) error {
+	if err := common.ValidateRequiredParam("sessionID", sessionID); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntitySession, "invalid sessionID")
+	}
+
+	// Get existing session
+	var existingModel models.MediaSession
+	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &existingModel)
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, EntitySession, sessionID)
+	}
+
+	// Validate session is still active
+	if !existingModel.Active {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntitySession, sessionID)
+	}
+
+	// Update streaming metrics
+	now := time.Now()
+	existingModel.CurrentQuality = string(currentQuality)
+	existingModel.LastSegmentIndex = segmentIndex
+	existingModel.BytesTransferred = bytesTransferred
+	existingModel.BufferHealth = bufferHealth
+	existingModel.LastUpdate = &now
+
+	// Update using BaseRepository
+	if err := r.Update(ctx, &existingModel); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
+	}
+
+	// Track quality change for analytics if quality changed
+	if existingModel.CurrentQuality != string(currentQuality) {
+		session := &types.StreamingSession{
+			SessionID:      sessionID,
+			CurrentQuality: currentQuality,
+		}
+		r.trackQualityChange(ctx, session)
+	}
+
+	return nil
+}
+
+// EndStreamingSession marks a session as ended and calculates final metrics
+func (r *MediaSessionRepository) EndStreamingSession(ctx context.Context, sessionID string) error {
+	if err := common.ValidateRequiredParam("sessionID", sessionID); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntitySession, "invalid sessionID")
+	}
+
+	// Get existing session
+	var existingModel models.MediaSession
+	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &existingModel)
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, EntitySession, sessionID)
+	}
+
+	// Calculate final session metrics
+	now := time.Now()
+	duration := now.Sub(existingModel.StartTime).Seconds()
+
+	// Update session as ended
+	existingModel.Active = false
+	existingModel.EndTime = &now
+	existingModel.Duration = duration
+	existingModel.LastUpdate = &now
+
+	// Update using BaseRepository
+	if err := r.Update(ctx, &existingModel); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
+	}
+
+	return nil
+}
+
+// GetActiveStreams retrieves all active streaming sessions for monitoring
+func (r *MediaSessionRepository) GetActiveStreams(ctx context.Context, limit int) ([]*types.StreamingSession, error) {
+	// Query for active sessions using filter
+	filters := map[string]interface{}{
+		"Active": true,
+	}
+
+	// Use BaseRepository's QueryWithFilter - scanning for active sessions
+	// Note: This is inefficient for large datasets; consider adding GSI for Active field
+	models, err := r.QueryWithFilter(ctx, "", filters, limit)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "active sessions")
+	}
+
+	// Convert to streaming sessions
+	sessions := make([]*types.StreamingSession, 0, len(models))
+	for _, model := range models {
+		if model != nil {
+			sessions = append(sessions, r.modelToStreamingSession(model))
+		}
+	}
+
+	return sessions, nil
+}
+
+// ValidateSessionAccess validates if user has access to the streaming session
+func (r *MediaSessionRepository) ValidateSessionAccess(ctx context.Context, sessionID, userID string) (bool, error) {
+	if err := common.ValidateRequiredParam("sessionID", sessionID); err != nil {
+		return false, ErrorHandler.HandleGetError(err, EntitySession, "invalid sessionID")
+	}
+	if err := common.ValidateRequiredParam("userID", userID); err != nil {
+		return false, ErrorHandler.HandleGetError(err, EntitySession, "invalid userID")
+	}
+
+	// Get session
+	var model models.MediaSession
+	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &model)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return false, nil // Session doesn't exist
+		}
+		return false, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
+	}
+
+	// Check if user owns the session
+	return model.UserID == userID, nil
+}
+
+// ====================================================================================
+// BASIC CRUD OPERATIONS - MIGRATED TO USE BaseRepository
+// ====================================================================================
+
+// CreateSession creates a new streaming session (legacy compatibility)
 func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *types.StreamingSession) error {
 	model := &models.MediaSession{
 		SessionID:        session.SessionID,
@@ -72,172 +257,79 @@ func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *typ
 	}
 
 	// Set keys and TTL
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntitySession, "model keys")
+	}
 	model.SetTTL(r.sessionTTL)
 
-	// Create the session
-	err := r.db.WithContext(ctx).Model(model).Create()
-
-	if err != nil {
-		r.logger.Error("failed to create session",
-			zap.String("sessionID", session.SessionID),
-			zap.Error(err))
-		return fmt.Errorf("create session: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	return nil
+	// Use BaseRepository Create
+	return r.Create(ctx, model)
 }
 
-// GetSession retrieves a streaming session
+// GetSession retrieves a streaming session (legacy compatibility)
 func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID string) (*types.StreamingSession, error) {
 	var model models.MediaSession
-
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("PK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
-		Where("SK", "=", "METADATA").
-		First(&model)
-
+	
+	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &model)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("session not found: %s", sessionID)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntitySession, sessionID)
 		}
-		r.logger.Error("failed to get session",
-			zap.String("sessionID", sessionID),
-			zap.Error(err))
-		return nil, fmt.Errorf("get session: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, 1); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}
 
 	return r.modelToStreamingSession(&model), nil
 }
 
-// UpdateSession updates a streaming session
+// UpdateSession updates a streaming session (legacy compatibility)
 func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *types.StreamingSession) error {
-	now := time.Now()
-
-	// Get the existing session first
+	// Get existing model first
 	var existingModel models.MediaSession
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("PK", "=", fmt.Sprintf("SESSION#%s", session.SessionID)).
-		Where("SK", "=", "METADATA").
-		First(&existingModel)
-
+	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", session.SessionID), "METADATA", &existingModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("session not found: %s", session.SessionID)
-		}
-		return fmt.Errorf("failed to get existing session: %w", err)
+		return ErrorHandler.HandleGetError(err, EntitySession, session.SessionID)
 	}
 
-	// Update the fields
+	// Update fields
+	now := time.Now()
 	existingModel.CurrentQuality = string(session.CurrentQuality)
 	existingModel.LastSegmentIndex = session.LastSegmentIndex
 	existingModel.BytesTransferred = session.BytesTransferred
 	existingModel.BufferHealth = session.BufferHealth
 	existingModel.LastUpdate = &now
 
-	// Update the session
-	err = r.db.WithContext(ctx).Model(&existingModel).Update()
-
-	if err != nil {
-		r.logger.Error("failed to update session",
-			zap.String("sessionID", session.SessionID),
-			zap.Error(err))
-		return fmt.Errorf("update session: %w", err)
+	// Use BaseRepository Update
+	if err := r.Update(ctx, &existingModel); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntitySession, session.SessionID)
 	}
 
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	// Track quality change for analytics
+	// Track quality change
 	r.trackQualityChange(ctx, session)
-
 	return nil
 }
 
-// EndSession marks a session as ended
+// EndSession marks a session as ended (legacy compatibility)
 func (r *MediaSessionRepository) EndSession(ctx context.Context, sessionID string) error {
-	now := time.Now()
-
-	// Get the existing session first
-	var existingModel models.MediaSession
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("PK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
-		Where("SK", "=", "METADATA").
-		First(&existingModel)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("session not found: %s", sessionID)
-		}
-		return fmt.Errorf("failed to get existing session: %w", err)
-	}
-
-	// Calculate duration
-	duration := now.Sub(existingModel.StartTime).Seconds()
-
-	// Update the fields
-	existingModel.Active = false
-	existingModel.EndTime = &now
-	existingModel.Duration = duration
-
-	// Update session as ended
-	err = r.db.WithContext(ctx).Model(&existingModel).Update()
-
-	if err != nil {
-		r.logger.Error("failed to end session",
-			zap.String("sessionID", sessionID),
-			zap.Error(err))
-		return fmt.Errorf("end session: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoWrite(ctx, r.tableName, 1); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	return nil
+	return r.EndStreamingSession(ctx, sessionID)
 }
 
-// GetUserSessions retrieves active sessions for a user
+// GetUserSessions retrieves active sessions for a user using GSI
 func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID string) ([]*types.StreamingSession, error) {
-	var sessionModels []models.MediaSession
-
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("GSI1PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("Active", "=", true).
-		Index("gsi1").
-		All(&sessionModels)
-
+	// Query using GSI1 with user partition key
+	models, err := r.QueryGSI(ctx, "gsi1", fmt.Sprintf("USER#%s", userID), 0)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return []*types.StreamingSession{}, nil
 		}
-		r.logger.Error("failed to query user sessions",
-			zap.String("userID", userID),
-			zap.Error(err))
-		return nil, fmt.Errorf("query user sessions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, userID)
 	}
 
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
-	for _, model := range sessionModels {
-		sessions = append(sessions, r.modelToStreamingSession(&model))
+	// Filter for active sessions and convert
+	sessions := make([]*types.StreamingSession, 0)
+	for _, model := range models {
+		if model != nil && model.Active {
+			sessions = append(sessions, r.modelToStreamingSession(model))
+		}
 	}
 
 	return sessions, nil
@@ -245,80 +337,130 @@ func (r *MediaSessionRepository) GetUserSessions(ctx context.Context, userID str
 
 // GetMediaSessions retrieves sessions for a specific media item
 func (r *MediaSessionRepository) GetMediaSessions(ctx context.Context, mediaID string, limit int32) ([]*types.StreamingSession, error) {
-	var sessionModels []models.MediaSession
-
-	query := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("MediaID", "=", mediaID).
-		Where("Active", "=", true)
-
-	if limit > 0 {
-		query = query.Limit(int(limit))
+	// Use filter to find sessions by MediaID (requires scan)
+	filters := map[string]interface{}{
+		"MediaID": mediaID,
+		"Active":  true,
 	}
 
-	// Note: This requires a scan since we don't have a GSI on MediaID
-	// In production, consider adding GSI2 with MediaID as PK
-	err := query.All(&sessionModels)
-
+	models, err := r.QueryWithFilter(ctx, "", filters, int(limit))
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return []*types.StreamingSession{}, nil
 		}
-		r.logger.Error("failed to scan media sessions",
-			zap.String("mediaID", mediaID),
-			zap.Error(err))
-		return nil, fmt.Errorf("scan media sessions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, mediaID)
 	}
 
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
-	for _, model := range sessionModels {
-		sessions = append(sessions, r.modelToStreamingSession(&model))
+	sessions := make([]*types.StreamingSession, 0, len(models))
+	for _, model := range models {
+		if model != nil {
+			sessions = append(sessions, r.modelToStreamingSession(model))
+		}
 	}
 
 	return sessions, nil
 }
 
+// ====================================================================================
+// STREAMING ANALYTICS AND MONITORING
+// ====================================================================================
+
+// GetActiveSessionsCount returns the count of active sessions for monitoring
+func (r *MediaSessionRepository) GetActiveSessionsCount(ctx context.Context) (int, error) {
+	// Use filter to count active sessions
+	filters := map[string]interface{}{
+		"Active": true,
+	}
+
+	activeSessions, err := r.QueryWithFilter(ctx, "", filters, 0)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, ErrorHandler.HandleQueryError(err, EntitySession, "active sessions count")
+	}
+
+	return len(activeSessions), nil
+}
+
+// GetSessionsByTimeRange retrieves sessions within a specific time range for analytics
+func (r *MediaSessionRepository) GetSessionsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int32) ([]*types.StreamingSession, error) {
+	// Use filter with time range
+	filters := map[string]interface{}{
+		"StartTime": map[string]interface{}{
+			"op":    ">=",
+			"value": startTime.Format(time.RFC3339),
+		},
+	}
+
+	models, err := r.QueryWithFilter(ctx, "", filters, int(limit))
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return []*types.StreamingSession{}, nil
+		}
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "time range")
+	}
+
+	// Filter by end time and convert
+	sessions := make([]*types.StreamingSession, 0)
+	for _, model := range models {
+		if model != nil && model.StartTime.Before(endTime) {
+			sessions = append(sessions, r.modelToStreamingSession(model))
+		}
+	}
+
+	return sessions, nil
+}
+
+// ====================================================================================
+// SESSION CLEANUP AND MAINTENANCE
+// ====================================================================================
+
 // CleanupExpiredSessions removes sessions older than the specified duration
 func (r *MediaSessionRepository) CleanupExpiredSessions(ctx context.Context, maxAge time.Duration) error {
 	cutoff := time.Now().Add(-maxAge)
-	var expiredSessions []models.MediaSession
 
-	// Scan for expired sessions
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("Active", "=", false).
-		Where("StartTime", "<", cutoff.Format(time.RFC3339)).
-		All(&expiredSessions)
+	// Find expired sessions
+	filters := map[string]interface{}{
+		"Active": false,
+		"StartTime": map[string]interface{}{
+			"op":    "<",
+			"value": cutoff.Format(time.RFC3339),
+		},
+	}
 
+	expiredSessions, err := r.QueryWithFilter(ctx, "", filters, 0)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return nil // No expired sessions
 		}
-		return fmt.Errorf("scan expired sessions: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntitySession, "expired sessions")
 	}
 
 	// Delete expired sessions
+	deletedCount := 0
 	for _, session := range expiredSessions {
-		err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-			Where("PK", "=", session.PK).
-			Where("SK", "=", session.SK).
-			Delete()
-
-		if err != nil {
-			r.logger.Warn("failed to delete expired session",
-				zap.String("sessionID", session.SessionID),
-				zap.Error(err))
+		if session != nil {
+			err := r.Delete(ctx, session.PK, session.SK)
+			if err != nil {
+				r.logger.Warn("failed to delete expired session",
+					zap.String("sessionID", session.SessionID),
+					zap.Error(err))
+			} else {
+				deletedCount++
+			}
 		}
 	}
 
 	r.logger.Info("cleaned up expired sessions",
-		zap.Int("count", len(expiredSessions)))
+		zap.Int("count", deletedCount))
 
 	return nil
 }
+
+// ====================================================================================
+// STREAMING QUALITY ANALYTICS
+// ====================================================================================
 
 // trackQualityChange creates a quality change record for analytics
 func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session *types.StreamingSession) {
@@ -327,9 +469,15 @@ func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session
 		Quality:   string(session.CurrentQuality),
 		Timestamp: time.Now(),
 	}
-	qualityChange.UpdateKeys()
+	
+	if err := qualityChange.UpdateKeys(); err != nil {
+		r.logger.Warn("failed to update quality change keys",
+			zap.String("sessionID", session.SessionID),
+			zap.Error(err))
+		return
+	}
 
-	err := r.db.WithContext(ctx).Model(qualityChange).Create()
+	err := r.qualityChangeRepo.Create(ctx, qualityChange)
 	if err != nil {
 		r.logger.Warn("failed to track quality change",
 			zap.String("sessionID", session.SessionID),
@@ -337,6 +485,10 @@ func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session
 			zap.Error(err))
 	}
 }
+
+// ====================================================================================
+// MODEL CONVERSION HELPERS
+// ====================================================================================
 
 // modelToStreamingSession converts a DynamORM model to types.StreamingSession
 func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSession) *types.StreamingSession {
@@ -372,60 +524,4 @@ func (r *MediaSessionRepository) modelToStreamingSession(model *models.MediaSess
 	}
 
 	return session
-}
-
-// GetActiveSessionsCount returns the count of active sessions for monitoring
-func (r *MediaSessionRepository) GetActiveSessionsCount(ctx context.Context) (int, error) {
-	var activeSessions []models.MediaSession
-
-	err := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("Active", "=", true).
-		All(&activeSessions)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("failed to count active sessions: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(activeSessions))); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	return len(activeSessions), nil
-}
-
-// GetSessionsByTimeRange retrieves sessions within a specific time range for analytics
-func (r *MediaSessionRepository) GetSessionsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int32) ([]*types.StreamingSession, error) {
-	var sessionModels []models.MediaSession
-
-	query := r.db.WithContext(ctx).Model(&models.MediaSession{}).
-		Where("StartTime", ">=", startTime.Format(time.RFC3339)).
-		Where("StartTime", "<=", endTime.Format(time.RFC3339))
-
-	if limit > 0 {
-		query = query.Limit(int(limit))
-	}
-
-	err := query.All(&sessionModels)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			return []*types.StreamingSession{}, nil
-		}
-		return nil, fmt.Errorf("failed to query sessions by time range: %w", err)
-	}
-
-	// Track cost using centralized tracker
-	if err := r.unifiedTracker.TrackDynamoRead(ctx, r.tableName, int64(len(sessionModels))); err != nil {
-		r.logger.Warn("failed to track cost", zap.Error(err))
-	}
-
-	sessions := make([]*types.StreamingSession, 0, len(sessionModels))
-	for _, model := range sessionModels {
-		sessions = append(sessions, r.modelToStreamingSession(&model))
-	}
-
-	return sessions, nil
 }

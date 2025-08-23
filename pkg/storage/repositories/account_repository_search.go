@@ -21,7 +21,7 @@ import (
 func (r *AccountRepository) SearchActors(ctx context.Context, query string, limit int, offset int, following bool, username string) ([]*activitypub.Actor, error) {
 	// Validate query offset using centralized validation
 	if err := common.ValidateQueryOffset(offset, 10000); err != nil {
-		return nil, fmt.Errorf("invalid query offset: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityActor, "actor search with offset validation")
 	}
 
 	// Normalize query for search
@@ -282,7 +282,7 @@ func (r *AccountRepository) GetTrendingActors(ctx context.Context, limit int) ([
 
 	if err != nil {
 		r.logger.Error("failed to get trending actors", zap.Error(err))
-		return nil, fmt.Errorf("failed to get trending actors: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityActor, "trending actors")
 	}
 
 	// Convert to activitypub actors
@@ -299,7 +299,7 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 	// Parse webfinger address (user@domain)
 	parts := strings.Split(webfinger, "@")
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid webfinger address: %s", webfinger)
+		return nil, ErrorHandler.HandleQueryError(ErrAccountSearchInvalidWebfingerFormat, EntityActor, fmt.Sprintf("webfinger address: %s", webfinger))
 	}
 
 	username := parts[0]
@@ -323,9 +323,9 @@ func (r *AccountRepository) SearchByWebfinger(ctx context.Context, webfinger str
 			// Try to fetch from remote if not cached
 			// Remote actor lookup is available via federation.RemoteSearchService
 			// For now, return not found to maintain current behavior
-			return nil, fmt.Errorf("actor not found: %s", webfinger)
+			return nil, ErrorHandler.HandleGetError(err, EntityActor, webfinger)
 		}
-		return nil, fmt.Errorf("failed to search by webfinger: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityActor, fmt.Sprintf("webfinger search: %s", webfinger))
 	}
 
 	return actor.Actor, nil
@@ -371,7 +371,7 @@ func (r *AccountRepository) CacheRemoteActor(ctx context.Context, actor *activit
 			r.logger.Error("failed to cache remote actor",
 				zap.String("webfinger", webfinger),
 				zap.Error(err))
-			return fmt.Errorf("failed to cache remote actor: %w", err)
+			return ErrorHandler.HandleUpdateError(err, EntityActor, webfinger)
 		}
 	}
 
@@ -399,7 +399,7 @@ func (r *AccountRepository) GetActiveUsers(ctx context.Context, since time.Time,
 
 	if err != nil {
 		r.logger.Error("failed to get active users", zap.Error(err))
-		return nil, fmt.Errorf("failed to get active users: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "active users")
 	}
 
 	// Convert to storage type
@@ -425,7 +425,7 @@ func (r *AccountRepository) GetInactiveUsers(ctx context.Context, inactiveSince 
 
 	if err != nil {
 		r.logger.Error("failed to get inactive users", zap.Error(err))
-		return nil, fmt.Errorf("failed to get inactive users: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "inactive users")
 	}
 
 	// Convert to storage type

@@ -70,7 +70,25 @@ type PollVote struct {
 }
 
 // UpdateKeys updates the DynamoDB keys based on the business fields
-func (v *PollVote) UpdateKeys(pollID string) {
+func (v *PollVote) UpdateKeys() error {
+	// PollVote keys are set when a pollID is provided during voting
+	// This method is required by BaseModel interface but doesn't need pollID param
+	// since the PK should already be set during vote creation
+	return nil
+}
+
+// SetPollID sets the poll ID and updates keys (used during vote creation)
+func (v *PollVote) SetPollID(pollID string) {
 	v.PK = fmt.Sprintf("POLL#%s", pollID)
 	v.SK = fmt.Sprintf("VOTE#%s", v.VoterID)
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (v *PollVote) GetPK() string {
+	return v.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (v *PollVote) GetSK() string {
+	return v.SK
 }

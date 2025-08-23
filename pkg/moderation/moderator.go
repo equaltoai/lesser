@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // Moderation action constants
@@ -59,7 +60,7 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 	// Step 1: Pattern matching
 	patternMatches, err := m.moderateWithPatterns(ctx, content)
 	if err != nil {
-		return nil, fmt.Errorf("pattern moderation failed: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrPatternModerationFailed, err)
 	}
 	result.PatternMatches = patternMatches
 
@@ -67,7 +68,9 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 	aiAnalysis, err := m.moderateWithAI(ctx, content)
 	if err != nil {
 		// AI failure shouldn't block moderation, log and continue
-		fmt.Printf("AI moderation failed for %s: %v\n", content.ID, err)
+		zap.L().Error("AI moderation failed", 
+			zap.String("content_id", content.ID), 
+			zap.Error(err))
 	} else {
 		result.AIAnalysis = aiAnalysis
 	}
@@ -77,7 +80,7 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 
 	// Step 4: Record moderation decision
 	if err := m.recordModerationDecision(ctx, result); err != nil {
-		fmt.Printf("Failed to record moderation decision: %v\n", err)
+		zap.L().Error("failed to record moderation decision", zap.Error(err))
 	}
 
 	return result, nil
@@ -114,7 +117,7 @@ func (m *Moderator) moderateWithAI(ctx context.Context, content *ContentSubmissi
 
 		textAnalysis, err := m.aiAnalyzer.AnalyzeText(ctx, textContent)
 		if err != nil {
-			return nil, fmt.Errorf("text analysis failed: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrTextAnalysisFailed, err)
 		}
 		analysis.TextAnalysis = textAnalysis
 	}
@@ -129,7 +132,7 @@ func (m *Moderator) moderateWithAI(ctx context.Context, content *ContentSubmissi
 
 		imageAnalysis, err := m.aiAnalyzer.AnalyzeImage(ctx, imageContent)
 		if err != nil {
-			return nil, fmt.Errorf("image analysis failed: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrImageAnalysisFailed, err)
 		}
 		analysis.ImageAnalysis = imageAnalysis
 	}
@@ -406,13 +409,15 @@ func (m *Moderator) GetModerationQueue(ctx context.Context, filter *ModerationFi
 func (m *Moderator) ReviewModerationDecision(ctx context.Context, review *ModerationReview) error {
 	// Update the original decision
 	if err := m.storage.UpdateModerationDecision(ctx, review.ContentID, review); err != nil {
-		return fmt.Errorf("failed to update moderation decision: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateModerationDecision, err)
 	}
 
 	// Update pattern effectiveness if pattern was involved
 	for patternID, feedback := range review.PatternFeedback {
 		if err := m.patternManager.UpdatePatternStats(ctx, patternID, feedback.WasMatch, feedback.WasFalsePositive); err != nil {
-			fmt.Printf("Failed to update pattern stats for %s: %v\n", patternID, err)
+			zap.L().Error("failed to update pattern stats", 
+				zap.String("pattern_id", patternID), 
+				zap.Error(err))
 		}
 	}
 

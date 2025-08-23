@@ -11,12 +11,15 @@ package bulk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
+	serviceerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -426,17 +429,21 @@ func (s *Service) processBulkDeleteStatuses(ctx context.Context, operation *Oper
 func (s *Service) GetOperation(_ context.Context, query *GetOperationQuery) (*OperationResult, error) {
 	value, ok := s.operations.Load(query.OperationID)
 	if !ok {
-		return nil, fmt.Errorf("operation not found")
+		return nil, serviceerrors.ErrBulkOperationNotFound
 	}
 
 	operation, ok := value.(*Operation)
 	if !ok {
-		return nil, fmt.Errorf("invalid operation data")
+		return nil, serviceerrors.ErrBulkOperationInvalidData
 	}
 
 	// Verify ownership
 	if operation.Username != query.Username {
-		return nil, fmt.Errorf("unauthorized")
+		s.logger.Warn("unauthorized bulk operation access",
+		zap.String("requesting_user", query.Username),
+		zap.String("operation_user", operation.Username),
+		zap.String("operation_id", query.OperationID))
+	return nil, common.ErrForbidden(serviceerrors.ErrBulkOperationUnauthorizedAccess)
 	}
 
 	return &OperationResult{
@@ -559,11 +566,18 @@ func (s *Service) finalizeBulkOperation(ctx context.Context, operation *Operatio
 func (s *Service) validateContentOwnership(ctx context.Context, contentID, username string) (*models.Status, error) {
 	status, err := s.statusRepo.GetStatus(ctx, contentID)
 	if err != nil {
-		return nil, fmt.Errorf("content %s not found", contentID)
+		s.logger.Debug("bulk content not found",
+		zap.String("content_id", contentID),
+		zap.String("username", username))
+	return nil, errors.Join(serviceerrors.ErrBulkContentNotFound, err)
 	}
 
 	if status.AuthorUsername != username {
-		return nil, fmt.Errorf("not authorized to delete content %s", contentID)
+		s.logger.Warn("unauthorized bulk content deletion",
+		zap.String("content_id", contentID),
+		zap.String("content_owner", status.AuthorUsername),
+		zap.String("requesting_user", username))
+	return nil, serviceerrors.ErrBulkContentUnauthorizedDelete
 	}
 
 	return status, nil

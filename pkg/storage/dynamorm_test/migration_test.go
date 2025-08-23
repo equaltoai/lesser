@@ -3,12 +3,10 @@ package dynamorm_test
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -23,42 +21,43 @@ import (
 )
 
 // Migration test data structures that mimic legacy DynamoDB format
+// Now using native Go types instead of AWS SDK types
 
 // LegacyUserItem represents a user as stored in legacy DynamoDB format
-type LegacyUserItem map[string]types.AttributeValue
+type LegacyUserItem map[string]interface{}
 
-// LegacyActorItem represents an actor as stored in legacy DynamoDB format
-type LegacyActorItem map[string]types.AttributeValue
+// LegacyActorItem represents an actor as stored in legacy DynamoDB format  
+type LegacyActorItem map[string]interface{}
 
 // LegacyActivityItem represents an activity as stored in legacy DynamoDB format
-type LegacyActivityItem map[string]types.AttributeValue
+type LegacyActivityItem map[string]interface{}
 
 // Test data creators for legacy format
 
 func createLegacyUserItem(username, email string, createdAt time.Time) LegacyUserItem {
 	item := LegacyUserItem{
-		"PK":           &types.AttributeValueMemberS{Value: fmt.Sprintf("USER#%s", username)},
-		"SK":           &types.AttributeValueMemberS{Value: "METADATA"},
-		"username":     &types.AttributeValueMemberS{Value: username},
-		"created_at":   &types.AttributeValueMemberS{Value: createdAt.Format(time.RFC3339)},
-		"updated_at":   &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		"approved":     &types.AttributeValueMemberBOOL{Value: true},
-		"suspended":    &types.AttributeValueMemberBOOL{Value: false},
-		"silenced":     &types.AttributeValueMemberBOOL{Value: false},
-		"role":         &types.AttributeValueMemberS{Value: "user"},
-		"display_name": &types.AttributeValueMemberS{Value: fmt.Sprintf("User %s", username)},
+		"PK":           fmt.Sprintf("USER#%s", username),
+		"SK":           "METADATA",
+		"username":     username,
+		"created_at":   createdAt.Format(time.RFC3339),
+		"updated_at":   time.Now().Format(time.RFC3339),
+		"approved":     true,
+		"suspended":    false,
+		"silenced":     false,
+		"role":         "user",
+		"display_name": fmt.Sprintf("User %s", username),
 	}
 
 	// Add email GSI if email provided
 	if email != "" {
-		item["email"] = &types.AttributeValueMemberS{Value: email}
-		item["GSI2PK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("EMAIL#%s", email)}
-		item["GSI2SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("USERNAME#%s", username)}
+		item["email"] = email
+		item["GSI2PK"] = fmt.Sprintf("EMAIL#%s", email)
+		item["GSI2SK"] = fmt.Sprintf("USERNAME#%s", username)
 	}
 
 	// Add user listing GSI
-	item["GSI1PK"] = &types.AttributeValueMemberS{Value: "USERS"}
-	item["GSI1SK"] = &types.AttributeValueMemberS{Value: fmt.Sprintf("%s#%s", createdAt.Format(time.RFC3339), username)}
+	item["GSI1PK"] = "USERS"
+	item["GSI1SK"] = fmt.Sprintf("%s#%s", createdAt.Format(time.RFC3339), username)
 
 	return item
 }
@@ -85,30 +84,30 @@ func createLegacyActorItem(username string, displayName string, createdAt time.T
 	actorJSON := `{"@context":["https://www.w3.org/ns/activitystreams"],"id":"` + actor.ID + `","type":"Person","preferredUsername":"` + username + `","name":"` + displayName + `","inbox":"` + actor.Inbox + `","outbox":"` + actor.Outbox + `","following":"` + actor.Following + `","followers":"` + actor.Followers + `","published":"` + createdAt.Format(time.RFC3339) + `"}`
 
 	item := LegacyActorItem{
-		"PK":              &types.AttributeValueMemberS{Value: fmt.Sprintf("ACTOR#%s", username)},
-		"SK":              &types.AttributeValueMemberS{Value: "PROFILE"},
-		"username":        &types.AttributeValueMemberS{Value: username},
-		"actor":           &types.AttributeValueMemberS{Value: actorJSON},
-		"created_at":      &types.AttributeValueMemberS{Value: createdAt.Format(time.RFC3339)},
-		"updated_at":      &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
-		"numeric_id":      &types.AttributeValueMemberS{Value: fmt.Sprintf("%d", time.Now().Unix())},
-		"follower_count":  &types.AttributeValueMemberN{Value: "10"},
-		"following_count": &types.AttributeValueMemberN{Value: "5"},
-		"status_count":    &types.AttributeValueMemberN{Value: "3"},
+		"PK":              fmt.Sprintf("ACTOR#%s", username),
+		"SK":              "PROFILE",
+		"username":        username,
+		"actor":           actorJSON,
+		"created_at":      createdAt.Format(time.RFC3339),
+		"updated_at":      time.Now().Format(time.RFC3339),
+		"numeric_id":      fmt.Sprintf("%d", time.Now().Unix()),
+		"follower_count":  10,
+		"following_count": 5,
+		"status_count":    3,
 	}
 
 	// Add username search GSI
 	usernameLower := strings.ToLower(username)
 	if len(usernameLower) >= 2 {
-		item["GSI1PK"] = &types.AttributeValueMemberS{Value: "USERNAME_SEARCH#" + usernameLower[:2]}
-		item["GSI1SK"] = &types.AttributeValueMemberS{Value: usernameLower}
+		item["GSI1PK"] = "USERNAME_SEARCH#" + usernameLower[:2]
+		item["GSI1SK"] = usernameLower
 	}
 
 	// Add display name search GSI
 	displayNameLower := strings.ToLower(displayName)
 	if len(displayNameLower) >= 2 {
-		item["GSI2PK"] = &types.AttributeValueMemberS{Value: "NAME_SEARCH#" + displayNameLower[:2]}
-		item["GSI2SK"] = &types.AttributeValueMemberS{Value: displayNameLower + "#" + username}
+		item["GSI2PK"] = "NAME_SEARCH#" + displayNameLower[:2]
+		item["GSI2SK"] = displayNameLower + "#" + username
 	}
 
 	return item
@@ -222,25 +221,25 @@ func TestReadLegacyUserData(t *testing.T) {
 			mockQuery.On("First", mock.AnythingOfType("*models.User")).Run(func(args mock.Arguments) {
 				user := args.Get(0).(*models.User)
 				// Simulate DynamORM unmarshaling legacy data
-				user.PK = legacyItem["PK"].(*types.AttributeValueMemberS).Value
-				user.SK = legacyItem["SK"].(*types.AttributeValueMemberS).Value
-				user.Username = legacyItem["username"].(*types.AttributeValueMemberS).Value
+				user.PK = legacyItem["PK"].(string)
+				user.SK = legacyItem["SK"].(string)
+				user.Username = legacyItem["username"].(string)
 				user.CreatedAt = createdAt
 				user.UpdatedAt = time.Now()
-				user.Approved = legacyItem["approved"].(*types.AttributeValueMemberBOOL).Value
-				user.Suspended = legacyItem["suspended"].(*types.AttributeValueMemberBOOL).Value
-				user.Silenced = legacyItem["silenced"].(*types.AttributeValueMemberBOOL).Value
-				user.Role = legacyItem["role"].(*types.AttributeValueMemberS).Value
-				user.DisplayName = legacyItem["display_name"].(*types.AttributeValueMemberS).Value
+				user.Approved = legacyItem["approved"].(bool)
+				user.Suspended = legacyItem["suspended"].(bool)
+				user.Silenced = legacyItem["silenced"].(bool)
+				user.Role = legacyItem["role"].(string)
+				user.DisplayName = legacyItem["display_name"].(string)
 
 				if tt.hasEmail {
-					user.Email = legacyItem["email"].(*types.AttributeValueMemberS).Value
-					user.GSI2PK = legacyItem["GSI2PK"].(*types.AttributeValueMemberS).Value
-					user.GSI2SK = legacyItem["GSI2SK"].(*types.AttributeValueMemberS).Value
+					user.Email = legacyItem["email"].(string)
+					user.GSI2PK = legacyItem["GSI2PK"].(string)
+					user.GSI2SK = legacyItem["GSI2SK"].(string)
 				}
 
-				user.GSI1PK = legacyItem["GSI1PK"].(*types.AttributeValueMemberS).Value
-				user.GSI1SK = legacyItem["GSI1SK"].(*types.AttributeValueMemberS).Value
+				user.GSI1PK = legacyItem["GSI1PK"].(string)
+				user.GSI1SK = legacyItem["GSI1SK"].(string)
 			}).Return(nil)
 
 			// Test reading with DynamORM repository
@@ -287,27 +286,24 @@ func TestReadLegacyActorData(t *testing.T) {
 	mockQuery.On("First", mock.AnythingOfType("*models.Actor")).Run(func(args mock.Arguments) {
 		actor := args.Get(0).(*models.Actor)
 		// Simulate DynamORM unmarshaling legacy data
-		actor.PK = legacyItem["PK"].(*types.AttributeValueMemberS).Value
-		actor.SK = legacyItem["SK"].(*types.AttributeValueMemberS).Value
-		actor.Username = legacyItem["username"].(*types.AttributeValueMemberS).Value
+		actor.PK = legacyItem["PK"].(string)
+		actor.SK = legacyItem["SK"].(string)
+		actor.Username = legacyItem["username"].(string)
 		actor.CreatedAt = createdAt
 		actor.UpdatedAt = time.Now()
-		actor.NumericID = legacyItem["numeric_id"].(*types.AttributeValueMemberS).Value
+		actor.NumericID = legacyItem["numeric_id"].(string)
 
-		// Parse follower counts
-		followerCountStr := legacyItem["follower_count"].(*types.AttributeValueMemberN).Value
-		actor.FollowerCount, _ = strconv.Atoi(followerCountStr)
-		followingCountStr := legacyItem["following_count"].(*types.AttributeValueMemberN).Value
-		actor.FollowingCount, _ = strconv.Atoi(followingCountStr)
-		statusCountStr := legacyItem["status_count"].(*types.AttributeValueMemberN).Value
-		actor.StatusCount, _ = strconv.Atoi(statusCountStr)
+		// Parse follower counts  
+		actor.FollowerCount = legacyItem["follower_count"].(int)
+		actor.FollowingCount = legacyItem["following_count"].(int)
+		actor.StatusCount = legacyItem["status_count"].(int)
 
 		// GSI keys
 		if gsi1pk, ok := legacyItem["GSI1PK"]; ok {
-			actor.GSI1PK = gsi1pk.(*types.AttributeValueMemberS).Value
+			actor.GSI1PK = gsi1pk.(string)
 		}
 		if gsi1sk, ok := legacyItem["GSI1SK"]; ok {
-			actor.GSI1SK = gsi1sk.(*types.AttributeValueMemberS).Value
+			actor.GSI1SK = gsi1sk.(string)
 		}
 
 		// Mock ActivityPub actor object

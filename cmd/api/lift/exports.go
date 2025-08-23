@@ -1,6 +1,7 @@
 package lift
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -164,7 +165,7 @@ func (h *Handler) validateExportToken(ctx *lift.Context, token string) (string, 
 		return "", common.RespondUnauthorized(ctx)
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)
@@ -318,10 +319,10 @@ func (h *Handler) processExportDateRange(ctx *lift.Context, dateRange *DateRange
 
 // queueExportJobSQS queues the export job using SQS
 func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string, req *ExportRequest) error {
-	// Create job queue service
-	jobQueue, err := services.NewJobQueueService(h.logger)
+	// Create job queue service with config
+	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
-		return fmt.Errorf("failed to create job queue service: %w", err)
+		return errors.Join(ErrFailedToCreateJobQueueService, err)
 	}
 
 	// Convert DateRange to service format
@@ -329,11 +330,11 @@ func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string
 	if req.DateRange != nil {
 		startTime, err := time.Parse(common.DateFormat, req.DateRange.Start)
 		if err != nil {
-			return fmt.Errorf("invalid start date: %w", err)
+			return errors.Join(ErrInvalidStartDate, err)
 		}
 		endTime, err := time.Parse(common.DateFormat, req.DateRange.End)
 		if err != nil {
-			return fmt.Errorf("invalid end date: %w", err)
+			return errors.Join(ErrInvalidEndDate, err)
 		}
 		dateRange = &services.ExportDateRange{
 			Start: startTime,
@@ -472,7 +473,7 @@ func (h *Handler) authenticateListExportsWithToken(ctx *lift.Context) (string, e
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)
@@ -701,7 +702,7 @@ func (h *Handler) authenticateExportStatusRequest(ctx *lift.Context) (string, er
 	}
 
 	// Validate token (no scope check needed for read operations)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)

@@ -16,14 +16,14 @@ import (
 
 // DynamORMStorage handles persistence of cost data using DynamORM
 type DynamORMStorage struct {
-	repo   *repositories.CostTrackingRepository
+	repo   *repositories.TrackingRepository
 	logger *zap.Logger
 }
 
 // NewDynamORMStorage creates a new DynamORM-based cost storage instance
 func NewDynamORMStorage(db core.DB, tableName string, logger *zap.Logger) *DynamORMStorage {
 	return &DynamORMStorage{
-		repo:   repositories.NewCostTrackingRepository(db, tableName, logger),
+		repo:   repositories.NewTrackingRepository(db, tableName, logger),
 		logger: logger,
 	}
 }

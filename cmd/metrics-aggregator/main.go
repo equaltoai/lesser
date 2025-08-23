@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -39,7 +40,7 @@ func NewMetricsAggregator(db core.DB, tableName string, logger *zap.Logger) *Met
 	}
 }
 
-// HandleStream implements the DynamoDBStreamHandler interface for Lift
+// HandleStreamWithContext implements the DynamoDBStreamHandler interface for Lift
 func (ma *MetricsAggregator) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
 	ma.logger.Info("processing metrics stream batch",
 		zap.String("request_id", liftCtx.GetRequestID()),
@@ -204,7 +205,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 	// Get service stats for the period
 	stats, err := ma.metricsRepository.GetServiceStats(ctx, service, metricType, startTime, endTime)
 	if err != nil {
-		return fmt.Errorf("failed to get service stats: %w", err)
+		return errors.Join(ErrServiceStatsRetrieval, err)
 	}
 
 	if stats.Count == 0 {
@@ -216,7 +217,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 
 	// Perform aggregation using the repository
 	if err := ma.metricsRepository.Aggregate(ctx, metricType, period, startTime, endTime); err != nil {
-		return fmt.Errorf("failed to aggregate: %w", err)
+		return errors.Join(ErrMetricsAggregation, err)
 	}
 
 	ma.logger.Info("aggregated metrics",
@@ -305,15 +306,21 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 	var metric models.Metrics
 
 	if err := stream.UnmarshalItem(record, &metric); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal metric from stream record: %w", err)
+		return nil, errors.Join(ErrStreamRecordUnmarshal, err)
 	}
 
-	// Basic validation
+	// Basic validation with structured logging
 	if err := common.ValidateRequiredParam("metric.Type", metric.Type); err != nil {
-		return nil, fmt.Errorf("missing required fields: type=%s, service=%s", metric.Type, metric.Service)
+		ma.logger.Error("missing required metric type",
+			zap.String("type", metric.Type),
+			zap.String("service", metric.Service))
+		return nil, ErrMissingRequiredFields
 	}
 	if err := common.ValidateRequiredParam("metric.Service", metric.Service); err != nil {
-		return nil, fmt.Errorf("missing required fields: type=%s, service=%s", metric.Type, metric.Service)
+		ma.logger.Error("missing required metric service",
+			zap.String("type", metric.Type),
+			zap.String("service", metric.Service))
+		return nil, ErrMissingRequiredFields
 	}
 
 	return &metric, nil
@@ -371,7 +378,7 @@ func (ma *MetricsAggregator) cleanupMetricsByGranularity(ctx context.Context, gr
 			zap.String("granularity", granularity),
 			zap.Time("cutoff_time", cutoffTime),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to cleanup metrics: %w", err)
+		return 0, errors.Join(ErrMetricsCleanup, err)
 	}
 
 	ma.logger.Info("Cleanup operation completed successfully",

@@ -114,7 +114,7 @@ func (rch *RelationshipCommandHandler) handleAcceptFollowRequest(ctx context.Con
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			acceptCmd := &relationships.AcceptFollowRequestCommand{
 				RequesterID: userID,
 				FollowerID:  targetID,
@@ -135,7 +135,7 @@ func (rch *RelationshipCommandHandler) handleRejectFollowRequest(ctx context.Con
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			rejectCmd := &relationships.RejectFollowRequestCommand{
 				RequesterID: userID,
 				FollowerID:  targetID,
@@ -156,7 +156,7 @@ func (rch *RelationshipCommandHandler) handleRemoveFollower(ctx context.Context,
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			removeCmd := &accounts.RemoveFollowerCommand{
 				Username:   userID,
 				FollowerID: targetID,
@@ -203,7 +203,7 @@ func (rch *RelationshipCommandHandler) handleUnfollowUser(ctx context.Context, c
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			unfollowCmd := &relationships.UnfollowCommand{
 				FollowerID:  userID,
 				FollowingID: targetID,
@@ -224,7 +224,7 @@ func (rch *RelationshipCommandHandler) handleBlockUser(ctx context.Context, conn
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			blockCmd := &relationships.BlockCommand{
 				BlockerID: userID,
 				BlockedID: targetID,
@@ -245,7 +245,7 @@ func (rch *RelationshipCommandHandler) handleUnblockUser(ctx context.Context, co
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			unblockCmd := &relationships.UnblockCommand{
 				BlockerID: userID,
 				BlockedID: targetID,
@@ -297,7 +297,7 @@ func (rch *RelationshipCommandHandler) handleUnmuteUser(ctx context.Context, con
 	return rch.genericRelationshipHandler(
 		ctx, conn, cmd,
 		[]string{"id"},
-		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
+		func(ctx context.Context, userID, targetID string, _ map[string]interface{}) (interface{}, error) {
 			unmuteCmd := &relationships.UnmuteCommand{
 				MuterID: userID,
 				MutedID: targetID,

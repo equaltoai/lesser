@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,7 +22,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
-	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -35,7 +35,7 @@ type CostAggregator struct {
 	db                     dynamormCore.DB
 	tableName              string
 	logger                 *zap.Logger
-	costTrackingRepository *repositories.CostTrackingRepository
+	costTrackingRepository *repositories.TrackingRepository
 	awsServices            *awsInit.AWSServices
 	cfg                    *config.Config
 	lambdaCtx              *common.LambdaContext
@@ -45,7 +45,6 @@ var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	logger    *zap.Logger
-	repos     core.RepositoryStorage
 	processor *CostAggregator
 )
 
@@ -94,7 +93,6 @@ func init() {
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	repos = lambdaCtx.Repos.(core.RepositoryStorage)
 	
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
@@ -113,7 +111,7 @@ func init() {
 	}
 
 	// Initialize cost tracking repository
-	costTrackingRepository := repositories.NewCostTrackingRepository(
+	costTrackingRepository := repositories.NewTrackingRepository(
 		db, 
 		tableName, 
 		logger,
@@ -479,7 +477,7 @@ func (ca *CostAggregator) aggregateCosts(ctx context.Context, operationType, per
 
 	// Use repository's aggregation method
 	if err := ca.costTrackingRepository.Aggregate(ctx, operationType, period, startTime, endTime); err != nil {
-		return fmt.Errorf("failed to aggregate: %w", err)
+		return errors.Join(ErrAggregationFailed, err)
 	}
 
 	// Get the aggregated data to log summary
@@ -616,7 +614,7 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal SNS message: %w", err)
+		return errors.Join(ErrSNSMessageMarshal, err)
 	}
 
 	// Send SNS message
@@ -639,7 +637,7 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 
 	result, err := ca.awsServices.SNS.Publish(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to publish SNS message: %w", err)
+		return errors.Join(ErrSNSPublish, err)
 	}
 
 	ca.logger.Info("SNS alert sent successfully",
@@ -695,7 +693,7 @@ func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAle
 
 	_, err := ca.awsServices.CloudWatch.PutMetricData(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to put CloudWatch metric: %w", err)
+		return errors.Join(ErrCloudWatchMetric, err)
 	}
 
 	ca.logger.Info("CloudWatch metrics published",
@@ -726,7 +724,7 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("failed to marshal aggregation event: %w", err)
+		return errors.Join(ErrEventMarshal, err)
 	}
 
 	// Option 1: Use SQS for async processing (preferred for resilience)
@@ -773,11 +771,16 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 
 	lambdaResult, err := ca.awsServices.Lambda.Invoke(ctx, lambdaInput)
 	if err != nil {
-		return fmt.Errorf("failed to invoke lambda and send SQS message: lambda_err=%w, sqs_err=%v", err, sqsErr)
+		ca.logger.Error("lambda invocation failed after SQS failure",
+			zap.Error(err),
+			zap.NamedError("sqs_error", sqsErr))
+		return errors.Join(ErrLambdaInvoke, err)
 	}
 
 	if lambdaResult.FunctionError != nil {
-		return fmt.Errorf("lambda function returned error: %s", *lambdaResult.FunctionError)
+		ca.logger.Error("lambda function execution error",
+			zap.String("function_error", *lambdaResult.FunctionError))
+		return ErrLambdaFunctionError
 	}
 
 	ca.logger.Info("Successfully triggered cost aggregation via direct Lambda invocation",

@@ -2,9 +2,9 @@ package activitypub
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"net/url"
 	"strings"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AddressingValidator provides validation for ActivityPub addressing fields
@@ -60,7 +60,7 @@ func (v *AddressingValidator) validateRecipientList(recipients []string, fieldNa
 // validateRecipient validates a single recipient address
 func (v *AddressingValidator) validateRecipient(recipient, fieldName string) error {
 	if err := common.ValidateRequiredParam("recipient", recipient); err != nil {
-		return fmt.Errorf("empty recipient in %s field", fieldName)
+		return fmt.Errorf("%s field: %w", fieldName, ErrEmptyRecipient)
 	}
 
 	// Check if it's the special Public address
@@ -71,17 +71,17 @@ func (v *AddressingValidator) validateRecipient(recipient, fieldName string) err
 	// Check if it's a valid URL
 	parsed, err := url.Parse(recipient)
 	if err != nil {
-		return fmt.Errorf("invalid URL in %s field: %s", fieldName, recipient)
+		return fmt.Errorf("%s field (%s): %w", fieldName, recipient, ErrInvalidRecipientURL)
 	}
 
 	// Must be HTTPS for federation
 	if parsed.Scheme != "https" && parsed.Scheme != "http" {
-		return fmt.Errorf("recipient URL must use HTTP(S) scheme: %s", recipient)
+		return fmt.Errorf("%s: %w", recipient, ErrInvalidURLScheme)
 	}
 
 	// Basic validation that it looks like an actor or collection URL
 	if !v.isValidRecipientURL(recipient) {
-		return fmt.Errorf("invalid recipient URL format: %s", recipient)
+		return fmt.Errorf("%s: %w", recipient, ErrInvalidRecipientFormat)
 	}
 
 	return nil
@@ -305,7 +305,7 @@ func (v *AddressingValidator) ValidatePrivacyCompliance(activity *Activity) erro
 	// Validate that direct messages don't have public addressing
 	if v.IsDirectMessage(activity) {
 		if v.hasPublicAddressing(activity) {
-			return fmt.Errorf("direct messages cannot have public addressing")
+			return ErrDirectMessagePublicAddressing
 		}
 	}
 
@@ -314,7 +314,7 @@ func (v *AddressingValidator) ValidatePrivacyCompliance(activity *Activity) erro
 		// BCC should not appear in any visible fields
 		for _, bccRecipient := range activity.BCC {
 			if v.isInVisibleFields(activity, bccRecipient) {
-				return fmt.Errorf("BCC recipient %s appears in visible addressing fields", bccRecipient)
+				return fmt.Errorf("%s: %w", bccRecipient, ErrBCCInVisibleFields)
 			}
 		}
 	}

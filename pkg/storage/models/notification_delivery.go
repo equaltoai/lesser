@@ -74,16 +74,16 @@ func (n *NotificationDelivery) BeforeUpdate() error {
 // Validate performs validation on the NotificationDelivery
 func (n *NotificationDelivery) Validate() error {
 	if err := common.ValidateRequiredParam("n.NotificationID", n.NotificationID); err != nil {
-		return fmt.Errorf("notification ID is required")
+		return ErrNotificationIDRequired
 	}
 	if err := common.ValidateRequiredParam("n.DeliveryMethod", n.DeliveryMethod); err != nil {
-		return fmt.Errorf("delivery method is required")
+		return ErrDeliveryMethodRequired
 	}
 	if !isValidDeliveryMethod(n.DeliveryMethod) {
-		return fmt.Errorf("invalid delivery method: %s", n.DeliveryMethod)
+		return fmt.Errorf("%w: %s", ErrInvalidDeliveryMethod, n.DeliveryMethod)
 	}
 	if !isValidDeliveryStatus(n.Status) {
-		return fmt.Errorf("invalid delivery status: %s", n.Status)
+		return fmt.Errorf("%w: %s", ErrInvalidDeliveryStatus, n.Status)
 	}
 	return nil
 }

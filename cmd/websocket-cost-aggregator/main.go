@@ -17,21 +17,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -80,12 +81,13 @@ func init() {
 		tableName = "lesser-main"
 	}
 
-	connectionsTable := os.Getenv("CONNECTIONS_TABLE")
+	cfg := config.Get()
+	connectionsTable := cfg.ConnectionsTable
 	if err := common.ValidateRequiredParam("connectionsTable", connectionsTable); err != nil {
 		connectionsTable = "lesser-streaming-connections"
 	}
 
-	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+	subscriptionsTable := cfg.SubscriptionsTable
 	if err := common.ValidateRequiredParam("subscriptionsTable", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
@@ -95,7 +97,7 @@ func init() {
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
 
 	// Initialize AWS SDK config for SNS
-	awsCfg, err := config.LoadDefaultConfig(context.Background())
+	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
 	if err != nil {
 		lambdaCtx.Logger.Error("failed to load AWS config for SNS", zap.Error(err))
 	}
@@ -105,9 +107,9 @@ func init() {
 		snsClient = sns.NewFromConfig(awsCfg)
 	}
 
-	// Get alerting configuration from environment
-	webhookURL := os.Getenv("BUDGET_ALERT_WEBHOOK_URL")
-	snsTopicArn := os.Getenv("BUDGET_ALERT_SNS_TOPIC_ARN")
+	// Get alerting configuration from centralized config
+	webhookURL := cfg.BudgetAlertWebhookURL
+	snsTopicArn := cfg.BudgetAlertSNSTopicArn
 
 	if err := common.ValidateRequiredParam("webhookURL", webhookURL); err != nil {
 		if err2 := common.ValidateRequiredParam("snsTopicArn", snsTopicArn); err2 != nil {
@@ -209,7 +211,7 @@ func (h *WebSocketCostAggregatorHandler) trackIdleConnections(ctx context.Contex
 	// Get all WebSocket connections that have been idle past the threshold
 	idleConnections, err := h.getIdleConnections(ctx, idleThreshold)
 	if err != nil {
-		return fmt.Errorf("failed to get idle connections: %w", err)
+		return errors.Join(ErrGetIdleConnections, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("idleConnections", idleConnections); err != nil {
@@ -297,7 +299,7 @@ func (h *WebSocketCostAggregatorHandler) updateBudgetAlerts(ctx context.Context)
 	// This would typically involve querying for users with high recent costs
 	highCostUsers, err := h.costRepo.GetTopCostlyUsers(ctx, time.Now().AddDate(0, 0, -1), time.Now(), 50)
 	if err != nil {
-		return fmt.Errorf("failed to get high cost users: %w", err)
+		return errors.Join(ErrGetHighCostUsers, err)
 	}
 
 	alertCount := 0
@@ -347,7 +349,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 	// Marshal to JSON
 	alertJSON, err := json.Marshal(alertMessage)
 	if err != nil {
-		return fmt.Errorf("failed to marshal alert message: %w", err)
+		return errors.Join(ErrMarshalAlertMessage, err)
 	}
 
 	var alertErrors []error
@@ -387,7 +389,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 
 	// Return error if all alert methods failed
 	if err := common.ValidateSliceNotEmpty("alertErrors", alertErrors); err == nil && len(alertErrors) == countConfiguredAlertMethods(h) {
-		return fmt.Errorf("all alert methods failed: %v", alertErrors)
+		return errors.Join(ErrAllAlertMethodsFailed, errors.New(fmt.Sprintf("alert errors: %v", alertErrors)))
 	}
 
 	return nil
@@ -410,12 +412,12 @@ type BudgetAlertMessage struct {
 func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, alertJSON []byte) error {
 	req, err := http.NewRequestWithContext(ctx, "POST", h.webhookURL, bytes.NewBuffer(alertJSON))
 	if err != nil {
-		return fmt.Errorf("failed to create webhook request: %w", err)
+		return errors.Join(ErrCreateWebhookRequest, err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Alert-Type", "budget-alert")
-	req.Header.Set("X-Instance-Domain", os.Getenv("DOMAIN_NAME"))
+	req.Header.Set("X-Instance-Domain", config.Get().Domain)
 
 	client := &http.Client{
 		Timeout: 10 * time.Second,
@@ -423,12 +425,12 @@ func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, a
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("webhook request failed: %w", err)
+		return errors.Join(ErrWebhookRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook returned non-2xx status: %d", resp.StatusCode)
+		return errors.Join(ErrWebhookNon2xxStatus, errors.New(fmt.Sprintf("status code: %d", resp.StatusCode)))
 	}
 
 	return nil
@@ -447,14 +449,14 @@ func (h *WebSocketCostAggregatorHandler) sendSNSAlert(ctx context.Context, alert
 			},
 			"Instance": {
 				DataType:    aws.String("String"),
-				StringValue: aws.String(os.Getenv("DOMAIN_NAME")),
+				StringValue: aws.String(config.Get().Domain),
 			},
 		},
 	}
 
 	_, err := h.snsClient.Publish(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to publish SNS message: %w", err)
+		return errors.Join(ErrPublishSNSMessage, err)
 	}
 
 	return nil
@@ -548,7 +550,7 @@ func (h *WebSocketCostAggregatorHandler) cleanupStaleConnections(ctx context.Con
 	// Find connections that are older than the stale threshold
 	staleConnections, err := h.getStaleConnections(ctx, staleThreshold)
 	if err != nil {
-		return fmt.Errorf("failed to get stale connections: %w", err)
+		return errors.Join(ErrGetStaleConnections, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("staleConnections", staleConnections); err != nil {
@@ -604,7 +606,7 @@ func (h *WebSocketCostAggregatorHandler) getIdleConnections(ctx context.Context,
 // trackIdleConnectionsBatch tracks costs for a batch of idle connections
 func (h *WebSocketCostAggregatorHandler) trackIdleConnectionsBatch(ctx context.Context, connections []models.WebSocketConnection, idleThreshold time.Time) (int64, error) {
 	if err := h.costTracker.TrackIdleConnections(ctx, connections); err != nil {
-		return 0, fmt.Errorf("failed to track idle connections: %w", err)
+		return 0, errors.Join(ErrTrackIdleConnections, err)
 	}
 
 	// Calculate total idle cost for reporting
@@ -772,24 +774,14 @@ type CleanupAlertMessage struct {
 	Message                 string    `json:"message"`
 }
 
-// getIdleTimeoutMinutes returns the idle timeout in minutes from environment or default
+// getIdleTimeoutMinutes returns the idle timeout in minutes from config
 func getIdleTimeoutMinutes() int {
-	if timeoutStr := os.Getenv("IDLE_TIMEOUT_MINUTES"); timeoutStr != "" {
-		if timeout, err := common.ParseAndValidateIntWithBounds("timeout", timeoutStr, 0, 1440, 30); err == nil {
-			return timeout
-		}
-	}
-	return 30 // Default: 30 minutes
+	return config.Get().IdleTimeoutMinutes
 }
 
-// getStaleTimeoutHours returns the stale timeout in hours from environment or default
+// getStaleTimeoutHours returns the stale timeout in hours from config
 func getStaleTimeoutHours() int {
-	if timeoutStr := os.Getenv("STALE_TIMEOUT_HOURS"); timeoutStr != "" {
-		if timeout, err := common.ParseAndValidateIntWithBounds("timeout", timeoutStr, 0, 168, 24); err == nil {
-			return timeout
-		}
-	}
-	return 24 // Default: 24 hours
+	return config.Get().StaleTimeoutHours
 }
 
 func main() {

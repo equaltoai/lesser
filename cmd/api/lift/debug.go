@@ -93,7 +93,7 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -211,7 +211,7 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -310,7 +310,7 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -394,7 +394,7 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -467,7 +467,7 @@ func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {

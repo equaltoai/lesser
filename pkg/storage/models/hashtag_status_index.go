@@ -41,7 +41,7 @@ type HashtagStatusIndex struct {
 }
 
 // UpdateKeys updates all the GSI keys when the index data changes
-func (hsi *HashtagStatusIndex) UpdateKeys() {
+func (hsi *HashtagStatusIndex) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(hsi.HashtagName, "#"))
 
 	// Create timestamp-descending format for SK (latest first)
@@ -59,6 +59,18 @@ func (hsi *HashtagStatusIndex) UpdateKeys() {
 	// GSI2 for visibility filtering
 	hsi.GSI2PK = fmt.Sprintf("HASHTAG_VIS#%s#%s", tagLower, hsi.Visibility)
 	hsi.GSI2SK = fmt.Sprintf("TIMELINE#%s", timestampDesc)
+	
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (hsi *HashtagStatusIndex) GetPK() string {
+	return hsi.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (hsi *HashtagStatusIndex) GetSK() string {
+	return hsi.SK
 }
 
 // HashtagTrendingData represents trending data for hashtags with time-windowed metrics

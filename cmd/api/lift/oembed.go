@@ -51,9 +51,7 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 	statusID := h.extractStatusID(parsedURL.Path)
 	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		h.logger.Warn("status not found in URL path", zap.String("path", parsedURL.Path))
-		return ctx.Status(404).JSON(map[string]string{
-			"error": "status not found",
-		})
+		return common.RespondStatusNotFound(ctx)
 	}
 
 	// Get request parameters
@@ -70,9 +68,7 @@ func (h *Handler) HandleOEmbedLift(ctx *lift.Context) error {
 	// Check if status is embeddable
 	if !h.isStatusEmbeddable(note) {
 		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
-		return ctx.Status(403).JSON(map[string]string{
-			"error": "status is not embeddable",
-		})
+		return common.RespondForbidden(ctx, "status is not embeddable")
 	}
 
 	// Get the author's actor
@@ -96,9 +92,7 @@ func (h *Handler) extractOEmbedURL(ctx *lift.Context) (string, error) {
 
 	if err := common.ValidateRequiredParam("requestedURL", requestedURL); err != nil {
 		h.logger.Warn("missing required parameter: url")
-		return "", ctx.Status(400).JSON(map[string]string{
-			"error": "missing required parameter: url",
-		})
+		return "", common.RespondBadRequest(ctx, "missing required parameter: url")
 	}
 
 	return requestedURL, nil
@@ -109,9 +103,7 @@ func (h *Handler) validateOEmbedURL(ctx *lift.Context, requestedURL string) (*ur
 	parsedURL, err := url.Parse(requestedURL)
 	if err != nil {
 		h.logger.Warn("invalid URL", zap.String("url", requestedURL), zap.Error(err))
-		return nil, ctx.Status(400).JSON(map[string]string{
-			"error": "invalid URL",
-		})
+		return nil, common.RespondBadRequest(ctx, "invalid URL")
 	}
 
 	// Check if it's from our instance
@@ -120,9 +112,7 @@ func (h *Handler) validateOEmbedURL(ctx *lift.Context, requestedURL string) (*ur
 		h.logger.Warn("URL does not belong to this instance",
 			zap.String("requested_host", parsedURL.Host),
 			zap.String("expected_host", expectedHost))
-		return nil, ctx.Status(404).JSON(map[string]string{
-			"error": "URL does not belong to this instance",
-		})
+		return nil, common.RespondNotFound(ctx, "URL does not belong to this instance")
 	}
 
 	return parsedURL, nil
@@ -180,9 +170,7 @@ func (h *Handler) fetchAndConvertNote(ctx *lift.Context, objectID string) (*acti
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		h.logger.Error("failed to get note", zap.String("status_id", statusID), zap.Error(err))
-		return nil, ctx.Status(404).JSON(map[string]string{
-			"error": "status not found",
-		})
+		return nil, common.RespondStatusNotFound(ctx)
 	}
 
 	// Return the Note directly
@@ -231,9 +219,7 @@ func (h *Handler) sendOEmbedResponse(ctx *lift.Context, oembed *OEmbedResponse, 
 		return h.sendXMLResponseLift(ctx, oembed)
 	default:
 		h.logger.Warn("unsupported format", zap.String("format", format))
-		return ctx.Status(400).JSON(map[string]string{
-			"error": "unsupported format",
-		})
+		return common.RespondBadRequest(ctx, "unsupported format")
 	}
 }
 
@@ -413,17 +399,13 @@ func (h *Handler) HandleEmbedPageLift(ctx *lift.Context) error {
 	note, ok := obj.(*activitypub.Note)
 	if !ok {
 		h.logger.Error("object is not a Note", zap.String("object_id", objectID))
-		return ctx.Status(500).JSON(map[string]string{
-			"error": "invalid status type",
-		})
+		return common.RespondInternalServerError(ctx, "invalid status type")
 	}
 
 	// Check if status is embeddable (public/unlisted)
 	if !h.isStatusEmbeddable(note) {
 		h.logger.Warn("status is not embeddable", zap.String("object_id", objectID))
-		return ctx.Status(403).JSON(map[string]string{
-			"error": "status is not embeddable",
-		})
+		return common.RespondForbidden(ctx, "status is not embeddable")
 	}
 
 	// Get author information
@@ -466,9 +448,7 @@ func (h *Handler) extractEmbedStatusID(ctx *lift.Context) (string, error) {
 
 	if err := common.ValidateRequiredParam("statusID", statusID); err != nil {
 		h.logger.Warn("missing status ID in embed page request")
-		return "", ctx.Status(400).JSON(map[string]string{
-			"error": "missing status ID",
-		})
+		return "", common.RespondBadRequest(ctx, "missing status ID")
 	}
 
 	return statusID, nil
@@ -492,9 +472,7 @@ func (h *Handler) fetchEmbedObject(ctx *lift.Context, objectID string) (any, err
 	result, err := h.registry.Notes().GetNote(ctx.Context, statusID)
 	if err != nil {
 		h.logger.Error("failed to get note for embed", zap.String("status_id", statusID), zap.Error(err))
-		return nil, ctx.Status(404).JSON(map[string]string{
-			"error": "status not found",
-		})
+		return nil, common.RespondStatusNotFound(ctx)
 	}
 	return result.Note, nil
 }

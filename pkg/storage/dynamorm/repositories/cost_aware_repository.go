@@ -18,14 +18,14 @@ import (
 type CostAwareRepository struct {
 	*dynamorm.BaseRepository
 	costTracker    *cost.DynamORMCostTracker
-	costThresholds CostThresholds
+	costThresholds Thresholds
 	logger         *zap.Logger
 	mu             sync.RWMutex
 	operationStats map[string]*OperationStats
 }
 
-// CostThresholds defines warning and limit thresholds for operations
-type CostThresholds struct {
+// Thresholds defines warning and limit thresholds for operations
+type Thresholds struct {
 	// Per-operation thresholds (in cents)
 	WarningCostPerOp float64
 	MaxCostPerOp     float64
@@ -44,8 +44,8 @@ type CostThresholds struct {
 }
 
 // DefaultCostThresholds returns default cost thresholds aligned with Lesser's cost goals
-func DefaultCostThresholds() CostThresholds {
-	return CostThresholds{
+func DefaultCostThresholds() Thresholds {
+	return Thresholds{
 		WarningCostPerOp:        0.0001, // $0.0001 (0.01 cents)
 		MaxCostPerOp:            0.001,  // $0.001 (0.1 cents)
 		WarningCostPerRequest:   0.001,  // $0.001
@@ -96,7 +96,7 @@ func NewCostAwareRepositoryWithRequest(db core.DB, tableName, requestID, operati
 }
 
 // SetCostThresholds updates the cost thresholds for this repository
-func (r *CostAwareRepository) SetCostThresholds(thresholds CostThresholds) {
+func (r *CostAwareRepository) SetCostThresholds(thresholds Thresholds) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.costThresholds = thresholds

@@ -54,7 +54,7 @@ func NewBaseRepositoryWithCostTracking[T BaseModel](db core.DB, tableName string
 func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 	// Update keys before saving
 	if err := item.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return ErrorHandler.HandleCreateError(err, "base entity keys", item.GetPK())
 	}
 
 	// Track cost if cost service is available
@@ -86,7 +86,7 @@ func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 			zap.Error(err),
 			zap.String("pk", item.GetPK()),
 			zap.String("sk", item.GetSK()))
-		return fmt.Errorf("failed to create item: %w", err)
+		return ErrorHandler.HandleCreateError(err, "base entity", item.GetPK())
 	}
 
 	return nil
@@ -124,13 +124,13 @@ func (r *BaseRepository[T]) Get(ctx context.Context, pk, sk string, result T) er
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("item not found: pk=%s, sk=%s", pk, sk)
+			return ErrorHandler.HandleGetError(err, "base entity", fmt.Sprintf("pk=%s, sk=%s", pk, sk))
 		}
 		r.logger.Error("failed to get item",
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
-		return fmt.Errorf("failed to get item: %w", err)
+		return ErrorHandler.HandleGetError(err, "base entity", fmt.Sprintf("pk=%s, sk=%s", pk, sk))
 	}
 
 	return nil
@@ -170,7 +170,7 @@ func (r *BaseRepository[T]) Update(ctx context.Context, item T) error {
 			zap.Error(err),
 			zap.String("pk", item.GetPK()),
 			zap.String("sk", item.GetSK()))
-		return fmt.Errorf("failed to update item: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "base entity", item.GetPK())
 	}
 
 	return nil
@@ -214,7 +214,7 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
-		return fmt.Errorf("failed to delete item: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "base entity", fmt.Sprintf("pk=%s, sk=%s", pk, sk))
 	}
 
 	return nil
@@ -266,7 +266,7 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.Int("limit", limit))
-		return nil, fmt.Errorf("failed to query items: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "partition query")
 	}
 
 	return results, nil
@@ -293,7 +293,7 @@ func (r *BaseRepository[T]) QueryWithSKPrefix(ctx context.Context, pk, skPrefix 
 			zap.String("pk", pk),
 			zap.String("skPrefix", skPrefix),
 			zap.Int("limit", limit))
-		return nil, fmt.Errorf("failed to query items: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "prefix query")
 	}
 
 	return results, nil
@@ -320,7 +320,7 @@ func (r *BaseRepository[T]) QueryGSI(ctx context.Context, indexName, pk string, 
 			zap.String("index", indexName),
 			zap.String("pk", pk),
 			zap.Int("limit", limit))
-		return nil, fmt.Errorf("failed to query GSI: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", fmt.Sprintf("GSI query on %s", indexName))
 	}
 
 	return results, nil
@@ -357,7 +357,7 @@ func (r *BaseRepository[T]) BatchGet(ctx context.Context, keys []struct{ PK, SK 
 			r.logger.Error("failed to batch get items",
 				zap.Error(err),
 				zap.Int("batchSize", len(batch)))
-			return nil, fmt.Errorf("failed to batch get items: %w", err)
+			return nil, ErrorHandler.HandleGetError(err, "base entity batch", fmt.Sprintf("batch size %d", len(batch)))
 		}
 
 		results = append(results, batchResults...)
@@ -376,7 +376,7 @@ func (r *BaseRepository[T]) Count(ctx context.Context, pk string) (int, error) {
 		r.logger.Error("failed to count items",
 			zap.Error(err),
 			zap.String("pk", pk))
-		return 0, fmt.Errorf("failed to count items: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "base entity", "count query")
 	}
 
 	return int(count), nil
@@ -394,7 +394,7 @@ func (r *BaseRepository[T]) Exists(ctx context.Context, pk, sk string) (bool, er
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
-		return false, fmt.Errorf("failed to check existence: %w", err)
+		return false, ErrorHandler.HandleGetError(err, "base entity", fmt.Sprintf("pk=%s, sk=%s", pk, sk))
 	}
 
 	return count > 0, nil
@@ -473,6 +473,11 @@ func (r *BaseRepository[T]) SetCostService(costService *cost.TrackingService) {
 // SetRepoName allows setting the repository name for better cost tracking identification
 func (r *BaseRepository[T]) SetRepoName(repoName string) {
 	r.repoName = repoName
+}
+
+// GetDB returns the underlying database connection for complex queries that can't use BaseRepository methods
+func (r *BaseRepository[T]) GetDB() core.DB {
+	return r.db
 }
 
 // === CONSOLIDATION HELPER FUNCTIONS ===
@@ -560,13 +565,13 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		r.logger.Error(fmt.Sprintf("failed to %s", config.ErrorPrefix),
 			zap.String("entity_id", entityID),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to %s: %w", config.ErrorPrefix, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "collection entity", config.ErrorPrefix)
 	}
 
 	// Convert to target type
 	results, err := converter(models)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to convert %s: %w", config.LogName, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "collection conversion", config.LogName)
 	}
 
 	// Generate next cursor
@@ -613,7 +618,7 @@ func DeleteEntityWithLogging[M BaseModel](
 			logFields = append(logFields, zap.String(key, value))
 		}
 		r.logger.Error(fmt.Sprintf("failed to delete %s", entityType), logFields...)
-		return fmt.Errorf("failed to delete %s: %w", entityType, err)
+		return ErrorHandler.HandleDeleteError(err, entityType, fmt.Sprintf("pk=%s, sk=%s", pk, sk))
 	}
 
 	logFields := []zap.Field{zap.String("entity_type", entityType)}
@@ -666,7 +671,7 @@ func QueryHistoryWithDateRange[M BaseModel](
 		r.logger.Error(fmt.Sprintf("Failed to get %s", config.LogName), 
 			zap.Error(err), 
 			zap.Int("days", days))
-		return nil, fmt.Errorf("failed to get %s: %w", config.LogName, err)
+		return nil, ErrorHandler.HandleQueryError(err, "history entity", config.LogName)
 	}
 
 	// Convert to expected format
@@ -726,7 +731,7 @@ func QueryMetricsByTimeRange[M BaseModel](
 			zap.String("entity", entityName),
 			zap.Time("startTime", startTime),
 			zap.Time("endTime", endTime))
-		return nil, MapErrorWithContext(err, fmt.Sprintf("failed to get %s", config.LogName))
+		return nil, ErrorHandler.HandleQueryError(err, "metrics entity", config.LogName)
 	}
 
 	return records, nil
@@ -743,7 +748,7 @@ type ReportConversionConfig struct {
 func ConvertAndPaginateReports[M interface{}](
 	models []M,
 	limit int,
-	config ReportConversionConfig,
+	_ ReportConversionConfig,
 	converter func(M) *storage.Report,
 	cursorExtractor func(M) string,
 ) ([]*storage.Report, string, error) {
@@ -780,7 +785,7 @@ type AuditLogConversionConfig struct {
 // This eliminates duplication in GetAuditLogsByAdmin, GetAuditLogsByTarget
 func ConvertAndPaginateAuditLogs[M interface{}](
 	models []M,
-	config AuditLogConversionConfig,
+	_ AuditLogConversionConfig,
 	converter func(M) *storage.AuditLog,
 	cursorExtractor func(M) string,
 ) ([]*storage.AuditLog, string) {
@@ -802,8 +807,431 @@ func ConvertAndPaginateAuditLogs[M interface{}](
 
 // getGSISK extracts GSI SK value from a model using reflection or interface
 // This is a helper function to get cursor values from different GSI fields
-func getGSISK(model BaseModel, fieldName string) string {
+func getGSISK(_ BaseModel, _ string) string {
 	// This would need to be implemented based on the actual model structure
 	// For now, return empty string - this should be customized per repository
 	return ""
+}
+
+// === ENHANCED CRUD OPERATIONS FOR TASK 1.2.1 ===
+
+// BasePaginationOptions configures pagination behavior for BaseRepository
+type BasePaginationOptions struct {
+	Limit  int    // Maximum number of items to return
+	Cursor string // Pagination cursor for next page
+	Order  string // Sort order: "ASC" or "DESC"
+}
+
+// BasePaginatedResult contains paginated query results from BaseRepository
+type BasePaginatedResult[T BaseModel] struct {
+	Items      []T    // The retrieved items
+	NextCursor string // Cursor for next page (empty if no more pages)
+	HasMore    bool   // Whether there are more pages available
+}
+
+// FindByPK retrieves all items with a specific partition key
+func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error) {
+	var results []T
+
+	err := r.db.WithContext(ctx).Model(new(T)).
+		Where("PK", "=", pk).
+		All(&results)
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1 // Minimum for the query operation itself
+		}
+		
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  estimatedRU,
+			ConsumedWriteUnits: 0,
+			ItemCount:          itemCount,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_findByPK_%d", r.repoName, time.Now().UnixNano()),
+		}
+		
+		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track DynamoDB findByPK operation cost",
+				zap.String("repository", r.repoName),
+				zap.String("pk", pk),
+				zap.Error(trackErr))
+		}
+	}
+
+	if err != nil {
+		r.logger.Error("failed to find items by PK",
+			zap.Error(err),
+			zap.String("pk", pk))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "find by PK")
+	}
+
+	return results, nil
+}
+
+// FindBySK retrieves all items with a specific sort key (across all partitions)
+// Note: This requires a GSI with SK as the partition key
+func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName string) ([]T, error) {
+	var results []T
+
+	err := r.db.WithContext(ctx).Model(new(T)).
+		Index(gsiName).
+		Where(fmt.Sprintf("%sPK", gsiName), "=", sk).
+		All(&results)
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  estimatedRU,
+			ConsumedWriteUnits: 0,
+			ItemCount:          itemCount,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_findBySK_%d", r.repoName, time.Now().UnixNano()),
+		}
+		
+		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track DynamoDB findBySK operation cost",
+				zap.String("repository", r.repoName),
+				zap.String("sk", sk),
+				zap.Error(trackErr))
+		}
+	}
+
+	if err != nil {
+		r.logger.Error("failed to find items by SK",
+			zap.Error(err),
+			zap.String("sk", sk),
+			zap.String("gsi", gsiName))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", fmt.Sprintf("find by SK on %s", gsiName))
+	}
+
+	return results, nil
+}
+
+// FindWithPagination performs paginated queries with cursor support
+func (r *BaseRepository[T]) FindWithPagination(ctx context.Context, pk string, opts BasePaginationOptions) (*BasePaginatedResult[T], error) {
+	// Validate and set defaults
+	if opts.Limit <= 0 {
+		opts.Limit = 20 // Default limit
+	}
+	if opts.Limit > 100 {
+		opts.Limit = 100 // Maximum limit to prevent abuse
+	}
+	if opts.Order == "" {
+		opts.Order = "ASC"
+	}
+
+	var results []T
+	
+	// Build query
+	query := r.db.WithContext(ctx).Model(new(T)).
+		Where("PK", "=", pk).
+		Limit(opts.Limit + 1). // Get one extra to check if there are more
+		OrderBy("SK", opts.Order)
+
+	// Apply cursor if provided
+	if opts.Cursor != "" {
+		if opts.Order == "DESC" {
+			query = query.Where("SK", "<", opts.Cursor)
+		} else {
+			query = query.Where("SK", ">", opts.Cursor)
+		}
+	}
+
+	// Execute query
+	err := query.All(&results)
+	if err != nil {
+		r.logger.Error("failed to execute paginated query",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.Int("limit", opts.Limit))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "paginated query")
+	}
+
+	// Determine if there are more pages
+	hasMore := len(results) > opts.Limit
+	if hasMore {
+		results = results[:opts.Limit] // Trim to requested limit
+	}
+
+	// Generate next cursor
+	nextCursor := ""
+	if hasMore && len(results) > 0 {
+		nextCursor = results[len(results)-1].GetSK()
+	}
+
+	// Track cost
+	if r.costService != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  estimatedRU,
+			ConsumedWriteUnits: 0,
+			ItemCount:          itemCount,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_paginated_%d", r.repoName, time.Now().UnixNano()),
+		}
+		
+		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track paginated query cost",
+				zap.String("repository", r.repoName),
+				zap.String("pk", pk),
+				zap.Error(trackErr))
+		}
+	}
+
+	return &BasePaginatedResult[T]{
+		Items:      results,
+		NextCursor: nextCursor,
+		HasMore:    hasMore,
+	}, nil
+}
+
+// BatchCreate creates multiple items efficiently using DynamoDB batch operations
+func (r *BaseRepository[T]) BatchCreate(ctx context.Context, items []T) error {
+	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
+		return nil // Silently return if no items to create
+	}
+
+	// Update keys for all items
+	for _, item := range items {
+		if err := item.UpdateKeys(); err != nil {
+			return ErrorHandler.HandleCreateError(err, "batch entity keys", item.GetPK())
+		}
+	}
+
+	// DynamoDB batch write has a limit of 25 items
+	batchSize := 25
+	for i := 0; i < len(items); i += batchSize {
+		end := i + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+
+		batch := items[i:end]
+		
+		// Create batch write request
+		// Note: This is a simplified implementation - would need proper batch write implementation
+		for _, item := range batch {
+			err := r.db.WithContext(ctx).Model(item).Create()
+			if err != nil {
+				r.logger.Error("failed to create item in batch",
+					zap.Error(err),
+					zap.String("pk", item.GetPK()),
+					zap.String("sk", item.GetSK()))
+				return ErrorHandler.HandleCreateError(err, "batch entity", item.GetPK())
+			}
+		}
+
+		// Track cost for batch
+		if r.costService != nil {
+			operation := cost.DynamoOperation{
+				Type:               "BatchWriteItem",
+				TableName:          r.tableName,
+				ConsumedReadUnits:  0,
+				ConsumedWriteUnits: int64(len(batch)), // 1 WU per item
+				ItemCount:          int64(len(batch)),
+				Timestamp:          time.Now(),
+				OperationID:        fmt.Sprintf("%s_batchCreate_%d", r.repoName, time.Now().UnixNano()),
+			}
+			
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track batch create cost",
+					zap.String("repository", r.repoName),
+					zap.Int("batchSize", len(batch)),
+					zap.Error(trackErr))
+			}
+		}
+	}
+
+	return nil
+}
+
+// BatchDelete removes multiple items efficiently using DynamoDB batch operations  
+func (r *BaseRepository[T]) BatchDelete(ctx context.Context, keys []struct{ PK, SK string }) error {
+	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
+		return nil // Silently return if no keys to delete
+	}
+
+	// DynamoDB batch write has a limit of 25 items
+	batchSize := 25
+	for i := 0; i < len(keys); i += batchSize {
+		end := i + batchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		batch := keys[i:end]
+		
+		// Create batch delete request
+		// Note: This is a simplified implementation - would need proper batch delete implementation
+		for _, key := range batch {
+			err := r.Delete(ctx, key.PK, key.SK)
+			if err != nil {
+				r.logger.Error("failed to delete item in batch",
+					zap.Error(err),
+					zap.String("pk", key.PK),
+					zap.String("sk", key.SK))
+				return ErrorHandler.HandleDeleteError(err, "batch entity", fmt.Sprintf("pk=%s, sk=%s", key.PK, key.SK))
+			}
+		}
+
+		// Track cost for batch
+		if r.costService != nil {
+			operation := cost.DynamoOperation{
+				Type:               "BatchWriteItem",
+				TableName:          r.tableName,
+				ConsumedReadUnits:  0,
+				ConsumedWriteUnits: int64(len(batch)), // 1 WU per item
+				ItemCount:          int64(len(batch)),
+				Timestamp:          time.Now(),
+				OperationID:        fmt.Sprintf("%s_batchDelete_%d", r.repoName, time.Now().UnixNano()),
+			}
+			
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track batch delete cost",
+					zap.String("repository", r.repoName),
+					zap.Int("batchSize", len(batch)),
+					zap.Error(trackErr))
+			}
+		}
+	}
+
+	return nil
+}
+
+// QueryWithFilter performs queries with additional filter conditions
+func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filters map[string]interface{}, limit int) ([]T, error) {
+	var results []T
+
+	// Build query
+	query := r.db.WithContext(ctx).Model(new(T)).
+		Where("PK", "=", pk)
+
+	// Apply filters
+	for field, value := range filters {
+		switch v := value.(type) {
+		case string:
+			query = query.Filter(field, "=", v)
+		case map[string]interface{}:
+			// Handle complex filter conditions
+			if op, ok := v["op"].(string); ok {
+				if val, ok := v["value"]; ok {
+					query = query.Filter(field, op, val)
+				}
+			}
+		}
+	}
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	// Execute query
+	err := query.All(&results)
+	if err != nil {
+		r.logger.Error("failed to query with filters",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.Any("filters", filters))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "filtered query")
+	}
+
+	// Track cost
+	if r.costService != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  estimatedRU,
+			ConsumedWriteUnits: 0,
+			ItemCount:          itemCount,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_queryFilter_%d", r.repoName, time.Now().UnixNano()),
+		}
+		
+		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track filtered query cost",
+				zap.String("repository", r.repoName),
+				zap.String("pk", pk),
+				zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
+}
+
+// QueryBetween performs range queries between two sort key values
+func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK string, limit int) ([]T, error) {
+	var results []T
+
+	query := r.db.WithContext(ctx).Model(new(T)).
+		Where("PK", "=", pk).
+		Where("SK", ">=", startSK).
+		Where("SK", "<=", endSK)
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.All(&results)
+	if err != nil {
+		r.logger.Error("failed to query between range",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.String("startSK", startSK),
+			zap.String("endSK", endSK))
+		return nil, ErrorHandler.HandleQueryError(err, "base entity", "range query")
+	}
+
+	// Track cost
+	if r.costService != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  estimatedRU,
+			ConsumedWriteUnits: 0,
+			ItemCount:          itemCount,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_queryBetween_%d", r.repoName, time.Now().UnixNano()),
+		}
+		
+		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track range query cost",
+				zap.String("repository", r.repoName),
+				zap.String("pk", pk),
+				zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
 }

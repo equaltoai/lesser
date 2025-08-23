@@ -62,7 +62,7 @@ func TestCostAwareRepository_SetCostThresholds(t *testing.T) {
 	mockDB := &repoTesting.MockDB{}
 	repo := NewCostAwareRepository(mockDB, "test", zap.NewNop(), cost.New())
 
-	customThresholds := CostThresholds{
+	customThresholds := Thresholds{
 		WarningCostPerOp:        0.0005,
 		MaxCostPerOp:            0.002,
 		WarningCostPerRequest:   0.005,
@@ -141,7 +141,7 @@ func TestCostAwareRepository_CheckCostAlerts(t *testing.T) {
 	repo := NewCostAwareRepository(mockDB, "test_table", zap.NewNop(), cost.New())
 
 	// Set low thresholds to trigger alerts
-	repo.SetCostThresholds(CostThresholds{
+	repo.SetCostThresholds(Thresholds{
 		WarningCostPerOp: 0.001,
 		MaxCostPerOp:     0.002,
 	})

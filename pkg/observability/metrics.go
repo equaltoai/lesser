@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // MetricsCollector aggregates and publishes custom metrics
@@ -351,11 +352,12 @@ func mathMin(a, b float64) float64 {
 }
 
 func getEnvironment() string {
-	if env := os.Getenv("ENVIRONMENT"); env != "" {
-		return env
+	cfg := config.Get()
+	if cfg.Environment != "" {
+		return cfg.Environment
 	}
-	if env := os.Getenv("STAGE"); env != "" {
-		return env
+	if cfg.Stage != "" {
+		return cfg.Stage
 	}
 	return StatusUnknown
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -95,9 +96,9 @@ func (s *S3MediaStorage) GetMediaMetadata(mediaID string) (*MediaMetadata, error
 	if err != nil {
 		// Check for "not found" error pattern in DynamORM
 		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "item not found") {
-			return nil, fmt.Errorf("media metadata not found: %s", mediaID)
+			return nil, fmt.Errorf("%w: %s", ErrMediaMetadataNotFound, mediaID)
 		}
-		return nil, fmt.Errorf("get metadata from DynamoDB: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrGetMetadataFromDynamoDB, err)
 	}
 
 	// Convert from DynamORM model to streaming MediaMetadata
@@ -144,7 +145,7 @@ func (s *S3MediaStorage) ManifestExists(mediaID string, format MediaFormat) (boo
 		if strings.Contains(err.Error(), "NotFound") {
 			return false, nil
 		}
-		return false, fmt.Errorf("check manifest exists: %w", err)
+		return false, fmt.Errorf("%w: %w", ErrCheckManifestExists, err)
 	}
 
 	return true, nil
@@ -165,7 +166,7 @@ func (s *S3MediaStorage) SaveManifest(mediaID string, format MediaFormat, qualit
 
 	_, err := s.client.PutObject(ctx, putInput)
 	if err != nil {
-		return fmt.Errorf("save manifest to S3: %w", err)
+		return fmt.Errorf("%w: %w", ErrSaveManifestToS3, err)
 	}
 
 	return nil
@@ -183,7 +184,7 @@ func (s *S3MediaStorage) GetSegmentInfo(mediaID string, quality Quality, segment
 
 	result, err := s.client.HeadObject(ctx, headInput)
 	if err != nil {
-		return nil, fmt.Errorf("get segment info: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrGetSegmentInfo, err)
 	}
 
 	segmentSize := int64(0)
@@ -217,7 +218,7 @@ func (s *S3MediaStorage) ListSegments(mediaID string, quality Quality) ([]*Segme
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("list segments: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrListSegments, err)
 		}
 
 		for _, obj := range page.Contents {
@@ -281,10 +282,10 @@ func (s *S3MediaStorage) UpdateMediaMetadata(mediaID string, metadata *MediaMeta
 			// Record doesn't exist, create it
 			err = s.db.WithContext(ctx).Model(metadataModel).Create()
 			if err != nil {
-				return fmt.Errorf("create metadata in DynamoDB: %w", err)
+				return fmt.Errorf("%w: %w", ErrCreateMetadataInDynamoDB, err)
 			}
 		} else {
-			return fmt.Errorf("update metadata in DynamoDB: %w", err)
+			return fmt.Errorf("%w: %w", ErrUpdateMetadataInDynamoDB, err)
 		}
 	}
 
@@ -375,7 +376,7 @@ func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Qualit
 
 		_, err := s.client.PutObject(ctx, putIndexInput)
 		if err != nil {
-			return fmt.Errorf("create index for quality %s: %w", quality, err)
+			return fmt.Errorf("%w %s: %w", ErrCreateIndexForQuality, quality, err)
 		}
 
 		// Create segments directory marker with processing instructions
@@ -403,7 +404,7 @@ func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Qualit
 
 		_, err = s.client.PutObject(ctx, putSegmentsDirInput)
 		if err != nil {
-			return fmt.Errorf("create segments directory for quality %s: %w", quality, err)
+			return fmt.Errorf("%w %s: %w", ErrCreateSegmentsDirectory, quality, err)
 		}
 	}
 
@@ -436,7 +437,7 @@ func (s *S3MediaStorage) CreateMediaStructure(mediaID string, qualities []Qualit
 
 	_, err := s.client.PutObject(ctx, putMasterInput)
 	if err != nil {
-		return fmt.Errorf("create master index: %w", err)
+		return fmt.Errorf("%w: %w", ErrCreateMasterIndex, err)
 	}
 
 	// Create initial metadata in DynamoDB
@@ -463,23 +464,24 @@ func (s *S3MediaStorage) GetPresignedUploadURL(mediaID string, filename string) 
 		opts.Expires = 1 * time.Hour
 	})
 	if err != nil {
-		return "", fmt.Errorf("generate presigned upload URL: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrGeneratePresignedUploadURL, err)
 	}
 
 	return request.URL, nil
 }
 
-// initializeCloudFront sets up CloudFront signing if environment variables are configured
+// initializeCloudFront sets up CloudFront signing if configuration is available
 func (s *S3MediaStorage) initializeCloudFront() error {
-	// Get CloudFront configuration from environment
-	cfDomain := os.Getenv("CLOUDFRONT_DISTRIBUTION_DOMAIN")
-	cfKeyPairID := os.Getenv("CLOUDFRONT_KEY_PAIR_ID")
-	cfPrivateKeyPath := os.Getenv("CLOUDFRONT_PRIVATE_KEY_PATH")
-	cfPrivateKeyContent := os.Getenv("CLOUDFRONT_PRIVATE_KEY")
+	// Get CloudFront configuration from config
+	cfg := config.Get()
+	cfDomain := cfg.CloudFrontDistributionDomain
+	cfKeyPairID := cfg.CloudFrontKeyPairID
+	cfPrivateKeyPath := cfg.CloudFrontPrivateKeyPath
+	cfPrivateKeyContent := cfg.CloudFrontPrivateKey
 
 	// Check if CloudFront is configured
 	if cfDomain == "" || cfKeyPairID == "" {
-		return fmt.Errorf("CloudFront not configured: missing domain or key pair ID")
+		return ErrCloudFrontNotConfigured
 	}
 
 	// Load private key
@@ -490,30 +492,30 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 		// Validate the file path to prevent directory traversal
 		cleanPath := filepath.Clean(cfPrivateKeyPath)
 		if !filepath.IsAbs(cleanPath) || strings.Contains(cleanPath, "..") {
-			return fmt.Errorf("invalid CloudFront private key path: %s", cfPrivateKeyPath)
+			return fmt.Errorf("%w: %s", ErrInvalidCloudFrontPrivateKeyPath, cfPrivateKeyPath)
 		}
 		// Load from file path
 		privateKeyPEM, err = os.ReadFile(cleanPath)
 		if err != nil {
-			return fmt.Errorf("failed to read CloudFront private key file: %w", err)
+			return fmt.Errorf("%w: %w", ErrFailedToReadCloudFrontPrivateKeyFile, err)
 		}
 	} else if cfPrivateKeyContent != "" {
 		// Use key content directly
 		privateKeyPEM = []byte(cfPrivateKeyContent)
 	} else {
-		return fmt.Errorf("CloudFront private key not provided")
+		return ErrCloudFrontPrivateKeyNotProvided
 	}
 
 	// Parse PEM block
 	block, _ := pem.Decode(privateKeyPEM)
 	if block == nil || block.Type != "RSA PRIVATE KEY" {
-		return fmt.Errorf("invalid RSA private key PEM")
+		return ErrInvalidRSAPrivateKeyPEM
 	}
 
 	// Parse RSA private key
 	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse RSA private key: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToParseRSAPrivateKey, err)
 	}
 
 	// Create URL signer
@@ -654,26 +656,26 @@ func (s *S3MediaStorage) GetKeyframeData(mediaID string, quality Quality) ([]byt
 				if strings.Contains(iframeErr.Error(), "NoSuchKey") || strings.Contains(iframeErr.Error(), "NotFound") {
 					return nil, nil
 				}
-				return nil, fmt.Errorf("failed to get keyframe data: %w", iframeErr)
+				return nil, fmt.Errorf("%w: %w", ErrFailedToGetKeyframeData, iframeErr)
 			}
 			defer func() { _ = iframeResult.Body.Close() }()
 
 			// Read I-frame playlist data
 			iframeData, readErr := io.ReadAll(iframeResult.Body)
 			if readErr != nil {
-				return nil, fmt.Errorf("failed to read I-frame playlist: %w", readErr)
+				return nil, fmt.Errorf("%w: %w", ErrFailedToReadIFramePlaylist, readErr)
 			}
 
 			return iframeData, nil
 		}
-		return nil, fmt.Errorf("failed to get keyframe data: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToGetKeyframeData, err)
 	}
 	defer func() { _ = result.Body.Close() }()
 
 	// Read keyframe data
 	keyframeData, readErr := io.ReadAll(result.Body)
 	if readErr != nil {
-		return nil, fmt.Errorf("failed to read keyframe data: %w", readErr)
+		return nil, fmt.Errorf("%w: %w", ErrFailedToReadKeyframeData, readErr)
 	}
 
 	return keyframeData, nil

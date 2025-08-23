@@ -59,6 +59,11 @@ const (
 	TagTypeMention      = "Mention"
 )
 
+// GSI field name constants
+const (
+	gsi1SKField = "GSI1SK"
+)
+
 // User preference keys
 const (
 	PrefKeyLanguage                  = "language"

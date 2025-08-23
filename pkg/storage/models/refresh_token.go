@@ -45,3 +45,20 @@ func (r *RefreshToken) BeforeCreate() error {
 
 	return nil
 }
+
+// GetPK returns the partition key for BaseModel interface
+func (r *RefreshToken) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (r *RefreshToken) GetSK() string {
+	return r.SK
+}
+
+// UpdateKeys implements BaseModel interface and updates DynamoDB keys
+func (r *RefreshToken) UpdateKeys() error {
+	r.PK = "REFRESHTOKEN#" + r.Token
+	r.SK = "TOKEN"
+	return nil
+}

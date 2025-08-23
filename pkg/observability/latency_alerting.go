@@ -13,8 +13,11 @@ import (
 
 // Alert severity constants
 const (
-	AlertSeverityInfo    = "info"
-	AlertSeverityUnknown = "unknown"
+	AlertSeverityInfo     = "info"
+	AlertSeverityWarning  = "warning"
+	AlertSeverityError    = "error"
+	AlertSeverityCritical = "critical"
+	AlertSeverityUnknown  = "unknown"
 )
 
 // LatencyAlerter manages real-time latency alerting
@@ -105,11 +108,11 @@ func (s AlertSeverity) String() string {
 	case SeverityInfo:
 		return AlertSeverityInfo
 	case SeverityWarning:
-		return "warning"
+		return AlertSeverityWarning
 	case SeverityError:
 		return "error"
 	case SeverityCritical:
-		return "critical"
+		return AlertSeverityCritical
 	default:
 		return AlertSeverityUnknown
 	}
@@ -566,7 +569,7 @@ func (la *LatencyAlerter) executeActions(ctx context.Context, alert *Alert) {
 func (la *LatencyAlerter) executeLogAction(alert *Alert, action AlertAction) {
 	level, ok := action.Config["level"].(string)
 	if !ok {
-		level = "info"
+		level = AlertSeverityInfo
 	}
 
 	logFields := []zap.Field{
@@ -585,7 +588,7 @@ func (la *LatencyAlerter) executeLogAction(alert *Alert, action AlertAction) {
 		la.logger.Error(alert.Message, logFields...)
 	case "warn":
 		la.logger.Warn(alert.Message, logFields...)
-	case "info":
+	case AlertSeverityInfo:
 		la.logger.Info(alert.Message, logFields...)
 	case "debug":
 		la.logger.Debug(alert.Message, logFields...)

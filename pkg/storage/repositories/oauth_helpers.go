@@ -61,7 +61,7 @@ func (h *OAuthHelper) StoreOAuthStateGeneric(ctx context.Context, state string, 
 		h.logger.Error("failed to store OAuth state",
 			zap.String("state", state),
 			zap.Error(err))
-		return fmt.Errorf("failed to store OAuth state: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityOAuthState, state)
 	}
 
 	return nil
@@ -83,7 +83,7 @@ func (h *OAuthHelper) GetOAuthStateGeneric(ctx context.Context, state string) (*
 		h.logger.Error("failed to get OAuth state",
 			zap.String("state", state),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth state: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthState, state)
 	}
 
 	// Check expiration
@@ -120,7 +120,7 @@ func (h *OAuthHelper) DeleteOAuthStateGeneric(ctx context.Context, state string)
 		h.logger.Error("failed to delete OAuth state",
 			zap.String("state", state),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete OAuth state: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityOAuthState, state)
 	}
 
 	return nil
@@ -132,7 +132,7 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 	if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
 		secret, err := h.generateClientSecret()
 		if err != nil {
-			return fmt.Errorf("failed to generate client secret: %w", err)
+			return ErrorHandler.HandleCreateError(err, "oauth client secret", "generation")
 		}
 		client.ClientSecret = secret
 	}
@@ -168,7 +168,7 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 		h.logger.Error("failed to create OAuth client",
 			zap.String("client_id", client.ClientID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create OAuth client: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, client.ClientID)
 	}
 
 	return nil
@@ -190,7 +190,7 @@ func (h *OAuthHelper) GetOAuthClientGeneric(ctx context.Context, clientID string
 		h.logger.Error("failed to get OAuth client",
 			zap.String("client_id", clientID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth client: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 	}
 
 	// Convert to storage model
@@ -218,7 +218,7 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 		return err
 	}
 	if existing == nil {
-		return fmt.Errorf("OAuth client not found: %s", clientID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthClient, clientID)
 	}
 
 	// Apply updates
@@ -282,7 +282,7 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 		h.logger.Error("failed to update OAuth client",
 			zap.String("client_id", clientID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update OAuth client: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
 	}
 
 	return nil
@@ -300,7 +300,7 @@ func (h *OAuthHelper) DeleteOAuthClientGeneric(ctx context.Context, clientID str
 		h.logger.Error("failed to delete OAuth client",
 			zap.String("client_id", clientID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete OAuth client: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityOAuthClient, clientID)
 	}
 
 	// Also delete any associated tokens
@@ -326,7 +326,7 @@ func (h *OAuthHelper) ListOAuthClientsGeneric(ctx context.Context, ownerID strin
 		h.logger.Error("failed to list OAuth clients",
 			zap.String("owner_id", ownerID),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to list OAuth clients: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityOAuthClient, "list by owner")
 	}
 
 	// Convert to storage models
@@ -367,7 +367,7 @@ func (h *OAuthHelper) generateClientSecret() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
-func (h *OAuthHelper) deleteOAuthTokensForClient(ctx context.Context, clientID string) {
+func (h *OAuthHelper) deleteOAuthTokensForClient(_ context.Context, clientID string) {
 	// This would delete all tokens associated with the client
 	// Implementation depends on how tokens are stored
 	h.logger.Info("deleting OAuth tokens for client",
@@ -419,7 +419,7 @@ func (h *OAuthHelper) CreateAuthorizationCodeGeneric(ctx context.Context, code *
 
 	// BeforeCreate will set up keys and TTL
 	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare authorization code: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityAuthCode, "preparation")
 	}
 
 	// Create the item with condition that it doesn't exist
@@ -427,10 +427,10 @@ func (h *OAuthHelper) CreateAuthorizationCodeGeneric(ctx context.Context, code *
 	if err != nil {
 		// Check if it's a duplicate key error
 		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("authorization code already exists: %s", code.Code)
+			return ErrorHandler.HandleCreateError(storage.ErrAlreadyExists, EntityAuthCode, code.Code)
 		}
 		h.logger.Error("failed to create authorization code", zap.Error(err))
-		return fmt.Errorf("failed to create authorization code: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityAuthCode, code.Code)
 	}
 
 	h.logger.Debug("created authorization code",
@@ -445,7 +445,7 @@ func (h *OAuthHelper) CreateAuthorizationCodeGeneric(ctx context.Context, code *
 func (h *OAuthHelper) GetAuthorizationCodeGeneric(ctx context.Context, code string) (*storage.AuthorizationCode, error) {
 	// Construct the key
 	pk := "AUTHCODE#" + code
-	sk := "CODE"
+	sk := SKCode
 
 	// Query for the item
 	var model models.AuthorizationCode
@@ -456,17 +456,17 @@ func (h *OAuthHelper) GetAuthorizationCodeGeneric(ctx context.Context, code stri
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("authorization code not found: %s", code)
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAuthCode, code)
 		}
 		h.logger.Error("failed to get authorization code", zap.Error(err))
-		return nil, fmt.Errorf("failed to get authorization code: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityAuthCode, code)
 	}
 
 	// Check if code has expired
 	if time.Now().After(model.ExpiresAt) {
 		// Clean up expired code
 		_ = h.DeleteAuthorizationCodeGeneric(ctx, code)
-		return nil, fmt.Errorf("authorization code expired: %s", code)
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityAuthCode, code)
 	}
 
 	// Convert to storage model
@@ -490,7 +490,7 @@ func (h *OAuthHelper) GetAuthorizationCodeGeneric(ctx context.Context, code stri
 func (h *OAuthHelper) DeleteAuthorizationCodeGeneric(ctx context.Context, code string) error {
 	// Construct the key
 	pk := "AUTHCODE#" + code
-	sk := "CODE"
+	sk := SKCode
 
 	// Delete the item
 	err := h.db.WithContext(ctx).Model(&models.AuthorizationCode{}).
@@ -500,7 +500,7 @@ func (h *OAuthHelper) DeleteAuthorizationCodeGeneric(ctx context.Context, code s
 
 	if err != nil {
 		h.logger.Error("failed to delete authorization code", zap.Error(err))
-		return fmt.Errorf("failed to delete authorization code: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityAuthCode, code)
 	}
 
 	h.logger.Debug("deleted authorization code", zap.String("code", code))
@@ -521,7 +521,7 @@ func (h *OAuthHelper) CreateRefreshTokenGeneric(ctx context.Context, token *stor
 
 	// BeforeCreate will set up keys and TTL
 	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare refresh token: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRefreshToken, "preparation")
 	}
 
 	// Create the item with condition that it doesn't exist
@@ -529,10 +529,10 @@ func (h *OAuthHelper) CreateRefreshTokenGeneric(ctx context.Context, token *stor
 	if err != nil {
 		// Check if it's a duplicate key error
 		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("refresh token already exists")
+			return ErrorHandler.HandleCreateError(storage.ErrAlreadyExists, EntityRefreshToken, "token")
 		}
 		h.logger.Error("failed to create refresh token", zap.Error(err))
-		return fmt.Errorf("failed to create refresh token: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRefreshToken, "token")
 	}
 
 	h.logger.Debug("created refresh token",
@@ -546,7 +546,7 @@ func (h *OAuthHelper) CreateRefreshTokenGeneric(ctx context.Context, token *stor
 func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) (*storage.RefreshToken, error) {
 	// Construct the key
 	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
+	sk := SKToken
 
 	// Query for the item
 	var model models.RefreshToken
@@ -557,17 +557,17 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("refresh token not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRefreshToken, "token")
 		}
 		h.logger.Error("failed to get refresh token", zap.Error(err))
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityRefreshToken, "token")
 	}
 
 	// Check if token has expired
 	if time.Now().After(model.ExpiresAt) {
 		// Clean up expired token
 		_ = h.DeleteRefreshTokenGeneric(ctx, token)
-		return nil, fmt.Errorf("refresh token expired")
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRefreshToken, "token")
 	}
 
 	// Convert to storage model
@@ -590,7 +590,7 @@ func (h *OAuthHelper) GetRefreshTokenGeneric(ctx context.Context, token string) 
 func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token string) error {
 	// Construct the key
 	pk := "REFRESHTOKEN#" + token
-	sk := "TOKEN"
+	sk := SKToken
 
 	// Delete the item
 	err := h.db.WithContext(ctx).Model(&models.RefreshToken{}).
@@ -600,7 +600,7 @@ func (h *OAuthHelper) DeleteRefreshTokenGeneric(ctx context.Context, token strin
 
 	if err != nil {
 		h.logger.Error("failed to delete refresh token", zap.Error(err))
-		return fmt.Errorf("failed to delete refresh token: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityRefreshToken, "token")
 	}
 
 	h.logger.Debug("deleted refresh token", zap.String("token", token))
@@ -639,11 +639,11 @@ func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *st
 			err = h.db.WithContext(ctx).Model(model).Create()
 			if err != nil {
 				h.logger.Error("failed to create user app consent", zap.Error(err))
-				return fmt.Errorf("failed to create user app consent: %w", err)
+				return ErrorHandler.HandleCreateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", consent.UserID, consent.AppID))
 			}
 		} else {
 			h.logger.Error("failed to update user app consent", zap.Error(err))
-			return fmt.Errorf("failed to update user app consent: %w", err)
+			return ErrorHandler.HandleUpdateError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", consent.UserID, consent.AppID))
 		}
 	}
 
@@ -669,10 +669,10 @@ func (h *OAuthHelper) GetUserAppConsentGeneric(ctx context.Context, userID, appI
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("user app consent not found: %s:%s", userID, appID)
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityOAuthConsent, fmt.Sprintf("%s:%s", userID, appID))
 		}
 		h.logger.Error("failed to get user app consent", zap.Error(err))
-		return nil, fmt.Errorf("failed to get user app consent: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthConsent, fmt.Sprintf("%s:%s", userID, appID))
 	}
 
 	// Convert to storage model

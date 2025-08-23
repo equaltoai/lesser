@@ -42,12 +42,23 @@ type AIAnalysis struct {
 }
 
 // UpdateKeys updates the GSI keys for the AI analysis
-func (a *AIAnalysis) UpdateKeys() {
+func (a *AIAnalysis) UpdateKeys() error {
 	a.PK = "AI#" + a.ObjectID
 	a.SK = "ANALYSIS#" + a.ID
 	a.GSI4PK = "AI#ANALYSIS#" + a.AnalyzedAt.Format(common.DateFormat)
 	a.GSI4SK = a.AnalyzedAt.Format(time.RFC3339Nano)
 	a.Type = "AIAnalysis"
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (a *AIAnalysis) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (a *AIAnalysis) GetSK() string {
+	return a.SK
 }
 
 // BeforeCreate hook for DynamORM
@@ -56,15 +67,13 @@ func (a *AIAnalysis) BeforeCreate() error {
 		a.CreatedAt = time.Now()
 	}
 	a.UpdatedAt = time.Now()
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
 }
 
 // BeforeUpdate hook for DynamORM
 func (a *AIAnalysis) BeforeUpdate() error {
 	a.UpdatedAt = time.Now()
-	a.UpdateKeys()
-	return nil
+	return a.UpdateKeys()
 }
 
 // AIAnalysisQueue represents a queued object for AI analysis
@@ -79,12 +88,23 @@ type AIAnalysisQueue struct {
 }
 
 // UpdateKeys updates the keys for the queue entry
-func (q *AIAnalysisQueue) UpdateKeys() {
+func (q *AIAnalysisQueue) UpdateKeys() error {
 	// Keys are set externally since they depend on the object ID
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (q *AIAnalysisQueue) GetPK() string {
+	return q.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (q *AIAnalysisQueue) GetSK() string {
+	return q.SK
 }
 
 // BeforeUpdate hook for DynamORM
 func (q *AIAnalysisQueue) BeforeUpdate() error {
 	q.UpdatedAt = time.Now()
-	return nil
+	return q.UpdateKeys()
 }

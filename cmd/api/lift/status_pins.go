@@ -42,7 +42,7 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -186,7 +186,7 @@ func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
@@ -329,7 +329,7 @@ func (h *Handler) authenticateWithWriteScope(ctx *lift.Context) (*auth.Claims, e
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		ctx.Status(http.StatusUnauthorized)
@@ -511,7 +511,7 @@ func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		var err error
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {

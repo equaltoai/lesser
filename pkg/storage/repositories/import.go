@@ -40,7 +40,7 @@ func (r *ImportRepository) CreateImport(_ context.Context, importRecord *models.
 		r.logger.Error("failed to create import",
 			zap.String("import_id", importRecord.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create import: %w", err)
+		return ErrorHandler.HandleCreateError(err, "import", importRecord.ID)
 	}
 
 	r.logger.Info("created import record",
@@ -63,12 +63,12 @@ func (r *ImportRepository) GetImport(_ context.Context, importID string) (*model
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("import not found: %s", importID)
+			return nil, ErrorHandler.HandleGetError(err, "import", importID)
 		}
 		r.logger.Error("failed to get import",
 			zap.String("import_id", importID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get import: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "import", importID)
 	}
 
 	return &importRecord, nil
@@ -123,7 +123,7 @@ func (r *ImportRepository) UpdateImportStatus(ctx context.Context, importID, sta
 			zap.String("import_id", importID),
 			zap.String("status", status),
 			zap.Error(err))
-		return fmt.Errorf("failed to update import status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "import", importID)
 	}
 
 	r.logger.Info("updated import status",
@@ -151,7 +151,7 @@ func (r *ImportRepository) UpdateImportProgress(ctx context.Context, importID st
 			zap.String("import_id", importID),
 			zap.Int("progress", progress),
 			zap.Error(err))
-		return fmt.Errorf("failed to update import progress: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "import", importID)
 	}
 
 	r.logger.Debug("updated import progress",
@@ -163,7 +163,7 @@ func (r *ImportRepository) UpdateImportProgress(ctx context.Context, importID st
 
 // GetImportsForUser retrieves all imports for a user
 func (r *ImportRepository) GetImportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Import, string, error) {
-	result, nextCursor, err := getImportExportItemsForUser(r.db, r.logger, ctx, username, limit, cursor, "import", false)
+	result, nextCursor, err := getImportExportItemsForUser(ctx, r.db, r.logger, username, limit, cursor, "import", false)
 	if err != nil {
 		return nil, "", err
 	}
@@ -172,7 +172,7 @@ func (r *ImportRepository) GetImportsForUser(ctx context.Context, username strin
 
 // GetUserImportsByStatus retrieves imports for a user filtered by status
 func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Import, error) {
-	result, err := getImportExportItemsByStatus(r.db, r.logger, ctx, username, statuses, "import", &models.Import{})
+	result, err := getImportExportItemsByStatus(ctx, r.db, r.logger, username, statuses, "import", &models.Import{})
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (r *ImportRepository) GetUserImportsByStatus(ctx context.Context, username 
 // CreateImportCostTracking creates a new import cost tracking record
 func (r *ImportRepository) CreateImportCostTracking(_ context.Context, costTracking *models.ImportCostTracking) error {
 	if err := costTracking.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "import cost tracking", costTracking.ImportID)
 	}
 
 	err := r.db.Model(costTracking).Create()
@@ -193,7 +193,7 @@ func (r *ImportRepository) CreateImportCostTracking(_ context.Context, costTrack
 			zap.String("import_id", costTracking.ImportID),
 			zap.String("username", costTracking.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to create import cost tracking: %w", err)
+		return ErrorHandler.HandleCreateError(err, "import cost tracking", costTracking.ImportID)
 	}
 
 	r.logger.Debug("created import cost tracking",
@@ -218,7 +218,7 @@ func (r *ImportRepository) GetImportCostTracking(_ context.Context, importID str
 		r.logger.Error("failed to get import cost tracking",
 			zap.String("import_id", importID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get import cost tracking: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "import cost tracking", "cost tracking query")
 	}
 
 	return costTrackingRecords, nil
@@ -226,7 +226,7 @@ func (r *ImportRepository) GetImportCostTracking(_ context.Context, importID str
 
 // GetUserImportCosts retrieves import costs for a user within a date range
 func (r *ImportRepository) GetUserImportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	result, err := getUserCosts(r.db, r.logger, ctx, username, startDate, endDate, limit, "import", &models.ImportCostTracking{})
+	result, err := getUserCosts(ctx, r.db, r.logger, username, startDate, endDate, limit, "import", &models.ImportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +235,7 @@ func (r *ImportRepository) GetUserImportCosts(ctx context.Context, username stri
 
 // GetImportCostsByDateRange retrieves import costs for all users within a date range
 func (r *ImportRepository) GetImportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	result, err := getCostsByDateRange(r.db, r.logger, ctx, startDate, endDate, limit, "import", &models.ImportCostTracking{})
+	result, err := getCostsByDateRange(ctx, r.db, r.logger, startDate, endDate, limit, "import", &models.ImportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +328,7 @@ func (r *ImportRepository) GetImportCostSummary(ctx context.Context, username st
 
 // GetHighCostImports returns import operations that exceed a cost threshold
 func (r *ImportRepository) GetHighCostImports(ctx context.Context, thresholdMicroCents int64, startDate, endDate time.Time, limit int) ([]*models.ImportCostTracking, error) {
-	result, err := getHighCostOperations(r.db, r.logger, ctx, thresholdMicroCents, startDate, endDate, limit, "import", &models.ImportCostTracking{})
+	result, err := getHighCostOperations(ctx, r.db, r.logger, thresholdMicroCents, startDate, endDate, limit, "import", &models.ImportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +340,7 @@ func (r *ImportRepository) GetHighCostImports(ctx context.Context, thresholdMicr
 // CreateImportBudget creates a new import budget configuration
 func (r *ImportRepository) CreateImportBudget(_ context.Context, budget *models.ImportBudget) error {
 	if err := budget.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "import budget", budget.Username)
 	}
 
 	err := r.db.Model(budget).Create()
@@ -349,7 +349,7 @@ func (r *ImportRepository) CreateImportBudget(_ context.Context, budget *models.
 			zap.String("username", budget.Username),
 			zap.String("period", budget.Period),
 			zap.Error(err))
-		return fmt.Errorf("failed to create import budget: %w", err)
+		return ErrorHandler.HandleCreateError(err, "import budget", budget.Username)
 	}
 
 	r.logger.Info("created import budget",
@@ -363,7 +363,7 @@ func (r *ImportRepository) CreateImportBudget(_ context.Context, budget *models.
 // UpdateImportBudget updates an existing import budget
 func (r *ImportRepository) UpdateImportBudget(_ context.Context, budget *models.ImportBudget) error {
 	if err := budget.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "import budget", budget.Username)
 	}
 
 	err := r.db.Model(budget).Update()
@@ -372,7 +372,7 @@ func (r *ImportRepository) UpdateImportBudget(_ context.Context, budget *models.
 			zap.String("username", budget.Username),
 			zap.String("period", budget.Period),
 			zap.Error(err))
-		return fmt.Errorf("failed to update import budget: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "import budget", budget.Username)
 	}
 
 	return nil
@@ -392,13 +392,13 @@ func (r *ImportRepository) GetImportBudget(_ context.Context, username, period s
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("import budget not found for user %s period %s", username, period)
+			return nil, ErrorHandler.HandleGetError(err, "import budget", fmt.Sprintf("%s:%s", username, period))
 		}
 		r.logger.Error("failed to get import budget",
 			zap.String("username", username),
 			zap.String("period", period),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get import budget: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "import budget", fmt.Sprintf("%s:%s", username, period))
 	}
 
 	return &budget, nil
@@ -466,7 +466,7 @@ func (r *ImportRepository) UpdateBudgetUsage(ctx context.Context, username, peri
 		}
 
 		if err := r.CreateImportBudget(ctx, budget); err != nil {
-			return fmt.Errorf("failed to create default budget: %w", err)
+			return ErrorHandler.HandleCreateError(err, "import budget", username)
 		}
 	}
 

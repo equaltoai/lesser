@@ -3,12 +3,12 @@ package streaming
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaSessionRepository interface for session persistence
@@ -36,7 +36,8 @@ type SessionManager struct {
 
 // NewSessionManager creates a new session manager
 func NewSessionManager(repo MediaSessionRepository, logger *zap.Logger, costTracker CostTracker) *SessionManager {
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
@@ -77,7 +78,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, session *StreamingS
 		sm.logger.Error("failed to create session",
 			zap.String("sessionID", session.SessionID),
 			zap.Error(err))
-		return fmt.Errorf("create session: %w", err)
+		return fmt.Errorf("%w: %w", ErrCreateSession, err)
 	}
 
 	// Track cost using centralized tracker
@@ -95,7 +96,7 @@ func (sm *SessionManager) GetSession(ctx context.Context, sessionID string) (*St
 		sm.logger.Error("failed to get session",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return nil, fmt.Errorf("get session: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrGetSession, err)
 	}
 
 	// Track cost using centralized tracker
@@ -113,7 +114,7 @@ func (sm *SessionManager) UpdateSession(ctx context.Context, session *StreamingS
 		sm.logger.Error("failed to update session",
 			zap.String("sessionID", session.SessionID),
 			zap.Error(err))
-		return fmt.Errorf("update session: %w", err)
+		return fmt.Errorf("%w: %w", ErrUpdateSession, err)
 	}
 
 	// Track cost using centralized tracker
@@ -131,7 +132,7 @@ func (sm *SessionManager) EndSession(ctx context.Context, sessionID string) erro
 		sm.logger.Error("failed to end session",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("end session: %w", err)
+		return fmt.Errorf("%w: %w", ErrEndSession, err)
 	}
 
 	// Track cost using centralized tracker
@@ -149,7 +150,7 @@ func (sm *SessionManager) GetUserSessions(ctx context.Context, userID string) ([
 		sm.logger.Error("failed to query user sessions",
 			zap.String("userID", userID),
 			zap.Error(err))
-		return nil, fmt.Errorf("query user sessions: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrQueryUserSessions, err)
 	}
 
 	// Track cost
@@ -170,7 +171,7 @@ func (sm *SessionManager) GetMediaSessions(ctx context.Context, mediaID string, 
 		sm.logger.Error("failed to scan media sessions",
 			zap.String("mediaID", mediaID),
 			zap.Error(err))
-		return nil, fmt.Errorf("scan media sessions: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrScanMediaSessions, err)
 	}
 
 	// Track cost
@@ -191,7 +192,7 @@ func (sm *SessionManager) GetMediaSessions(ctx context.Context, mediaID string, 
 func (sm *SessionManager) CleanupExpiredSessions(ctx context.Context, maxAge time.Duration) error {
 	err := sm.repo.CleanupExpiredSessions(ctx, maxAge)
 	if err != nil {
-		return fmt.Errorf("cleanup expired sessions: %w", err)
+		return fmt.Errorf("%w: %w", ErrCleanupExpiredSessions, err)
 	}
 
 	return nil

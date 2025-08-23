@@ -5,21 +5,15 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"go.uber.org/zap"
 )
 
-// Session errors
-var (
-	ErrSessionNotFound = errors.New("session not found")
-	ErrSessionExpired  = errors.New("session expired")
-	ErrDeviceNotFound  = errors.New("device not found")
-)
 
 // Session constants - enhanced security
 const (
@@ -29,7 +23,7 @@ const (
 	MaxSessionsPerUser            = 10                 // Limit concurrent sessions
 	SessionInactivityTimeout      = 24 * time.Hour     // Auto-logout after inactivity
 	DeviceTrustPromotionThreshold = 7 * 24 * time.Hour // Days until device can be trusted
-	
+
 	// Device trust levels
 	TrustLevelTrusted   = "trusted"
 	TrustLevelUntrusted = "untrusted"
@@ -75,19 +69,19 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	// Generate session ID
 	sessionID, err := generateSecureToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate session ID: %w", err)
+		return nil, errors.Join(ErrSessionIDGeneration, err)
 	}
 
 	// Generate refresh token
 	refreshToken, err := generateSecureToken()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
+		return nil, errors.Join(ErrRefreshTokenGeneration, err)
 	}
 
 	// Generate device ID if new device
 	deviceID, err := sm.getOrCreateDeviceID(ctx, username, userAgent, ipAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get device ID: %w", err)
+		return nil, errors.Join(ErrDeviceIDRetrieval, err)
 	}
 
 	// Token version tracking (for future use)
@@ -111,13 +105,13 @@ func (sm *SessionManager) CreateSession(ctx context.Context, username, deviceNam
 	// Store session
 	_, err = sm.repos.Account().CreateSession(ctx, session.Username, session.IPAddress, session.UserAgent)
 	if err != nil {
-		return nil, fmt.Errorf("failed to store session: %w", err)
+		return nil, errors.Join(ErrSessionStorage, err)
 	}
 
 	// Update device record
 	if err := sm.updateDeviceRecord(ctx, deviceID, username, deviceName, userAgent, ipAddress); err != nil {
 		// Non-fatal error, log but continue
-		fmt.Printf("Failed to update device record: %v\n", err)
+		zap.L().Error("failed to update device record", zap.Error(err))
 	}
 
 	return session, nil
@@ -152,7 +146,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 	// Generate new refresh token
 	newRefreshToken, err := generateSecureToken()
 	if err != nil {
-		return "", fmt.Errorf("failed to generate new refresh token: %w", err)
+		return "", errors.Join(ErrNewRefreshTokenGeneration, err)
 	}
 
 	// Update session with new token
@@ -168,7 +162,7 @@ func (sm *SessionManager) RotateRefreshToken(ctx context.Context, session *Sessi
 
 	// Update in storage
 	if err := sm.repos.Account().UpdateSession(ctx, session.SessionID, session.RefreshToken, session.IPAddress, session.LastActivity, session.ExpiresAt); err != nil {
-		return "", fmt.Errorf("failed to update session: %w", err)
+		return "", errors.Join(ErrSessionUpdate, err)
 	}
 
 	return newRefreshToken, nil
@@ -207,7 +201,9 @@ func (sm *SessionManager) RevokeAllUserSessions(ctx context.Context, username st
 	for _, session := range sessions {
 		if err := sm.repos.Account().DeleteSession(ctx, session.SessionID); err != nil {
 			// Log error but continue
-			fmt.Printf("Failed to delete session %s: %v\n", session.SessionID, err)
+			zap.L().Error("failed to delete session",
+				zap.String("session_id", session.SessionID),
+				zap.Error(err))
 		}
 	}
 
@@ -268,7 +264,7 @@ func contains(s, substr string) bool {
 func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username string) error {
 	sessions, err := sm.repos.Account().GetUserSessions(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get user sessions: %w", err)
+		return errors.Join(ErrUserSessionsRetrieval, err)
 	}
 
 	// Count active sessions
@@ -283,7 +279,7 @@ func (sm *SessionManager) enforceSessionLimits(ctx context.Context, username str
 	// If at limit, remove oldest session
 	if activeCount >= MaxSessionsPerUser {
 		if err := sm.removeOldestSession(ctx, username, sessions); err != nil {
-			return fmt.Errorf("failed to remove oldest session: %w", err)
+			return errors.Join(ErrOldestSessionRemoval, err)
 		}
 	}
 

@@ -75,7 +75,7 @@ func (s *Session) BeforeCreate() error {
 		var err error
 		s.SessionID, err = generateSecureToken(32)
 		if err != nil {
-			return fmt.Errorf("failed to generate session ID: %w", err)
+			return fmt.Errorf("%w: %w", ErrSessionIDGenerationFailed, err)
 		}
 	}
 
@@ -84,7 +84,7 @@ func (s *Session) BeforeCreate() error {
 		var err error
 		s.AccessToken, err = generateSecureToken(64)
 		if err != nil {
-			return fmt.Errorf("failed to generate access token: %w", err)
+			return fmt.Errorf("%w: %w", ErrAccessTokenGenerationFailed, err)
 		}
 	}
 
@@ -145,7 +145,7 @@ func (s *Session) Validate() error {
 		return err
 	}
 	if s.ExpiresAt <= 0 {
-		return fmt.Errorf("ExpiresAt must be set")
+		return ErrExpiresAtRequired
 	}
 
 	return nil

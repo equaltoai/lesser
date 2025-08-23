@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -55,7 +54,7 @@ func generateNextCursor(resultsLen, requestedLimit int, getGSI1SK func() string)
 func getPaginatedInstanceDomainBlocks(
 	ctx context.Context,
 	db core.DB,
-	logger *zap.Logger,
+	_ *zap.Logger,
 	limit int,
 	cursor string,
 	config DomainPaginationConfig,
@@ -65,7 +64,7 @@ func getPaginatedInstanceDomainBlocks(
 	var modelBlocks []models.InstanceDomainBlock
 	err := query.All(&modelBlocks)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to %s: %w", config.ErrorPrefix, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityInstanceDomainBlock, "paginated query")
 	}
 
 	// Generate next cursor and trim results if needed
@@ -116,6 +115,7 @@ type DomainConverter[M any, S any] interface {
 // EmailDomainBlockConverter converts models.EmailDomainBlock to storage.EmailDomainBlock
 type EmailDomainBlockConverter struct{}
 
+// Convert transforms a models.EmailDomainBlock into a storage.EmailDomainBlock
 func (c EmailDomainBlockConverter) Convert(m models.EmailDomainBlock) *storage.EmailDomainBlock {
 	return &storage.EmailDomainBlock{
 		ID:        m.ID,
@@ -125,6 +125,7 @@ func (c EmailDomainBlockConverter) Convert(m models.EmailDomainBlock) *storage.E
 	}
 }
 
+// GetGSI1SK returns the GSI1 sort key for the given EmailDomainBlock model
 func (c EmailDomainBlockConverter) GetGSI1SK(m models.EmailDomainBlock) string {
 	return m.GSI1SK
 }
@@ -132,6 +133,7 @@ func (c EmailDomainBlockConverter) GetGSI1SK(m models.EmailDomainBlock) string {
 // DomainAllowConverter converts models.DomainAllow to storage.DomainAllow
 type DomainAllowConverter struct{}
 
+// Convert transforms a models.DomainAllow into a storage.DomainAllow
 func (c DomainAllowConverter) Convert(m models.DomainAllow) *storage.DomainAllow {
 	return &storage.DomainAllow{
 		ID:        m.ID,
@@ -141,6 +143,7 @@ func (c DomainAllowConverter) Convert(m models.DomainAllow) *storage.DomainAllow
 	}
 }
 
+// GetGSI1SK returns the GSI1 sort key for the given DomainAllow model
 func (c DomainAllowConverter) GetGSI1SK(m models.DomainAllow) string {
 	return m.GSI1SK
 }
@@ -160,7 +163,7 @@ func getPaginatedDomainItems[M any, S any](
 	var models []M
 	err := query.All(&models)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to %s: %w", config.ErrorPrefix, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "domain items", "paginated query")
 	}
 
 	// Generate next cursor and trim results if needed
@@ -193,7 +196,7 @@ func getPaginatedDomainItems[M any, S any](
 func getPaginatedEmailDomainBlocks(
 	ctx context.Context,
 	db core.DB,
-	logger *zap.Logger,
+	_ *zap.Logger,
 	limit int,
 	cursor string,
 	config DomainPaginationConfig,
@@ -206,7 +209,7 @@ func getPaginatedEmailDomainBlocks(
 func getPaginatedDomainAllows(
 	ctx context.Context,
 	db core.DB,
-	logger *zap.Logger,
+	_ *zap.Logger,
 	limit int,
 	cursor string,
 	config DomainPaginationConfig,
@@ -229,7 +232,7 @@ type DomainDeleteConfig struct {
 }
 
 // genericDeleteByID finds and deletes an item by ID from a domain collection
-func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, logger *zap.Logger, id string, gsipkValue string, modelPtr T) error {
+func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, _ *zap.Logger, id string, gsipkValue string, modelPtr T) error {
 	// First, find the item by ID - need to query GSI1 and filter
 	var items []T
 	err := db.WithContext(ctx).Model(modelPtr).
@@ -239,7 +242,7 @@ func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, logger *za
 		All(&items)
 
 	if err != nil {
-		return fmt.Errorf("failed to find item: %w", err)
+		return ErrorHandler.HandleQueryError(err, "domain item", "lookup by GSI")
 	}
 
 	// Find the item with matching ID
@@ -264,7 +267,7 @@ func genericDeleteByID[T DomainItem](ctx context.Context, db core.DB, logger *za
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete item: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "domain item", id)
 	}
 
 	return nil

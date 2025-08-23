@@ -13,11 +13,12 @@ import (
 	"go.uber.org/zap"
 )
 
+
 // MetricsRepository handles metrics persistence
 type MetricsRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Metrics]
+	aggregatedRepo *BaseRepository[*models.AggregatedMetrics]
+	logger         *zap.Logger
 }
 
 // MetricRecordRepository handles new reporting table schema with extensive indexing
@@ -29,21 +30,21 @@ type MetricRecordRepository struct {
 // NewMetricsRepository creates a new metrics repository
 func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *MetricsRepository {
 	return &MetricsRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.Metrics](db, tableName, logger),
+		aggregatedRepo: NewBaseRepository[*models.AggregatedMetrics](db, tableName, logger),
+		logger:         logger,
 	}
 }
 
 // Create creates a new metrics record
-func (r *MetricsRepository) Create(_ context.Context, metrics *models.Metrics) error {
+func (r *MetricsRepository) Create(ctx context.Context, metrics *models.Metrics) error {
 	// Call BeforeCreate to set up the model
 	if err := metrics.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "metrics", "validation")
 	}
 
-	// Create the metrics
-	err := r.db.Model(metrics).Create()
+	// Use BaseRepository Create method
+	err := r.BaseRepository.Create(ctx, metrics)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create metrics")
 	}
@@ -65,7 +66,7 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 	// Prepare all metrics
 	for _, m := range metricsList {
 		if err := m.BeforeCreate(); err != nil {
-			return fmt.Errorf("before create validation failed for metric %s: %w", m.ID, err)
+			return ErrorHandler.HandleCreateError(err, "metrics", m.ID)
 		}
 	}
 
@@ -76,12 +77,12 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 	}
 
 	// Use DynamORM's batch create functionality
-	err := r.db.WithContext(ctx).Model(&models.Metrics{}).BatchCreate(items)
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).BatchCreate(items)
 	if err != nil {
 		r.logger.Error("batch create failed",
 			zap.Int("count", len(metricsList)),
 			zap.Error(err))
-		return fmt.Errorf("failed to batch create metrics: %w", err)
+		return ErrorHandler.HandleCreateError(err, "metrics", "batch")
 	}
 
 	r.logger.Debug("batch created metrics",
@@ -91,18 +92,14 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 }
 
 // Get retrieves a metrics record by ID and type
-func (r *MetricsRepository) Get(_ context.Context, metricType, id string, timestamp time.Time) (*models.Metrics, error) {
+func (r *MetricsRepository) Get(ctx context.Context, metricType, id string, timestamp time.Time) (*models.Metrics, error) {
 	metrics := &models.Metrics{}
 
 	// Construct the keys
 	pk := fmt.Sprintf("metrics#%s", metricType)
 	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
 
-	err := r.db.Model(metrics).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(metrics)
-
+	err := r.BaseRepository.Get(ctx, pk, sk, metrics)
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get metrics")
 	}
@@ -111,7 +108,7 @@ func (r *MetricsRepository) Get(_ context.Context, metricType, id string, timest
 }
 
 // ListByType lists metrics by type within a time range
-func (r *MetricsRepository) ListByType(_ context.Context, metricType string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
+func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
 	var metricsList []*models.Metrics
 
 	// Construct SK range for time-based query
@@ -119,7 +116,7 @@ func (r *MetricsRepository) ListByType(_ context.Context, metricType string, sta
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	query := r.db.Model(&models.Metrics{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -135,14 +132,14 @@ func (r *MetricsRepository) ListByType(_ context.Context, metricType string, sta
 }
 
 // ListByService lists metrics by service within a time range
-func (r *MetricsRepository) ListByService(_ context.Context, service string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
+func (r *MetricsRepository) ListByService(ctx context.Context, service string, startTime, endTime time.Time, limit int) ([]*models.Metrics, error) {
 	var metricsList []*models.Metrics
 
 	// Use GSI1 for service-based queries
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.Model(&models.Metrics{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
 		Index("service-index").
 		Where("GSI1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
 		Where("GSI1SK", ">=", startSK).
@@ -159,17 +156,13 @@ func (r *MetricsRepository) ListByService(_ context.Context, service string, sta
 }
 
 // GetAggregated retrieves aggregated metrics
-func (r *MetricsRepository) GetAggregated(_ context.Context, period, metricType string, windowStart time.Time) (*models.AggregatedMetrics, error) {
+func (r *MetricsRepository) GetAggregated(ctx context.Context, period, metricType string, windowStart time.Time) (*models.AggregatedMetrics, error) {
 	aggregated := &models.AggregatedMetrics{}
 
 	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
 	sk := fmt.Sprintf("window#%s", windowStart.Format(time.RFC3339))
 
-	err := r.db.Model(aggregated).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(aggregated)
-
+	err := r.aggregatedRepo.Get(ctx, pk, sk, aggregated)
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get aggregated metrics")
 	}
@@ -178,14 +171,14 @@ func (r *MetricsRepository) GetAggregated(_ context.Context, period, metricType 
 }
 
 // CreateAggregated creates an aggregated metrics record
-func (r *MetricsRepository) CreateAggregated(_ context.Context, aggregated *models.AggregatedMetrics) error {
+func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *models.AggregatedMetrics) error {
 	// Call BeforeCreate to set up the model
 	if err := aggregated.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "aggregated metrics", "validation")
 	}
 
-	// Create the aggregated metrics
-	err := r.db.Model(aggregated).Create()
+	// Use aggregated repository Create method
+	err := r.aggregatedRepo.Create(ctx, aggregated)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated metrics")
 	}
@@ -199,14 +192,14 @@ func (r *MetricsRepository) CreateAggregated(_ context.Context, aggregated *mode
 }
 
 // UpdateAggregated updates an existing aggregated metrics record
-func (r *MetricsRepository) UpdateAggregated(_ context.Context, aggregated *models.AggregatedMetrics) error {
+func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *models.AggregatedMetrics) error {
 	// Call BeforeUpdate to set up the model
 	if err := aggregated.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "aggregated metrics", "validation")
 	}
 
-	// Update the aggregated metrics
-	err := r.db.Model(aggregated).Update()
+	// Use aggregated repository Update method
+	err := r.aggregatedRepo.Update(ctx, aggregated)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to update aggregated metrics")
 	}
@@ -215,14 +208,14 @@ func (r *MetricsRepository) UpdateAggregated(_ context.Context, aggregated *mode
 }
 
 // ListAggregatedByPeriod lists aggregated metrics for a period
-func (r *MetricsRepository) ListAggregatedByPeriod(_ context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
+func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
 	var aggregatedList []*models.AggregatedMetrics
 
 	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
 	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
-	query := r.db.Model(&models.AggregatedMetrics{}).
+	query := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -299,7 +292,7 @@ func (r *MetricsRepository) Aggregate(ctx context.Context, metricType, period st
 	// Get all metrics in the window
 	metrics, err := r.ListByType(ctx, metricType, windowStart, windowEnd, 10000)
 	if err != nil {
-		return fmt.Errorf("failed to list metrics for aggregation: %w", err)
+		return ErrorHandler.HandleQueryError(err, "metrics", "aggregation")
 	}
 
 	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
@@ -448,23 +441,20 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 	
 	// We need to query by period prefix since we can't easily do time-based filtering in DynamoDB
 	// This is a limitation but necessary to avoid expensive scans
-	err := r.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
+	err := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
 		Index("aggregate-index").
 		Where("GSI2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
 		Where("GSI2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
 		All(&oldMetrics)
 	
 	if err != nil {
-		return 0, fmt.Errorf("failed to query old aggregated metrics: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "aggregated metrics", "cleanup")
 	}
 
 	// Delete old metrics in batches
 	for _, metric := range oldMetrics {
 		if metric.WindowStart.Before(cutoffTime) {
-			err := r.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
-				Where("PK", "=", metric.PK).
-				Where("SK", "=", metric.SK).
-				Delete()
+			err := r.aggregatedRepo.Delete(ctx, metric.PK, metric.SK)
 			if err != nil {
 				r.logger.Warn("failed to delete aggregated metric",
 					zap.String("pk", metric.PK),
@@ -489,21 +479,18 @@ func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime ti
 	
 	// Use a broad query and filter in application code
 	// This is not ideal but necessary with DynamoDB's query limitations
-	err := r.db.WithContext(ctx).Model(&models.Metrics{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "begins_with", "metrics#").
 		All(&oldMetrics)
 	
 	if err != nil {
-		return 0, fmt.Errorf("failed to query old raw metrics: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "metrics", "cleanup")
 	}
 
 	// Filter and delete old metrics
 	for _, metric := range oldMetrics {
 		if metric.Timestamp.Before(cutoffTime) {
-			err := r.db.WithContext(ctx).Model(&models.Metrics{}).
-				Where("PK", "=", metric.PK).
-				Where("SK", "=", metric.SK).
-				Delete()
+			err := r.BaseRepository.Delete(ctx, metric.PK, metric.SK)
 			if err != nil {
 				r.logger.Warn("failed to delete raw metric",
 					zap.String("pk", metric.PK),
@@ -681,7 +668,7 @@ func (r *MetricRecordRepository) GetMetricsByAggregationLevel(ctx context.Contex
 func (r *MetricRecordRepository) CreateMetricRecord(ctx context.Context, record *models.MetricRecord) error {
 	// Call BeforeCreate to set up the model
 	if err := record.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "metric record", "validation")
 	}
 
 	// Use BaseRepository Create method
@@ -692,7 +679,7 @@ func (r *MetricRecordRepository) CreateMetricRecord(ctx context.Context, record 
 			zap.String("metricType", record.MetricType),
 			zap.String("service", record.ServiceName),
 			zap.String("level", record.AggregationLevel))
-		return fmt.Errorf("failed to create metric record: %w", err)
+		return ErrorHandler.HandleCreateError(err, "metric record", record.MetricID)
 	}
 
 	r.logger.Debug("created metric record",
@@ -713,7 +700,7 @@ func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, r
 	// Prepare all records
 	for _, record := range records {
 		if err := record.BeforeCreate(); err != nil {
-			return fmt.Errorf("before create validation failed for record %s: %w", record.MetricID, err)
+			return ErrorHandler.HandleCreateError(err, "metric record", record.MetricID)
 		}
 	}
 
@@ -729,7 +716,7 @@ func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, r
 		r.logger.Error("batch create failed",
 			zap.Int("count", len(records)),
 			zap.Error(err))
-		return fmt.Errorf("failed to batch create metric records: %w", err)
+		return ErrorHandler.HandleCreateError(err, "metric record", "batch")
 	}
 
 	r.logger.Debug("batch created metric records", zap.Int("count", len(records)))
@@ -745,7 +732,7 @@ func (r *MetricRecordRepository) GetMetricRecord(ctx context.Context, metricType
 
 	err := r.Get(ctx, pk, sk, record)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metric record: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "metric record", fmt.Sprintf("%s#%s#%s", metricType, bucket, timestamp))
 	}
 
 	return record, nil
@@ -755,7 +742,7 @@ func (r *MetricRecordRepository) GetMetricRecord(ctx context.Context, metricType
 func (r *MetricRecordRepository) UpdateMetricRecord(ctx context.Context, record *models.MetricRecord) error {
 	// Call BeforeUpdate to set up the model
 	if err := record.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "metric record", "validation")
 	}
 
 	// Use BaseRepository Update method
@@ -765,7 +752,7 @@ func (r *MetricRecordRepository) UpdateMetricRecord(ctx context.Context, record 
 			zap.Error(err),
 			zap.String("metricType", record.MetricType),
 			zap.String("service", record.ServiceName))
-		return fmt.Errorf("failed to update metric record: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "metric record", record.MetricID)
 	}
 
 	return nil
@@ -782,7 +769,7 @@ func (r *MetricRecordRepository) DeleteMetricRecord(ctx context.Context, metricT
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
-		return fmt.Errorf("failed to delete metric record: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "metric record", fmt.Sprintf("%s#%s", pk, sk))
 	}
 
 	return nil
@@ -792,7 +779,7 @@ func (r *MetricRecordRepository) DeleteMetricRecord(ctx context.Context, metricT
 func (r *MetricRecordRepository) GetServiceMetricsStats(ctx context.Context, serviceName string, metricType string, startTime, endTime time.Time) (*MetricRecordStats, error) {
 	records, err := r.GetMetricsByService(ctx, serviceName, startTime, endTime)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get service metrics: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "metric record", "service stats")
 	}
 
 	// Filter by metric type if specified

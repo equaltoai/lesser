@@ -56,7 +56,7 @@ func (PushSubscription) TableName() string {
 }
 
 // UpdateKeys updates the GSI keys for the push subscription
-func (p *PushSubscription) UpdateKeys() {
+func (p *PushSubscription) UpdateKeys() error {
 	p.PK = fmt.Sprintf("PUSH#%s", p.Username)
 	p.SK = fmt.Sprintf("SUB#%s", p.ID)
 
@@ -66,6 +66,17 @@ func (p *PushSubscription) UpdateKeys() {
 		p.GSI1PK = fmt.Sprintf("PUSH_ENDPOINT#%s", endpointHash)
 		p.GSI1SK = p.Username
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (p *PushSubscription) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key
+func (p *PushSubscription) GetSK() string {
+	return p.SK
 }
 
 // BeforeCreate is called before creating a new push subscription
@@ -98,10 +109,10 @@ func (p *PushSubscription) Validate() error {
 		return err
 	}
 	if err := common.ValidateRequiredParam("p256dh", p.P256dh); err != nil {
-		return fmt.Errorf("p256dh public key is required")
+		return ErrPushSubscriptionP256dhRequired
 	}
 	if err := common.ValidateRequiredParam("auth", p.Auth); err != nil {
-		return fmt.Errorf("auth secret is required")
+		return ErrPushSubscriptionAuthRequired
 	}
 	return nil
 }

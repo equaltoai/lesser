@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -18,125 +19,64 @@ import (
 // Use common time format constants from pkg/common/time_formats.go
 // common.CompactTimeFormat is replaced by common.CompactTimeFormat
 
-// CostTrackingRepository handles cost tracking persistence
-type CostTrackingRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+// TrackingRepository handles cost tracking persistence
+type TrackingRepository struct {
+	*BaseRepository[*models.DynamoDBCostRecord]
 }
 
-// NewCostTrackingRepository creates a new cost tracking repository
-func NewCostTrackingRepository(db core.DB, tableName string, logger *zap.Logger) *CostTrackingRepository {
-	return &CostTrackingRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+// NewTrackingRepository creates a new cost tracking repository
+func NewTrackingRepository(db core.DB, tableName string, logger *zap.Logger) *TrackingRepository {
+	return &TrackingRepository{
+		BaseRepository: NewBaseRepository[*models.DynamoDBCostRecord](db, tableName, logger),
+	}
+}
+
+// NewTrackingRepositoryWithCostTracking creates a new cost tracking repository with cost tracking service
+func NewTrackingRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrackingRepository {
+	return &TrackingRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.DynamoDBCostRecord](db, tableName, logger, costService, "TrackingRepository"),
 	}
 }
 
 // Create creates a new cost tracking record
-func (r *CostTrackingRepository) Create(_ context.Context, tracking *models.DynamoDBCostRecord) error {
-	// Call BeforeCreate to set up the model
-	if err := tracking.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
-	}
-
-	// Create the cost tracking record
-	err := r.db.Model(tracking).Create()
-	if err != nil {
-		return MapErrorWithContext(err, "failed to create cost tracking")
-	}
-
-	r.logger.Debug("created cost tracking",
-		zap.String("id", tracking.ID),
-		zap.String("operation_type", tracking.OperationType),
-		zap.String("table_name", tracking.Table),
-		zap.Float64("cost_dollars", tracking.EstimatedCostDollars))
-
-	return nil
+func (r *TrackingRepository) Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error {
+	return r.BaseRepository.Create(ctx, tracking)
 }
 
 // BatchCreate creates multiple cost tracking records efficiently using DynamORM BatchCreate
-func (r *CostTrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
-	if err := common.ValidateSliceNotEmpty("tracking_list", trackingList); err != nil {
-		return nil
-	}
-
-	// Prepare all records
-	for _, ct := range trackingList {
-		if err := ct.BeforeCreate(); err != nil {
-			return fmt.Errorf("before create validation failed for tracking %s: %w", ct.ID, err)
-		}
-	}
-
-	// Use DynamORM's efficient BatchCreate - splits into chunks of 25 automatically
-	err := r.db.WithContext(ctx).Model(&trackingList[0]).BatchCreate(trackingList)
-	if err != nil {
-		r.logger.Error("failed to batch create cost tracking records",
-			zap.Int("record_count", len(trackingList)),
-			zap.Error(err))
-		return MapErrorWithContext(err, "failed to batch create cost tracking records")
-	}
-
-	r.logger.Debug("batch created cost tracking records",
-		zap.Int("record_count", len(trackingList)))
-
-	return nil
+func (r *TrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
+	return r.BaseRepository.BatchCreate(ctx, trackingList)
 }
 
 // Get retrieves a cost tracking record by operation type, timestamp and ID
-func (r *CostTrackingRepository) Get(_ context.Context, operationType, id string, timestamp time.Time) (*models.DynamoDBCostRecord, error) {
-	tracking := &models.DynamoDBCostRecord{}
-
-	// Construct the keys
+func (r *TrackingRepository) Get(ctx context.Context, operationType, id string, timestamp time.Time) (*models.DynamoDBCostRecord, error) {
+	// Construct the keys using the same pattern as the model
 	pk := fmt.Sprintf("cost#%s", operationType)
-	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format(common.CompactTimeFormat), id)
+	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
 
-	err := r.db.Model(tracking).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(tracking)
-
-	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to get cost tracking")
-	}
-
-	return tracking, nil
+	tracking := &models.DynamoDBCostRecord{}
+	return tracking, r.BaseRepository.Get(ctx, pk, sk, tracking)
 }
 
 // ListByOperationType lists cost tracking records by operation type within a time range
-func (r *CostTrackingRepository) ListByOperationType(_ context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
-	var trackingList []*models.DynamoDBCostRecord
-
+func (r *TrackingRepository) ListByOperationType(ctx context.Context, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	// Construct SK range for time-based query
 	pk := fmt.Sprintf("cost#%s", operationType)
-	startSK := fmt.Sprintf("ts#%s", startTime.Format(common.CompactTimeFormat))
-	endSK := fmt.Sprintf("ts#%s", endTime.Format(common.CompactTimeFormat))
+	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
+	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	query := r.db.Model(&models.DynamoDBCostRecord{}).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&trackingList)
-	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to list cost tracking by operation type")
-	}
-
-	return trackingList, nil
+	return r.BaseRepository.QueryBetween(ctx, pk, startSK, endSK, limit)
 }
 
 // ListByTable lists cost tracking records by table within a time range
-func (r *CostTrackingRepository) ListByTable(_ context.Context, tableName string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	var trackingList []*models.DynamoDBCostRecord
 
 	// Use GSI1 for table-based queries
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.Model(&models.DynamoDBCostRecord{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
 		Index("table-index").
 		Where("GSI1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
 		Where("GSI1SK", ">=", startSK).
@@ -153,7 +93,7 @@ func (r *CostTrackingRepository) ListByTable(_ context.Context, tableName string
 }
 
 // GetRecentCosts retrieves recent cost tracking records across all operations
-func (r *CostTrackingRepository) GetRecentCosts(ctx context.Context, since time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) GetRecentCosts(ctx context.Context, since time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	var allCosts []*models.DynamoDBCostRecord
 
 	// Query each operation type (we need to iterate through known types)
@@ -181,13 +121,13 @@ func (r *CostTrackingRepository) GetRecentCosts(ctx context.Context, since time.
 }
 
 // GetAggregated retrieves aggregated cost tracking
-func (r *CostTrackingRepository) GetAggregated(_ context.Context, period, operationType string, windowStart time.Time) (*models.DynamoDBCostAggregation, error) {
+func (r *TrackingRepository) GetAggregated(ctx context.Context, period, operationType string, windowStart time.Time) (*models.DynamoDBCostAggregation, error) {
 	aggregated := &models.DynamoDBCostAggregation{}
 
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
 	sk := fmt.Sprintf("window#%s", windowStart.Format(time.RFC3339))
 
-	err := r.db.Model(aggregated).
+	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(aggregated)
@@ -200,19 +140,19 @@ func (r *CostTrackingRepository) GetAggregated(_ context.Context, period, operat
 }
 
 // CreateAggregated creates an aggregated cost tracking record
-func (r *CostTrackingRepository) CreateAggregated(_ context.Context, aggregated *models.DynamoDBCostAggregation) error {
+func (r *TrackingRepository) CreateAggregated(ctx context.Context, aggregated *models.DynamoDBCostAggregation) error {
 	// Call BeforeCreate to set up the model
 	if err := aggregated.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "cost aggregation", "validation")
 	}
 
 	// Create the aggregated cost tracking
-	err := r.db.Model(aggregated).Create()
+	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).Create()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated cost tracking")
 	}
 
-	r.logger.Debug("created aggregated cost tracking",
+	r.BaseRepository.logger.Debug("created aggregated cost tracking",
 		zap.String("operation_type", aggregated.OperationType),
 		zap.String("period", aggregated.Period),
 		zap.Time("window_start", aggregated.WindowStart),
@@ -222,14 +162,14 @@ func (r *CostTrackingRepository) CreateAggregated(_ context.Context, aggregated 
 }
 
 // UpdateAggregated updates an existing aggregated cost tracking record
-func (r *CostTrackingRepository) UpdateAggregated(_ context.Context, aggregated *models.DynamoDBCostAggregation) error {
+func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *models.DynamoDBCostAggregation) error {
 	// Call BeforeUpdate to set up the model
 	if err := aggregated.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "cost aggregation", "validation")
 	}
 
 	// Update the aggregated cost tracking
-	err := r.db.Model(aggregated).Update()
+	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).Update()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to update aggregated cost tracking")
 	}
@@ -238,14 +178,14 @@ func (r *CostTrackingRepository) UpdateAggregated(_ context.Context, aggregated 
 }
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
-func (r *CostTrackingRepository) ListAggregatedByPeriod(_ context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
+func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
 	var aggregatedList []*models.DynamoDBCostAggregation
 
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
 	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
 
-	query := r.db.Model(&models.DynamoDBCostAggregation{}).
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.DynamoDBCostAggregation{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -261,7 +201,7 @@ func (r *CostTrackingRepository) ListAggregatedByPeriod(_ context.Context, perio
 }
 
 // GetTableCostStats calculates cost statistics for a table
-func (r *CostTrackingRepository) GetTableCostStats(ctx context.Context, tableName string, startTime, endTime time.Time) (*TableCostStats, error) {
+func (r *TrackingRepository) GetTableCostStats(ctx context.Context, tableName string, startTime, endTime time.Time) (*TableCostStats, error) {
 	costs, err := r.ListByTable(ctx, tableName, startTime, endTime, 10000)
 	if err != nil {
 		return nil, err
@@ -322,11 +262,11 @@ func (r *CostTrackingRepository) GetTableCostStats(ctx context.Context, tableNam
 }
 
 // Aggregate performs aggregation of raw cost tracking data
-func (r *CostTrackingRepository) Aggregate(ctx context.Context, operationType, period string, windowStart, windowEnd time.Time) error {
+func (r *TrackingRepository) Aggregate(ctx context.Context, operationType, period string, windowStart, windowEnd time.Time) error {
 	// Get all cost tracking records in the window
 	costs, err := r.ListByOperationType(ctx, operationType, windowStart, windowEnd, 10000)
 	if err != nil {
-		return fmt.Errorf("failed to list costs for aggregation: %w", err)
+		return ErrorHandler.HandleQueryError(err, "cost tracking", "aggregation")
 	}
 
 	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
@@ -453,7 +393,7 @@ type OperationCostStats struct {
 }
 
 // GetHighCostOperations returns operations that exceed a cost threshold
-func (r *CostTrackingRepository) GetHighCostOperations(ctx context.Context, thresholdDollars float64, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) GetHighCostOperations(ctx context.Context, thresholdDollars float64, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostRecord, error) {
 	// First get all recent costs
 	allCosts, err := r.GetRecentCosts(ctx, startTime, limit*10) // Get more to filter
 	if err != nil {
@@ -478,7 +418,7 @@ func (r *CostTrackingRepository) GetHighCostOperations(ctx context.Context, thre
 }
 
 // GetCostTrends calculates cost trends over time
-func (r *CostTrackingRepository) GetCostTrends(ctx context.Context, period string, operationType string, lookbackDays int) (*CostTrend, error) {
+func (r *TrackingRepository) GetCostTrends(ctx context.Context, period string, operationType string, lookbackDays int) (*CostTrend, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -lookbackDays)
 
@@ -721,7 +661,7 @@ func getPercentileValue(sorted []float64, percentile float64) float64 {
 }
 
 // GetAggregatedCostsByPeriod retrieves aggregated costs for a specific period
-func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
+func (r *TrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context, period string, startDate, endDate time.Time) ([]*models.DynamoDBCostAggregation, error) {
 	// Query all operation types for the period
 	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
 		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
@@ -803,7 +743,7 @@ func (r *CostTrackingRepository) GetAggregatedCostsByPeriod(ctx context.Context,
 }
 
 // GetCostsByOperationType retrieves costs grouped by operation type
-func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+func (r *TrackingRepository) GetCostsByOperationType(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
 	operationTypes := []string{"GetItem", "PutItem", "UpdateItem", "DeleteItem", "Query", "Scan",
 		"BatchGetItem", "BatchWriteItem", "TransactGetItems", "TransactWriteItems"}
 
@@ -843,7 +783,7 @@ func (r *CostTrackingRepository) GetCostsByOperationType(ctx context.Context, st
 }
 
 // GetCostsByService retrieves costs grouped by service/function
-func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
+func (r *TrackingRepository) GetCostsByService(ctx context.Context, startDate, endDate time.Time) (map[string]*models.DynamoDBServiceCostStats, error) {
 	// Get all costs in the time range
 	costs, err := r.GetRecentCosts(ctx, startDate, 10000)
 	if err != nil {
@@ -887,7 +827,7 @@ func (r *CostTrackingRepository) GetCostsByService(ctx context.Context, startDat
 }
 
 // GetCostsByDateRange returns individual cost records for the specified date range
-func (r *CostTrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, _ time.Time) ([]*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) GetCostsByDateRange(ctx context.Context, startDate, _ time.Time) ([]*models.DynamoDBCostRecord, error) {
 	return r.GetRecentCosts(ctx, startDate, 1000) // Use existing method with reasonable limit
 }
 
@@ -903,7 +843,7 @@ type DailyAggregate struct {
 }
 
 // GetDailyAggregates returns aggregated daily costs for the specified date range
-func (r *CostTrackingRepository) GetDailyAggregates(ctx context.Context, startDate, endDate time.Time) ([]*DailyAggregate, error) {
+func (r *TrackingRepository) GetDailyAggregates(ctx context.Context, startDate, endDate time.Time) ([]*DailyAggregate, error) {
 	// Get aggregated data by day
 	aggregations, err := r.GetAggregatedCostsByPeriod(ctx, "day", startDate, endDate)
 	if err != nil {
@@ -938,7 +878,7 @@ type MonthlyAggregate struct {
 }
 
 // GetMonthlyAggregate returns aggregated costs for the specified month
-func (r *CostTrackingRepository) GetMonthlyAggregate(ctx context.Context, year, month int) (*MonthlyAggregate, error) {
+func (r *TrackingRepository) GetMonthlyAggregate(ctx context.Context, year, month int) (*MonthlyAggregate, error) {
 	// Calculate month boundaries
 	startDate := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	endDate := startDate.AddDate(0, 1, 0).Add(-time.Second)
@@ -966,7 +906,7 @@ func (r *CostTrackingRepository) GetMonthlyAggregate(ctx context.Context, year, 
 }
 
 // GetCostProjections retrieves the most recent cost projection for the given period
-func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period string) (*storage.CostProjection, error) {
+func (r *TrackingRepository) GetCostProjections(ctx context.Context, period string) (*storage.CostProjection, error) {
 	r.logger.Debug("getting cost projections",
 		zap.String("period", period))
 
@@ -990,7 +930,7 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 		r.logger.Error("failed to query cost projections",
 			zap.String("period", period),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query cost projections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "cost projection", "query")
 	}
 
 	// If no projection exists, return a default projection with zero values
@@ -1003,7 +943,7 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 			CurrentCost:     0.0,
 			ProjectedCost:   0.0,
 			Variance:        0.0,
-			TopDrivers:      []storage.CostDriver{},
+			TopDrivers:      []storage.Driver{},
 			Recommendations: []string{},
 		}, nil
 	}
@@ -1011,10 +951,10 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 	// Convert models.CostProjection to storage.CostProjection
 	projection := projections[0]
 
-	// Convert models.CostDriver to storage.CostDriver
-	topDrivers := make([]storage.CostDriver, 0, len(projection.TopDrivers))
+	// Convert models.Driver to storage.Driver
+	topDrivers := make([]storage.Driver, 0, len(projection.TopDrivers))
 	for _, driver := range projection.TopDrivers {
-		topDrivers = append(topDrivers, storage.CostDriver{
+		topDrivers = append(topDrivers, storage.Driver{
 			Name:           driver.Type, // Use Type as Name
 			Impact:         driver.Cost, // Use Cost as Impact
 			Description:    fmt.Sprintf("%.1f%% of total cost", driver.PercentOfTotal),
@@ -1050,10 +990,10 @@ func (r *CostTrackingRepository) GetCostProjections(ctx context.Context, period 
 // Relay Cost Tracking Methods
 
 // CreateRelayCost creates a new relay cost record
-func (r *CostTrackingRepository) CreateRelayCost(ctx context.Context, relayCost *models.RelayCost) error {
+func (r *TrackingRepository) CreateRelayCost(ctx context.Context, relayCost *models.RelayCost) error {
 	// Call BeforeCreate to set up the model
 	if err := relayCost.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "relay cost", "validation")
 	}
 
 	// Create the relay cost record
@@ -1072,7 +1012,7 @@ func (r *CostTrackingRepository) CreateRelayCost(ctx context.Context, relayCost 
 }
 
 // GetRelayCostsByURL retrieves relay costs for a specific relay URL within a time range
-func (r *CostTrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
+func (r *TrackingRepository) GetRelayCostsByURL(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
 	var costs []*models.RelayCost
 
 	startSK := fmt.Sprintf("TS#%s", startTime.Format(common.CompactTimeFormat))
@@ -1095,7 +1035,7 @@ func (r *CostTrackingRepository) GetRelayCostsByURL(ctx context.Context, relayUR
 }
 
 // GetRelayCostsByDateRange retrieves relay costs for all relays within a date range
-func (r *CostTrackingRepository) GetRelayCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.RelayCost, error) {
+func (r *TrackingRepository) GetRelayCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.RelayCost, error) {
 	var allCosts []*models.RelayCost
 
 	// Query by daily partitions
@@ -1142,10 +1082,10 @@ func (r *CostTrackingRepository) GetRelayCostsByDateRange(ctx context.Context, s
 }
 
 // CreateRelayMetrics creates or updates relay metrics
-func (r *CostTrackingRepository) CreateRelayMetrics(ctx context.Context, metrics *models.RelayMetrics) error {
+func (r *TrackingRepository) CreateRelayMetrics(ctx context.Context, metrics *models.RelayMetrics) error {
 	// Call BeforeCreate to set up the model
 	if err := metrics.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "relay metrics", "validation")
 	}
 
 	// Create the relay metrics record
@@ -1165,10 +1105,10 @@ func (r *CostTrackingRepository) CreateRelayMetrics(ctx context.Context, metrics
 }
 
 // UpdateRelayMetrics updates existing relay metrics
-func (r *CostTrackingRepository) UpdateRelayMetrics(ctx context.Context, metrics *models.RelayMetrics) error {
+func (r *TrackingRepository) UpdateRelayMetrics(ctx context.Context, metrics *models.RelayMetrics) error {
 	// Call BeforeUpdate to set up the model
 	if err := metrics.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "relay metrics", "validation")
 	}
 
 	// Update the relay metrics record
@@ -1181,7 +1121,7 @@ func (r *CostTrackingRepository) UpdateRelayMetrics(ctx context.Context, metrics
 }
 
 // GetRelayMetrics retrieves relay metrics for a specific relay and period
-func (r *CostTrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, period string, windowStart time.Time) (*models.RelayMetrics, error) {
+func (r *TrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, period string, windowStart time.Time) (*models.RelayMetrics, error) {
 	var metrics models.RelayMetrics
 
 	pk := fmt.Sprintf("RELAY_METRICS#%s#%s", relayURL, period)
@@ -1200,7 +1140,7 @@ func (r *CostTrackingRepository) GetRelayMetrics(ctx context.Context, relayURL, 
 }
 
 // GetRelayMetricsHistory retrieves metrics history for a relay
-func (r *CostTrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayMetrics, error) {
+func (r *TrackingRepository) GetRelayMetricsHistory(ctx context.Context, relayURL string, startTime, endTime time.Time, limit int) ([]*models.RelayMetrics, error) {
 	var metricsHistory []*models.RelayMetrics
 
 	startSK := fmt.Sprintf("daily#%s", startTime.Format(common.CompactTimeFormat))
@@ -1223,10 +1163,10 @@ func (r *CostTrackingRepository) GetRelayMetricsHistory(ctx context.Context, rel
 }
 
 // CreateRelayBudget creates a new relay budget configuration
-func (r *CostTrackingRepository) CreateRelayBudget(ctx context.Context, budget *models.RelayBudget) error {
+func (r *TrackingRepository) CreateRelayBudget(ctx context.Context, budget *models.RelayBudget) error {
 	// Call BeforeCreate to set up the model
 	if err := budget.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, "relay budget", "validation")
 	}
 
 	// Create the relay budget record
@@ -1244,10 +1184,10 @@ func (r *CostTrackingRepository) CreateRelayBudget(ctx context.Context, budget *
 }
 
 // UpdateRelayBudget updates an existing relay budget
-func (r *CostTrackingRepository) UpdateRelayBudget(ctx context.Context, budget *models.RelayBudget) error {
+func (r *TrackingRepository) UpdateRelayBudget(ctx context.Context, budget *models.RelayBudget) error {
 	// Call BeforeUpdate to set up the model
 	if err := budget.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "relay budget", "validation")
 	}
 
 	// Update the relay budget record
@@ -1260,7 +1200,7 @@ func (r *CostTrackingRepository) UpdateRelayBudget(ctx context.Context, budget *
 }
 
 // GetRelayBudget retrieves relay budget configuration
-func (r *CostTrackingRepository) GetRelayBudget(ctx context.Context, relayURL, period string) (*models.RelayBudget, error) {
+func (r *TrackingRepository) GetRelayBudget(ctx context.Context, relayURL, period string) (*models.RelayBudget, error) {
 	var budget models.RelayBudget
 
 	pk := fmt.Sprintf("RELAY_BUDGET#%s#%s", relayURL, period)
@@ -1279,11 +1219,11 @@ func (r *CostTrackingRepository) GetRelayBudget(ctx context.Context, relayURL, p
 }
 
 // AggregateRelayCosts aggregates raw relay cost data into metrics
-func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, period string, windowStart, windowEnd time.Time) error {
+func (r *TrackingRepository) AggregateRelayCosts(ctx context.Context, relayURL, period string, windowStart, windowEnd time.Time) error {
 	// Get all relay costs in the window
 	costs, err := r.GetRelayCostsByURL(ctx, relayURL, windowStart, windowEnd, 10000)
 	if err != nil {
-		return fmt.Errorf("failed to get relay costs for aggregation: %w", err)
+		return ErrorHandler.HandleQueryError(err, "relay cost", "aggregation")
 	}
 
 	if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
@@ -1377,7 +1317,7 @@ func (r *CostTrackingRepository) AggregateRelayCosts(ctx context.Context, relayU
 }
 
 // GetRelayCostSummary calculates cost summary for a relay
-func (r *CostTrackingRepository) GetRelayCostSummary(ctx context.Context, relayURL string, startTime, endTime time.Time) (*RelayCostSummary, error) {
+func (r *TrackingRepository) GetRelayCostSummary(ctx context.Context, relayURL string, startTime, endTime time.Time) (*RelayCostSummary, error) {
 	costs, err := r.GetRelayCostsByURL(ctx, relayURL, startTime, endTime, 10000)
 	if err != nil {
 		return nil, err
@@ -1450,7 +1390,7 @@ func (r *CostTrackingRepository) GetRelayCostSummary(ctx context.Context, relayU
 }
 
 // GetHighCostRelayOperations returns relay operations that exceed a cost threshold
-func (r *CostTrackingRepository) GetHighCostRelayOperations(ctx context.Context, thresholdMicroCents int64, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
+func (r *TrackingRepository) GetHighCostRelayOperations(ctx context.Context, thresholdMicroCents int64, startTime, endTime time.Time, limit int) ([]*models.RelayCost, error) {
 	// Get all recent costs
 	allCosts, err := r.GetRelayCostsByDateRange(ctx, startTime, endTime, limit*10) // Get more to filter
 	if err != nil {
@@ -1507,17 +1447,17 @@ type RelayOperationCostStats struct {
 // Import/Export Cost Aggregation Methods
 
 // GetImportExportCostsByUser retrieves combined import and export costs for a user
-func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context, username string, startDate, endDate time.Time) (*ImportExportUserCostSummary, error) {
+func (r *TrackingRepository) GetImportExportCostsByUser(ctx context.Context, username string, startDate, endDate time.Time) (*ImportExportUserCostSummary, error) {
 	// Get import costs
 	importCosts, err := r.GetCostsByService(ctx, startDate, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get import costs: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "import cost", "query")
 	}
 
 	// Get export costs
 	exportCosts, err := r.GetCostsByService(ctx, startDate, endDate)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get export costs: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "export cost", "query")
 	}
 
 	summary := &ImportExportUserCostSummary{
@@ -1559,19 +1499,19 @@ func (r *CostTrackingRepository) GetImportExportCostsByUser(ctx context.Context,
 }
 
 // GetImportExportTrends calculates cost trends for import/export operations
-func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, lookbackDays int) (*ImportExportTrends, error) {
+func (r *TrackingRepository) GetImportExportTrends(ctx context.Context, lookbackDays int) (*ImportExportTrends, error) {
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -lookbackDays)
 
 	// Get daily aggregated data for import and export services
 	importTrend, err := r.GetCostTrends(ctx, "daily", "ImportProcessing", lookbackDays)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get import trends: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "import trend", "query")
 	}
 
 	exportTrend, err := r.GetCostTrends(ctx, "daily", "ExportGeneration", lookbackDays)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get export trends: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "export trend", "query")
 	}
 
 	trends := &ImportExportTrends{
@@ -1661,7 +1601,7 @@ func (r *CostTrackingRepository) GetImportExportTrends(ctx context.Context, look
 }
 
 // GetTopCostlyUsers returns users with highest import/export costs
-func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDate, endDate time.Time, limit int) ([]*UserCostRanking, error) {
+func (r *TrackingRepository) GetTopCostlyUsers(ctx context.Context, startDate, endDate time.Time, limit int) ([]*UserCostRanking, error) {
 	// Get all costs in the time range for import and export services
 	costs, err := r.GetRecentCosts(ctx, startDate, 10000)
 	if err != nil {
@@ -1743,7 +1683,7 @@ func (r *CostTrackingRepository) GetTopCostlyUsers(ctx context.Context, startDat
 }
 
 // GetImportExportMetrics calculates key metrics for import/export operations
-func (r *CostTrackingRepository) GetImportExportMetrics(ctx context.Context, startDate, endDate time.Time) (*ImportExportMetrics, error) {
+func (r *TrackingRepository) GetImportExportMetrics(ctx context.Context, startDate, endDate time.Time) (*ImportExportMetrics, error) {
 	// Get costs by service
 	serviceCosts, err := r.GetCostsByService(ctx, startDate, endDate)
 	if err != nil {
@@ -1837,7 +1777,7 @@ type UserCostRanking struct {
 }
 
 // GetActivityCost retrieves cost tracking data for a specific activity
-func (r *CostTrackingRepository) GetActivityCost(ctx context.Context, activityID string) (*models.DynamoDBCostRecord, error) {
+func (r *TrackingRepository) GetActivityCost(ctx context.Context, activityID string) (*models.DynamoDBCostRecord, error) {
 	r.logger.Debug("Getting activity cost",
 		zap.String("activity_id", activityID))
 
@@ -1863,7 +1803,7 @@ func (r *CostTrackingRepository) GetActivityCost(ctx context.Context, activityID
 		r.logger.Error("Failed to query activity cost",
 			zap.String("activity_id", activityID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query activity cost: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "activity cost", "query")
 	}
 
 	r.logger.Debug("Retrieved activity cost",
@@ -1922,7 +1862,7 @@ func standardDeviation(values []float64, mean float64) float64 {
 }
 
 // approximateTTestPValue provides an approximate p-value for t-test
-func (r *CostTrackingRepository) approximateTTestPValue(tStat float64, df int) float64 {
+func (r *TrackingRepository) approximateTTestPValue(tStat float64, df int) float64 {
 	// Simplified p-value approximation for t-distribution
 	// This is a rough approximation - in production, use a proper statistical library
 	absTStat := math.Abs(tStat)
@@ -1951,7 +1891,7 @@ func (r *CostTrackingRepository) approximateTTestPValue(tStat float64, df int) f
 }
 
 // mannKendallTest performs Mann-Kendall trend test
-func (r *CostTrackingRepository) mannKendallTest(values []float64) (tau, pValue float64) {
+func (r *TrackingRepository) mannKendallTest(values []float64) (tau, pValue float64) {
 	n := len(values)
 	if n < 3 {
 		return 0, 1
@@ -1992,7 +1932,7 @@ func (r *CostTrackingRepository) mannKendallTest(values []float64) (tau, pValue 
 }
 
 // theilSenSlope calculates Theil-Sen slope estimator
-func (r *CostTrackingRepository) theilSenSlope(values []float64) float64 {
+func (r *TrackingRepository) theilSenSlope(values []float64) float64 {
 	n := len(values)
 	if n < 2 {
 		return 0
@@ -2022,7 +1962,7 @@ func (r *CostTrackingRepository) theilSenSlope(values []float64) float64 {
 }
 
 // durbinWatsonTest calculates Durbin-Watson test statistic
-func (r *CostTrackingRepository) durbinWatsonTest(residuals []float64) float64 {
+func (r *TrackingRepository) durbinWatsonTest(residuals []float64) float64 {
 	n := len(residuals)
 	if n < 2 {
 		return 2.0 // No autocorrelation
@@ -2048,7 +1988,7 @@ func (r *CostTrackingRepository) durbinWatsonTest(residuals []float64) float64 {
 }
 
 // jarqueBeraTest performs Jarque-Bera test for normality
-func (r *CostTrackingRepository) jarqueBeraTest(values []float64) (jb, pValue float64) {
+func (r *TrackingRepository) jarqueBeraTest(values []float64) (jb, pValue float64) {
 	n := float64(len(values))
 	if n < 4 {
 		return 0, 1
@@ -2093,7 +2033,7 @@ func (r *CostTrackingRepository) jarqueBeraTest(values []float64) (jb, pValue fl
 }
 
 // analyzeResiduals analyzes regression residuals
-func (r *CostTrackingRepository) analyzeResiduals(residuals []float64) *ResidualStats {
+func (r *TrackingRepository) analyzeResiduals(residuals []float64) *ResidualStats {
 	if len(residuals) < 3 {
 		return nil
 	}
@@ -2147,7 +2087,7 @@ func (r *CostTrackingRepository) analyzeResiduals(residuals []float64) *Residual
 }
 
 // calculateSeasonalStrength calculates seasonal strength for a given period
-func (r *CostTrackingRepository) calculateSeasonalStrength(values []float64, period int) float64 {
+func (r *TrackingRepository) calculateSeasonalStrength(values []float64, period int) float64 {
 	n := len(values)
 	if n < 2*period {
 		return 0
@@ -2196,7 +2136,7 @@ func (r *CostTrackingRepository) calculateSeasonalStrength(values []float64, per
 }
 
 // simpleSeasonalDecomposition performs simple seasonal decomposition
-func (r *CostTrackingRepository) simpleSeasonalDecomposition(values []float64, period int) (trend, seasonal, residual []float64) {
+func (r *TrackingRepository) simpleSeasonalDecomposition(values []float64, period int) (trend, seasonal, residual []float64) {
 	n := len(values)
 	trend = make([]float64, n)
 	seasonal = make([]float64, n)
@@ -2246,7 +2186,7 @@ func (r *CostTrackingRepository) simpleSeasonalDecomposition(values []float64, p
 }
 
 // calculateDecompositionR2 calculates R-squared for seasonal decomposition
-func (r *CostTrackingRepository) calculateDecompositionR2(original, trend, seasonal []float64) float64 {
+func (r *TrackingRepository) calculateDecompositionR2(original, trend, seasonal []float64) float64 {
 	n := len(original)
 	if n == 0 {
 		return 0
@@ -2270,7 +2210,7 @@ func (r *CostTrackingRepository) calculateDecompositionR2(original, trend, seaso
 }
 
 // extractSeasonalPatterns extracts seasonal patterns from decomposition
-func (r *CostTrackingRepository) extractSeasonalPatterns(seasonal []float64, period int) map[string]float64 {
+func (r *TrackingRepository) extractSeasonalPatterns(seasonal []float64, period int) map[string]float64 {
 	patterns := make(map[string]float64)
 
 	seasonalSums := make([]float64, period)
@@ -2293,7 +2233,7 @@ func (r *CostTrackingRepository) extractSeasonalPatterns(seasonal []float64, per
 }
 
 // analyzeSeasonality analyzes seasonal patterns in cost data
-func (r *CostTrackingRepository) analyzeSeasonality(dataPoints []CostDataPoint) *SeasonalityAnalysis {
+func (r *TrackingRepository) analyzeSeasonality(dataPoints []CostDataPoint) *SeasonalityAnalysis {
 	n := len(dataPoints)
 	if n < 14 { // Need at least 2 weeks of data for seasonal analysis
 		return nil
@@ -2350,7 +2290,7 @@ func (r *CostTrackingRepository) analyzeSeasonality(dataPoints []CostDataPoint) 
 }
 
 // calculateLinearRegressionStats calculates comprehensive linear regression statistics
-func (r *CostTrackingRepository) calculateLinearRegressionStats(dataPoints []CostDataPoint) *LinearRegressionStats {
+func (r *TrackingRepository) calculateLinearRegressionStats(dataPoints []CostDataPoint) *LinearRegressionStats {
 	n := len(dataPoints)
 	if n < 2 {
 		return nil
@@ -2465,7 +2405,7 @@ func (r *CostTrackingRepository) calculateLinearRegressionStats(dataPoints []Cos
 }
 
 // calculateStatisticalTests performs additional statistical tests
-func (r *CostTrackingRepository) calculateStatisticalTests(dataPoints []CostDataPoint, regression *LinearRegressionStats) *StatisticalTests {
+func (r *TrackingRepository) calculateStatisticalTests(dataPoints []CostDataPoint, regression *LinearRegressionStats) *StatisticalTests {
 	if regression == nil || len(dataPoints) < 3 {
 		return nil
 	}
@@ -2507,7 +2447,7 @@ func (r *CostTrackingRepository) calculateStatisticalTests(dataPoints []CostData
 }
 
 // detectCostAnomalies detects anomalies in cost data
-func (r *CostTrackingRepository) detectCostAnomalies(dataPoints []CostDataPoint, regression *LinearRegressionStats) []CostAnomaly {
+func (r *TrackingRepository) detectCostAnomalies(dataPoints []CostDataPoint, regression *LinearRegressionStats) []CostAnomaly {
 	if regression == nil || len(dataPoints) < 5 {
 		return nil
 	}
@@ -2589,7 +2529,7 @@ func (r *CostTrackingRepository) detectCostAnomalies(dataPoints []CostDataPoint,
 }
 
 // generateCostForecast generates cost forecasts based on trend analysis
-func (r *CostTrackingRepository) generateCostForecast(dataPoints []CostDataPoint, regression *LinearRegressionStats) *CostForecast {
+func (r *TrackingRepository) generateCostForecast(dataPoints []CostDataPoint, regression *LinearRegressionStats) *CostForecast {
 	if regression == nil || len(dataPoints) < 3 {
 		return nil
 	}

@@ -940,12 +940,12 @@ type CostProjection struct {
 	// Additional projection fields
 	CurrentCost     float64      `json:"current_cost"`
 	Variance        float64      `json:"variance"`
-	TopDrivers      []CostDriver `json:"top_drivers,omitempty"`
+	TopDrivers      []Driver `json:"top_drivers,omitempty"`
 	Recommendations []string     `json:"recommendations,omitempty"`
 }
 
-// CostDriver represents a factor that drives federation costs
-type CostDriver struct {
+// Driver represents a factor that drives federation costs
+type Driver struct {
 	Name         string  `json:"name"`
 	Impact       float64 `json:"impact"` // Impact factor on total cost
 	Description  string  `json:"description"`

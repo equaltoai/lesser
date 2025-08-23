@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -15,38 +16,31 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// CommunityNoteRepository implements the community note operations using DynamORM
+// CommunityNoteRepository implements community note operations using BaseRepository with DynamORM
 type CommunityNoteRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.CommunityNote]
 }
 
-// NewCommunityNoteRepository creates a new community note repository
+// NewCommunityNoteRepository creates a new community note repository with cost tracking
 func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger) *CommunityNoteRepository {
 	return &CommunityNoteRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, nil, "community_note"),
 	}
 }
 
-// GetDB returns the database connection for shared use
-func (r *CommunityNoteRepository) GetDB() core.DB {
-	return r.db
+// NewCommunityNoteRepositoryWithCostTracking creates a new community note repository with integrated cost tracking
+func NewCommunityNoteRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CommunityNoteRepository {
+	return &CommunityNoteRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, costService, "community_note"),
+	}
 }
 
-// GetTableName returns the table name for shared use
-func (r *CommunityNoteRepository) GetTableName() string {
-	return r.tableName
-}
-
-// GetUserVotingHistory retrieves a user's voting history for reputation calculation
+// GetUserVotingHistory retrieves a user's voting history for reputation calculation - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, userID string, limit int) ([]*storage.CommunityNoteVote, error) {
 	var votes []models.CommunityNoteVote
 	
-	// Query using GSI to get all votes by this user
-	err := r.db.WithContext(ctx).Model(&models.CommunityNoteVote{}).
+	// Query using GSI to get all votes by this user - preserve community voting history functionality
+	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
 		Index("user-votes-index").
 		Where("GSI1PK", "=", "VOTES#"+userID).
 		OrderBy("GSI1SK", "DESC"). // Most recent first
@@ -54,10 +48,10 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 		All(&votes)
 		
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user voting history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "community note", "user voting history")
 	}
 	
-	// Convert to storage models
+	// Convert to storage models - preserve exact conversion logic
 	result := make([]*storage.CommunityNoteVote, len(votes))
 	for i, model := range votes {
 		result[i] = &storage.CommunityNoteVote{
@@ -73,19 +67,19 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 	return result, nil
 }
 
-// CreateCommunityNote creates a new community note
-func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *storage.CommunityNote) error {
-	// Generate ID if not provided
+// CreateCommunityNote creates a new community note - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note *storage.CommunityNote) error {
+	// Generate ID if not provided - preserve community note creation validation
 	if err := common.ValidateRequiredParam("note.ID", note.ID); err != nil {
 		note.ID = uuid.New().String()
 	}
 
-	// Set timestamps
+	// Set timestamps - preserve exact timestamp logic
 	now := time.Now()
 	note.CreatedAt = now
 	note.UpdatedAt = now
 
-	// Create model
+	// Create model - preserve all community note fields and validation
 	model := &models.CommunityNote{
 		ID:               note.ID,
 		ObjectID:         note.ObjectID,
@@ -103,50 +97,29 @@ func (r *CommunityNoteRepository) CreateCommunityNote(_ context.Context, note *s
 		SourceQuality:    note.SourceQuality,
 		CreatedAt:        note.CreatedAt,
 		UpdatedAt:        note.UpdatedAt,
-		TTL:              now.Add(90 * 24 * time.Hour).Unix(), // 90 days TTL
+		TTL:              now.Add(90 * 24 * time.Hour).Unix(), // 90 days TTL - preserve exact TTL
 	}
 
-	// Update keys
-	model.UpdateKeys()
-
-	// Create in DynamoDB
-	err := r.db.Model(model).Create()
+	// Use BaseRepository Create method for consistent cost tracking
+	err := r.Create(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to create community note",
-			zap.String("noteID", note.ID),
-			zap.String("objectID", note.ObjectID),
-			zap.String("authorID", note.AuthorID),
-			zap.Error(err))
-		return fmt.Errorf("failed to create community note: %w", err)
+		return ErrorHandler.HandleCreateError(err, "community note", note.ID)
 	}
-
-	r.logger.Debug("Created community note",
-		zap.String("noteID", note.ID),
-		zap.String("objectID", note.ObjectID),
-		zap.String("authorID", note.AuthorID))
 
 	return nil
 }
 
-// GetCommunityNote retrieves a note by ID
-func (r *CommunityNoteRepository) GetCommunityNote(_ context.Context, noteID string) (*storage.CommunityNote, error) {
+// GetCommunityNote retrieves a note by ID - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error) {
 	var model models.CommunityNote
-	err := r.db.Model(&models.CommunityNote{}).
-		Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
-		Where("SK", "=", "METADATA").
-		First(&model)
-
+	
+	// Use BaseRepository Get method for consistent cost tracking and error handling
+	err := r.Get(ctx, fmt.Sprintf("NOTE#%s", noteID), "METADATA", &model)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("note not found")
-		}
-		r.logger.Error("failed to get community note",
-			zap.String("noteID", noteID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get community note: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "community note", noteID)
 	}
 
-	// Convert to storage type
+	// Convert to storage type - preserve exact conversion logic
 	note := &storage.CommunityNote{
 		ID:               model.ID,
 		ObjectID:         model.ObjectID,
@@ -169,12 +142,12 @@ func (r *CommunityNoteRepository) GetCommunityNote(_ context.Context, noteID str
 	return note, nil
 }
 
-// GetVisibleCommunityNotes retrieves visible notes for an object
-func (r *CommunityNoteRepository) GetVisibleCommunityNotes(_ context.Context, objectID string) ([]*storage.CommunityNote, error) {
+// GetVisibleCommunityNotes retrieves visible notes for an object - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) GetVisibleCommunityNotes(ctx context.Context, objectID string) ([]*storage.CommunityNote, error) {
 	var modelsSlice []models.CommunityNote
 
-	// Query by object ID using GSI1
-	err := r.db.Model(&models.CommunityNote{}).
+	// Query by object ID using GSI1 - preserve community visibility filtering
+	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi1").
 		Where("GSI1PK", "=", fmt.Sprintf("OBJECT#%s#NOTES", objectID)).
 		Limit(50).
@@ -184,16 +157,13 @@ func (r *CommunityNoteRepository) GetVisibleCommunityNotes(_ context.Context, ob
 		if errors.IsNotFound(err) {
 			return []*storage.CommunityNote{}, nil
 		}
-		r.logger.Error("failed to query community notes",
-			zap.String("objectID", objectID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to query community notes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "community note", "visible notes")
 	}
 
-	// Filter for visible notes and convert to storage type
+	// Filter for visible notes and convert to storage type - PRESERVE COMMUNITY VISIBILITY LOGIC
 	notes := make([]*storage.CommunityNote, 0, len(modelsSlice))
 	for _, model := range modelsSlice {
-		// Only include visible notes
+		// Only include visible notes - preserve exact visibility filtering
 		if model.VisibilityStatus == "visible" || model.VisibilityStatus == "prominent" {
 			note := &storage.CommunityNote{
 				ID:               model.ID,
@@ -220,20 +190,20 @@ func (r *CommunityNoteRepository) GetVisibleCommunityNotes(_ context.Context, ob
 	return notes, nil
 }
 
-// UpdateCommunityNoteScore updates a note's score and visibility
+// UpdateCommunityNoteScore updates a note's score and visibility - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) UpdateCommunityNoteScore(ctx context.Context, noteID string, score float64, status string) error {
-	// Get the current note to preserve other fields
+	// Get the current note to preserve other fields - preserve community score update logic
 	note, err := r.GetCommunityNote(ctx, noteID)
 	if err != nil {
 		return err
 	}
 
-	// Update fields
+	// Update fields - preserve exact score and visibility update logic
 	note.Score = score
 	note.VisibilityStatus = status
 	note.UpdatedAt = time.Now()
 
-	// Create updated model
+	// Create updated model - preserve all community note fields
 	model := &models.CommunityNote{
 		ID:               note.ID,
 		ObjectID:         note.ObjectID,
@@ -246,34 +216,28 @@ func (r *CommunityNoteRepository) UpdateCommunityNoteScore(ctx context.Context, 
 		NotHelpfulVotes:  note.NotHelpfulVotes,
 		Score:            note.Score,
 		VisibilityStatus: note.VisibilityStatus,
+		Sentiment:        note.Sentiment,
+		Objectivity:      note.Objectivity,
+		SourceQuality:    note.SourceQuality,
 		CreatedAt:        note.CreatedAt,
 		UpdatedAt:        note.UpdatedAt,
-		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(),
+		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // preserve exact TTL
 	}
 
-	// Update keys with new values
-	model.UpdateKeys()
-
-	// Update in DynamoDB
-	err = r.db.Model(model).Update()
-
+	// Use BaseRepository Update method for consistent cost tracking
+	err = r.Update(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to update community note score",
-			zap.String("noteID", noteID),
-			zap.Float64("score", score),
-			zap.String("status", status),
-			zap.Error(err))
-		return fmt.Errorf("failed to update community note score: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "community note", noteID)
 	}
 
 	return nil
 }
 
-// CreateCommunityNoteVote creates a vote on a note
-func (r *CommunityNoteRepository) CreateCommunityNoteVote(_ context.Context, vote *storage.CommunityNoteVote) error {
+// CreateCommunityNoteVote creates a vote on a note - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) CreateCommunityNoteVote(ctx context.Context, vote *storage.CommunityNoteVote) error {
 	vote.CreatedAt = time.Now()
 
-	// Create model
+	// Create model - preserve community voting logic
 	model := &models.CommunityNoteVote{
 		NoteID:    vote.NoteID,
 		VoterID:   vote.VoterID,
@@ -281,52 +245,41 @@ func (r *CommunityNoteRepository) CreateCommunityNoteVote(_ context.Context, vot
 		Helpful:   vote.Helpful,
 		Weight:    vote.Weight,
 		CreatedAt: vote.CreatedAt,
-		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(),
+		TTL:       time.Now().Add(90 * 24 * time.Hour).Unix(), // preserve exact TTL
 	}
 
-	// Update keys
+	// Create the vote using our own DB connection (no BaseRepository for votes)
 	model.UpdateKeys()
-
-	// Create in DynamoDB
-	err := r.db.Model(model).Create()
+	err := r.GetDB().WithContext(ctx).Model(model).Create()
 	if err != nil {
-		r.logger.Error("failed to create community note vote",
-			zap.String("noteID", vote.NoteID),
-			zap.String("voterID", vote.VoterID),
-			zap.String("voteType", vote.VoteType),
-			zap.Error(err))
-		return fmt.Errorf("failed to create community note vote: %w", err)
+		return ErrorHandler.HandleCreateError(err, "community note vote", vote.NoteID)
 	}
 
 	return nil
 }
 
-// GetUserCommunityNoteVotes retrieves a user's votes on specific notes
-func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(_ context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error) {
+// GetUserCommunityNoteVotes retrieves a user's votes on specific notes - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(ctx context.Context, userID string, noteIDs []string) (map[string]*storage.CommunityNoteVote, error) {
 	votes := make(map[string]*storage.CommunityNoteVote)
 
-	// Batch get votes - DynamORM doesn't have batch get, so we query individually
+	// Batch get votes - preserve individual note vote retrieval logic
 	for _, noteID := range noteIDs {
 		var model models.CommunityNoteVote
-		err := r.db.Model(&models.CommunityNoteVote{}).
+		err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
 			Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
 			Where("SK", "=", fmt.Sprintf("VOTE#%s", userID)).
 			First(&model)
 
 		if err != nil {
 			if errors.IsNotFound(err) {
-				// Not found is ok - user hasn't voted on this note
+				// Not found is ok - user hasn't voted on this note - preserve graceful handling
 				continue
 			}
-			r.logger.Error("failed to get community note vote",
-				zap.String("noteID", noteID),
-				zap.String("userID", userID),
-				zap.Error(err))
-			// Continue to next vote instead of failing entirely
+			// Continue to next vote instead of failing entirely - preserve resilient behavior
 			continue
 		}
 
-		// Convert to storage type
+		// Convert to storage type - preserve exact conversion
 		vote := &storage.CommunityNoteVote{
 			NoteID:    model.NoteID,
 			VoterID:   model.VoterID,
@@ -341,19 +294,19 @@ func (r *CommunityNoteRepository) GetUserCommunityNoteVotes(_ context.Context, u
 	return votes, nil
 }
 
-// GetCommunityNotesByAuthor retrieves community notes authored by a specific actor
-func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
+// GetCommunityNotesByAuthor retrieves community notes authored by a specific actor - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(ctx context.Context, authorID string, limit int, cursor string) ([]*storage.CommunityNote, string, error) {
 	var modelsSlice []models.CommunityNote
 
-	// Build query using GSI3
-	query := r.db.Model(&models.CommunityNote{}).
+	// Build query using GSI3 - preserve community author query logic
+	query := r.GetDB().WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi3").
 		Where("GSI3PK", "=", fmt.Sprintf("AUTHOR#%s#NOTES", authorID)).
 		Limit(limit)
 
-	// Add cursor if provided
+	// Add cursor if provided - preserve exact cursor logic
 	if cursor != "" {
-		// Parse cursor - expecting format "timestamp#noteID"
+		// Parse cursor - expecting format "timestamp#noteID" - preserve exact parsing
 		parts := strings.Split(cursor, "#")
 		if len(parts) >= 2 {
 			query = query.Where("GSI3SK", "<", cursor)
@@ -366,13 +319,10 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, a
 		if errors.IsNotFound(err) {
 			return []*storage.CommunityNote{}, "", nil
 		}
-		r.logger.Error("failed to query community notes by author",
-			zap.String("authorID", authorID),
-			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query community notes by author: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "community note", "by author")
 	}
 
-	// Convert to storage type
+	// Convert to storage type - preserve exact conversion
 	notes := make([]*storage.CommunityNote, 0, len(modelsSlice))
 	for _, model := range modelsSlice {
 		note := &storage.CommunityNote{
@@ -396,7 +346,7 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, a
 		notes = append(notes, note)
 	}
 
-	// Determine next cursor
+	// Determine next cursor - preserve exact pagination logic
 	var nextCursor string
 	if len(modelsSlice) == limit && len(modelsSlice) > 0 {
 		lastModel := modelsSlice[len(modelsSlice)-1]
@@ -406,12 +356,12 @@ func (r *CommunityNoteRepository) GetCommunityNotesByAuthor(_ context.Context, a
 	return notes, nextCursor, nil
 }
 
-// GetCommunityNoteVotes retrieves votes on a specific community note
-func (r *CommunityNoteRepository) GetCommunityNoteVotes(_ context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
+// GetCommunityNoteVotes retrieves votes on a specific community note - COMMUNITY NOTES BUSINESS LOGIC
+func (r *CommunityNoteRepository) GetCommunityNoteVotes(ctx context.Context, noteID string) ([]*storage.CommunityNoteVote, error) {
 	var modelsSlice []models.CommunityNoteVote
 
-	// Query votes for the note
-	err := r.db.Model(&models.CommunityNoteVote{}).
+	// Query votes for the note - preserve community vote retrieval logic
+	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
 		Where("PK", "=", fmt.Sprintf("NOTE#%s", noteID)).
 		Where("SK", "BEGINS_WITH", "VOTE#").
 		All(&modelsSlice)
@@ -420,16 +370,13 @@ func (r *CommunityNoteRepository) GetCommunityNoteVotes(_ context.Context, noteI
 		if errors.IsNotFound(err) {
 			return []*storage.CommunityNoteVote{}, nil
 		}
-		r.logger.Error("failed to query community note votes",
-			zap.String("noteID", noteID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to query community note votes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "community note vote", "by note")
 	}
 
-	// Convert to storage type
+	// Convert to storage type - preserve exact conversion with Helpful flag logic
 	votes := make([]*storage.CommunityNoteVote, 0, len(modelsSlice))
 	for _, model := range modelsSlice {
-		// Set the Helpful flag based on VoteType for easier access
+		// Set the Helpful flag based on VoteType for easier access - preserve exact logic
 		model.Helpful = (model.VoteType == "helpful")
 
 		vote := &storage.CommunityNoteVote{
@@ -446,21 +393,21 @@ func (r *CommunityNoteRepository) GetCommunityNoteVotes(_ context.Context, noteI
 	return votes, nil
 }
 
-// UpdateCommunityNoteAnalysis updates AI analysis results for a note
+// UpdateCommunityNoteAnalysis updates AI analysis results for a note - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) UpdateCommunityNoteAnalysis(ctx context.Context, noteID string, sentiment, objectivity, sourceQuality float64) error {
-	// Get the current note to preserve other fields
+	// Get the current note to preserve other fields - preserve community analysis update logic
 	note, err := r.GetCommunityNote(ctx, noteID)
 	if err != nil {
 		return err
 	}
 
-	// Update analysis fields
+	// Update analysis fields - preserve exact AI analysis field updates
 	note.Sentiment = sentiment
 	note.Objectivity = objectivity
 	note.SourceQuality = sourceQuality
 	note.UpdatedAt = time.Now()
 
-	// Create updated model
+	// Create updated model - preserve all community note fields
 	model := &models.CommunityNote{
 		ID:               note.ID,
 		ObjectID:         note.ObjectID,
@@ -478,23 +425,13 @@ func (r *CommunityNoteRepository) UpdateCommunityNoteAnalysis(ctx context.Contex
 		SourceQuality:    note.SourceQuality,
 		CreatedAt:        note.CreatedAt,
 		UpdatedAt:        note.UpdatedAt,
-		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(),
+		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // preserve exact TTL
 	}
 
-	// Update keys
-	model.UpdateKeys()
-
-	// Update in DynamoDB
-	err = r.db.Model(model).Update()
-
+	// Use BaseRepository Update method for consistent cost tracking
+	err = r.Update(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to update community note analysis",
-			zap.String("noteID", noteID),
-			zap.Float64("sentiment", sentiment),
-			zap.Float64("objectivity", objectivity),
-			zap.Float64("sourceQuality", sourceQuality),
-			zap.Error(err))
-		return fmt.Errorf("failed to update community note analysis: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "community note", noteID)
 	}
 
 	return nil

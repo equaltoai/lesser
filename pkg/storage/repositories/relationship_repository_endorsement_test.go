@@ -11,9 +11,7 @@ import (
 
 func TestRelationshipRepository_extractUsernameFromID(t *testing.T) {
 	logger := zap.NewNop()
-	repo := &RelationshipRepository{
-		logger: logger,
-	}
+	repo := NewRelationshipRepository(nil, "test-table", logger)
 
 	tests := []struct {
 		name     string
@@ -74,7 +72,7 @@ func TestCreateEndorsement_ValidationLogic(t *testing.T) {
 		assert.False(t, endorsement.CreatedAt.IsZero())
 
 		// Test that extract username works correctly
-		repo := &RelationshipRepository{logger: logger}
+		repo := NewRelationshipRepository(nil, "test-table", logger)
 		extractedUsername := repo.extractUsernameFromID(endorsement.PinnedActorID)
 		assert.Equal(t, "target", extractedUsername)
 	})

@@ -26,7 +26,7 @@ type WebSocketEventConnection struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (w *WebSocketEventConnection) UpdateKeys() {
+func (w *WebSocketEventConnection) UpdateKeys() error {
 	// Set primary keys
 	w.PK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 	w.SK = SKMetadata
@@ -36,6 +36,17 @@ func (w *WebSocketEventConnection) UpdateKeys() {
 		w.GSI1PK = fmt.Sprintf(KeyPatternUser, w.UserID)
 		w.GSI1SK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (w *WebSocketEventConnection) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (w *WebSocketEventConnection) GetSK() string {
+	return w.SK
 }
 
 // WebSocketEventSubscription represents a subscription to events
@@ -59,7 +70,7 @@ type WebSocketEventSubscription struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (w *WebSocketEventSubscription) UpdateKeys() {
+func (w *WebSocketEventSubscription) UpdateKeys() error {
 	// Set primary keys
 	w.PK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
 	w.SK = fmt.Sprintf("SUBSCRIPTION#%s", w.SubscriptionType)
@@ -67,4 +78,15 @@ func (w *WebSocketEventSubscription) UpdateKeys() {
 	// Set GSI1 keys for subscription-type-based queries
 	w.GSI1PK = fmt.Sprintf("SUBSCRIPTION#%s", w.SubscriptionType)
 	w.GSI1SK = fmt.Sprintf(KeyPatternConnection, w.ConnectionID)
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (w *WebSocketEventSubscription) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (w *WebSocketEventSubscription) GetSK() string {
+	return w.SK
 }

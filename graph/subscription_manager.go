@@ -73,7 +73,7 @@ func (sm *GraphQLSubscriptionManager) Start(ctx context.Context) error {
 	defer sm.runningMux.Unlock()
 
 	if sm.running {
-		return fmt.Errorf("subscription manager is already running")
+		return ErrSubscriptionManagerAlreadyRunning
 	}
 
 	sm.running = true
@@ -118,7 +118,7 @@ func (sm *GraphQLSubscriptionManager) IsRunning() bool {
 // SubscribeToTimeline subscribes to timeline updates using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, username string, timelineType model.TimelineType) (<-chan *model.Object, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	// Create output channel
@@ -153,7 +153,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 
 	// Use event bus for timeline subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for timeline subscription")
+		return nil, ErrEventBusNotAvailableForTimeline
 	}
 
 	return sm.createEventBusSubscription(ctx, subscriptionID, "timeline", username, filter, ch)
@@ -162,7 +162,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTimeline(ctx context.Context, u
 // SubscribeToNotifications subscribes to notification events using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Context, username string) (<-chan *model.Notification, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *model.Notification, 50)
@@ -179,7 +179,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Conte
 
 	// Use event bus for notification subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for notification subscription")
+		return nil, ErrEventBusNotAvailableForNotifications
 	}
 
 	return sm.createNotificationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
@@ -188,7 +188,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToNotifications(ctx context.Conte
 // SubscribeToCostUpdates subscribes to cost update events using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context, username string, threshold *int) (<-chan *model.CostUpdate, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *model.CostUpdate, 20)
@@ -206,7 +206,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context
 
 	// Use event bus for cost update subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for cost update subscription")
+		return nil, ErrEventBusNotAvailableForCost
 	}
 
 	return sm.createCostEventBusSubscription(ctx, subscriptionID, username, filter, ch, threshold)
@@ -215,7 +215,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToCostUpdates(ctx context.Context
 // SubscribeToModerationEvents subscribes to moderation events using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Context, actorID *string) (<-chan *moderation.ModerationDecision, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *moderation.ModerationDecision, 50)
@@ -237,7 +237,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Co
 
 	// Use event bus for moderation subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for moderation subscription")
+		return nil, ErrEventBusNotAvailableForModeration
 	}
 
 	return sm.createModerationEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
@@ -246,7 +246,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToModerationEvents(ctx context.Co
 // SubscribeToTrustUpdates subscribes to trust score updates using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Context, actorID string) (<-chan *trust.TrustEdge, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *trust.TrustEdge, 20)
@@ -265,7 +265,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 
 	// Use event bus for trust subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for trust subscription")
+		return nil, ErrEventBusNotAvailableForTrust
 	}
 
 	return sm.createTrustEventBusSubscription(ctx, subscriptionID, actorID, filter, ch)
@@ -274,7 +274,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToTrustUpdates(ctx context.Contex
 // SubscribeToAIAnalysis subscribes to AI analysis updates using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context, objectID *string) (<-chan *model.AIAnalysis, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *model.AIAnalysis, 20)
@@ -299,7 +299,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context,
 
 	// Use event bus for AI analysis subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for AI analysis subscription")
+		return nil, ErrEventBusNotAvailableForAI
 	}
 
 	return sm.createAIEventBusSubscription(ctx, subscriptionID, objectID, filter, ch)
@@ -308,11 +308,11 @@ func (sm *GraphQLSubscriptionManager) SubscribeToAIAnalysis(ctx context.Context,
 // SubscribeToHashtagActivity subscribes to hashtag activity using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Context, username string, hashtags []string) (<-chan *model.HashtagActivityUpdate, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	if err := common.ValidateSliceNotEmpty("hashtags", hashtags); err != nil {
-		return nil, fmt.Errorf("at least one hashtag must be specified")
+		return nil, ErrAtLeastOneHashtagRequired
 	}
 
 	ch := make(chan *model.HashtagActivityUpdate, 100)
@@ -335,7 +335,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 
 	// Use event bus for hashtag activity subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for hashtag activity subscription")
+		return nil, ErrEventBusNotAvailableForHashtag
 	}
 
 	return sm.createHashtagEventBusSubscription(ctx, subscriptionID, username, hashtags, filter, ch)
@@ -344,14 +344,14 @@ func (sm *GraphQLSubscriptionManager) SubscribeToHashtagActivity(ctx context.Con
 // SubscribeToQuoteActivity subscribes to quote activity using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Context, username string, noteID string, noteObj any) (<-chan *model.QuoteActivityUpdate, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	if err := common.ValidateRequiredParam("noteID", noteID); err != nil {
-		return nil, fmt.Errorf("noteID cannot be empty")
+		return nil, ErrNoteIDCannotBeEmpty
 	}
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, fmt.Errorf("username cannot be empty")
+		return nil, ErrUsernameCannotBeEmpty
 	}
 
 	ch := make(chan *model.QuoteActivityUpdate, 50)
@@ -368,7 +368,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 
 	// Use event bus for quote activity subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for quote activity subscription")
+		return nil, ErrEventBusNotAvailableForQuote
 	}
 
 	return sm.createQuoteEventBusSubscription(ctx, subscriptionID, username, noteID, noteObj, filter, ch)
@@ -377,7 +377,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToQuoteActivity(ctx context.Conte
 // SubscribeToMetricsUpdates subscribes to real-time metrics updates using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Context, username string, categories []string, services []string, threshold *float64) (<-chan *model.MetricsUpdate, error) {
 	if !sm.IsRunning() {
-		return nil, fmt.Errorf("subscription manager is not running")
+		return nil, ErrSubscriptionManagerNotRunning
 	}
 
 	ch := make(chan *model.MetricsUpdate, 100)
@@ -423,7 +423,7 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 
 	// Use event bus for metrics subscription
 	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
-		return nil, fmt.Errorf("event bus is not available for metrics subscription")
+		return nil, ErrEventBusNotAvailableForMetrics
 	}
 
 	return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)

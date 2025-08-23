@@ -2,13 +2,13 @@ package lift
 
 import (
 	"context"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 )
@@ -16,61 +16,48 @@ import (
 func TestIsProductionEnvironment(t *testing.T) {
 	tests := []struct {
 		name         string
-		envVar       string
-		envValue     string
+		stage        string
 		expectedProd bool
 	}{
 		{
-			name:         "ENV=production",
-			envVar:       "ENV",
-			envValue:     "production",
+			name:         "Stage=production",
+			stage:        "production",
 			expectedProd: true,
 		},
 		{
-			name:         "ENV=prod",
-			envVar:       "ENV",
-			envValue:     "prod",
+			name:         "Stage=prod",
+			stage:        "prod",
 			expectedProd: true,
 		},
 		{
-			name:         "ENVIRONMENT=production",
-			envVar:       "ENVIRONMENT",
-			envValue:     "production",
-			expectedProd: true,
-		},
-		{
-			name:         "ENV=development",
-			envVar:       "ENV",
-			envValue:     "development",
+			name:         "Stage=development",
+			stage:        "development",
 			expectedProd: false,
 		},
 		{
-			name:         "ENV=staging",
-			envVar:       "ENV",
-			envValue:     "staging",
+			name:         "Stage=staging",
+			stage:        "staging",
 			expectedProd: false,
 		},
 		{
-			name:         "no_env_set",
-			envVar:       "",
-			envValue:     "",
+			name:         "Stage=dev",
+			stage:        "dev",
+			expectedProd: false,
+		},
+		{
+			name:         "Stage=empty",
+			stage:        "",
 			expectedProd: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clear existing env vars
-			os.Unsetenv("ENV")
-			os.Unsetenv("ENVIRONMENT")
-
-			// Set test env var
-			if tt.envVar != "" {
-				os.Setenv(tt.envVar, tt.envValue)
-				defer os.Unsetenv(tt.envVar)
+			cfg := &config.Config{
+				Stage: tt.stage,
 			}
 
-			result := IsProductionEnvironment()
+			result := IsProductionEnvironment(cfg)
 			assert.Equal(t, tt.expectedProd, result)
 		})
 	}
@@ -107,10 +94,9 @@ func (m *MockPushRepository) CreateVAPIDKeys(context.Context, *storage.VAPIDKeys
 func TestValidateVAPIDKeysForProduction(t *testing.T) {
 	t.Run("non_production_environment_skips_validation", func(t *testing.T) {
 		// Setup development environment
-		os.Unsetenv("ENV")
-		os.Unsetenv("ENVIRONMENT")
-		os.Setenv("ENV", "development")
-		defer os.Unsetenv("ENV")
+		cfg := &config.Config{
+			Stage: "development",
+		}
 
 		ctx := context.Background()
 		logger := zap.NewNop()
@@ -119,16 +105,17 @@ func TestValidateVAPIDKeysForProduction(t *testing.T) {
 		mockRepos := new(mocks.MockRepositoryStorage)
 
 		// This should not error because we're not in production
-		err := ValidateVAPIDKeysForProduction(ctx, mockRepos, logger)
+		err := ValidateVAPIDKeysForProduction(ctx, cfg, mockRepos, logger)
 		assert.NoError(t, err, "Non-production environment should skip VAPID validation")
 	})
 
 	t.Run("production_environment_logic", func(t *testing.T) {
 		// Test that production environment detection works correctly
-		os.Setenv("ENV", "production")
-		defer os.Unsetenv("ENV")
+		cfg := &config.Config{
+			Stage: "production",
+		}
 
-		assert.True(t, IsProductionEnvironment(), "Should detect production environment")
+		assert.True(t, IsProductionEnvironment(cfg), "Should detect production environment")
 
 		// In actual production deployment, the VAPID keys validation would be called
 		// and would enforce the requirement. The integration test happens at runtime.
@@ -139,10 +126,11 @@ func TestValidateVAPIDKeysForProduction(t *testing.T) {
 func TestVAPIDProductionEnforcementLogic(t *testing.T) {
 	t.Run("production_environment_detection", func(t *testing.T) {
 		// Test production environment detection
-		os.Setenv("ENV", "production")
-		defer os.Unsetenv("ENV")
+		cfg := &config.Config{
+			Stage: "production",
+		}
 
-		assert.True(t, IsProductionEnvironment(), "Should detect production environment")
+		assert.True(t, IsProductionEnvironment(cfg), "Should detect production environment")
 
 		t.Log("Production VAPID enforcement environment detection works correctly")
 	})

@@ -7,24 +7,26 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// MuteRepository implements mute operations using DynamORM
+// MuteRepository implements mute operations using BaseRepository and DynamORM
 type MuteRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Mute]
+	// Keep direct access to fields that domain methods need
+	logger *zap.Logger
+	db     core.DB
 }
 
-// NewMuteRepository creates a new mute repository
-func NewMuteRepository(db core.DB, tableName string, logger *zap.Logger) *MuteRepository {
+// NewMuteRepository creates a new mute repository with cost tracking
+func NewMuteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MuteRepository {
 	return &MuteRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Mute](db, tableName, logger, costService, "mute"),
+		logger:         logger,
+		db:             db,
 	}
 }
 
@@ -45,10 +47,11 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 			zap.String("muter", muterActor),
 			zap.String("muted", mutedActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to prepare mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityMute, fmt.Sprintf("%s muting %s", muterActor, mutedActor))
 	}
 
-	if err := r.db.WithContext(ctx).Model(mute).Create(); err != nil {
+	// Use BaseRepository Create method
+	if err := r.Create(ctx, mute); err != nil {
 		// Check if it's a duplicate mute
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("mute relationship already exists",
@@ -60,7 +63,7 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 			zap.String("muter", muterActor),
 			zap.String("muted", mutedActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to create mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityMute, fmt.Sprintf("%s muting %s", muterActor, mutedActor))
 	}
 
 	r.logger.Info("created mute relationship",
@@ -73,16 +76,58 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 
 // DeleteMute removes a mute relationship (for Undo Mute)
 func (r *MuteRepository) DeleteMute(ctx context.Context, muterActor, mutedActor string) error {
-	helper := NewRelationshipHelper(r.db, r.logger, "mute")
-	return helper.DeleteRelationship(ctx, muterActor, mutedActor, 
-		"MUTE#%s", "MUTED#%s", &models.Mute{})
+	// Extract usernames for key generation
+	muterUsername := extractUsernameFromActor(muterActor)
+	mutedUsername := extractUsernameFromActor(mutedActor)
+
+	pk := fmt.Sprintf("MUTE#%s", muterUsername)
+	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
+
+	err := r.Delete(ctx, pk, sk)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug("mute not found for deletion",
+				zap.String("muter", muterActor),
+				zap.String("muted", mutedActor))
+			return nil // Idempotent - don't fail if mute doesn't exist
+		}
+		r.logger.Error("failed to delete mute",
+			zap.String("muter", muterActor),
+			zap.String("muted", mutedActor),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityMute, fmt.Sprintf("%s unmuting %s", muterActor, mutedActor))
+	}
+
+	r.logger.Info("deleted mute relationship",
+		zap.String("muter", muterActor),
+		zap.String("muted", mutedActor))
+
+	return nil
 }
 
 // IsMuted checks if one actor has muted another
 func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor string) (bool, error) {
-	helper := NewRelationshipHelper(r.db, r.logger, "mute")
-	return helper.CheckRelationship(ctx, muterActor, mutedActor, 
-		"MUTE#%s", "MUTED#%s", &models.Mute{})
+	// Extract usernames for key generation
+	muterUsername := extractUsernameFromActor(muterActor)
+	mutedUsername := extractUsernameFromActor(mutedActor)
+
+	pk := fmt.Sprintf("MUTE#%s", muterUsername)
+	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
+
+	var mute models.Mute
+	err := r.Get(ctx, pk, sk, &mute)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check mute status",
+			zap.String("muter", muterActor),
+			zap.String("muted", mutedActor),
+			zap.Error(err))
+		return false, ErrorHandler.HandleQueryError(err, EntityMute, fmt.Sprintf("mute check %s->%s", muterActor, mutedActor))
+	}
+
+	return true, nil
 }
 
 // GetMutedUsers returns a list of users muted by the given actor
@@ -121,22 +166,21 @@ func (r *MuteRepository) GetMute(ctx context.Context, muterActor, mutedActor str
 	muterUsername := extractUsernameFromActor(muterActor)
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	var mute models.Mute
+	pk := fmt.Sprintf("MUTE#%s", muterUsername)
+	sk := fmt.Sprintf("MUTED#%s", mutedUsername)
 
-	err := r.db.WithContext(ctx).Model(&mute).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
-		First(&mute)
+	var mute models.Mute
+	err := r.Get(ctx, pk, sk, &mute)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("mute not found")
+			return nil, ErrorHandler.HandleGetError(err, EntityMute, fmt.Sprintf("%s->%s", muterActor, mutedActor))
 		}
 		r.logger.Error("failed to get mute",
 			zap.String("muter", muterActor),
 			zap.String("muted", mutedActor),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get mute: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityMute, fmt.Sprintf("%s->%s", muterActor, mutedActor))
 	}
 
 	// Convert to storage.Mute
@@ -153,37 +197,32 @@ func (r *MuteRepository) GetMute(ctx context.Context, muterActor, mutedActor str
 // CountMutedUsers returns the number of users muted by the given actor
 func (r *MuteRepository) CountMutedUsers(ctx context.Context, muterActor string) (int, error) {
 	muterUsername := extractUsernameFromActor(muterActor)
+	pk := fmt.Sprintf("MUTE#%s", muterUsername)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", muterUsername)).
-		Count()
-
+	count, err := r.Count(ctx, pk)
 	if err != nil {
 		r.logger.Error("failed to count muted users",
 			zap.String("muter", muterActor),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count muted users: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityMute, fmt.Sprintf("count muted users for %s", muterActor))
 	}
 
-	return int(count), nil
+	return count, nil
 }
 
 // CountUsersWhoMuted returns the number of users who have muted the given actor
 func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor string) (int, error) {
 	mutedUsername := extractUsernameFromActor(mutedActor)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("MUTED#%s", mutedUsername)).
-		Count()
-
+	// Use QueryGSI from BaseRepository to count on GSI1
+	mutes, err := r.QueryGSI(ctx, "GSI1", fmt.Sprintf("MUTED#%s", mutedUsername), 0)
 	if err != nil {
 		r.logger.Error("failed to count users who muted actor",
 			zap.String("muted_actor", mutedActor),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count users who muted actor: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityMute, fmt.Sprintf("count users who muted %s", mutedActor))
 	}
 
-	return int(count), nil
+	return len(mutes), nil
 }
 

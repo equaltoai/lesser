@@ -38,12 +38,23 @@ type InstanceHealth struct {
 }
 
 // UpdateKeys updates the partition and sort keys
-func (h *InstanceHealth) UpdateKeys() {
+func (h *InstanceHealth) UpdateKeys() error {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.Domain)
 	h.SK = fmt.Sprintf("HEALTH#%d", h.Timestamp.UnixNano())
 
 	// Set TTL to 7 days from timestamp
 	h.TTL = h.Timestamp.Add(7 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (h *InstanceHealth) GetPK() string {
+	return h.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (h *InstanceHealth) GetSK() string {
+	return h.SK
 }
 
 // NewInstanceHealth creates a new instance health record
@@ -134,7 +145,7 @@ type InstanceHealthSummary struct {
 }
 
 // UpdateKeys updates the partition and sort keys for health summary
-func (s *InstanceHealthSummary) UpdateKeys() {
+func (s *InstanceHealthSummary) UpdateKeys() error {
 	s.PK = fmt.Sprintf("INSTANCE#%s", s.Domain)
 
 	// Convert window to string identifier
@@ -154,6 +165,17 @@ func (s *InstanceHealthSummary) UpdateKeys() {
 
 	// Set TTL to 30 days from last update
 	s.TTL = s.LastUpdated.Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (s *InstanceHealthSummary) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (s *InstanceHealthSummary) GetSK() string {
+	return s.SK
 }
 
 // NewInstanceHealthSummary creates a new health summary

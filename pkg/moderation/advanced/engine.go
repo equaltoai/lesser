@@ -20,6 +20,7 @@ import (
 	rekognitionTypes "github.com/aws/aws-sdk-go-v2/service/rekognition/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -896,10 +897,14 @@ func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 	s3Client := s3.NewFromConfig(aws.Config{})
 	uploader := manager.NewUploader(s3Client)
 	
-	// Get bucket name from environment or default
-	bucketName := os.Getenv("MEDIA_BUCKET_NAME")
-	if err := common.ValidateRequiredParam("bucketName", bucketName); err != nil {
-		bucketName = "lesser-media" // default bucket name
+	// Get bucket name from centralized config
+	globalCfg := appconfig.Get()
+	bucketName := globalCfg.MediaBucketName
+	if bucketName == "" {
+		bucketName = globalCfg.S3BucketName // fallback to main S3 bucket
+	}
+	if bucketName == "" {
+		bucketName = "lesser-media" // final fallback
 	}
 	
 	return &VideoAnalyzer{
@@ -2345,13 +2350,12 @@ type GlobalConfig interface {
 // getGlobalConfig safely attempts to get the global configuration
 // Returns nil if config is not available to avoid hard dependencies
 func getGlobalConfig() GlobalConfig {
-	// We need to use a runtime check to avoid circular imports
-	// In production, this would be called via dependency injection
-	// For now, we'll check environment variables directly
+	// Use centralized configuration for consistent config management
+	cfg := appconfig.Get()
 	return &configChecker{
-		disableAWSModeration: getEnvBool("DISABLE_AWS_MODERATION", false),
-		disableComprehend:    getEnvBool("DISABLE_COMPREHEND", false),
-		disableRekognition:   getEnvBool("DISABLE_REKOGNITION", false),
+		disableAWSModeration: cfg.DisableAWSModeration,
+		disableComprehend:    cfg.DisableComprehend,
+		disableRekognition:   cfg.DisableRekognition,
 	}
 }
 
@@ -2374,11 +2378,3 @@ func (c *configChecker) GetDisableRekognition() bool {
 	return c.disableRekognition
 }
 
-// getEnvBool gets a boolean environment variable with a default
-func getEnvBool(key string, defaultValue bool) bool {
-	value := os.Getenv(key)
-	if err := common.ValidateRequiredParam("value", value); err != nil {
-		return defaultValue
-	}
-	return common.ValidateBooleanString(value)
-}

@@ -2,9 +2,9 @@ package common
 
 import (
 	"context"
-	"os"
 
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
@@ -13,31 +13,32 @@ var logger *zap.Logger
 
 func init() {
 	// Initialize logger with Lambda-optimized configuration
-	cfg := zap.NewProductionConfig()
+	zapCfg := zap.NewProductionConfig()
 
-	// Set log level from environment
-	logLevel := os.Getenv("LOG_LEVEL")
+	// Set log level from centralized config
+	appCfg := config.Get()
+	logLevel := appCfg.LogLevel
 	switch logLevel {
 	case "debug":
-		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 	case "info":
-		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	case "warn":
-		cfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.WarnLevel)
 	case "error":
-		cfg.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
 	default:
-		cfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+		zapCfg.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	}
 
 	// Optimize for Lambda environment
-	cfg.OutputPaths = []string{"stdout"}
-	cfg.ErrorOutputPaths = []string{"stderr"}
-	cfg.EncoderConfig.TimeKey = "timestamp"
-	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	zapCfg.OutputPaths = []string{"stdout"}
+	zapCfg.ErrorOutputPaths = []string{"stderr"}
+	zapCfg.EncoderConfig.TimeKey = "timestamp"
+	zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	var err error
-	logger, err = cfg.Build()
+	logger, err = zapCfg.Build()
 	if err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}

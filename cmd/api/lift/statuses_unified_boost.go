@@ -25,49 +25,10 @@ func (h *Handler) HandleUnifiedBoostLift(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, "missing status id")
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return common.RespondInsufficientScope(ctx)
-		}
-
-		username = claims.Username
+	// Authenticate user with write scope requirement
+	username, err := h.authenticateUserWithWriteScope(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Get the user's actor
@@ -438,7 +399,7 @@ func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error
 	}
 
 	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)

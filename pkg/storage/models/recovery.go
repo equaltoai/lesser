@@ -19,9 +19,20 @@ type Trustee struct {
 }
 
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
-func (t *Trustee) UpdateKeys() {
+func (t *Trustee) UpdateKeys() error {
 	t.PK = fmt.Sprintf(KeyPatternUser, t.Username)
 	t.SK = fmt.Sprintf("TRUSTEE#%s", t.ActorID)
+	return nil
+}
+
+// GetPK returns the partition key
+func (t *Trustee) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key
+func (t *Trustee) GetSK() string {
+	return t.SK
 }
 
 // RecoveryRequest represents an active social recovery request
@@ -49,7 +60,7 @@ type RecoveryRequest struct {
 }
 
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
-func (r *RecoveryRequest) UpdateKeys() {
+func (r *RecoveryRequest) UpdateKeys() error {
 	r.PK = fmt.Sprintf("RECOVERY#%s", r.ID)
 	r.SK = "REQUEST"
 	r.GSI1PK = fmt.Sprintf(KeyPatternUser, r.Username)
@@ -57,6 +68,17 @@ func (r *RecoveryRequest) UpdateKeys() {
 	if !r.ExpiresAt.IsZero() {
 		r.TTL = r.ExpiresAt.Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (r *RecoveryRequest) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key
+func (r *RecoveryRequest) GetSK() string {
+	return r.SK
 }
 
 // RecoveryCode represents a single recovery code
@@ -74,9 +96,20 @@ type RecoveryCode struct {
 }
 
 // UpdateKeys updates the primary and GSI keys based on the model's business fields
-func (c *RecoveryCode) UpdateKeys() {
+func (c *RecoveryCode) UpdateKeys() error {
 	c.PK = fmt.Sprintf(KeyPatternUser, c.Username)
 	c.SK = fmt.Sprintf("RECOVERY_CODE#%d", c.Position)
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *RecoveryCode) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *RecoveryCode) GetSK() string {
+	return c.SK
 }
 
 // RecoveryToken represents a generic recovery token with custom data
@@ -94,11 +127,22 @@ type RecoveryToken struct {
 }
 
 // UpdateKeys updates the primary keys and TTL based on the model's business fields
-func (t *RecoveryToken) UpdateKeys() {
+func (t *RecoveryToken) UpdateKeys() error {
 	// PK is set directly from the key parameter
 	t.SK = SKToken
 	// Set TTL to 24 hours from creation
 	if !t.CreatedAt.IsZero() {
 		t.TTL = t.CreatedAt.Add(24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (t *RecoveryToken) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key
+func (t *RecoveryToken) GetSK() string {
+	return t.SK
 }

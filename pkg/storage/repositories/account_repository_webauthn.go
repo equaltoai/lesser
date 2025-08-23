@@ -2,12 +2,13 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -58,13 +59,13 @@ func (r *AccountRepository) GetWebAuthnCredential(ctx context.Context, credentia
 		First(&model)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("WebAuthn credential %s not found", credentialID)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
 		}
 		r.logger.Error("failed to get WebAuthn credential",
 			zap.String("id", credentialID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get WebAuthn credential: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	return &storage.WebAuthnCredential{
@@ -97,7 +98,7 @@ func (r *AccountRepository) GetUserWebAuthnCredentials(ctx context.Context, user
 		r.logger.Error("failed to get user WebAuthn credentials",
 			zap.String("userID", userID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user WebAuthn credentials: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "webauthn credentials")
 	}
 
 	result := make([]*storage.WebAuthnCredential, len(credentials))
@@ -128,11 +129,11 @@ func (r *AccountRepository) DeleteWebAuthnCredential(ctx context.Context, creden
 		Where("SK", "=", "CREDENTIAL").
 		Delete()
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to delete WebAuthn credential",
 			zap.String("id", credentialID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete WebAuthn credential: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	r.logger.Info("deleted WebAuthn credential",
@@ -151,10 +152,10 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 		First(&credential)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("WebAuthn credential %s not found", credentialID)
+		if dynamormerrors.IsNotFound(err) {
+			return ErrorHandler.HandleNotFound(err, EntityWebAuthnCredential, credentialID)
 		}
-		return fmt.Errorf("failed to get WebAuthn credential for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	// Update fields
@@ -166,7 +167,7 @@ func (r *AccountRepository) UpdateWebAuthnLastUsed(ctx context.Context, credenti
 		r.logger.Error("failed to update WebAuthn credential usage",
 			zap.String("id", credentialID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update WebAuthn credential usage: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	return nil
@@ -194,7 +195,7 @@ func (r *AccountRepository) CreateWebAuthnChallenge(ctx context.Context, challen
 			zap.String("challenge", challenge.Challenge),
 			zap.String("userID", challenge.UserID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create WebAuthn challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnChallenge, challenge.Challenge)
 	}
 
 	return nil
@@ -210,13 +211,13 @@ func (r *AccountRepository) GetWebAuthnChallenge(ctx context.Context, challenge 
 		First(&model)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("WebAuthn challenge %s not found", challenge)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleNotFound(err, EntityWebAuthnChallenge, challenge)
 		}
 		r.logger.Error("failed to get WebAuthn challenge",
 			zap.String("challenge", challenge),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get WebAuthn challenge: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWebAuthnChallenge, challenge)
 	}
 
 	// Check if expired
@@ -227,7 +228,7 @@ func (r *AccountRepository) GetWebAuthnChallenge(ctx context.Context, challenge 
 				zap.String("challenge", challenge),
 				zap.Error(err))
 		}
-		return nil, fmt.Errorf("WebAuthn challenge %s has expired", challenge)
+		return nil, ErrorHandler.HandleNotFound(errors.New("challenge expired"), EntityWebAuthnChallenge, challenge)
 	}
 
 	return &storage.WebAuthnChallenge{
@@ -246,11 +247,11 @@ func (r *AccountRepository) DeleteWebAuthnChallenge(ctx context.Context, challen
 		Where("SK", "=", "WEBAUTHN").
 		Delete()
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to delete WebAuthn challenge",
 			zap.String("challenge", challenge),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete WebAuthn challenge: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWebAuthnChallenge, challenge)
 	}
 
 	return nil
@@ -270,14 +271,14 @@ func (r *AccountRepository) StoreWalletCredential(ctx context.Context, credentia
 
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
-		if errors.IsConditionFailed(err) {
-			return fmt.Errorf("wallet credential %s already exists", credential.Address)
+		if dynamormerrors.IsConditionFailed(err) {
+			return ErrorHandler.HandleCreateError(errors.New("already exists"), EntityWalletCredential, credential.Address)
 		}
 		r.logger.Error("failed to store wallet credential",
 			zap.String("address", credential.Address),
 			zap.String("username", credential.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to store wallet credential: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWalletCredential, credential.Address)
 	}
 
 	return nil
@@ -293,10 +294,10 @@ func (r *AccountRepository) GetWalletCredential(ctx context.Context, address str
 		First(&model)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("wallet credential %s not found", address)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleNotFound(err, EntityWalletCredential, address)
 		}
-		return nil, fmt.Errorf("failed to get wallet credential: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletCredential, address)
 	}
 
 	return &storage.WalletCredential{
@@ -323,7 +324,7 @@ func (r *AccountRepository) GetUserWalletCredentials(ctx context.Context, userna
 		r.logger.Error("failed to get user wallet credentials",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user wallet credentials: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "wallet credentials")
 	}
 
 	result := make([]*storage.WalletCredential, len(wallets))
@@ -349,11 +350,11 @@ func (r *AccountRepository) DeleteWalletCredentialByAddress(ctx context.Context,
 		Where("SK", "=", "CREDENTIAL").
 		Delete()
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to delete wallet credential",
 			zap.String("address", address),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete wallet credential: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWalletCredential, address)
 	}
 
 	return nil
@@ -380,7 +381,7 @@ func (r *AccountRepository) StoreWalletChallenge(ctx context.Context, challenge 
 			zap.String("id", challenge.ID),
 			zap.String("address", challenge.Address),
 			zap.Error(err))
-		return fmt.Errorf("failed to store wallet challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWalletChallenge, challenge.ID)
 	}
 
 	return nil
@@ -396,13 +397,13 @@ func (r *AccountRepository) GetWalletChallenge(ctx context.Context, challengeID 
 		First(&model)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("wallet challenge %s not found", challengeID)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleNotFound(err, EntityWalletChallenge, challengeID)
 		}
 		r.logger.Error("failed to get wallet challenge",
 			zap.String("challengeID", challengeID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get wallet challenge: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletChallenge, challengeID)
 	}
 
 	// Check if expired
@@ -413,7 +414,7 @@ func (r *AccountRepository) GetWalletChallenge(ctx context.Context, challengeID 
 				zap.String("challengeID", challengeID),
 				zap.Error(err))
 		}
-		return nil, fmt.Errorf("wallet challenge %s has expired", challengeID)
+		return nil, ErrorHandler.HandleNotFound(errors.New("challenge expired"), EntityWalletChallenge, challengeID)
 	}
 
 	return &storage.WalletChallenge{
@@ -435,11 +436,11 @@ func (r *AccountRepository) DeleteWalletChallenge(ctx context.Context, challenge
 		Where("SK", "=", "CHALLENGE").
 		Delete()
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to delete wallet challenge",
 			zap.String("challengeID", challengeID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete wallet challenge: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWalletChallenge, challengeID)
 	}
 
 	return nil
@@ -455,15 +456,15 @@ func (r *AccountRepository) GetWalletByAddress(ctx context.Context, walletType, 
 		First(&model)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("wallet credential %s not found", address)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleNotFound(err, EntityWalletCredential, address)
 		}
-		return nil, fmt.Errorf("failed to get wallet credential: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletCredential, address)
 	}
 
 	// Filter by wallet type if specified
 	if walletType != "" && model.Type != walletType {
-		return nil, fmt.Errorf("wallet credential %s not found for type %s", address, walletType)
+		return nil, ErrorHandler.HandleNotFound(errors.New("type mismatch"), EntityWalletCredential, address)
 	}
 
 	return &storage.WalletCredential{
@@ -491,7 +492,7 @@ func (r *AccountRepository) DeleteWalletCredential(ctx context.Context, username
 	}
 
 	if wallet.Username != username {
-		return fmt.Errorf("wallet %s does not belong to user %s", address, username)
+		return ErrorHandler.HandleGetError(errors.New("ownership mismatch"), EntityWalletCredential, address)
 	}
 
 	return r.DeleteWalletCredentialByAddress(ctx, address)

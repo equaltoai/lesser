@@ -171,7 +171,7 @@ func (d *dnsCacheManager) getCachedIPs(ctx context.Context, hostname string) ([]
 
 	// Check DynamoDB if we have a store
 	if d.store != nil {
-		entry, err := d.store.User().GetDNSCache(ctx, hostname)
+		entry, err := d.store.DNSCache().GetDNSCache(ctx, hostname)
 		if err == nil && entry != nil {
 			// Check if cache is still valid
 			if time.Since(entry.ResolvedAt) < dnsCacheTTL {
@@ -212,7 +212,7 @@ func (d *dnsCacheManager) setCachedIPs(ctx context.Context, hostname string, ips
 
 	// Store in DynamoDB if available
 	if d.store != nil {
-		if err := d.store.User().SetDNSCache(ctx, entry); err != nil {
+		if err := d.store.DNSCache().SetDNSCache(ctx, entry); err != nil {
 			d.logger.Warn("failed to cache DNS lookup",
 				zap.String("hostname", hostname),
 				zap.Error(err))

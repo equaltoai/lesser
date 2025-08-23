@@ -13,6 +13,17 @@ type VAPIDKeyRecord struct {
 }
 
 // UpdateKeys updates any GSI keys - VAPID doesn't use GSIs so this is no-op
-func (v *VAPIDKeyRecord) UpdateKeys() {
+func (v *VAPIDKeyRecord) UpdateKeys() error {
 	// VAPID keys don't use GSI keys, so no updates needed
+	return nil
+}
+
+// GetPK returns the partition key
+func (v *VAPIDKeyRecord) GetPK() string {
+	return v.PK
+}
+
+// GetSK returns the sort key
+func (v *VAPIDKeyRecord) GetSK() string {
+	return v.SK
 }

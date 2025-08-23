@@ -6,6 +6,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -16,16 +17,18 @@ type authenticationService struct {
 	storage   StorageAdapter
 	repos     interface{}
 	logger    *zap.Logger
+	config    *config.Config
 }
 
 // NewAuthenticationService creates a new authentication service
-func NewAuthenticationService(jwtSecret string, repos interface{}) AuthenticationService {
+func NewAuthenticationService(jwtSecret string, cfg *config.Config, repos interface{}) AuthenticationService {
 	storage := CreateStorageAdapter(repos)
 	return &authenticationService{
 		jwtSecret: jwtSecret,
 		storage:   storage,
 		repos:     repos,
 		logger:    zap.NewNop(), // Use nop logger by default
+		config:    cfg,
 	}
 }
 
@@ -46,7 +49,7 @@ func (a *authenticationService) AuthenticateUser(_ context.Context, token string
 	case core.RepositoryStorage:
 		// Create a minimal audit logger for OAuth service
 		auditLogger := auth.NewAuditLogger(r, a.logger, auth.DefaultAuditConfig())
-		oauthSvc = auth.NewOAuthService(a.jwtSecret, r, auditLogger)
+		oauthSvc = auth.NewOAuthService(a.jwtSecret, a.config, r, auditLogger)
 	default:
 		// For legacy storage, we can't use the OAuth service directly
 		// Would need to implement a different validation approach

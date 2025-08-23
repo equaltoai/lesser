@@ -135,13 +135,13 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 
 	// Validate the command
 	if err := s.validateCreateCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, ErrValidationFailed
 	}
 
 	// Check if recipient user exists
 	_, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
 	if err != nil {
-		return nil, fmt.Errorf("recipient user not found: %w", err)
+		return nil, common.WrapError(common.ErrNotFound("recipient user"), "failed to get recipient user")
 	}
 
 	// Check if actor exists (optional validation)
@@ -190,7 +190,7 @@ func (s *Service) CreateNotification(ctx context.Context, cmd *CreateNotificatio
 
 	// Store the notification
 	if err := s.notificationRepo.CreateNotification(ctx, notification); err != nil {
-		return nil, fmt.Errorf("failed to create notification: %w", err)
+		return nil, ErrNotificationCreateFailed
 	}
 
 	s.logger.Info("created notification successfully",
@@ -216,12 +216,12 @@ func (s *Service) MarkAsRead(ctx context.Context, cmd *MarkAsReadCommand) (*Noti
 	// Get the notification
 	notification, err := s.notificationRepo.GetNotification(ctx, cmd.NotificationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notification: %w", err)
+		return nil, ErrNotificationNotFound
 	}
 
 	// Verify ownership
 	if notification.UserID != cmd.UserID {
-		return nil, fmt.Errorf("unauthorized: notification belongs to different user")
+		return nil, ErrNotificationAccessDenied
 	}
 
 	// Check if already read
@@ -238,7 +238,7 @@ func (s *Service) MarkAsRead(ctx context.Context, cmd *MarkAsReadCommand) (*Noti
 
 	// Update the notification
 	if err := s.notificationRepo.UpdateNotification(ctx, notification); err != nil {
-		return nil, fmt.Errorf("failed to update notification: %w", err)
+		return nil, ErrNotificationUpdateFailed
 	}
 
 	s.logger.Info("marked notification as read successfully",
@@ -266,7 +266,7 @@ func (s *Service) ClearNotifications(ctx context.Context, cmd *ClearCommand) (*C
 
 	// Validate the command
 	if err := s.validateClearCommand(cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, ErrValidationFailed
 	}
 
 	switch {
@@ -283,11 +283,11 @@ func (s *Service) ClearNotifications(ctx context.Context, cmd *ClearCommand) (*C
 		clearedCount, err = s.clearNotificationsByType(ctx, cmd.UserID, cmd.Types, cmd.OlderThanSeconds)
 
 	default:
-		return nil, fmt.Errorf("no clear criteria specified")
+		return nil, ErrNoClearCriteria
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to clear notifications: %w", err)
+		return nil, ErrNotificationClearFailed
 	}
 
 	s.logger.Info("cleared notifications successfully",
@@ -312,12 +312,12 @@ func (s *Service) GetNotification(ctx context.Context, query *GetNotificationQue
 	// Get the notification
 	notification, err := s.notificationRepo.GetNotification(ctx, query.NotificationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notification: %w", err)
+		return nil, ErrNotificationNotFound
 	}
 
 	// Verify ownership
 	if notification.UserID != query.UserID {
-		return nil, fmt.Errorf("notification not found") // Don't reveal it exists for other users
+		return nil, common.ErrNotFound("notification") // Don't reveal it exists for other users
 	}
 
 	return notification, nil
@@ -344,7 +344,7 @@ func (s *Service) ListNotifications(ctx context.Context, query *ListNotification
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notifications: %w", err)
+		return nil, ErrNotificationQueryFailed
 	}
 
 	// Apply additional filters
@@ -403,7 +403,7 @@ func (s *Service) validateCreateCommand(_ context.Context, cmd *CreateNotificati
 	}
 
 	if !validTypes[strings.ToLower(cmd.Type)] {
-		return fmt.Errorf("invalid notification type: %s", cmd.Type)
+		return ErrValidationFailed
 	}
 
 	return nil
@@ -416,7 +416,7 @@ func (s *Service) validateClearCommand(cmd *ClearCommand) error {
 
 	// At least one clear criteria must be specified
 	if !cmd.ClearAll && len(cmd.NotificationIDs) == 0 && len(cmd.Types) == 0 {
-		return fmt.Errorf("at least one clear criteria must be specified")
+		return ErrNoClearMethodSpecified
 	}
 
 	return nil
@@ -560,13 +560,13 @@ func (s *Service) getNotificationSummary(ctx context.Context, userID string) (*N
 	// Get unread count
 	unreadCount, err := s.notificationRepo.GetUnreadNotificationCount(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get unread count: %w", err)
+		return nil, ErrUnreadCountFailed
 	}
 
 	// Get counts by type
 	countsByType, err := s.notificationRepo.GetNotificationCountsByType(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get counts by type: %w", err)
+		return nil, ErrCountsByTypeFailed
 	}
 
 	// Calculate total count

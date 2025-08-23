@@ -29,10 +29,10 @@ func (ConversationStatus) TableName() string {
 // BeforeCreate sets up the keys before creating a status record
 func (s *ConversationStatus) BeforeCreate() error {
 	if err := common.ValidateRequiredParam("ConversationID", s.ConversationID); err != nil {
-		return fmt.Errorf("conversation ID is required")
+		return ErrConversationStatusIDRequired
 	}
 	if err := common.ValidateRequiredParam("UserID", s.UserID); err != nil {
-		return fmt.Errorf("user ID is required")
+		return ErrConversationStatusUserIDRequired
 	}
 
 	s.PK = fmt.Sprintf("CONVERSATION_STATUS#%s", s.ConversationID)
@@ -43,6 +43,25 @@ func (s *ConversationStatus) BeforeCreate() error {
 	}
 
 	return nil
+}
+
+// UpdateKeys updates the composite keys based on conversation ID and user ID
+func (s *ConversationStatus) UpdateKeys() error {
+	if s.ConversationID != "" && s.UserID != "" {
+		s.PK = fmt.Sprintf("CONVERSATION_STATUS#%s", s.ConversationID)
+		s.SK = fmt.Sprintf(KeyPatternUser, s.UserID)
+	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (s *ConversationStatus) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key
+func (s *ConversationStatus) GetSK() string {
+	return s.SK
 }
 
 // ConversationMessage represents a message/status within a conversation
@@ -75,10 +94,10 @@ func (ConversationMessage) TableName() string {
 // BeforeCreate sets up the keys before creating a message record
 func (m *ConversationMessage) BeforeCreate() error {
 	if err := common.ValidateRequiredParam("ConversationID", m.ConversationID); err != nil {
-		return fmt.Errorf("conversation ID is required")
+		return ErrConversationStatusIDRequired
 	}
 	if err := common.ValidateRequiredParam("StatusID", m.StatusID); err != nil {
-		return fmt.Errorf("status ID is required")
+		return ErrConversationStatusStatusIDRequired
 	}
 
 	if m.CreatedAt.IsZero() {
@@ -93,4 +112,26 @@ func (m *ConversationMessage) BeforeCreate() error {
 	}
 
 	return nil
+}
+
+// UpdateKeys updates the composite keys based on conversation ID and status ID
+func (m *ConversationMessage) UpdateKeys() error {
+	if m.ConversationID != "" && m.StatusID != "" {
+		if m.CreatedAt.IsZero() {
+			m.CreatedAt = time.Now()
+		}
+		m.PK = fmt.Sprintf(KeyPatternConversation, m.ConversationID)
+		m.SK = fmt.Sprintf("STATUS#%s#%s", m.CreatedAt.Format(time.RFC3339Nano), m.StatusID)
+	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (m *ConversationMessage) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *ConversationMessage) GetSK() string {
+	return m.SK
 }

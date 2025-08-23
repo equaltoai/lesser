@@ -25,15 +25,26 @@ type UserAppConsent struct {
 	Active    bool       `json:"active"`
 }
 
-// UpdateKeys updates the GSI keys based on the consent data
-func (c *UserAppConsent) UpdateKeys() {
+// GetPK returns the partition key for BaseModel interface
+func (c *UserAppConsent) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (c *UserAppConsent) GetSK() string {
+	return c.SK
+}
+
+// UpdateKeys implements BaseModel interface and updates the GSI keys based on the consent data
+func (c *UserAppConsent) UpdateKeys() error {
 	// Primary key - for user's consent list
-	c.PK = fmt.Sprintf(KeyPatternUser, c.UserID)
+	c.PK = fmt.Sprintf("USER#%s", c.UserID)
 	c.SK = fmt.Sprintf("CONSENT#%s", c.AppID)
 
 	// GSI - for app's authorized users list
 	c.GSI1PK = fmt.Sprintf("APP#%s", c.AppID)
-	c.GSI1SK = fmt.Sprintf(KeyPatternUser, c.UserID)
+	c.GSI1SK = fmt.Sprintf("USER#%s", c.UserID)
+	return nil
 }
 
 // HasScope checks if the consent includes a specific scope

@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
-	"fmt"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -26,8 +26,6 @@ var (
 	ErrUnauthorizedClient = errors.New("unauthorized_client")
 	// ErrUnsupportedGrantType is returned when the grant type is not supported
 	ErrUnsupportedGrantType = errors.New("unsupported_grant_type")
-	// ErrInvalidToken is returned when the token is invalid
-	ErrInvalidToken = errors.New("invalid_token")
 	// ErrInvalidCodeChallenge is returned when the code challenge doesn't match
 	ErrInvalidCodeChallenge = errors.New("invalid_code_challenge")
 	// ErrInvalidScope is returned when requested scopes are invalid
@@ -82,14 +80,16 @@ type OAuthService struct {
 	jwtSecret   []byte
 	repos       StorageProvider
 	auditLogger *AuditLogger
+	config      *config.Config
 }
 
 // NewOAuthService creates a new OAuth service
-func NewOAuthService(jwtSecret string, repos StorageProvider, auditLogger *AuditLogger) *OAuthService {
+func NewOAuthService(jwtSecret string, cfg *config.Config, repos StorageProvider, auditLogger *AuditLogger) *OAuthService {
 	return &OAuthService{
 		jwtSecret:   []byte(jwtSecret),
 		repos:       repos,
 		auditLogger: auditLogger,
+		config:      cfg,
 	}
 }
 
@@ -226,7 +226,7 @@ func (s *OAuthService) generateAccessTokenWithContext(username, clientID string,
 
 	// Use shorter duration in production environments
 	duration := AccessTokenDuration
-	if os.Getenv("GO_ENV") == "development" || os.Getenv("GO_ENV") == "test" {
+	if s.config.Stage == "development" || s.config.Stage == "test" {
 		duration = AccessTokenDurationDev
 	}
 
@@ -271,7 +271,7 @@ func (s *OAuthService) ValidateAccessToken(tokenString string) (*Claims, error) 
 func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessionID, expectedIP string, expectedTokenVersion int) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, errors.Join(ErrUnexpectedSigningMethod, ErrJWTUnexpectedSigningMethod)
 		}
 		return s.jwtSecret, nil
 	})
@@ -294,24 +294,24 @@ func (s *OAuthService) ValidateAccessTokenWithContext(tokenString, expectedSessi
 func (s *OAuthService) validateEnhancedClaims(claims *Claims, expectedSessionID, expectedIP string, expectedTokenVersion int) error {
 	// Validate session ID if provided
 	if expectedSessionID != "" && claims.SessionID != "" && claims.SessionID != expectedSessionID {
-		return fmt.Errorf("session ID mismatch")
+		return ErrSessionIDMismatch
 	}
 
 	// Validate IP binding if enabled and provided
 	if expectedIP != "" && claims.IPAddress != "" && claims.IPAddress != expectedIP {
-		return fmt.Errorf("IP address mismatch")
+		return ErrIPAddressMismatch
 	}
 
 	// Validate token version for invalidation support
 	if expectedTokenVersion > 0 && claims.TokenVersion > 0 && claims.TokenVersion != expectedTokenVersion {
-		return fmt.Errorf("token version mismatch")
+		return ErrTokenVersionMismatch
 	}
 
 	// Check if token is too old (additional security check)
 	if claims.IssuedAt != nil {
 		maxAge := 24 * time.Hour // Maximum token age regardless of expiry
 		if time.Since(claims.IssuedAt.Time) > maxAge {
-			return fmt.Errorf("token too old")
+			return ErrTokenTooOld
 		}
 	}
 
@@ -415,7 +415,7 @@ func generateSecureJTI() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		// Fallback to timestamp-based ID
-		return fmt.Sprintf("jti_%d", time.Now().UnixNano())
+		return "jti_" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	return base64.URLEncoding.EncodeToString(b)
 }

@@ -2,7 +2,6 @@ package repositories
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -54,7 +53,7 @@ func (r *HashtagRepository) GetTrendingAnalytics(ctx context.Context, since time
 		Scan(&activeHashtags)
 
 	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get active hashtags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "active hashtags")
 	}
 
 	analytics.TotalHashtags = int64(len(activeHashtags))
@@ -62,7 +61,7 @@ func (r *HashtagRepository) GetTrendingAnalytics(ctx context.Context, since time
 	// Count trending hashtags
 	trending, err := r.GetTrendingHashtags(ctx, since, 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get trending hashtags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityHashtag, "trending hashtags")
 	}
 	analytics.TrendingCandidates = int64(len(trending))
 

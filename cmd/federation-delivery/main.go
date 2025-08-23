@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -158,12 +159,12 @@ func init() {
 	federationStore := &FederationStorageAdapter{repos: repos}
 
 	// Initialize federation delivery service
-	deliveryService := federation.NewDeliveryService(federationStore)
+	deliveryService := federation.NewDeliveryService(federationStore, cfg)
 
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Get queue URL from environment
-	queueURL := cfg.FederationDeliveryQueueURL
+	queueURL := cfg.FederationQueueURL
 	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
 		logger.Fatal("FEDERATION_DELIVERY_QUEUE_URL environment variable is required")
 	}
@@ -263,7 +264,10 @@ func (p *FederationDeliveryProcessor) handleDeliveryMessage(ctx *lift.Context, m
 	// Parse the message
 	var msg FederationDeliveryMessage
 	if err := common.ParseRequestBody([]byte(message.Body), &msg); err != nil {
-		return fmt.Errorf("failed to parse message: %w", err)
+		p.logger.Error("failed to parse message body",
+			zap.String("message_id", message.MessageId),
+			zap.Error(err))
+		return errors.Join(ErrInvalidMessageBody, err)
 	}
 
 	p.logger.Info("processing federation delivery",
@@ -291,7 +295,10 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 	// Get the signing actor
 	signingActor, err := p.repos.Account().GetActor(ctx, msg.SigningActorID)
 	if err != nil {
-		return fmt.Errorf("failed to get signing actor: %w", err)
+		logger.Error("signing actor not found",
+			zap.String("signing_actor_id", msg.SigningActorID),
+			zap.Error(err))
+		return ErrSigningActorMissing
 	}
 
 	targetDomain := extractDomainFromURL(msg.TargetInbox)
@@ -377,8 +384,11 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 			}
 
 			// Send to dead letter queue by returning error
-			return fmt.Errorf("delivery permanently failed (type=%s, attempts=%d): %w", 
-				errorType, msg.RetryCount+1, err)
+			logger.Error("delivery permanently failed",
+				zap.String("delivery_id", msg.DeliveryID),
+				zap.Int("total_attempts", msg.RetryCount+1),
+				zap.String("error_type", errorType))
+			return ErrDeliveryMaxAttemptsExceeded
 		}
 
 		// This is a temporary error - schedule retry
@@ -468,7 +478,10 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 	// Marshal the updated message
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		p.logger.Error("failed to marshal message for requeue",
+			zap.String("delivery_id", msg.DeliveryID),
+			zap.Error(err))
+		return ErrMessageMarshalFailure
 	}
 
 	// Calculate delay seconds (SQS DelaySeconds max is 900 seconds / 15 minutes)
@@ -508,7 +521,7 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 			zap.String("delivery_id", msg.DeliveryID),
 			zap.Int("delay_minutes", delayMinutes),
 			zap.Error(err))
-		return fmt.Errorf("failed to requeue message: %w", err)
+		return ErrMessageRequeueFailure
 	}
 
 	p.logger.Info("message requeued with delay",

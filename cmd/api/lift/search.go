@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -127,21 +128,6 @@ func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
 	return limit
 }
 
-// parseSearchOffset parses the offset parameter
-func (h *Handler) parseSearchOffset(ctx *lift.Context) int {
-	// Extract offset using shared helper logic
-	offsetStr := ctx.Query("offset")
-	if err := common.ValidateRequiredParam("offset_str", offsetStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		offsetStr = ctx.Request.Request.QueryParams["offset"]
-	}
-
-	offset, err := common.ParseSearchOffset(offsetStr)
-	if err != nil {
-		h.logger.Debug("invalid offset parameter", zap.Error(err))
-		return 0 // Return default on validation error
-	}
-	return offset
-}
 
 // parseSearchFollowing parses the following filter parameter
 func (h *Handler) parseSearchFollowing(ctx *lift.Context) bool {
@@ -176,7 +162,7 @@ func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly boo
 
 
 // authenticateFromSearchHeader authenticates from Authorization header
-func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, followingOnly bool) string {
+func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, _ bool) string {
 	// Try to authenticate without requiring it (optional auth)
 	username, err := h.authenticateUser(ctx, []string{})
 	if err != nil {
@@ -208,7 +194,7 @@ func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearc
 				zap.Bool("following", params.followingOnly),
 				zap.String("searcher", authenticatedUser),
 				zap.Error(err))
-			return nil, fmt.Errorf("privacy-aware search failed: %w", err)
+			return nil, errors.Join(ErrPrivacyAwareSearchFailed, err)
 		}
 		return actors, nil
 	}
@@ -222,7 +208,7 @@ func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearc
 			zap.Int("offset", params.offset),
 			zap.Bool("following", params.followingOnly),
 			zap.Error(err))
-		return nil, fmt.Errorf("search failed: %w", err)
+		return nil, errors.Join(ErrSearchFailed, err)
 	}
 	return actors, nil
 }
@@ -432,7 +418,7 @@ func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
 		return "", common.RespondUnauthorized(ctx, "invalid authorization header")
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx, "invalid access token")
@@ -469,7 +455,7 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 				zap.Int("limit", params.limit),
 				zap.String("searcher", authenticatedUser),
 				zap.Error(err))
-			return nil, fmt.Errorf("privacy-aware status search failed: %w", err)
+			return nil, errors.Join(ErrPrivacyAwareStatusSearchFailed, err)
 		}
 
 		// Convert pointer slice to value slice
@@ -489,7 +475,7 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 			zap.String("query", params.query),
 			zap.Int("limit", params.limit),
 			zap.Error(err))
-		return nil, fmt.Errorf("status search failed: %w", err)
+		return nil, errors.Join(ErrStatusSearchFailed, err)
 	}
 
 	// Convert pointer slice to value slice

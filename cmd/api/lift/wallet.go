@@ -224,7 +224,7 @@ func (h *Handler) HandleUnlinkWalletLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	authService, err := auth.NewAuthService(h.cfg, h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -265,7 +265,7 @@ func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 	}
 
 	// Initialize auth service
-	authService, err := auth.NewAuthService(h.repos)
+	authService, err := auth.NewAuthService(h.cfg, h.repos)
 	if err != nil {
 		h.logger.Error("failed to initialize auth service", zap.Error(err))
 		ctx.Status(http.StatusInternalServerError)
@@ -313,7 +313,7 @@ func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
 	}
 
 	// Create auth service and validate token
-	authService, err := auth.NewAuthService(h.repos)
+	authService, err := auth.NewAuthService(h.cfg, h.repos)
 	if err != nil {
 		return ""
 	}

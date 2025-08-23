@@ -13,7 +13,15 @@ import (
 	"go.uber.org/zap"
 )
 
-// Global transformation registry for ActivityPub transformations
+const (
+	// Default URL constants
+	defaultBaseURL = "https://example.com"
+	
+	// ActivityPub attachment types
+	propertyValueType = "PropertyValue"
+)
+
+// ActivityPubRegistry is the global transformation registry for ActivityPub transformations
 var ActivityPubRegistry *common.TransformationRegistry
 
 // Initialize the global registry
@@ -25,22 +33,22 @@ func init() {
 // registerActivityPubTransformers registers all ActivityPub transformation functions
 func registerActivityPubTransformers() {
 	// Actor transformations
-	ActivityPubRegistry.Register("actor_to_storage", NewActorToStorageTransformer())
-	ActivityPubRegistry.Register("storage_to_actor", NewStorageToActorTransformer())
-	ActivityPubRegistry.Register("actor_to_mastodon", NewActorToMastodonTransformer())
+	_ = ActivityPubRegistry.Register("actor_to_storage", NewActorToStorageTransformer())
+	_ = ActivityPubRegistry.Register("storage_to_actor", NewStorageToActorTransformer())
+	_ = ActivityPubRegistry.Register("actor_to_mastodon", NewActorToMastodonTransformer())
 	
 	// Object transformations
-	ActivityPubRegistry.Register("object_to_storage", NewObjectToStorageTransformer())
-	ActivityPubRegistry.Register("storage_to_object", NewStorageToObjectTransformer())
-	ActivityPubRegistry.Register("object_to_mastodon", NewObjectToMastodonTransformer())
+	_ = ActivityPubRegistry.Register("object_to_storage", NewObjectToStorageTransformer())
+	_ = ActivityPubRegistry.Register("storage_to_object", NewStorageToObjectTransformer())
+	_ = ActivityPubRegistry.Register("object_to_mastodon", NewObjectToMastodonTransformer())
 	
 	// Activity transformations
-	ActivityPubRegistry.Register("activity_to_storage", NewActivityToStorageTransformer())
-	ActivityPubRegistry.Register("storage_to_activity", NewStorageToActivityTransformer())
+	_ = ActivityPubRegistry.Register("activity_to_storage", NewActivityToStorageTransformer())
+	_ = ActivityPubRegistry.Register("storage_to_activity", NewStorageToActivityTransformer())
 	
 	// Batch transformers for performance
-	ActivityPubRegistry.Register("actors_to_mastodon_batch", NewActorBatchToMastodonTransformer())
-	ActivityPubRegistry.Register("objects_to_mastodon_batch", NewObjectBatchToMastodonTransformer())
+	_ = ActivityPubRegistry.Register("actors_to_mastodon_batch", NewActorBatchToMastodonTransformer())
+	_ = ActivityPubRegistry.Register("objects_to_mastodon_batch", NewObjectBatchToMastodonTransformer())
 }
 
 // Actor Transformations
@@ -385,7 +393,7 @@ func StorageActivityToActivityPub(activity *storagemodels.Activity) (*activitypu
 func NewActorToStorageTransformer() common.Transformer[*activitypub.Actor, *storagemodels.Actor] {
 	return common.NewBaseTransformer(
 		"actor_to_storage",
-		func(ctx context.Context, actor *activitypub.Actor) (*storagemodels.Actor, error) {
+		func(_ context.Context, actor *activitypub.Actor) (*storagemodels.Actor, error) {
 			return ActivityPubActorToStorage(actor)
 		},
 		nil,
@@ -396,7 +404,7 @@ func NewActorToStorageTransformer() common.Transformer[*activitypub.Actor, *stor
 func NewStorageToActorTransformer() common.Transformer[*storagemodels.Actor, *activitypub.Actor] {
 	return common.NewBaseTransformer(
 		"storage_to_actor",
-		func(ctx context.Context, actor *storagemodels.Actor) (*activitypub.Actor, error) {
+		func(_ context.Context, actor *storagemodels.Actor) (*activitypub.Actor, error) {
 			return StorageActorToActivityPub(actor)
 		},
 		nil,
@@ -408,7 +416,7 @@ func NewActorToMastodonTransformer() common.Transformer[*activitypub.Actor, *mod
 	return common.NewBaseTransformer(
 		"actor_to_mastodon",
 		func(ctx context.Context, actor *activitypub.Actor) (*models.Account, error) {
-			baseURL := "https://example.com" // Default fallback
+			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
@@ -422,7 +430,7 @@ func NewActorToMastodonTransformer() common.Transformer[*activitypub.Actor, *mod
 func NewObjectToStorageTransformer() common.Transformer[*activitypub.Note, *storagemodels.Object] {
 	return common.NewBaseTransformer(
 		"object_to_storage",
-		func(ctx context.Context, obj *activitypub.Note) (*storagemodels.Object, error) {
+		func(_ context.Context, obj *activitypub.Note) (*storagemodels.Object, error) {
 			return ActivityPubObjectToStorage(obj)
 		},
 		nil,
@@ -433,7 +441,7 @@ func NewObjectToStorageTransformer() common.Transformer[*activitypub.Note, *stor
 func NewStorageToObjectTransformer() common.Transformer[*storagemodels.Object, *activitypub.Note] {
 	return common.NewBaseTransformer(
 		"storage_to_object",
-		func(ctx context.Context, obj *storagemodels.Object) (*activitypub.Note, error) {
+		func(_ context.Context, obj *storagemodels.Object) (*activitypub.Note, error) {
 			return StorageObjectToActivityPub(obj)
 		},
 		nil,
@@ -451,7 +459,7 @@ func NewObjectToMastodonTransformer() common.Transformer[*activitypub.Note, *mod
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
 			
-			baseURL := "https://example.com" // Default fallback
+			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
@@ -466,7 +474,7 @@ func NewObjectToMastodonTransformer() common.Transformer[*activitypub.Note, *mod
 func NewActivityToStorageTransformer() common.Transformer[*activitypub.Activity, *storagemodels.Activity] {
 	return common.NewBaseTransformer(
 		"activity_to_storage",
-		func(ctx context.Context, activity *activitypub.Activity) (*storagemodels.Activity, error) {
+		func(_ context.Context, activity *activitypub.Activity) (*storagemodels.Activity, error) {
 			return ActivityPubActivityToStorage(activity)
 		},
 		nil,
@@ -477,7 +485,7 @@ func NewActivityToStorageTransformer() common.Transformer[*activitypub.Activity,
 func NewStorageToActivityTransformer() common.Transformer[*storagemodels.Activity, *activitypub.Activity] {
 	return common.NewBaseTransformer(
 		"storage_to_activity",
-		func(ctx context.Context, activity *storagemodels.Activity) (*activitypub.Activity, error) {
+		func(_ context.Context, activity *storagemodels.Activity) (*activitypub.Activity, error) {
 			return StorageActivityToActivityPub(activity)
 		},
 		nil,
@@ -491,14 +499,14 @@ func NewActorBatchToMastodonTransformer() common.BatchTransformer[*activitypub.A
 	return common.NewBatchTransformer(
 		"actors_to_mastodon_batch",
 		func(ctx context.Context, actor *activitypub.Actor) (*models.Account, error) {
-			baseURL := "https://example.com" // Default fallback
+			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
 			return ActivityPubActorToMastodon(actor, baseURL)
 		},
 		func(ctx context.Context, actors []*activitypub.Actor) ([]*models.Account, error) {
-			baseURL := "https://example.com" // Default fallback
+			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
@@ -528,7 +536,7 @@ func NewObjectBatchToMastodonTransformer() common.BatchTransformer[*activitypub.
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
 			
-			baseURL := "https://example.com" // Default fallback
+			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
@@ -550,7 +558,7 @@ func convertAttachmentsToActorFields(attachments []activitypub.Attachment) []sto
 	
 	fields := make([]storagemodels.ActorField, 0, len(attachments))
 	for _, attachment := range attachments {
-		if attachment.Type == "PropertyValue" {
+		if attachment.Type == propertyValueType {
 			fields = append(fields, storagemodels.ActorField{
 				Name:  attachment.Name,
 				Value: attachment.Value,
@@ -570,7 +578,7 @@ func convertActorFieldsToAttachments(fields []storagemodels.ActorField) []activi
 	attachments := make([]activitypub.Attachment, 0, len(fields))
 	for _, field := range fields {
 		attachments = append(attachments, activitypub.Attachment{
-			Type:  "PropertyValue",
+			Type:  propertyValueType,
 			Name:  field.Name,
 			Value: field.Value,
 		})
@@ -587,7 +595,7 @@ func convertAttachmentsToMastodonFields(attachments []activitypub.Attachment) []
 	
 	fields := make([]any, 0, len(attachments))
 	for _, attachment := range attachments {
-		if attachment.Type == "PropertyValue" {
+		if attachment.Type == propertyValueType {
 			fields = append(fields, map[string]any{
 				"name":  attachment.Name,
 				"value": attachment.Value,
@@ -606,7 +614,7 @@ func convertAttachmentsToMastodonMedia(attachments []activitypub.Attachment) []a
 	
 	media := make([]any, 0, len(attachments))
 	for _, attachment := range attachments {
-		if attachment.Type != "PropertyValue" { // Skip profile fields
+		if attachment.Type != propertyValueType { // Skip profile fields
 			media = append(media, map[string]any{
 				"id":          generateNumericIDFromURL(attachment.URL),
 				"type":        attachment.Type,
@@ -621,7 +629,7 @@ func convertAttachmentsToMastodonMedia(attachments []activitypub.Attachment) []a
 }
 
 // convertTagsToMastodonMentions converts ActivityPub tags to Mastodon mentions
-func convertTagsToMastodonMentions(tags []activitypub.Tag, baseURL string) []any {
+func convertTagsToMastodonMentions(tags []activitypub.Tag, _ string) []any {
 	var mentions []any
 	
 	for _, tag := range tags {

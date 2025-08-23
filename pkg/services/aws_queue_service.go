@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -38,19 +39,22 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 		logger = zap.NewNop()
 	}
 
+	// Get configuration from centralized config
+	globalCfg := appconfig.Get()
+	
 	// Check for queue URL first - if not set, we can't function
-	queueURL := os.Getenv("IMPORT_EXPORT_QUEUE_URL")
-	if err := common.ValidateRequiredParam("queueURL", queueURL); err != nil {
-		return nil, fmt.Errorf("IMPORT_EXPORT_QUEUE_URL environment variable is required")
+	queueURL := globalCfg.ImportExportQueueURL
+	if queueURL == "" {
+		return nil, ErrImportExportQueueURLNotConfigured
 	}
 
 	// Load AWS configuration with retry and timeout
 	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(os.Getenv("AWS_REGION")),
+		config.WithRegion(globalCfg.Region),
 		config.WithRetryMaxAttempts(3),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, errors.Join(ErrAWSConfigLoad, err)
 	}
 
 	client := sqs.NewFromConfig(cfg)
@@ -66,7 +70,10 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to SQS queue %s: %w", queueURL, err)
+		logger.Error("failed to connect to SQS queue",
+			zap.String("queue_url", queueURL),
+			zap.Error(err))
+		return nil, errors.Join(ErrSQSConnectFailed, err)
 	}
 
 	return &AWSQueueService{
@@ -90,7 +97,11 @@ func (s *AWSQueueService) queueJobGeneric(ctx context.Context, jobID, jobType st
 
 	messageBody, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal %s message: %w", jobType, err)
+		s.logger.Error("failed to marshal queue message",
+			zap.String("job_type", jobType),
+			zap.String("job_id", jobID),
+			zap.Error(err))
+		return errors.Join(ErrQueueMessageMarshalFailed, err)
 	}
 
 	// Add timeout to the context if not already present
@@ -123,15 +134,17 @@ func (s *AWSQueueService) queueJobGeneric(ctx context.Context, jobID, jobType st
 
 	result, err := s.client.SendMessage(ctx, input)
 	if err != nil {
-		s.logger.Error(fmt.Sprintf("failed to send %s message to SQS", jobType),
-			zap.String(jobType+"_id", jobID),
+		s.logger.Error("failed to send message to SQS",
+			zap.String("job_type", jobType),
+			zap.String("job_id", jobID),
 			zap.String("queue_url", s.queueURL),
 			zap.Error(err))
-		return fmt.Errorf("failed to send %s message to SQS: %w", jobType, err)
+		return errors.Join(ErrSQSMessageSendFailed, err)
 	}
 
-	s.logger.Info(fmt.Sprintf("%s job queued successfully", jobType),
-		zap.String(jobType+"_id", jobID),
+	s.logger.Info("job queued successfully",
+		zap.String("job_type", jobType),
+		zap.String("job_id", jobID),
 		zap.String("message_id", aws.ToString(result.MessageId)),
 		zap.String("queue_url", s.queueURL))
 

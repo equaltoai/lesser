@@ -1,3 +1,5 @@
+// Package common provides shared authentication helper functions and types for the Lesser project.
+// These helpers consolidate common authentication patterns found across all services.
 package common
 
 import (
@@ -55,7 +57,7 @@ func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthServic
 	if authHeader == "" {
 		return &AuthenticationResult{
 			ErrorCode: 401,
-			Error:     fmt.Errorf("missing authorization header"),
+			Error:     ErrMissingAuthorizationHeader,
 		}
 	}
 
@@ -81,7 +83,7 @@ func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthServic
 	if requiredScope != "" && !claims.HasScope(requiredScope) {
 		return &AuthenticationResult{
 			ErrorCode: 403,
-			Error:     fmt.Errorf("insufficient scope: requires %s", requiredScope),
+			Error:     fmt.Errorf("%w: requires %s", ErrInsufficientScope, requiredScope),
 		}
 	}
 
@@ -113,7 +115,7 @@ func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes [
 	if authHeader == "" {
 		return &AuthenticationResult{
 			ErrorCode: 401,
-			Error:     fmt.Errorf("missing authorization header"),
+			Error:     ErrMissingAuthorizationHeader,
 		}
 	}
 
@@ -148,7 +150,7 @@ func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes [
 		if !hasValidScope {
 			return &AuthenticationResult{
 				ErrorCode: 403,
-				Error:     fmt.Errorf("insufficient scope: requires one of %v", allowedScopes),
+				Error:     fmt.Errorf("%w: requires one of %v", ErrInsufficientScope, allowedScopes),
 			}
 		}
 	}
@@ -273,11 +275,11 @@ func ValidateWriteAccess(authResult *AuthenticationResult) error {
 	}
 
 	if authResult.Context.Claims == nil {
-		return fmt.Errorf("authentication required for write operations")
+		return ErrAuthenticationRequired
 	}
 
 	if !authResult.Context.Claims.HasScope(ScopeWrite) {
-		return fmt.Errorf("insufficient scope: write access required")
+		return ErrInsufficientScopeWrite
 	}
 
 	return nil
@@ -294,11 +296,11 @@ func ValidateReadAccess(authResult *AuthenticationResult) error {
 	}
 
 	if authResult.Context.Claims == nil {
-		return fmt.Errorf("authentication required for read operations")
+		return ErrAuthenticationRequiredRead
 	}
 
 	if !authResult.Context.Claims.HasScope(ScopeRead) {
-		return fmt.Errorf("insufficient scope: read access required")
+		return ErrInsufficientScopeRead
 	}
 
 	return nil
@@ -359,23 +361,27 @@ var (
 	AdminScopes    = []string{AdminRead, AdminWrite}
 )
 
-// ValidateSpecificScopes validates against common scope combinations
+// ValidateReadScopes validates against common read scope combinations
 func ValidateReadScopes(claims Claims) bool {
 	return HasAnyScope(claims, ReadScopes)
 }
 
+// ValidateWriteScopes validates against common write scope combinations
 func ValidateWriteScopes(claims Claims) bool {
 	return HasAnyScope(claims, WriteScopes)
 }
 
+// ValidateFollowScopes validates against common follow scope combinations
 func ValidateFollowScopes(claims Claims) bool {
 	return HasAnyScope(claims, FollowScopes)
 }
 
+// ValidateBlockScopes validates against common block scope combinations
 func ValidateBlockScopes(claims Claims) bool {
 	return HasAnyScope(claims, BlockScopes)
 }
 
+// ValidateAdminScopes validates against common admin scope combinations
 func ValidateAdminScopes(claims Claims) bool {
 	return HasAnyScope(claims, AdminScopes)
 }
@@ -384,12 +390,12 @@ func ValidateAdminScopes(claims Claims) bool {
 // This consolidates auth.ExtractBearerToken to avoid import cycles
 func ExtractBearerToken(authHeader string) (string, error) {
 	if authHeader == "" {
-		return "", fmt.Errorf("authorization header is empty")
+		return "", ErrAuthHeaderEmpty
 	}
 
 	const bearerPrefix = "Bearer "
 	if !strings.HasPrefix(authHeader, bearerPrefix) {
-		return "", fmt.Errorf("authorization header must start with 'Bearer '")
+		return "", ErrAuthHeaderInvalidPrefix
 	}
 
 	// Use centralized validation and sanitization for bearer token

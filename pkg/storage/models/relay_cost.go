@@ -190,7 +190,7 @@ func (rm *RelayMetrics) BeforeCreate() error {
 		return err
 	}
 	if rm.WindowStart.IsZero() {
-		return fmt.Errorf("window_start is required")
+		return ErrRelayWindowStartRequired
 	}
 
 	now := time.Now()
@@ -321,7 +321,7 @@ func (rb *RelayBudget) BeforeCreate() error {
 		return err
 	}
 	if rb.LimitMicroCents <= 0 {
-		return fmt.Errorf("limit_micro_cents must be positive")
+		return ErrInvalidBudgetLimit
 	}
 
 	now := time.Now()

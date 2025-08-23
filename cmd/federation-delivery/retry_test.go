@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"go.uber.org/zap/zaptest"
+	"github.com/equaltoai/lesser/pkg/federation"
 )
 
 // Test retry backoff calculation edge cases
@@ -306,7 +307,7 @@ func (r *MockFederationRepo) GetInstanceStats(ctx context.Context, domain string
 	if stats, exists := r.stats[domain]; exists {
 		return stats, nil
 	}
-	return nil, fmt.Errorf("stats not found for domain: %s", domain)
+	return nil, fmt.Errorf("domain %s: %w", domain, federation.ErrInstanceStatsNotFound)
 }
 
 // Add method to FederationDeliveryProcessor for testing

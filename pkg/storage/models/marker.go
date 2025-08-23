@@ -52,7 +52,18 @@ func (m *Marker) BeforeUpdate() error {
 
 // UpdateKeys updates the primary key fields based on username and timeline
 // This method allows for key updates when username or timeline changes
-func (m *Marker) UpdateKeys() {
+func (m *Marker) UpdateKeys() error {
 	m.PK = fmt.Sprintf(KeyPatternUser, m.Username)
 	m.SK = fmt.Sprintf("MARKER#%s", m.Timeline)
+	return nil
+}
+
+// GetPK returns the partition key for BaseRepository interface
+func (m *Marker) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key for BaseRepository interface
+func (m *Marker) GetSK() string {
+	return m.SK
 }

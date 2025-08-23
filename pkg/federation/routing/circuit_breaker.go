@@ -3,7 +3,8 @@ package routing
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"strconv"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/types"
@@ -41,7 +42,12 @@ func (dcb *DistributedCircuitBreaker) Open(instanceID string, reason string) err
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		return fmt.Errorf("get circuit state: %w", err)
+		dcb.logger.Error("failed to retrieve circuit state for opening",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "open"),
+			zap.String("reason", reason),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateRetrieveFailed, err)
 	}
 
 	previousStatus := state.Status
@@ -63,7 +69,14 @@ func (dcb *DistributedCircuitBreaker) Open(instanceID string, reason string) err
 
 	// Save state
 	if err := dcb.repo.SaveCircuitState(ctx, state); err != nil {
-		return fmt.Errorf("save circuit state: %w", err)
+		dcb.logger.Error("failed to save circuit state during opening",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "open"),
+			zap.String("new_status", state.Status),
+			zap.String("reason", reason),
+			zap.Duration("backoff", state.GetBackoffDuration()),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateSaveFailed, err)
 	}
 
 	// Record state change event
@@ -85,7 +98,11 @@ func (dcb *DistributedCircuitBreaker) Close(instanceID string) error {
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		return fmt.Errorf("get circuit state: %w", err)
+		dcb.logger.Error("failed to retrieve circuit state for closing",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "close"),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateRetrieveFailed, err)
 	}
 
 	if state.Status == string(types.CircuitClosed) {
@@ -103,7 +120,13 @@ func (dcb *DistributedCircuitBreaker) Close(instanceID string) error {
 
 	// Save state
 	if err := dcb.repo.SaveCircuitState(ctx, state); err != nil {
-		return fmt.Errorf("save circuit state: %w", err)
+		dcb.logger.Error("failed to save circuit state during closing",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "close"),
+			zap.String("previous_status", previousStatus),
+			zap.String("new_status", state.Status),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateSaveFailed, err)
 	}
 
 	// Record state change event
@@ -122,11 +145,15 @@ func (dcb *DistributedCircuitBreaker) HalfOpen(instanceID string) error {
 	// Get current state
 	state, err := dcb.repo.GetCircuitState(ctx, instanceID)
 	if err != nil {
-		return fmt.Errorf("get circuit state: %w", err)
+		dcb.logger.Error("failed to retrieve circuit state for half-open transition",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "half_open"),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateRetrieveFailed, err)
 	}
 
 	if state.Status != string(types.CircuitOpen) {
-		return fmt.Errorf("circuit must be open to transition to half-open")
+		return ErrInvalidCircuitTransition
 	}
 
 	previousStatus := state.Status
@@ -137,7 +164,14 @@ func (dcb *DistributedCircuitBreaker) HalfOpen(instanceID string) error {
 
 	// Save state
 	if err := dcb.repo.SaveCircuitState(ctx, state); err != nil {
-		return fmt.Errorf("save circuit state: %w", err)
+		dcb.logger.Error("failed to save circuit state during half-open transition",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "half_open"),
+			zap.String("previous_status", previousStatus),
+			zap.String("new_status", state.Status),
+			zap.Time("next_retry", state.NextRetry),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateSaveFailed, err)
 	}
 
 	// Record state change event
@@ -254,7 +288,11 @@ func (dcb *DistributedCircuitBreaker) RecordSuccess(instanceID string) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("update circuit state: %w", err)
+		dcb.logger.Error("failed to update circuit state during success recording",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "record_success"),
+			zap.Error(err))
+		return errors.Join(ErrCircuitStateUpdateFailed, err)
 	}
 
 	// Record metric (non-blocking)
@@ -293,7 +331,7 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 				state.Status = string(types.CircuitOpen)
 				state.LastStateChange = time.Now()
 				state.NextRetry = time.Now().Add(dcb.config.OpenTimeout)
-				state.Reason = fmt.Sprintf("consecutive failures: %d, error: %v", state.ConsecutiveFails, errorType)
+				state.Reason = "consecutive failures: " + strconv.Itoa(state.ConsecutiveFails) + ", error: " + errorType
 
 				dcb.logger.Warn("circuit opened due to failures",
 					zap.String("instanceID", instanceID),
@@ -313,7 +351,7 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 			state.LastStateChange = time.Now()
 			state.NextRetry = time.Now().Add(state.GetBackoffDuration())
 			state.SuccessCount = 0
-			state.Reason = fmt.Sprintf("half-open test failed: %v", errorType)
+			state.Reason = "half-open test failed: " + errorType
 
 			dcb.logger.Warn("circuit reopened",
 				zap.String("instanceID", instanceID),
@@ -329,7 +367,12 @@ func (dcb *DistributedCircuitBreaker) RecordFailure(instanceID string, err error
 	})
 
 	if updateErr != nil {
-		return fmt.Errorf("update circuit state: %w", updateErr)
+		dcb.logger.Error("failed to update circuit state during failure recording",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "record_failure"),
+			zap.String("error_type", errorType),
+			zap.Error(updateErr))
+		return errors.Join(ErrCircuitStateUpdateFailed, updateErr)
 	}
 
 	// Record metric (non-blocking)
@@ -451,7 +494,8 @@ func (dcb *DistributedCircuitBreaker) AssessRouteHealthAndAdjustCircuit(ctx cont
 	case RouteHealthCritical:
 		// Open circuit immediately for critical health status
 		if dcb.GetStatus(routeID) != types.CircuitOpen {
-			return dcb.Open(routeID, fmt.Sprintf("critical health: %s", assessment.DegradationReason))
+			reason := "critical health: " + assessment.DegradationReason
+			return dcb.Open(routeID, reason)
 		}
 
 	case RouteHealthDegraded:

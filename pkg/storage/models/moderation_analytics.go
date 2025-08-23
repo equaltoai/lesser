@@ -37,7 +37,7 @@ func (m *ModerationAnalytics) TableName() string {
 }
 
 // UpdateKeys updates the primary and sort keys for DynamoDB
-func (m *ModerationAnalytics) UpdateKeys() {
+func (m *ModerationAnalytics) UpdateKeys() error {
 	// Support both patterns
 	if m.PatternID != "" {
 		// Pattern analytics mode
@@ -52,4 +52,15 @@ func (m *ModerationAnalytics) UpdateKeys() {
 	// GSI2 for querying by report type
 	m.GSI2PK = "MOD_ANALYTICS#" + m.ReportType
 	m.GSI2SK = m.Date
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (m *ModerationAnalytics) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (m *ModerationAnalytics) GetSK() string {
+	return m.SK
 }

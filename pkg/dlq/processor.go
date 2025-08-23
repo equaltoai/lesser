@@ -22,7 +22,7 @@ import (
 type Processor struct {
 	db                core.DB
 	dlqRepo           *repositories.DLQRepository
-	costTrackingRepo  *repositories.CostTrackingRepository
+	costTrackingRepo  *repositories.TrackingRepository
 	logger            *zap.Logger
 	sqsClient         *sqs.Client
 	errorClassifier   *ErrorClassifier
@@ -33,8 +33,8 @@ type Processor struct {
 func NewProcessor(db core.DB, tableName string, logger *zap.Logger) *Processor {
 	return &Processor{
 		db:                db,
-		dlqRepo:           repositories.NewDLQRepository(db, tableName, logger),
-		costTrackingRepo:  repositories.NewCostTrackingRepository(db, tableName, logger),
+		dlqRepo:           repositories.NewDLQRepositorySimple(db, tableName, logger),
+		costTrackingRepo:  repositories.NewTrackingRepository(db, tableName, logger),
 		logger:            logger,
 		errorClassifier:   NewErrorClassifier(),
 		reprocessorClient: NewReprocessorClient(logger),
@@ -83,7 +83,7 @@ func (p *Processor) ProcessDLQMessages(ctx context.Context, event events.SQSEven
 
 	// If all messages failed, return error to trigger reprocessing
 	if errorCount > 0 && processedCount == 0 {
-		return fmt.Errorf("failed to process any DLQ messages")
+		return ErrNoDLQMessagesProcessed
 	}
 
 	return nil

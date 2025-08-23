@@ -2,9 +2,7 @@ package mastodon
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
-	"math/big"
 	"strings"
 	"time"
 
@@ -16,6 +14,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/transformations"
+)
+
+const (
+	// VisibilityPublic represents public visibility for posts
+	VisibilityPublic = "public"
 )
 
 // converterImpl implements the Converter interface with caching support
@@ -125,7 +128,7 @@ func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj any, 
 	status.Pinned = false
 	
 	// Apply visibility determination if not already set by transformation
-	if status.Visibility == "public" {
+	if status.Visibility == VisibilityPublic {
 		// Let the centralized transformation handle visibility unless we need custom logic
 		objMap := c.convertObjectToMap(obj)
 		if to, ok := objMap["to"].([]interface{}); ok {
@@ -237,33 +240,12 @@ func (c *converterImpl) convertObjectToMap(obj any) map[string]interface{} {
 
 // Helper methods (streamlined to use centralized transformations)
 
-// processAttachments now uses centralized transformation with caching
-func (c *converterImpl) processAttachments(attachments []activitypub.Attachment) []any {
-	// Convert to interface{} slice for centralized transformer
-	attachmentsInterface := make([]interface{}, len(attachments))
-	for i, att := range attachments {
-		attachmentsInterface[i] = map[string]interface{}{
-			"url":       att.URL,
-			"mediaType": att.MediaType,
-			"name":      att.Name,
-		}
-	}
-	
-	// Use cached transformer for better performance
-	return c.cachedTransformer.TransformStorageMediaToMastodon(attachmentsInterface)
-}
-
-// processAttachmentsFromMap now uses centralized media attachment transformation with caching
-func (c *converterImpl) processAttachmentsFromMap(attachments []any) []any {
-	// Use cached transformer for media attachments
-	return c.cachedTransformer.TransformStorageMediaToMastodon(attachments)
-}
 
 // getAttachmentType is now handled by centralized transformer
 
 func (c *converterImpl) determineVisibility(to, cc []string) string {
 	if c.contains(to, activitypub.PublicAddress) {
-		return "public"
+		return VisibilityPublic
 	} else if c.contains(cc, activitypub.PublicAddress) {
 		return "unlisted"
 	} else if err := common.ValidateSliceNotEmpty("to addressees", to); err == nil && strings.Contains(to[0], "/followers") {
@@ -272,24 +254,6 @@ func (c *converterImpl) determineVisibility(to, cc []string) string {
 	return "direct"
 }
 
-// generateRandomString utility method
-func (c *converterImpl) generateRandomString(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		b[i] = charset[n.Int64()]
-	}
-	return string(b)
-}
-
-// getStringFromMap utility method
-func (c *converterImpl) getStringFromMap(m map[string]any, key string) string {
-	if val, ok := m[key].(string); ok {
-		return val
-	}
-	return ""
-}
 
 func (c *converterImpl) contains(slice []string, item string) bool {
 	for _, s := range slice {
@@ -306,7 +270,7 @@ func (c *converterImpl) NotesToStatus(note any) models.Status {
 	status := transformations.NotesToStatusAny(note, c.baseURL)
 	
 	// Apply implementation-specific overrides if needed
-	status.Visibility = "public" // Community notes are always public
+	status.Visibility = VisibilityPublic // Community notes are always public
 	status.Language = "en"      // Default to English
 	
 	return status

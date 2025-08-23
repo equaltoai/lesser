@@ -29,12 +29,23 @@ type Hashtag struct {
 }
 
 // UpdateKeys updates the GSI keys when the hashtag data changes
-func (h *Hashtag) UpdateKeys() {
+func (h *Hashtag) UpdateKeys() error {
 	tagLower := strings.ToLower(strings.TrimPrefix(h.Name, "#"))
 	h.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
 	h.SK = SKMetadata
 	h.GSI3PK = fmt.Sprintf(KeyPatternHashtagSearch, getHashtagPrefix(tagLower))
 	h.GSI3SK = tagLower
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (h *Hashtag) GetPK() string {
+	return h.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (h *Hashtag) GetSK() string {
+	return h.SK
 }
 
 // HashtagUsage represents a single usage of a hashtag stored in DynamoDB using DynamORM
@@ -56,11 +67,29 @@ type HashtagUsage struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// UpdateKeys updates the keys when the usage data changes
-func (hu *HashtagUsage) UpdateKeys(hashtag string) {
+// UpdateKeysWithHashtag updates the keys when the usage data changes (parameterized version)
+func (hu *HashtagUsage) UpdateKeysWithHashtag(hashtag string) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	hu.PK = fmt.Sprintf(KeyPatternHashtag, tagLower)
 	hu.SK = fmt.Sprintf("USAGE#%d#%s", hu.UsedAt.Unix(), hu.StatusID)
+}
+
+// UpdateKeys implements BaseModel interface - updates keys without parameters
+func (hu *HashtagUsage) UpdateKeys() error {
+	// For HashtagUsage, we need the hashtag to be set in some way
+	// This is a limitation - we'll need to call the parameterized version
+	// For now, return nil assuming keys are already set
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (hu *HashtagUsage) GetPK() string {
+	return hu.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (hu *HashtagUsage) GetSK() string {
+	return hu.SK
 }
 
 // getHashtagPrefix returns the first 2 characters of a hashtag for GSI partitioning

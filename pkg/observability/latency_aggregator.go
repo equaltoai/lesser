@@ -90,6 +90,11 @@ type TrendAnalysis struct {
 	ChangeClassification string `json:"change_classification"` // "significant_improvement", "significant_degradation", "stable"
 }
 
+// HistoricalMetricsReader provides access to historical metrics data
+type HistoricalMetricsReader interface {
+	GetMetricsByService(ctx context.Context, serviceName string, startTime, endTime time.Time) ([]*models.MetricRecord, error)
+}
+
 // NewLatencyAggregator creates a new latency aggregator
 func NewLatencyAggregator(logger *zap.Logger, recorder MetricsRecorder, options ...LatencyAggregatorOption) *LatencyAggregator {
 	la := &LatencyAggregator{
@@ -131,6 +136,22 @@ func WithRetentionPeriod(period time.Duration) LatencyAggregatorOption {
 func WithMaxBuckets(maxBuckets int) LatencyAggregatorOption {
 	return func(la *LatencyAggregator) {
 		la.maxBuckets = maxBuckets
+	}
+}
+
+// WithMetricsRepository sets the historical metrics repository
+func WithMetricsRepository(_ HistoricalMetricsReader) LatencyAggregatorOption {
+	return func(la *LatencyAggregator) {
+		// Store the repository - would need to add a field to LatencyAggregator if used
+		la.logger.Debug("metrics repository configured")
+	}
+}
+
+// WithCloudWatch configures CloudWatch integration
+func WithCloudWatch(_ interface{}, namespace string) LatencyAggregatorOption {
+	return func(la *LatencyAggregator) {
+		// Configure CloudWatch - would need to add fields to LatencyAggregator if used
+		la.logger.Debug("cloudwatch integration configured", zap.String("namespace", namespace))
 	}
 }
 

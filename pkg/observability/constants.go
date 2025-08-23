@@ -218,6 +218,12 @@ const (
 	ErrorTypeConflict       = "conflict"
 )
 
+// Boolean String Constants
+const (
+	TrueString  = "true"
+	FalseString = "false"
+)
+
 // Status constants (legacy compatibility)
 const (
 	StatusUnknown = "unknown"

@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"time"
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Mute represents a mute relationship between actors
@@ -15,13 +16,14 @@ type Mute struct {
 	GSI1PK string `dynamorm:"index:GSI1,pk" json:"GSI1PK"` // MUTED#{muted_username}
 	GSI1SK string `dynamorm:"index:GSI1,sk" json:"GSI1SK"` // MUTER#{username}
 
-	// Core fields from legacy (embedded storage.Mute)
-	Actor             string    `json:"actor"`              // The actor doing the muting
-	Object            string    `json:"object"`             // The actor being muted
-	ID                string    `json:"id"`                 // The mute activity ID
-	HideNotifications bool      `json:"hide_notifications"` // Whether to hide notifications from this user
-	Published         time.Time `json:"published"`          // When the mute was created
-	CreatedAt         time.Time `json:"created_at"`         // Database timestamp
+	// Core fields from legacy
+	Type              string    `json:"Type"`              // Always "Mute"
+	Actor             string    `json:"Actor"`             // Full actor ID who is muting
+	Object            string    `json:"Object"`            // Full actor ID being muted
+	ID                string    `json:"ID"`                // Mute activity ID
+	HideNotifications bool      `json:"HideNotifications"` // Whether to hide notifications from this user
+	Published         time.Time `json:"Published"`         // When the mute was published
+	CreatedAt         time.Time `json:"CreatedAt"`         // When stored in DB
 }
 
 // TableName returns the DynamoDB table name
@@ -31,27 +33,55 @@ func (Mute) TableName() string {
 
 // BeforeCreate prepares the Mute for creation
 func (m *Mute) BeforeCreate() error {
+	// Set type
+	m.Type = "Mute"
+
 	// Set timestamps if not already set
-	if m.CreatedAt.IsZero() {
-		m.CreatedAt = time.Now()
-	}
 	if m.Published.IsZero() {
-		m.Published = time.Now()
+		m.Published = time.Now().UTC()
+	}
+	if m.CreatedAt.IsZero() {
+		m.CreatedAt = time.Now().UTC()
+	}
+
+	// Generate ID if not provided
+	if err := common.ValidateRequiredParam("m.ID", m.ID); err != nil {
+		m.ID = fmt.Sprintf("%s/activities/mute-%d", m.Actor, time.Now().Unix())
 	}
 
 	// Update keys based on actor usernames
-	m.UpdateKeys()
+	if err := m.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrMuteUpdateKeysFailed, err)
+	}
 
 	return nil
 }
 
 // UpdateKeys sets the primary and GSI keys based on the actor usernames
-func (m *Mute) UpdateKeys() {
+// This implements the BaseModel interface requirement
+func (m *Mute) UpdateKeys() error {
+	// Extract usernames from actor IDs
+	muterUsername := extractUsername(m.Actor)
+	mutedUsername := extractUsername(m.Object)
+
 	// Primary keys
-	m.PK = fmt.Sprintf("MUTE#%s", m.Actor)
-	m.SK = fmt.Sprintf("MUTED#%s", m.Object)
+	m.PK = fmt.Sprintf("MUTE#%s", muterUsername)
+	m.SK = fmt.Sprintf("MUTED#%s", mutedUsername)
 
 	// GSI1 for reverse lookup
-	m.GSI1PK = fmt.Sprintf("MUTED#%s", m.Object)
-	m.GSI1SK = fmt.Sprintf("MUTER#%s", m.Actor)
+	m.GSI1PK = fmt.Sprintf("MUTED#%s", mutedUsername)
+	m.GSI1SK = fmt.Sprintf("MUTER#%s", muterUsername)
+
+	return nil
 }
+
+// GetPK returns the partition key (implements BaseModel interface)
+func (m *Mute) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key (implements BaseModel interface)
+func (m *Mute) GetSK() string {
+	return m.SK
+}
+

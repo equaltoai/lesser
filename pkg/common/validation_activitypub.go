@@ -41,12 +41,31 @@ func ValidateActivityPubActor(actor map[string]interface{}) error {
 		return err
 	}
 	
+	// Validate all required fields
+	if err := validateActorRequiredFields(actor); err != nil {
+		return err
+	}
+	
+	// Validate optional profile fields
+	if err := validateActorOptionalFields(actor); err != nil {
+		return err
+	}
+	
+	// Validate collections and public key
+	if err := validateActorCollectionsAndKey(actor); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateActorRequiredFields validates all required fields for ActivityPub actors
+func validateActorRequiredFields(actor map[string]interface{}) error {
 	// Validate required id field
 	id, ok := actor["id"].(string)
 	if !ok || id == "" {
 		return ValidationError{Field: "id", Message: "is required for ActivityPub actors"}
 	}
-	
 	if err := ValidateActivityPubURL(id, "id"); err != nil {
 		return err
 	}
@@ -56,7 +75,6 @@ func ValidateActivityPubActor(actor map[string]interface{}) error {
 	if !ok || actorType == "" {
 		return ValidationError{Field: "type", Message: "is required for ActivityPub actors"}
 	}
-	
 	if !ActorTypePattern.MatchString(actorType) {
 		return ValidationError{
 			Field:   "type",
@@ -69,7 +87,6 @@ func ValidateActivityPubActor(actor map[string]interface{}) error {
 	if !ok || username == "" {
 		return ValidationError{Field: "preferredUsername", Message: "is required for ActivityPub actors"}
 	}
-	
 	if err := ValidateActivityPubUsername(username); err != nil {
 		return err
 	}
@@ -79,11 +96,15 @@ func ValidateActivityPubActor(actor map[string]interface{}) error {
 	if !ok || inbox == "" {
 		return ValidationError{Field: "inbox", Message: "is required for ActivityPub actors"}
 	}
-	
 	if err := ValidateActivityPubURL(inbox, "inbox"); err != nil {
 		return err
 	}
 	
+	return nil
+}
+
+// validateActorOptionalFields validates optional profile fields for ActivityPub actors
+func validateActorOptionalFields(actor map[string]interface{}) error {
 	// Validate optional outbox
 	if outbox, exists := actor["outbox"].(string); exists && outbox != "" {
 		if err := ValidateActivityPubURL(outbox, "outbox"); err != nil {
@@ -105,6 +126,11 @@ func ValidateActivityPubActor(actor map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateActorCollectionsAndKey validates collections and public key for ActivityPub actors
+func validateActorCollectionsAndKey(actor map[string]interface{}) error {
 	// Validate optional followers collection
 	if followers, exists := actor["followers"].(string); exists && followers != "" {
 		if err := ValidateActivityPubURL(followers, "followers"); err != nil {
@@ -218,6 +244,31 @@ func ValidateActivityPubNote(note map[string]interface{}) error {
 		return err
 	}
 	
+	// Validate required note fields
+	if err := validateNoteRequiredFields(note); err != nil {
+		return err
+	}
+	
+	// Validate optional note fields
+	if err := validateNoteOptionalFields(note); err != nil {
+		return err
+	}
+	
+	// Validate addressing and metadata
+	if err := validateNoteAddressingAndMetadata(note); err != nil {
+		return err
+	}
+	
+	// Validate attachments and tags
+	if err := validateNoteAttachmentsAndTags(note); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateNoteRequiredFields validates all required fields for ActivityPub notes
+func validateNoteRequiredFields(note map[string]interface{}) error {
 	// Validate required type field
 	noteType, ok := note["type"].(string)
 	if !ok || noteType != "Note" {
@@ -229,7 +280,6 @@ func ValidateActivityPubNote(note map[string]interface{}) error {
 	if !ok || strings.TrimSpace(content) == "" {
 		return ValidationError{Field: "content", Message: "is required for ActivityPub notes"}
 	}
-	
 	if err := ValidateStringLength("content", content, 1, 100000); err != nil {
 		return err
 	}
@@ -239,11 +289,15 @@ func ValidateActivityPubNote(note map[string]interface{}) error {
 	if !ok || attributedTo == "" {
 		return ValidationError{Field: "attributedTo", Message: "is required for ActivityPub notes"}
 	}
-	
 	if err := ValidateActivityPubURL(attributedTo, "attributedTo"); err != nil {
 		return err
 	}
 	
+	return nil
+}
+
+// validateNoteOptionalFields validates optional fields for ActivityPub notes
+func validateNoteOptionalFields(note map[string]interface{}) error {
 	// Validate optional id field
 	if id, exists := note["id"].(string); exists && id != "" {
 		if err := ValidateActivityPubURL(id, "id"); err != nil {
@@ -265,6 +319,11 @@ func ValidateActivityPubNote(note map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateNoteAddressingAndMetadata validates addressing and timestamp for ActivityPub notes
+func validateNoteAddressingAndMetadata(note map[string]interface{}) error {
 	// Validate addressing
 	if to, exists := note["to"]; exists {
 		if err := ValidateActivityPubAddressing(to, "to"); err != nil {
@@ -285,6 +344,11 @@ func ValidateActivityPubNote(note map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateNoteAttachmentsAndTags validates attachments and tags for ActivityPub notes
+func validateNoteAttachmentsAndTags(note map[string]interface{}) error {
 	// Validate attachment array if present
 	if attachment, exists := note["attachment"]; exists {
 		if err := ValidateActivityPubAttachments(attachment, "attachment"); err != nil {
@@ -314,7 +378,7 @@ func ValidateActivityPubURL(urlStr, fieldName string) error {
 	}
 	
 	// Must use HTTPS or HTTP
-	if parsedURL.Scheme != "https" && parsedURL.Scheme != "http" {
+	if parsedURL.Scheme != SchemeHTTPS && parsedURL.Scheme != SchemeHTTP {
 		return ValidationError{Field: fieldName, Message: "must use HTTP or HTTPS scheme"}
 	}
 	

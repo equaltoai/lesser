@@ -32,7 +32,7 @@ func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			// Validate token
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				username = claims.Username
@@ -216,7 +216,7 @@ func (h *Handler) HandleDismissAnnouncementLift(ctx *lift.Context) error {
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
@@ -271,7 +271,7 @@ func (h *Handler) handleAnnouncementReaction(ctx *lift.Context, action string) e
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)

@@ -58,12 +58,12 @@ func NewExportDateRangeFromStrings(start, end string) (*ExportDateRange, error) 
 
 	startTime, err := time.Parse(common.DateFormat, start)
 	if err != nil {
-		return nil, fmt.Errorf("invalid start date: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrExportInvalidStartDate, err)
 	}
 
 	endTime, err := time.Parse(common.DateFormat, end)
 	if err != nil {
-		return nil, fmt.Errorf("invalid end date: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrExportInvalidEndDate, err)
 	}
 
 	return &ExportDateRange{

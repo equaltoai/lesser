@@ -127,7 +127,7 @@ func TenantServiceFromContext(ctx *lift.Context, db core.DB, tableName string, l
 	// Use the same tenant ID extraction as the middleware
 	tenantID, ok := ctx.Get("tenant_id").(string)
 	if !ok || tenantID == "" {
-		return nil, fmt.Errorf("tenant context required")
+		return nil, ErrTenantContextRequired
 	}
 
 	service := NewTenantService(db, tableName, logger)

@@ -10,12 +10,12 @@ import (
 
 // SessionValidator provides comprehensive session validation
 type SessionValidator struct {
-	sessionManager    *SessionManager
-	securityManager   *SessionSecurityManager
-	lifecycleManager  *SessionLifecycleManager
+	sessionManager     *SessionManager
+	securityManager    *SessionSecurityManager
+	lifecycleManager   *SessionLifecycleManager
 	fingerprintManager *DeviceFingerprintManager
-	logger           *zap.Logger
-	config           *SessionValidationConfig
+	logger             *zap.Logger
+	config             *SessionValidationConfig
 }
 
 // SessionValidationConfig holds validation configuration
@@ -25,18 +25,18 @@ type SessionValidationConfig struct {
 	RequireIPValidation     bool // Validate IP addresses
 	RequireCSRFValidation   bool // Validate CSRF tokens
 	RequireSecurityHeaders  bool // Validate security headers
-	
+
 	// Validation thresholds
-	MaxSessionAge          time.Duration // Maximum session age
-	MaxInactivityPeriod    time.Duration // Maximum inactivity period
-	MinTrustScore          float64       // Minimum required trust score
-	DeviceMatchThreshold   float64       // Device fingerprint match threshold
-	
+	MaxSessionAge        time.Duration // Maximum session age
+	MaxInactivityPeriod  time.Duration // Maximum inactivity period
+	MinTrustScore        float64       // Minimum required trust score
+	DeviceMatchThreshold float64       // Device fingerprint match threshold
+
 	// Security policies
-	StrictValidation       bool // Enable strict validation mode
-	AllowGracePeriod       bool // Allow grace period for token rotation
-	RequireReauth          bool // Require reauthentication for sensitive operations
-	LogAllValidations      bool // Log all validation attempts
+	StrictValidation  bool // Enable strict validation mode
+	AllowGracePeriod  bool // Allow grace period for token rotation
+	RequireReauth     bool // Require reauthentication for sensitive operations
+	LogAllValidations bool // Log all validation attempts
 }
 
 // DefaultSessionValidationConfig provides secure defaults
@@ -45,15 +45,15 @@ func DefaultSessionValidationConfig() *SessionValidationConfig {
 		RequireDeviceValidation: true,
 		RequireIPValidation:     true,
 		RequireCSRFValidation:   true,
-		RequireSecurityHeaders:  false, // Optional for API endpoints
-		MaxSessionAge:          30 * 24 * time.Hour, // 30 days
-		MaxInactivityPeriod:    24 * time.Hour,      // 24 hours
-		MinTrustScore:          0.7,                 // 70% trust required
-		DeviceMatchThreshold:   0.8,                 // 80% device match required
-		StrictValidation:       false,
-		AllowGracePeriod:       true,
-		RequireReauth:          false,
-		LogAllValidations:      false,
+		RequireSecurityHeaders:  false,               // Optional for API endpoints
+		MaxSessionAge:           30 * 24 * time.Hour, // 30 days
+		MaxInactivityPeriod:     24 * time.Hour,      // 24 hours
+		MinTrustScore:           0.7,                 // 70% trust required
+		DeviceMatchThreshold:    0.8,                 // 80% device match required
+		StrictValidation:        false,
+		AllowGracePeriod:        true,
+		RequireReauth:           false,
+		LogAllValidations:       false,
 	}
 }
 
@@ -63,18 +63,18 @@ type SessionValidationRequest struct {
 	SessionID    string `json:"session_id,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 	CSRFToken    string `json:"csrf_token,omitempty"`
-	
+
 	// Request context
-	IPAddress    string            `json:"ip_address"`
-	UserAgent    string            `json:"user_agent"`
-	Headers      map[string]string `json:"headers,omitempty"`
-	RequestPath  string            `json:"request_path,omitempty"`
-	RequestMethod string           `json:"request_method,omitempty"`
-	
+	IPAddress     string            `json:"ip_address"`
+	UserAgent     string            `json:"user_agent"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	RequestPath   string            `json:"request_path,omitempty"`
+	RequestMethod string            `json:"request_method,omitempty"`
+
 	// Additional context
-	DeviceFingerprint map[string]string `json:"device_fingerprint,omitempty"`
-	Timestamp        time.Time         `json:"timestamp"`
-	RequireHighSecurity bool           `json:"require_high_security,omitempty"`
+	DeviceFingerprint   map[string]string `json:"device_fingerprint,omitempty"`
+	Timestamp           time.Time         `json:"timestamp"`
+	RequireHighSecurity bool              `json:"require_high_security,omitempty"`
 }
 
 // SessionValidationResponse represents the validation result
@@ -84,26 +84,26 @@ type SessionValidationResponse struct {
 	TrustScore      float64 `json:"trust_score"`
 	RiskScore       float64 `json:"risk_score"`
 	ValidationLevel string  `json:"validation_level"` // basic, standard, strict
-	
+
 	// Session information
-	SessionID       string    `json:"session_id"`
-	Username        string    `json:"username"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	LastActivity    time.Time `json:"last_activity"`
-	DeviceID        string    `json:"device_id,omitempty"`
-	
+	SessionID    string    `json:"session_id"`
+	Username     string    `json:"username"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	LastActivity time.Time `json:"last_activity"`
+	DeviceID     string    `json:"device_id,omitempty"`
+
 	// Validation details
-	ValidatedChecks  []string `json:"validated_checks"`
-	FailedChecks     []string `json:"failed_checks"`
-	Warnings         []string `json:"warnings"`
-	RequiredActions  []string `json:"required_actions"`
-	
+	ValidatedChecks []string `json:"validated_checks"`
+	FailedChecks    []string `json:"failed_checks"`
+	Warnings        []string `json:"warnings"`
+	RequiredActions []string `json:"required_actions"`
+
 	// Security recommendations
 	RequiresChallenge      bool   `json:"requires_challenge"`
 	RequiresReauth         bool   `json:"requires_reauth"`
 	RequiresDeviceApproval bool   `json:"requires_device_approval"`
 	SuggestedAction        string `json:"suggested_action"`
-	
+
 	// Extended session if applicable
 	ExtendedSession bool      `json:"extended_session,omitempty"`
 	NewExpiresAt    time.Time `json:"new_expires_at,omitempty"`
@@ -122,31 +122,31 @@ func NewSessionValidator(
 	if config == nil {
 		config = DefaultSessionValidationConfig()
 	}
-	
+
 	return &SessionValidator{
 		sessionManager:     sessionManager,
 		securityManager:    securityManager,
 		lifecycleManager:   lifecycleManager,
 		fingerprintManager: fingerprintManager,
-		logger:            logger,
-		config:            config,
+		logger:             logger,
+		config:             config,
 	}
 }
 
 // ValidateSession performs comprehensive session validation
 func (sv *SessionValidator) ValidateSession(ctx context.Context, request *SessionValidationRequest) (*SessionValidationResponse, error) {
 	response := &SessionValidationResponse{
-		Valid:              false,
-		TrustScore:         0.0,
-		RiskScore:          1.0,
-		ValidationLevel:    sv.determineValidationLevel(request),
-		ValidatedChecks:    []string{},
-		FailedChecks:       []string{},
-		Warnings:           []string{},
-		RequiredActions:    []string{},
-		RequiresChallenge:  false,
-		RequiresReauth:     false,
-		SuggestedAction:    "deny",
+		Valid:             false,
+		TrustScore:        0.0,
+		RiskScore:         1.0,
+		ValidationLevel:   sv.determineValidationLevel(request),
+		ValidatedChecks:   []string{},
+		FailedChecks:      []string{},
+		Warnings:          []string{},
+		RequiredActions:   []string{},
+		RequiresChallenge: false,
+		RequiresReauth:    false,
+		SuggestedAction:   "deny",
 	}
 
 	// Log validation attempt if configured

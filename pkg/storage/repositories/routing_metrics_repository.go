@@ -10,35 +10,59 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
-// RoutingMetricsRepository handles routing metrics data persistence
+// RoutingMetricsRepository handles routing metrics data persistence using BaseRepository pattern
 type RoutingMetricsRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	routeMetricsRepo    *BaseRepository[*models.RouteMetricsWindow]
+	globalMetricsRepo   *BaseRepository[*models.GlobalMetricsWindow]
+	instanceMetricsRepo *BaseRepository[*models.InstanceMetricsWindow]
+	logger              *zap.Logger
 }
 
 // NewRoutingMetricsRepository creates a new routing metrics repository
 func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *RoutingMetricsRepository {
+	routeRepo := NewBaseRepository[*models.RouteMetricsWindow](db, tableName, logger)
+	routeRepo.SetRepoName("route_metrics")
+	
+	globalRepo := NewBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger)
+	globalRepo.SetRepoName("global_metrics")
+	
+	instanceRepo := NewBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger)
+	instanceRepo.SetRepoName("instance_metrics")
+	
 	return &RoutingMetricsRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		routeMetricsRepo:    routeRepo,
+		globalMetricsRepo:   globalRepo,
+		instanceMetricsRepo: instanceRepo,
+		logger:              logger,
+	}
+}
+
+// NewRoutingMetricsRepositoryWithCostTracking creates a new routing metrics repository with cost tracking
+func NewRoutingMetricsRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RoutingMetricsRepository {
+	routeRepo := NewBaseRepositoryWithCostTracking[*models.RouteMetricsWindow](db, tableName, logger, costService, "route_metrics")
+	globalRepo := NewBaseRepositoryWithCostTracking[*models.GlobalMetricsWindow](db, tableName, logger, costService, "global_metrics")
+	instanceRepo := NewBaseRepositoryWithCostTracking[*models.InstanceMetricsWindow](db, tableName, logger, costService, "instance_metrics")
+	
+	return &RoutingMetricsRepository{
+		routeMetricsRepo:    routeRepo,
+		globalMetricsRepo:   globalRepo,
+		instanceMetricsRepo: instanceRepo,
+		logger:              logger,
 	}
 }
 
 // StoreRouteMetricsWindow stores aggregated route metrics for a time window
 func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, window *models.RouteMetricsWindow) error {
-	window.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(window).Create()
+	err := r.routeMetricsRepo.Create(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store route metrics window",
 			zap.String("routeID", window.RouteID),
 			zap.Time("windowStart", window.WindowStart),
 			zap.Error(err))
-		return fmt.Errorf("store route metrics window: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, window.RouteID)
 	}
 
 	r.logger.Debug("Stored route metrics window",
@@ -50,11 +74,11 @@ func (r *RoutingMetricsRepository) StoreRouteMetricsWindow(ctx context.Context, 
 }
 
 // getMetricsWindows is a generic function to retrieve metrics windows
-func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, metricsType, id string, since time.Time, limit int, model interface{}, result interface{}) error {
+func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, repo interface{ GetDB() core.DB }, metricsType, id string, since time.Time, limit int, model interface{}, result interface{}) error {
 	pk := fmt.Sprintf("METRICS#%s#%s", metricsType, id)
 	sinceKey := fmt.Sprintf("WINDOW#%d", since.Unix())
 
-	err := r.db.WithContext(ctx).Model(model).
+	err := repo.GetDB().WithContext(ctx).Model(model).
 		Where("PK", "=", pk).
 		Where("SK", ">", sinceKey).
 		Limit(limit).
@@ -66,7 +90,7 @@ func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, metric
 			zap.String(fmt.Sprintf("%sID", strings.ToLower(metricsType)), id),
 			zap.Time("since", since),
 			zap.Error(err))
-		return fmt.Errorf("get %s metrics windows: %w", strings.ToLower(metricsType), err)
+		return ErrorHandler.HandleQueryError(err, EntityRoutingMetrics, fmt.Sprintf("%s windows", strings.ToLower(metricsType)))
 	}
 
 	r.logger.Debug(fmt.Sprintf("Retrieved %s metrics windows", strings.ToLower(metricsType)),
@@ -80,7 +104,7 @@ func (r *RoutingMetricsRepository) getMetricsWindows(ctx context.Context, metric
 // GetRouteMetricsWindows retrieves route metrics for a time range
 func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, routeID string, since time.Time, limit int) ([]*models.RouteMetricsWindow, error) {
 	var windows []*models.RouteMetricsWindow
-	err := r.getMetricsWindows(ctx, "ROUTE", routeID, since, limit, &models.RouteMetricsWindow{}, &windows)
+	err := r.getMetricsWindows(ctx, r.routeMetricsRepo, "ROUTE", routeID, since, limit, &models.RouteMetricsWindow{}, &windows)
 	if err != nil {
 		return nil, err
 	}
@@ -89,14 +113,12 @@ func (r *RoutingMetricsRepository) GetRouteMetricsWindows(ctx context.Context, r
 
 // StoreGlobalMetricsWindow stores aggregated global metrics for a time window
 func (r *RoutingMetricsRepository) StoreGlobalMetricsWindow(ctx context.Context, window *models.GlobalMetricsWindow) error {
-	window.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(window).Create()
+	err := r.globalMetricsRepo.Create(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store global metrics window",
 			zap.Time("windowStart", window.WindowStart),
 			zap.Error(err))
-		return fmt.Errorf("store global metrics window: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "global")
 	}
 
 	r.logger.Debug("Stored global metrics window",
@@ -112,7 +134,7 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 
 	sinceKey := fmt.Sprintf("%d", since.Unix())
 
-	err := r.db.WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
+	err := r.globalMetricsRepo.GetDB().WithContext(ctx).Model(&models.GlobalMetricsWindow{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "METRICS#GLOBAL").
 		Where("GSI1SK", ">", sinceKey).
@@ -124,7 +146,7 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 		r.logger.Error("Failed to get global metrics windows",
 			zap.Time("since", since),
 			zap.Error(err))
-		return nil, fmt.Errorf("get global metrics windows: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityRoutingMetrics, "global windows")
 	}
 
 	r.logger.Debug("Retrieved global metrics windows",
@@ -136,15 +158,13 @@ func (r *RoutingMetricsRepository) GetGlobalMetricsWindows(ctx context.Context, 
 
 // StoreInstanceMetricsWindow stores aggregated instance metrics for a time window
 func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Context, window *models.InstanceMetricsWindow) error {
-	window.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(window).Create()
+	err := r.instanceMetricsRepo.Create(ctx, window)
 	if err != nil {
 		r.logger.Error("Failed to store instance metrics window",
 			zap.String("instanceID", window.InstanceID),
 			zap.Time("windowStart", window.WindowStart),
 			zap.Error(err))
-		return fmt.Errorf("store instance metrics window: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, window.InstanceID)
 	}
 
 	r.logger.Debug("Stored instance metrics window",
@@ -158,7 +178,7 @@ func (r *RoutingMetricsRepository) StoreInstanceMetricsWindow(ctx context.Contex
 // GetInstanceMetricsWindows retrieves instance metrics for a time range
 func (r *RoutingMetricsRepository) GetInstanceMetricsWindows(ctx context.Context, instanceID string, since time.Time, limit int) ([]*models.InstanceMetricsWindow, error) {
 	var windows []*models.InstanceMetricsWindow
-	err := r.getMetricsWindows(ctx, "INSTANCE", instanceID, since, limit, &models.InstanceMetricsWindow{}, &windows)
+	err := r.getMetricsWindows(ctx, r.instanceMetricsRepo, "INSTANCE", instanceID, since, limit, &models.InstanceMetricsWindow{}, &windows)
 	if err != nil {
 		return nil, err
 	}
@@ -170,43 +190,34 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 	routeWindows []*models.RouteMetricsWindow,
 	instanceWindows []*models.InstanceMetricsWindow,
 	globalWindow *models.GlobalMetricsWindow) error {
-	// Update keys for all items
-	for _, window := range routeWindows {
-		window.UpdateKeys()
-	}
-	for _, window := range instanceWindows {
-		window.UpdateKeys()
-	}
-	if globalWindow != nil {
-		globalWindow.UpdateKeys()
-	}
-
-	// Store route windows
-	for _, window := range routeWindows {
-		if err := r.db.WithContext(ctx).Model(window).Create(); err != nil {
-			r.logger.Error("Failed to store route metrics window in batch",
-				zap.String("routeID", window.RouteID),
+	
+	// Use BaseRepository batch create operations if available, or fall back to individual creates
+	if len(routeWindows) > 0 {
+		err := r.routeMetricsRepo.BatchCreate(ctx, routeWindows)
+		if err != nil {
+			r.logger.Error("Failed to batch store route metrics windows",
 				zap.Error(err))
-			return fmt.Errorf("batch store route metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "route batch")
 		}
 	}
 
 	// Store instance windows
-	for _, window := range instanceWindows {
-		if err := r.db.WithContext(ctx).Model(window).Create(); err != nil {
-			r.logger.Error("Failed to store instance metrics window in batch",
-				zap.String("instanceID", window.InstanceID),
+	if len(instanceWindows) > 0 {
+		err := r.instanceMetricsRepo.BatchCreate(ctx, instanceWindows)
+		if err != nil {
+			r.logger.Error("Failed to batch store instance metrics windows",
 				zap.Error(err))
-			return fmt.Errorf("batch store instance metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "instance batch")
 		}
 	}
 
 	// Store global window
 	if globalWindow != nil {
-		if err := r.db.WithContext(ctx).Model(globalWindow).Create(); err != nil {
+		err := r.globalMetricsRepo.Create(ctx, globalWindow)
+		if err != nil {
 			r.logger.Error("Failed to store global metrics window in batch",
 				zap.Error(err))
-			return fmt.Errorf("batch store global metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityRoutingMetrics, "global batch")
 		}
 	}
 

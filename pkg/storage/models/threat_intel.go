@@ -36,7 +36,7 @@ type ThreatIntel struct {
 }
 
 // UpdateKeys updates the PK, SK, and GSI keys based on threat data
-func (t *ThreatIntel) UpdateKeys() {
+func (t *ThreatIntel) UpdateKeys() error {
 	// Primary key: PK=THREAT#{id}, SK=METADATA (exact legacy pattern)
 	t.PK = fmt.Sprintf("THREAT#%s", t.ID)
 	t.SK = SKMetadata
@@ -48,6 +48,17 @@ func (t *ThreatIntel) UpdateKeys() {
 	// GSI2 for querying by time: PK=THREATS, SK={timestamp}#{id}
 	t.GSI2PK = "THREATS"
 	t.GSI2SK = fmt.Sprintf("%d#%s", t.LastSeen.Unix(), t.ID)
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (t *ThreatIntel) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (t *ThreatIntel) GetSK() string {
+	return t.SK
 }
 
 // ThreatIndicator represents an indicator mapping for fast lookup
@@ -64,7 +75,7 @@ type ThreatIndicator struct {
 }
 
 // UpdateKeys updates the PK and SK for indicator lookup
-func (ti *ThreatIndicator) UpdateKeys(indicator, threatID string) {
+func (ti *ThreatIndicator) UpdateKeys(indicator, threatID string) error {
 	// Primary key: PK=INDICATOR#{indicator}, SK=THREAT#{threatID}
 	ti.PK = fmt.Sprintf("INDICATOR#%s", indicator)
 	ti.SK = fmt.Sprintf("THREAT#%s", threatID)
@@ -72,4 +83,15 @@ func (ti *ThreatIndicator) UpdateKeys(indicator, threatID string) {
 
 	// Set TTL for 30 days (same as legacy)
 	ti.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (ti *ThreatIndicator) GetPK() string {
+	return ti.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (ti *ThreatIndicator) GetSK() string {
+	return ti.SK
 }

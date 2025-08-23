@@ -20,7 +20,7 @@ func GenerateBlurhash(img image.Image, componentX, componentY int) (string, erro
 	// Generate the hash
 	hash, err := blurhash.Encode(componentX, componentY, resized)
 	if err != nil {
-		return "", fmt.Errorf("failed to encode blurhash: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrBlurhashEncode, err)
 	}
 
 	return hash, nil
@@ -43,7 +43,7 @@ func GenerateBlurhashFromBytes(data []byte, mimeType string) (string, error) {
 	}
 
 	if err != nil {
-		return "", fmt.Errorf("failed to decode image: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrImageDecode, err)
 	}
 
 	// Use 4x3 components for a good balance of quality and size
@@ -55,7 +55,7 @@ func DecodeBlurhash(hash string, width, height int) (image.Image, error) {
 	// Decode the hash
 	img, err := blurhash.Decode(hash, width, height, 1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode blurhash: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrBlurhashDecode, err)
 	}
 
 	return img, nil

@@ -30,10 +30,10 @@ func (ConversationMute) TableName() string {
 // BeforeCreate sets up the keys before creating a mute
 func (c *ConversationMute) BeforeCreate() error {
 	if err := common.ValidateRequiredParam("c.Username", c.Username); err != nil {
-		return fmt.Errorf("username is required")
+		return ErrConversationMuteUsernameRequired
 	}
 	if err := common.ValidateRequiredParam("c.ConversationID", c.ConversationID); err != nil {
-		return fmt.Errorf("conversation ID is required")
+		return ErrConversationMuteConversationIDRequired
 	}
 
 	c.PK = fmt.Sprintf(KeyPatternUser, c.Username)
@@ -52,7 +52,7 @@ func (c *ConversationMute) BeforeCreate() error {
 }
 
 // UpdateKeys updates the composite keys based on the username and conversation ID
-func (c *ConversationMute) UpdateKeys() {
+func (c *ConversationMute) UpdateKeys() error {
 	if c.Username != "" && c.ConversationID != "" {
 		c.PK = fmt.Sprintf(KeyPatternUser, c.Username)
 		c.SK = fmt.Sprintf("CONVERSATION_MUTE#%s", c.ConversationID)
@@ -62,4 +62,15 @@ func (c *ConversationMute) UpdateKeys() {
 	if !c.ExpiresAt.IsZero() {
 		c.TTL = c.ExpiresAt.Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *ConversationMute) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *ConversationMute) GetSK() string {
+	return c.SK
 }

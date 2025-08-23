@@ -3,6 +3,7 @@ package federation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -80,13 +81,20 @@ func (s *RemoteSearchService) ResolveActor(ctx context.Context, handle string) (
 	// Not in cache, perform WebFinger lookup
 	actorURL, err := s.webFingerLookup(ctx, username, domain)
 	if err != nil {
-		return nil, fmt.Errorf("webfinger lookup failed: %w", err)
+		s.logger.Error("webfinger lookup failed",
+			zap.String("username", username),
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil, errors.Join(ErrWebFingerLookupFailed, err)
 	}
 
 	// Fetch the actor from their ActivityPub endpoint
 	actor, err := s.fetchRemoteActor(ctx, actorURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch remote actor: %w", err)
+		s.logger.Error("failed to fetch remote actor",
+			zap.String("actor_url", actorURL),
+			zap.Error(err))
+		return nil, errors.Join(ErrFetchRemoteActorFailed, err)
 	}
 
 	// Cache the remote actor with 24 hour TTL
@@ -123,18 +131,27 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("webfinger request failed: %w", err)
+		s.logger.Error("webfinger request failed",
+			zap.String("url", webfingerURL),
+			zap.Error(err))
+		return "", errors.Join(ErrWebFingerRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("webfinger returned status %d", resp.StatusCode)
+		s.logger.Error("webfinger returned non-2xx status",
+			zap.String("url", webfingerURL),
+			zap.Int("status_code", resp.StatusCode))
+		return "", ErrWebFingerNon2xxStatus
 	}
 
 	// Parse WebFinger response
 	var webfingerResp activitypub.WebFingerResource
 	if err := common.ParseHTTPResponse(resp.Body, &webfingerResp); err != nil {
-		return "", fmt.Errorf("failed to parse webfinger response: %w", err)
+		s.logger.Error("failed to parse webfinger response",
+			zap.String("url", webfingerURL),
+			zap.Error(err))
+		return "", errors.Join(ErrWebFingerResponseParseFailed, err)
 	}
 
 	// Find the ActivityPub link
@@ -144,7 +161,9 @@ func (s *RemoteSearchService) webFingerLookup(ctx context.Context, username, dom
 		}
 	}
 
-	return "", fmt.Errorf("no ActivityPub link found in webfinger response")
+	s.logger.Error("no ActivityPub link found in webfinger response",
+		zap.String("url", webfingerURL))
+	return "", ErrNoActivityPubLinkFound
 }
 
 // fetchRemoteActor fetches an actor from their ActivityPub endpoint
@@ -158,22 +177,35 @@ func (s *RemoteSearchService) fetchRemoteActor(ctx context.Context, actorURL str
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch actor: %w", err)
+		s.logger.Error("failed to fetch actor",
+			zap.String("actor_url", actorURL),
+			zap.Error(err))
+		return nil, errors.Join(ErrFetchActorHTTPFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
+		s.logger.Error("failed to fetch actor: non-2xx status",
+			zap.String("actor_url", actorURL),
+			zap.Int("status_code", resp.StatusCode))
+		return nil, ErrRemoteActorNon2xxStatus
 	}
 
 	var actor activitypub.Actor
 	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, fmt.Errorf("failed to decode actor: %w", err)
+		s.logger.Error("failed to decode actor",
+			zap.String("actor_url", actorURL),
+			zap.Error(err))
+		return nil, errors.Join(ErrRemoteActorDecodeFailed, err)
 	}
 
 	// Validate required fields
 	if actor.ID == "" || actor.Inbox == "" {
-		return nil, fmt.Errorf("invalid actor: missing required fields")
+		s.logger.Error("invalid actor: missing required fields",
+			zap.String("actor_url", actorURL),
+			zap.String("actor_id", actor.ID),
+			zap.String("actor_inbox", actor.Inbox))
+		return nil, ErrInvalidActorMissingFields
 	}
 
 	return &actor, nil
@@ -232,7 +264,7 @@ func parseHandle(handle string) (username, domain string, err error) {
 		// Local user - validate username
 		username = parts[0]
 		if err := activitypub.ValidateUsername(username); err != nil {
-			return "", "", fmt.Errorf("invalid username: %w", err)
+			return "", "", errors.Join(ErrInvalidUsernameFormat, err)
 		}
 		return username, "", nil
 	} else if len(parts) == 2 {
@@ -241,17 +273,17 @@ func parseHandle(handle string) (username, domain string, err error) {
 		domain = parts[1]
 
 		if err := activitypub.ValidateUsername(username); err != nil {
-			return "", "", fmt.Errorf("invalid username: %w", err)
+			return "", "", errors.Join(ErrInvalidUsernameFormat, err)
 		}
 
 		if err := activitypub.ValidateDomain(domain); err != nil {
-			return "", "", fmt.Errorf("invalid domain: %w", err)
+			return "", "", errors.Join(ErrInvalidDomainFormat, err)
 		}
 
 		return username, domain, nil
 	}
 
-	return "", "", fmt.Errorf("invalid handle format: %s", handle)
+	return "", "", ErrInvalidHandleFormat
 }
 
 // isValidHandle checks if a query looks like a federated handle
@@ -273,7 +305,8 @@ func (s *RemoteSearchService) searchKnownInstances(ctx context.Context, query st
 	// Get active instances (this would come from federation stats/health)
 	knownInstances, err := s.getKnownActiveInstances(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get known instances: %w", err)
+		s.logger.Error("failed to get known instances", zap.Error(err))
+		return nil, errors.Join(ErrGetKnownInstancesFailed, err)
 	}
 
 	var results []*SearchResult
@@ -357,7 +390,7 @@ func (s *RemoteSearchService) searchRemoteInstance(ctx context.Context, domain, 
 
 	req, err := http.NewRequestWithContext(ctx, "GET", searchURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.Join(ErrCreateSearchRequestFailed, err)
 	}
 
 	req.Header.Set("User-Agent", "Lesser/1.0")
@@ -365,7 +398,7 @@ func (s *RemoteSearchService) searchRemoteInstance(ctx context.Context, domain, 
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
+		return nil, errors.Join(ErrSearchRequestFailed, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -374,7 +407,7 @@ func (s *RemoteSearchService) searchRemoteInstance(ctx context.Context, domain, 
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("search returned status %d", resp.StatusCode)
+		return nil, ErrSearchNon2xxStatus
 	}
 
 	// Parse response
@@ -390,7 +423,7 @@ func (s *RemoteSearchService) searchRemoteInstance(ctx context.Context, domain, 
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, fmt.Errorf("failed to decode search response: %w", err)
+		return nil, errors.Join(ErrSearchResponseDecodeFailed, err)
 	}
 
 	// Convert to our result format

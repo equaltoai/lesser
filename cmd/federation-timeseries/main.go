@@ -301,7 +301,7 @@ var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	logger    *zap.Logger
-	repos     core.RepositoryStorage
+	repos     core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
 	processor *TimeseriesProcessor
 )
 

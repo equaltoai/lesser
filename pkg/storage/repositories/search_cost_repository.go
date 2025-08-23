@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -10,28 +11,29 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // SearchCostRepository manages search cost tracking and budgets
 type SearchCostRepository struct {
-	db     core.DB
+	*BaseRepository[*models.SearchCostTracking]
 	logger *zap.Logger
 }
 
 // NewSearchCostRepository creates a new search cost tracking repository
 func NewSearchCostRepository(db core.DB, logger *zap.Logger) *SearchCostRepository {
+	baseRepo := NewBaseRepository[*models.SearchCostTracking](db, "", logger)
 	return &SearchCostRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: baseRepo,
+		logger:         logger,
 	}
 }
 
 // RecordSearchCost records cost tracking data for a search operation
 func (r *SearchCostRepository) RecordSearchCost(ctx context.Context, costData *models.SearchCostTracking) error {
 	if costData == nil {
-		return fmt.Errorf("cost data cannot be nil")
+		return ErrorHandler.HandleCreateError(errors.New("cost data cannot be nil"), EntitySearchCost, "validation")
 	}
 
 	// Update keys and set defaults
@@ -45,15 +47,15 @@ func (r *SearchCostRepository) RecordSearchCost(ctx context.Context, costData *m
 		costData.CostPerResult = costData.TotalCostMicros / int64(costData.ResultCount)
 	}
 
-	// Store the cost tracking record
-	err := r.db.WithContext(ctx).Model(costData).Create()
+	// Store the cost tracking record using BaseRepository
+	err := r.BaseRepository.Create(ctx, costData)
 	if err != nil {
 		r.logger.Error("failed to record search cost",
 			zap.String("user_id", costData.UserID),
 			zap.String("operation_type", costData.OperationType),
 			zap.String("search_type", costData.SearchType),
 			zap.Error(err))
-		return fmt.Errorf("failed to record search cost: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntitySearchCost, costData.UserID)
 	}
 
 	// Update user budget usage
@@ -85,25 +87,25 @@ func (r *SearchCostRepository) RecordSearchCost(ctx context.Context, costData *m
 func (r *SearchCostRepository) CheckBudget(ctx context.Context, userID, operationType string, estimatedCostMicros int64) error {
 	budget, err := r.getUserBudget(ctx, userID, "daily")
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			// Create default budget if none exists
 			if err := r.createDefaultBudget(ctx, userID); err != nil {
-				return fmt.Errorf("failed to create default budget: %w", err)
+				return ErrorHandler.HandleCreateError(err, EntitySearchBudget, userID)
 			}
 			// Retry getting budget
 			budget, err = r.getUserBudget(ctx, userID, "daily")
 			if err != nil {
-				return fmt.Errorf("failed to get budget after creation: %w", err)
+				return ErrorHandler.HandleGetError(err, EntitySearchBudget, userID)
 			}
 		} else {
-			return fmt.Errorf("failed to check budget: %w", err)
+			return ErrorHandler.HandleGetError(err, EntitySearchBudget, userID)
 		}
 	}
 
 	// Check if user can make the request
 	if !budget.CanMakeRequest(operationType, estimatedCostMicros) {
-		return fmt.Errorf("budget exceeded: operation %s would cost %d microcents but budget allows %d remaining",
-			operationType, estimatedCostMicros, budget.BudgetLimitMicros-budget.UsedBudgetMicros)
+		return ErrorHandler.HandleQueryError(errors.New(fmt.Sprintf("budget exceeded: operation %s would cost %d microcents but budget allows %d remaining",
+			operationType, estimatedCostMicros, budget.BudgetLimitMicros-budget.UsedBudgetMicros)), EntitySearchBudget, "budget limit check")
 	}
 
 	return nil
@@ -113,21 +115,21 @@ func (r *SearchCostRepository) CheckBudget(ctx context.Context, userID, operatio
 func (r *SearchCostRepository) RecordBudgetUsage(ctx context.Context, userID, operationType string, actualCostMicros int64) error {
 	budget, err := r.getUserBudget(ctx, userID, "daily")
 	if err != nil {
-		return fmt.Errorf("failed to get budget for usage recording: %w", err)
+		return ErrorHandler.HandleGetError(err, EntitySearchBudget, userID)
 	}
 
 	// Record the usage
 	budget.RecordUsage(operationType, actualCostMicros)
 
-	// Update the budget record
-	err = r.db.WithContext(ctx).Model(budget).Update()
+	// Update the budget record using BaseRepository's GetDB for SearchBudget
+	err = r.BaseRepository.GetDB().WithContext(ctx).Model(budget).Update()
 	if err != nil {
 		r.logger.Error("failed to update budget usage",
 			zap.String("user_id", userID),
 			zap.String("operation_type", operationType),
 			zap.Int64("cost_micros", actualCostMicros),
 			zap.Error(err))
-		return fmt.Errorf("failed to update budget usage: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntitySearchBudget, userID)
 	}
 
 	return nil
@@ -148,11 +150,11 @@ func (r *SearchCostRepository) GetSearchCosts(ctx context.Context, userID string
 		dateStr := current.Format(common.DateFormat)
 
 		var dayCosts []models.SearchCostTracking
-		err := r.db.WithContext(ctx).Model(&models.SearchCostTracking{}).
+		err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.SearchCostTracking{}).
 			Where("PK", "=", fmt.Sprintf("SEARCH_COST#%s#%s", dateStr, userID)).
 			All(&dayCosts)
 
-		if err != nil && !errors.IsNotFound(err) {
+		if err != nil && !dynamormErrors.IsNotFound(err) {
 			r.logger.Warn("failed to get search costs for date",
 				zap.String("user_id", userID),
 				zap.String("date", dateStr),
@@ -192,7 +194,7 @@ func (r *SearchCostRepository) GetSearchCostSummary(ctx context.Context, userID 
 
 	costs, err := r.GetSearchCosts(ctx, userID, startDate, now)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get search costs: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySearchCost, "date range query")
 	}
 
 	return r.calculateSummary(costs), nil
@@ -219,13 +221,13 @@ func (r *SearchCostRepository) GetPopularQueries(ctx context.Context, limit int,
 	// Note: periodDate could be used for more specific queries in the future
 
 	// Query all query stats for the period
-	err := r.db.WithContext(ctx).Model(&models.SearchQueryStats{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.SearchQueryStats{}).
 		Filter("SK", "=", fmt.Sprintf("STATS#%s", period)).
 		Limit(limit * 2). // Get more to filter and sort
 		All(&stats)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get popular queries: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySearchMetric, "popular queries")
 	}
 
 	// Sort by query count
@@ -256,12 +258,12 @@ func (r *SearchCostRepository) ResetBudgets(ctx context.Context, period string) 
 	periodDate := time.Now().Format(common.DateFormat)
 
 	// Scan for budgets that need resetting
-	err := r.db.WithContext(ctx).Model(&models.SearchBudget{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.SearchBudget{}).
 		Filter("SK", "=", fmt.Sprintf("PERIOD#%s", periodDate)).
 		All(&budgets)
 
 	if err != nil {
-		return fmt.Errorf("failed to query budgets for reset: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntitySearchBudget, "reset query")
 	}
 
 	for _, budget := range budgets {
@@ -276,7 +278,7 @@ func (r *SearchCostRepository) ResetBudgets(ctx context.Context, period string) 
 		budget.LastResetTime = time.Now()
 		budget.UpdatedAt = time.Now()
 
-		err = r.db.WithContext(ctx).Model(&budget).Update()
+		err = r.BaseRepository.GetDB().WithContext(ctx).Model(&budget).Update()
 		if err != nil {
 			r.logger.Error("failed to reset budget",
 				zap.String("user_id", budget.UserID),
@@ -298,7 +300,7 @@ func (r *SearchCostRepository) getUserBudget(ctx context.Context, userID, period
 
 	periodDate := r.getPeriodDate(period)
 
-	err := r.db.WithContext(ctx).Model(&models.SearchBudget{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.SearchBudget{}).
 		Where("PK", "=", fmt.Sprintf("SEARCH_BUDGET#%s", userID)).
 		Where("SK", "=", fmt.Sprintf("PERIOD#%s", periodDate)).
 		First(&budget)
@@ -332,9 +334,9 @@ func (r *SearchCostRepository) createDefaultBudget(ctx context.Context, userID s
 
 	budget.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(budget).Create()
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(budget).Create()
 	if err != nil {
-		return fmt.Errorf("failed to create default budget: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntitySearchBudget, userID)
 	}
 
 	return nil
@@ -356,12 +358,12 @@ func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *m
 	var stats models.SearchQueryStats
 	// periodDate := time.Now().Format(common.DateFormat) // Reserved for future use
 
-	err := r.db.WithContext(ctx).Model(&models.SearchQueryStats{}).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.SearchQueryStats{}).
 		Where("PK", "=", fmt.Sprintf("SEARCH_STATS#%s", queryHash)).
 		Where("SK", "=", "STATS#daily").
 		First(&stats)
 
-	if errors.IsNotFound(err) {
+	if dynamormErrors.IsNotFound(err) {
 		// Create new stats record
 		stats = models.SearchQueryStats{
 			QueryHash:    queryHash,
@@ -371,7 +373,7 @@ func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *m
 			FirstQueried: costData.Timestamp,
 		}
 	} else if err != nil {
-		return fmt.Errorf("failed to get query stats: %w", err)
+		return ErrorHandler.HandleGetError(err, EntitySearchMetric, "query stats")
 	}
 
 	// Update statistics
@@ -407,13 +409,13 @@ func (r *SearchCostRepository) updateQueryStats(ctx context.Context, costData *m
 
 	// Create or update the record
 	if err == nil {
-		err = r.db.WithContext(ctx).Model(&stats).Update()
+		err = r.BaseRepository.GetDB().WithContext(ctx).Model(&stats).Update()
 	} else {
-		err = r.db.WithContext(ctx).Model(&stats).Create()
+		err = r.BaseRepository.GetDB().WithContext(ctx).Model(&stats).Create()
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to update query stats: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntitySearchMetric, "query stats")
 	}
 
 	return nil

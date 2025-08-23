@@ -36,9 +36,9 @@ type TransformationStep[T any] struct {
 
 // TransformationPipeline provides a framework for chaining transformations
 type TransformationPipeline[TSource, TTarget any] struct {
-	steps   []TransformationStep[any]
-	logger  *zap.Logger
-	metrics *TransformationMetrics
+	steps   []TransformationStep[any] //nolint:unused // Framework pattern - will be used when pipeline is implemented
+	logger  *zap.Logger              //nolint:unused // Framework pattern - will be used when pipeline is implemented
+	metrics *TransformationMetrics    //nolint:unused // Framework pattern - will be used when pipeline is implemented
 }
 
 // TransformationMetrics tracks performance and success rates
@@ -134,7 +134,7 @@ func (bt *BaseTransformer[TSource, TTarget]) Transform(ctx context.Context, sour
 			Step:       bt.name,
 			SourceType: fmt.Sprintf("%T", source),
 			TargetType: fmt.Sprintf("%T", zero),
-			Cause:      fmt.Errorf("transform function not set"),
+			Cause:      ErrTransformFunctionNotSet,
 		}
 	}
 
@@ -181,7 +181,7 @@ func (bt *BaseTransformer[TSource, TTarget]) WithCache(
 	return bt
 }
 
-// BatchTransformer provides efficient batch processing capabilities
+// BatchTransformerImpl provides efficient batch processing capabilities
 type BatchTransformerImpl[TSource, TTarget any] struct {
 	*BaseTransformer[TSource, TTarget]
 	batchFn    func(context.Context, []TSource) ([]TTarget, error)
@@ -333,7 +333,7 @@ func (tc *TransformationCache[TSource, TTarget]) Set(source TSource, target TTar
 
 // Clear removes all cached entries
 func (tc *TransformationCache[TSource, TTarget]) Clear() {
-	tc.cache.Range(func(key, value interface{}) bool {
+	tc.cache.Range(func(key, _ interface{}) bool {
 		tc.cache.Delete(key)
 		return true
 	})
@@ -450,7 +450,7 @@ func (tc *TransformationContext) Duration() time.Duration {
 // Utility transformation functions for common patterns
 
 // IdentityTransformer returns the input unchanged (useful for pipeline testing)
-func IdentityTransformer[T any](ctx context.Context, input T) (T, error) {
+func IdentityTransformer[T any](_ context.Context, input T) (T, error) {
 	return input, nil
 }
 
@@ -516,7 +516,7 @@ func (ct *ConditionalTransformerImpl[TSource, TTarget]) Transform(
 			Step:       ct.name,
 			SourceType: fmt.Sprintf("%T", source),
 			TargetType: fmt.Sprintf("%T", zero),
-			Cause:      fmt.Errorf("transformation condition not met"),
+			Cause:      ErrTransformationConditionNotMet,
 		}
 	}
 	

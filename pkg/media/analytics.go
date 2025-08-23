@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // BandwidthAnalytics handles bandwidth usage analytics
@@ -154,7 +154,7 @@ func NewBandwidthAnalytics(ctx context.Context, storageService interface {
 }) (BandwidthAnalytics, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrAWSConfigLoad, err)
 	}
 
 	return &bandwidthAnalytics{
@@ -174,13 +174,15 @@ func (b *bandwidthAnalytics) ProcessLogFiles(ctx context.Context, bucket, prefix
 
 	result, err := b.s3Client.ListObjectsV2(ctx, listInput)
 	if err != nil {
-		return fmt.Errorf("failed to list log files: %w", err)
+		return fmt.Errorf("%w: %w", ErrLogFilesListing, err)
 	}
 
 	// Process each log file
 	for _, obj := range result.Contents {
 		if err := b.processLogFile(ctx, bucket, *obj.Key); err != nil {
-			log.Printf("Failed to process log file %s: %v", *obj.Key, err)
+			zap.L().Error("failed to process log file", 
+				zap.String("key", *obj.Key), 
+				zap.Error(err))
 			continue
 		}
 	}
@@ -198,11 +200,11 @@ func (b *bandwidthAnalytics) processLogFile(ctx context.Context, bucket, key str
 
 	result, err := b.s3Client.GetObject(ctx, getInput)
 	if err != nil {
-		return fmt.Errorf("failed to get log file: %w", err)
+		return fmt.Errorf("%w: %w", ErrLogFileRetrieval, err)
 	}
 	defer func() {
 		if closeErr := result.Body.Close(); closeErr != nil {
-			log.Printf("Warning: failed to close S3 object body: %v", closeErr)
+			zap.L().Warn("failed to close S3 object body", zap.Error(closeErr))
 		}
 	}()
 
@@ -252,13 +254,13 @@ func (b *bandwidthAnalytics) processLogFile(ctx context.Context, bucket, key str
 	// Store usage records
 	for _, usage := range usageRecords {
 		if err := b.storageService.StoreBandwidthUsage(ctx, usage); err != nil {
-			log.Printf("Failed to store bandwidth usage: %v", err)
+			zap.L().Error("failed to store bandwidth usage", zap.Error(err))
 		}
 	}
 
 	// Send metrics to CloudWatch
 	if err := b.sendMetrics(ctx, usageRecords); err != nil {
-		log.Printf("Failed to send metrics to CloudWatch: %v", err)
+		zap.L().Error("failed to send metrics to CloudWatch", zap.Error(err))
 	}
 
 	return nil
@@ -412,7 +414,7 @@ func (b *bandwidthAnalytics) sendMetrics(ctx context.Context, usageRecords []*Ba
 		}
 
 		if _, err := b.cloudWatch.PutMetricData(ctx, input); err != nil {
-			return fmt.Errorf("failed to put metric data: %w", err)
+			return fmt.Errorf("%w: %w", ErrMetricDataSubmission, err)
 		}
 	}
 
@@ -424,7 +426,7 @@ func (b *bandwidthAnalytics) GetBandwidthReport(ctx context.Context, period stri
 	// Get usage data from storage
 	usageData, err := b.storageService.GetBandwidthUsage(ctx, start, end)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get bandwidth usage: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrBandwidthUsageRetrieval, err)
 	}
 
 	// Calculate aggregations
@@ -586,7 +588,7 @@ func (b *bandwidthAnalytics) generateRecommendations(report *BandwidthReport) []
 func (b *bandwidthAnalytics) TrackBandwidthUsage(ctx context.Context, usage *BandwidthUsage) error {
 	// Store in database
 	if err := b.storageService.StoreBandwidthUsage(ctx, usage); err != nil {
-		return fmt.Errorf("failed to store bandwidth usage: %w", err)
+		return fmt.Errorf("%w: %w", ErrBandwidthUsageStorage, err)
 	}
 
 	// Send real-time metric to CloudWatch
@@ -616,7 +618,7 @@ func (b *bandwidthAnalytics) TrackBandwidthUsage(ctx context.Context, usage *Ban
 
 	_, err := b.cloudWatch.PutMetricData(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to send realtime metric: %w", err)
+		return fmt.Errorf("%w: %w", ErrRealtimeMetricSubmission, err)
 	}
 
 	return nil

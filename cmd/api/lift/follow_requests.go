@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -29,7 +30,7 @@ type followRequestConfig struct {
 func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activitypub.Actor, username, accountID string, config followRequestConfig) error {
 	// Only locked accounts can have follow requests
 	if !actor.ManuallyApprovesFollowers {
-		return h.respondBadRequest(ctx, "account is not locked")
+		return common.RespondBadRequest(ctx, "account is not locked")
 	}
 
 	// Call the appropriate service method
@@ -55,10 +56,10 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 
 	if err != nil {
 		h.logger.Error(config.errorLogMessage, zap.Error(err))
-		if fmt.Sprintf("%v", err) == "follow request not found" {
-			return h.respondNotFound(ctx, "follow request")
+		if err.Error() == common.ErrorFollowRequestNotFound {
+			return common.RespondNotFound(ctx, "follow request")
 		}
-		return h.respondInternalError(ctx, "internal server error")
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Send activity to the follower
@@ -90,7 +91,7 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 		result, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
-			return h.respondInternalError(ctx, "internal server error")
+			return common.RespondInternalServerError(ctx, "internal server error")
 		}
 		actor := result.Actor
 
@@ -114,26 +115,26 @@ func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return h.respondUnauthorized(ctx)
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return h.respondUnauthorized(ctx)
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Check read:follows scope
 	if !claims.HasScope("read:follows") && !claims.HasScope(auth.ScopeRead) {
-		return h.respondInsufficientScope(ctx)
+		return common.RespondInsufficientScope(ctx)
 	}
 
 	// Get the user's actor
 	result, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return h.respondInternalError(ctx, "internal server error")
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 	actor := result.Actor
 
@@ -154,7 +155,7 @@ func (h *Handler) handleGetFollowRequestsLogic(ctx *lift.Context, actor *activit
 	})
 	if err != nil {
 		h.logger.Error("failed to get pending follow requests", zap.Error(err))
-		return h.respondInternalError(ctx, "internal server error")
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 
 	// Convert to account format
@@ -208,10 +209,10 @@ func (h *Handler) HandleRejectFollowRequestLift(ctx *lift.Context) error {
 
 // handleFollowRequestAction consolidates the common authentication and validation logic
 // for both authorize and reject follow request actions
-func (h *Handler) handleFollowRequestAction(ctx *lift.Context, action string, logicHandler func(*lift.Context, *activitypub.Actor, string, string) error) error {
+func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHandler func(*lift.Context, *activitypub.Actor, string, string) error) error {
 	accountID := ctx.Param("account_id")
 	if err := common.ValidateRequiredParam("account_id", accountID); err != nil {
-		return h.respondBadRequest(ctx, err.Error())
+		return common.RespondBadRequest(ctx, err.Error())
 	}
 
 	// Test hook - check for test username header
@@ -225,7 +226,7 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, action string, lo
 		result, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
 		if err != nil {
 			h.logger.Error("failed to get actor", zap.Error(err))
-			return h.respondInternalError(ctx, "internal server error")
+			return common.RespondInternalServerError(ctx, "internal server error")
 		}
 		actor := result.Actor
 
@@ -249,26 +250,26 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, action string, lo
 
 	token, err := auth.ExtractBearerToken(authHeader)
 	if err != nil {
-		return h.respondUnauthorized(ctx)
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return h.respondUnauthorized(ctx)
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Check write:follows scope
 	if !claims.HasScope(auth.WriteFollows) && !claims.HasScope(auth.ScopeWrite) {
-		return h.respondInsufficientScope(ctx)
+		return common.RespondInsufficientScope(ctx)
 	}
 
 	// Get the user's actor
 	result, err := h.registry.Accounts().GetAccount(ctx.Context, claims.Username)
 	if err != nil {
 		h.logger.Error("failed to get actor", zap.Error(err))
-		return h.respondInternalError(ctx, "internal server error")
+		return common.RespondInternalServerError(ctx, "internal server error")
 	}
 	actor := result.Actor
 
@@ -365,14 +366,14 @@ func (h *Handler) sendFollowResponseActivity(ctx context.Context, followerID, fo
 	// Get follower actor to determine inbox
 	followerResult, err := h.registry.Accounts().GetAccount(ctx, followerID)
 	if err != nil {
-		return fmt.Errorf("failed to get follower actor: %w", err)
+		return errors.Join(ErrFailedToGetFollowerActor, err)
 	}
 	followerActor := followerResult.Actor
 
 	// Get followed actor
 	followedResult, err := h.registry.Accounts().GetAccount(ctx, followedID)
 	if err != nil {
-		return fmt.Errorf("failed to get followed actor: %w", err)
+		return errors.Join(ErrFailedToGetFollowedActor, err)
 	}
 	followedActor := followedResult.Actor
 

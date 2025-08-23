@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -20,7 +21,7 @@ type HashtagFollowUpdateConfig struct {
 
 // updateHashtagFollowSetting is a generic helper for updating hashtag follow settings
 func updateHashtagFollowSetting(
-	ctx context.Context,
+	_ context.Context,
 	db core.DB,
 	logger *zap.Logger,
 	userID, hashtag string,
@@ -41,7 +42,7 @@ func updateHashtagFollowSetting(
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return fmt.Errorf("failed to get hashtag follow: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 	}
 
 	// Update the appropriate field based on operation
@@ -55,7 +56,11 @@ func updateHashtagFollowSetting(
 	case "unmute":
 		existingFollow.Muted = false
 	default:
-		return fmt.Errorf("unknown operation: %s", config.Operation)
+		logger.Error("unknown operation type for hashtag follow",
+			zap.String("operation", config.Operation),
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower))
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, fmt.Sprintf("follow %s#%s operation %s", userID, tagLower, config.Operation))
 	}
 
 	existingFollow.UpdatedAt = now
@@ -67,7 +72,7 @@ func updateHashtagFollowSetting(
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return fmt.Errorf("failed to %s hashtag: %w", config.Operation, err)
+		return ErrorHandler.HandleUpdateError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 	}
 
 	return nil

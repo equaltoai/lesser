@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -16,9 +17,7 @@ import (
 
 // RelationshipRepository implements relationship operations using DynamORM
 type RelationshipRepository struct {
-	db         core.DB
-	tableName  string
-	logger     *zap.Logger
+	*BaseRepository[*models.RelationshipRecord]
 	blockRepo  *BlockRepository
 	muteRepo   *MuteRepository
 	socialRepo *SocialRepository
@@ -28,13 +27,22 @@ type RelationshipRepository struct {
 // NewRelationshipRepository creates a new relationship repository
 func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger) *RelationshipRepository {
 	return &RelationshipRepository{
-		db:         db,
-		tableName:  tableName,
-		logger:     logger,
-		blockRepo:  NewBlockRepository(db, tableName, logger),
-		muteRepo:   NewMuteRepository(db, tableName, logger),
-		socialRepo: NewSocialRepository(db, logger),
-		queryUtils: NewQueryUtils(db, logger),
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.RelationshipRecord](db, tableName, logger, nil, "relationship"),
+		blockRepo:      NewBlockRepository(db, tableName, logger, nil),
+		muteRepo:       NewMuteRepository(db, tableName, logger, nil),
+		socialRepo:     NewSocialRepository(db, logger),
+		queryUtils:     NewQueryUtils(db, logger),
+	}
+}
+
+// NewRelationshipRepositoryWithCostTracking creates a new relationship repository with cost tracking
+func NewRelationshipRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelationshipRepository {
+	return &RelationshipRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.RelationshipRecord](db, tableName, logger, costService, "relationship"),
+		blockRepo:      NewBlockRepository(db, tableName, logger, costService),
+		muteRepo:       NewMuteRepository(db, tableName, logger, costService),
+		socialRepo:     NewSocialRepository(db, logger),
+		queryUtils:     NewQueryUtils(db, logger),
 	}
 }
 
@@ -44,20 +52,15 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerID, targetID string) (*storage.RelationshipRecord, error) {
 	var relationship models.RelationshipRecord
 
-	err := r.db.WithContext(ctx).Model(&relationship).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerID)).
-		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
-		First(&relationship)
+	pk := fmt.Sprintf("FOLLOW#%s", followerID)
+	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
 
+	err := r.Get(ctx, pk, sk, &relationship)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("follow request not found")
+		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
+			return nil, ErrorHandler.HandleGetError(err, EntityFollow, "not found")
 		}
-		r.logger.Error("failed to get follow request",
-			zap.String("follower_id", followerID),
-			zap.String("target_id", targetID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get follow request: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityFollow, "request")
 	}
 
 	// Convert models.RelationshipRecord to storage.RelationshipRecord
@@ -75,33 +78,22 @@ func (r *RelationshipRepository) GetFollowRequest(ctx context.Context, followerI
 
 // HasFollowRequest checks if there's a follow request between two users
 func (r *RelationshipRepository) HasFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
-	var relationship models.RelationshipRecord
+	pk := fmt.Sprintf("FOLLOW#%s", requesterID)
+	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
 
-	err := r.db.WithContext(ctx).Model(&relationship).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
-		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
-		First(&relationship)
-
+	exists, err := r.Exists(ctx, pk, sk)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
-		r.logger.Error("failed to check for follow request",
-			zap.String("requester_id", requesterID),
-			zap.String("target_id", targetID),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to check for follow request: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "follow request", "check")
 	}
 
-	// Return true if any relationship exists (pending, accepted, or rejected)
-	return true, nil
+	return exists, nil
 }
 
 // CreateRelationship creates a new follow relationship
 func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followerUsername, followingUsername, activityID string) error {
 	relationship := models.NewRelationshipRecord(followerUsername, followingUsername, activityID)
 
-	if err := r.db.WithContext(ctx).Model(relationship).Create(); err != nil {
+	if err := r.Create(ctx, relationship); err != nil {
 		// Check if it's a duplicate key error
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("follow relationship already exists",
@@ -109,11 +101,7 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 				zap.String("following", followingUsername))
 			return nil
 		}
-		r.logger.Error("failed to create relationship",
-			zap.String("follower", followerUsername),
-			zap.String("following", followingUsername),
-			zap.Error(err))
-		return fmt.Errorf("failed to create relationship: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityFollow, followerUsername)
 	}
 
 	r.logger.Info("created follow relationship",
@@ -124,60 +112,33 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 	return nil
 }
 
-// deleteWithLogging provides a common pattern for deleting records with proper error handling and logging
-func (r *RelationshipRepository) deleteWithLogging(ctx context.Context, model interface{}, pk, sk, entityType string, debugFields, errorFields, successFields []zap.Field) error {
-	if err := r.db.WithContext(ctx).Model(model).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete(); err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug(fmt.Sprintf("%s not found", entityType), debugFields...)
-			return nil
-		}
-		r.logger.Error(fmt.Sprintf("failed to delete %s", entityType), append(errorFields, zap.Error(err))...)
-		return fmt.Errorf("failed to delete %s: %w", entityType, err)
-	}
-
-	r.logger.Info(fmt.Sprintf("deleted %s", entityType), successFields...)
-	return nil
-}
 
 // DeleteRelationship removes a follow relationship
 func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followerUsername, followingUsername string) error {
-	relationship := &models.RelationshipRecord{
-		PK: fmt.Sprintf("FOLLOW#%s", followerUsername),
-		SK: fmt.Sprintf("FOLLOWING#%s", followingUsername),
+	pk := fmt.Sprintf("FOLLOW#%s", followerUsername)
+	sk := fmt.Sprintf("FOLLOWING#%s", followingUsername)
+
+	identifiers := map[string]string{
+		"follower":  followerUsername,
+		"following": followingUsername,
 	}
 
-	debugFields := []zap.Field{
-		zap.String("follower", followerUsername),
-		zap.String("following", followingUsername),
-	}
-	errorFields := []zap.Field{
-		zap.String("follower", followerUsername),
-		zap.String("following", followingUsername),
-	}
-	successFields := []zap.Field{
-		zap.String("follower", followerUsername),
-		zap.String("following", followingUsername),
-	}
-
-	return r.deleteWithLogging(ctx, relationship, relationship.PK, relationship.SK, "relationship", debugFields, errorFields, successFields)
+	return DeleteEntityWithLogging(ctx, r.BaseRepository, pk, sk, "relationship", identifiers)
 }
 
 // GetRelationship retrieves a specific follow relationship
 func (r *RelationshipRepository) GetRelationship(ctx context.Context, followerUsername, followingUsername string) (*models.RelationshipRecord, error) {
 	var relationship models.RelationshipRecord
 
-	query := r.db.WithContext(ctx).Model(&relationship).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
-		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followingUsername))
+	pk := fmt.Sprintf("FOLLOW#%s", followerUsername)
+	sk := fmt.Sprintf("FOLLOWING#%s", followingUsername)
 
-	if err := query.First(&relationship); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("follow relationship not found")
+	err := r.Get(ctx, pk, sk, &relationship)
+	if err != nil {
+		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
+			return nil, ErrorHandler.HandleGetError(err, EntityFollow, "not found")
 		}
-		return nil, fmt.Errorf("failed to get relationship: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityFollow, followerUsername)
 	}
 
 	return &relationship, nil
@@ -204,7 +165,7 @@ func (r *RelationshipRepository) getRelationshipsByState(ctx context.Context, us
 		r.logger.Error(fmt.Sprintf("failed to query %s", errorContext),
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query %s: %w", errorContext, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, errorContext)
 	}
 
 	// Generate next cursor
@@ -251,7 +212,7 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 		r.logger.Error("failed to query following",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query following: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityFollow, "following")
 	}
 
 	// Generate next cursor
@@ -275,6 +236,8 @@ func (r *RelationshipRepository) GetFollowing(ctx context.Context, username stri
 
 // CountFollowers returns the number of followers for a user
 func (r *RelationshipRepository) CountFollowers(ctx context.Context, username string) (int, error) {
+	// Note: This uses GSI and filter, so we keep the custom implementation
+	// BaseRepository doesn't have a method for filtered counts on GSI
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
@@ -285,7 +248,7 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 		r.logger.Error("failed to count followers",
 			zap.String("username", username),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count followers: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityFollow, "count followers")
 	}
 
 	return int(count), nil
@@ -293,6 +256,8 @@ func (r *RelationshipRepository) CountFollowers(ctx context.Context, username st
 
 // CountFollowing returns the number of users that a user is following
 func (r *RelationshipRepository) CountFollowing(ctx context.Context, username string) (int, error) {
+	// Note: This uses filter, so we keep the custom implementation
+	// BaseRepository doesn't have a method for filtered counts
 	count, err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", username)).
 		Filter("State", "=", models.RelationshipAccepted).
@@ -302,7 +267,7 @@ func (r *RelationshipRepository) CountFollowing(ctx context.Context, username st
 		r.logger.Error("failed to count following",
 			zap.String("username", username),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count following: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityFollow, "count following")
 	}
 
 	return int(count), nil
@@ -352,7 +317,7 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 			zap.String("follower", followerUsername),
 			zap.String("following", followingUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to update relationship: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityFollow, followerUsername)
 	}
 
 	return nil
@@ -374,16 +339,9 @@ func (r *RelationshipRepository) AcceptFollowRequest(ctx context.Context, follow
 	// Update state
 	relationship.Accept()
 
-	// Update in database
-	if err := r.db.WithContext(ctx).Model(relationship).
-		Where("PK", "=", relationship.PK).
-		Where("SK", "=", relationship.SK).
-		Update(); err != nil {
-		r.logger.Error("failed to accept follow request",
-			zap.String("follower", followerUsername),
-			zap.String("following", followingUsername),
-			zap.Error(err))
-		return fmt.Errorf("failed to accept follow request: %w", err)
+	// Update in database using BaseRepository
+	if err := r.Update(ctx, relationship); err != nil {
+		return ErrorHandler.HandleUpdateError(err, "follow request", "accept")
 	}
 
 	r.logger.Info("accepted follow request",
@@ -404,16 +362,9 @@ func (r *RelationshipRepository) RejectFollowRequest(ctx context.Context, follow
 	// Update state
 	relationship.Reject()
 
-	// Update in database
-	if err := r.db.WithContext(ctx).Model(relationship).
-		Where("PK", "=", relationship.PK).
-		Where("SK", "=", relationship.SK).
-		Update(); err != nil {
-		r.logger.Error("failed to reject follow request",
-			zap.String("follower", followerUsername),
-			zap.String("following", followingUsername),
-			zap.Error(err))
-		return fmt.Errorf("failed to reject follow request: %w", err)
+	// Update in database using BaseRepository
+	if err := r.Update(ctx, relationship); err != nil {
+		return ErrorHandler.HandleUpdateError(err, "follow request", "reject")
 	}
 
 	r.logger.Info("rejected follow request",
@@ -427,20 +378,15 @@ func (r *RelationshipRepository) RejectFollowRequest(ctx context.Context, follow
 func (r *RelationshipRepository) HasPendingFollowRequest(ctx context.Context, requesterID, targetID string) (bool, error) {
 	var relationship models.RelationshipRecord
 
-	err := r.db.WithContext(ctx).Model(&relationship).
-		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", requesterID)).
-		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
-		First(&relationship)
+	pk := fmt.Sprintf("FOLLOW#%s", requesterID)
+	sk := fmt.Sprintf("FOLLOWING#%s", targetID)
 
+	err := r.Get(ctx, pk, sk, &relationship)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if fmt.Sprintf("%v", err) == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
 			return false, nil
 		}
-		r.logger.Error("failed to check for pending follow request",
-			zap.String("requester", requesterID),
-			zap.String("target", targetID),
-			zap.Error(err))
-		return false, fmt.Errorf("failed to check for pending follow request: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityFollow, "pending check")
 	}
 
 	// Check if the relationship is in pending state
@@ -457,13 +403,13 @@ func (r *RelationshipRepository) CreateMove(ctx context.Context, move *storage.M
 	if err := r.db.WithContext(ctx).Model(moveRecord).Create(); err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Warn("actor has already moved", zap.String("actor", move.Actor))
-			return fmt.Errorf("actor %s has already moved", move.Actor)
+			return ErrorHandler.HandleCreateError(err, "move", move.Actor)
 		}
 		r.logger.Error("failed to create move",
 			zap.String("actor", move.Actor),
 			zap.String("target", move.Target),
 			zap.Error(err))
-		return fmt.Errorf("failed to create move: %w", err)
+		return ErrorHandler.HandleCreateError(err, "move", move.Actor)
 	}
 
 	r.logger.Info("created move",
@@ -483,12 +429,12 @@ func (r *RelationshipRepository) GetMove(ctx context.Context, actor string) (*st
 
 	if err := query.First(&moveRecord); err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("no move found for actor: %s", actor)
+			return nil, ErrorHandler.HandleGetError(err, "move", actor)
 		}
 		r.logger.Error("failed to get move",
 			zap.String("actor", actor),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get move: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "move", actor)
 	}
 
 	// Convert to storage.Move
@@ -511,7 +457,7 @@ func (r *RelationshipRepository) GetAccountMoves(ctx context.Context, actor stri
 		r.logger.Error("failed to get account moves",
 			zap.String("actor", actor),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get account moves: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "move", actor)
 	}
 
 	// Convert to storage.Move slice
@@ -549,7 +495,7 @@ func (r *RelationshipRepository) UpdateMoveProgress(ctx context.Context, actor, 
 			zap.String("actor", actor),
 			zap.String("target", target),
 			zap.Error(err))
-		return fmt.Errorf("failed to update move progress: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "move", actor)
 	}
 
 	return nil
@@ -575,7 +521,7 @@ func (r *RelationshipRepository) GetPendingMoves(ctx context.Context, limit int)
 	var moveRecords []models.Move
 	if err := query.All(&moveRecords); err != nil {
 		r.logger.Error("failed to get pending moves", zap.Error(err))
-		return nil, fmt.Errorf("failed to get pending moves: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "move", "pending")
 	}
 
 	// Convert to storage.Move slice
@@ -604,7 +550,7 @@ func (r *RelationshipRepository) GetMoveByTarget(ctx context.Context, target str
 		r.logger.Error("failed to get moves by target",
 			zap.String("target", target),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get moves by target: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "move", target)
 	}
 
 	// Convert to storage.Move slice
@@ -643,7 +589,7 @@ func (r *RelationshipRepository) HasMovedFrom(ctx context.Context, oldActor, new
 			zap.String("old_actor", oldActor),
 			zap.String("new_actor", newActor),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check move relationship: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "move", "relationship")
 	}
 
 	r.logger.Info("checked move relationship",
@@ -673,7 +619,7 @@ func (r *RelationshipRepository) IsEndorsed(ctx context.Context, userID, targetI
 			zap.String("user_id", userID),
 			zap.String("target_id", targetID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check endorsement: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "endorsement", targetID)
 	}
 
 	return true, nil
@@ -693,11 +639,11 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 			zap.String("endorser", endorserUsername),
 			zap.String("endorsed", endorsedActorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to check follow relationship: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityFollow, "endorsement check")
 	}
 
 	if !isFollowing {
-		return fmt.Errorf("cannot endorse an account you are not following")
+		return ErrorHandler.HandleCreateError(nil, "endorsement", "not following")
 	}
 
 	// Check current endorsement count (Mastodon typically allows 4 endorsements)
@@ -706,11 +652,11 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 		r.logger.Error("failed to get current endorsements",
 			zap.String("endorser", endorserUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to get current endorsements: %w", err)
+		return ErrorHandler.HandleQueryError(err, "endorsement", "current")
 	}
 
 	if len(currentPins) >= 4 {
-		return fmt.Errorf("maximum number of endorsements reached (4)")
+		return ErrorHandler.HandleCreateError(nil, "endorsement", "limit reached")
 	}
 
 	// Create the endorsement using social repository
@@ -720,7 +666,7 @@ func (r *RelationshipRepository) CreateEndorsement(ctx context.Context, endorsem
 			zap.String("endorser", endorserUsername),
 			zap.String("endorsed", endorsedActorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create endorsement: %w", err)
+		return ErrorHandler.HandleCreateError(err, "endorsement", endorserUsername)
 	}
 
 	r.logger.Info("created endorsement",
@@ -742,7 +688,7 @@ func (r *RelationshipRepository) DeleteEndorsement(ctx context.Context, endorser
 			zap.String("endorser", endorserUsername),
 			zap.String("endorsed", endorsedID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete endorsement: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "endorsement", endorserUsername)
 	}
 
 	r.logger.Info("deleted endorsement",
@@ -763,7 +709,7 @@ func (r *RelationshipRepository) GetEndorsements(ctx context.Context, userID str
 		r.logger.Error("failed to get endorsements",
 			zap.String("user", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get endorsements: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "endorsement", username)
 	}
 
 	return endorsements, nextCursor, nil
@@ -820,7 +766,7 @@ func (r *RelationshipRepository) GetRelationshipNote(ctx context.Context, userID
 			zap.String("user_id", userID),
 			zap.String("target_id", targetID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get relationship note: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "relationship note", targetID)
 	}
 
 	// Convert to storage.AccountNote
@@ -842,25 +788,36 @@ func (r *RelationshipRepository) AddToCollection(ctx context.Context, collection
 
 // RemoveFromCollection removes an item from a collection
 func (r *RelationshipRepository) RemoveFromCollection(ctx context.Context, collection, itemID string) error {
-	collectionItem := &models.CollectionItem{
-		PK: fmt.Sprintf("COLLECTION#%s", collection),
-		SK: fmt.Sprintf("ITEM#%s", itemID),
+	pk := fmt.Sprintf("COLLECTION#%s", collection)
+	sk := fmt.Sprintf("ITEM#%s", itemID)
+
+	// Note: This method would ideally be in a BaseRepository[*models.CollectionItem]
+	// For now, we use a custom delete with similar logging pattern
+	var model models.CollectionItem
+	err := r.db.WithContext(ctx).Model(&model).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug("item from collection not found",
+				zap.String("collection", collection),
+				zap.String("item_id", itemID))
+			return nil
+		}
+		r.logger.Error("failed to delete item from collection",
+			zap.String("collection", collection),
+			zap.String("item_id", itemID),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, "collection", itemID)
 	}
 
-	debugFields := []zap.Field{
+	r.logger.Info("deleted item from collection",
 		zap.String("collection", collection),
-		zap.String("item_id", itemID),
-	}
-	errorFields := []zap.Field{
-		zap.String("collection", collection),
-		zap.String("item_id", itemID),
-	}
-	successFields := []zap.Field{
-		zap.String("collection", collection),
-		zap.String("item_id", itemID),
-	}
+		zap.String("item_id", itemID))
 
-	return r.deleteWithLogging(ctx, collectionItem, collectionItem.PK, collectionItem.SK, "item from collection", debugFields, errorFields, successFields)
+	return nil
 }
 
 // GetCollectionItems retrieves items from a collection with pagination
@@ -886,7 +843,7 @@ func (r *RelationshipRepository) GetCollectionItems(ctx context.Context, collect
 		r.logger.Error("failed to get collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "collection", collection)
 	}
 
 	// Generate next cursor
@@ -930,7 +887,7 @@ func (r *RelationshipRepository) IsInCollection(ctx context.Context, collection,
 			zap.String("collection", collection),
 			zap.String("item_id", itemID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check collection membership: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "collection", itemID)
 	}
 
 	return true, nil
@@ -946,7 +903,7 @@ func (r *RelationshipRepository) CountCollectionItems(ctx context.Context, colle
 		r.logger.Error("failed to count collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count collection items: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "collection", "count")
 	}
 
 	return int(count), nil
@@ -994,7 +951,7 @@ func (r *RelationshipRepository) DeleteBlock(ctx context.Context, blockerActor, 
 func (r *RelationshipRepository) BlockUser(ctx context.Context, blockerID, blockedID string) error {
 	// Validate the relationship using centralized validation
 	if err := common.ValidateRepositoryRelationship(blockerID, blockedID, "block"); err != nil {
-		return fmt.Errorf("invalid block relationship: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityBlock, blockerID)
 	}
 
 	// Generate a unique activity ID for the block action

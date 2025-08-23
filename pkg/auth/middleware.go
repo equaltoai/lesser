@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 	"errors"
-	"os"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	// "github.com/equaltoai/lesser/pkg/storage/dynamodb"
 	// "go.uber.org/zap"
 )
@@ -47,8 +47,9 @@ func GetMiddleware() (*Middleware, error) {
 func NewMiddleware() *Middleware {
 	m, err := GetMiddleware()
 	if err != nil {
-		// Get the JWT secret for fallback
-		jwtSecret := os.Getenv("JWT_SECRET")
+		// Get the JWT secret from centralized config for fallback
+		cfg := config.Get()
+		jwtSecret := cfg.JWTSecret
 		if err := common.ValidateRequiredParam("JWT_SECRET", jwtSecret); err != nil {
 			jwtSecret = "development-secret-change-me"
 		}

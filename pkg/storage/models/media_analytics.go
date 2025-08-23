@@ -96,7 +96,7 @@ type MediaVariantCost struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (m *MediaAnalytics) UpdateKeys() {
+func (m *MediaAnalytics) UpdateKeys() error {
 	// Set GSI1 keys for date-based queries
 	m.GSI1PK = fmt.Sprintf("DATE#%s", m.Date)
 	m.GSI1SK = fmt.Sprintf("%s#%s", m.Format, m.Timestamp.Format(time.RFC3339))
@@ -106,6 +106,17 @@ func (m *MediaAnalytics) UpdateKeys() {
 		m.GSI2PK = fmt.Sprintf("VARIANT#%s", m.DominantVariant)
 		m.GSI2SK = fmt.Sprintf("COST#%s", m.Timestamp.Format(time.RFC3339))
 	}
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (m *MediaAnalytics) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (m *MediaAnalytics) GetSK() string {
+	return m.SK
 }
 
 // SetManifestGeneration configures this record for manifest generation tracking

@@ -17,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // StreamingService handles media streaming operations
@@ -117,7 +118,7 @@ type streamingService struct {
 func NewStreamingService(ctx context.Context, distributionDomain, keyPairID string, privateKey []byte, mediaStorage streaming.MediaStorage) (StreamingService, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrAWSConfigLoad, err)
 	}
 
 	return &streamingService{
@@ -136,7 +137,7 @@ func NewStreamingService(ctx context.Context, distributionDomain, keyPairID stri
 func NewStreamingServiceWithStorage(ctx context.Context, distributionDomain, keyPairID string, privateKey []byte, mediaStorage streaming.MediaStorage, storage core.RepositoryStorage) (StreamingService, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrAWSConfigLoad, err)
 	}
 
 	// Create CloudWatch enhanced service with proper logger
@@ -215,7 +216,7 @@ func (s *streamingService) GenerateStreamingURL(mediaID string, quality string) 
 	// Sign the URL
 	signedURL, err := s.signURL(baseURL, expiresAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign URL: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrSignURL, err)
 	}
 
 	return &StreamingURL{
@@ -231,7 +232,7 @@ func (s *streamingService) signURL(rawURL string, expiresAt time.Time) (string, 
 	// Parse the URL
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("invalid URL: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrInvalidURL, err)
 	}
 
 	// Create the policy statement
@@ -249,7 +250,7 @@ func (s *streamingService) signURL(rawURL string, expiresAt time.Time) (string, 
 	// Create signature
 	signature, err := s.createSignature(policy)
 	if err != nil {
-		return "", fmt.Errorf("failed to create signature: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrCreateSignature, err)
 	}
 
 	// Add query parameters
@@ -488,7 +489,9 @@ func (s *streamingService) executeMetricQueries(ctx context.Context, metricQueri
 		results[result.name] = result
 		if result.err != nil {
 			// Log error but continue with available data
-			fmt.Printf("Failed to get metric %s: %v\n", result.name, result.err)
+			zap.L().Error("failed to get metric", 
+				zap.String("metric_name", result.name), 
+				zap.Error(result.err))
 		}
 	}
 
@@ -652,7 +655,7 @@ func (s *streamingService) RecordStreamingEvent(ctx context.Context, event *Stre
 
 	_, err := s.cloudWatch.PutMetricData(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to record streaming event: %w", err)
+		return fmt.Errorf("%w: %w", ErrRecordStreamingEvent, err)
 	}
 
 	return nil

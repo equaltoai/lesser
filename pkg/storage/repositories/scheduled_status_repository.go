@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -76,18 +77,21 @@ func (r *ScheduledStatusRepository) storageToModel(scheduled *storage.ScheduledS
 
 // ScheduledStatusRepository handles scheduled status operations using DynamORM
 type ScheduledStatusRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.ScheduledStatus]
 	mediaRepo MediaRepositoryInterface // Add media repository dependency
 }
 
 // NewScheduledStatusRepository creates a new scheduled status repository
 func NewScheduledStatusRepository(db core.DB, tableName string, logger *zap.Logger) *ScheduledStatusRepository {
 	return &ScheduledStatusRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.ScheduledStatus](db, tableName, logger),
+	}
+}
+
+// NewScheduledStatusRepositoryWithCostTracking creates a new scheduled status repository with cost tracking
+func NewScheduledStatusRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledStatusRepository {
+	return &ScheduledStatusRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ScheduledStatus](db, tableName, logger, costService, "ScheduledStatusRepository"),
 	}
 }
 
@@ -118,10 +122,10 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 	// Create DynamORM model
 	scheduledModel := r.storageToModel(scheduled)
 
-	// Create the scheduled status using DynamORM
-	err := r.db.WithContext(ctx).Model(scheduledModel).Create()
+	// Create the scheduled status using BaseRepository
+	err := r.BaseRepository.Create(ctx, scheduledModel)
 	if err != nil {
-		return fmt.Errorf("failed to create scheduled status: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityScheduledStatus, scheduled.ID)
 	}
 
 	// Update the original with any generated values
@@ -136,20 +140,20 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 func (r *ScheduledStatusRepository) GetScheduledStatus(ctx context.Context, id string) (*storage.ScheduledStatus, error) {
 	// Since we don't know the username, we need to do a scan with a filter
 	// This is less efficient than the legacy implementation but follows DynamORM patterns
-	var scheduledModels []models.ScheduledStatus
+	var scheduledModels []*models.ScheduledStatus
 
 	err := r.db.WithContext(ctx).Model(&models.ScheduledStatus{}).
 		Where("SK", "=", fmt.Sprintf("ID#%s", id)).
 		All(&scheduledModels)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan for scheduled status: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityScheduledStatus, id)
 	}
 
 	if err := common.ValidateSliceNotEmpty("scheduled_models", scheduledModels); err != nil {
-		return nil, fmt.Errorf("scheduled status not found")
+		return nil, ErrorHandler.HandleGetError(err, EntityScheduledStatus, id)
 	}
 
-	return r.modelToStorage(&scheduledModels[0]), nil
+	return r.modelToStorage(scheduledModels[0]), nil
 }
 
 // GetScheduledStatuses retrieves scheduled statuses for a user
@@ -170,7 +174,7 @@ func (r *ScheduledStatusRepository) GetScheduledStatuses(ctx context.Context, us
 	var scheduledModels []*models.ScheduledStatus
 	err := query.All(&scheduledModels)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get scheduled statuses: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityScheduledStatus, "user scheduling")
 	}
 
 	// Filter out published statuses and convert to storage models
@@ -211,10 +215,10 @@ func (r *ScheduledStatusRepository) UpdateScheduledStatus(ctx context.Context, s
 	// Create updated model
 	scheduledModel := r.storageToModel(scheduled)
 
-	// Use DynamORM update - this will update all fields
-	err = r.db.WithContext(ctx).Model(scheduledModel).Update()
+	// Use BaseRepository update
+	err = r.BaseRepository.Update(ctx, scheduledModel)
 	if err != nil {
-		return fmt.Errorf("failed to update scheduled status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityScheduledStatus, scheduled.ID)
 	}
 
 	return nil
@@ -228,15 +232,13 @@ func (r *ScheduledStatusRepository) DeleteScheduledStatus(ctx context.Context, i
 		return err
 	}
 
-	// Create model with keys for deletion
-	scheduledModel := &models.ScheduledStatus{
-		PK: fmt.Sprintf("USER#%s#SCHEDULED", status.Username),
-		SK: fmt.Sprintf("ID#%s", id),
-	}
+	// Use BaseRepository delete with keys
+	pk := fmt.Sprintf("USER#%s#SCHEDULED", status.Username)
+	sk := fmt.Sprintf("ID#%s", id)
 
-	err = r.db.WithContext(ctx).Model(scheduledModel).Delete()
+	err = r.BaseRepository.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete scheduled status: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityScheduledStatus, id)
 	}
 
 	return nil
@@ -256,7 +258,7 @@ func (r *ScheduledStatusRepository) GetDueScheduledStatuses(ctx context.Context,
 	var scheduledModels []*models.ScheduledStatus
 	err := query.All(&scheduledModels)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get due scheduled statuses: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityScheduledStatus, "due scheduling")
 	}
 
 	// Filter out published statuses and convert to storage models
@@ -287,9 +289,9 @@ func (r *ScheduledStatusRepository) MarkScheduledStatusPublished(ctx context.Con
 	// Create model for update
 	scheduledModel := r.storageToModel(status)
 
-	err = r.db.WithContext(ctx).Model(scheduledModel).Update()
+	err = r.BaseRepository.Update(ctx, scheduledModel)
 	if err != nil {
-		return fmt.Errorf("failed to mark scheduled status as published: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityScheduledStatus, id)
 	}
 
 	return nil

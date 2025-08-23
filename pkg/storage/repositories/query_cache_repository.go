@@ -4,20 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
 // QueryCacheRepository handles query cache operations
 type QueryCacheRepository struct {
-	db           core.DB
-	tableName    string
-	logger       *zap.Logger
+	*BaseRepository[*models.QueryCacheEntry]
 	instanceRepo *FederationInstanceRepository
 	routeRepo    *RouteOptimizerRepository
 }
@@ -25,11 +24,9 @@ type QueryCacheRepository struct {
 // NewQueryCacheRepository creates a new query cache repository
 func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, instanceRepo *FederationInstanceRepository, routeRepo *RouteOptimizerRepository) *QueryCacheRepository {
 	return &QueryCacheRepository{
-		db:           db,
-		tableName:    tableName,
-		logger:       logger,
-		instanceRepo: instanceRepo,
-		routeRepo:    routeRepo,
+		BaseRepository: NewBaseRepository[*models.QueryCacheEntry](db, tableName, logger),
+		instanceRepo:   instanceRepo,
+		routeRepo:      routeRepo,
 	}
 }
 
@@ -37,38 +34,27 @@ func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, i
 func (r *QueryCacheRepository) GetCachedValue(ctx context.Context, cacheKey string) (interface{}, error) {
 	var entry models.QueryCacheEntry
 	pk := fmt.Sprintf("CACHE#%s", cacheKey)
+	sk := "ENTRY"
 
-	err := r.db.WithContext(ctx).Model(&models.QueryCacheEntry{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "ENTRY").
-		First(&entry)
-
+	err := r.Get(ctx, pk, sk, &entry)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return nil, nil // Cache miss
 		}
-		r.logger.Error("Failed to get cached value",
-			zap.String("cacheKey", cacheKey),
-			zap.Error(err))
-		return nil, fmt.Errorf("get cached value: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, cacheKey)
 	}
 
 	// Check if expired
 	if entry.IsExpired() {
-		r.logger.Debug("Cache entry expired", zap.String("cacheKey", cacheKey))
 		return nil, nil
 	}
 
 	// Deserialize the value based on cache key pattern
 	var result interface{}
 	if err := json.Unmarshal([]byte(entry.Value), &result); err != nil {
-		r.logger.Error("Failed to unmarshal cached value",
-			zap.String("cacheKey", cacheKey),
-			zap.Error(err))
-		return nil, fmt.Errorf("unmarshal cached value: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, cacheKey)
 	}
 
-	r.logger.Debug("Cache hit", zap.String("cacheKey", cacheKey))
 	return result, nil
 }
 
@@ -77,7 +63,7 @@ func (r *QueryCacheRepository) SetCachedValue(ctx context.Context, cacheKey stri
 	// Serialize the value
 	valueBytes, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("marshal cache value: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityQueryCache, cacheKey)
 	}
 
 	entry := &models.QueryCacheEntry{
@@ -86,19 +72,12 @@ func (r *QueryCacheRepository) SetCachedValue(ctx context.Context, cacheKey stri
 		Size:      size,
 		ExpiresAt: time.Now().Add(ttl),
 	}
-	entry.UpdateKeys()
 
-	err = r.db.WithContext(ctx).Model(entry).Create()
+	err = r.Create(ctx, entry)
 	if err != nil {
-		r.logger.Error("Failed to set cached value",
-			zap.String("cacheKey", cacheKey),
-			zap.Error(err))
-		return fmt.Errorf("set cached value: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityQueryCache, cacheKey)
 	}
 
-	r.logger.Debug("Cached value",
-		zap.String("cacheKey", cacheKey),
-		zap.Int("size", size))
 	return nil
 }
 
@@ -112,54 +91,36 @@ func (r *QueryCacheRepository) InvalidateCachePattern(ctx context.Context, patte
 
 	// For exact match, delete specific key
 	pk := fmt.Sprintf("CACHE#%s", pattern)
-	err := r.db.WithContext(ctx).Model(&models.QueryCacheEntry{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "ENTRY").
-		Delete()
+	sk := "ENTRY"
+	err := r.Delete(ctx, pk, sk)
 
-	if err != nil && !errors.IsNotFound(err) {
-		r.logger.Error("Failed to invalidate cache entry",
-			zap.String("pattern", pattern),
-			zap.Error(err))
-		return fmt.Errorf("invalidate cache entry: %w", err)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		return ErrorHandler.HandleDeleteError(err, EntityQueryCache, pattern)
 	}
 
-	r.logger.Debug("Invalidated cache entry", zap.String("pattern", pattern))
 	return nil
 }
 
 // invalidateCachePrefix removes all cache entries with keys starting with prefix
 func (r *QueryCacheRepository) invalidateCachePrefix(ctx context.Context, prefix string) error {
 	var entries []models.QueryCacheEntry
-
 	pk := fmt.Sprintf("CACHE#%s", prefix)
 
-	// Scan for entries with keys starting with prefix
-	query := r.db.WithContext(ctx).Model(&models.QueryCacheEntry{}).
+	// Get entries with keys starting with prefix
+	err := r.GetDB().WithContext(ctx).Model(&models.QueryCacheEntry{}).
 		Where("PK", "begins_with", pk).
-		Where("SK", "=", "ENTRY")
+		Where("SK", "=", "ENTRY").
+		All(&entries)
 
-	err := query.All(&entries)
 	if err != nil {
-		r.logger.Error("Failed to scan cache entries for prefix",
-			zap.String("prefix", prefix),
-			zap.Error(err))
-		return fmt.Errorf("scan cache entries: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityQueryCache, "prefix scan")
 	}
 
 	// Delete each entry
 	for _, entry := range entries {
-		deleteErr := r.db.WithContext(ctx).Model(&entry).Delete()
-		if deleteErr != nil && !errors.IsNotFound(deleteErr) {
-			r.logger.Warn("Failed to delete cache entry",
-				zap.String("cacheKey", entry.CacheKey),
-				zap.Error(deleteErr))
-		}
+		_ = r.Delete(ctx, entry.GetPK(), entry.GetSK()) // Ignore errors for cleanup
 	}
 
-	r.logger.Debug("Invalidated cache entries by prefix",
-		zap.String("prefix", prefix),
-		zap.Int("count", len(entries)))
 	return nil
 }
 
@@ -177,18 +138,18 @@ func (r *QueryCacheRepository) GetInstance(ctx context.Context, instanceID strin
 	// Convert from generic interface to Instance
 	instanceMap, ok := cached.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("cached instance has invalid format")
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityQueryCache, instanceID)
 	}
 
 	// Deserialize to Instance struct
 	instanceBytes, err := json.Marshal(instanceMap)
 	if err != nil {
-		return nil, fmt.Errorf("marshal instance map: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, "instance")
 	}
 
 	var instance types.Instance
 	if err := json.Unmarshal(instanceBytes, &instance); err != nil {
-		return nil, fmt.Errorf("unmarshal instance: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityQueryCache, "instance")
 	}
 
 	return &instance, nil
@@ -238,7 +199,7 @@ func (r *QueryCacheRepository) GetInstancesByStatus(ctx context.Context, status 
 	// Cache miss - fetch from database
 	instances, err := r.instanceRepo.ListInstancesByStatus(ctx, status, 100)
 	if err != nil {
-		return nil, fmt.Errorf("get instances by status: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityQueryCache, "instances by status")
 	}
 
 	// Cache the results
@@ -286,7 +247,7 @@ func (r *QueryCacheRepository) BatchGetInstances(ctx context.Context, instanceID
 			r.logger.Error("Failed to batch get instances from database",
 				zap.Strings("instanceIDs", uncachedIDs),
 				zap.Error(err))
-			return instances, fmt.Errorf("batch get instances: %w", err)
+			return instances, ErrorHandler.HandleQueryError(err, EntityQueryCache, "batch get instances")
 		}
 
 		// Cache the fresh instances and add to results
@@ -313,7 +274,7 @@ func (r *QueryCacheRepository) GetMetricsInRange(ctx context.Context, routeID st
 
 	// Metrics queries bypass cache and go directly to route repository for real-time data
 	if r.routeRepo == nil {
-		return nil, fmt.Errorf("route optimizer repository not configured")
+		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityQueryCache, "metrics")
 	}
 
 	// Delegate to the route optimizer repository for actual metrics data
@@ -327,7 +288,7 @@ func (r *QueryCacheRepository) PrewarmActiveInstances(ctx context.Context) error
 	// Get active instances and cache them
 	_, err := r.GetInstancesByStatus(ctx, types.InstanceStatusActive)
 	if err != nil {
-		return fmt.Errorf("prewarm active instances: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityQueryCache, "prewarm")
 	}
 
 	return nil

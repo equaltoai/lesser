@@ -4,19 +4,23 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation/routing"
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -71,24 +75,24 @@ const (
 	VisibilityPublic = "public"
 	// VisibilityDirect represents a direct message visibility level
 	VisibilityDirect = "direct"
-	
+
 	// ModerationEventTypeFlagCreated represents a flag creation event
-	ModerationEventTypeFlagCreated     = "flag_created"
+	ModerationEventTypeFlagCreated = "flag_created"
 	// ModerationEventTypeFlagWithdrawn represents a flag withdrawal event
-	ModerationEventTypeFlagWithdrawn   = "flag_withdrawn"
+	ModerationEventTypeFlagWithdrawn = "flag_withdrawn"
 	// ModerationCategoryUserReport represents a user-generated report category
-	ModerationCategoryUserReport       = "user_report"
+	ModerationCategoryUserReport = "user_report"
 	// ModerationCategoryUserAction represents a user-generated action category
-	ModerationCategoryUserAction       = "user_action"
+	ModerationCategoryUserAction = "user_action"
 	// ModerationSeverityLow represents low severity moderation level
-	ModerationSeverityLow             = "low"
+	ModerationSeverityLow = "low"
 	// ModerationSeverityMedium represents medium severity moderation level
-	ModerationSeverityMedium          = "medium"
+	ModerationSeverityMedium = "medium"
 	// FlagStatusPending represents a pending flag status
-	FlagStatusPending                 = "pending"
+	FlagStatusPending = "pending"
 	// ObjectTypeStatus represents a status object type
-	ObjectTypeStatus                  = "status"
-	
+	ObjectTypeStatus = "status"
+
 	// DefaultTestingDomain is the default domain used for testing
 	DefaultTestingDomain = "example.com"
 )
@@ -112,7 +116,8 @@ type ActivityHandler struct {
 // NewActivityHandler creates a new ActivityHandler
 func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 	logger := zap.L()
-	domain := os.Getenv("DOMAIN_NAME")
+	cfg := config.Get()
+	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
@@ -144,7 +149,7 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	// Extract entity type from PK
 	entityType, err := stream.GetEventType(record)
 	if err != nil {
-		return fmt.Errorf("failed to get entity type: %w", err)
+		return errors.Join(ErrEntityTypeExtraction, err)
 	}
 
 	// Only process activity records
@@ -155,13 +160,13 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	// Unmarshal the activity record
 	var activityRecord ActivityRecord
 	if err := stream.UnmarshalItem(record, &activityRecord); err != nil {
-		return fmt.Errorf("failed to unmarshal activity record: %w", err)
+		return errors.Join(ErrActivityRecordUnmarshaling, err)
 	}
 
 	// Parse the activity
 	activity, err := activitypub.ParseActivity([]byte(activityRecord.Activity))
 	if err != nil {
-		return fmt.Errorf("failed to parse activity: %w", err)
+		return errors.Join(ErrActivityParsing, err)
 	}
 
 	// Determine direction (inbox or outbox)
@@ -177,17 +182,19 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	case OutboxDirection:
 		return h.processOutboxActivity(ctx, activity, activityRecord.Username)
 	default:
-		return fmt.Errorf("unknown activity direction: %s", direction)
+		return ErrUnknownActivityDirection
 	}
 }
 
 // processActivityByType processes an activity based on its type with configurable handlers
+//
+//nolint:unused // False positive - called from processInboxActivity and processOutboxActivity
 func (h *ActivityHandler) processActivityByType(ctx context.Context, activity *activitypub.Activity, username string, isInbox bool) error {
 	logType := "outbox"
 	if isInbox {
 		logType = "inbox"
 	}
-	
+
 	h.Logger.Info("Processing "+logType+" activity",
 		zap.String("type", activity.Type),
 		zap.String("username", username),
@@ -198,9 +205,9 @@ func (h *ActivityHandler) processActivityByType(ctx context.Context, activity *a
 	if !isInbox {
 		switch activity.Type {
 		case ActivityTypeCreate, ActivityTypeFollow, ActivityTypeAccept, ActivityTypeReject,
-			 ActivityTypeUpdate, ActivityTypeDelete, ActivityTypeLike, ActivityTypeAnnounce,
-			 ActivityTypeUndo, ActivityTypeBlock, ActivityTypeFlag, ActivityTypeMove,
-			 ActivityTypeAdd, ActivityTypeRemove:
+			ActivityTypeUpdate, ActivityTypeDelete, ActivityTypeLike, ActivityTypeAnnounce,
+			ActivityTypeUndo, ActivityTypeBlock, ActivityTypeFlag, ActivityTypeMove,
+			ActivityTypeAdd, ActivityTypeRemove:
 			return h.deliverActivity(ctx, activity, username)
 		default:
 			h.Logger.Info("Ignoring unsupported activity type",
@@ -284,19 +291,19 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 		} else {
 			h.Logger.Error("Follow activity object missing id field",
 				zap.String("activity_id", activity.ID))
-			return fmt.Errorf("follow activity object missing id field")
+			return services.ErrFollowMissingObjectID
 		}
 	default:
 		h.Logger.Error("Follow activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("follow activity has invalid object type")
+		return services.ErrFollowInvalidObjectType
 	}
 
 	if err := common.ValidateRequiredParam("targetUser", targetUser); err != nil {
 		h.Logger.Error("Follow activity missing target user",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("follow activity missing target user")
+		return services.ErrFollowMissingTargetUser
 	}
 
 	// Extract username from actor URI
@@ -307,13 +314,13 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 		h.Logger.Error("Failed to extract usernames from Follow activity",
 			zap.String("actor", activity.Actor),
 			zap.String("target", targetUser))
-		return fmt.Errorf("failed to extract usernames from Follow activity")
+		return services.ErrExtractUsernamesFromFollow
 	}
 	if err := common.ValidateRequiredParam("targetUsername", targetUsername); err != nil {
 		h.Logger.Error("Failed to extract usernames from Follow activity",
 			zap.String("actor", activity.Actor),
 			zap.String("target", targetUser))
-		return fmt.Errorf("failed to extract usernames from Follow activity")
+		return services.ErrExtractUsernamesFromFollow
 	}
 
 	// Create the follow relationship
@@ -323,7 +330,7 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 			zap.String("following", targetUsername),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create follow relationship: %w", err)
+		return errors.Join(ErrFollowRelationshipCreation, err)
 	}
 
 	// Create follow notification for the target user
@@ -378,7 +385,7 @@ func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *a
 		h.Logger.Error("Accept activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("accept activity has invalid object type")
+		return services.ErrAcceptInvalidObjectType
 	}
 
 	// Extract the actors involved
@@ -408,21 +415,21 @@ func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *a
 		h.Logger.Error("Failed to extract usernames from Accept activity",
 			zap.String("accepter", accepter),
 			zap.String("follower", follower))
-		return fmt.Errorf("failed to extract usernames from Accept activity")
+		return services.ErrExtractUsernamesFromAccept
 	}
 
 	// Update the relationship status to accepted
 	updates := map[string]interface{}{
 		"State": "accepted",
 	}
-	
+
 	if err := h.RelationshipRepo.UpdateRelationship(ctx, follower, accepter, updates); err != nil {
 		h.Logger.Error("Failed to update relationship status to accepted",
 			zap.String("follower", follower),
 			zap.String("accepter", accepter),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update relationship status: %w", err)
+		return errors.Join(ErrRelationshipStatusUpdate, err)
 	}
 
 	// Create notification for the follower that their follow request was accepted
@@ -467,7 +474,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to extract Note from Create activity",
 			zap.Error(err),
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("failed to extract Note: %w", err)
+		return errors.Join(ErrNoteExtraction, err)
 	}
 
 	// Create addressing validator for visibility processing
@@ -485,7 +492,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to create status from Note",
 			zap.Error(err),
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("failed to create status: %w", err)
+		return errors.Join(ErrStatusCreation, err)
 	}
 
 	// Store the status/object
@@ -493,7 +500,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to store Note object",
 			zap.Error(err),
 			zap.String("status_id", status.StatusID))
-		return fmt.Errorf("failed to store object: %w", err)
+		return errors.Join(ErrObjectStorage, err)
 	}
 
 	// Add to appropriate timelines based on visibility
@@ -511,13 +518,12 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 	return nil
 }
 
-
 // mapToNote converts a map to a Note object
 //
 //nolint:unused // Kept for future implementation of enhanced note mapping
 func (h *ActivityHandler) mapToNote(objMap map[string]interface{}) (*activitypub.Note, error) {
 	note := &activitypub.Note{}
-	
+
 	// Extract basic fields
 	if id, ok := objMap["id"].(string); ok {
 		note.ID = id
@@ -568,7 +574,7 @@ func (h *ActivityHandler) extractNoteFromActivity(activity *activitypub.Activity
 		// Convert map to Note
 		return h.mapToNote(obj)
 	default:
-		return nil, fmt.Errorf("unsupported object type: %T", obj)
+		return nil, ErrUnsupportedObjectType
 	}
 }
 
@@ -590,11 +596,11 @@ func (h *ActivityHandler) interfaceSliceToStringSlice(slice []interface{}) []str
 //nolint:unused // False positive - called from processCreateActivity
 func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activitypub.Activity, visibility string) (*models.Status, error) {
 	statusID := h.extractStatusID(note.ID)
-	
+
 	// NOTE: This transformation demonstrates the framework usage but is not ideal here
 	// since we're creating a storage model, not an API response model.
 	// The transformations framework is designed for API model generation.
-	
+
 	// Create an object map from the Note for transformation demonstration
 	statusMap := map[string]interface{}{
 		"id":        note.ID,
@@ -602,7 +608,7 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 		"published": note.Published,
 		"type":      note.Type,
 	}
-	
+
 	// Create a fake actor for the transformation (this is suboptimal)
 	username := ""
 	if parts := strings.Split(note.AttributedTo, "/"); len(parts) > 0 {
@@ -615,10 +621,11 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 		},
 		PreferredUsername: username,
 	}
-	
+
 	// Use transformation framework to get base structure
-	apiStatus := transformations.ObjectToStatusBase(statusMap, fakeActor, "https://"+os.Getenv("DOMAIN_NAME"))
-	
+	cfg := config.Get()
+	apiStatus := transformations.ObjectToStatusBase(statusMap, fakeActor, cfg.BaseURL())
+
 	// Create storage model with transformation-derived and specific fields
 	status := &models.Status{
 		StatusID:      statusID,
@@ -632,8 +639,8 @@ func (h *ActivityHandler) createStatusFromNote(note *activitypub.Note, _ *activi
 		CreatedAt:     time.Now(),
 		ModifiedAt:    time.Now(),
 		// Use transformation for content extraction
-		Content:       apiStatus.Content,
-		Sensitive:     apiStatus.Sensitive,
+		Content:   apiStatus.Content,
+		Sensitive: apiStatus.Sensitive,
 	}
 
 	// Set published time from Note if available
@@ -681,13 +688,13 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 	// Process based on visibility
 	switch visibility {
 	case VisibilityPublic:
-		h.Logger.Debug("Adding to public and local timelines", 
+		h.Logger.Debug("Adding to public and local timelines",
 			zap.String("status_id", status.StatusID))
 
 		// Add to federated public timeline
 		federatedEntry := &models.Timeline{
 			TimelineType: "PUBLIC",
-			TimelineID:   "FEDERATED", 
+			TimelineID:   "FEDERATED",
 			PostID:       postID,
 			ActorID:      actorID,
 			ActorHandle:  h.extractUsernameFromActorURI(actorID),
@@ -719,7 +726,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 		}
 
 	case "unlisted":
-		h.Logger.Debug("Status is unlisted, adding to followers' home timelines", 
+		h.Logger.Debug("Status is unlisted, adding to followers' home timelines",
 			zap.String("status_id", status.StatusID))
 		// Unlisted posts go to followers' home timelines
 		if err := h.distributeToFollowersTimeline(ctx, status, actorID, postID, contentPreview, isReply, inReplyTo, createdAt); err != nil {
@@ -730,7 +737,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 		}
 
 	case "private":
-		h.Logger.Debug("Status is private, adding to followers' home timelines", 
+		h.Logger.Debug("Status is private, adding to followers' home timelines",
 			zap.String("status_id", status.StatusID))
 		// Private posts only go to followers' home timelines
 		if err := h.distributeToFollowersTimeline(ctx, status, actorID, postID, contentPreview, isReply, inReplyTo, createdAt); err != nil {
@@ -741,7 +748,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 		}
 
 	case VisibilityDirect:
-		h.Logger.Debug("Status is direct, would add to conversations timeline", 
+		h.Logger.Debug("Status is direct, would add to conversations timeline",
 			zap.String("status_id", status.StatusID))
 		// Direct messages go to conversations, not public timelines
 
@@ -759,7 +766,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 				zap.String("status_id", status.StatusID),
 				zap.Int("entries_count", len(timelineEntries)),
 				zap.Error(err))
-			return fmt.Errorf("failed to create timeline entries: %w", err)
+			return errors.Join(ErrTimelineEntriesCreation, err)
 		}
 
 		h.Logger.Info("Successfully added status to timelines",
@@ -775,7 +782,8 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 //
 //nolint:unused // Helper method for timeline processing
 func (h *ActivityHandler) isLocalActor(actorID string) bool {
-	domain := os.Getenv("DOMAIN_NAME")
+	cfg := config.Get()
+	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
@@ -793,8 +801,6 @@ func (h *ActivityHandler) extractStatusID(noteID string) string {
 	}
 	return noteID
 }
-
-
 
 // processRejectActivity processes a Reject activity
 //
@@ -820,7 +826,7 @@ func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *a
 		h.Logger.Error("Reject activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("reject activity has invalid object type")
+		return services.ErrRejectInvalidObjectType
 	}
 
 	// Extract the actors involved
@@ -849,7 +855,7 @@ func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *a
 		h.Logger.Error("Failed to extract usernames from Reject activity",
 			zap.String("rejecter", rejecter),
 			zap.String("follower", follower))
-		return fmt.Errorf("failed to extract usernames from Reject activity")
+		return services.ErrExtractUsernamesFromReject
 	}
 
 	// Delete the follow relationship entirely (rejected follow requests should be removed)
@@ -859,7 +865,7 @@ func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *a
 			zap.String("rejecter", rejecter),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete rejected relationship: %w", err)
+		return errors.Join(ErrRejectedRelationshipDeletion, err)
 	}
 
 	// Optional: Create notification for the follower that their follow request was rejected
@@ -923,19 +929,19 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 		} else {
 			h.Logger.Error("Delete activity object missing id field",
 				zap.String("activity_id", activity.ID))
-			return fmt.Errorf("delete activity object missing id field")
+			return services.ErrDeleteMissingObjectID
 		}
 	default:
 		h.Logger.Error("Delete activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("delete activity has invalid object type")
+		return services.ErrDeleteInvalidObjectType
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Delete activity missing object ID",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("delete activity missing object ID")
+		return services.ErrDeleteMissingObjectID2
 	}
 
 	// Verify actor authorization - can only delete their own objects
@@ -955,7 +961,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 			zap.String("actor", activity.Actor),
 			zap.String("object_id", objectID),
 			zap.String("object_attributed_to", h.getObjectAuthor(existingObject)))
-		return fmt.Errorf("actor not authorized to delete object")
+		return services.ErrActorNotAuthorizedDelete
 	}
 
 	// Extract object type from the existingObject
@@ -990,7 +996,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create tombstone: %w", err)
+		return errors.Join(ErrTombstoneCreation, err)
 	}
 
 	// Perform cascade deletion (remove from timelines, notifications, etc.)
@@ -1050,7 +1056,7 @@ func (h *ActivityHandler) performCascadeDeletion(ctx context.Context, objectID, 
 	// Remove from all timelines using the TimelineRepository
 	// This handles:
 	// - Public timeline removal
-	// - Local timeline removal  
+	// - Local timeline removal
 	// - Federated timeline removal
 	// - Followers' home timeline removal
 	if err := h.TimelineRepo.RemoveFromTimelines(ctx, objectID); err != nil {
@@ -1091,19 +1097,19 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 		} else {
 			h.Logger.Error("Like activity object missing id field",
 				zap.String("activity_id", activity.ID))
-			return fmt.Errorf("like activity object missing id field")
+			return services.ErrLikeMissingObjectID
 		}
 	default:
 		h.Logger.Error("Like activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("like activity has invalid object type")
+		return services.ErrLikeInvalidObjectType
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Like activity missing object ID",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("like activity missing object ID")
+		return services.ErrLikeMissingObjectID2
 	}
 
 	// Extract the actor doing the liking
@@ -1111,18 +1117,18 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		h.Logger.Error("Like activity missing actor",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("like activity missing actor")
+		return services.ErrLikeMissingActor
 	}
 
 	// Create the like record
-	_, err := h.LikeRepo.CreateLike(ctx, actorURI, objectID)
+	_, err := h.LikeRepo.CreateLike(ctx, actorURI, objectID, username)
 	if err != nil {
 		h.Logger.Error("Failed to create like record",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create like record: %w", err)
+		return errors.Join(ErrLikeRecordCreation, err)
 	}
 
 	// Create notification for the object owner
@@ -1158,19 +1164,19 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 		} else {
 			h.Logger.Error("Announce activity object missing id field",
 				zap.String("activity_id", activity.ID))
-			return fmt.Errorf("announce activity object missing id field")
+			return services.ErrAnnounceMissingObjectID
 		}
 	default:
 		h.Logger.Error("Announce activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("announce activity has invalid object type")
+		return services.ErrAnnounceInvalidObjectType
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		h.Logger.Error("Announce activity missing object ID",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("announce activity missing object ID")
+		return services.ErrAnnounceMissingObjectID2
 	}
 
 	// Extract the actor doing the announcing
@@ -1178,7 +1184,7 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
 		h.Logger.Error("Announce activity missing actor",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("announce activity missing actor")
+		return services.ErrAnnounceMissingActor
 	}
 
 	// Create the announce record using storage.Announce format
@@ -1198,7 +1204,7 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create announce record: %w", err)
+		return errors.Join(ErrAnnounceRecordCreation, err)
 	}
 
 	// Create notification for the object owner
@@ -1233,7 +1239,7 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 			h.Logger.Error("Failed to fetch original activity for undo",
 				zap.String("activity_id", obj),
 				zap.Error(err))
-			return fmt.Errorf("failed to fetch original activity: %w", err)
+			return errors.Join(ErrOriginalActivityFetch, err)
 		}
 		undoTarget = originalActivity
 	case map[string]interface{}:
@@ -1242,7 +1248,7 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 		h.Logger.Error("Undo activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("undo activity has invalid object type")
+		return services.ErrUndoInvalidObjectType
 	}
 
 	// Extract the type of activity being undone
@@ -1251,7 +1257,7 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 		h.Logger.Error("Failed to extract activity type from undo target",
 			zap.String("activity_id", activity.ID),
 			zap.Any("target", undoTarget))
-		return fmt.Errorf("failed to extract activity type from undo target")
+		return services.ErrExtractActivityTypeFromUndo
 	}
 
 	// Verify actor authorization - can only undo their own activities
@@ -1261,7 +1267,7 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 			zap.String("undo_actor", activity.Actor),
 			zap.String("target_actor", targetActor),
 			zap.String("activity_type", activityType))
-		return fmt.Errorf("actor not authorized to undo activity")
+		return services.ErrActorNotAuthorizedUndo
 	}
 
 	// Process undo based on activity type
@@ -1312,10 +1318,10 @@ func (h *ActivityHandler) getActivityByID(_ context.Context, activityID string) 
 	// This is a simplified implementation - in practice you might need more sophisticated lookup
 	h.Logger.Debug("Fetching activity by ID",
 		zap.String("activity_id", activityID))
-	
+
 	// For now, return an error indicating the activity wasn't found locally
 	// In a full implementation, this would check local storage and potentially fetch from remote
-	return nil, fmt.Errorf("activity not found locally: %s", activityID)
+	return nil, ErrActivityNotFoundLocally
 }
 
 // extractActivityType extracts the type field from an activity object
@@ -1352,6 +1358,7 @@ func (h *ActivityHandler) extractActivityActor(activity interface{}) string {
 
 // extractActivityObject extracts the object field from an activity
 // This function is used by multiple processUndo* methods
+//
 //nolint:unused // Used by processUndo* methods but linter has false positive
 func (h *ActivityHandler) extractActivityObject(activity interface{}) interface{} {
 	switch act := activity.(type) {
@@ -1368,7 +1375,7 @@ func (h *ActivityHandler) extractActivityObject(activity interface{}) interface{
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *activitypub.Activity, followActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(followActivity)
-	
+
 	var targetActor string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1380,7 +1387,7 @@ func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *a
 	}
 
 	if err := common.ValidateRequiredParam("targetActor", targetActor); err != nil {
-		return fmt.Errorf("unable to extract target actor from follow activity")
+		return services.ErrExtractTargetActorFromFollow
 	}
 
 	// Remove the relationship
@@ -1389,7 +1396,7 @@ func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *a
 			zap.String("follower", undoActivity.Actor),
 			zap.String("followee", targetActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete follow relationship: %w", err)
+		return errors.Join(ErrFollowRelationshipDeletion, err)
 	}
 
 	h.Logger.Info("Successfully processed Undo Follow",
@@ -1425,7 +1432,7 @@ func (h *ActivityHandler) processUndoBlock(ctx context.Context, undoActivity *ac
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *activitypub.Activity, createActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(createActivity)
-	
+
 	var objectID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1437,12 +1444,12 @@ func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from create activity")
+		return services.ErrExtractObjectIDFromCreate
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo create activity missing actor")
+		return services.ErrUndoCreateMissingActor
 	}
 
 	// Delete the created object - this effectively undoes the creation
@@ -1451,7 +1458,7 @@ func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete created object: %w", err)
+		return errors.Join(ErrCreatedObjectDeletion, err)
 	}
 
 	h.Logger.Info("Successfully processed Undo Create",
@@ -1466,7 +1473,7 @@ func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *a
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *activitypub.Activity, updateActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(updateActivity)
-	
+
 	var objectID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1478,12 +1485,12 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from update activity")
+		return services.ErrExtractObjectIDFromUpdate
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo update activity missing actor")
+		return services.ErrUndoUpdateMissingActor
 	}
 
 	// Get object history to find the previous version
@@ -1493,34 +1500,34 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get object history: %w", err)
+		return errors.Join(ErrObjectHistoryRetrieval, err)
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		h.Logger.Warn("no history found for object, cannot undo update",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return fmt.Errorf("no history found for object %s", objectID)
+		return ErrNoHistoryFound
 	}
-	
+
 	// Get the most recent previous version (first in sorted list)
 	previousVersion := history[0]
 	if previousVersion.PreviousState == nil {
 		h.Logger.Warn("previous state not available for undo",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return fmt.Errorf("previous state not available for object %s", objectID)
+		return ErrPreviousStateNotAvailable
 	}
-	
+
 	// Update the object to the previous version
 	if err := h.ObjectRepo.UpdateObject(ctx, previousVersion.PreviousState); err != nil {
 		h.Logger.Error("failed to revert object to previous version",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to revert object: %w", err)
+		return errors.Join(ErrObjectReversion, err)
 	}
-	
+
 	h.Logger.Info("successfully reverted object to previous version",
 		zap.String("actor", actorURI),
 		zap.String("object_id", objectID),
@@ -1534,7 +1541,7 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *activitypub.Activity, deleteActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(deleteActivity)
-	
+
 	var objectID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1546,12 +1553,12 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from delete activity")
+		return services.ErrExtractObjectIDFromDelete
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo delete activity missing actor")
+		return services.ErrUndoDeleteMissingActor
 	}
 
 	// Check if object is tombstoned
@@ -1561,16 +1568,16 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to check tombstone status: %w", err)
+		return errors.Join(ErrTombstoneStatusCheck, err)
 	}
-	
+
 	if !tombstoned {
 		h.Logger.Warn("object is not deleted, cannot undo delete",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return fmt.Errorf("object %s is not deleted", objectID)
+		return ErrObjectNotDeleted
 	}
-	
+
 	// Get the tombstone to find deletion info
 	tombstone, err := h.ObjectRepo.GetTombstone(ctx, objectID)
 	if err != nil {
@@ -1578,9 +1585,9 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get tombstone: %w", err)
+		return errors.Join(ErrTombstoneRetrieval, err)
 	}
-	
+
 	// Get object history to find the last version before deletion
 	history, err := h.ObjectRepo.GetObjectHistory(ctx, objectID)
 	if err != nil || len(history) == 0 {
@@ -1588,27 +1595,27 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get object history for restoration: %w", err)
+		return errors.Join(ErrObjectHistoryRestoration, err)
 	}
-	
+
 	// Get the most recent version before deletion
 	lastVersion := history[0]
 	if lastVersion.PreviousState == nil {
 		h.Logger.Error("no previous state available for object restoration",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return fmt.Errorf("no previous state available for restoration")
+		return services.ErrNoPreviousStateForRestoration
 	}
-	
+
 	// Restore the object by recreating it with the previous state
 	if err := h.ObjectRepo.CreateObject(ctx, lastVersion.PreviousState); err != nil {
 		h.Logger.Error("failed to restore object from previous state",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to restore object: %w", err)
+		return errors.Join(ErrObjectRestoration, err)
 	}
-	
+
 	h.Logger.Info("successfully restored deleted object",
 		zap.String("actor", actorURI),
 		zap.String("object_id", objectID),
@@ -1623,7 +1630,7 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoAccept(_ context.Context, undoActivity *activitypub.Activity, acceptActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(acceptActivity)
-	
+
 	var originalActivityID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1635,12 +1642,12 @@ func (h *ActivityHandler) processUndoAccept(_ context.Context, undoActivity *act
 	}
 
 	if err := common.ValidateRequiredParam("originalActivityID", originalActivityID); err != nil {
-		return fmt.Errorf("unable to extract original activity ID from accept activity")
+		return services.ErrExtractOriginalActivityIDFromAccept
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo accept activity missing actor")
+		return services.ErrUndoAcceptMissingActor
 	}
 
 	// This would typically revert the accepted state of the original activity
@@ -1657,7 +1664,7 @@ func (h *ActivityHandler) processUndoAccept(_ context.Context, undoActivity *act
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *activitypub.Activity, flagActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(flagActivity)
-	
+
 	var flaggedObjectID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1669,12 +1676,12 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 	}
 
 	if err := common.ValidateRequiredParam("flaggedObjectID", flaggedObjectID); err != nil {
-		return fmt.Errorf("unable to extract flagged object ID from flag activity")
+		return services.ErrExtractFlaggedObjectIDFromFlag
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo flag activity missing actor")
+		return services.ErrUndoFlagMissingActor
 	}
 
 	// Find and delete the flag record using ModerationRepository
@@ -1683,7 +1690,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 		h.Logger.Error("Failed to retrieve flags for object",
 			zap.String("flagged_object_id", flaggedObjectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to retrieve flags for object: %w", err)
+		return errors.Join(ErrFlagsRetrieval, err)
 	}
 
 	// Find flag created by this actor
@@ -1710,7 +1717,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 			zap.String("flagged_object_id", flaggedObjectID),
 			zap.String("flag_id", targetFlagID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete flag record: %w", err)
+		return errors.Join(ErrFlagRecordDeletion, err)
 	}
 
 	// Create a moderation event for the flag withdrawal
@@ -1724,9 +1731,9 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 		ConfidenceScore: 1.0,
 		Reason:          "Flag withdrawn by user via Undo activity",
 		Data: map[string]interface{}{
-			"undo_activity_id":    undoActivity.ID,
-			"original_flag_id":    targetFlagID,
-			"flagged_object_id":   flaggedObjectID,
+			"undo_activity_id":  undoActivity.ID,
+			"original_flag_id":  targetFlagID,
+			"flagged_object_id": flaggedObjectID,
 		},
 	}
 
@@ -1750,7 +1757,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 //nolint:unused // Called from processUndoActivity but kept for full implementation
 func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *activitypub.Activity, moveActivity interface{}, _ string) error {
 	targetObject := h.extractActivityObject(moveActivity)
-	
+
 	var movedToTarget string
 	switch obj := targetObject.(type) {
 	case string:
@@ -1762,31 +1769,31 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 	}
 
 	if err := common.ValidateRequiredParam("movedToTarget", movedToTarget); err != nil {
-		return fmt.Errorf("unable to extract moved-to target from move activity")
+		return services.ErrExtractMovedToTargetFromMove
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo move activity missing actor")
+		return services.ErrUndoMoveMissingActor
 	}
 
 	// Extract username from actor URI for repository operations
 	username := h.extractUsernameFromActorURI(actorURI)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return fmt.Errorf("unable to extract username from actor URI: %s", actorURI)
+		return ErrUsernameExtractionFromActorURI
 	}
 
 	h.Logger.Info("processing undo move operation",
 		zap.String("actor", actorURI),
 		zap.String("username", username),
 		zap.String("moved_to_target", movedToTarget))
-	
+
 	// 1. Clear the movedTo field from the actor
 	if err := h.ActorRepo.UpdateMovedTo(ctx, username, ""); err != nil {
 		h.Logger.Error("failed to clear movedTo field",
 			zap.String("username", username),
 			zap.Error(err))
-		return fmt.Errorf("failed to clear movedTo field: %w", err)
+		return errors.Join(ErrMovedToFieldClearing, err)
 	}
 
 	// 2. Remove the moved-to target from alsoKnownAs field on the target actor
@@ -1803,7 +1810,7 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 					updatedAlsoKnownAs = append(updatedAlsoKnownAs, knownAs)
 				}
 			}
-			
+
 			// Update the target actor's alsoKnownAs field
 			if err := h.ActorRepo.UpdateAlsoKnownAs(ctx, targetUsername, updatedAlsoKnownAs); err != nil {
 				h.Logger.Warn("failed to update alsoKnownAs field on target actor",
@@ -1859,6 +1866,8 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 
 // processUndoListActivity processes undo operations for Add/Remove activities on lists
 // This consolidates processUndoAdd and processUndoRemove which had 85 lines of duplication
+//
+//nolint:unused // False positive - called from processUndoAdd and processUndoRemove
 func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActivity *activitypub.Activity, originalActivity interface{}, activityType string) error {
 	// Extract object ID from the original activity
 	targetObject := h.extractActivityObject(originalActivity)
@@ -1873,12 +1882,12 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return fmt.Errorf("unable to extract object ID from %s activity", activityType)
+		return ErrObjectIDExtractionFromActivity
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo %s activity missing actor", activityType)
+		return ErrUndoActivityMissingActor
 	}
 
 	// Extract target collection from the original activity
@@ -1895,7 +1904,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 		h.Logger.Error("Unable to extract list ID from target collection",
 			zap.String("target", targetCollection),
 			zap.String("activity_id", undoActivity.ID))
-		return fmt.Errorf("unable to extract list ID from target collection")
+		return services.ErrExtractListIDFromTargetCollection
 	}
 
 	// Verify the list exists and the actor has permission to modify it
@@ -1906,7 +1915,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 			zap.String("activity_id", undoActivity.ID),
 			zap.String("activity_type", activityType),
 			zap.Error(err))
-		return fmt.Errorf("failed to get target list: %w", err)
+		return errors.Join(ErrTargetListRetrieval, err)
 	}
 
 	// Check if actor has permission (must be list owner)
@@ -1917,7 +1926,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 			zap.String("list_owner", list.Username),
 			zap.String("list_id", listID),
 			zap.String("activity_type", activityType))
-		return fmt.Errorf("actor does not have permission to modify list")
+		return services.ErrActorNoPermissionModifyList
 	}
 
 	// Extract username from object ID
@@ -1925,7 +1934,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 	if err := common.ValidateRequiredParam("memberUsername", memberUsername); err != nil {
 		h.Logger.Error("Unable to extract username from object ID",
 			zap.String("object_id", objectID))
-		return fmt.Errorf("unable to extract username from object ID")
+		return services.ErrExtractUsernameFromObjectID
 	}
 
 	// Perform the inverse operation based on the original activity type
@@ -1949,7 +1958,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 			zap.String("activity_type", activityType),
 			zap.String("action", action),
 			zap.Error(opErr))
-		return fmt.Errorf("failed to perform list operation: %w", opErr)
+		return errors.Join(ErrListOperation, opErr)
 	}
 
 	h.Logger.Info("Successfully processed Undo",
@@ -1977,7 +1986,6 @@ func (h *ActivityHandler) processUndoRemove(ctx context.Context, undoActivity *a
 	return h.processUndoListActivity(ctx, undoActivity, removeActivity, "remove")
 }
 
-
 // processBlockActivity processes a Block activity
 //
 //nolint:unused // False positive - called from processInboxActivity
@@ -2000,19 +2008,19 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 		} else {
 			h.Logger.Error("Block activity object missing id field",
 				zap.String("activity_id", activity.ID))
-			return fmt.Errorf("block activity object missing id field")
+			return services.ErrBlockMissingObjectID
 		}
 	default:
 		h.Logger.Error("Block activity has invalid object type",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("block activity has invalid object type")
+		return services.ErrBlockInvalidObjectType
 	}
 
 	if err := common.ValidateRequiredParam("blockedActor", blockedActor); err != nil {
 		h.Logger.Error("Block activity missing blocked actor",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("block activity missing blocked actor")
+		return services.ErrBlockMissingBlockedActor
 	}
 
 	// Extract the actor doing the blocking
@@ -2020,7 +2028,7 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 	if err := common.ValidateRequiredParam("blockerActor", blockerActor); err != nil {
 		h.Logger.Error("Block activity missing blocker actor",
 			zap.String("activity_id", activity.ID))
-		return fmt.Errorf("block activity missing blocker actor")
+		return services.ErrBlockMissingBlockerActor
 	}
 
 	// Create the block relationship
@@ -2030,7 +2038,7 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 			zap.String("blocked", blockedActor),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create block relationship: %w", err)
+		return errors.Join(ErrBlockRelationshipCreation, err)
 	}
 
 	// Remove any existing follow relationships in both directions
@@ -2097,11 +2105,11 @@ func (h *ActivityHandler) processFlagActivity(ctx context.Context, activity *act
 		h.Logger.Error("Unable to extract flagged object from Flag activity",
 			zap.String("activity_id", activity.ID),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("unable to extract flagged object from Flag activity")
+		return services.ErrExtractFlaggedObjectFromFlag
 	}
 
 	if err := common.ValidateSliceNotEmpty("flaggedObjects", flaggedObjects); err != nil {
-		return fmt.Errorf("no flagged objects found in Flag activity")
+		return services.ErrNoFlaggedObjectsFound
 	}
 
 	// Extract flag content/reason from Summary field
@@ -2127,7 +2135,7 @@ func (h *ActivityHandler) processFlagActivity(ctx context.Context, activity *act
 				zap.String("activity_id", activity.ID),
 				zap.String("actor", activity.Actor),
 				zap.String("flagged_object", objectID))
-			return fmt.Errorf("failed to create flag record: %w", err)
+			return errors.Join(ErrFlagRecordCreation, err)
 		}
 
 		h.Logger.Info("Created flag record",
@@ -2141,7 +2149,7 @@ func (h *ActivityHandler) processFlagActivity(ctx context.Context, activity *act
 	moderationEvent := &storage.ModerationEvent{
 		EventType:       ModerationEventTypeFlagCreated,
 		ObjectID:        strings.Join(flaggedObjects, ","), // Join multiple objects
-		ObjectType:      ObjectTypeStatus, // Default to status, could be inferred
+		ObjectType:      ObjectTypeStatus,                  // Default to status, could be inferred
 		ActorID:         activity.Actor,
 		Category:        ModerationCategoryUserReport,
 		Severity:        ModerationSeverityMedium,
@@ -2183,7 +2191,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 	// Validate required fields for Move activity
 	if err := common.ValidateRequiredParam("activity.Target", activity.Target); err != nil {
 		h.Logger.Warn("move activity missing target")
-		return fmt.Errorf("move activity must specify a target account")
+		return services.ErrMoveMustSpecifyTarget
 	}
 
 	// The actor field is the old account, target is the new account
@@ -2193,7 +2201,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 	// Extract username from old account ID
 	oldUsername := h.extractUsernameFromActorURI(oldAccountID)
 	if err := common.ValidateRequiredParam("oldUsername", oldUsername); err != nil {
-		return fmt.Errorf("unable to extract username from old actor URI: %s", oldAccountID)
+		return ErrUsernameExtractionFromOldActorURI
 	}
 
 	// Update the old actor's movedTo field
@@ -2202,7 +2210,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 			zap.String("old_username", oldUsername),
 			zap.String("new_account_id", newAccountID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update movedTo field: %w", err)
+		return errors.Join(ErrMovedToFieldUpdate, err)
 	}
 
 	// Update the new actor's alsoKnownAs field to include the old account
@@ -2220,7 +2228,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 			if migrationInfo != nil {
 				updatedAlsoKnownAs = migrationInfo.AlsoKnownAs
 			}
-			
+
 			// Check if old account is already in alsoKnownAs
 			found := false
 			for _, knownAs := range updatedAlsoKnownAs {
@@ -2229,10 +2237,10 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 					break
 				}
 			}
-			
+
 			if !found {
 				updatedAlsoKnownAs = append(updatedAlsoKnownAs, oldAccountID)
-				
+
 				if err := h.ActorRepo.UpdateAlsoKnownAs(ctx, newUsername, updatedAlsoKnownAs); err != nil {
 					h.Logger.Warn("failed to update alsoKnownAs field on new account",
 						zap.String("new_username", newUsername),
@@ -2253,6 +2261,8 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 
 // processListActivity processes Add/Remove activities on lists
 // This consolidates processAddActivity and processRemoveActivity which had 104 lines of duplication
+//
+//nolint:unused // False positive - called from processAddActivity and processRemoveActivity
 func (h *ActivityHandler) processListActivity(ctx context.Context, activity *activitypub.Activity, username string, activityType string) error {
 	h.Logger.Info("Processing list activity",
 		zap.String("username", username),
@@ -2265,7 +2275,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 		h.Logger.Error("List activity missing target collection",
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType))
-		return fmt.Errorf("%s activity missing target collection", activityType)
+		return ErrActivityMissingTargetCollection
 	}
 
 	// Extract the objects being processed
@@ -2295,11 +2305,11 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType),
 			zap.Any("object", activity.Object))
-		return fmt.Errorf("unable to extract object from %s activity", activityType)
+		return ErrObjectExtractionFromActivity
 	}
 
 	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
-		return fmt.Errorf("no objects found to %s in %s activity", activityType, activityType)
+		return ErrNoObjectsFoundInActivity
 	}
 
 	// Extract list ID from target
@@ -2309,7 +2319,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("target", activity.Target),
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType))
-		return fmt.Errorf("unable to extract list ID from target collection")
+		return services.ErrExtractListIDFromTargetCollection
 	}
 
 	// Verify the list exists and the actor has permission to modify it
@@ -2320,7 +2330,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType),
 			zap.Error(err))
-		return fmt.Errorf("failed to get target list: %w", err)
+		return errors.Join(ErrTargetListRetrieval, err)
 	}
 
 	// Check if actor has permission (must be list owner)
@@ -2331,7 +2341,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("list_owner", list.Username),
 			zap.String("list_id", listID),
 			zap.String("activity_type", activityType))
-		return fmt.Errorf("actor does not have permission to modify list")
+		return services.ErrActorNoPermissionModifyList
 	}
 
 	// Process each object based on activity type
@@ -2408,12 +2418,12 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 
 	// Extract recipients from the activity
 	recipients := make([]string, 0)
-	
+
 	// Add direct recipients (To field)
 	if activity.To != nil {
 		recipients = append(recipients, activity.To...)
 	}
-	
+
 	// Add carbon copy recipients (CC field)
 	if activity.CC != nil {
 		recipients = append(recipients, activity.CC...)
@@ -2427,7 +2437,7 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 
 	// Filter out local recipients and public addresses
 	remoteRecipients := h.filterRemoteRecipients(recipients)
-	
+
 	if err := common.ValidateSliceNotEmpty("remoteRecipients", remoteRecipients); err != nil {
 		h.Logger.Debug("No remote recipients found for activity, skipping delivery",
 			zap.String("activity_id", activity.ID),
@@ -2441,7 +2451,7 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 	// 2. Group by shared inbox for efficiency
 	// 3. Queue delivery jobs to SQS
 	// 4. Handle signatures and authentication
-	
+
 	h.Logger.Info("Queueing activity for federation delivery",
 		zap.String("activity_id", activity.ID),
 		zap.String("activity_type", activity.Type),
@@ -2452,19 +2462,19 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 	if h.RouteManager != nil && len(remoteRecipients) > 0 {
 		// Create federation message from the activity
 		message := &types.FederationMessage{
-			ID:     activity.ID,
-			Type:   types.MessageTypeActivity, // Use the correct type constant
-			Actor:  activity.Actor,
-			Target: remoteRecipients,
+			ID:      activity.ID,
+			Type:    types.MessageTypeActivity, // Use the correct type constant
+			Actor:   activity.Actor,
+			Target:  remoteRecipients,
 			Payload: nil, // Will be serialized by the route manager
 		}
 
 		// Set delivery options
 		options := types.DeliveryOptions{
-			Priority:    types.PriorityNormal,
-			MaxRetries:  3,
+			Priority:     types.PriorityNormal,
+			MaxRetries:   3,
 			RetryBackoff: 1 * time.Second,
-			Timeout:     30 * time.Second,
+			Timeout:      30 * time.Second,
 		}
 
 		// Deliver the message using the route manager
@@ -2498,39 +2508,41 @@ func (h *ActivityHandler) deliverActivity(_ context.Context, activity *activityp
 //
 //nolint:unused // Helper method for deliverActivity
 func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
-	domain := os.Getenv("DOMAIN_NAME")
+	cfg := config.Get()
+	domain := cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = DefaultTestingDomain // Default for testing
 	}
-	
+
 	remoteRecipients := make([]string, 0)
-	
+
 	for _, recipient := range recipients {
 		// Skip public addresses
 		if recipient == "https://www.w3.org/ns/activitystreams#Public" ||
-		   recipient == "as:Public" ||
-		   recipient == "Public" {
+			recipient == "as:Public" ||
+			recipient == "Public" {
 			continue
 		}
-		
+
 		// Skip local recipients
 		if strings.Contains(recipient, domain) {
 			continue
 		}
-		
+
 		// Skip empty recipients
 		if err := common.ValidateRequiredParam("recipient", recipient); err != nil {
 			continue
 		}
-		
+
 		remoteRecipients = append(remoteRecipients, recipient)
 	}
-	
+
 	return remoteRecipients
 }
 
 // createNotificationRepo creates a notification repository instance
 // Note: linter false positive - this function IS used (lines 334, 430, 833, 1122, 1244)
+//
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
 	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger)
@@ -2538,6 +2550,8 @@ func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRep
 
 // processUndoWithObjectExtraction handles the common pattern for Undo activities
 // that need to extract an object/target from the original activity and delete a record
+//
+//nolint:unused // False positive - called from processUndoLike, processUndoAnnounce, and processUndoBlock
 func (h *ActivityHandler) processUndoWithObjectExtraction(
 	ctx context.Context,
 	undoActivity *activitypub.Activity,
@@ -2546,7 +2560,7 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 	deleteFunc func(ctx context.Context, actor, target string) error,
 ) error {
 	targetObject := h.extractActivityObject(originalActivity)
-	
+
 	var extractedID string
 	switch obj := targetObject.(type) {
 	case string:
@@ -2558,12 +2572,12 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 	}
 
 	if err := common.ValidateRequiredParam("extractedID", extractedID); err != nil {
-		return fmt.Errorf("unable to extract target ID from %s activity", activityType)
+		return ErrTargetIDExtractionFromActivity
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return fmt.Errorf("undo %s activity missing actor", activityType)
+		return ErrUndoActivityMissingActor
 	}
 
 	// Call the specific delete function
@@ -2572,10 +2586,10 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 			zap.String("actor", actorURI),
 			zap.String("target_id", extractedID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete %s record: %w", activityType, err)
+		return errors.Join(ErrActivityRecordDeletion, err)
 	}
 
-	h.Logger.Info(fmt.Sprintf("Successfully processed Undo %s", strings.Title(activityType)),
+	h.Logger.Info(fmt.Sprintf("Successfully processed Undo %s", cases.Title(language.English).String(activityType)),
 		zap.String("actor", actorURI),
 		zap.String("target_id", extractedID))
 
@@ -2583,6 +2597,8 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 }
 
 // createObjectInteractionNotification creates a notification for object interactions (like, announce, etc.)
+//
+//nolint:unused // False positive - called from processLikeActivity and processAnnounceActivity
 func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Context, objectID, actorURI, notificationType, actionVerb, actorRole string) {
 	// Find the owner of the object to send notification
 	object, err := h.ObjectRepo.GetObject(ctx, objectID)
@@ -2637,6 +2653,7 @@ func (h *ActivityHandler) createObjectInteractionNotification(ctx context.Contex
 
 // extractUsernameFromActorURI extracts the username from an ActivityPub actor URI
 // Note: linter false positive - this function IS used extensively throughout the file
+//
 //nolint:unused // false positive - function is used extensively
 func (h *ActivityHandler) extractUsernameFromActorURI(actorURI string) string {
 	// Extract username from URL like https://domain.com/users/username
@@ -2644,29 +2661,30 @@ func (h *ActivityHandler) extractUsernameFromActorURI(actorURI string) string {
 	if len(parts) >= 2 && parts[len(parts)-2] == "users" {
 		return parts[len(parts)-1]
 	}
-	
+
 	// Try alternative format like https://domain.com/@username
 	if len(parts) >= 1 && strings.HasPrefix(parts[len(parts)-1], "@") {
 		return strings.TrimPrefix(parts[len(parts)-1], "@")
 	}
-	
+
 	// Fallback: extract the last path segment
 	parts = strings.Split(strings.TrimSuffix(actorURI, "/"), "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
-	
+
 	return ""
 }
 
 // distributeToFollowersTimeline distributes a status to followers' home timelines
 // Note: linter false positive - this function IS used (lines 685, 696)
+//
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, status *models.Status, actorID, postID, _ string, isReply bool, inReplyTo string, createdAt time.Time) error {
 	// Extract username from actor ID for follower lookup
 	actorUsername := h.extractUsernameFromActorURI(actorID)
 	if err := common.ValidateRequiredParam("actorUsername", actorUsername); err != nil {
-		return fmt.Errorf("failed to extract username from actor ID: %s", actorID)
+		return ErrUsernameExtractionFromActorID
 	}
 
 	h.Logger.Debug("Starting follower timeline distribution",
@@ -2679,7 +2697,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 		h.Logger.Error("Failed to get followers for timeline distribution",
 			zap.String("actor_username", actorUsername),
 			zap.Error(err))
-		return fmt.Errorf("failed to get followers: %w", err)
+		return errors.Join(ErrFollowersRetrieval, err)
 	}
 
 	// Create timeline entries for all followers
@@ -2717,7 +2735,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 				zap.String("post_id", postID),
 				zap.Int("entry_count", len(timelineEntries)),
 				zap.Error(err))
-			return fmt.Errorf("failed to create timeline entries: %w", err)
+			return errors.Join(ErrTimelineEntriesCreation, err)
 		}
 
 		h.Logger.Info("Distributed status to follower timelines",
@@ -2730,14 +2748,15 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 	return nil
 }
 
-
 // extractUsernameFromActor is an alias for extractUsernameFromActorURI for consistency
+//
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) extractUsernameFromActor(actorURI string) string {
 	return h.extractUsernameFromActorURI(actorURI)
 }
 
 // extractListIDFromCollection extracts the list ID from a collection URI
+//
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) string {
 	// Handle lists pattern
@@ -2747,7 +2766,7 @@ func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) stri
 			return strings.Split(parts[1], "/")[0]
 		}
 	}
-	
+
 	// Handle collections pattern
 	if strings.Contains(collectionURI, "/collections/") {
 		parts := strings.Split(collectionURI, "/collections/")
@@ -2755,13 +2774,13 @@ func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) stri
 			return strings.Split(parts[1], "/")[0]
 		}
 	}
-	
+
 	// Fallback: try to extract the last path segment
 	parts := strings.Split(strings.TrimSuffix(collectionURI, "/"), "/")
 	if err := common.ValidateSliceNotEmpty("parts", parts); err == nil {
 		return parts[len(parts)-1]
 	}
-	
+
 	return ""
 }
 
@@ -2769,10 +2788,12 @@ func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) stri
 func createRouteManager(db core.DB, tableName string, logger *zap.Logger) *routing.Manager {
 	// Create the necessary repositories
 	federationInstanceRepo := repositories.NewFederationInstanceRepository(db, logger)
-	circuitBreakerRepo := repositories.NewCircuitBreakerRepository(db, tableName, logger)
+	circuitBreakerRepo := repositories.NewCircuitBreakerRepositoryBasic(db, tableName, logger)
 	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
 	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
-	costTrackingRepo := repositories.NewFederationCostRepository(db, tableName, logger)
+	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
+	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
+	costTrackingRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
 
 	// Create route manager with default config
 	config := &routing.ManagerConfig{

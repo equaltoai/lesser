@@ -1,3 +1,5 @@
+// Package transformations provides utility functions for converting ActivityPub
+// objects and actors to Mastodon API compatible models and data structures.
 package transformations
 
 import (
@@ -158,7 +160,7 @@ func isBot(actorType string) bool {
 	return common.ValidateEnumField(actorType, botTypes, "actor_type") == nil
 }
 
-func transformAttachments(attachment interface{}) []any {
+func transformAttachments(_ interface{}) []any {
 	// TODO: Implement attachment transformation
 	return []any{}
 }
@@ -194,17 +196,17 @@ func extractLanguage(obj map[string]interface{}) *string {
 	return nil
 }
 
-func transformMediaAttachments(obj map[string]interface{}) []any {
+func transformMediaAttachments(_ map[string]interface{}) []any {
 	// TODO: Implement media attachment transformation
 	return []any{}
 }
 
-func transformMentions(obj map[string]interface{}) []any {
+func transformMentions(_ map[string]interface{}) []any {
 	// TODO: Implement mentions transformation
 	return []any{}
 }
 
-func transformTags(obj map[string]interface{}) []any {
+func transformTags(_ map[string]interface{}) []any {
 	// TODO: Implement tags transformation
 	return []any{}
 }
@@ -278,7 +280,7 @@ func ObjectToStatusWithContext(ctx context.Context, obj map[string]interface{}) 
 }
 
 // ObjectToStatusWithContextAndCounts provides full context-aware object to status conversion with counts and user state
-func ObjectToStatusWithContextAndCounts(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool, baseURL string) models.Status {
+func ObjectToStatusWithContextAndCounts(_ context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool, baseURL string) models.Status {
 	if obj == nil || actor == nil {
 		return models.Status{}
 	}

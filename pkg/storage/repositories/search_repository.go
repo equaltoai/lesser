@@ -28,24 +28,102 @@ type SearchRepositoryDeps interface {
 	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 }
 
-// SearchRepository implements search functionality using DynamORM
+// SearchRepository implements search functionality using DynamORM with BaseRepository pattern
 type SearchRepository struct {
-	db     core.DB
-	logger *zap.Logger
-	deps   SearchRepositoryDeps
+	*BaseRepository[*models.SearchSuggestion]
+	deps SearchRepositoryDeps
 }
 
 // NewSearchRepository creates a new search repository
 func NewSearchRepository(db core.DB, logger *zap.Logger) *SearchRepository {
+	tableName := storage.DefaultTableName // Use the default table name
 	return &SearchRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.SearchSuggestion](
+			db, tableName, logger, nil, "SearchRepository"),
 	}
 }
 
 // SetDependencies sets the dependencies for cross-repository operations
 func (r *SearchRepository) SetDependencies(deps SearchRepositoryDeps) {
 	r.deps = deps
+}
+
+// Helper methods for SearchEmbedding operations using DynamORM patterns
+
+// createSearchEmbedding creates a search embedding using DynamORM
+func (r *SearchRepository) createSearchEmbedding(ctx context.Context, embedding *models.SearchEmbedding) error {
+	if embedding == nil {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntitySearchEmbedding, "nil embedding")
+	}
+
+	// Set created time if not provided
+	if embedding.CreatedAt.IsZero() {
+		embedding.CreatedAt = time.Now()
+	}
+
+	// Update keys and create
+	err := embedding.UpdateKeys()
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, "search embedding", "update keys")
+	}
+
+	err = r.db.WithContext(ctx).Model(embedding).Create()
+	if err != nil {
+		r.logger.Error("failed to create search embedding",
+			zap.String("content_id", embedding.ContentID),
+			zap.Error(err))
+		return ErrorHandler.HandleCreateError(err, "search embedding", embedding.ContentID)
+	}
+
+	return nil
+}
+
+// getSearchEmbedding retrieves a search embedding by content ID
+func (r *SearchRepository) getSearchEmbedding(ctx context.Context, contentID string) (*models.SearchEmbedding, error) {
+	var embedding models.SearchEmbedding
+	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+		Where("PK", "=", fmt.Sprintf("EMBEDDING#%s", contentID)).
+		Where("SK", "=", "VECTOR").
+		First(&embedding)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, "search embedding", contentID)
+		}
+		return nil, ErrorHandler.HandleGetError(err, "search embedding", contentID)
+	}
+
+	return &embedding, nil
+}
+
+// updateSearchEmbedding updates an existing search embedding
+func (r *SearchRepository) updateSearchEmbedding(ctx context.Context, embedding *models.SearchEmbedding) error {
+	embedding.CreatedAt = time.Now() // Update timestamp
+	err := r.db.WithContext(ctx).Model(embedding).Update()
+	if err != nil {
+		r.logger.Error("failed to update search embedding",
+			zap.String("content_id", embedding.ContentID),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, "search embedding", embedding.ContentID)
+	}
+	return nil
+}
+
+// deleteSearchEmbedding removes a search embedding
+func (r *SearchRepository) deleteSearchEmbedding(ctx context.Context, contentID string) error {
+	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
+		Where("PK", "=", fmt.Sprintf("EMBEDDING#%s", contentID)).
+		Where("SK", "=", "VECTOR").
+		Delete()
+
+	if err != nil {
+		r.logger.Error("failed to delete search embedding",
+			zap.String("content_id", contentID),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, "search embedding", contentID)
+	}
+
+	return nil
 }
 
 // SearchAccounts searches for accounts matching the given query
@@ -347,7 +425,7 @@ func (r *SearchRepository) SearchStatusesWithOptionsPaginated(ctx context.Contex
 
 	// Apply default options and validate
 	if err := paginationOpts.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "search", "pagination validation")
 	}
 
 	// Execute search strategies concurrently
@@ -801,7 +879,7 @@ func (r *SearchRepository) SearchAllPaginated(ctx context.Context, query string,
 		options = NewPaginationOptions()
 	}
 	if err := options.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "search all", "pagination validation")
 	}
 
 	results := &storage.SearchResults{
@@ -925,7 +1003,7 @@ func (r *SearchRepository) SearchHashtags(ctx context.Context, query string, lim
 		All(&hashtags)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to search hashtags: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "hashtag", "search query")
 	}
 
 	// Convert to storage format
@@ -961,7 +1039,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 		options = NewPaginationOptions()
 	}
 	if err := options.Validate(); err != nil {
-		return nil, nil, fmt.Errorf("invalid pagination options: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "hashtag search", "pagination validation")
 	}
 
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
@@ -974,7 +1052,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	// Parse cursor for continuation
 	cursorData, err := DecodeCursor(options.Cursor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "hashtag search", "cursor decoding")
 	}
 
 	// Use efficient cursor-based pagination with the hashtag search index
@@ -996,7 +1074,7 @@ func (r *SearchRepository) SearchHashtagsAdvancedPaginated(ctx context.Context, 
 	hashtagQuery = hashtagQuery.Limit(options.Limit + 1)
 	err = hashtagQuery.All(&hashtags)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to search hashtags: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "hashtag search", "advanced search")
 	}
 
 	r.logger.Debug("hashtag search results",
@@ -1147,7 +1225,7 @@ func (r *SearchRepository) isLocalStatus(statusID string) bool {
 // CreateSearchSuggestion creates a new search suggestion
 func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestion *models.SearchSuggestion) error {
 	if suggestion == nil {
-		return fmt.Errorf("suggestion cannot be nil")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntitySearchSuggestion, "nil suggestion")
 	}
 
 	// Set timestamps
@@ -1156,20 +1234,8 @@ func (r *SearchRepository) CreateSearchSuggestion(ctx context.Context, suggestio
 	suggestion.UpdatedAt = now
 	suggestion.LastUsed = now
 
-	// Update keys
-	suggestion.UpdateKeys()
-
-	// Create the suggestion
-	err := r.db.WithContext(ctx).Model(suggestion).Create()
-	if err != nil {
-		r.logger.Error("failed to create search suggestion",
-			zap.String("type", suggestion.Type),
-			zap.String("term", suggestion.Term),
-			zap.Error(err))
-		return fmt.Errorf("failed to create search suggestion: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Create method
+	return r.Create(ctx, suggestion)
 }
 
 // UpdateSearchSuggestion updates an existing search suggestion
@@ -1178,15 +1244,13 @@ func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestio
 		return nil
 	}
 
-	// Add updated timestamp
-	updates["updated_at"] = time.Now()
-
-	// Build and update the suggestion model
-	suggestion := &models.SearchSuggestion{
-		Type: suggestionType,
-		Term: term,
+	// Get the existing suggestion first
+	pk := fmt.Sprintf("SEARCH_SUGGEST#%s", suggestionType)
+	suggestion := &models.SearchSuggestion{}
+	err := r.Get(ctx, pk, term, suggestion)
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, "search suggestion", fmt.Sprintf("%s:%s", suggestionType, term))
 	}
-	suggestion.UpdateKeys()
 
 	// Apply updates to the model
 	if score, ok := updates["score"].(float64); ok {
@@ -1198,21 +1262,10 @@ func (r *SearchRepository) UpdateSearchSuggestion(ctx context.Context, suggestio
 	if useCount, ok := updates["use_count"].(int); ok {
 		suggestion.UseCount = useCount
 	}
-	if updatedAt, ok := updates["updated_at"].(time.Time); ok {
-		suggestion.UpdatedAt = updatedAt
-	}
+	suggestion.UpdatedAt = time.Now()
 
-	// Execute update
-	err := r.db.WithContext(ctx).Model(suggestion).Update()
-	if err != nil {
-		r.logger.Error("failed to update search suggestion",
-			zap.String("type", suggestionType),
-			zap.String("term", term),
-			zap.Error(err))
-		return fmt.Errorf("failed to update search suggestion: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Update method
+	return r.Update(ctx, suggestion)
 }
 
 // GetSearchSuggestions retrieves search suggestions based on prefix
@@ -1228,60 +1281,33 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	// Search usernames in USERNAME_SEARCH index
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	// Search different suggestion types concurrently
+	sugTypes := []string{"username", "hashtag", "display_name"}
 
-		prefixKey := normalizedPrefix[:2]
-		var usernameSuggestions []models.SearchSuggestion
+	for _, sugType := range sugTypes {
+		wg.Add(1)
+		go func(suggestionType string) {
+			defer wg.Done()
 
-		err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-			Index("username-search-index").
-			Where("GSI1PK", "=", fmt.Sprintf("USERNAME_SEARCH#%s", prefixKey)).
-			Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
-			Limit(limit).
-			All(&usernameSuggestions)
-
-		if err != nil {
-			r.logger.Warn("username search suggestions failed", zap.Error(err))
-			return
-		}
-
-		mu.Lock()
-		for _, sugg := range usernameSuggestions {
-			key := fmt.Sprintf("%s:%s", sugg.Type, sugg.Term)
-			if !seen[key] {
-				suggestions = append(suggestions, &sugg)
-				seen[key] = true
-			}
-		}
-		mu.Unlock()
-	}()
-
-	// Search display names in NAME_SEARCH index
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		if len(normalizedPrefix) >= 2 {
-			prefixKey := normalizedPrefix[:2]
-			var nameSuggestions []models.SearchSuggestion
+			// Query using partition key with prefix filter
+			pk := fmt.Sprintf("SEARCH_SUGGEST#%s", suggestionType)
+			var typeSuggestions []models.SearchSuggestion
 
 			err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-				Index("name-search-index").
-				Where("GSI2PK", "=", fmt.Sprintf("NAME_SEARCH#%s", prefixKey)).
-				Filter("GSI2SK", "BEGINS_WITH", normalizedPrefix).
+				Where("PK", "=", pk).
+				Filter("SK", "BEGINS_WITH", normalizedPrefix).
 				Limit(limit).
-				All(&nameSuggestions)
+				All(&typeSuggestions)
 
 			if err != nil {
-				r.logger.Warn("name search suggestions failed", zap.Error(err))
+				r.logger.Warn("search suggestions failed",
+					zap.String("type", suggestionType),
+					zap.Error(err))
 				return
 			}
 
 			mu.Lock()
-			for _, sugg := range nameSuggestions {
+			for _, sugg := range typeSuggestions {
 				key := fmt.Sprintf("%s:%s", sugg.Type, sugg.Term)
 				if !seen[key] {
 					suggestions = append(suggestions, &sugg)
@@ -1289,37 +1315,8 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 				}
 			}
 			mu.Unlock()
-		}
-	}()
-
-	// Search hashtag suggestions
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		var hashtagSuggestions []models.SearchSuggestion
-
-		err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-			Where("PK", "=", "SEARCH_SUGGEST#hashtag").
-			Filter("SK", "BEGINS_WITH", normalizedPrefix).
-			Limit(limit).
-			All(&hashtagSuggestions)
-
-		if err != nil {
-			r.logger.Warn("hashtag search suggestions failed", zap.Error(err))
-			return
-		}
-
-		mu.Lock()
-		for _, sugg := range hashtagSuggestions {
-			key := fmt.Sprintf("%s:%s", sugg.Type, sugg.Term)
-			if !seen[key] {
-				suggestions = append(suggestions, &sugg)
-				seen[key] = true
-			}
-		}
-		mu.Unlock()
-	}()
+		}(sugType)
+	}
 
 	wg.Wait()
 
@@ -1343,17 +1340,15 @@ func (r *SearchRepository) GetSearchSuggestions(ctx context.Context, prefix stri
 
 // IncrementSuggestionUse increments the use count for a suggestion
 func (r *SearchRepository) IncrementSuggestionUse(ctx context.Context, suggestionType, term string) error {
-	// First, get the current suggestion
-	var suggestion models.SearchSuggestion
-	err := r.db.WithContext(ctx).Model(&models.SearchSuggestion{}).
-		Where("PK", "=", fmt.Sprintf("SEARCH_SUGGEST#%s", suggestionType)).
-		Where("SK", "=", term).
-		First(&suggestion)
+	// First, try to get the current suggestion
+	pk := fmt.Sprintf("SEARCH_SUGGEST#%s", suggestionType)
+	suggestion := &models.SearchSuggestion{}
+	err := r.Get(ctx, pk, term, suggestion)
 
 	if err != nil {
 		// If not found, create a new suggestion
-		if errors.IsNotFound(err) {
-			suggestion = models.SearchSuggestion{
+		if strings.Contains(err.Error(), "not found") {
+			suggestion = &models.SearchSuggestion{
 				Type:      suggestionType,
 				Term:      term,
 				UseCount:  1,
@@ -1362,10 +1357,9 @@ func (r *SearchRepository) IncrementSuggestionUse(ctx context.Context, suggestio
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			}
-			suggestion.UpdateKeys()
-			return r.db.WithContext(ctx).Model(&suggestion).Create()
+			return r.Create(ctx, suggestion)
 		}
-		return fmt.Errorf("failed to get suggestion: %w", err)
+		return ErrorHandler.HandleGetError(err, "search suggestion", fmt.Sprintf("%s:%s", suggestionType, term))
 	}
 
 	// Update the suggestion
@@ -1374,7 +1368,7 @@ func (r *SearchRepository) IncrementSuggestionUse(ctx context.Context, suggestio
 	suggestion.LastUsed = time.Now()
 	suggestion.UpdatedAt = time.Now()
 
-	return r.db.WithContext(ctx).Model(&suggestion).Update()
+	return r.Update(ctx, suggestion)
 }
 
 // PruneOldSuggestions removes suggestions older than the specified time
@@ -1387,7 +1381,7 @@ func (r *SearchRepository) PruneOldSuggestions(ctx context.Context, olderThan ti
 		All(&oldSuggestions)
 
 	if err != nil {
-		return fmt.Errorf("failed to query old suggestions: %w", err)
+		return ErrorHandler.HandleQueryError(err, "search suggestion", "pruning query")
 	}
 
 	// Delete in batches
@@ -1449,7 +1443,7 @@ func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) e
 		All(&embeddings)
 
 	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to query embeddings for deletion: %w", err)
+		return ErrorHandler.HandleQueryError(err, "search embedding", "deletion query")
 	}
 
 	// Delete embeddings in batch if they exist
@@ -1464,7 +1458,7 @@ func (r *SearchRepository) UnindexStatus(ctx context.Context, statusID string) e
 
 		err = r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).BatchDelete(keys)
 		if err != nil {
-			return fmt.Errorf("failed to batch delete embeddings: %w", err)
+			return ErrorHandler.HandleDeleteError(err, "search embedding", "batch delete")
 		}
 
 		r.logger.Debug("removed embeddings for status",
@@ -1552,7 +1546,7 @@ func (r *SearchRepository) SearchStatusesByHashtag(ctx context.Context, hashtag 
 		if errors.IsNotFound(err) {
 			return []*storage.StatusSearchResult{}, nil
 		}
-		return nil, fmt.Errorf("failed to search statuses by hashtag: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "status search", "hashtag query")
 	}
 
 	// Convert hashtag index entries to search results
@@ -1593,7 +1587,7 @@ func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID 
 		All(&statuses)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to search statuses by author: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "status search", "author query")
 	}
 
 	// Convert to search results
@@ -1612,7 +1606,7 @@ func (r *SearchRepository) SearchStatusesByAuthor(ctx context.Context, authorID 
 // RecordSearch records a search event for analytics
 func (r *SearchRepository) RecordSearch(ctx context.Context, event *models.SearchAnalytics) error {
 	if event == nil {
-		return fmt.Errorf("search event cannot be nil")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntitySearchAnalytics, "nil event")
 	}
 
 	// Set timestamp if not provided
@@ -1632,7 +1626,7 @@ func (r *SearchRepository) RecordSearch(ctx context.Context, event *models.Searc
 		r.logger.Error("failed to record search analytics",
 			zap.String("query_hash", r.hashQuery(event.Query)),
 			zap.Error(err))
-		return fmt.Errorf("failed to record search analytics: %w", err)
+		return ErrorHandler.HandleCreateError(err, "search analytics", r.hashQuery(event.Query))
 	}
 
 	return nil
@@ -1857,28 +1851,7 @@ func (r *SearchRepository) GetSearchTrends(ctx context.Context, days int) (map[s
 
 // IndexContentEmbedding indexes content with its embedding vector
 func (r *SearchRepository) IndexContentEmbedding(ctx context.Context, embedding *models.SearchEmbedding) error {
-	if embedding == nil {
-		return fmt.Errorf("embedding cannot be nil")
-	}
-
-	// Set created time
-	if embedding.CreatedAt.IsZero() {
-		embedding.CreatedAt = time.Now()
-	}
-
-	// Update keys
-	embedding.UpdateKeys()
-
-	// Create the embedding
-	err := r.db.WithContext(ctx).Model(embedding).Create()
-	if err != nil {
-		r.logger.Error("failed to index content embedding",
-			zap.String("content_id", embedding.ContentID),
-			zap.Error(err))
-		return fmt.Errorf("failed to index content embedding: %w", err)
-	}
-
-	return nil
+	return r.createSearchEmbedding(ctx, embedding)
 }
 
 // SearchByEmbedding searches for similar content using vector similarity
@@ -1901,7 +1874,7 @@ func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, query
 
 	cursorData, err := DecodeCursor(options.Cursor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid cursor: %w", err)
+		return nil, nil, ErrorHandler.HandleQueryError(err, "embedding search", "cursor decoding")
 	}
 
 	baseQuery := r.buildBaseQuery(ctx, cursorData)
@@ -1921,7 +1894,7 @@ func (r *SearchRepository) SearchByEmbeddingPaginated(ctx context.Context, query
 // validateSearchParams validates and normalizes search parameters
 func (r *SearchRepository) validateSearchParams(queryEmbedding []float32, threshold *float64, options **PaginationOptions) error {
 	if err := common.ValidateSliceNotEmpty("queryEmbedding", queryEmbedding); err != nil {
-		return fmt.Errorf("query embedding cannot be empty")
+		return ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntitySearchEmbedding, "empty embedding vector")
 	}
 
 	if err := common.ValidateFloatRange("threshold", *threshold, 0.0, 1.0); err != nil {
@@ -1932,7 +1905,7 @@ func (r *SearchRepository) validateSearchParams(queryEmbedding []float32, thresh
 		*options = NewPaginationOptions()
 	}
 	if err := (*options).Validate(); err != nil {
-		return fmt.Errorf("invalid pagination options: %w", err)
+		return ErrorHandler.HandleQueryError(err, "search", "pagination validation")
 	}
 
 	return nil
@@ -2017,7 +1990,7 @@ func (r *SearchRepository) processBatch(baseQuery interface{}, currentBatch, bat
 		if errors.IsNotFound(err) {
 			return nil, true, nil
 		}
-		return nil, false, fmt.Errorf("failed to search embeddings batch %d: %w", currentBatch, err)
+		return nil, false, ErrorHandler.HandleQueryError(err, "search embedding", fmt.Sprintf("batch %d", currentBatch))
 	}
 
 	if err := common.ValidateSliceNotEmpty("embeddings", embeddings); err != nil {
@@ -2109,46 +2082,20 @@ func (r *SearchRepository) logSearchCompletion(finalResults []*models.SearchEmbe
 // UpdateEmbedding updates an existing embedding
 func (r *SearchRepository) UpdateEmbedding(ctx context.Context, contentID string, embedding []float32) error {
 	// Get the existing embedding
-	var searchEmbedding models.SearchEmbedding
-	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-		Where("PK", "=", fmt.Sprintf("EMBEDDING#%s", contentID)).
-		Where("SK", "=", "VECTOR").
-		First(&searchEmbedding)
-
+	searchEmbedding, err := r.getSearchEmbedding(ctx, contentID)
 	if err != nil {
-		return fmt.Errorf("failed to get embedding: %w", err)
+		return err
 	}
 
 	// Update the embedding
 	searchEmbedding.Embedding = embedding
-	searchEmbedding.CreatedAt = time.Now()
 
-	err = r.db.WithContext(ctx).Model(&searchEmbedding).Update()
-	if err != nil {
-		r.logger.Error("failed to update embedding",
-			zap.String("content_id", contentID),
-			zap.Error(err))
-		return fmt.Errorf("failed to update embedding: %w", err)
-	}
-
-	return nil
+	return r.updateSearchEmbedding(ctx, searchEmbedding)
 }
 
 // DeleteEmbedding removes an embedding
 func (r *SearchRepository) DeleteEmbedding(ctx context.Context, contentID string) error {
-	err := r.db.WithContext(ctx).Model(&models.SearchEmbedding{}).
-		Where("PK", "=", fmt.Sprintf("EMBEDDING#%s", contentID)).
-		Where("SK", "=", "VECTOR").
-		Delete()
-
-	if err != nil {
-		r.logger.Error("failed to delete embedding",
-			zap.String("content_id", contentID),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete embedding: %w", err)
-	}
-
-	return nil
+	return r.deleteSearchEmbedding(ctx, contentID)
 }
 
 // Helper method for cosine similarity

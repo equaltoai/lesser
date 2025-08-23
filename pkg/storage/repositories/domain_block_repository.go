@@ -6,25 +6,40 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// DomainBlockRepository implements domain block operations using DynamORM
+// DomainBlockRepository implements domain block operations using DynamORM with BaseRepository pattern
 type DomainBlockRepository struct {
+	baseRepo  *BaseRepository[*models.UserDomainBlock] // BaseRepository for user domain blocks
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-// NewDomainBlockRepository creates a new domain block repository
+// NewDomainBlockRepository creates a new domain block repository with BaseRepository integration
 func NewDomainBlockRepository(db core.DB, tableName string, logger *zap.Logger) *DomainBlockRepository {
+	baseRepo := NewBaseRepository[*models.UserDomainBlock](db, tableName, logger)
 	return &DomainBlockRepository{
+		baseRepo:  baseRepo,
+		db:        db,
+		tableName: tableName,
+		logger:    logger,
+	}
+}
+
+// NewDomainBlockRepositoryWithCostTracking creates a new domain block repository with cost tracking
+func NewDomainBlockRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DomainBlockRepository {
+	baseRepo := NewBaseRepositoryWithCostTracking[*models.UserDomainBlock](db, tableName, logger, costService, "DomainBlockRepository")
+	return &DomainBlockRepository{
+		baseRepo:  baseRepo,
 		db:        db,
 		tableName: tableName,
 		logger:    logger,
@@ -39,11 +54,11 @@ func (r *DomainBlockRepository) AddDomainBlock(ctx context.Context, username, do
 		CreatedAt: time.Now(),
 	}
 	if err := block.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update domain block keys: %w", err)
+		return ErrorHandler.HandleCreateError(err, "domain block", domain)
 	}
 
-	// Use Create with condition to prevent duplicates
-	err := r.db.WithContext(ctx).Model(block).Create()
+	// Use BaseRepository Create method which handles key updates automatically
+	err := r.baseRepo.Create(ctx, block)
 
 	if err != nil {
 		// Check if it's a duplicate (already exists)
@@ -51,7 +66,7 @@ func (r *DomainBlockRepository) AddDomainBlock(ctx context.Context, username, do
 			// Already blocked, not an error
 			return nil
 		}
-		return fmt.Errorf("failed to add domain block: %w", err)
+		return ErrorHandler.HandleCreateError(err, "domain block", domain)
 	}
 
 	return nil
@@ -64,18 +79,26 @@ func (r *DomainBlockRepository) RemoveDomainBlock(ctx context.Context, username,
 		Domain:   domain,
 	}
 	if err := block.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update domain block keys for removal: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "domain block", domain)
 	}
 
-	err := r.db.WithContext(ctx).Model(&models.UserDomainBlock{}).
-		Where("PK", "=", block.PK).
-		Where("SK", "=", block.SK).
-		Delete()
+	// Use BaseRepository Delete method with proper error handling
+	err := r.baseRepo.Delete(ctx, block.PK, block.SK)
 
 	if err != nil {
-		return fmt.Errorf("failed to remove domain block: %w", err)
+		// Handle not found gracefully (idempotent operation)
+		if strings.Contains(err.Error(), "not found") {
+			r.logger.Debug("domain block not found for removal",
+				zap.String("username", username),
+				zap.String("domain", domain))
+			return nil
+		}
+		return ErrorHandler.HandleDeleteError(err, "domain block", domain)
 	}
 
+	r.logger.Info("removed domain block",
+		zap.String("username", username),
+		zap.String("domain", domain))
 	return nil
 }
 
@@ -99,7 +122,7 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 	var blocks []models.UserDomainBlock
 	err := query.All(&blocks)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query domain blocks: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "domain block", "blocking")
 	}
 
 	// Generate next cursor
@@ -121,24 +144,22 @@ func (r *DomainBlockRepository) GetUserDomainBlocks(ctx context.Context, usernam
 
 // IsBlockedDomain checks if a domain is blocked by a user
 func (r *DomainBlockRepository) IsBlockedDomain(ctx context.Context, username, domain string) (bool, error) {
-	var block models.UserDomainBlock
-	err := r.db.WithContext(ctx).Model(&block).
-		Where("PK", "=", fmt.Sprintf("USER#%s", username)).
-		Where("SK", "=", fmt.Sprintf("DOMAIN_BLOCK#%s", strings.ToLower(strings.TrimSpace(domain)))).
-		First(&block)
+	// Normalize domain
+	normalizedDomain := strings.ToLower(strings.TrimSpace(domain))
+	pk := fmt.Sprintf("USER#%s", username)
+	sk := fmt.Sprintf("DOMAIN_BLOCK#%s", normalizedDomain)
 
+	// Use BaseRepository Exists method for efficient checking
+	exists, err := r.baseRepo.Exists(ctx, pk, sk)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return false, nil
-		}
 		r.logger.Error("failed to check if domain is blocked",
 			zap.String("username", username),
-			zap.String("domain", domain),
+			zap.String("domain", normalizedDomain),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check if domain is blocked: %w", err)
+		return false, ErrorHandler.HandleGetError(err, "blocked domain", normalizedDomain)
 	}
 
-	return true, nil
+	return exists, nil
 }
 
 // CreateInstanceDomainBlock creates an instance-level domain block
@@ -171,17 +192,27 @@ func (r *DomainBlockRepository) CreateInstanceDomainBlock(ctx context.Context, b
 		CreatedAt:      block.CreatedAt,
 		UpdatedAt:      block.UpdatedAt,
 	}
-	modelBlock.UpdateKeys()
+	if err := modelBlock.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "domain block", block.Domain)
+	}
 
 	// Create with condition to prevent duplicates
 	err := r.db.WithContext(ctx).Model(modelBlock).Create()
 
 	if err != nil {
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			return fmt.Errorf("domain block already exists for %s", block.Domain)
+			r.logger.Debug("domain block already exists",
+				zap.String("domain", block.Domain),
+				zap.String("created_by", block.CreatedBy))
+			return ErrorHandler.HandleCreateError(err, "domain block", block.Domain)
 		}
-		return fmt.Errorf("failed to create domain block: %w", err)
+		return ErrorHandler.HandleCreateError(err, "domain block", block.Domain)
 	}
+
+	r.logger.Info("created instance domain block",
+		zap.String("domain", block.Domain),
+		zap.String("severity", block.Severity),
+		zap.String("created_by", block.CreatedBy))
 
 	return nil
 }
@@ -200,7 +231,7 @@ func (r *DomainBlockRepository) GetInstanceDomainBlock(ctx context.Context, doma
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get domain block: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "domain block", domain)
 	}
 
 	// Convert models.InstanceDomainBlock to storage.InstanceDomainBlock
@@ -231,7 +262,7 @@ func (r *DomainBlockRepository) GetInstanceDomainBlockByID(ctx context.Context, 
 		All(&blocks)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query domain block by ID: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "domain block", "by ID")
 	}
 
 	// Find the block with matching ID
@@ -286,7 +317,7 @@ func (r *DomainBlockRepository) UpdateInstanceDomainBlock(ctx context.Context, d
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to get domain block: %w", err)
+		return ErrorHandler.HandleGetError(err, "domain block", domain)
 	}
 
 	// Apply updates to the model
@@ -318,7 +349,7 @@ func (r *DomainBlockRepository) UpdateInstanceDomainBlock(ctx context.Context, d
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to update domain block: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "domain block", domain)
 	}
 
 	return nil
@@ -337,7 +368,7 @@ func (r *DomainBlockRepository) DeleteInstanceDomainBlock(ctx context.Context, d
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to delete domain block: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "domain block", domain)
 	}
 
 	return nil
@@ -428,16 +459,18 @@ func (r *DomainBlockRepository) CreateEmailDomainBlock(ctx context.Context, bloc
 		CreatedBy: block.CreatedBy,
 		CreatedAt: block.CreatedAt,
 	}
-	modelBlock.UpdateKeys()
+	if err := modelBlock.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "email domain block", block.Domain)
+	}
 
 	// Create with condition to prevent duplicates
 	err := r.db.WithContext(ctx).Model(modelBlock).Create()
 
 	if err != nil {
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			return fmt.Errorf("email domain block already exists")
+			return ErrorHandler.HandleCreateError(err, "email domain block", modelBlock.Domain)
 		}
-		return fmt.Errorf("failed to create email domain block: %w", err)
+		return ErrorHandler.HandleCreateError(err, "email domain block", modelBlock.Domain)
 	}
 
 	return nil
@@ -483,16 +516,18 @@ func (r *DomainBlockRepository) CreateDomainAllow(ctx context.Context, allow *st
 		CreatedBy: allow.CreatedBy,
 		CreatedAt: allow.CreatedAt,
 	}
-	modelAllow.UpdateKeys()
+	if err := modelAllow.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "domain allow", allow.Domain)
+	}
 
 	// Create with condition to prevent duplicates
 	err := r.db.WithContext(ctx).Model(modelAllow).Create()
 
 	if err != nil {
 		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			return fmt.Errorf("domain allow already exists")
+			return ErrorHandler.HandleCreateError(err, "domain allow", modelAllow.Domain)
 		}
-		return fmt.Errorf("failed to create domain allow: %w", err)
+		return ErrorHandler.HandleCreateError(err, "domain allow", modelAllow.Domain)
 	}
 
 	return nil

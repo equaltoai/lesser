@@ -1,7 +1,6 @@
 package advanced
 
 import (
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
@@ -9,6 +8,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // ModerationMode defines the operation mode for the moderation engine
@@ -40,10 +40,11 @@ type EngineOptions struct {
 
 // NewEngineWithMode creates a moderation engine with the specified mode
 func NewEngineWithMode(opts EngineOptions) *Engine {
-	// Check global AWS moderation flags first
-	awsModDisabled := getEnvBool("DISABLE_AWS_MODERATION", false)
-	comprehendDisabled := getEnvBool("DISABLE_COMPREHEND", false)
-	rekognitionDisabled := getEnvBool("DISABLE_REKOGNITION", false)
+	// Check global AWS moderation flags from centralized config
+	cfg := config.Get()
+	awsModDisabled := cfg.DisableAWSModeration
+	comprehendDisabled := cfg.DisableComprehend
+	rekognitionDisabled := cfg.DisableRekognition
 
 	// If AWS moderation is globally disabled, force basic mode
 	if awsModDisabled {
@@ -53,7 +54,7 @@ func NewEngineWithMode(opts EngineOptions) *Engine {
 
 	// Determine mode from environment if not specified
 	if err := common.ValidateRequiredParam("opts.Mode", string(opts.Mode)); err != nil {
-		modeStr := os.Getenv("MODERATION_MODE")
+		modeStr := cfg.ModerationMode
 		switch modeStr {
 		case "aws":
 			opts.Mode = ModeAWS

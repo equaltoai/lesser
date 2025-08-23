@@ -59,14 +59,14 @@ type CommandValidationResult struct {
 // ValidateStruct performs basic struct validation using reflection
 func ValidateStruct(data interface{}, rules ValidationRules) error {
 	if data == nil {
-		return fmt.Errorf("data cannot be nil")
+		return ErrDataCannotBeNil
 	}
 	
 	// Basic validation - check for required fields if data is a map
 	if dataMap, ok := data.(map[string]interface{}); ok {
 		for _, required := range rules.Required {
 			if value, exists := dataMap[required]; !exists || value == nil || value == "" {
-				return fmt.Errorf("required field '%s' is missing or empty", required)
+				return fmt.Errorf("%w: %s", ErrRequiredFieldMissing, required)
 			}
 		}
 		
@@ -74,7 +74,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 		for field, maxLen := range rules.MaxLen {
 			if value, exists := dataMap[field]; exists {
 				if strValue, ok := value.(string); ok && len(strValue) > maxLen {
-					return fmt.Errorf("field '%s' exceeds maximum length of %d characters", field, maxLen)
+					return fmt.Errorf("%w: %s exceeds %d characters", ErrFieldExceedsMaxLength, field, maxLen)
 				}
 			}
 		}
@@ -83,7 +83,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 		for field, minLen := range rules.MinLen {
 			if value, exists := dataMap[field]; exists {
 				if strValue, ok := value.(string); ok && len(strValue) < minLen {
-					return fmt.Errorf("field '%s' is below minimum length of %d characters", field, minLen)
+					return fmt.Errorf("%w: %s below %d characters", ErrFieldBelowMinLength, field, minLen)
 				}
 			}
 		}
@@ -99,7 +99,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 // Found in: notes, accounts, relationships, media, lists, etc.
 
 // ValidateCommand performs standard validation on command structures
-func ValidateCommand(ctx context.Context, cmd interface{}, rules ValidationRules) *CommandValidationResult {
+func ValidateCommand(_ context.Context, cmd interface{}, rules ValidationRules) *CommandValidationResult {
 	result := &CommandValidationResult{
 		IsValid:  true,
 		Errors:   make([]string, 0),
@@ -119,7 +119,7 @@ func ValidateCommand(ctx context.Context, cmd interface{}, rules ValidationRules
 // Found in all services with consistent structure
 
 // EmitBusinessEvent creates standardized business events
-func EmitBusinessEvent(ctx context.Context, eventType, objectType, objectID, actorID string, metadata map[string]interface{}) *StreamingEvent {
+func EmitBusinessEvent(_ context.Context, eventType, objectType, objectID, actorID string, metadata map[string]interface{}) *StreamingEvent {
 	return &StreamingEvent{
 		Type:      eventType,
 		Object:    objectType,
@@ -212,18 +212,18 @@ type ContentValidationRules struct {
 // ValidateBusinessContent validates content against business rules
 func ValidateBusinessContent(content string, rules ContentValidationRules) error {
 	if len(content) > rules.MaxLength {
-		return fmt.Errorf("content exceeds maximum length of %d characters", rules.MaxLength)
+		return fmt.Errorf("%w: %d characters", ErrContentExceedsMaxLength, rules.MaxLength)
 	}
 
 	if len(content) < rules.MinLength {
-		return fmt.Errorf("content below minimum length of %d characters", rules.MinLength)
+		return fmt.Errorf("%w: %d characters", ErrContentBelowMinLength, rules.MinLength)
 	}
 
 	// Check for forbidden words
 	contentLower := strings.ToLower(content)
 	for _, word := range rules.ForbiddenWords {
 		if strings.Contains(contentLower, strings.ToLower(word)) {
-			return fmt.Errorf("content contains forbidden word: %s", word)
+			return fmt.Errorf("%w: %s", ErrContentContainsForbiddenWord, word)
 		}
 	}
 
@@ -234,13 +234,13 @@ func ValidateBusinessContent(content string, rules ContentValidationRules) error
 // Found in: relationships, accounts, lists
 
 // ValidateUserRelationship validates relationships between users
-func ValidateUserRelationship(ctx context.Context, actorID, targetID string, relationshipType string) error {
+func ValidateUserRelationship(_ context.Context, actorID, targetID string, relationshipType string) error {
 	if actorID == targetID {
-		return fmt.Errorf("cannot perform %s operation on self", relationshipType)
+		return fmt.Errorf("%w: %s", ErrCannotPerformOperationOnSelf, relationshipType)
 	}
 
 	if actorID == "" || targetID == "" {
-		return fmt.Errorf("both actor and target IDs are required for %s operation", relationshipType)
+		return fmt.Errorf("%w: %s", ErrActorAndTargetIDsRequired, relationshipType)
 	}
 
 	return nil
@@ -252,15 +252,16 @@ func ValidateUserRelationship(ctx context.Context, actorID, targetID string, rel
 // VisibilityLevel represents different visibility levels
 type VisibilityLevel string
 
+// Visibility levels for content
 const (
-	VisibilityPublic   VisibilityLevel = "public"
-	VisibilityUnlisted VisibilityLevel = "unlisted"
-	VisibilityPrivate  VisibilityLevel = "private"
-	VisibilityDirect   VisibilityLevel = "direct"
+	VisibilityPublic   VisibilityLevel = "public"   // VisibilityPublic makes content visible to everyone
+	VisibilityUnlisted VisibilityLevel = "unlisted" // VisibilityUnlisted makes content visible but not in public timelines
+	VisibilityPrivate  VisibilityLevel = "private"  // VisibilityPrivate makes content visible only to followers
+	VisibilityDirect   VisibilityLevel = "direct"   // VisibilityDirect makes content visible only to mentioned users
 )
 
 // ValidateBusinessVisibility validates business visibility settings
-func ValidateBusinessVisibility(visibility VisibilityLevel, actorID string) error {
+func ValidateBusinessVisibility(visibility VisibilityLevel, _ string) error {
 	validVisibilities := []VisibilityLevel{
 		VisibilityPublic,
 		VisibilityUnlisted,
@@ -274,7 +275,7 @@ func ValidateBusinessVisibility(visibility VisibilityLevel, actorID string) erro
 		}
 	}
 
-	return fmt.Errorf("invalid visibility level: %s", visibility)
+	return fmt.Errorf("%w: %s", ErrInvalidVisibilityLevel, visibility)
 }
 
 // 6. Rate Limiting and Quota Pattern
@@ -287,14 +288,14 @@ type QuotaValidator struct {
 }
 
 // ValidateQuota checks if action is within quota limits
-func (q *QuotaValidator) ValidateQuota(ctx context.Context, actorID, actionType string) error {
+func (q *QuotaValidator) ValidateQuota(_ context.Context, actorID, actionType string) error {
 	// Implement actual quota validation logic
 	if actorID == "" {
-		return fmt.Errorf("actorID is required for quota validation")
+		return ErrActorIDRequiredForQuotaValidation
 	}
 	
 	if actionType == "" {
-		return fmt.Errorf("actionType is required for quota validation")
+		return ErrActionTypeRequiredForQuotaValidation
 	}
 	
 	// For now, implement basic throttling based on configured limits
@@ -305,11 +306,13 @@ func (q *QuotaValidator) ValidateQuota(ctx context.Context, actorID, actionType 
 		if q.MaxActionsPerHour > 0 {
 			// This would check actual usage from storage/cache
 			// For now, we'll allow all requests but log the quota check
+			_ = q.MaxActionsPerHour // Placeholder to avoid empty block
 		}
 	case "follow", "like", "announce":
 		// Allow up to MaxActionsPerDay social actions per day
 		if q.MaxActionsPerDay > 0 {
 			// This would check actual usage from storage/cache
+			_ = q.MaxActionsPerDay // Placeholder to avoid empty block
 		}
 	}
 	
@@ -340,13 +343,13 @@ func CreateFederationActivity(actorID, activityType string, object interface{}) 
 // Found in: notes, accounts, relationships
 
 // RecordBusinessMetric records business metrics using the existing metrics infrastructure
-func RecordBusinessMetric(ctx context.Context, metricType, entityType, actorID string, metadata map[string]interface{}) error {
+func RecordBusinessMetric(_ context.Context, metricType, _ string, actorID string, _ map[string]interface{}) error {
 	if metricType == "" {
-		return fmt.Errorf("metricType is required")
+		return ErrMetricTypeRequired
 	}
 	
 	if actorID == "" {
-		return fmt.Errorf("actorID is required for metrics")
+		return ErrActorIDRequiredForMetrics
 	}
 	
 	// The actual implementation would use the existing observability.MetricsCollector
@@ -375,13 +378,14 @@ func RecordBusinessMetric(ctx context.Context, metricType, entityType, actorID s
 // EntityState represents entity states
 type EntityState string
 
+// Entity state constants for state machine transitions
 const (
-	StateDraft     EntityState = "draft"
-	StatePending   EntityState = "pending"
-	StateActive    EntityState = "active"
-	StateInactive  EntityState = "inactive"
-	StateSuspended EntityState = "suspended"
-	StateDeleted   EntityState = "deleted"
+	StateDraft     EntityState = "draft"     // StateDraft represents entities in draft state
+	StatePending   EntityState = "pending"   // StatePending represents entities awaiting approval
+	StateActive    EntityState = "active"    // StateActive represents active entities
+	StateInactive  EntityState = "inactive"  // StateInactive represents temporarily disabled entities
+	StateSuspended EntityState = "suspended" // StateSuspended represents suspended entities
+	StateDeleted   EntityState = "deleted"   // StateDeleted represents deleted entities
 )
 
 // ValidateStateTransition validates state transitions
@@ -397,7 +401,7 @@ func ValidateStateTransition(currentState, newState EntityState, entityType stri
 
 	validNext, exists := validTransitions[currentState]
 	if !exists {
-		return fmt.Errorf("invalid current state: %s", currentState)
+		return fmt.Errorf("%w: %s", ErrInvalidCurrentState, currentState)
 	}
 
 	for _, valid := range validNext {
@@ -406,7 +410,7 @@ func ValidateStateTransition(currentState, newState EntityState, entityType stri
 		}
 	}
 
-	return fmt.Errorf("invalid state transition from %s to %s for %s", currentState, newState, entityType)
+	return fmt.Errorf("%w: from %s to %s for %s", ErrInvalidStateTransition, currentState, newState, entityType)
 }
 
 // 10. Resource Access Control Pattern
@@ -415,26 +419,27 @@ func ValidateStateTransition(currentState, newState EntityState, entityType stri
 // AccessLevel represents access levels
 type AccessLevel string
 
+// Resource access level constants
 const (
-	AccessNone  AccessLevel = "none"
-	AccessRead  AccessLevel = "read"
-	AccessWrite AccessLevel = "write"
-	AccessAdmin AccessLevel = "admin"
+	AccessNone  AccessLevel = "none"  // AccessNone represents no access required
+	AccessRead  AccessLevel = "read"  // AccessRead represents read access required
+	AccessWrite AccessLevel = "write" // AccessWrite represents write access required
+	AccessAdmin AccessLevel = "admin" // AccessAdmin represents admin access required
 )
 
 // ValidateResourceAccess validates access to resources using existing auth patterns
-func ValidateResourceAccess(ctx context.Context, actorID, resourceID, resourceType string, requiredAccess AccessLevel) error {
+func ValidateResourceAccess(_ context.Context, actorID, resourceID, resourceType string, requiredAccess AccessLevel) error {
 	// Validate inputs first
 	if actorID == "" {
-		return fmt.Errorf("authentication required to access %s", resourceType)
+		return fmt.Errorf("%w: %s", ErrAuthenticationRequiredForAccess, resourceType)
 	}
 	
 	if resourceID == "" {
-		return fmt.Errorf("resourceID is required for access validation")
+		return ErrResourceIDRequiredForAccessValidation
 	}
 	
 	if resourceType == "" {
-		return fmt.Errorf("resourceType is required for access validation")
+		return ErrResourceTypeRequiredForAccessValidation
 	}
 	
 	// Use existing validation patterns from the codebase
@@ -451,7 +456,7 @@ func ValidateResourceAccess(ctx context.Context, actorID, resourceID, resourceTy
 		// which are handled by the service layer's auth integration
 		return nil
 	default:
-		return fmt.Errorf("invalid access level: %s", requiredAccess)
+		return fmt.Errorf("%w: %s", ErrInvalidAccessLevel, requiredAccess)
 	}
 }
 
@@ -478,12 +483,12 @@ func NewBusinessLogicService(logger *zap.Logger, eventEmitter EventEmitter, doma
 func (s *BusinessLogicService) ExecuteBusinessOperation(ctx context.Context, operation BusinessOperation) error {
 	// 1. Validate operation
 	if err := operation.Validate(ctx); err != nil {
-		return fmt.Errorf("operation validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrOperationValidationFailed, err)
 	}
 
 	// 2. Execute operation
 	if err := operation.Execute(ctx); err != nil {
-		return fmt.Errorf("operation execution failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrOperationExecutionFailed, err)
 	}
 
 	// 3. Emit events

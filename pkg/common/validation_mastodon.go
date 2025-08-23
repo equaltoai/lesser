@@ -66,23 +66,48 @@ const (
 	MaxAppScopesLength = 500
 )
 
-// Mastodon visibility levels
+// ValidVisibilityLevels defines the valid Mastodon visibility levels
 var ValidVisibilityLevels = []string{"public", "unlisted", "private", "direct"}
 
-// Mastodon notification types
+// ValidNotificationTypes defines the valid Mastodon notification types
 var ValidNotificationTypes = []string{"mention", "status", "reblog", "follow", "follow_request", "favourite", "poll", "update", "admin.sign_up", "admin.report"}
 
-// Mastodon filter contexts
+// ValidFilterContexts defines the valid Mastodon filter contexts
 var ValidFilterContexts = []string{"home", "notifications", "public", "thread", "account"}
 
-// Mastodon filter actions
+// ValidFilterActions defines the valid Mastodon filter actions
 var ValidFilterActions = []string{"warn", "hide", "blur"}
 
-// Mastodon report categories
+// ValidReportCategories defines the valid Mastodon report categories
 var ValidReportCategories = []string{"spam", "violation", "other"}
 
 // ValidateStatusParams validates parameters for status creation/update
 func ValidateStatusParams(params map[string]interface{}) error {
+	// Validate basic status content and attachments
+	if err := validateStatusBasicFields(params); err != nil {
+		return err
+	}
+	
+	// Validate status metadata and settings
+	if err := validateStatusMetadata(params); err != nil {
+		return err
+	}
+	
+	// Validate timing and scheduling
+	if err := validateStatusTiming(params); err != nil {
+		return err
+	}
+	
+	// Ensure either content or media is provided
+	if err := validateStatusContentRequirement(params); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateStatusBasicFields validates basic status content, media, and poll fields
+func validateStatusBasicFields(params map[string]interface{}) error {
 	// Validate status content
 	if status, exists := params["status"]; exists {
 		if statusStr, ok := status.(string); ok {
@@ -115,6 +140,11 @@ func ValidateStatusParams(params map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateStatusMetadata validates status metadata like sensitivity, spoiler text, and visibility
+func validateStatusMetadata(params map[string]interface{}) error {
 	// Validate sensitive flag
 	if sensitive, exists := params["sensitive"]; exists {
 		if _, ok := sensitive.(bool); !ok {
@@ -149,6 +179,11 @@ func ValidateStatusParams(params map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateStatusTiming validates scheduling-related status parameters
+func validateStatusTiming(params map[string]interface{}) error {
 	// Validate scheduled_at
 	if scheduledAt, exists := params["scheduled_at"]; exists {
 		if schedStr, ok := scheduledAt.(string); ok && schedStr != "" {
@@ -158,21 +193,13 @@ func ValidateStatusParams(params map[string]interface{}) error {
 		}
 	}
 	
-	// Ensure either content or media is provided
-	hasContent := false
-	hasMedia := false
-	
-	if status, exists := params["status"]; exists {
-		if statusStr, ok := status.(string); ok && strings.TrimSpace(statusStr) != "" {
-			hasContent = true
-		}
-	}
-	
-	if mediaIDs, exists := params["media_ids"]; exists {
-		if mediaArray, ok := mediaIDs.([]interface{}); ok && len(mediaArray) > 0 {
-			hasMedia = true
-		}
-	}
+	return nil
+}
+
+// validateStatusContentRequirement ensures either content or media is provided
+func validateStatusContentRequirement(params map[string]interface{}) error {
+	hasContent := hasStatusContent(params)
+	hasMedia := hasStatusMedia(params)
 	
 	if !hasContent && !hasMedia {
 		return ValidationError{Field: "status", Message: "status content or media attachments required"}
@@ -181,63 +208,41 @@ func ValidateStatusParams(params map[string]interface{}) error {
 	return nil
 }
 
+// hasStatusContent checks if status has text content
+func hasStatusContent(params map[string]interface{}) bool {
+	if status, exists := params["status"]; exists {
+		if statusStr, ok := status.(string); ok && strings.TrimSpace(statusStr) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// hasStatusMedia checks if status has media attachments
+func hasStatusMedia(params map[string]interface{}) bool {
+	if mediaIDs, exists := params["media_ids"]; exists {
+		if mediaArray, ok := mediaIDs.([]interface{}); ok && len(mediaArray) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // ValidateAccountParams validates parameters for account updates
 func ValidateAccountParams(params map[string]interface{}) error {
-	// Validate display_name
-	if displayName, exists := params["display_name"]; exists {
-		if nameStr, ok := displayName.(string); ok {
-			if err := ValidateDisplayName(nameStr); err != nil {
-				return err
-			}
-		}
+	// Validate string fields
+	if err := validateAccountStringFields(params); err != nil {
+		return err
 	}
 	
-	// Validate note (bio)
-	if note, exists := params["note"]; exists {
-		if noteStr, ok := note.(string); ok {
-			if err := ValidateAccountBio(noteStr); err != nil {
-				return err
-			}
-		}
+	// Validate media fields
+	if err := validateAccountMediaFields(params); err != nil {
+		return err
 	}
 	
-	// Validate avatar
-	if avatar, exists := params["avatar"]; exists {
-		if avatarStr, ok := avatar.(string); ok && avatarStr != "" {
-			if err := ValidateMediaFile(avatarStr, "avatar"); err != nil {
-				return err
-			}
-		}
-	}
-	
-	// Validate header
-	if header, exists := params["header"]; exists {
-		if headerStr, ok := header.(string); ok && headerStr != "" {
-			if err := ValidateMediaFile(headerStr, "header"); err != nil {
-				return err
-			}
-		}
-	}
-	
-	// Validate locked
-	if locked, exists := params["locked"]; exists {
-		if _, ok := locked.(bool); !ok {
-			return ValidationError{Field: "locked", Message: "must be a boolean"}
-		}
-	}
-	
-	// Validate bot
-	if bot, exists := params["bot"]; exists {
-		if _, ok := bot.(bool); !ok {
-			return ValidationError{Field: "bot", Message: "must be a boolean"}
-		}
-	}
-	
-	// Validate discoverable
-	if discoverable, exists := params["discoverable"]; exists {
-		if _, ok := discoverable.(bool); !ok {
-			return ValidationError{Field: "discoverable", Message: "must be a boolean"}
-		}
+	// Validate boolean fields
+	if err := validateAccountBooleanFields(params); err != nil {
+		return err
 	}
 	
 	// Validate fields_attributes
@@ -247,6 +252,79 @@ func ValidateAccountParams(params map[string]interface{}) error {
 		}
 	}
 	
+	return nil
+}
+
+// validateAccountStringFields validates string-based account fields
+func validateAccountStringFields(params map[string]interface{}) error {
+	// Validate display_name
+	if err := validateOptionalStringField(params, "display_name", ValidateDisplayName); err != nil {
+		return err
+	}
+	
+	// Validate note (bio)
+	if err := validateOptionalStringField(params, "note", ValidateAccountBio); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateAccountMediaFields validates media-related account fields
+func validateAccountMediaFields(params map[string]interface{}) error {
+	// Validate avatar
+	if err := validateOptionalMediaField(params, "avatar"); err != nil {
+		return err
+	}
+	
+	// Validate header
+	if err := validateOptionalMediaField(params, "header"); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateAccountBooleanFields validates boolean account fields
+func validateAccountBooleanFields(params map[string]interface{}) error {
+	boolFields := []string{"locked", "bot", "discoverable"}
+	
+	for _, field := range boolFields {
+		if err := validateOptionalBooleanField(params, field); err != nil {
+			return err
+		}
+	}
+	
+	return nil
+}
+
+// validateOptionalStringField validates an optional string field with a custom validator
+func validateOptionalStringField(params map[string]interface{}, fieldName string, validator func(string) error) error {
+	if value, exists := params[fieldName]; exists {
+		if valueStr, ok := value.(string); ok {
+			return validator(valueStr)
+		}
+	}
+	return nil
+}
+
+// validateOptionalMediaField validates an optional media field
+func validateOptionalMediaField(params map[string]interface{}, fieldName string) error {
+	if value, exists := params[fieldName]; exists {
+		if valueStr, ok := value.(string); ok && valueStr != "" {
+			return ValidateMediaFile(valueStr, fieldName)
+		}
+	}
+	return nil
+}
+
+// validateOptionalBooleanField validates an optional boolean field
+func validateOptionalBooleanField(params map[string]interface{}, fieldName string) error {
+	if value, exists := params[fieldName]; exists {
+		if _, ok := value.(bool); !ok {
+			return ValidationError{Field: fieldName, Message: "must be a boolean"}
+		}
+	}
 	return nil
 }
 
@@ -648,85 +726,141 @@ func ValidatePollParams(poll interface{}) error {
 		return ValidationError{Field: "poll", Message: "must be an object"}
 	}
 	
+	// Validate required fields
+	if err := validatePollRequiredFields(pollObj); err != nil {
+		return err
+	}
+	
+	// Validate optional boolean fields
+	if err := validatePollOptionalFields(pollObj); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validatePollRequiredFields validates required poll fields (options and expires_in)
+func validatePollRequiredFields(pollObj map[string]interface{}) error {
 	// Validate options
-	if options, exists := pollObj["options"]; exists {
-		optionsArray, ok := options.([]interface{})
-		if !ok {
-			return ValidationError{Field: "poll.options", Message: "must be an array"}
-		}
-		
-		if len(optionsArray) < 2 {
-			return ValidationError{Field: "poll.options", Message: "must have at least 2 options"}
-		}
-		
-		if len(optionsArray) > MaxPollOptions {
-			return ValidationError{
-				Field:   "poll.options",
-				Message: fmt.Sprintf("cannot have more than %d options", MaxPollOptions),
-			}
-		}
-		
-		for i, option := range optionsArray {
-			if optionStr, ok := option.(string); ok {
-				if optionStr == "" {
-					return ValidationError{
-						Field:   fmt.Sprintf("poll.options[%d]", i),
-						Message: "cannot be empty",
-					}
-				}
-				
-				if len(optionStr) > MaxPollOptionLength {
-					return ValidationError{
-						Field:   fmt.Sprintf("poll.options[%d]", i),
-						Message: fmt.Sprintf("cannot be longer than %d characters", MaxPollOptionLength),
-					}
-				}
-			} else {
-				return ValidationError{
-					Field:   fmt.Sprintf("poll.options[%d]", i),
-					Message: "must be a string",
-				}
-			}
-		}
-	} else {
-		return ValidationError{Field: "poll.options", Message: "is required"}
+	if err := validatePollOptions(pollObj); err != nil {
+		return err
 	}
 	
 	// Validate expires_in
-	if expiresIn, exists := pollObj["expires_in"]; exists {
-		if expiresNum, ok := expiresIn.(float64); ok {
-			duration := int(expiresNum)
-			if duration < MinPollDuration {
-				return ValidationError{
-					Field:   "poll.expires_in",
-					Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration),
-				}
-			}
-			
-			if duration > MaxPollDuration {
-				return ValidationError{
-					Field:   "poll.expires_in",
-					Message: fmt.Sprintf("cannot be more than %d seconds", MaxPollDuration),
-				}
-			}
-		} else {
-			return ValidationError{Field: "poll.expires_in", Message: "must be a number"}
+	if err := validatePollExpiration(pollObj); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validatePollOptions validates poll options array
+func validatePollOptions(pollObj map[string]interface{}) error {
+	options, exists := pollObj["options"]
+	if !exists {
+		return ValidationError{Field: "poll.options", Message: "is required"}
+	}
+	
+	optionsArray, ok := options.([]interface{})
+	if !ok {
+		return ValidationError{Field: "poll.options", Message: "must be an array"}
+	}
+	
+	if err := validatePollOptionsCount(optionsArray); err != nil {
+		return err
+	}
+	
+	if err := validatePollOptionsContent(optionsArray); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validatePollOptionsCount validates the number of poll options
+func validatePollOptionsCount(optionsArray []interface{}) error {
+	if len(optionsArray) < 2 {
+		return ValidationError{Field: "poll.options", Message: "must have at least 2 options"}
+	}
+	
+	if len(optionsArray) > MaxPollOptions {
+		return ValidationError{
+			Field:   "poll.options",
+			Message: fmt.Sprintf("cannot have more than %d options", MaxPollOptions),
 		}
-	} else {
+	}
+	
+	return nil
+}
+
+// validatePollOptionsContent validates individual poll option strings
+func validatePollOptionsContent(optionsArray []interface{}) error {
+	for i, option := range optionsArray {
+		optionStr, ok := option.(string)
+		if !ok {
+			return ValidationError{
+				Field:   fmt.Sprintf("poll.options[%d]", i),
+				Message: "must be a string",
+			}
+		}
+		
+		if optionStr == "" {
+			return ValidationError{
+				Field:   fmt.Sprintf("poll.options[%d]", i),
+				Message: "cannot be empty",
+			}
+		}
+		
+		if len(optionStr) > MaxPollOptionLength {
+			return ValidationError{
+				Field:   fmt.Sprintf("poll.options[%d]", i),
+				Message: fmt.Sprintf("cannot be longer than %d characters", MaxPollOptionLength),
+			}
+		}
+	}
+	
+	return nil
+}
+
+// validatePollExpiration validates poll expiration time
+func validatePollExpiration(pollObj map[string]interface{}) error {
+	expiresIn, exists := pollObj["expires_in"]
+	if !exists {
 		return ValidationError{Field: "poll.expires_in", Message: "is required"}
 	}
 	
-	// Validate multiple (optional, default false)
-	if multiple, exists := pollObj["multiple"]; exists {
-		if _, ok := multiple.(bool); !ok {
-			return ValidationError{Field: "poll.multiple", Message: "must be a boolean"}
+	expiresNum, ok := expiresIn.(float64)
+	if !ok {
+		return ValidationError{Field: "poll.expires_in", Message: "must be a number"}
+	}
+	
+	duration := int(expiresNum)
+	if duration < MinPollDuration {
+		return ValidationError{
+			Field:   "poll.expires_in",
+			Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration),
 		}
 	}
 	
-	// Validate hide_totals (optional, default false)
-	if hideTotals, exists := pollObj["hide_totals"]; exists {
-		if _, ok := hideTotals.(bool); !ok {
-			return ValidationError{Field: "poll.hide_totals", Message: "must be a boolean"}
+	if duration > MaxPollDuration {
+		return ValidationError{
+			Field:   "poll.expires_in",
+			Message: fmt.Sprintf("cannot be more than %d seconds", MaxPollDuration),
+		}
+	}
+	
+	return nil
+}
+
+// validatePollOptionalFields validates optional poll fields
+func validatePollOptionalFields(pollObj map[string]interface{}) error {
+	optionalBoolFields := []string{"multiple", "hide_totals"}
+	
+	for _, fieldName := range optionalBoolFields {
+		if value, exists := pollObj[fieldName]; exists {
+			if _, ok := value.(bool); !ok {
+				return ValidationError{Field: fmt.Sprintf("poll.%s", fieldName), Message: "must be a boolean"}
+			}
 		}
 	}
 	
@@ -1094,50 +1228,72 @@ func ValidateHashtag(hashtag string) error {
 
 // ValidateMastodonTimeline validates timeline parameters
 func ValidateMastodonTimeline(params map[string]interface{}) error {
-	// Validate max_id
-	if maxID, exists := params["max_id"]; exists {
-		if maxStr, ok := maxID.(string); ok && maxStr != "" {
-			if err := ValidateMastodonStatusID(maxStr); err != nil {
-				return ValidationError{Field: "max_id", Message: err.Error()}
-			}
+	// Validate ID parameters
+	if err := validateTimelineIDs(params); err != nil {
+		return err
+	}
+	
+	// Validate limit parameter
+	if err := validateTimelineLimit(params); err != nil {
+		return err
+	}
+	
+	// Validate boolean parameters
+	if err := validateTimelineBooleans(params); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
+// validateTimelineIDs validates timeline ID parameters (max_id, since_id, min_id)
+func validateTimelineIDs(params map[string]interface{}) error {
+	idFields := []string{"max_id", "since_id", "min_id"}
+	
+	for _, fieldName := range idFields {
+		if err := validateOptionalStatusIDField(params, fieldName); err != nil {
+			return err
 		}
 	}
 	
-	// Validate since_id
-	if sinceID, exists := params["since_id"]; exists {
-		if sinceStr, ok := sinceID.(string); ok && sinceStr != "" {
-			if err := ValidateMastodonStatusID(sinceStr); err != nil {
-				return ValidationError{Field: "since_id", Message: err.Error()}
-			}
-		}
+	return nil
+}
+
+// validateTimelineLimit validates the limit parameter
+func validateTimelineLimit(params map[string]interface{}) error {
+	limit, exists := params["limit"]
+	if !exists {
+		return nil
 	}
 	
-	// Validate min_id
-	if minID, exists := params["min_id"]; exists {
-		if minStr, ok := minID.(string); ok && minStr != "" {
-			if err := ValidateMastodonStatusID(minStr); err != nil {
-				return ValidationError{Field: "min_id", Message: err.Error()}
-			}
-		}
+	limitNum, ok := limit.(float64)
+	if !ok {
+		return ValidationError{Field: "limit", Message: "must be a number"}
 	}
 	
-	// Validate limit
-	if limit, exists := params["limit"]; exists {
-		if limitNum, ok := limit.(float64); ok {
-			limitInt := int(limitNum)
-			if err := ValidateLimit(limitInt, 80); err != nil {
-				return err
-			}
-		} else {
-			return ValidationError{Field: "limit", Message: "must be a number"}
-		}
+	limitInt := int(limitNum)
+	return ValidateLimit(limitInt, 80)
+}
+
+// validateTimelineBooleans validates boolean timeline parameters
+func validateTimelineBooleans(params map[string]interface{}) error {
+	return validateOptionalBooleanField(params, "local")
+}
+
+// validateOptionalStatusIDField validates an optional status ID field
+func validateOptionalStatusIDField(params map[string]interface{}, fieldName string) error {
+	value, exists := params[fieldName]
+	if !exists {
+		return nil
 	}
 	
-	// Validate local (boolean)
-	if local, exists := params["local"]; exists {
-		if _, ok := local.(bool); !ok {
-			return ValidationError{Field: "local", Message: "must be a boolean"}
-		}
+	valueStr, ok := value.(string)
+	if !ok || valueStr == "" {
+		return nil
+	}
+	
+	if err := ValidateMastodonStatusID(valueStr); err != nil {
+		return ValidationError{Field: fieldName, Message: err.Error()}
 	}
 	
 	return nil

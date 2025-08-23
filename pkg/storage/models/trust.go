@@ -58,7 +58,7 @@ type TrustRelationship struct {
 }
 
 // UpdateKeys sets all the DynamoDB keys based on the relationship data
-func (tr *TrustRelationship) UpdateKeys() {
+func (tr *TrustRelationship) UpdateKeys() error {
 	// Primary keys
 	tr.PK = fmt.Sprintf("TRUST#%s#%s", tr.TrusterID, tr.Category)
 	tr.SK = fmt.Sprintf("TRUSTEE#%s", tr.TrusteeID)
@@ -74,6 +74,17 @@ func (tr *TrustRelationship) UpdateKeys() {
 
 	// Set type
 	tr.Type = "RELATIONSHIP"
+	return nil
+}
+
+// GetPK returns the partition key for this trust relationship
+func (tr *TrustRelationship) GetPK() string {
+	return tr.PK
+}
+
+// GetSK returns the sort key for this trust relationship
+func (tr *TrustRelationship) GetSK() string {
+	return tr.SK
 }
 
 // TrustScore represents a cached trust score for an actor
@@ -100,7 +111,7 @@ type TrustScore struct {
 }
 
 // UpdateKeys sets all the DynamoDB keys for the trust score
-func (ts *TrustScore) UpdateKeys() {
+func (ts *TrustScore) UpdateKeys() error {
 	ts.PK = fmt.Sprintf("SCORE#%s#%s", ts.ActorID, ts.Category)
 	ts.SK = SKCurrent
 	ts.Type = "SCORE"
@@ -109,6 +120,17 @@ func (ts *TrustScore) UpdateKeys() {
 	if !ts.CacheTTL.IsZero() {
 		ts.TTL = ts.CacheTTL.Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for this trust score
+func (ts *TrustScore) GetPK() string {
+	return ts.PK
+}
+
+// GetSK returns the sort key for this trust score
+func (ts *TrustScore) GetSK() string {
+	return ts.SK
 }
 
 // TrustUpdate represents a trust score update event
@@ -131,7 +153,7 @@ type TrustUpdate struct {
 }
 
 // UpdateKeys sets all the DynamoDB keys for the trust update
-func (tu *TrustUpdate) UpdateKeys() {
+func (tu *TrustUpdate) UpdateKeys() error {
 	tu.PK = fmt.Sprintf("UPDATES#%s", tu.ActorID)
 	tu.SK = fmt.Sprintf("TIME#%s#%s", tu.Timestamp.Format(time.RFC3339), tu.EventID)
 	tu.Type = "UPDATE"
@@ -140,6 +162,17 @@ func (tu *TrustUpdate) UpdateKeys() {
 	if tu.TTL == 0 {
 		tu.TTL = tu.Timestamp.Add(30 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key for this trust update
+func (tu *TrustUpdate) GetPK() string {
+	return tu.PK
+}
+
+// GetSK returns the sort key for this trust update
+func (tu *TrustUpdate) GetSK() string {
+	return tu.SK
 }
 
 // Helper function to extract domain from actor ID

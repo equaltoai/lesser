@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/testing/mocks"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
@@ -16,8 +17,9 @@ import (
 // Helper function to create OAuth service with audit logger for tests
 func createTestOAuthService(secret string, repos StorageProvider) *OAuthService {
 	logger := zap.NewNop()
+	cfg := config.Get() // Get test config
 	auditLogger := NewAuditLogger(repos, logger, DefaultAuditConfig())
-	return NewOAuthService(secret, repos, auditLogger)
+	return NewOAuthService(secret, cfg, repos, auditLogger)
 }
 
 func TestNewOAuthService(t *testing.T) {
