@@ -2,6 +2,7 @@ package cost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -16,7 +17,7 @@ type controller struct {
 	calculator CostCalculator
 	logger     *zap.Logger
 	budget     *FederationBudget
-	thresholds *CostThresholds
+	thresholds *Thresholds
 
 	// In-memory cache for performance
 	mu          sync.RWMutex
@@ -32,7 +33,7 @@ func NewController(
 	calculator CostCalculator,
 	logger *zap.Logger,
 	budget *FederationBudget,
-	thresholds *CostThresholds,
+	thresholds *Thresholds,
 ) Controller {
 	return &controller{
 		storage:     storage,
@@ -52,7 +53,7 @@ func (c *controller) ShouldFederate(ctx context.Context, instance string) (bool,
 	// Check instance tier
 	tier, err := c.GetInstanceTier(ctx, instance)
 	if err != nil {
-		return false, fmt.Errorf("get instance tier: %w", err)
+		return false, errors.Join(ErrGetInstanceTier, err)
 	}
 
 	if tier == TierBlocked {
@@ -65,7 +66,7 @@ func (c *controller) ShouldFederate(ctx context.Context, instance string) (bool,
 	// Check health status
 	healthy, err := c.IsHealthy(ctx, instance)
 	if err != nil {
-		return false, fmt.Errorf("check health: %w", err)
+		return false, errors.Join(ErrCheckHealth, err)
 	}
 
 	if !healthy {
@@ -77,7 +78,7 @@ func (c *controller) ShouldFederate(ctx context.Context, instance string) (bool,
 	// Check budget
 	remaining, err := c.GetRemainingBudget(ctx, instance)
 	if err != nil {
-		return false, fmt.Errorf("get remaining budget: %w", err)
+		return false, errors.Join(ErrGetRemainingBudget, err)
 	}
 
 	if remaining <= 0 {
@@ -106,7 +107,7 @@ func (c *controller) ShouldFederate(ctx context.Context, instance string) (bool,
 func (c *controller) GetInstanceTier(ctx context.Context, instance string) (FederationTier, error) {
 	config, err := c.getInstanceConfig(ctx, instance)
 	if err != nil {
-		return TierStandard, fmt.Errorf("get instance config: %w", err)
+		return TierStandard, errors.Join(ErrGetInstanceConfig, err)
 	}
 
 	if config == nil {
@@ -121,7 +122,7 @@ func (c *controller) GetInstanceTier(ctx context.Context, instance string) (Fede
 func (c *controller) GetRetryPolicy(ctx context.Context, instance string) (*RetryPolicy, error) {
 	config, err := c.getInstanceConfig(ctx, instance)
 	if err != nil {
-		return DefaultRetryPolicy, fmt.Errorf("get instance config: %w", err)
+		return DefaultRetryPolicy, errors.Join(ErrGetInstanceConfig, err)
 	}
 
 	if config == nil || config.RetryPolicy == nil {
@@ -139,7 +140,7 @@ func (c *controller) TrackActivity(ctx context.Context, instance string, activit
 	// Get current cost data
 	cost, err := c.getInstanceCost(ctx, instance, period)
 	if err != nil {
-		return fmt.Errorf("get instance cost: %w", err)
+		return errors.Join(ErrGetInstanceCost, err)
 	}
 
 	if cost == nil {
@@ -163,7 +164,7 @@ func (c *controller) TrackActivity(ctx context.Context, instance string, activit
 
 	// Save updated cost
 	if err := c.storage.RecordCost(ctx, cost); err != nil {
-		return fmt.Errorf("record cost: %w", err)
+		return errors.Join(ErrRecordCost, err)
 	}
 
 	// Update cache
@@ -189,7 +190,7 @@ func (c *controller) GetRemainingBudget(ctx context.Context, instance string) (f
 
 	cost, err := c.getInstanceCost(ctx, instance, period)
 	if err != nil {
-		return 0, fmt.Errorf("get instance cost: %w", err)
+		return 0, errors.Join(ErrGetInstanceCost, err)
 	}
 
 	budget := c.getInstanceBudget(instance)
@@ -212,7 +213,7 @@ func (c *controller) GetRemainingBudget(ctx context.Context, instance string) (f
 func (c *controller) RecordSuccess(ctx context.Context, instance string, responseTimeMs int64) error {
 	health, err := c.getInstanceHealth(ctx, instance)
 	if err != nil {
-		return fmt.Errorf("get instance health: %w", err)
+		return errors.Join(ErrGetInstanceHealth, err)
 	}
 
 	if health == nil {
@@ -239,7 +240,7 @@ func (c *controller) RecordSuccess(ctx context.Context, instance string, respons
 
 	// Save updated health
 	if err := c.storage.UpdateInstanceHealth(ctx, health); err != nil {
-		return fmt.Errorf("update instance health: %w", err)
+		return errors.Join(ErrUpdateInstanceHealth, err)
 	}
 
 	// Update cache
@@ -254,7 +255,7 @@ func (c *controller) RecordSuccess(ctx context.Context, instance string, respons
 func (c *controller) RecordFailure(ctx context.Context, instance string, err error) error {
 	health, healthErr := c.getInstanceHealth(ctx, instance)
 	if healthErr != nil {
-		return fmt.Errorf("get instance health: %w", healthErr)
+		return errors.Join(ErrGetInstanceHealth, healthErr)
 	}
 
 	if health == nil {
@@ -291,7 +292,7 @@ func (c *controller) RecordFailure(ctx context.Context, instance string, err err
 
 	// Save updated health
 	if err := c.storage.UpdateInstanceHealth(ctx, health); err != nil {
-		return fmt.Errorf("update instance health: %w", err)
+		return errors.Join(ErrUpdateInstanceHealth, err)
 	}
 
 	// Update cache
@@ -311,7 +312,7 @@ func (c *controller) RecordFailure(ctx context.Context, instance string, err err
 func (c *controller) IsHealthy(ctx context.Context, instance string) (bool, error) {
 	health, err := c.getInstanceHealth(ctx, instance)
 	if err != nil {
-		return false, fmt.Errorf("get instance health: %w", err)
+		return false, errors.Join(ErrGetInstanceHealth, err)
 	}
 
 	if health == nil {

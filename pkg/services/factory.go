@@ -33,7 +33,7 @@ func (f *ServiceFactory) CreateBusinessLogicService() BusinessLogicService {
 
 	// Create and return the business logic service
 	// Create job queue service
-	jobQueue, err := NewJobQueueService(f.deps.Logger.(*zap.Logger))
+	jobQueue, err := NewJobQueueService(f.deps.Config.Config, f.deps.Logger.(*zap.Logger))
 	if err != nil {
 		f.deps.Logger.(*zap.Logger).Warn("failed to create job queue service, using nil", zap.Error(err))
 		jobQueue = nil
@@ -58,7 +58,7 @@ func (f *ServiceFactory) CreateValidationService() ValidationService {
 
 // CreateAuthenticationService creates an authentication service
 func (f *ServiceFactory) CreateAuthenticationService() AuthenticationService {
-	return NewAuthenticationService(f.deps.Config.JWTSecret, f.deps.Repos)
+	return NewAuthenticationService(f.deps.Config.JWTSecret, f.deps.Config.Config, f.deps.Repos)
 }
 
 // CreateFederationService creates a federation service

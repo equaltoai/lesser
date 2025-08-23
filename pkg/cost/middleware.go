@@ -3,7 +3,6 @@ package cost
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -28,18 +28,25 @@ var (
 	maxBufferSize = 100
 )
 
-func init() {
+// InitializeCostStorage initializes the global cost storage with configuration
+func InitializeCostStorage(cfg *appConfig.Config) {
 	// Initialize cost storage if table name is set
-	if tableName := os.Getenv("COST_HISTORY_TABLE_NAME"); tableName != "" {
+	if tableName := cfg.CostHistoryTableName; tableName != "" {
 		ctx := context.Background()
-		cfg, err := config.LoadDefaultConfig(ctx)
+		awsCfg, err := config.LoadDefaultConfig(ctx)
 		if err == nil {
-			client := dynamodb.NewFromConfig(cfg)
+			client := dynamodb.NewFromConfig(awsCfg)
 			// Create a logger for cost storage
 			logger, _ := zap.NewProduction()
 			globalCostStorage = NewStorage(client, tableName, logger)
 		}
 	}
+}
+
+func init() {
+	// Use configuration-based initialization if available
+	cfg := appConfig.Get()
+	InitializeCostStorage(cfg)
 }
 
 // saveCostWithRetry attempts to save cost data with retry logic
@@ -60,7 +67,7 @@ func saveCostWithRetry(ctx context.Context, cost *OperationCost, logger *zap.Log
 		saveCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		if err := globalCostStorage.SaveOperationCost(saveCtx, bufferedCost); err != nil {
 			// Log error but continue - this is best effort
-			log.Printf("Warning: failed to save buffered operation cost: %v", err)
+			logger.Warn("failed to save buffered operation cost", zap.Error(err))
 		}
 		cancel()
 	}

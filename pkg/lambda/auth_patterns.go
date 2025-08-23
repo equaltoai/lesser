@@ -249,7 +249,7 @@ func NewHTTPSignatureAuth(signatureService interface{}, logger *zap.Logger) *HTT
 
 // ValidateHTTPSignature validates ActivityPub HTTP signatures
 // This eliminates the federation signature validation duplication
-func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, body []byte) error {
+func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, _ []byte) error {
 	// Extract signature headers
 	signature := ctx.Header("Signature")
 	date := ctx.Header("Date")

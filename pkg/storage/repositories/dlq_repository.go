@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -23,31 +24,35 @@ const (
 	DLQStatusAbandoned    = "abandoned"
 )
 
-// DLQRepository handles dead letter queue message operations using DynamORM
+// DLQRepository handles dead letter queue message operations using BaseRepository with DLQ-specific business logic
 type DLQRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.DLQMessage]
 }
 
-// NewDLQRepository creates a new DLQ repository
-func NewDLQRepository(db core.DB, tableName string, logger *zap.Logger) *DLQRepository {
+// NewDLQRepository creates a new DLQ repository with cost tracking
+func NewDLQRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DLQRepository {
 	return &DLQRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.DLQMessage](db, tableName, logger, costService, "dlq_repository"),
 	}
 }
 
-// CreateDLQMessage creates a new DLQ message
+// NewDLQRepositorySimple creates a new DLQ repository without cost tracking
+func NewDLQRepositorySimple(db core.DB, tableName string, logger *zap.Logger) *DLQRepository {
+	return &DLQRepository{
+		BaseRepository: NewBaseRepository[*models.DLQMessage](db, tableName, logger),
+	}
+}
+
+// CreateDLQMessage creates a new DLQ message using BaseRepository
 func (r *DLQRepository) CreateDLQMessage(ctx context.Context, message *models.DLQMessage) error {
 	if err := message.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare DLQ message for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, "dlq", "message preparation")
 	}
 
-	err := r.db.WithContext(ctx).Model(message).Create()
+	// Delegate to BaseRepository for CRUD operation
+	err := r.Create(ctx, message)
 	if err != nil {
-		return fmt.Errorf("failed to create DLQ message: %w", err)
+		return ErrorHandler.HandleCreateError(err, "dlq", message.ID)
 	}
 
 	r.logger.Info("created DLQ message",
@@ -60,54 +65,40 @@ func (r *DLQRepository) CreateDLQMessage(ctx context.Context, message *models.DL
 	return nil
 }
 
-// GetDLQMessage retrieves a DLQ message by ID
+// GetDLQMessage retrieves a DLQ message by ID (complex query - needs custom implementation)
 func (r *DLQRepository) GetDLQMessage(ctx context.Context, id string) (*models.DLQMessage, error) {
 	var message models.DLQMessage
-	err := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
-		Where("ID", "=", id).
+	err := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
+		Filter("ID", "=", id).
 		First(&message)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get DLQ message: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "dlq", id)
 	}
 
 	return &message, nil
 }
 
-// GetDLQMessagesByService retrieves DLQ messages for a specific service with pagination
+// GetDLQMessagesByService retrieves DLQ messages for a specific service with pagination (DLQ-specific business logic)
 func (r *DLQRepository) GetDLQMessagesByService(ctx context.Context, service string, date time.Time, limit int, cursor string) ([]*models.DLQMessage, string, error) {
 	dateStr := date.Format(common.CompactDateFormat)
 	pk := fmt.Sprintf("DLQ#%s#%s", service, dateStr)
 
-	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", "DESC") // Most recent first
-
-	// Handle cursor-based pagination
-	if cursor != "" {
-		query = query.Where("SK", "<", cursor)
+	// Use BaseRepository for paginated query with business logic
+	opts := BasePaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+		Order:  "DESC", // Most recent first
 	}
 
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var messages []*models.DLQMessage
-	err := query.All(&messages)
+	result, err := r.FindWithPagination(ctx, pk, opts)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get DLQ messages for service: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "dlq", "service messages")
 	}
 
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("messages", messages, limit); err == nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = messages[limit-1].SK
-		messages = messages[:limit] // Trim to requested limit
-	}
-
-	return messages, nextCursor, nil
+	return result.Items, result.NextCursor, nil
 }
 
 // GetDLQMessagesByServiceDateRange retrieves DLQ messages for a service across multiple dates
@@ -147,9 +138,9 @@ func (r *DLQRepository) GetDLQMessagesByServiceDateRange(ctx context.Context, se
 	return allMessages, nil
 }
 
-// GetDLQMessagesByErrorType retrieves DLQ messages by error type with pagination
+// GetDLQMessagesByErrorType retrieves DLQ messages by error type with pagination (DLQ-specific business logic)
 func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType string, limit int, cursor string) ([]*models.DLQMessage, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("error-index").
 		Where("GSI1PK", "=", "DLQ_ERROR#"+errorType).
 		OrderBy("GSI1SK", "DESC")
@@ -164,7 +155,7 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get DLQ messages by error type: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "dlq", "error type messages")
 	}
 
 	// Generate next cursor
@@ -178,9 +169,9 @@ func (r *DLQRepository) GetDLQMessagesByErrorType(ctx context.Context, errorType
 	return messages, nextCursor, nil
 }
 
-// GetDLQMessagesForReprocessing retrieves messages that can be reprocessed
+// GetDLQMessagesForReprocessing retrieves messages that can be reprocessed (DLQ-specific retry logic)
 func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, service string, status string, limit int) ([]*models.DLQMessage, error) {
-	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("retry-index").
 		Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 		OrderBy("GSI2SK", "ASC"). // Oldest first for reprocessing
@@ -189,10 +180,10 @@ func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, servi
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get DLQ messages for reprocessing: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "dlq", "reprocessing messages")
 	}
 
-	// Filter to only include messages that can actually be reprocessed
+	// Filter to only include messages that can actually be reprocessed - DLQ business logic
 	var reprocessableMessages []*models.DLQMessage
 	for _, message := range messages {
 		if message.CanReprocess() {
@@ -203,9 +194,9 @@ func (r *DLQRepository) GetDLQMessagesForReprocessing(ctx context.Context, servi
 	return reprocessableMessages, nil
 }
 
-// GetDLQMessagesByStatus retrieves messages by status
+// GetDLQMessagesByStatus retrieves messages by status (DLQ-specific status querying)
 func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, status string, limit int, cursor string) ([]*models.DLQMessage, string, error) {
-	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("retry-index").
 		Where("GSI2PK", "=", fmt.Sprintf("DLQ_RETRY#%s#%s", service, status)).
 		OrderBy("GSI2SK", "DESC")
@@ -219,7 +210,7 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get DLQ messages by status: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "dlq", "status messages")
 	}
 
 	// Generate next cursor
@@ -232,15 +223,16 @@ func (r *DLQRepository) GetDLQMessagesByStatus(ctx context.Context, service, sta
 	return messages, nextCursor, nil
 }
 
-// UpdateDLQMessage updates an existing DLQ message
+// UpdateDLQMessage updates an existing DLQ message using BaseRepository
 func (r *DLQRepository) UpdateDLQMessage(ctx context.Context, message *models.DLQMessage) error {
 	if err := message.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare DLQ message for update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "dlq", "message preparation")
 	}
 
-	err := r.db.WithContext(ctx).Model(message).Update()
+	// Delegate to BaseRepository for CRUD operation
+	err := r.Update(ctx, message)
 	if err != nil {
-		return fmt.Errorf("failed to update DLQ message: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "dlq", message.ID)
 	}
 
 	r.logger.Info("updated DLQ message",
@@ -252,11 +244,12 @@ func (r *DLQRepository) UpdateDLQMessage(ctx context.Context, message *models.DL
 	return nil
 }
 
-// DeleteDLQMessage deletes a DLQ message
+// DeleteDLQMessage deletes a DLQ message using BaseRepository
 func (r *DLQRepository) DeleteDLQMessage(ctx context.Context, message *models.DLQMessage) error {
-	err := r.db.WithContext(ctx).Model(message).Delete()
+	// Delegate to BaseRepository for CRUD operation
+	err := r.Delete(ctx, message.GetPK(), message.GetSK())
 	if err != nil {
-		return fmt.Errorf("failed to delete DLQ message: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "dlq", message.ID)
 	}
 
 	r.logger.Info("deleted DLQ message",
@@ -286,7 +279,7 @@ func (r *DLQRepository) BatchUpdateDLQMessages(ctx context.Context, messages []*
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("batch update failed: %d of %d messages failed", len(errors), len(messages))
+		return ErrorHandler.HandleUpdateError(fmt.Errorf("%w: %d of %d messages failed", ErrDLQBatchUpdateFailed, len(errors), len(messages)), "dlq", "batch update")
 	}
 
 	return nil
@@ -305,7 +298,7 @@ func (r *DLQRepository) GetDLQAnalytics(ctx context.Context, service string, tim
 	// Get messages for the time range
 	messages, err := r.GetDLQMessagesByServiceDateRange(ctx, service, timeRange.StartTime, timeRange.EndTime, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get messages for analytics: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "dlq", "analytics messages")
 	}
 
 	// Process messages for analytics
@@ -438,14 +431,14 @@ func (r *DLQRepository) GetDLQTrends(ctx context.Context, service string, days i
 	return trends, nil
 }
 
-// SearchDLQMessages searches DLQ messages with various filters
+// SearchDLQMessages searches DLQ messages with various filters (DLQ-specific search functionality)
 func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearchFilter) ([]*models.DLQMessage, string, error) {
 	if err := common.ValidateRequiredParam("filter.Service", filter.Service); err != nil {
-		return nil, "", fmt.Errorf("service is required for DLQ search")
+		return nil, "", ErrorHandler.HandleQueryError(ErrDLQServiceRequired, "dlq", "search validation")
 	}
 
 	// Use service-wide index for broad searches
-	query := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Index("service-index").
 		Where("GSI3PK", "=", "DLQ_SERVICE#"+filter.Service).
 		OrderBy("GSI3SK", "DESC")
@@ -490,7 +483,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 	var messages []*models.DLQMessage
 	err := query.All(&messages)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to search DLQ messages: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "dlq", "search messages")
 	}
 
 	// Generate next cursor
@@ -500,7 +493,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 		messages = messages[:limit]
 	}
 
-	// Apply text search if specified
+	// Apply text search if specified - DLQ business logic
 	if filter.SearchText != "" {
 		messages = r.filterByText(messages, filter.SearchText)
 	}
@@ -508,7 +501,7 @@ func (r *DLQRepository) SearchDLQMessages(ctx context.Context, filter *DLQSearch
 	return messages, nextCursor, nil
 }
 
-// filterByText performs in-memory text filtering
+// filterByText performs in-memory text filtering (DLQ-specific search logic)
 func (r *DLQRepository) filterByText(messages []*models.DLQMessage, searchText string) []*models.DLQMessage {
 	searchText = strings.ToLower(searchText)
 	var filtered []*models.DLQMessage
@@ -522,7 +515,7 @@ func (r *DLQRepository) filterByText(messages []*models.DLQMessage, searchText s
 	return filtered
 }
 
-// messageMatchesText checks if a message matches the search text
+// messageMatchesText checks if a message matches the search text (DLQ-specific text matching)
 func (r *DLQRepository) messageMatchesText(message *models.DLQMessage, searchText string) bool {
 	fields := []string{
 		strings.ToLower(message.ErrorMessage),
@@ -540,24 +533,24 @@ func (r *DLQRepository) messageMatchesText(message *models.DLQMessage, searchTex
 	return false
 }
 
-// CleanupExpiredMessages deletes expired DLQ messages
+// CleanupExpiredMessages deletes expired DLQ messages (DLQ-specific cleanup logic)
 func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.Time) (int, error) {
 	// DynamoDB TTL should handle most cleanup, but this provides manual cleanup
 	var expiredMessages []*models.DLQMessage
-	err := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Filter("ExpiresAt", "<", before.Unix()).
 		Limit(100). // Process in batches
 		All(&expiredMessages)
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to find expired DLQ messages: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "dlq", "expired messages")
 	}
 
 	if err := common.ValidateSliceNotEmpty("expiredMessages", expiredMessages); err != nil {
 		return 0, nil
 	}
 
-	// Delete expired messages
+	// Delete expired messages using BaseRepository
 	deletedCount := 0
 	for _, message := range expiredMessages {
 		if err := r.DeleteDLQMessage(ctx, message); err != nil {
@@ -578,20 +571,199 @@ func (r *DLQRepository) CleanupExpiredMessages(ctx context.Context, before time.
 	return deletedCount, nil
 }
 
-// GetSimilarMessages finds messages with the same similarity hash
+// GetSimilarMessages finds messages with the same similarity hash (DLQ-specific similarity analysis)
 func (r *DLQRepository) GetSimilarMessages(ctx context.Context, similarityHash string, limit int) ([]*models.DLQMessage, error) {
 	var messages []*models.DLQMessage
-	err := r.db.WithContext(ctx).Model(&models.DLQMessage{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.DLQMessage{}).
 		Filter("SimilarityHash", "=", similarityHash).
 		OrderBy("FirstSeenAt", "DESC").
 		Limit(limit).
 		All(&messages)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get similar messages: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "dlq", "similar messages")
 	}
 
 	return messages, nil
+}
+
+// ================= DLQ-SPECIFIC BUSINESS LOGIC METHODS =================
+
+// SendToDeadLetterQueue creates and stores a DLQ message with proper error categorization
+func (r *DLQRepository) SendToDeadLetterQueue(ctx context.Context, service, messageID, messageBody, errorType, errorMessage string, isPermanent bool) error {
+	message := models.NewDLQMessageBuilder().
+		ForService(service).
+		WithOriginalMessage(messageID, messageBody).
+		WithError(errorType, errorMessage, "").
+		WithFailureReason("Message processing failed").
+		Build()
+
+	if isPermanent {
+		message.IsPermanent = true
+		message.Status = DLQStatusFailed
+	} else {
+		message.Status = DLQStatusNew
+	}
+
+	return r.CreateDLQMessage(ctx, message)
+}
+
+// RetryFailedMessage attempts to reprocess a DLQ message with exponential backoff
+func (r *DLQRepository) RetryFailedMessage(ctx context.Context, messageID string) error {
+	message, err := r.GetDLQMessage(ctx, messageID)
+	if err != nil {
+		return ErrorHandler.HandleGetError(err, "dlq", messageID)
+	}
+	if message == nil {
+		return ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrDLQMessageNotFound, messageID), "dlq", messageID)
+	}
+
+	if !message.CanReprocess() {
+		return ErrorHandler.HandleUpdateError(fmt.Errorf("%w: %s", ErrDLQMessageNotReprocessable, messageID), "dlq", messageID)
+	}
+
+	// Mark for reprocessing with exponential backoff
+	message.MarkForReprocessing()
+
+	if message.ShouldAbandon() {
+		message.MarkAbandoned()
+		r.logger.Warn("abandoning DLQ message after max retry attempts",
+			zap.String("id", messageID),
+			zap.Int("retry_count", message.ReprocessingCount),
+		)
+	}
+
+	return r.UpdateDLQMessage(ctx, message)
+}
+
+// AnalyzeFailurePatterns analyzes DLQ messages to identify common failure patterns
+func (r *DLQRepository) AnalyzeFailurePatterns(ctx context.Context, service string, days int) (map[string]*DLQSimilarityGroup, error) {
+	endDate := time.Now()
+	startDate := endDate.Add(-time.Duration(days) * 24 * time.Hour)
+
+	messages, err := r.GetDLQMessagesByServiceDateRange(ctx, service, startDate, endDate, 1000)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "dlq", "pattern analysis")
+	}
+
+	patterns := make(map[string]*DLQSimilarityGroup)
+	for _, message := range messages {
+		if group, exists := patterns[message.SimilarityHash]; exists {
+			group.MessageCount++
+			group.MessageIDs = append(group.MessageIDs, message.ID)
+		} else {
+			patterns[message.SimilarityHash] = &DLQSimilarityGroup{
+				SimilarityHash: message.SimilarityHash,
+				ErrorType:      message.ErrorType,
+				Service:        message.Service,
+				MessageCount:   1,
+				MessageIDs:     []string{message.ID},
+				FirstSeen:      message.FirstSeenAt,
+				LastSeen:       message.FirstSeenAt,
+				SampleError:    message.ErrorMessage,
+			}
+		}
+	}
+
+	return patterns, nil
+}
+
+// GetRetryableMessages returns messages that are ready for retry based on backoff schedule
+func (r *DLQRepository) GetRetryableMessages(ctx context.Context, service string, limit int) ([]*models.DLQMessage, error) {
+	// Get messages with status "new" or "reprocessing" that are ready for retry
+	newMessages, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusNew, limit/2)
+	if err != nil {
+		r.logger.Warn("failed to get new messages for retry", zap.Error(err))
+		newMessages = []*models.DLQMessage{}
+	}
+
+	retryMessages, err := r.GetDLQMessagesForReprocessing(ctx, service, DLQStatusReprocessing, limit/2)
+	if err != nil {
+		r.logger.Warn("failed to get reprocessing messages for retry", zap.Error(err))
+		retryMessages = []*models.DLQMessage{}
+	}
+
+	// Combine and filter by actual retry readiness
+	allMessages := append(newMessages, retryMessages...)
+	var retryableMessages []*models.DLQMessage
+
+	now := time.Now()
+	for _, message := range allMessages {
+		if message.NextRetryAt == nil || now.After(*message.NextRetryAt) {
+			if message.CanReprocess() {
+				retryableMessages = append(retryableMessages, message)
+			}
+		}
+	}
+
+	// Limit to requested count
+	if len(retryableMessages) > limit {
+		retryableMessages = retryableMessages[:limit]
+	}
+
+	return retryableMessages, nil
+}
+
+// MonitorDLQHealth provides health metrics for DLQ monitoring and alerting
+func (r *DLQRepository) MonitorDLQHealth(ctx context.Context, service string) (*DLQHealthStatus, error) {
+	// Get recent messages for health assessment
+	endTime := time.Now()
+	startTime := endTime.Add(-1 * time.Hour) // Last hour
+
+	messages, err := r.GetDLQMessagesByServiceDateRange(ctx, service, startTime, endTime, 500)
+	if err != nil {
+		return nil, ErrorHandler.HandleQueryError(err, "dlq", "health monitoring")
+	}
+
+	health := &DLQHealthStatus{
+		Service:           service,
+		CheckTime:         endTime,
+		TotalMessages:     len(messages),
+		NewMessages:       0,
+		ReprocessingCount: 0,
+		AbandonedCount:    0,
+		ErrorRates:        make(map[string]int),
+		AverageRetryCount: 0.0,
+		IsHealthy:         true,
+		Alerts:            []string{},
+	}
+
+	var totalRetries int
+	for _, message := range messages {
+		switch message.Status {
+		case DLQStatusNew:
+			health.NewMessages++
+		case DLQStatusReprocessing:
+			health.ReprocessingCount++
+		case DLQStatusAbandoned:
+			health.AbandonedCount++
+		}
+
+		health.ErrorRates[message.ErrorType]++
+		totalRetries += message.ReprocessingCount
+	}
+
+	if len(messages) > 0 {
+		health.AverageRetryCount = float64(totalRetries) / float64(len(messages))
+	}
+
+	// Health checks and alerting
+	if health.TotalMessages > 100 {
+		health.IsHealthy = false
+		health.Alerts = append(health.Alerts, "High volume of DLQ messages in last hour")
+	}
+
+	if health.AbandonedCount > 10 {
+		health.IsHealthy = false
+		health.Alerts = append(health.Alerts, "High number of abandoned messages")
+	}
+
+	if health.AverageRetryCount > 2.5 {
+		health.IsHealthy = false
+		health.Alerts = append(health.Alerts, "High average retry count indicates systemic issues")
+	}
+
+	return health, nil
 }
 
 // Data structures for analytics and search
@@ -681,4 +853,18 @@ type DLQSearchFilter struct {
 	SearchText  string    `json:"search_text,omitempty"`
 	Limit       int       `json:"limit,omitempty"`
 	Cursor      string    `json:"cursor,omitempty"`
+}
+
+// DLQHealthStatus represents the health status of DLQ for monitoring
+type DLQHealthStatus struct {
+	Service           string         `json:"service"`
+	CheckTime         time.Time      `json:"check_time"`
+	TotalMessages     int            `json:"total_messages"`
+	NewMessages       int            `json:"new_messages"`
+	ReprocessingCount int            `json:"reprocessing_count"`
+	AbandonedCount    int            `json:"abandoned_count"`
+	ErrorRates        map[string]int `json:"error_rates"`
+	AverageRetryCount float64        `json:"average_retry_count"`
+	IsHealthy         bool           `json:"is_healthy"`
+	Alerts            []string       `json:"alerts"`
 }

@@ -17,8 +17,9 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // ProductionMetricsConfig configures comprehensive production monitoring
@@ -445,18 +446,25 @@ func NewProductionDynamORMClient(baseClient core.DB, monitor *ProductionMonitor)
 // Helper utility functions
 
 func getEnvironment() string {
-	if env := os.Getenv("ENVIRONMENT"); env != "" {
-		return env
+	cfg := config.Get()
+	if cfg.Environment != "" {
+		return cfg.Environment
 	}
-	if env := os.Getenv("STAGE"); env != "" {
-		return env
+	if cfg.Stage != "" {
+		return cfg.Stage
 	}
 	return "production"
 }
 
 func getFunctionName() string {
+	// AWS Lambda runtime variable should remain as os.Getenv
 	if name := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); name != "" {
 		return name
+	}
+	// Use centralized config as fallback
+	cfg := config.Get()
+	if cfg.ServiceName != "" {
+		return cfg.ServiceName
 	}
 	return StatusUnknown
 }

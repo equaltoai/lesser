@@ -49,13 +49,16 @@ func (b *Block) BeforeCreate() error {
 	}
 
 	// Update keys based on actor usernames
-	b.UpdateKeys()
+	if err := b.UpdateKeys(); err != nil {
+		return fmt.Errorf("%w: %w", ErrBlockUpdateKeysFailed, err)
+	}
 
 	return nil
 }
 
 // UpdateKeys sets the primary and GSI keys based on the actor usernames
-func (b *Block) UpdateKeys() {
+// This implements the BaseModel interface requirement
+func (b *Block) UpdateKeys() error {
 	// Extract usernames from actor IDs
 	blockerUsername := extractUsername(b.Actor)
 	blockedUsername := extractUsername(b.Object)
@@ -67,6 +70,18 @@ func (b *Block) UpdateKeys() {
 	// GSI5 for reverse lookup
 	b.GSI5PK = fmt.Sprintf("BLOCKED#%s", blockedUsername)
 	b.GSI5SK = fmt.Sprintf("BLOCKER#%s", blockerUsername)
+
+	return nil
+}
+
+// GetPK returns the partition key (implements BaseModel interface)
+func (b *Block) GetPK() string {
+	return b.PK
+}
+
+// GetSK returns the sort key (implements BaseModel interface)
+func (b *Block) GetSK() string {
+	return b.SK
 }
 
 // extractUsername extracts the username from an actor ID

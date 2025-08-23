@@ -16,15 +16,16 @@ import (
 
 // EmojiRepository handles custom emoji operations using DynamORM
 type EmojiRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	*BaseRepository[*models.EmojiModel]
+	errorHandler *ErrorUtils
 }
 
 // NewEmojiRepository creates a new emoji repository
 func NewEmojiRepository(db core.DB, logger *zap.Logger) *EmojiRepository {
 	return &EmojiRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.EmojiModel](
+			db, models.MainTableName, logger, nil, "EmojiRepository"),
+		errorHandler: ErrorHandler,
 	}
 }
 
@@ -60,51 +61,35 @@ func (r *EmojiRepository) CreateCustomEmoji(ctx context.Context, emoji *storage.
 		AltText:             emoji.AltText,
 	}
 
-	// Update the composite keys
-	model.UpdateKeys()
-
 	// Check if emoji already exists
-	var existing models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", emoji.Shortcode)).
-		Where("SK", "=", "EMOJI").
-		First(&existing)
-
-	if err == nil {
-		// Emoji already exists
+	pk := fmt.Sprintf("EMOJI#%s", emoji.Shortcode)
+	if emoji.Domain != "" {
+		pk = fmt.Sprintf("EMOJI#%s@%s", emoji.Shortcode, emoji.Domain)
+	}
+	
+	exists, err := r.Exists(ctx, pk, "EMOJI")
+	if err != nil {
+		return err
+	}
+	
+	if exists {
 		return storage.ErrAlreadyExists
 	}
 
-	if !errors.IsNotFound(err) {
-		r.logger.Error("failed to check existing emoji", zap.Error(err))
-		return err
-	}
-
-	// Create the emoji
-	err = r.db.WithContext(ctx).Model(model).Create()
-	if err != nil {
-		r.logger.Error("failed to create custom emoji", zap.Error(err))
-		return err
-	}
-
-	return nil
+	// Create the emoji using BaseRepository
+	return r.Create(ctx, model)
 }
 
 // GetCustomEmoji retrieves a custom emoji by shortcode
 func (r *EmojiRepository) GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error) {
 	var model models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", shortcode)).
-		Where("SK", "=", "EMOJI").
-		First(&model)
-
+	pk := fmt.Sprintf("EMOJI#%s", shortcode)
+	
+	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		r.logger.Error("failed to get custom emoji", zap.Error(err))
 		return nil, err
 	}
 
@@ -114,16 +99,9 @@ func (r *EmojiRepository) GetCustomEmoji(ctx context.Context, shortcode string) 
 
 // GetCustomEmojis retrieves all custom emojis (not disabled)
 func (r *EmojiRepository) GetCustomEmojis(ctx context.Context) ([]*storage.CustomEmoji, error) {
-	var emojiModels []*models.EmojiModel
-
 	// Query using GSI1 for all emojis
-	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-		Index("gsi1").
-		Where("GSI1PK", "=", "ALL_EMOJIS").
-		All(&emojiModels)
-
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
 	if err != nil {
-		r.logger.Error("failed to get custom emojis", zap.Error(err))
 		return nil, err
 	}
 
@@ -170,55 +148,35 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 		AltText:             emoji.AltText,
 	}
 
-	// Update the composite keys
-	model.UpdateKeys()
-
 	// Check if emoji exists first
-	var existing models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", emoji.Shortcode)).
-		Where("SK", "=", "EMOJI").
-		First(&existing)
-
+	pk := fmt.Sprintf("EMOJI#%s", emoji.Shortcode)
+	if emoji.Domain != "" {
+		pk = fmt.Sprintf("EMOJI#%s@%s", emoji.Shortcode, emoji.Domain)
+	}
+	
+	exists, err := r.Exists(ctx, pk, "EMOJI")
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return storage.ErrNotFound
-		}
-		r.logger.Error("failed to check existing emoji", zap.Error(err))
 		return err
 	}
-
-	// Update the emoji (DynamORM will handle the put operation)
-	err = r.db.WithContext(ctx).Model(model).Create()
-
-	if err != nil {
-		r.logger.Error("failed to update custom emoji", zap.Error(err))
-		return err
+	
+	if !exists {
+		return storage.ErrNotFound
 	}
 
-	return nil
+	// Update the emoji using BaseRepository
+	return r.Update(ctx, model)
 }
 
 // GetRemoteEmoji retrieves a remote emoji by shortcode and domain
 func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error) {
 	var model models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-
-	// Remote emojis use a different key pattern
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s@%s", shortcode, domain)).
-		Where("SK", "=", "EMOJI").
-		First(&model)
-
+	pk := fmt.Sprintf("EMOJI#%s@%s", shortcode, domain)
+	
+	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		r.logger.Error("failed to get remote emoji",
-			zap.String("shortcode", shortcode),
-			zap.String("domain", domain),
-			zap.Error(err))
 		return nil, err
 	}
 
@@ -228,48 +186,27 @@ func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain 
 
 // DeleteCustomEmoji deletes a custom emoji
 func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
+	pk := fmt.Sprintf("EMOJI#%s", shortcode)
+	
 	// Check if emoji exists first
-	var existing models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", shortcode)).
-		Where("SK", "=", "EMOJI").
-		First(&existing)
-
+	exists, err := r.Exists(ctx, pk, "EMOJI")
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return storage.ErrNotFound
-		}
-		r.logger.Error("failed to check existing emoji", zap.Error(err))
 		return err
 	}
-
-	// Delete the emoji
-	err = r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", shortcode)).
-		Where("SK", "=", "EMOJI").
-		Delete()
-
-	if err != nil {
-		r.logger.Error("failed to delete custom emoji", zap.Error(err))
-		return err
+	
+	if !exists {
+		return storage.ErrNotFound
 	}
 
-	return nil
+	// Delete the emoji using BaseRepository
+	return r.Delete(ctx, pk, "EMOJI")
 }
 
 // GetCustomEmojisByCategory retrieves custom emojis by category
 func (r *EmojiRepository) GetCustomEmojisByCategory(ctx context.Context, category string) ([]*storage.CustomEmoji, error) {
-	var emojiModels []*models.EmojiModel
-
 	// Query using GSI2 for category
-	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-		Index("gsi2").
-		Where("GSI2PK", "=", fmt.Sprintf("CATEGORY#%s", category)).
-		All(&emojiModels)
-
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi2", "GSI2PK", fmt.Sprintf("CATEGORY#%s", category), 0)
 	if err != nil {
-		r.logger.Error("failed to get custom emojis by category", zap.Error(err))
 		return nil, err
 	}
 
@@ -302,26 +239,15 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 	// Strategy 1: Prefix search using GSI3
 	if len(normalizedQuery) >= 3 {
 		prefix := normalizedQuery[:3]
-		var prefixModels []*models.EmojiModel
-		err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-			Index("gsi3").
-			Where("GSI3PK", "=", fmt.Sprintf("SEARCH#%s", prefix)).
-			All(&prefixModels)
-		
+		prefixModels, err := r.queryEmojiGSI(ctx, "gsi3", "GSI3PK", fmt.Sprintf("SEARCH#%s", prefix), 0)
 		if err == nil {
 			allModels = append(allModels, prefixModels...)
 		}
 	}
 	
 	// Strategy 2: Get all emojis and perform in-memory search for broader matching
-	var allEmojis []*models.EmojiModel
-	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-		Index("gsi1").
-		Where("GSI1PK", "=", "ALL_EMOJIS").
-		All(&allEmojis)
-	
+	allEmojis, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
 	if err != nil {
-		r.logger.Error("failed to search emojis", zap.Error(err))
 		return nil, err
 	}
 	
@@ -370,8 +296,6 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 		limit = 20
 	}
 	
-	var emojiModels []*models.EmojiModel
-	
 	// Determine domain key
 	domainKey := domain
 	if err := common.ValidateRequiredParam("domain", domainKey); err != nil {
@@ -379,14 +303,8 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 	}
 	
 	// Query using GSI4 for usage statistics, which sorts by usage count
-	err := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
-		Index("gsi4").
-		Where("GSI4PK", "=", fmt.Sprintf("USAGE#%s", domainKey)).
-		Limit(limit * 2). // Get more than needed to filter disabled ones
-		All(&emojiModels)
-	
+	emojiModels, err := r.queryEmojiGSI(ctx, "gsi4", "GSI4PK", fmt.Sprintf("USAGE#%s", domainKey), limit*2)
 	if err != nil {
-		r.logger.Error("failed to get popular emojis", zap.Error(err))
 		return nil, err
 	}
 	
@@ -412,31 +330,21 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 func (r *EmojiRepository) IncrementEmojiUsage(ctx context.Context, shortcode string) error {
 	// Get current emoji
 	var model models.EmojiModel
-	query := r.db.WithContext(ctx).Model(&models.EmojiModel{})
-	err := query.
-		Where("PK", "=", fmt.Sprintf("EMOJI#%s", shortcode)).
-		Where("SK", "=", "EMOJI").
-		First(&model)
+	pk := fmt.Sprintf("EMOJI#%s", shortcode)
 	
+	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
-		r.logger.Error("failed to get emoji for usage increment", zap.Error(err))
 		return err
 	}
 	
 	// Increment usage and update keys
 	model.IncrementUsage()
 	
-	// Update the emoji in database
-	err = r.db.WithContext(ctx).Model(&model).Create()
-	if err != nil {
-		r.logger.Error("failed to increment emoji usage", zap.Error(err))
-		return err
-	}
-	
-	return nil
+	// Update the emoji in database using BaseRepository
+	return r.Update(ctx, &model)
 }
 
 // Helper methods
@@ -572,4 +480,47 @@ func (r *EmojiRepository) calculateSearchScore(model *models.EmojiModel, query s
 	}
 	
 	return score
+}
+
+// queryEmojiGSI is a helper method for querying GSI with correct field names
+func (r *EmojiRepository) queryEmojiGSI(ctx context.Context, indexName, pkField, pkValue string, limit int) ([]*models.EmojiModel, error) {
+	var results []*models.EmojiModel
+
+	// Create query
+	query := r.db.WithContext(ctx).Model(&models.EmojiModel{}).
+		Index(indexName).
+		Where(pkField, "=", pkValue)
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	// Execute query
+	err := query.All(&results)
+	if err != nil {
+		r.logger.Error("failed to query emoji GSI",
+			zap.Error(err),
+			zap.String("index", indexName),
+			zap.String("pkField", pkField),
+			zap.String("pkValue", pkValue),
+			zap.Int("limit", limit))
+		return nil, r.errorHandler.HandleQueryError(err, EntityEmoji, fmt.Sprintf("GSI query %s", indexName))
+	}
+
+	// Track cost if cost service is available
+	if r.GetCostService() != nil {
+		itemCount := int64(len(results))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		
+		if trackErr := r.TrackRead(ctx, "QueryGSI", estimatedRU); trackErr != nil {
+			r.logger.Warn("failed to track GSI query cost",
+				zap.String("index", indexName),
+				zap.Error(trackErr))
+		}
+	}
+
+	return results, nil
 }

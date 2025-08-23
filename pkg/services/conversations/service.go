@@ -6,6 +6,7 @@ package conversations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -152,13 +153,15 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 
 	// Validate the command (basic validation only - accounts validated below)
 	if err := s.validateSendMessageCommandBasic(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		s.logger.Error("validation failed", zap.Error(err))
+		return nil, errors.Join(ErrConversationValidationFailed, err)
 	}
 
 	// Get sender account - also validates it exists
 	sender, err := s.accountRepo.GetAccount(ctx, cmd.SenderID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get sender account: %w", err)
+		s.logger.Error("failed to get sender account", zap.String("sender_id", cmd.SenderID), zap.Error(err))
+		return nil, errors.Join(ErrGetSenderAccount, err)
 	}
 
 	// Get recipient accounts - also validates they exist
@@ -166,7 +169,8 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	for _, recipientID := range cmd.Recipients {
 		recipient, err := s.accountRepo.GetAccount(ctx, recipientID)
 		if err != nil {
-			return nil, fmt.Errorf("invalid recipient %s: %w", recipientID, err)
+			s.logger.Error("invalid recipient", zap.String("recipient_id", recipientID), zap.Error(err))
+			return nil, errors.Join(ErrInvalidRecipient, err)
 		}
 		recipientAccounts[recipientID] = recipient
 	}
@@ -178,7 +182,8 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 	// Try to find existing conversation with these exact participants
 	conversation, err := s.conversationRepo.GetConversationByParticipants(ctx, allParticipants)
 	if err != nil && !isNotFoundError(err) {
-		return nil, fmt.Errorf("failed to lookup existing conversation: %w", err)
+		s.logger.Error("failed to lookup existing conversation", zap.Strings("participants", allParticipants), zap.Error(err))
+		return nil, errors.Join(ErrLookupExistingConversation, err)
 	}
 
 	// Create new conversation if none exists
@@ -192,7 +197,8 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 		}
 
 		if err := s.conversationRepo.CreateConversation(ctx, conversation, allParticipants); err != nil {
-			return nil, fmt.Errorf("failed to create conversation: %w", err)
+			s.logger.Error("failed to create conversation", zap.String("conversation_id", conversationID), zap.Error(err))
+			return nil, errors.Join(ErrCreateConversation, err)
 		}
 
 		s.logger.Info("created new conversation",
@@ -230,7 +236,8 @@ func (s *Service) SendDirectMessage(ctx context.Context, cmd *SendDirectMessageC
 
 	// Store the message
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, fmt.Errorf("failed to create direct message: %w", err)
+		s.logger.Error("failed to create direct message", zap.String("message_id", messageID), zap.Error(err))
+		return nil, errors.Join(ErrCreateDirectMessage, err)
 	}
 
 	// Update conversation with latest message
@@ -265,17 +272,20 @@ func (s *Service) MarkConversationRead(ctx context.Context, cmd *MarkConversatio
 	// Get the conversation
 	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
+		s.logger.Error("failed to get conversation", zap.String("conversation_id", cmd.ConversationID), zap.Error(err))
+		return nil, errors.Join(ErrGetConversation, err)
 	}
 
 	// Verify user is a participant
 	if !s.isParticipant(cmd.UserID, conversation.Participants) {
-		return nil, fmt.Errorf("user is not a participant in this conversation")
+		s.logger.Warn("user is not a conversation participant", zap.String("user_id", cmd.UserID), zap.String("conversation_id", cmd.ConversationID))
+		return nil, ErrNotConversationParticipant
 	}
 
 	// Mark as read
 	if err := s.conversationRepo.MarkConversationRead(ctx, cmd.ConversationID, cmd.UserID); err != nil {
-		return nil, fmt.Errorf("failed to mark conversation as read: %w", err)
+		s.logger.Error("failed to mark conversation as read", zap.String("conversation_id", cmd.ConversationID), zap.String("user_id", cmd.UserID), zap.Error(err))
+		return nil, errors.Join(ErrMarkConversationRead, err)
 	}
 
 	s.logger.Debug("marked conversation as read successfully",
@@ -307,7 +317,8 @@ func (s *Service) ListConversations(ctx context.Context, query *ListConversation
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user conversations: %w", err)
+		s.logger.Error("failed to get user conversations", zap.String("user_id", query.UserID), zap.Bool("only_unread", query.OnlyUnread), zap.Error(err))
+		return nil, errors.Join(ErrGetUserConversations, err)
 	}
 
 	return &Result{
@@ -325,18 +336,21 @@ func (s *Service) GetConversation(ctx context.Context, query *GetConversationQue
 	// Get the conversation
 	conversation, err := s.conversationRepo.GetConversation(ctx, query.ConversationID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
+		s.logger.Error("failed to get conversation", zap.String("conversation_id", query.ConversationID), zap.Error(err))
+		return nil, errors.Join(ErrGetConversation, err)
 	}
 
 	// Verify user is a participant
 	if !s.isParticipant(query.ViewerID, conversation.Participants) {
-		return nil, fmt.Errorf("user is not a participant in this conversation")
+		s.logger.Warn("viewer is not a conversation participant", zap.String("viewer_id", query.ViewerID), zap.String("conversation_id", query.ConversationID))
+		return nil, ErrNotConversationParticipant
 	}
 
 	// Get conversation messages (these are statuses with this conversation ID)
 	messages, err := s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get conversation messages: %w", err)
+		s.logger.Error("failed to get conversation messages", zap.String("conversation_id", query.ConversationID), zap.Error(err))
+		return nil, errors.Join(ErrGetConversationMessages, err)
 	}
 
 	// Filter messages to ensure they're all direct messages visible to the viewer
@@ -370,7 +384,7 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 	}
 
 	if err := common.ValidateSliceNotEmpty("cmd.Recipients", cmd.Recipients); err != nil {
-		return fmt.Errorf("recipients is required")
+		return ErrRecipientsRequired
 	}
 
 	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
@@ -378,7 +392,7 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 	}
 
 	if len(cmd.Content) > 5000 {
-		return fmt.Errorf("content too long (max 5000 characters)")
+		return ErrContentTooLongConversation
 	}
 
 	// Account validation is done in SendDirectMessage method to avoid duplicate calls
@@ -387,11 +401,11 @@ func (s *Service) validateSendMessageCommandBasic(ctx context.Context, cmd *Send
 	if cmd.InReplyToID != "" {
 		parentMessage, err := s.noteRepo.GetStatus(ctx, cmd.InReplyToID)
 		if err != nil {
-			return fmt.Errorf("invalid in_reply_to_id: %w", err)
+			return errors.Join(ErrInvalidInReplyToIDConversation, err)
 		}
 		// Verify it's a direct message in an accessible conversation
 		if parentMessage.Visibility != VisibilityDirect {
-			return fmt.Errorf("can only reply to direct messages")
+			return ErrCanOnlyReplyToDirectMessages
 		}
 	}
 
@@ -560,9 +574,11 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 	conversation, err := s.conversationRepo.GetConversation(ctx, cmd.ConversationID)
 	if err != nil {
 		if isNotFoundError(err) {
-			return nil, fmt.Errorf("conversation not found")
+			s.logger.Warn("conversation not found", zap.String("conversation_id", cmd.ConversationID))
+			return nil, ErrConversationNotFound
 		}
-		return nil, fmt.Errorf("failed to get conversation: %w", err)
+		s.logger.Error("failed to get conversation", zap.String("conversation_id", cmd.ConversationID), zap.Error(err))
+		return nil, errors.Join(ErrGetConversation, err)
 	}
 
 	// Check if user is a participant
@@ -570,12 +586,14 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 		// Get user's account to check actor ID
 		account, err := s.accountRepo.GetAccount(ctx, cmd.UserID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get account: %w", err)
+			s.logger.Error("failed to get account", zap.String("user_id", cmd.UserID), zap.Error(err))
+			return nil, errors.Join(ErrGetAccount, err)
 		}
 
 		// Check with actor ID as well
 		if account.Actor == nil || !s.isParticipant(account.Actor.ID, conversation.Participants) {
-			return nil, fmt.Errorf("user is not a participant in this conversation")
+			s.logger.Warn("user is not a conversation participant (checked actor ID)", zap.String("user_id", cmd.UserID), zap.String("conversation_id", cmd.ConversationID))
+			return nil, ErrNotConversationParticipant
 		}
 	}
 
@@ -583,7 +601,8 @@ func (s *Service) DeleteConversation(ctx context.Context, cmd *DeleteConversatio
 	// The exact behavior depends on the storage implementation
 	// Some systems remove the user from participants, others delete the entire conversation
 	if err := s.conversationRepo.DeleteConversation(ctx, cmd.ConversationID); err != nil {
-		return nil, fmt.Errorf("failed to delete conversation: %w", err)
+		s.logger.Error("failed to delete conversation", zap.String("conversation_id", cmd.ConversationID), zap.String("user_id", cmd.UserID), zap.Error(err))
+		return nil, errors.Join(ErrDeleteConversation, err)
 	}
 
 	// Emit conversation deleted event

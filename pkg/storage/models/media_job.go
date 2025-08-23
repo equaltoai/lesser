@@ -75,8 +75,13 @@ func (MediaJob) TableName() string {
 	return MainTableName // Use the main table
 }
 
-// UpdateKeys sets up all the composite keys
-func (mj *MediaJob) UpdateKeys() {
+// UpdateKeys sets up all the composite keys (BaseModel interface implementation)
+func (mj *MediaJob) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("JobID", mj.JobID); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaJobIDRequired, err)
+	}
+
 	// Primary key
 	mj.PK = fmt.Sprintf("JOB#%s", mj.JobID)
 	mj.SK = fmt.Sprintf("JOB#%s", mj.JobID)
@@ -90,6 +95,8 @@ func (mj *MediaJob) UpdateKeys() {
 	// GSI2 - Status-based queries
 	mj.GSI2PK = fmt.Sprintf(KeyPatternStatus, mj.Status)
 	mj.GSI2SK = fmt.Sprintf("UPDATED#%s", mj.UpdatedAt.Format(time.RFC3339))
+
+	return nil
 }
 
 // BeforeCreate sets up the model before creation
@@ -140,7 +147,9 @@ func (mj *MediaJob) BeforeCreate() error {
 	}
 
 	// Set up keys
-	mj.UpdateKeys()
+	if err := mj.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return mj.Validate()
 }
@@ -148,7 +157,9 @@ func (mj *MediaJob) BeforeCreate() error {
 // BeforeUpdate sets up the model before update
 func (mj *MediaJob) BeforeUpdate() error {
 	mj.UpdatedAt = time.Now()
-	mj.UpdateKeys()
+	if err := mj.UpdateKeys(); err != nil {
+		return err
+	}
 	return mj.Validate()
 }
 
@@ -172,7 +183,7 @@ func (mj *MediaJob) Validate() error {
 
 	// Validate status
 	if !isValidJobStatus(mj.Status) {
-		return fmt.Errorf("invalid job status: %s", mj.Status)
+		return fmt.Errorf("%w: %s", ErrInvalidMediaJobStatus, mj.Status)
 	}
 
 	return nil
@@ -192,7 +203,7 @@ func (mj *MediaJob) SetProcessing() {
 	mj.ProcessingStartedAt = &now
 	mj.LastAttemptAt = &now
 
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // SetCompleted marks the job as completed with results
@@ -208,7 +219,7 @@ func (mj *MediaJob) SetCompleted(results map[string]any) {
 	// Clear TTL for completed jobs to keep them longer
 	mj.ExpiresAt = nil
 
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // SetFailed marks the job as failed with an error message
@@ -224,7 +235,7 @@ func (mj *MediaJob) SetFailed(errorMsg string) {
 	ttl := now.Add(7 * 24 * time.Hour).Unix()
 	mj.ExpiresAt = &ttl
 
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // IsCompleted returns true if the job is completed
@@ -285,7 +296,7 @@ func (mj *MediaJob) SetCancelled(reason string) {
 	ttl := now.Add(24 * time.Hour).Unix()
 	mj.ExpiresAt = &ttl
 
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // CanRetry determines if the job can be retried based on error type and retry count
@@ -366,7 +377,7 @@ func (mj *MediaJob) ScheduleRetry(baseDelay time.Duration) {
 	mj.Status = StatusPending // Reset to pending for retry
 	mj.UpdatedAt = now
 
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // IsAbandoned checks if the job has been abandoned (no updates for too long)
@@ -399,7 +410,7 @@ func (mj *MediaJob) UpdateProgress(progress int) {
 
 	mj.Progress = progress
 	mj.UpdatedAt = time.Now()
-	mj.UpdateKeys()
+	_ = mj.UpdateKeys() // Ignore error in status update methods
 }
 
 // AddCost adds to the actual cost incurred for processing
@@ -482,4 +493,16 @@ func isValidJobStatus(status string) bool {
 	}
 
 	return validStatuses[strings.ToLower(status)]
+}
+
+// === BaseModel Interface Implementation ===
+
+// GetPK returns the partition key for this media job
+func (mj *MediaJob) GetPK() string {
+	return mj.PK
+}
+
+// GetSK returns the sort key for this media job
+func (mj *MediaJob) GetSK() string {
+	return mj.SK
 }

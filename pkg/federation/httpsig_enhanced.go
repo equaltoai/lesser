@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -67,7 +68,7 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	// Build signature string
 	sigString, err := buildSignatureString(req, sig.Headers)
 	if err != nil {
-		return fmt.Errorf("failed to build signature string: %w", err)
+		return errors.Join(ErrBuildSignatureString, err)
 	}
 
 	// Verify the signature based on algorithm
@@ -80,7 +81,8 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	case AlgorithmRSASHA256:
 		rsaKey, ok := publicKey.(*rsa.PublicKey)
 		if !ok {
-			return common.AuthenticationError{Message: "public key is not RSA"}
+			log.Error("algorithm requires RSA key", zap.String("algorithm", AlgorithmRSASHA256))
+			return ErrAlgorithmRequiresRSA
 		}
 		hash := sha256.Sum256([]byte(sigString))
 		verifyErr = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, hash[:], sig.Signature)
@@ -88,7 +90,8 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	case AlgorithmRSASHA512:
 		rsaKey, ok := publicKey.(*rsa.PublicKey)
 		if !ok {
-			return common.AuthenticationError{Message: "public key is not RSA"}
+			log.Error("algorithm requires RSA key", zap.String("algorithm", AlgorithmRSASHA512))
+			return ErrAlgorithmRequiresRSA
 		}
 		hash := sha512.Sum512([]byte(sigString))
 		verifyErr = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA512, hash[:], sig.Signature)
@@ -96,21 +99,23 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 	case AlgorithmECDSASHA256:
 		ecdsaKey, ok := publicKey.(*ecdsa.PublicKey)
 		if !ok {
-			return common.AuthenticationError{Message: "public key is not ECDSA"}
+			log.Error("algorithm requires ECDSA key", zap.String("algorithm", AlgorithmECDSASHA256))
+			return ErrAlgorithmRequiresECDSA
 		}
 		hash := sha256.Sum256([]byte(sigString))
 		valid := ecdsa.VerifyASN1(ecdsaKey, hash[:], sig.Signature)
 		if !valid {
-			verifyErr = fmt.Errorf("ECDSA signature verification failed")
+			verifyErr = ErrECDSAVerificationFailed
 		}
 
 	case AlgorithmEd25519:
 		ed25519Key, ok := publicKey.(ed25519.PublicKey)
 		if !ok {
-			return common.AuthenticationError{Message: "public key is not Ed25519"}
+			log.Error("algorithm requires Ed25519 key", zap.String("algorithm", AlgorithmEd25519))
+			return ErrAlgorithmRequiresEd25519
 		}
 		if !ed25519.Verify(ed25519Key, []byte(sigString), sig.Signature) {
-			verifyErr = fmt.Errorf("Ed25519 signature verification failed")
+			verifyErr = ErrEd25519VerificationFailed
 		}
 
 	default:
@@ -118,17 +123,19 @@ func VerifyHTTPSignatureEnhanced(req *http.Request, publicKey crypto.PublicKey, 
 		if sig.Algorithm == DefaultAlgorithm {
 			rsaKey, ok := publicKey.(*rsa.PublicKey)
 			if !ok {
-				return common.AuthenticationError{Message: "public key is not RSA"}
+				log.Error("algorithm requires RSA key", zap.String("algorithm", DefaultAlgorithm))
+				return ErrAlgorithmRequiresRSA
 			}
 			hash := sha256.Sum256([]byte(sigString))
 			verifyErr = rsa.VerifyPKCS1v15(rsaKey, crypto.SHA256, hash[:], sig.Signature)
 		} else {
-			return common.AuthenticationError{Message: fmt.Sprintf("unsupported algorithm: %s", sig.Algorithm)}
+			log.Error("unsupported signature algorithm", zap.String("algorithm", sig.Algorithm))
+			return ErrUnsupportedAlgorithm
 		}
 	}
 
 	if verifyErr != nil {
-		return common.AuthenticationError{Message: "signature verification failed"}
+		return ErrSignatureFailed
 	}
 
 	log.Info("verified HTTP signature",
@@ -150,18 +157,18 @@ func verifyWithKey(sigString string, signature []byte, publicKey crypto.PublicKe
 	case *ecdsa.PublicKey:
 		hash := sha256.Sum256([]byte(sigString))
 		if !ecdsa.VerifyASN1(key, hash[:], signature) {
-			return fmt.Errorf("ECDSA signature verification failed")
+			return ErrECDSAVerificationFailed
 		}
 		return nil
 
 	case ed25519.PublicKey:
 		if !ed25519.Verify(key, []byte(sigString), signature) {
-			return fmt.Errorf("Ed25519 signature verification failed")
+			return ErrEd25519VerificationFailed
 		}
 		return nil
 
 	default:
-		return fmt.Errorf("unsupported public key type for hs2019")
+		return ErrUnsupportedPublicKeyType
 	}
 }
 
@@ -186,7 +193,7 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	// Build signature string
 	sigString, err := buildSignatureString(req, headers)
 	if err != nil {
-		return fmt.Errorf("failed to build signature string: %w", err)
+		return errors.Join(ErrBuildSignatureString, err)
 	}
 
 	// Sign the string based on algorithm
@@ -198,7 +205,8 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	case AlgorithmRSASHA256:
 		key, ok := privateKey.(*rsa.PrivateKey)
 		if !ok {
-			return fmt.Errorf("algorithm %s requires RSA key", algorithm)
+			log.Error("algorithm requires RSA key", zap.String("algorithm", algorithm))
+			return ErrAlgorithmRequiresRSA
 		}
 		hash := sha256.Sum256([]byte(sigString))
 		signature, err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, hash[:])
@@ -206,7 +214,8 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	case AlgorithmRSASHA512:
 		key, ok := privateKey.(*rsa.PrivateKey)
 		if !ok {
-			return fmt.Errorf("algorithm %s requires RSA key", algorithm)
+			log.Error("algorithm requires RSA key", zap.String("algorithm", algorithm))
+			return ErrAlgorithmRequiresRSA
 		}
 		hash := sha512.Sum512([]byte(sigString))
 		signature, err = rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA512, hash[:])
@@ -214,7 +223,8 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	case AlgorithmECDSASHA256:
 		key, ok := privateKey.(*ecdsa.PrivateKey)
 		if !ok {
-			return fmt.Errorf("algorithm %s requires ECDSA key", algorithm)
+			log.Error("algorithm requires ECDSA key", zap.String("algorithm", algorithm))
+			return ErrAlgorithmRequiresECDSA
 		}
 		hash := sha256.Sum256([]byte(sigString))
 		signature, err = ecdsa.SignASN1(rand.Reader, key, hash[:])
@@ -222,16 +232,18 @@ func SignHTTPRequestWithAlgorithm(req *http.Request, privateKey crypto.PrivateKe
 	case AlgorithmEd25519:
 		key, ok := privateKey.(ed25519.PrivateKey)
 		if !ok {
-			return fmt.Errorf("algorithm %s requires Ed25519 key", algorithm)
+			log.Error("algorithm requires Ed25519 key", zap.String("algorithm", algorithm))
+			return ErrAlgorithmRequiresEd25519
 		}
 		signature = ed25519.Sign(key, []byte(sigString))
 
 	default:
-		return fmt.Errorf("unsupported algorithm: %s", algorithm)
+		log.Error("unsupported signature algorithm", zap.String("algorithm", algorithm))
+		return ErrUnsupportedAlgorithm
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to sign: %w", err)
+		return errors.Join(ErrSignatureFailed, err)
 	}
 
 	// Build signature header
@@ -269,7 +281,7 @@ func signWithKey(sigString string, privateKey crypto.PrivateKey) ([]byte, error)
 		return ed25519.Sign(key, []byte(sigString)), nil
 
 	default:
-		return nil, fmt.Errorf("unsupported private key type for hs2019")
+		return nil, ErrUnsupportedPrivateKeyType
 	}
 }
 
@@ -320,7 +332,7 @@ func parseStructuredSignature(signatureInput, signature string) (*HTTPSignature,
 	startParen := strings.Index(signatureInput, "(")
 	endParen := strings.Index(signatureInput, ")")
 	if startParen == -1 || endParen == -1 {
-		return nil, fmt.Errorf("invalid signature-input format: missing parentheses")
+		return nil, ErrInvalidSignatureInputFormat
 	}
 
 	// Extract headers from within parentheses
@@ -354,7 +366,7 @@ func parseStructuredSignature(signatureInput, signature string) (*HTTPSignature,
 	// Parse signature value (base64 encoded)
 	sigBytes, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode signature: %w", err)
+		return nil, errors.Join(ErrDecodeSignature, err)
 	}
 
 	return &HTTPSignature{

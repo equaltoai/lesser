@@ -11,21 +11,17 @@ import (
 	"go.uber.org/zap"
 )
 
-// ThreatIntelRepository implements threat intelligence operations using DynamORM
+// ThreatIntelRepository implements threat intelligence operations using BaseRepository
 type ThreatIntelRepository struct {
-	db         core.DB
-	tableName  string
-	logger     *zap.Logger
+	*BaseRepository[*models.ThreatIntel]
 	queryUtils *QueryUtils
 }
 
 // NewThreatIntelRepository creates a new threat intelligence repository
 func NewThreatIntelRepository(db core.DB, tableName string, logger *zap.Logger) *ThreatIntelRepository {
 	return &ThreatIntelRepository{
-		db:         db,
-		tableName:  tableName,
-		logger:     logger,
-		queryUtils: NewQueryUtils(db, logger),
+		BaseRepository: NewBaseRepository[*models.ThreatIntel](db, tableName, logger),
+		queryUtils:     NewQueryUtils(db, logger),
 	}
 }
 
@@ -68,25 +64,18 @@ func (r *ThreatIntelRepository) ShareThreat(ctx context.Context, threat *ThreatI
 	model.UpdateKeys()
 
 	// Store the threat
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		r.logger.Error("Failed to share threat",
-			zap.Error(err),
-			zap.String("threat_id", threat.ID),
-			zap.String("type", threat.ThreatType))
-		return fmt.Errorf("failed to share threat: %w", err)
+	if err := r.Create(ctx, model); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityThreatIntel, threat.ID)
 	}
 
-	// Store indicators for fast lookup
+	// Store indicators for fast lookup using BaseRepository for ThreatIndicator
 	for _, indicator := range threat.Indicators {
 		indicatorModel := &models.ThreatIndicator{}
 		indicatorModel.UpdateKeys(indicator, threat.ID)
 
-		if err := r.db.WithContext(ctx).Model(indicatorModel).Create(); err != nil {
-			r.logger.Warn("Failed to store threat indicator",
-				zap.String("indicator", indicator),
-				zap.String("threat_id", threat.ID),
-				zap.Error(err))
-			// Continue with other indicators
+		// Use GetDB() for ThreatIndicator since BaseRepository is typed for ThreatIntel
+		if err := r.GetDB().WithContext(ctx).Model(indicatorModel).Create(); err != nil {
+			// Continue with other indicators on error
 		}
 	}
 
@@ -120,7 +109,7 @@ func (r *ThreatIntelRepository) GetSharedThreats(ctx context.Context, since time
 	})
 	
 	if err != nil {
-		return nil, fmt.Errorf("failed to query shared threats: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "shared threats")
 	}
 
 	return r.convertResultToThreats(result), nil
@@ -134,7 +123,7 @@ func (r *ThreatIntelRepository) GetThreatsByType(ctx context.Context, threatType
 	})
 	
 	if err != nil {
-		return nil, fmt.Errorf("failed to query threats by type: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "threats by type")
 	}
 
 	return r.convertResultToThreats(result), nil
@@ -153,9 +142,9 @@ func (r *ThreatIntelRepository) updateThreat(ctx context.Context, threatID strin
 					zap.String("threat_id", threatID))
 				return nil // Don't fail on missing threats
 			}
-			return fmt.Errorf("threat not found: %s", threatID)
+			return ErrorHandler.HandleGetError(err, EntityThreatIntel, threatID)
 		}
-		return fmt.Errorf("failed to get threat for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityThreatIntel, threatID)
 	}
 
 	// Apply the update function
@@ -171,7 +160,7 @@ func (r *ThreatIntelRepository) updateThreat(ctx context.Context, threatID strin
 				zap.Error(err))
 			return nil // Don't fail the main operation
 		}
-		return fmt.Errorf("failed to update threat: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityThreatIntel, threatID)
 	}
 
 	return nil
@@ -225,7 +214,7 @@ func (r *ThreatIntelRepository) LoadActiveThreats(ctx context.Context) ([]*Threa
 		All(&models)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan active threats: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "active threats")
 	}
 
 	threats := make([]*ThreatIntel, 0)
@@ -261,9 +250,9 @@ func (r *ThreatIntelRepository) GetThreatByID(ctx context.Context, threatID stri
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("threat not found: %s", threatID)
+			return nil, ErrorHandler.HandleGetError(err, EntityThreatIntel, threatID)
 		}
-		return nil, fmt.Errorf("failed to get threat: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityThreatIntel, threatID)
 	}
 
 	return r.convertModelToThreat(&model), nil
@@ -281,7 +270,7 @@ func (r *ThreatIntelRepository) GetIndicatorThreat(ctx context.Context, indicato
 		if errors.IsNotFound(err) {
 			return "", nil // No threat found for this indicator
 		}
-		return "", fmt.Errorf("failed to lookup indicator: %w", err)
+		return "", ErrorHandler.HandleGetError(err, EntityThreatIndicator, indicator)
 	}
 
 	return model.ThreatID, nil

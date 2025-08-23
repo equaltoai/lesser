@@ -36,7 +36,7 @@ type RepositoryStorage interface {
 	Social() *repositories.SocialRepository
 	User() *repositories.UserRepository
 	Status() *repositories.StatusRepository
-	Cost() *repositories.CostTrackingRepository
+	Cost() *repositories.TrackingRepository
 	WebSocketCost() *repositories.WebSocketCostRepository
 	Trust() *repositories.TrustRepository
 	Search() *repositories.SearchRepository
@@ -56,6 +56,8 @@ type RepositoryStorage interface {
 	StreamingCloudWatch() *repositories.StreamingCloudWatchRepository
 	Audit() *repositories.AuditRepository
 	OAuth() *repositories.OAuthRepository
+	DNSCache() *repositories.DNSCacheRepository
+	Filter() *repositories.FilterRepository
 
 	// Utility methods
 	GetDB() dynamormCore.DB

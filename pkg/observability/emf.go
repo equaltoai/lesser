@@ -6,12 +6,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"go.uber.org/zap"
 )
 
 // EMFMetrics handles CloudWatch EMF metric emission
@@ -81,7 +81,8 @@ type LatencyMetric struct {
 
 // NewEMFMetrics creates a new EMF metrics collector
 func NewEMFMetrics(logger *zap.Logger, namespace, service string) *EMFMetrics {
-	enabled := os.Getenv("EMF_METRICS_ENABLED") != "false" // Default to enabled unless explicitly disabled
+	cfg := config.Get()
+	enabled := cfg.EmfMetricsEnabled
 
 	return &EMFMetrics{
 		logger:    logger,
@@ -381,11 +382,12 @@ func (emf *EMFMetrics) Flush() {
 	}
 
 	// Create EMF log entry
+	cfg := config.Get()
 	entry := EMFLogEntry{
 		AWS: EMFMetadata{
 			Timestamp: time.Now().UnixMilli(),
-			LogGroup:  os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME"),
-			LogStream: os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME"),
+			LogGroup:  cfg.LambdaLogGroupName,
+			LogStream: cfg.LambdaLogStreamName,
 			CloudWatchMetrics: []EMFCloudWatchMetrics{
 				{
 					Namespace:  emf.namespace,

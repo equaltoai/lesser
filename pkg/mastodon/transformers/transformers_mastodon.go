@@ -1,3 +1,5 @@
+// Package transformers provides consolidated Mastodon API transformations for
+// converting between storage models and Mastodon API response formats.
 package transformers
 
 import (
@@ -38,7 +40,7 @@ type PaginationInfo struct {
 // === Storage to Mastodon API Transformations ===
 
 // StorageStatusToMastodon converts storage Status to Mastodon API Status
-func (t *MastodonTransformer) StorageStatusToMastodon(status *storageModels.Status, viewerUsername string) (*models.Status, error) {
+func (t *MastodonTransformer) StorageStatusToMastodon(status *storageModels.Status, _ string) (*models.Status, error) {
 	if status == nil {
 		return nil, fmt.Errorf("status cannot be nil")
 	}
@@ -467,7 +469,7 @@ type TransformationFrameworkBridge struct {
 }
 
 // Transform implements the Transformer interface for Account transformations
-func (tfb *TransformationFrameworkBridge) Transform(ctx context.Context, source *storage.Account) (models.Account, error) {
+func (tfb *TransformationFrameworkBridge) Transform(_ context.Context, source *storage.Account) (models.Account, error) {
 	account, err := tfb.transformer.StorageAccountToMastodon(source)
 	if err != nil {
 		return models.Account{}, err

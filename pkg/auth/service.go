@@ -6,10 +6,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -28,29 +28,23 @@ type AuthService struct {
 	walletService   *WalletService
 	auditLogger     *AuditLogger
 	jwtSecret       []byte
+	config          *config.Config
 }
 
-// Authentication errors
-var (
-	ErrInvalidCredentials = errors.New("invalid username or password")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrUserSuspended      = errors.New("user account is suspended")
-	ErrUserNotApproved    = errors.New("user account is not approved")
-)
 
 // NewAuthService creates a comprehensive auth service
-func NewAuthService(repos StorageProvider) (*AuthService, error) {
-	jwtSecret := os.Getenv("JWT_SECRET")
-	if err := common.ValidateRequiredParam("JWT_SECRET", jwtSecret); err != nil {
+func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, error) {
+	jwtSecret := cfg.JWTSecret
+	if jwtSecret == "" {
 		jwtSecret = "development-secret-change-me"
-		if os.Getenv("GO_ENV") != "test" {
+		if cfg.Stage != "test" {
 			common.Logger().Warn("using default JWT secret - not secure for production")
 		}
 	}
 
 	// Get domain for WebAuthn configuration
-	domain := os.Getenv("DOMAIN")
-	if err := common.ValidateRequiredParam("DOMAIN", domain); err != nil {
+	domain := cfg.Domain
+	if domain == "" {
 		domain = "lesser.app"
 	}
 
@@ -70,13 +64,14 @@ func NewAuthService(repos StorageProvider) (*AuthService, error) {
 
 	return &AuthService{
 		repos:           repos,
-		oauthService:    NewOAuthService(jwtSecret, repos, auditLogger),
+		oauthService:    NewOAuthService(jwtSecret, cfg, repos, auditLogger),
 		sessionManager:  NewSessionManager(repos),
 		rateLimiter:     NewRateLimiter(repos),
 		webAuthnService: webAuthnService,
 		walletService:   walletService,
 		auditLogger:     auditLogger,
 		jwtSecret:       []byte(jwtSecret),
+		config:          cfg,
 	}, nil
 }
 
@@ -175,13 +170,13 @@ func (as *AuthService) AuthenticateWithPassword(ctx context.Context, username, p
 	// Create session
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "password")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens with shorter access token duration
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -219,7 +214,7 @@ func (as *AuthService) RefreshAccessToken(ctx context.Context, refreshToken, ipA
 	// Generate new short-lived access token
 	accessToken, err := as.generateShortLivedAccessToken(session.Username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -256,7 +251,7 @@ func (as *AuthService) TrustDevice(ctx context.Context, username, deviceID strin
 		return err
 	}
 	if device.Username != username {
-		return errors.New("device does not belong to user")
+		return ErrDeviceOwnershipMismatch
 	}
 
 	return as.sessionManager.TrustDevice(ctx, deviceID)
@@ -287,7 +282,8 @@ func (as *AuthService) generateShortLivedAccessToken(username, sessionID, device
 func (as *AuthService) ValidateAccessToken(tokenString string) (*EnhancedClaims, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &EnhancedClaims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			common.Logger().Error("unexpected JWT signing method", zap.Any("method", token.Header["alg"]))
+			return nil, ErrJWTUnexpectedSigningMethod
 		}
 		return as.jwtSecret, nil
 	})
@@ -324,7 +320,7 @@ func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword
 	// Hash new password
 	newHash, err := HashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return errors.Join(ErrPasswordHashingFailed, err)
 	}
 
 	// Update user
@@ -334,7 +330,7 @@ func (as *AuthService) ChangePassword(ctx context.Context, username, oldPassword
 	}
 
 	if err := as.repos.Account().UpdateUser(ctx, username, updates); err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+		return errors.Join(ErrPasswordUpdateFailed, err)
 	}
 
 	// Revoke all sessions to force re-authentication
@@ -411,13 +407,13 @@ func (as *AuthService) FinishWebAuthnLogin(ctx context.Context, username string,
 	// Create session with WebAuthn auth method
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "passkey")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -468,7 +464,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	// Verify signature and get username
 	username, err := as.walletService.VerifySignature(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("signature verification failed: %w", err)
+		return nil, errors.Join(ErrSignatureVerificationFailed, err)
 	}
 
 	// If no username returned, this is a new wallet
@@ -487,7 +483,7 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	// Check if user is active
 	user, err := as.repos.Account().GetUser(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, errors.Join(ErrUserRetrievalFailed, err)
 	}
 	if user.Suspended {
 		return nil, ErrUserSuspended
@@ -499,13 +495,13 @@ func (as *AuthService) VerifyWalletSignature(ctx context.Context, req *WalletVer
 	// Create session with wallet auth method
 	session, err := as.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, "wallet")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Generate tokens
 	accessToken, err := as.generateShortLivedAccessToken(username, session.SessionID, session.DeviceID, DefaultScopes())
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate access token: %w", err)
+		return nil, errors.Join(ErrAccessTokenGenerationFailed, err)
 	}
 
 	return &AuthResponse{
@@ -541,8 +537,8 @@ func (as *AuthService) GetStore() StorageProvider {
 
 // GetConfig returns configuration (for handlers that need environment info)
 func (as *AuthService) GetConfig() *ServiceConfig {
-	env := os.Getenv("GO_ENV")
-	if err := common.ValidateRequiredParam("GO_ENV", env); err != nil {
+	env := as.config.Stage
+	if env == "" {
 		env = "development"
 	}
 	return &ServiceConfig{
@@ -555,7 +551,7 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 	// Generate a secure random token
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+		return "", errors.Join(ErrRecoveryTokenGenerationFailed, err)
 	}
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
@@ -570,7 +566,7 @@ func (as *AuthService) GenerateRecoveryToken(ctx context.Context, username strin
 
 	recoveryKey := fmt.Sprintf("RECOVERY#%s", token)
 	if err := as.repos.Account().StoreRecoveryToken(ctx, recoveryKey, recoveryData); err != nil {
-		return "", fmt.Errorf("failed to store recovery token: %w", err)
+		return "", errors.Join(ErrRecoveryTokenStorageFailed, err)
 	}
 
 	return token, nil

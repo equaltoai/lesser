@@ -102,7 +102,7 @@ func (n *NotificationCostTracking) BeforeUpdate() error {
 }
 
 // UpdateKeys updates all the key fields for DynamoDB
-func (n *NotificationCostTracking) UpdateKeys() {
+func (n *NotificationCostTracking) UpdateKeys() error {
 	timestampStr := n.Timestamp.Format(common.CompactTimeFormat)
 	dateStr := n.Timestamp.Format(common.CompactDateFormat)
 
@@ -121,6 +121,17 @@ func (n *NotificationCostTracking) UpdateKeys() {
 	// GSI3 - Daily aggregation
 	n.GSI3PK = fmt.Sprintf("DAILY#%s", dateStr)
 	n.GSI3SK = fmt.Sprintf("COST#%s", timestampStr)
+	return nil
+}
+
+// GetPK returns the partition key
+func (n *NotificationCostTracking) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key
+func (n *NotificationCostTracking) GetSK() string {
+	return n.SK
 }
 
 // CalculateDollarAmounts calculates dollar amounts from micro-cents
@@ -244,9 +255,20 @@ func (n *NotificationCostAggregation) BeforeUpdate() error {
 }
 
 // UpdateKeys updates the primary and sort keys
-func (n *NotificationCostAggregation) UpdateKeys() {
+func (n *NotificationCostAggregation) UpdateKeys() error {
 	n.PK = fmt.Sprintf("NOTIF_AGG#%s#%s", n.Period, n.DeliveryMethod)
 	n.SK = fmt.Sprintf("WINDOW#%s", n.WindowStart.Format(time.RFC3339))
+	return nil
+}
+
+// GetPK returns the partition key
+func (n *NotificationCostAggregation) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key
+func (n *NotificationCostAggregation) GetSK() string {
+	return n.SK
 }
 
 // CalculateDollarAmounts calculates dollar amounts from micro-cents
@@ -372,9 +394,20 @@ func (n *NotificationBudget) BeforeUpdate() error {
 }
 
 // UpdateKeys updates the primary and sort keys
-func (n *NotificationBudget) UpdateKeys() {
+func (n *NotificationBudget) UpdateKeys() error {
 	n.PK = fmt.Sprintf("NOTIF_BUDGET#%s", n.Username)
 	n.SK = fmt.Sprintf("PERIOD#%s", n.Period)
+	return nil
+}
+
+// GetPK returns the partition key
+func (n *NotificationBudget) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key
+func (n *NotificationBudget) GetSK() string {
+	return n.SK
 }
 
 // CalculateDollarAmounts calculates dollar amounts from micro-cents

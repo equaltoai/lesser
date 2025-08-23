@@ -23,7 +23,7 @@ type RelationshipRecord struct {
 	UpdatedAt  time.Time `json:"UpdatedAt"`
 }
 
-// Relationship state constants (from legacy)
+// Follow relationship state constants (from legacy)
 const (
 	RelationshipPending  = "pending"
 	RelationshipAccepted = "accepted"
@@ -52,9 +52,20 @@ func (r *RelationshipRecord) BeforeUpdate() error {
 }
 
 // UpdateKeys updates GSI keys based on primary keys
-func (r *RelationshipRecord) UpdateKeys() {
+func (r *RelationshipRecord) UpdateKeys() error {
 	// GSI keys are already set by repository methods
 	// This method ensures they stay in sync if needed
+	return nil
+}
+
+// GetPK returns the partition key
+func (r *RelationshipRecord) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key
+func (r *RelationshipRecord) GetSK() string {
+	return r.SK
 }
 
 // NewRelationshipRecord creates a new relationship record with proper keys

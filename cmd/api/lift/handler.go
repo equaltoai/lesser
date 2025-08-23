@@ -66,6 +66,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.BaseURL(),
 		JWTSecret: cfg.JWTSecret,
+		Config:    cfg, // Add full config reference
 	}
 	serviceFactory := services.NewServiceFactory(repos, serviceConfig, logger)
 	businessLogic := serviceFactory.CreateBusinessLogicService()
@@ -98,7 +99,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	activityPubLogic := common.NewActivityPubBusinessLogic(federationConfig, logger)
 	mastodonConfig := common.DefaultMastodonConfig()
 	mastodonConfig.Domain = cfg.Domain
-	mastodonApiLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
+	mastodonAPILogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
 
 	return &Handler{
 		cfg:                 cfg,
@@ -112,7 +113,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		streamQueue:         streamQueue,
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,
-		mastodonLogic:       mastodonApiLogic,
+		mastodonLogic:       mastodonAPILogic,
 	}
 }
 
@@ -143,7 +144,7 @@ func (h *Handler) authenticateWithScope(ctx *lift.Context, requiredScope string)
 		return nil, common.RespondBadRequest(ctx, fmt.Sprintf("invalid required scope: %v", err))
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, common.RespondUnauthorized(ctx, err.Error())
@@ -170,7 +171,7 @@ func (h *Handler) getOptionalAuthenticatedUser(ctx *lift.Context) string {
 		return ""
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		// Token validation failed but we continue for public content

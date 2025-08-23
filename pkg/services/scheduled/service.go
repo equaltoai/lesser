@@ -9,11 +9,12 @@ package scheduled
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
-
+	svcErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -21,6 +22,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
+
 
 // Service provides business logic for scheduled status operations
 type Service struct {
@@ -123,17 +125,20 @@ func (s *Service) GetScheduledStatus(ctx context.Context, query *GetScheduledSta
 	// Get the scheduled status
 	scheduled, err := s.scheduledRepo.GetScheduledStatus(ctx, query.ID)
 	if err != nil {
-		return nil, fmt.Errorf("scheduled status not found: %w", err)
+		s.logger.Error("failed to get scheduled status",
+			zap.String("id", query.ID),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrGetStatus, err)
 	}
 
 	// Verify ownership if username provided
 	if query.Username != "" && scheduled.Username != query.Username {
-		return nil, fmt.Errorf("scheduled status not found") // Don't reveal it exists
+		return nil, svcErrors.ErrGetStatus // Don't reveal it exists
 	}
 
 	// Check if already published
 	if scheduled.Published {
-		return nil, fmt.Errorf("scheduled status already published")
+		return nil, svcErrors.ErrGetStatus
 	}
 
 	// Get media attachments if any
@@ -174,7 +179,10 @@ func (s *Service) ListScheduledStatuses(ctx context.Context, query *ListSchedule
 		query.Pagination.Cursor,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list scheduled statuses: %w", err)
+		s.logger.Error("failed to get scheduled statuses",
+			zap.String("username", query.Username),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrGetStatuses, err)
 	}
 
 	// Filter out published statuses (should already be done by repo, but double-check)
@@ -245,7 +253,10 @@ func (s *Service) CreateScheduledStatus(ctx context.Context, cmd *CreateSchedule
 
 	// Create in repository
 	if err := s.scheduledRepo.CreateScheduledStatus(ctx, scheduled); err != nil {
-		return nil, fmt.Errorf("failed to create scheduled status: %w", err)
+		s.logger.Error("failed to create scheduled status",
+			zap.String("username", scheduled.Username),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrCreateScheduledStatus, err)
 	}
 
 	// Get media attachments for response
@@ -273,17 +284,20 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 	// Get existing scheduled status
 	existing, err := s.scheduledRepo.GetScheduledStatus(ctx, cmd.ID)
 	if err != nil {
-		return nil, fmt.Errorf("scheduled status not found: %w", err)
+		s.logger.Error("failed to get scheduled status for update",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrGetStatus, err)
 	}
 
 	// Verify ownership
 	if existing.Username != cmd.Username {
-		return nil, fmt.Errorf("scheduled status not found") // Don't reveal it exists
+		return nil, svcErrors.ErrGetStatus // Don't reveal it exists
 	}
 
 	// Check if already published
 	if existing.Published {
-		return nil, fmt.Errorf("cannot update published scheduled status")
+		return nil, svcErrors.ErrUpdateStatus
 	}
 
 	// Update scheduled time if provided
@@ -308,7 +322,10 @@ func (s *Service) UpdateScheduledStatus(ctx context.Context, cmd *UpdateSchedule
 
 	// Update in repository
 	if err := s.scheduledRepo.UpdateScheduledStatus(ctx, existing); err != nil {
-		return nil, fmt.Errorf("failed to update scheduled status: %w", err)
+		s.logger.Error("failed to update scheduled status",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrUpdateStatus, err)
 	}
 
 	// Get media attachments for response
@@ -336,22 +353,28 @@ func (s *Service) DeleteScheduledStatus(ctx context.Context, cmd *DeleteSchedule
 	// Get existing scheduled status
 	existing, err := s.scheduledRepo.GetScheduledStatus(ctx, cmd.ID)
 	if err != nil {
-		return fmt.Errorf("scheduled status not found: %w", err)
+		s.logger.Error("failed to get scheduled status for deletion",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return errors.Join(svcErrors.ErrGetStatus, err)
 	}
 
 	// Verify ownership
 	if existing.Username != cmd.Username {
-		return fmt.Errorf("scheduled status not found") // Don't reveal it exists
+		return svcErrors.ErrGetStatus // Don't reveal it exists
 	}
 
 	// Check if already published
 	if existing.Published {
-		return fmt.Errorf("cannot delete published scheduled status")
+		return svcErrors.ErrDeleteStatus
 	}
 
 	// Delete from repository
 	if err := s.scheduledRepo.DeleteScheduledStatus(ctx, cmd.ID); err != nil {
-		return fmt.Errorf("failed to delete scheduled status: %w", err)
+		s.logger.Error("failed to delete scheduled status",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return errors.Join(svcErrors.ErrDeleteStatus, err)
 	}
 
 	// Emit events for real-time updates
@@ -368,12 +391,15 @@ func (s *Service) PublishScheduledStatus(ctx context.Context, cmd *PublishSchedu
 	// Get the scheduled status
 	scheduled, err := s.scheduledRepo.GetScheduledStatus(ctx, cmd.ID)
 	if err != nil {
-		return fmt.Errorf("scheduled status not found: %w", err)
+		s.logger.Error("failed to get scheduled status for publication",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return errors.Join(svcErrors.ErrGetStatus, err)
 	}
 
 	// Check if already published
 	if scheduled.Published {
-		return fmt.Errorf("scheduled status already published")
+		return svcErrors.ErrGetStatus
 	}
 
 	// Mark as published
@@ -384,7 +410,10 @@ func (s *Service) PublishScheduledStatus(ctx context.Context, cmd *PublishSchedu
 
 	// Update in repository
 	if err := s.scheduledRepo.UpdateScheduledStatus(ctx, scheduled); err != nil {
-		return fmt.Errorf("failed to mark scheduled status as published: %w", err)
+		s.logger.Error("failed to update scheduled status for publication",
+			zap.String("id", cmd.ID),
+			zap.Error(err))
+		return errors.Join(svcErrors.ErrUpdateStatus, err)
 	}
 
 	// Note: Actual status creation should be handled by a separate service
@@ -403,7 +432,10 @@ func (s *Service) GetScheduledMediaAttachments(ctx context.Context, scheduledSta
 
 	mediaItems, err := s.scheduledRepo.GetScheduledStatusMedia(ctx, scheduledStatusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get scheduled media attachments: %w", err)
+		s.logger.Error("failed to get scheduled status media",
+			zap.String("scheduled_status_id", scheduledStatusID),
+			zap.Error(err))
+		return nil, errors.Join(svcErrors.ErrGetStatuses, err)
 	}
 
 	return mediaItems, nil
@@ -416,13 +448,13 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 	// Must be at least 5 minutes in the future
 	minTime := time.Now().Add(5 * time.Minute)
 	if scheduledAt.Before(minTime) {
-		return fmt.Errorf("scheduled time must be at least 5 minutes in the future")
+		return svcErrors.ErrScheduledTimeInPast
 	}
 
 	// Must not be more than 1 year in the future
 	maxTime := time.Now().Add(365 * 24 * time.Hour)
 	if scheduledAt.After(maxTime) {
-		return fmt.Errorf("scheduled time cannot be more than 1 year in the future")
+		return svcErrors.ErrValidationFailed
 	}
 
 	return nil
@@ -431,13 +463,13 @@ func (s *Service) validateScheduledTime(scheduledAt time.Time) error {
 // validateMediaAttachments validates that media attachments exist
 func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []string) error {
 	if err := common.ValidateSliceLength("mediaIDs", mediaIDs, 4); err == nil {
-		return fmt.Errorf("cannot attach more than 4 media items")
+		return svcErrors.ErrValidationFailed
 	}
 
 	for _, mediaID := range mediaIDs {
 		// Validate media ID format
 		if err := common.ValidateRequiredParam("mediaID", mediaID); err != nil {
-			return fmt.Errorf("empty media ID provided")
+			return svcErrors.ErrValidationFailed
 		}
 
 		// Check if media exists and is accessible
@@ -446,17 +478,23 @@ func (s *Service) validateMediaAttachments(ctx context.Context, mediaIDs []strin
 			s.logger.Error("failed to get media attachment",
 				zap.String("media_id", mediaID),
 				zap.Error(err))
-			return fmt.Errorf("media attachment %s not found or inaccessible", mediaID)
+			return errors.Join(svcErrors.ErrMediaAttachmentNotFound, err)
 		}
 
 		// Validate media is in ready state
 		if media.Status != "ready" && media.Status != "completed" {
-			return fmt.Errorf("media attachment %s is not ready (status: %s)", mediaID, media.Status)
+			s.logger.Error("media attachment not ready",
+				zap.String("media_id", mediaID),
+				zap.String("status", media.Status))
+			return svcErrors.ErrMediaAttachmentNotReady
 		}
 
 		// Check media hasn't expired
 		if media.ExpiresAt != nil && time.Now().Unix() > *media.ExpiresAt {
-			return fmt.Errorf("media attachment %s has expired", mediaID)
+			s.logger.Error("media attachment expired",
+				zap.String("media_id", mediaID),
+				zap.Int64("expires_at", *media.ExpiresAt))
+			return svcErrors.ErrMediaAttachmentExpired
 		}
 
 		s.logger.Debug("validated media attachment",
@@ -478,7 +516,7 @@ func (s *Service) getMediaAttachments(ctx context.Context, mediaIDs []string) ([
 			s.logger.Error("failed to get media attachment",
 				zap.String("media_id", mediaID),
 				zap.Error(err))
-			return nil, fmt.Errorf("failed to retrieve media attachment %s: %w", mediaID, err)
+			return nil, errors.Join(svcErrors.ErrRetrieveMediaAttachment, err)
 		}
 
 		// Only include ready/completed media

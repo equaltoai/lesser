@@ -2,7 +2,6 @@ package services
 
 import (
 	"crypto/rsa"
-	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/federation"
@@ -38,7 +37,7 @@ func (c *CryptoAdapter) EncodePublicKeyPEM(publicKey interface{}) ([]byte, error
 	case *rsa.PublicKey:
 		return federation.EncodePublicKeyPEM(key)
 	default:
-		return nil, fmt.Errorf("unsupported key type: %T", publicKey)
+		return nil, ErrUnsupportedKeyType
 	}
 }
 
@@ -47,7 +46,7 @@ func (c *CryptoAdapter) EncodePrivateKeyPEM(privateKey interface{}) ([]byte, err
 	// Type assert to RSA private key
 	key, ok := privateKey.(*rsa.PrivateKey)
 	if !ok {
-		return nil, fmt.Errorf("expected *rsa.PrivateKey, got %T", privateKey)
+		return nil, ErrInvalidPrivateKeyType
 	}
 	// Use the federation package implementation
 	return federation.EncodePrivateKeyPEM(key)

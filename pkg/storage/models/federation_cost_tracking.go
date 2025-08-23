@@ -124,7 +124,7 @@ type FederationCostTracking struct {
 }
 
 // UpdateKeys sets the primary keys for the FederationCostTracking model
-func (f *FederationCostTracking) UpdateKeys() {
+func (f *FederationCostTracking) UpdateKeys() error {
 	timestampStr := f.Timestamp.Format(common.CompactTimeFormat)
 	f.PK = fmt.Sprintf("FED_COST#%s#%s", f.Domain, timestampStr)
 	f.SK = fmt.Sprintf("ACTIVITY#%s#%s", f.ActivityType, f.ActivityID)
@@ -132,6 +132,17 @@ func (f *FederationCostTracking) UpdateKeys() {
 	f.GSI1SK = fmt.Sprintf("TS#%s#%s", timestampStr, f.Domain)
 	f.GSI2PK = fmt.Sprintf("FED_TYPE#%s", f.ActivityType)
 	f.GSI2SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, timestampStr)
+	return nil
+}
+
+// GetPK returns the partition key (required for BaseModel interface)
+func (f *FederationCostTracking) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key (required for BaseModel interface)
+func (f *FederationCostTracking) GetSK() string {
+	return f.SK
 }
 
 // BeforeCreate is called before creating the record
@@ -168,7 +179,9 @@ func (f *FederationCostTracking) BeforeCreate() error {
 	// Set TTL to 30 days from creation (detailed records)
 	f.TTL = now.AddDate(0, 0, 30).Unix()
 
-	f.UpdateKeys()
+	if err := f.UpdateKeys(); err != nil {
+		return err
+	}
 	f.CalculateTotalCost()
 	return nil
 }
@@ -176,7 +189,9 @@ func (f *FederationCostTracking) BeforeCreate() error {
 // BeforeUpdate is called before updating the record
 func (f *FederationCostTracking) BeforeUpdate() error {
 	f.UpdatedAt = time.Now()
-	f.UpdateKeys()
+	if err := f.UpdateKeys(); err != nil {
+		return err
+	}
 	f.CalculateTotalCost()
 	return nil
 }
@@ -395,11 +410,22 @@ type FederationBudget struct {
 }
 
 // UpdateKeys sets the primary keys for the FederationBudget model
-func (f *FederationBudget) UpdateKeys() {
+func (f *FederationBudget) UpdateKeys() error {
 	f.PK = fmt.Sprintf("FED_BUDGET#%s#%s", f.Domain, f.Period)
 	f.SK = SKConfig
 	f.GSI1PK = "ACTIVE_BUDGETS"
 	f.GSI1SK = fmt.Sprintf("DOMAIN#%s#%s", f.Domain, f.Period)
+	return nil
+}
+
+// GetPK returns the partition key (required for BaseModel interface)
+func (f *FederationBudget) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key (required for BaseModel interface)
+func (f *FederationBudget) GetSK() string {
+	return f.SK
 }
 
 // BeforeCreate is called before creating the record
@@ -418,14 +444,18 @@ func (f *FederationBudget) BeforeCreate() error {
 		f.ActivityTypeUsage = make(map[string]int64)
 	}
 
-	f.UpdateKeys()
+	if err := f.UpdateKeys(); err != nil {
+		return err
+	}
 	return nil
 }
 
 // BeforeUpdate is called before updating the record
 func (f *FederationBudget) BeforeUpdate() error {
 	f.UpdatedAt = time.Now()
-	f.UpdateKeys()
+	if err := f.UpdateKeys(); err != nil {
+		return err
+	}
 	return nil
 }
 

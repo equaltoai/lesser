@@ -84,8 +84,8 @@ func (bch *BaseCommandHandler) CreateBulkOperationResponse(
 func (bch *BaseCommandHandler) CreateBulkServiceResponse(
 	commandID string,
 	operation interface{},
-	errorCode string,
-	errorMessage string,
+	_ string,
+	_ string,
 ) *CommandResponse {
 	data, err := bch.ConvertToJSON(operation)
 	if err != nil {

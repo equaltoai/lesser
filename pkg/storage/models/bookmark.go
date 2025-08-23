@@ -21,11 +21,22 @@ type Bookmark struct {
 }
 
 // UpdateKeys sets the DynamoDB partition and sort keys for the bookmark
-func (b *Bookmark) UpdateKeys() {
+func (b *Bookmark) UpdateKeys() error {
 	// PK: BOOKMARK#username (matches legacy pattern exactly)
 	b.PK = fmt.Sprintf("BOOKMARK#%s", b.Username)
 
 	// SK: timestamp#objectID (matches legacy pattern exactly)
 	// Use RFC3339Nano for timestamp precision matching legacy
 	b.SK = fmt.Sprintf("%s#%s", b.CreatedAt.Format(time.RFC3339Nano), b.ObjectID)
+	return nil
+}
+
+// GetPK returns the partition key for BaseRepository compatibility
+func (b *Bookmark) GetPK() string {
+	return b.PK
+}
+
+// GetSK returns the sort key for BaseRepository compatibility
+func (b *Bookmark) GetSK() string {
+	return b.SK
 }

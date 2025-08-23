@@ -291,14 +291,14 @@ func (r *ReprocessorClient) validateNotificationMessage(message map[string]inter
 
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
-			return fmt.Errorf("missing required field: %s", field)
+			return fmt.Errorf("%w: %s", ErrMissingRequiredField, field)
 		}
 	}
 
 	// Validate channels is an array
 	if channels, exists := message["channels"]; exists {
 		if _, ok := channels.([]interface{}); !ok {
-			return fmt.Errorf("channels must be an array")
+			return ErrChannelsMustBeArray
 		}
 	}
 
@@ -309,15 +309,15 @@ func (r *ReprocessorClient) validateNotificationMessage(message map[string]inter
 func (r *ReprocessorClient) validateActivityMessage(message map[string]interface{}) error {
 	// Check for ActivityPub required fields
 	if activityType, exists := message["type"]; !exists {
-		return fmt.Errorf("missing ActivityPub type field")
+		return ErrMissingActivityPubType
 	} else if _, ok := activityType.(string); !ok {
-		return fmt.Errorf("ActivityPub type must be a string")
+		return ErrActivityPubTypeMustBeString
 	}
 
 	if actor, exists := message["actor"]; !exists {
-		return fmt.Errorf("missing ActivityPub actor field")
+		return ErrMissingActivityPubActor
 	} else if _, ok := actor.(string); !ok {
-		return fmt.Errorf("ActivityPub actor must be a string")
+		return ErrActivityPubActorMustBeString
 	}
 
 	return nil
@@ -329,7 +329,7 @@ func (r *ReprocessorClient) validateMediaMessage(message map[string]interface{})
 
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
-			return fmt.Errorf("missing required field: %s", field)
+			return fmt.Errorf("%w: %s", ErrMissingRequiredField, field)
 		}
 	}
 
@@ -337,7 +337,7 @@ func (r *ReprocessorClient) validateMediaMessage(message map[string]interface{})
 	if mediaURL, exists := message["media_url"]; exists {
 		if urlStr, ok := mediaURL.(string); ok {
 			if !r.isValidURL(urlStr) {
-				return fmt.Errorf("invalid media URL format")
+				return ErrInvalidMediaURLFormat
 			}
 		}
 	}
@@ -351,7 +351,7 @@ func (r *ReprocessorClient) validateFederationMessage(message map[string]interfa
 
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
-			return fmt.Errorf("missing required field: %s", field)
+			return fmt.Errorf("%w: %s", ErrMissingRequiredField, field)
 		}
 	}
 
@@ -359,7 +359,7 @@ func (r *ReprocessorClient) validateFederationMessage(message map[string]interfa
 	if inboxURL, exists := message["inbox_url"]; exists {
 		if urlStr, ok := inboxURL.(string); ok {
 			if !r.isValidURL(urlStr) {
-				return fmt.Errorf("invalid inbox URL format")
+				return ErrInvalidInboxURLFormat
 			}
 		}
 	}
@@ -373,7 +373,7 @@ func (r *ReprocessorClient) validateSearchMessage(message map[string]interface{}
 
 	for _, field := range requiredFields {
 		if _, exists := message[field]; !exists {
-			return fmt.Errorf("missing required field: %s", field)
+			return fmt.Errorf("%w: %s", ErrMissingRequiredField, field)
 		}
 	}
 
@@ -389,7 +389,7 @@ func (r *ReprocessorClient) validateSearchMessage(message map[string]interface{}
 				}
 			}
 			if !valid {
-				return fmt.Errorf("invalid action: %s", actionStr)
+				return fmt.Errorf("%w: %s", ErrInvalidAction, actionStr)
 			}
 		}
 	}
@@ -401,7 +401,7 @@ func (r *ReprocessorClient) validateSearchMessage(message map[string]interface{}
 func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, mediaURL string) error {
 	// Basic URL validation
 	if !r.isValidURL(mediaURL) {
-		return fmt.Errorf("invalid media URL")
+		return ErrInvalidMediaURL
 	}
 
 	// Perform HTTP HEAD request to check accessibility
@@ -442,7 +442,7 @@ func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, medi
 		r.logger.Info("Media permanently unavailable, marking as non-retryable",
 			zap.String("url", mediaURL),
 			zap.Int("status_code", resp.StatusCode))
-		return fmt.Errorf("media permanently unavailable (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("%w (HTTP %d)", ErrMediaPermanentlyUnavailable, resp.StatusCode)
 
 	case resp.StatusCode == 429 || resp.StatusCode == 503:
 		// Rate limited or service unavailable - temporary issue
@@ -456,7 +456,7 @@ func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, medi
 		r.logger.Warn("Media access denied, treating as potentially permanent",
 			zap.String("url", mediaURL),
 			zap.Int("status_code", resp.StatusCode))
-		return fmt.Errorf("media access denied (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("%w (HTTP %d)", ErrMediaAccessDenied, resp.StatusCode)
 
 	default:
 		// Classify error based on HTTP status code semantics
@@ -469,7 +469,7 @@ func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, medi
 		r.logger.Warn("Media HEAD request returned non-retryable error",
 			zap.String("url", mediaURL),
 			zap.Int("status_code", resp.StatusCode))
-		return fmt.Errorf("media validation failed with non-retryable error (HTTP %d)", resp.StatusCode)
+		return fmt.Errorf("%w (HTTP %d)", ErrMediaValidationFailed, resp.StatusCode)
 	}
 }
 
@@ -477,7 +477,7 @@ func (r *ReprocessorClient) validateMediaAccessibility(ctx context.Context, medi
 func (r *ReprocessorClient) validateInboxAccessibility(ctx context.Context, inboxURL string) error {
 	// Basic URL validation
 	if !r.isValidURL(inboxURL) {
-		return fmt.Errorf("invalid inbox URL")
+		return ErrInvalidInboxURL
 	}
 
 	// Perform HTTP HEAD request to check accessibility

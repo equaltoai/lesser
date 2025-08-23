@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -4119,7 +4120,7 @@ type MockRepositoryStorage struct {
 	socialRepo           *repositories.SocialRepository
 	userRepo             *repositories.UserRepository
 	statusRepo           *repositories.StatusRepository
-	costRepo             *repositories.CostTrackingRepository
+	costRepo             *repositories.TrackingRepository
 	trustRepo            *repositories.TrustRepository
 	searchRepo           *repositories.SearchRepository
 	relayRepo            *repositories.RelayRepository
@@ -4152,7 +4153,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	moderationRepo := repositories.NewModerationRepository(nil, "test-table", logger)
 	listRepo := repositories.NewListRepository(nil, "test-table", logger)
 	mediaRepo := repositories.NewMediaRepository(nil, "test-table", logger)
-	mediaMetadataRepo := repositories.NewMediaMetadataRepository(nil, logger)
+	mediaMetadataRepo := repositories.NewMediaMetadataRepository(nil, "test-table", logger, nil)
 	pollRepo := repositories.NewPollRepository(nil, "test-table", logger)
 	hashtagRepo := repositories.NewHashtagRepository(nil, "test-table", logger, "test.example.com")
 	scheduledStatusRepo := repositories.NewScheduledStatusRepository(nil, "test-table", logger)
@@ -4160,16 +4161,16 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	domainBlockRepo := repositories.NewDomainBlockRepository(nil, "test-table", logger)
 	relationshipRepo := repositories.NewRelationshipRepository(nil, "test-table", logger)
 	instanceRepo := repositories.NewInstanceRepository(nil, "test-table", logger)
-	federationRepo := repositories.NewFederationRepository(nil, logger)
+	federationRepo := repositories.NewFederationRepository(nil, logger, config.Get())
 	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger)
 	conversationRepo := repositories.NewConversationRepository(nil, logger)
 	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(nil, "test-table", logger)
-	analyticsRepo := repositories.NewTrendingRepository(nil, logger)
+	analyticsRepo := repositories.NewTrendingRepository(nil, logger, nil)
 	socialRepo := repositories.NewSocialRepository(nil, logger)
 	userRepo := repositories.NewUserRepository(nil, "test-table", logger)
 	statusRepo := repositories.NewStatusRepository(nil, "test-table", logger)
-	costRepo := repositories.NewCostTrackingRepository(nil, "test-table", logger)
-	trustRepo := repositories.NewTrustRepository(nil, logger)
+	costRepo := repositories.NewTrackingRepository(nil, "test-table", logger)
+	trustRepo := repositories.NewTrustRepository(nil, "test-table", logger)
 	searchRepo := repositories.NewSearchRepository(&dynamorm.DB{}, logger)
 	relayRepo := repositories.NewRelayRepository(nil, "test-table", logger)
 	markerRepo := repositories.NewMarkerRepository(nil, "test-table", logger)
@@ -4177,7 +4178,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	aiRepo := repositories.NewAIRepository(nil, "test-table", logger)
 	exportRepo := repositories.NewExportRepository(nil, "test-table", logger)
 	importRepo := repositories.NewImportRepository(nil, "test-table", logger)
-	dlqRepo := repositories.NewDLQRepository(nil, "test-table", logger)
+	dlqRepo := repositories.NewDLQRepositorySimple(nil, "test-table", logger)
 	emojiRepo := repositories.NewEmojiRepository(nil, logger)
 	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger)
 
@@ -4355,7 +4356,7 @@ func (m *MockRepositoryStorage) Status() *repositories.StatusRepository {
 }
 
 // Cost returns the mock cost tracking repository
-func (m *MockRepositoryStorage) Cost() *repositories.CostTrackingRepository {
+func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository {
 	return m.costRepo
 }
 
@@ -4491,6 +4492,22 @@ func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingClo
 		return nil
 	}
 	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
+}
+
+func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.DNSCacheRepository)
+}
+
+func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.FilterRepository)
 }
 
 // Ensure MockRepositoryStorage implements RepositoryStorage interface

@@ -1,10 +1,10 @@
 package common
 
 import (
-	"os"
 	"runtime"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -21,10 +21,11 @@ type ErrorMiddlewareConfig struct {
 
 // DefaultErrorConfig returns a default error middleware configuration
 func DefaultErrorConfig(serviceName string, logger *zap.Logger) ErrorMiddlewareConfig {
+	cfg := config.Get()
 	return ErrorMiddlewareConfig{
 		Logger:             logger,
 		ServiceName:        serviceName,
-		EnableStackTrace:   os.Getenv("DEBUG") == "true",
+		EnableStackTrace:   cfg.DebugMode,
 		EnablePanicRecovery: true,
 		EnableErrorMetrics: true,
 		MaxErrorLogLength:  2000,
@@ -236,7 +237,7 @@ func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middlew
 }
 
 // isTimeoutError checks if an error is a timeout error
-func isTimeoutError(err error) bool {
+func isTimeoutError(_ error) bool {
 	// This would check for specific timeout error types
 	// Implementation depends on your timeout mechanism
 	return false
@@ -282,20 +283,21 @@ func attemptErrorRecovery(ctx *lift.Context, err error, serviceName string, logg
 }
 
 // isTemporaryError checks if an error is temporary
-func isTemporaryError(err error) bool {
+func isTemporaryError(_ error) bool {
 	// Implementation would check for specific temporary error patterns
 	return false
 }
 
 // isRetryableError checks if an error is retryable
-func isRetryableError(err error) bool {
+func isRetryableError(_ error) bool {
 	// Implementation would check for specific retryable error patterns
 	return false
 }
 
 // CreateStandardErrorMiddleware creates the standard error handling middleware stack
 func CreateStandardErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
-	if os.Getenv("ENV") == "production" {
+	cfg := config.Get()
+	if cfg.Environment == "production" {
 		return ProductionErrorMiddleware(serviceName, logger)
 	}
 	return DevelopmentErrorMiddleware(serviceName, logger)

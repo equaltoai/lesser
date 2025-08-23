@@ -29,9 +29,25 @@ func (s *StatusPin) BeforeCreate() error {
 		s.CreatedAt = time.Now()
 	}
 
-	// Set keys
-	s.PK = fmt.Sprintf("USER#%s#PINS", s.Username)
-	s.SK = fmt.Sprintf(KeyPatternStatus, s.StatusID)
+	// Update keys
+	s.UpdateKeys()
 
 	return nil
+}
+
+// UpdateKeys sets the primary keys based on the current data
+func (s *StatusPin) UpdateKeys() error {
+	s.PK = fmt.Sprintf("USER#%s#PINS", s.Username)
+	s.SK = fmt.Sprintf(KeyPatternStatus, s.StatusID)
+	return nil
+}
+
+// GetPK returns the partition key (implements BaseModel interface)
+func (s *StatusPin) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key (implements BaseModel interface)
+func (s *StatusPin) GetSK() string {
+	return s.SK
 }

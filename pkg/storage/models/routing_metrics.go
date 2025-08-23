@@ -36,12 +36,23 @@ type RouteMetricsWindow struct {
 }
 
 // UpdateKeys updates the keys based on the current data
-func (r *RouteMetricsWindow) UpdateKeys() {
+func (r *RouteMetricsWindow) UpdateKeys() error {
 	r.PK = fmt.Sprintf("METRICS#ROUTE#%s", r.RouteID)
 	r.SK = fmt.Sprintf("WINDOW#%d", r.WindowStart.Unix())
 
 	// Set TTL for 30 days from now
 	r.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (r *RouteMetricsWindow) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key
+func (r *RouteMetricsWindow) GetSK() string {
+	return r.SK
 }
 
 // GlobalMetricsWindow represents aggregated global metrics for a time window
@@ -77,7 +88,7 @@ type GlobalMetricsWindow struct {
 }
 
 // UpdateKeys updates the GSI keys based on the current data
-func (g *GlobalMetricsWindow) UpdateKeys() {
+func (g *GlobalMetricsWindow) UpdateKeys() error {
 	windowUnix := g.WindowStart.Unix()
 	g.PK = "METRICS#GLOBAL#SUMMARY"
 	g.SK = fmt.Sprintf("WINDOW#%d", windowUnix)
@@ -86,6 +97,17 @@ func (g *GlobalMetricsWindow) UpdateKeys() {
 
 	// Set TTL for 30 days from now
 	g.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (g *GlobalMetricsWindow) GetPK() string {
+	return g.PK
+}
+
+// GetSK returns the sort key
+func (g *GlobalMetricsWindow) GetSK() string {
+	return g.SK
 }
 
 // InstanceMetricsWindow represents aggregated instance metrics for a time window
@@ -114,10 +136,21 @@ type InstanceMetricsWindow struct {
 }
 
 // UpdateKeys updates the keys based on the current data
-func (i *InstanceMetricsWindow) UpdateKeys() {
+func (i *InstanceMetricsWindow) UpdateKeys() error {
 	i.PK = fmt.Sprintf("METRICS#INSTANCE#%s", i.InstanceID)
 	i.SK = fmt.Sprintf("WINDOW#%d", i.WindowStart.Unix())
 
 	// Set TTL for 30 days from now
 	i.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (i *InstanceMetricsWindow) GetPK() string {
+	return i.PK
+}
+
+// GetSK returns the sort key
+func (i *InstanceMetricsWindow) GetSK() string {
+	return i.SK
 }

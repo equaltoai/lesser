@@ -24,7 +24,7 @@ func (a *OAuthServiceAdapter) ValidateAccessToken(token string) (common.Claims, 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// EnhancedClaims already implements the Claims interface
 	return enhancedClaims, nil
 }
@@ -35,7 +35,7 @@ func CreateAPIAuthMiddlewareFromAuthService(authService *AuthService, logger *za
 	return CreateAPIAuthMiddleware(adapter, logger)
 }
 
-// CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService  
+// CreateGraphQLAuthMiddlewareFromAuthService creates GraphQL auth middleware from AuthService
 func CreateGraphQLAuthMiddlewareFromAuthService(authService *AuthService, logger *zap.Logger) lift.Middleware {
 	adapter := NewOAuthServiceAdapter(authService)
 	return CreateGraphQLAuthMiddleware(adapter, logger)

@@ -5,7 +5,7 @@ package lift
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -56,7 +56,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 			"hide_totals": req.Poll.HideTotals,
 		}
 		if err := common.ValidatePollParams(pollMap); err != nil {
-			return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("Invalid poll parameters: %v", err))
+			return common.RespondUnprocessableEntity(ctx, "Invalid poll parameters: "+err.Error())
 		}
 		
 		pollOptions = req.Poll.Options
@@ -224,7 +224,7 @@ func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storage
 func (h *Handler) checkPrivateVisibility(ctx context.Context, status *storageModels.Status, viewerID string) (bool, error) {
 	isFollowing, err := h.repos.Relationship().IsFollowing(ctx, viewerID, status.AuthorUsername)
 	if err != nil {
-		return false, fmt.Errorf("failed to check following relationship: %w", err)
+		return false, errors.New("failed to check following relationship: " + err.Error())
 	}
 	return isFollowing, nil
 }
@@ -252,7 +252,7 @@ func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 
 // isViewerInRecipientLists checks all recipient lists for viewer
 func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerID string) bool {
-	viewerActorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, viewerID)
+	viewerActorID := "https://" + h.cfg.Domain + "/users/" + viewerID
 	
 	// Check all recipient lists
 	recipientLists := [][]string{
@@ -282,7 +282,7 @@ func (h *Handler) enrichStatusWithPoll(ctx context.Context, status *models.Statu
 		if strings.Contains(err.Error(), "not found") {
 			return nil
 		}
-		return fmt.Errorf("failed to get poll: %w", err)
+		return errors.New("failed to get poll: " + err.Error())
 	}
 
 	// Get user's votes if authenticated

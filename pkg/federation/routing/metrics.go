@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -195,7 +196,12 @@ func (rm *RoutingMetrics) GetRouteMetrics(ctx context.Context, routeID string, w
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query route metrics: %w", err)
+		rm.logger.Error("query route metrics failed",
+			zap.String("route_id", routeID),
+			zap.Duration("window", window),
+			zap.String("operation", "query_route_metrics"),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryRouteMetricsFailed, err)
 	}
 
 	// Aggregate results
@@ -242,7 +248,12 @@ func (rm *RoutingMetrics) GetInstanceMetrics(ctx context.Context, instanceID str
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query instance metrics: %w", err)
+		rm.logger.Error("query instance metrics failed",
+			zap.String("instance_id", instanceID),
+			zap.Duration("window", window),
+			zap.String("operation", "query_instance_metrics"),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryInstanceMetricsFailed, err)
 	}
 
 	metrics := &InstanceMetrics{
@@ -277,7 +288,12 @@ func (rm *RoutingMetrics) GetGlobalMetrics(ctx context.Context, window time.Dura
 
 	result, err := rm.db.Query(ctx, queryInput)
 	if err != nil {
-		return nil, fmt.Errorf("query global metrics: %w", err)
+		rm.logger.Error("query global metrics failed",
+			zap.Duration("window", window),
+			zap.String("operation", "query_global_metrics"),
+			zap.Time("since", since),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryGlobalMetricsFailed, err)
 	}
 
 	metrics := &GlobalMetrics{
@@ -310,7 +326,14 @@ func (rm *RoutingMetrics) Flush(ctx context.Context) error {
 	if time.Since(rm.aggregator.windowStart) > rm.aggregator.windowSize {
 		// Persist current window to DynamoDB
 		if err := rm.persistWindow(ctx); err != nil {
-			return fmt.Errorf("failed to persist metrics window: %w", err)
+			rm.logger.Error("persist metrics window failed",
+				zap.Time("window_start", rm.aggregator.windowStart),
+				zap.Duration("window_size", rm.aggregator.windowSize),
+				zap.Int("route_metrics_count", len(rm.aggregator.routeMetrics)),
+				zap.Int("instance_metrics_count", len(rm.aggregator.instanceMetrics)),
+				zap.String("operation", "persist_metrics_window"),
+				zap.Error(err))
+			return errors.Join(ErrPersistMetricsWindowFailed, err)
 		}
 
 		// Reset aggregator
@@ -515,8 +538,12 @@ func (rm *RoutingMetrics) writeBatch(ctx context.Context, requests []types.Write
 
 	_, err := rm.db.BatchWriteItem(ctx, batchInput)
 	if err != nil {
-		rm.logger.Error("failed to write metrics batch", zap.Error(err))
-		return fmt.Errorf("batch write failed: %w", err)
+		rm.logger.Error("batch write metrics failed",
+			zap.Int("batch_size", len(requests)),
+			zap.String("table_name", rm.tableName),
+			zap.String("operation", "batch_write_metrics"),
+			zap.Error(err))
+		return errors.Join(ErrBatchWriteMetricsFailed, err)
 	}
 	return nil
 }

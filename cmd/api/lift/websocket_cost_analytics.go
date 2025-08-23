@@ -3,6 +3,7 @@ package lift
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -341,7 +342,7 @@ func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCos
 	// We'll fetch a larger set to ensure we don't miss any data
 	allCosts, err := costRepo.GetRecentCosts(context.Background(), startTime.Add(-7*24*time.Hour), 50000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cost records: %w", err)
+		return nil, errors.Join(ErrFailedToGetCostRecords, err)
 	}
 
 	// Filter to only include costs within our date range

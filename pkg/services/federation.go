@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/equaltoai/lesser/graph/model"
@@ -41,13 +40,13 @@ func (f *federationService) DeliverToFollowers(ctx context.Context, activity *ac
 			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName())
 		} else {
 			// Fall back to a basic implementation or return error
-			return fmt.Errorf("unsupported database type for federation")
+			return ErrUnsupportedDatabaseType
 		}
 	} else {
-		return fmt.Errorf("no database available for federation")
+		return ErrNoDatabaseAvailable
 	}
 
-	deliveryService := federation.NewDeliveryService(federationStorage)
+	deliveryService := federation.NewDeliveryService(federationStorage, f.deps.Config.Config)
 	return deliveryService.DeliverToFollowers(ctx, activity, actor)
 }
 
@@ -63,13 +62,13 @@ func (f *federationService) DeliverToRecipients(ctx context.Context, activity *a
 			federationStorage = federation.NewDynamORMFederationStorage(coreDB, f.storage.GetTableName())
 		} else {
 			// Fall back to a basic implementation or return error
-			return fmt.Errorf("unsupported database type for federation")
+			return ErrUnsupportedDatabaseType
 		}
 	} else {
-		return fmt.Errorf("no database available for federation")
+		return ErrNoDatabaseAvailable
 	}
 
-	deliveryService := federation.NewDeliveryService(federationStorage)
+	deliveryService := federation.NewDeliveryService(federationStorage, f.deps.Config.Config)
 
 	return deliveryService.DeliverToRecipients(ctx, activity, actor)
 }
@@ -81,7 +80,7 @@ func (f *federationService) DetermineRecipients(ctx context.Context, activity *a
 	// Extract actor from activity
 	actorID := activity.Actor
 	if err := common.ValidateRequiredParam("actor_id", actorID); err != nil {
-		return nil, fmt.Errorf("activity has no actor")
+		return nil, ErrActivityMissingActor
 	}
 
 	// Get actor username for follower lookup
@@ -174,7 +173,8 @@ func (f *federationService) getActorByID(ctx context.Context, actorID string) (*
 	}
 
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, fmt.Errorf("invalid actor ID format: %s", actorID)
+		f.logger.Error("invalid actor ID format", zap.String("actor_id", actorID))
+		return nil, ErrInvalidActorIDFormat
 	}
 
 	return f.storage.GetActor(ctx, username)

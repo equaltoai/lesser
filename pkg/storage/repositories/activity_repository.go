@@ -10,38 +10,42 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// ActivityRepository implements activity operations using DynamORM
+// ActivityRepository implements activity operations using BaseRepository pattern
 type ActivityRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Activity]
 }
 
 // NewActivityRepository creates a new activity repository
 func NewActivityRepository(db core.DB, tableName string, logger *zap.Logger) *ActivityRepository {
 	return &ActivityRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.Activity](db, tableName, logger),
+	}
+}
+
+// NewActivityRepositoryWithCostTracking creates a new activity repository with cost tracking
+func NewActivityRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActivityRepository {
+	return &ActivityRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Activity](db, tableName, logger, costService, "activity"),
 	}
 }
 
 // CreateActivity stores an activity in the database - matches legacy implementation
 func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
 	if err := common.ValidateRequiredParam("activity.ID", activity.ID); err != nil {
-		return fmt.Errorf("activity ID is required")
+		return ErrorHandler.HandleCreateError(err, EntityActivity, "create")
 	}
 
 	// Extract username from actor ID (e.g., "https://example.com/users/alice" -> "alice")
 	username := activityExtractUsernameFromActorID(activity.Actor)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return fmt.Errorf("invalid actor ID format")
+		return ErrorHandler.HandleCreateError(err, EntityActivity, "create")
 	}
 
 	// Build the activity record
@@ -61,13 +65,9 @@ func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activ
 		record.GSI1SK = timestamp
 	}
 
-	// Store in DynamoDB
-	if err := r.db.WithContext(ctx).Model(record).Create(); err != nil {
-		r.logger.Error("failed to create activity",
-			zap.String("activity_id", activity.ID),
-			zap.String("username", username),
-			zap.Error(err))
-		return fmt.Errorf("failed to create activity: %w", err)
+	// Store using BaseRepository
+	if err := r.Create(ctx, record); err != nil {
+		return ErrorHandler.HandleCreateError(err, "activity", activity.ID)
 	}
 
 	r.logger.Info("activity created successfully",
@@ -84,9 +84,13 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	// In a production system, you might want to extract username from the ID
 	// or maintain a separate GSI for activity lookups
 
-	// Use DynamORM to scan the table for the activity by ID
-	// This is a simplified approach - in production you might want a GSI for activity ID lookups
-	var activities []models.Activity
+	// We need to scan across all partitions since we don't know the username
+	// This is inefficient but matches the legacy behavior
+	// In a real implementation, we'd want a GSI on activity ID
+	var activities []*models.Activity
+	
+	// Unfortunately, BaseRepository doesn't have a scan method, so we'll use a custom approach
+	// We'll need to implement this as a scan operation
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("SK", "CONTAINS", id).
 		Limit(50). // Limit results to avoid scanning too much
@@ -96,7 +100,7 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 		r.logger.Error("failed to search for activity",
 			zap.String("activity_id", id),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get activity: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "activity", id)
 	}
 
 	// Filter activities to find exact match
@@ -107,7 +111,7 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	}
 
 	// Activity not found
-	return nil, fmt.Errorf("activity not found: %s", id)
+	return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityActivity, id)
 }
 
 // GetInboxActivities retrieves inbox activities for a user - matches legacy implementation
@@ -118,6 +122,7 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	}
 
 	// Query using GSI1 for inbox activities
+	// Note: Using direct DynamORM query since BaseRepository doesn't have GSI query with custom cursor handling
 	query := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "INBOX#"+username).
@@ -138,13 +143,23 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 	}
 
 	// Execute the query
-	var activities []models.Activity
+	var activities []*models.Activity
 	err := query.All(&activities)
 	if err != nil {
 		r.logger.Error("failed to query inbox activities",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query inbox activities: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "activity", "inbox")
+	}
+
+	// Track cost using BaseRepository method
+	if r.costService != nil {
+		itemCount := int64(len(activities))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		r.TrackRead(ctx, "GSI1_Query", estimatedRU)
 	}
 
 	// Convert to ActivityPub activities
@@ -182,34 +197,60 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 		limit = 20
 	}
 
-	// Query activities for the user
-	query := r.db.WithContext(ctx).Model(&models.Activity{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "BEGINS_WITH", "ACTIVITY#").
-		Limit(limit).
-		OrderBy("SK", "DESC") // Newest first
+	// Use BaseRepository QueryWithSKPrefix for outbox activities
+	pk := "ACTOR#" + username
+	skPrefix := "ACTIVITY#"
 
-	// If cursor provided, decode and set it
+	// Use BaseRepository method with custom cursor handling for compatibility
+	var activities []*models.Activity
+	var err error
+
+	// If cursor provided, we need custom query handling
 	if cursor != "" {
-		decodedCursor, err := activityDecodeCursor(cursor)
-		if err != nil {
+		decodedCursor, cursorErr := activityDecodeCursor(cursor)
+		if cursorErr != nil {
 			r.logger.Warn("invalid cursor provided",
 				zap.String("cursor", cursor),
-				zap.Error(err))
-			// Continue without cursor
+				zap.Error(cursorErr))
+			// Continue without cursor - use BaseRepository method
+			activities, err = r.QueryWithSKPrefix(ctx, pk, skPrefix, limit)
 		} else {
-			query = query.Cursor(decodedCursor)
+			// Custom query with cursor
+			query := r.db.WithContext(ctx).Model(&models.Activity{}).
+				Where("PK", "=", pk).
+				Where("SK", "BEGINS_WITH", skPrefix).
+				Limit(limit).
+				OrderBy("SK", "DESC"). // Newest first
+				Cursor(decodedCursor)
+			err = query.All(&activities)
 		}
+	} else {
+		// Use BaseRepository method directly
+		activities, err = r.QueryWithSKPrefix(ctx, pk, skPrefix, limit)
+		// For proper DESC ordering with BaseRepository, we need custom query
+		query := r.db.WithContext(ctx).Model(&models.Activity{}).
+			Where("PK", "=", pk).
+			Where("SK", "BEGINS_WITH", skPrefix).
+			Limit(limit).
+			OrderBy("SK", "DESC") // Newest first
+		err = query.All(&activities)
 	}
 
-	// Execute the query
-	var activities []models.Activity
-	err := query.All(&activities)
 	if err != nil {
 		r.logger.Error("failed to query outbox activities",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query outbox activities: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "activity", "outbox")
+	}
+
+	// Track cost using BaseRepository method
+	if r.costService != nil {
+		itemCount := int64(len(activities))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		r.TrackRead(ctx, "Query", estimatedRU)
 	}
 
 	// Convert to ActivityPub activities
@@ -251,7 +292,7 @@ func (r *ActivityRepository) GetCollection(ctx context.Context, username, collec
 		// Get inbox activities and convert to collection page
 		activities, nextCursor, err := r.GetInboxActivities(ctx, username, limit, cursor)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get inbox activities: %w", err)
+			return nil, ErrorHandler.HandleGetError(err, "activity", "inbox activities")
 		}
 		return r.createActivityCollectionPage(username, collectionType, activities, nextCursor, limit), nil
 
@@ -259,14 +300,14 @@ func (r *ActivityRepository) GetCollection(ctx context.Context, username, collec
 		// Get outbox activities and convert to collection page
 		activities, nextCursor, err := r.GetOutboxActivities(ctx, username, limit, cursor)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get outbox activities: %w", err)
+			return nil, ErrorHandler.HandleGetError(err, "activity", "outbox activities")
 		}
 		return r.createActivityCollectionPage(username, collectionType, activities, nextCursor, limit), nil
 
 	case activitypub.FollowersCollection, activitypub.FollowingCollection, activitypub.LikedCollection:
 		// These collections are handled by other repositories
 		// The adapter should route these to the appropriate repository
-		return nil, fmt.Errorf("collection type %s should be handled by adapter routing to appropriate repository", collectionType)
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, "activity collection", collectionType)
 
 	default:
 		// Unknown collection type - return empty collection
@@ -345,14 +386,25 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 
 	// Query activities for the week
 	// This is a simplified implementation - in production you'd likely use a separate analytics table
-	var activities []models.Activity
+	// Using direct DynamORM since this is a time-range scan which BaseRepository doesn't optimize for
+	var activities []*models.Activity
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("CreatedAt", ">=", weekStart).
 		Where("CreatedAt", "<", weekEnd).
 		All(&activities)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query weekly activities: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "activity", "weekly activities")
+	}
+
+	// Track cost manually since we're using direct DynamORM scan
+	if r.costService != nil {
+		itemCount := int64(len(activities))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		r.TrackRead(ctx, "Scan", estimatedRU)
 	}
 
 	// Count different types of activities
@@ -381,6 +433,7 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType string, actorID string, timestamp time.Time) error {
 	// Create a simple activity record
 	// In production, this might aggregate into time buckets for efficient querying
+	// Note: This uses direct DynamORM since it's not an Activity model
 
 	pk := fmt.Sprintf("activity_metric#%s", actorID)
 	sk := fmt.Sprintf("%s#%s", activityType, timestamp.Format(time.RFC3339Nano))
@@ -395,13 +448,19 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 		"Type":         "activity_metric",
 	}
 
-	// Use the generic model interface to store this
+	// Use direct DynamORM since this is not an Activity model
+	// BaseRepository is typed for Activity models only
 	if err := r.db.WithContext(ctx).Model(activityRecord).Create(); err != nil {
 		r.logger.Error("failed to record activity metric",
 			zap.String("activity_type", activityType),
 			zap.String("actor_id", actorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to record activity: %w", err)
+		return ErrorHandler.HandleCreateError(err, "activity metric", actorID)
+	}
+
+	// Track cost manually since we're not using BaseRepository
+	if r.costService != nil {
+		r.TrackWrite(ctx, "PutItem", 1)
 	}
 
 	return nil
@@ -411,14 +470,25 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 func (r *ActivityRepository) GetHashtagActivity(ctx context.Context, hashtag string, since time.Time) ([]*storage.Activity, error) {
 	// Query activities that contain the hashtag
 	// This is a simplified implementation - production would likely use a hashtag index
+	// Using direct DynamORM since this is a time-range scan which BaseRepository doesn't optimize for
 
-	var activities []models.Activity
+	var activities []*models.Activity
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
 		Where("CreatedAt", ">=", since).
 		All(&activities)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query hashtag activities: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "activity", "hashtag activities")
+	}
+
+	// Track cost manually since we're using direct DynamORM scan
+	if r.costService != nil {
+		itemCount := int64(len(activities))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		r.TrackRead(ctx, "Scan", estimatedRU)
 	}
 
 	// Filter activities that contain the hashtag
@@ -466,12 +536,18 @@ func (r *ActivityRepository) RecordFederationActivity(ctx context.Context, activ
 		"RecordType":   "federation_activity",
 	}
 
+	// Use direct DynamORM since this is not an Activity model
 	if err := r.db.WithContext(ctx).Model(federationRecord).Create(); err != nil {
 		r.logger.Error("failed to record federation activity",
 			zap.String("domain", activity.Domain),
 			zap.String("type", activity.Type),
 			zap.Error(err))
-		return fmt.Errorf("failed to record federation activity: %w", err)
+		return ErrorHandler.HandleCreateError(err, "federation activity", activity.Domain)
+	}
+
+	// Track cost manually since we're not using BaseRepository
+	if r.costService != nil {
+		r.TrackWrite(ctx, "PutItem", 1)
 	}
 
 	r.logger.Debug("recorded federation activity",
@@ -530,17 +606,17 @@ func activityEncodeCursor(data map[string]string) string {
 func activityDecodeCursor(cursor string) (string, error) {
 	// Validate cursor format first
 	if err := common.ValidateRepositoryCursor(cursor); err != nil {
-		return "", fmt.Errorf("invalid cursor: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "activity", "cursor")
 	}
 
 	data, err := base64.URLEncoding.DecodeString(cursor)
 	if err != nil {
-		return "", fmt.Errorf("invalid cursor format: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "activity", "cursor format")
 	}
 
 	var cursorMap map[string]string
 	if err := json.Unmarshal(data, &cursorMap); err != nil {
-		return "", fmt.Errorf("failed to unmarshal cursor: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "activity", "unmarshal cursor")
 	}
 
 	// DynamORM expects a string cursor, so we'll re-encode it

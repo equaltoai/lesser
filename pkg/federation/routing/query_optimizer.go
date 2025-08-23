@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -160,16 +161,20 @@ func (qo *QueryOptimizer) OptimizedGetInstance(ctx context.Context, instanceID s
 	// Use batch coordinator for efficient fetching
 	result, err := qo.batchCoordinator.AddInstanceQuery(ctx, instanceID, 3) // Normal priority
 	if err != nil {
-		return nil, fmt.Errorf("batch query failed: %w", err)
+		return nil, errors.Join(ErrBatchQueryFailed, err)
 	}
 
 	if result == nil {
-		return nil, fmt.Errorf("instance not found: %s", instanceID)
+		qo.logger.Error("instance not found in batch query", zap.String("instanceID", instanceID))
+		return nil, ErrInstanceNotFound
 	}
 
 	fetchedInstance, ok := result.(*fedTypes.Instance)
 	if !ok {
-		return nil, fmt.Errorf("invalid result type for instance: %s", instanceID)
+		qo.logger.Error("invalid result type from batch query", 
+			zap.String("instanceID", instanceID),
+			zap.String("resultType", fmt.Sprintf("%T", result)))
+		return nil, ErrInvalidResultType
 	}
 
 	// Cache the result in memory and persistent store
@@ -247,7 +252,7 @@ func (qo *QueryOptimizer) OptimizedQueryByStatus(ctx context.Context, status fed
 	// Use batch coordinator for efficient status queries
 	result, err := qo.batchCoordinator.AddStatusQuery(ctx, string(status), 2) // High priority
 	if err != nil {
-		return nil, fmt.Errorf("batch status query failed: %w", err)
+		return nil, errors.Join(ErrBatchStatusQueryFailed, err)
 	}
 
 	if result == nil {
@@ -259,7 +264,7 @@ func (qo *QueryOptimizer) OptimizedQueryByStatus(ctx context.Context, status fed
 		// Fallback to direct repository call
 		instances, err = qo.cacheRepo.GetInstancesByStatus(ctx, status)
 		if err != nil {
-			return nil, fmt.Errorf("fallback status query: %w", err)
+			return nil, errors.Join(ErrFallbackStatusQueryFailed, err)
 		}
 	}
 
@@ -341,13 +346,13 @@ func (qo *QueryOptimizer) PrewarmCache(ctx context.Context) error {
 	// Prewarm active instances using repository
 	err := qo.cacheRepo.PrewarmActiveInstances(ctx)
 	if err != nil {
-		return fmt.Errorf("prewarm active instances: %w", err)
+		return errors.Join(ErrPrewarmActiveInstancesFailed, err)
 	}
 
 	// Also load into in-memory cache
 	activeInstances, err := qo.OptimizedQueryByStatus(ctx, fedTypes.InstanceStatusActive)
 	if err != nil {
-		return fmt.Errorf("prewarm active instances in memory: %w", err)
+		return errors.Join(ErrPrewarmActiveInstancesInMemoryFailed, err)
 	}
 
 	qo.logger.Info("prewarmed cache",
@@ -541,13 +546,13 @@ func (bc *BatchQueryCoordinator) Stop() {
 	defer bc.mu.Unlock()
 
 	for _, query := range bc.instanceQueries {
-		bc.cancelBatchQuery(query, fmt.Errorf("coordinator stopped"))
+		bc.cancelBatchQuery(query, ErrCoordinatorStopped)
 	}
 	for _, query := range bc.statusQueries {
-		bc.cancelBatchQuery(query, fmt.Errorf("coordinator stopped"))
+		bc.cancelBatchQuery(query, ErrCoordinatorStopped)
 	}
 	for _, query := range bc.metricsQueries {
-		bc.cancelBatchQuery(query, fmt.Errorf("coordinator stopped"))
+		bc.cancelBatchQuery(query, ErrCoordinatorStopped)
 	}
 }
 
@@ -664,7 +669,8 @@ func (bc *BatchQueryCoordinator) waitForBatchResult(batch *batchQuery, key strin
 		}
 		return result.results[key], nil
 	case <-time.After(bc.maxWaitTime * 2): // Give extra time for processing
-		return nil, fmt.Errorf("batch query timeout for key: %s", key)
+		bc.logger.Error("batch query timeout", zap.String("key", key), zap.Duration("timeout", bc.maxWaitTime*2))
+		return nil, ErrBatchQueryTimeout
 	}
 }
 
@@ -792,7 +798,8 @@ func (bc *BatchQueryCoordinator) executeBatch(batch *batchQuery) {
 	case QueryTypeMetrics:
 		results, err = bc.executeBatchGetMetrics(ctx, keys)
 	default:
-		err = fmt.Errorf("unknown query type: %s", queryType)
+		bc.logger.Error("unknown query type in batch execution", zap.String("queryType", queryType))
+		err = ErrUnknownQueryType
 	}
 
 	// Distribute results to all responders
@@ -819,7 +826,7 @@ func (bc *BatchQueryCoordinator) executeBatch(batch *batchQuery) {
 func (bc *BatchQueryCoordinator) executeBatchGetInstances(ctx context.Context, instanceIDs []string) (map[string]interface{}, error) {
 	instances, err := bc.cacheRepo.BatchGetInstances(ctx, instanceIDs)
 	if err != nil {
-		return nil, fmt.Errorf("batch get instances: %w", err)
+		return nil, errors.Join(ErrBatchGetInstancesFailed, err)
 	}
 
 	results := make(map[string]interface{})

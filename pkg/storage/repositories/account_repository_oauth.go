@@ -46,7 +46,7 @@ func (r *AccountRepository) StoreOAuthState(ctx context.Context, state string, d
 		r.logger.Error("failed to store OAuth state",
 			zap.String("state", state),
 			zap.Error(err))
-		return fmt.Errorf("failed to store OAuth state: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityOAuthState, state)
 	}
 
 	r.logger.Debug("stored OAuth state",
@@ -72,17 +72,17 @@ func (r *AccountRepository) GetOAuthState(ctx context.Context, state string) (*s
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("OAuth state not found: %s", state)
+			return nil, ErrorHandler.HandleGetError(err, EntityOAuthState, state)
 		}
 		r.logger.Error("failed to get OAuth state", zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth state: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthState, state)
 	}
 
 	// Check if expired
 	if time.Now().After(model.ExpiresAt) {
 		// Clean up expired state
 		_ = r.DeleteOAuthState(ctx, state)
-		return nil, fmt.Errorf("OAuth state expired: %s", state)
+		return nil, ErrorHandler.HandleGetError(ErrOAuthStateExpired, EntityOAuthState, state)
 	}
 
 	// Convert to storage model
@@ -120,7 +120,7 @@ func (r *AccountRepository) DeleteOAuthState(ctx context.Context, state string) 
 
 	if err != nil {
 		r.logger.Error("failed to delete OAuth state", zap.Error(err))
-		return fmt.Errorf("failed to delete OAuth state: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityOAuthState, state)
 	}
 
 	r.logger.Debug("deleted OAuth state", zap.String("state", state))
@@ -153,7 +153,7 @@ func (r *AccountRepository) DeleteAuthorizationCode(ctx context.Context, code st
 
 	if err != nil {
 		r.logger.Error("failed to delete authorization code", zap.Error(err))
-		return fmt.Errorf("failed to delete authorization code: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityAuthCode, code)
 	}
 
 	r.logger.Debug("deleted authorization code", zap.String("code", code))
@@ -186,17 +186,17 @@ func (r *AccountRepository) DeleteRefreshToken(ctx context.Context, token string
 func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *storage.OAuthClient) error {
 	// Validate required fields
 	if err := common.ValidateRequiredParam("client.Name", client.Name); err != nil {
-		return fmt.Errorf("client name is required")
+		return ErrorHandler.HandleCreateError(ErrOAuthClientNameRequired, EntityOAuthClient, "validation")
 	}
 	if err := common.ValidateSliceNotEmpty("client.RedirectURIs", client.RedirectURIs); err != nil {
-		return fmt.Errorf("redirect_uris are required")
+		return ErrorHandler.HandleCreateError(ErrOAuthRedirectURIsRequired, EntityOAuthClient, "validation")
 	}
 
 	// Generate client ID if not provided
 	if err := common.ValidateRequiredParam("client.ClientID", client.ClientID); err != nil {
 		clientID, err := generateClientID()
 		if err != nil {
-			return fmt.Errorf("failed to generate client ID: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_id_generation")
 		}
 		client.ClientID = clientID
 	}
@@ -205,7 +205,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	if err := common.ValidateRequiredParam("client.ClientSecret", client.ClientSecret); err != nil {
 		clientSecret, err := generateClientSecret()
 		if err != nil {
-			return fmt.Errorf("failed to generate client secret: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "client_secret_generation")
 		}
 		client.ClientSecret = clientSecret
 	}
@@ -224,7 +224,7 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 
 	// BeforeCreate will set up keys
 	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare OAuth client: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, "preparation")
 	}
 
 	// Create the item with condition that it doesn't exist
@@ -232,10 +232,10 @@ func (r *AccountRepository) CreateOAuthClient(ctx context.Context, client *stora
 	if err != nil {
 		// Check if it's a duplicate key error
 		if strings.Contains(err.Error(), "ConditionalCheckFailed") || strings.Contains(err.Error(), "already exists") {
-			return fmt.Errorf("client with ID %s already exists", client.ClientID)
+			return ErrorHandler.HandleCreateError(ErrOAuthClientAlreadyExists, EntityOAuthClient, client.ClientID)
 		}
 		r.logger.Error("failed to create OAuth client", zap.Error(err))
-		return fmt.Errorf("failed to create OAuth client: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityOAuthClient, client.ClientID)
 	}
 
 	// Update the input client with generated values
@@ -264,10 +264,10 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("OAuth client not found: %s", clientID)
+			return nil, ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 		}
 		r.logger.Error("failed to get OAuth client", zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth client: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 	}
 
 	// Convert to storage model
@@ -294,7 +294,7 @@ func (r *AccountRepository) GetOAuthClient(ctx context.Context, clientID string)
 //nolint:dupl // OAuth client operations are shared between account and oauth repositories
 func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID string, updates map[string]any) error {
 	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
-		return fmt.Errorf("no updates provided")
+		return ErrorHandler.HandleUpdateError(ErrOAuthNoUpdatesProvided, EntityOAuthClient, "validation")
 	}
 
 	// Construct the key
@@ -310,9 +310,9 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("OAuth client not found: %s", clientID)
+			return ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 		}
-		return fmt.Errorf("failed to get OAuth client for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityOAuthClient, clientID)
 	}
 
 	// Only allow specific fields to be updated
@@ -357,10 +357,10 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 		Update()
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("OAuth client not found: %s", clientID)
+			return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
 		}
 		r.logger.Error("failed to update OAuth client", zap.Error(err))
-		return fmt.Errorf("failed to update OAuth client: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityOAuthClient, clientID)
 	}
 
 	r.logger.Debug("updated OAuth client",
@@ -384,7 +384,7 @@ func (r *AccountRepository) DeleteOAuthClient(ctx context.Context, clientID stri
 
 	if err != nil {
 		r.logger.Error("failed to delete OAuth client", zap.Error(err))
-		return fmt.Errorf("failed to delete OAuth client: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityOAuthClient, clientID)
 	}
 
 	r.logger.Debug("deleted OAuth client", zap.String("client_id", clientID))
@@ -412,7 +412,7 @@ func (r *AccountRepository) ListOAuthClients(ctx context.Context, limit int, _ s
 	err := query.Scan(&clientModels)
 	if err != nil {
 		r.logger.Error("failed to list OAuth clients", zap.Error(err))
-		return nil, "", fmt.Errorf("failed to list OAuth clients: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityOAuthClient, "list clients")
 	}
 
 	// Convert to storage models

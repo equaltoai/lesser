@@ -19,10 +19,21 @@ type QuotePermissions struct {
 }
 
 // UpdateKeys updates the composite keys based on the quote permissions
-func (q *QuotePermissions) UpdateKeys() {
+func (q *QuotePermissions) UpdateKeys() error {
 	// Primary key: USER#username
 	q.PK = fmt.Sprintf(KeyPatternUser, q.Username)
 	q.SK = "QUOTE_PERMISSIONS"
+	return nil
+}
+
+// GetPK returns the partition key
+func (q *QuotePermissions) GetPK() string {
+	return q.PK
+}
+
+// GetSK returns the sort key
+func (q *QuotePermissions) GetSK() string {
+	return q.SK
 }
 
 // IsAllowed checks if a given user is allowed to quote based on permissions

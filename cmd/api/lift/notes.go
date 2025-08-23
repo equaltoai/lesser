@@ -48,7 +48,7 @@ func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, error) {
 	}
 
 	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)
@@ -103,14 +103,7 @@ func (h *Handler) HandleCreateNoteLift(ctx *lift.Context) error {
 	canCreate, remaining := notesService.CheckRateLimit(ctx.Context, userID, float64(rep.TotalScore))
 
 	if !canCreate {
-		return ctx.Status(429).JSON(map[string]any{
-			"error": "Rate limit exceeded",
-			"rate_limit": map[string]any{
-				"limit":     limit,
-				"remaining": remaining,
-				"reset":     "24h",
-			},
-		})
+		return common.RespondRateLimited(ctx)
 	}
 
 	// Convert Source structs to string URLs
@@ -199,7 +192,7 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
-				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 				claims, err := oauthSvc.ValidateAccessToken(token)
 				if err == nil {
 					userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)

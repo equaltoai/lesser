@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -93,7 +94,7 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 		config.WithRegion(cfg.Region),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, errors.Join(ErrAWSConfigLoad, err)
 	}
 
 	// Create Secrets Manager client
@@ -104,7 +105,10 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 		MaxResults: aws.Int32(1),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to AWS Secrets Manager in region %s: %w", cfg.Region, err)
+		logger.Error("failed to connect to AWS Secrets Manager",
+			zap.String("region", cfg.Region),
+			zap.Error(err))
+		return nil, errors.Join(ErrSecretsManagerConnection, err)
 	}
 
 	logger.Info("AWS Secrets Manager client initialized",
@@ -128,10 +132,10 @@ func NewAWSSecretsManager(cfg SecretsManagerConfig, logger *zap.Logger) (*AWSSec
 // StorePrivateKey stores a private key in AWS Secrets Manager
 func (sm *AWSSecretsManager) StorePrivateKey(ctx context.Context, keyID, privateKeyPEM string) error {
 	secretName := sm.getSecretName(keyID)
-	
+
 	// Validate the private key format
 	if err := sm.validatePrivateKey(privateKeyPEM); err != nil {
-		return fmt.Errorf("invalid private key format: %w", err)
+		return errors.Join(ErrInvalidPrivateKeyFormat, err)
 	}
 
 	secretValue := SecretValue{
@@ -143,7 +147,7 @@ func (sm *AWSSecretsManager) StorePrivateKey(ctx context.Context, keyID, private
 
 	secretJSON, err := json.Marshal(secretValue)
 	if err != nil {
-		return fmt.Errorf("failed to marshal secret value: %w", err)
+		return errors.Join(ErrSecretValueMarshal, err)
 	}
 
 	// Try to create the secret first
@@ -153,7 +157,10 @@ func (sm *AWSSecretsManager) StorePrivateKey(ctx context.Context, keyID, private
 		if sm.isSecretAlreadyExistsError(err) {
 			return sm.updateSecret(ctx, secretName, string(secretJSON))
 		}
-		return fmt.Errorf("failed to create secret %s: %w", secretName, err)
+		sm.logger.Error("failed to create secret",
+			zap.String("secret_name", secretName),
+			zap.Error(err))
+		return errors.Join(ErrSecretCreation, err)
 	}
 
 	// Invalidate cache
@@ -178,17 +185,20 @@ func (sm *AWSSecretsManager) RetrievePrivateKey(ctx context.Context, keyID strin
 	// Retrieve secret with retry
 	secretValue, err := sm.getSecretWithRetry(ctx, secretName, 3)
 	if err != nil {
-		return "", fmt.Errorf("failed to retrieve private key for %s: %w", keyID, err)
+		sm.logger.Error("failed to retrieve private key",
+			zap.String("key_id", keyID),
+			zap.Error(err))
+		return "", errors.Join(ErrPrivateKeyRetrieval, err)
 	}
 
 	var secret SecretValue
 	if err := json.Unmarshal([]byte(secretValue), &secret); err != nil {
-		return "", fmt.Errorf("failed to unmarshal secret value: %w", err)
+		return "", errors.Join(ErrSecretValueUnmarshal, err)
 	}
 
 	// Validate the retrieved key
 	if err := sm.validatePrivateKey(secret.PrivateKeyPEM); err != nil {
-		return "", fmt.Errorf("retrieved private key is invalid: %w", err)
+		return "", errors.Join(ErrRetrievedPrivateKeyInvalid, err)
 	}
 
 	// Cache the result
@@ -219,7 +229,10 @@ func (sm *AWSSecretsManager) DeletePrivateKey(ctx context.Context, keyID string)
 				zap.String("secret_name", secretName))
 			return nil
 		}
-		return fmt.Errorf("failed to delete secret %s: %w", secretName, err)
+		sm.logger.Error("failed to delete secret",
+			zap.String("secret_name", secretName),
+			zap.Error(err))
+		return errors.Join(ErrSecretDeletion, err)
 	}
 
 	// Invalidate cache
@@ -237,13 +250,13 @@ func (sm *AWSSecretsManager) GenerateAndStoreKeyPair(ctx context.Context, keyID 
 	// Generate RSA key pair
 	privateKey, err := federation.GenerateRSAKeyPair(2048)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate RSA key pair: %w", err)
+		return "", "", errors.Join(ErrRSAKeyPairGeneration, err)
 	}
 
 	// Encode private key to PEM
 	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to marshal private key: %w", err)
+		return "", "", errors.Join(ErrPrivateKeyMarshal, err)
 	}
 
 	privateKeyPEM = string(pem.EncodeToMemory(&pem.Block{
@@ -254,7 +267,7 @@ func (sm *AWSSecretsManager) GenerateAndStoreKeyPair(ctx context.Context, keyID 
 	// Encode public key to PEM
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to marshal public key: %w", err)
+		return "", "", errors.Join(ErrPublicKeyMarshal, err)
 	}
 
 	publicKeyPEM = string(pem.EncodeToMemory(&pem.Block{
@@ -264,7 +277,7 @@ func (sm *AWSSecretsManager) GenerateAndStoreKeyPair(ctx context.Context, keyID 
 
 	// Store the private key
 	if err := sm.StorePrivateKey(ctx, keyID, privateKeyPEM); err != nil {
-		return "", "", fmt.Errorf("failed to store generated private key: %w", err)
+		return "", "", errors.Join(ErrGeneratedPrivateKeyStorage, err)
 	}
 
 	sm.logger.Info("generated and stored new key pair",
@@ -281,7 +294,7 @@ func (sm *AWSSecretsManager) RotateKey(ctx context.Context, keyID string) (publi
 	// Generate new key pair
 	publicKeyPEM, privateKeyPEM, err = sm.GenerateAndStoreKeyPair(ctx, keyID)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate new key pair during rotation: %w", err)
+		return "", "", errors.Join(ErrKeyPairGenerationRotation, err)
 	}
 
 	sm.logger.Info("key rotation completed",
@@ -301,7 +314,7 @@ func (sm *AWSSecretsManager) getSecretName(keyID string) string {
 func (sm *AWSSecretsManager) validatePrivateKey(privateKeyPEM string) error {
 	block, _ := pem.Decode([]byte(privateKeyPEM))
 	if block == nil {
-		return fmt.Errorf("failed to decode PEM block")
+		return ErrPEMBlockDecode
 	}
 
 	// Try to parse as PKCS8 private key
@@ -310,7 +323,7 @@ func (sm *AWSSecretsManager) validatePrivateKey(privateKeyPEM string) error {
 		// Try to parse as PKCS1 RSA private key
 		_, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 		if err != nil {
-			return fmt.Errorf("failed to parse private key: %w", err)
+			return errors.Join(ErrPrivateKeyParse, err)
 		}
 	}
 
@@ -379,13 +392,16 @@ func (sm *AWSSecretsManager) getSecretWithRetry(ctx context.Context, secretName 
 		}
 
 		if resp.SecretString == nil {
-			return "", fmt.Errorf("secret value is nil")
+			return "", ErrSecretValueNil
 		}
 
 		return *resp.SecretString, nil
 	}
 
-	return "", fmt.Errorf("failed to get secret after %d attempts: %w", maxRetries+1, lastErr)
+	sm.logger.Error("failed to get secret after retries",
+		zap.Int("max_attempts", maxRetries+1),
+		zap.Error(lastErr))
+	return "", errors.Join(ErrSecretRetrievalRetries, lastErr)
 }
 
 // Cache methods

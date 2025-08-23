@@ -54,3 +54,21 @@ func (w *WebAuthnCredential) BeforeUpdate() error {
 	w.LastUsedAt = time.Now()
 	return nil
 }
+
+// GetPK returns the partition key
+func (w *WebAuthnCredential) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WebAuthnCredential) GetSK() string {
+	return w.SK
+}
+
+// UpdateKeys updates the primary and sort keys based on the model data
+func (w *WebAuthnCredential) UpdateKeys() error {
+	w.PK = "USER#" + w.UserID
+	w.SK = "WEBAUTHN_CRED#" + w.ID
+	w.Type = "WebAuthnCredential"
+	return nil
+}

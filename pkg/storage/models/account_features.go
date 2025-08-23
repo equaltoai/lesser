@@ -39,9 +39,20 @@ func (p *AccountPin) BeforeCreate() error {
 }
 
 // UpdateKeys updates the primary key fields based on the current data
-func (p *AccountPin) UpdateKeys() {
+func (p *AccountPin) UpdateKeys() error {
 	p.PK = fmt.Sprintf("ACCOUNT_PIN#%s", p.Username)
 	p.SK = fmt.Sprintf("PIN#%s", p.PinnedActorID)
+	return nil
+}
+
+// GetPK returns the partition key (implements BaseModel interface)
+func (p *AccountPin) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key (implements BaseModel interface)
+func (p *AccountPin) GetSK() string {
+	return p.SK
 }
 
 // AccountNote represents a private note on an account in DynamoDB
@@ -81,7 +92,18 @@ func (n *AccountNote) BeforeCreate() error {
 }
 
 // UpdateKeys updates the primary key fields based on the current data
-func (n *AccountNote) UpdateKeys() {
+func (n *AccountNote) UpdateKeys() error {
 	n.PK = fmt.Sprintf("ACCOUNT_NOTE#%s", n.Username)
 	n.SK = fmt.Sprintf(KeyPatternNote, n.TargetActorID)
+	return nil
+}
+
+// GetPK returns the partition key (implements BaseModel interface)
+func (n *AccountNote) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key (implements BaseModel interface)
+func (n *AccountNote) GetSK() string {
+	return n.SK
 }

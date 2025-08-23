@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -94,25 +94,25 @@ type ActivityJobMessage struct {
 }
 
 // NewJobQueueService creates a new job queue service
-func NewJobQueueService(logger *zap.Logger) (*JobQueueService, error) {
+func NewJobQueueService(cfg *appConfig.Config, logger *zap.Logger) (*JobQueueService, error) {
 	ctx := context.Background()
 
 	// Load AWS configuration
-	cfg, err := config.LoadDefaultConfig(ctx)
+	awsConfig, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+		return nil, ErrAWSConfigLoad
 	}
 
 	// Create SQS client
-	sqsClient := sqs.NewFromConfig(cfg)
+	sqsClient := sqs.NewFromConfig(awsConfig)
 
-	// Initialize queue URLs from environment
+	// Initialize queue URLs from configuration
 	queueUrls := map[string]string{
-		"import-processing":    os.Getenv("IMPORT_QUEUE_URL"),
-		"export-generation":    os.Getenv("EXPORT_QUEUE_URL"),
-		"media-processing":     os.Getenv("MEDIA_QUEUE_URL"),
-		"scheduled-publishing": os.Getenv("SCHEDULED_QUEUE_URL"),
-		"federation-delivery":  os.Getenv("FEDERATION_DELIVERY_QUEUE_URL"),
+		"import-processing":    cfg.ImportQueueURL,
+		"export-generation":    cfg.ExportQueueURL,
+		"media-processing":     cfg.MediaQueueURL,
+		"scheduled-publishing": cfg.ScheduledQueueURL,
+		"federation-delivery":  cfg.FederationQueueURL,
 	}
 
 	// Validate required queue URLs
@@ -145,7 +145,7 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize import message: %w", err)
+		return ErrImportJobSerialization
 	}
 
 	// Send message to SQS
@@ -176,7 +176,7 @@ func (q *JobQueueService) QueueImportJob(ctx context.Context, msg ImportJobMessa
 			zap.String("import_id", msg.ImportID),
 			zap.String("queue_url", queueURL),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue import job: %w", err)
+		return ErrImportJobQueue
 	}
 
 	q.logger.Info("queued import job",
@@ -203,7 +203,7 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize export message: %w", err)
+		return ErrExportJobSerialization
 	}
 
 	// Send message to SQS
@@ -238,7 +238,7 @@ func (q *JobQueueService) QueueExportJob(ctx context.Context, msg ExportJobMessa
 			zap.String("export_id", msg.ExportID),
 			zap.String("queue_url", queueURL),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue export job: %w", err)
+		return ErrExportJobQueue
 	}
 
 	q.logger.Info("queued export job",
@@ -266,7 +266,7 @@ func (q *JobQueueService) QueueMediaJob(ctx context.Context, msg MediaJobMessage
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize media message: %w", err)
+		return ErrMediaJobSerialization
 	}
 
 	// Send message to SQS
@@ -298,7 +298,7 @@ func (q *JobQueueService) QueueMediaJob(ctx context.Context, msg MediaJobMessage
 			zap.String("media_id", msg.MediaID),
 			zap.String("queue_url", queueURL),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue media job: %w", err)
+		return ErrMediaJobQueue
 	}
 
 	q.logger.Info("queued media processing job",
@@ -325,7 +325,7 @@ func (q *JobQueueService) QueueScheduledJob(ctx context.Context, msg ScheduledJo
 	// Calculate delay until scheduled time
 	now := time.Now()
 	delaySeconds := int32(msg.ScheduledAt.Sub(now).Seconds())
-	
+
 	// If scheduled time is in the past or very soon, set minimal delay
 	if delaySeconds < 5 {
 		delaySeconds = 5
@@ -340,7 +340,7 @@ func (q *JobQueueService) QueueScheduledJob(ctx context.Context, msg ScheduledJo
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize scheduled message: %w", err)
+		return ErrScheduledJobSerialization
 	}
 
 	// Send message to SQS
@@ -372,7 +372,7 @@ func (q *JobQueueService) QueueScheduledJob(ctx context.Context, msg ScheduledJo
 			zap.Time("scheduled_at", msg.ScheduledAt),
 			zap.Int32("delay_seconds", delaySeconds),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue scheduled job: %w", err)
+		return ErrScheduledJobQueue
 	}
 
 	q.logger.Info("queued scheduled publishing job",
@@ -405,7 +405,7 @@ func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobM
 	// Serialize message to JSON
 	messageBody, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to serialize activity message: %w", err)
+		return ErrActivityJobSerialization
 	}
 
 	// Calculate delay based on priority
@@ -450,7 +450,7 @@ func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobM
 			zap.String("priority", msg.Priority),
 			zap.Int32("delay_seconds", delaySeconds),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue activity job: %w", err)
+		return ErrActivityJobQueue
 	}
 
 	q.logger.Info("queued federation activity job",
@@ -467,13 +467,13 @@ func (q *JobQueueService) QueueActivityJob(ctx context.Context, msg ActivityJobM
 func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string, messageBody interface{}, delaySeconds int32) error {
 	queueURL := q.queueUrls[queueName]
 	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
-		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
+		return ErrQueueURLNotConfigured
 	}
 
 	// Serialize message to JSON
 	bodyBytes, err := json.Marshal(messageBody)
 	if err != nil {
-		return fmt.Errorf("failed to serialize message: %w", err)
+		return ErrMessageSerialization
 	}
 
 	// Send message to SQS
@@ -489,7 +489,7 @@ func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string,
 			zap.String("queue", queueName),
 			zap.Int32("delay_seconds", delaySeconds),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue delayed job: %w", err)
+		return ErrDelayedJobQueue
 	}
 
 	return nil
@@ -499,7 +499,7 @@ func (q *JobQueueService) QueueDelayedJob(ctx context.Context, queueName string,
 func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName string, messages []interface{}) error {
 	queueURL := q.queueUrls[queueName]
 	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
-		return fmt.Errorf("queue URL not configured for queue: %s", queueName)
+		return ErrQueueURLNotConfigured
 	}
 
 	// Convert messages to SQS batch entries
@@ -507,7 +507,7 @@ func (q *JobQueueService) SendBatchMessages(ctx context.Context, queueName strin
 	for i, msg := range messages {
 		bodyBytes, err := json.Marshal(msg)
 		if err != nil {
-			return fmt.Errorf("failed to serialize message %d: %w", i, err)
+			return ErrMessageSerialization
 		}
 
 		entries = append(entries, types.SendMessageBatchRequestEntry{
@@ -541,7 +541,7 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 
 	result, err := q.sqsClient.SendMessageBatch(ctx, input)
 	if err != nil {
-		return fmt.Errorf("failed to send message batch: %w", err)
+		return ErrBatchMessageSend
 	}
 
 	// Log any failed messages
@@ -552,7 +552,7 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 				zap.String("code", aws.ToString(failed.Code)),
 				zap.String("message", aws.ToString(failed.Message)))
 		}
-		return fmt.Errorf("failed to send %d messages in batch", len(result.Failed))
+		return ErrBatchOperation
 	}
 
 	return nil
@@ -562,7 +562,7 @@ func (q *JobQueueService) sendBatch(ctx context.Context, queueURL string, entrie
 func (q *JobQueueService) GetQueueAttributes(ctx context.Context, queueName string) (map[string]string, error) {
 	queueURL := q.queueUrls[queueName]
 	if err := common.ValidateRequiredParam(queueName+"_url", queueURL); err != nil {
-		return nil, fmt.Errorf("queue URL not configured for queue: %s", queueName)
+		return nil, ErrQueueURLNotConfigured
 	}
 
 	input := &sqs.GetQueueAttributesInput{
@@ -576,7 +576,7 @@ func (q *JobQueueService) GetQueueAttributes(ctx context.Context, queueName stri
 
 	result, err := q.sqsClient.GetQueueAttributes(ctx, input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get queue attributes: %w", err)
+		return nil, ErrQueueAttributeQuery
 	}
 
 	return result.Attributes, nil

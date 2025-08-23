@@ -276,11 +276,11 @@ type CostProjection {
   currentCost: Float!
   projectedCost: Float!
   variance: Float!
-  topCostDrivers: [CostDriver!]!
+  topDrivers: [Driver!]!
   recommendations: [String!]!
 }
 
-type CostDriver {
+type Driver {
   type: String!
   domain: String
   cost: Float!

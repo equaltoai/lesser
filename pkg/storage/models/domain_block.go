@@ -53,12 +53,23 @@ type InstanceDomainBlock struct {
 }
 
 // UpdateKeys updates the keys for the instance domain block
-func (d *InstanceDomainBlock) UpdateKeys() {
+func (d *InstanceDomainBlock) UpdateKeys() error {
 	d.PK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
 	d.SK = fmt.Sprintf("DOMAIN_BLOCK#%s", d.Domain)
 	d.GSI1PK = "DOMAIN_BLOCKS"
 	d.GSI1SK = fmt.Sprintf("%d#%s", d.CreatedAt.Unix(), d.Domain)
 	d.Type = "INSTANCE_DOMAIN_BLOCK"
+	return nil
+}
+
+// GetPK returns the partition key (required by BaseModel)
+func (d *InstanceDomainBlock) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key (required by BaseModel)
+func (d *InstanceDomainBlock) GetSK() string {
+	return d.SK
 }
 
 // EmailDomainBlock represents an email domain block
@@ -74,11 +85,12 @@ type EmailDomainBlock struct {
 }
 
 // UpdateKeys updates the keys for the email domain block
-func (d *EmailDomainBlock) UpdateKeys() {
+func (d *EmailDomainBlock) UpdateKeys() error {
 	d.PK = fmt.Sprintf("EMAIL_DOMAIN_BLOCK#%s", d.Domain)
 	d.SK = fmt.Sprintf("EMAIL_DOMAIN_BLOCK#%s", d.Domain)
 	d.GSI1PK = "EMAIL_DOMAIN_BLOCKS"
 	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
+	return nil
 }
 
 // GetID returns the ID of the email domain block
@@ -109,11 +121,12 @@ type DomainAllow struct {
 }
 
 // UpdateKeys updates the keys for the domain allow
-func (d *DomainAllow) UpdateKeys() {
+func (d *DomainAllow) UpdateKeys() error {
 	d.PK = fmt.Sprintf("DOMAIN_ALLOW#%s", d.Domain)
 	d.SK = fmt.Sprintf("DOMAIN_ALLOW#%s", d.Domain)
 	d.GSI1PK = "DOMAIN_ALLOWS"
 	d.GSI1SK = d.CreatedAt.Format(time.RFC3339)
+	return nil
 }
 
 // GetID returns the ID of the domain allow

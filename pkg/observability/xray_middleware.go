@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-xray-sdk-go/xray"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -27,10 +28,11 @@ type XRayConfig struct {
 
 // NewXRayConfig creates X-Ray configuration with defaults
 func NewXRayConfig(serviceName, serviceVersion string) *XRayConfig {
+	cfg := config.Get()
 	return &XRayConfig{
 		ServiceName:    serviceName,
 		ServiceVersion: serviceVersion,
-		Enabled:        os.Getenv("_X_AMZN_TRACE_ID") != "" || os.Getenv("XRAY_TRACING_ENABLED") == "true",
+		Enabled:        os.Getenv("_X_AMZN_TRACE_ID") != "" || cfg.XrayTracingEnabled,
 		LocalTesting:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME") == "",
 	}
 }

@@ -58,7 +58,7 @@ var (
 	authService       *auth.AuthService
 	emfMetrics        *observability.EMFMetrics
 	healthChecker     *observability.HealthChecker
-	metricsCollector  *observability.MetricsCollector
+	metricsCollector  *observability.MetricsCollector //nolint:unused // Extracted from standardized initialization, used in different configurations
 	tracingManager    *observability.TracingManager
 	latencyAggregator *observability.LatencyAggregator
 	latencyAlerter    *observability.LatencyAlerter
@@ -148,9 +148,9 @@ func initializeManualServices() {
 	logger.Info("falling back to manual service initialization")
 	
 	// Manual DynamORM initialization
-	tableName := os.Getenv("DYNAMODB_TABLE")
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
-		tableName = cfg.DynamoTableName
+		tableName = "lesser-main" // fallback
 	}
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		logger.Fatal("DYNAMODB_TABLE environment variable is required")
@@ -163,19 +163,19 @@ func initializeManualServices() {
 	}
 
 	// Create repository storage using factory pattern
-	repos, err = factory.NewRepositoryFactory(db, tableName, lambdaCtx.AWSServices.Config, logger)
+	repos, err = factory.NewRepositoryFactory(db, tableName, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
 
 	// Initialize auth service
-	authService, err = auth.NewAuthService(repos)
+	authService, err = auth.NewAuthService(cfg, repos)
 	if err != nil {
 		logger.Fatal("failed to initialize auth service", zap.Error(err))
 	}
 
 	// Initialize observability services manually
-	if os.Getenv("DISABLE_METRICS") != envTrue {
+	if !cfg.DisableMetrics {
 		// EMF Metrics for CloudWatch integration
 		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/API", "api")
 		emfMetrics.AddDimension(observability.DimensionService, "api")
@@ -200,7 +200,7 @@ func initializeManualServices() {
 			ServiceName:    "lesser-api",
 			ServiceVersion: cfg.Version,
 			SamplingRate:   observability.TracingSampleRatePercent / 100.0,
-			Enabled:        os.Getenv("XRAY_TRACING_ENABLED") != "false",
+			Enabled:        cfg.XRayTracingEnabled,
 		}
 		tracingManager = observability.NewTracingManager(logger, tracingConfig)
 		
@@ -241,7 +241,7 @@ func initializeAPISpecificServices() {
 	_ = liftAuth.NewLiftAuthService(authService)
 
 	// Validate VAPID keys in production environment
-	if err := liftHandlers.ValidateVAPIDKeysForProduction(context.Background(), repos, logger); err != nil {
+	if err := liftHandlers.ValidateVAPIDKeysForProduction(context.Background(), cfg, repos, logger); err != nil {
 		logger.Fatal("VAPID keys validation failed in production", zap.Error(err))
 	}
 
@@ -287,7 +287,7 @@ func initializeAPISpecificServices() {
 func main() {
 	// Create a new Lift application
 	app := lift.New()
-	if debugMode, _ := common.ParseAndValidateBoolean(os.Getenv("DEBUG")); debugMode {
+	if cfg.DebugMode {
 		app = lift.New(lift.WithDebug())
 	}
 
@@ -325,7 +325,7 @@ func main() {
 	app.Use(createLatencyTrackingMiddleware())
 
 	// Add rate limiting middleware (before routes)
-	if os.Getenv("DISABLE_RATE_LIMITING") != "true" {
+	if !cfg.DisableRateLimiting {
 		app.Use(ratelimit.Middleware(repos, nil)) // Use default config
 		logger.Info("enabled rate limiting middleware")
 	}
@@ -840,7 +840,7 @@ const (
 // recordLatencyMetric records latency metrics to DynamoDB using DynamORM
 func recordLatencyMetric(ctx context.Context, metricType, operation string, duration time.Duration, dimensions map[string]string) error {
 	if repos == nil {
-		return fmt.Errorf("repositories not initialized")
+		return ErrRepositoriesNotInitialized
 	}
 	
 	// Create metric record

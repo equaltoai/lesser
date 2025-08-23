@@ -7,23 +7,29 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// AICostRepository implements AI cost tracking operations using DynamORM
+// AICostRepository implements AI cost tracking operations using BaseRepository pattern
 type AICostRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	*BaseRepository[*models.AICost]
 }
 
 // NewAICostRepository creates a new AI cost repository
-func NewAICostRepository(db core.DB, logger *zap.Logger) *AICostRepository {
+func NewAICostRepository(db core.DB, tableName string, logger *zap.Logger) *AICostRepository {
 	return &AICostRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepository[*models.AICost](db, tableName, logger),
+	}
+}
+
+// NewAICostRepositoryWithCostTracking creates a new AI cost repository with cost tracking
+func NewAICostRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AICostRepository {
+	return &AICostRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.AICost](db, tableName, logger, costService, "AICostRepository"),
 	}
 }
 
@@ -41,7 +47,7 @@ func (r *AICostRepository) CreateAICost(ctx context.Context, aiCost *models.AICo
 			zap.String("operation_type", aiCost.OperationType),
 			zap.String("model", aiCost.ModelName),
 			zap.Error(err))
-		return fmt.Errorf("failed to create AI cost record: %w", err)
+		return ErrorHandler.HandleCreateError(err, "ai cost", aiCost.OperationID)
 	}
 
 	r.logger.Info("Created AI cost record",
@@ -58,24 +64,22 @@ func (r *AICostRepository) CreateAICost(ctx context.Context, aiCost *models.AICo
 
 // GetAICost retrieves an AI cost record by operation ID
 func (r *AICostRepository) GetAICost(ctx context.Context, operationID string) (*models.AICost, error) {
-	var aiCost models.AICost
+	aiCost := &models.AICost{}
+	pk := fmt.Sprintf("AI_COST#%s", operationID)
+	sk := "METADATA"
 
-	err := r.db.WithContext(ctx).Model(&models.AICost{}).
-		Where("PK", "=", fmt.Sprintf("AI_COST#%s", operationID)).
-		Where("SK", "=", "METADATA").
-		First(&aiCost)
-
+	err := r.Get(ctx, pk, sk, aiCost)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("AI cost record not found for operation %s", operationID)
+			return nil, ErrorHandler.HandleGetError(err, "ai cost", operationID)
 		}
 		r.logger.Error("Failed to get AI cost record",
 			zap.String("operation_id", operationID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get AI cost record: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "ai cost", operationID)
 	}
 
-	return &aiCost, nil
+	return aiCost, nil
 }
 
 // GetAICostsByTimeRange retrieves AI cost records within a time range
@@ -100,7 +104,7 @@ func (r *AICostRepository) GetAICostsByTimeRange(ctx context.Context, startTime,
 			zap.Time("end", endTime),
 			zap.String("operation_type", operationType),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query AI costs by time range: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "time range")
 	}
 
 	// Filter by operation type if specified and within time range
@@ -144,7 +148,7 @@ func (r *AICostRepository) GetAICostsByOperationType(ctx context.Context, operat
 		r.logger.Error("Failed to query AI costs by operation type",
 			zap.String("operation_type", operationType),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query AI costs by operation type: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "operation type")
 	}
 
 	// Convert to pointers
@@ -176,7 +180,7 @@ func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier 
 		r.logger.Error("Failed to query top costly AI operations",
 			zap.String("cost_tier", costTier),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query top costly AI operations: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "top costly operations")
 	}
 
 	// Filter by time range and sort by cost descending
@@ -205,7 +209,7 @@ func (r *AICostRepository) GetTopCostlyOperations(ctx context.Context, costTier 
 func (r *AICostRepository) GetAICostSummary(ctx context.Context, startTime, endTime time.Time, operationType string) (*AICostSummary, error) {
 	costs, err := r.GetAICostsByTimeRange(ctx, startTime, endTime, operationType, 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get AI costs for summary: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "summary")
 	}
 
 	summary := &AICostSummary{
@@ -274,7 +278,7 @@ func (r *AICostRepository) GetAICostTrends(ctx context.Context, startTime, endTi
 	// Get all costs in the time range
 	costs, err := r.GetAICostsByTimeRange(ctx, startTime, endTime, "", 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get costs for trends: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost", "trends")
 	}
 
 	trends := &AICostTrends{
@@ -669,6 +673,7 @@ func (r *AICostRepository) sumCosts(costs []float64) float64 {
 
 // CreateOrUpdateAggregatedCost creates or updates aggregated cost records
 func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, aggregatedCost *models.AIAggregatedCost) error {
+	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
 	err := r.db.WithContext(ctx).Model(aggregatedCost).Create()
 	if err != nil {
 		r.logger.Error("Failed to create/update aggregated AI cost",
@@ -676,7 +681,7 @@ func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, agg
 			zap.String("operation_type", aggregatedCost.OperationType),
 			zap.String("model", aggregatedCost.ModelName),
 			zap.Error(err))
-		return fmt.Errorf("failed to create/update aggregated AI cost: %w", err)
+		return ErrorHandler.HandleCreateError(err, "ai cost aggregation", aggregatedCost.Period)
 	}
 
 	r.logger.Debug("Created/updated aggregated AI cost",
@@ -691,6 +696,7 @@ func (r *AICostRepository) CreateOrUpdateAggregatedCost(ctx context.Context, agg
 
 // GetAggregatedCosts retrieves aggregated cost data for analysis
 func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string, startTime, endTime time.Time) ([]*models.AIAggregatedCost, error) {
+	// Note: This uses the AIAggregatedCost model directly since BaseRepository is typed for AICost
 	query := r.db.WithContext(ctx).Model(&models.AIAggregatedCost{}).
 		Index("time-index").
 		Where("GSI1PK", "=", fmt.Sprintf("AI_AGG_TIME#%s", period))
@@ -720,7 +726,7 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 			zap.Time("start", startTime),
 			zap.Time("end", endTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query aggregated AI costs: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "ai cost aggregation", "period query")
 	}
 
 	// Convert to pointers

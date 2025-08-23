@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/batch"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -97,7 +98,7 @@ func (h *NotificationQueryHelper) GetPaginatedNotifications(ctx context.Context,
 	
 	result, err := h.executePaginatedNotificationQuery(query, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get paginated notifications: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "paginated query")
 	}
 
 	return result, nil
@@ -151,7 +152,7 @@ func (h *CostTrackingQueryHelper) GetCostTrackingByTimeRange(ctx context.Context
 
 	err = query.All(&trackingRecords)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get cost tracking by time range: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "cost tracking", "time range query")
 	}
 
 	return trackingRecords, nil
@@ -184,22 +185,22 @@ func (h *BatchOperationHelper) BatchCreateItems(ctx context.Context, items []int
 		switch v := item.(type) {
 		case *models.Notification:
 			if err := v.BeforeCreate(); err != nil {
-				return fmt.Errorf("failed to prepare notification for creation: %w", err)
+				return ErrorHandler.HandleCreateError(err, EntityNotification, "preparation")
 			}
 		case *models.Timeline:
 			if err := v.BeforeCreate(); err != nil {
-				return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
+				return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "preparation")
 			}
 		default:
-			return fmt.Errorf("unsupported item type for batch creation: %T", v)
+			itemTypeStr := fmt.Sprintf("%T", v)
+			h.logger.Error("unsupported item type for batch creation", zap.String("type", itemTypeStr))
+			return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, "batch items", itemTypeStr)
 		}
 	}
 
 	// Convert to []any for batch operations
 	anyItems := make([]any, len(items))
-	for i, item := range items {
-		anyItems[i] = item
-	}
+	copy(anyItems, items)
 
 	// Use batch writer for efficient bulk creation
 	batchWriter := batch.NewBatchWriter(h.db, batch.BatchWriterConfig{
@@ -209,7 +210,7 @@ func (h *BatchOperationHelper) BatchCreateItems(ctx context.Context, items []int
 
 	result, err := batchWriter.WriteItems(ctx, anyItems)
 	if err != nil {
-		return fmt.Errorf("failed to batch create %s: %w", itemType, err)
+		return ErrorHandler.HandleCreateError(err, itemType, "batch operation")
 	}
 
 	// Check if any items failed

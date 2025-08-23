@@ -3,6 +3,7 @@ package lift
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -49,7 +50,7 @@ func (h *Handler) HandleOAuthConsentLift(ctx *lift.Context) error {
 	}
 
 	// Initialize OAuth session repository
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.logger)
+	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
 
 	// Get OAuth state from storage
 	authState, err := h.repos.OAuth().GetOAuthState(ctx.Context, state)
@@ -113,7 +114,7 @@ func (h *Handler) getOrCreateOAuthSession(ctx context.Context, authState *storag
 
 	err = repo.CreateOAuthSession(ctx, oauthSession)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OAuth session: %w", err)
+		return nil, errors.Join(ErrFailedToCreateOAuthSession, err)
 	}
 
 	return oauthSession, nil
@@ -180,7 +181,7 @@ func (h *Handler) handleConsentApproval(ctx *lift.Context, authState *storage.OA
 	}
 
 	// Generate authorization code
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	code, err := oauthSvc.GenerateAuthorizationCode()
 	if err != nil {
 		h.logger.Error("failed to generate authorization code", zap.Error(err))
@@ -256,7 +257,7 @@ func (h *Handler) createUserSessionAfterAuth(ctx context.Context, username strin
 		"oauth", // Auth method
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create user session: %w", err)
+		return errors.Join(ErrFailedToCreateUserSession, err)
 	}
 
 	h.logger.Debug("created user session after OAuth authorization",
@@ -291,7 +292,7 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 	}
 
 	// Create OAuth session for tracking the flow
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.logger)
+	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
 
 	clientIP := "" // Extract from Lambda event context
 	userAgent := "" // Extract from Lambda event headers

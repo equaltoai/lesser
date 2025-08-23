@@ -31,7 +31,7 @@ type QuoteRelationship struct {
 }
 
 // UpdateKeys updates the composite keys based on the quote relationship
-func (q *QuoteRelationship) UpdateKeys() {
+func (q *QuoteRelationship) UpdateKeys() error {
 	// Primary key: QUOTE#quotingStatusID
 	q.PK = fmt.Sprintf("QUOTE#%s", q.QuoterNoteID)
 	q.SK = fmt.Sprintf("QUOTED#%s", q.TargetNoteID)
@@ -51,6 +51,17 @@ func (q *QuoteRelationship) UpdateKeys() {
 		q.GSI2PK = ""
 		q.GSI2SK = ""
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (q *QuoteRelationship) GetPK() string {
+	return q.PK
+}
+
+// GetSK returns the sort key
+func (q *QuoteRelationship) GetSK() string {
+	return q.SK
 }
 
 // Withdraw marks the quote relationship as withdrawn
@@ -58,7 +69,7 @@ func (q *QuoteRelationship) Withdraw() {
 	q.Withdrawn = true
 	now := time.Now()
 	q.WithdrawnAt = &now
-	q.UpdateKeys() // This will clear GSI keys
+	_ = q.UpdateKeys() // This will clear GSI keys
 }
 
 // IsActive returns whether the quote relationship is active (not withdrawn)

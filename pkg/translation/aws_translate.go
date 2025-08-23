@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -15,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go-v2/service/translate"
+	lesserconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
 )
@@ -31,21 +31,21 @@ type Service struct {
 }
 
 // NewService creates a new translation service
-func NewService(ctx context.Context, store core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
-	cfg, err := config.LoadDefaultConfig(ctx)
+func NewService(ctx context.Context, cfg *lesserconfig.Config, store core.RepositoryStorage, logger *zap.Logger, cacheEnabled bool) (*Service, error) {
+	awsCfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Get table name from environment or config
-	tableName := "lesser_main" // Default table name
-	if envTable := os.Getenv("DYNAMODB_TABLE"); envTable != "" {
-		tableName = envTable
+	// Get table name from config
+	tableName := cfg.DynamoTableName
+	if tableName == "" {
+		tableName = "lesser-main" // Default table name
 	}
 
 	return &Service{
-		client:       translate.NewFromConfig(cfg),
-		dynamoClient: dynamodb.NewFromConfig(cfg),
+		client:       translate.NewFromConfig(awsCfg),
+		dynamoClient: dynamodb.NewFromConfig(awsCfg),
 		tableName:    tableName,
 		store:        store,
 		logger:       logger,

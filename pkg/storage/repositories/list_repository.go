@@ -16,17 +16,18 @@ import (
 
 // ListRepository handles list-related database operations
 type ListRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.List]
+	// Helper for ListMember operations
+	memberRepo *BaseRepository[*models.ListMember]
 }
 
 // NewListRepository creates a new list repository
 func NewListRepository(db core.DB, tableName string, logger *zap.Logger) *ListRepository {
 	return &ListRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.List](
+			db, tableName, logger, nil, "ListRepository"),
+		memberRepo: NewBaseRepositoryWithCostTracking[*models.ListMember](
+			db, tableName, logger, nil, "ListMemberRepository"),
 	}
 }
 
@@ -37,7 +38,7 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 		list.RepliesPolicy = RepliesPolicyList // default
 	}
 	if list.RepliesPolicy != RepliesPolicyFollowed && list.RepliesPolicy != RepliesPolicyList && list.RepliesPolicy != RepliesPolicyNone {
-		return fmt.Errorf("invalid replies policy: %s", list.RepliesPolicy)
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityList, list.RepliesPolicy)
 	}
 
 	// Generate ID if not provided
@@ -45,30 +46,25 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 		list.ID = uuid.New().String()
 	}
 
-	// Save to DynamoDB
-	if err := r.db.WithContext(ctx).Model(list).Create(); err != nil {
-		return fmt.Errorf("failed to create list: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Create method
+	return r.Create(ctx, list)
 }
 
 // GetList retrieves a list by ID
 func (r *ListRepository) GetList(ctx context.Context, listID string) (*models.List, error) {
-	var list models.List
-	err := r.db.WithContext(ctx).Model(&models.List{}).
-		Where("PK", "=", fmt.Sprintf("LIST#%s", listID)).
-		Where("SK", "=", "METADATA").
-		First(&list)
-
+	list := &models.List{}
+	pk := fmt.Sprintf("LIST#%s", listID)
+	sk := "METADATA"
+	
+	err := r.Get(ctx, pk, sk, list)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
-			return nil, fmt.Errorf("list not found: %s", listID)
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityList, listID)
 		}
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityList, listID)
 	}
 
-	return &list, nil
+	return list, nil
 }
 
 // UpdateList updates a list's properties
@@ -76,16 +72,12 @@ func (r *ListRepository) UpdateList(ctx context.Context, list *models.List) erro
 	// Validate replies policy if provided
 	if list.RepliesPolicy != "" {
 		if list.RepliesPolicy != RepliesPolicyFollowed && list.RepliesPolicy != RepliesPolicyList && list.RepliesPolicy != RepliesPolicyNone {
-			return fmt.Errorf("invalid replies policy: %s", list.RepliesPolicy)
+			return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityList, list.RepliesPolicy)
 		}
 	}
 
-	// Update in database
-	if err := r.db.WithContext(ctx).Model(list).Update(); err != nil {
-		return fmt.Errorf("failed to update list: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Update method
+	return r.Update(ctx, list)
 }
 
 // DeleteList deletes a list and all its memberships
@@ -102,7 +94,7 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 		SK: "METADATA",
 	}
 	if err := r.db.WithContext(ctx).Model(listModel).Delete(); err != nil {
-		return fmt.Errorf("failed to delete list: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityList, listID)
 	}
 
 	// Query and delete all list memberships
@@ -111,7 +103,7 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
 		Scan(&members)
 	if err != nil && !dmerrors.IsNotFound(err) {
-		return fmt.Errorf("failed to query list members: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityList, "member deletion")
 	}
 
 	// Delete each membership
@@ -162,7 +154,7 @@ func (r *ListRepository) GetListsForUserPaginated(ctx context.Context, username 
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
 		}
-		return nil, "", fmt.Errorf("failed to query user lists: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityList, "user list pagination")
 	}
 
 	// Generate next cursor
@@ -211,7 +203,7 @@ func (r *ListRepository) GetUserLists(ctx context.Context, username string, opts
 	var lists []models.List
 	err := query.All(&lists)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user lists: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityList, "user list management")
 	}
 
 	// Convert to models.List pointers
@@ -250,7 +242,7 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 	var members []models.ListMember
 	err := query.All(&members)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list memberships: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityList, "member query")
 	}
 
 	// Now get the actual lists
@@ -277,13 +269,15 @@ func (r *ListRepository) GetListsByMember(ctx context.Context, memberUsername st
 
 // CountUserLists counts the number of lists owned by a user
 func (r *ListRepository) CountUserLists(ctx context.Context, username string) (int, error) {
+	// For GSI counts, we still need to use the direct query approach
+	// BaseRepository.Count works with main table PK only
 	count, err := r.db.WithContext(ctx).Model(&models.List{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("USER_LISTS#%s", username)).
 		Count()
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count user lists: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityList, "user list counting")
 	}
 
 	return int(count), nil
@@ -313,38 +307,16 @@ func (r *ListRepository) AddListMember(ctx context.Context, listID, memberUserna
 		ListUsername: list.Username,
 	}
 
-	// Save to DynamoDB
-	if err := r.db.WithContext(ctx).Model(member).Create(); err != nil {
-		return fmt.Errorf("failed to add member to list: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Create method
+	return r.memberRepo.Create(ctx, member)
 }
 
 // RemoveListMember removes a member from a list
 func (r *ListRepository) RemoveListMember(ctx context.Context, listID, memberUsername string) error {
-	// Get the list to verify it exists and get the owner
-	list, err := r.GetList(ctx, listID)
-	if err != nil {
-		return err
-	}
-
-	// Delete membership
-	member := &models.ListMember{
-		PK: fmt.Sprintf("LIST_MEMBERS#%s", listID),
-		SK: memberUsername,
-		// Need to set GSI keys for deletion
-		ListID:       listID,
-		AccountID:    memberUsername,
-		ListUsername: list.Username,
-	}
-	member.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(member).Delete(); err != nil {
-		return fmt.Errorf("failed to remove member from list: %w", err)
-	}
-
-	return nil
+	// Use BaseRepository Delete method
+	pk := fmt.Sprintf("LIST_MEMBERS#%s", listID)
+	sk := memberUsername
+	return r.memberRepo.Delete(ctx, pk, sk)
 }
 
 // GetListMembers retrieves paginated list members
@@ -369,7 +341,7 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 				Items: []*storage.Account{},
 			}, nil
 		}
-		return nil, fmt.Errorf("failed to query list members: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityList, "member timeline query")
 	}
 
 	// Fetch actual Account objects for each member
@@ -433,18 +405,9 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 
 // IsListMember checks if a user is a member of a list
 func (r *ListRepository) IsListMember(ctx context.Context, listID, memberUsername string) (bool, error) {
-	var member models.ListMember
-	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
-		Where("SK", "=", memberUsername).
-		First(&member)
-	if err != nil {
-		if dmerrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check list membership: %w", err)
-	}
-	return true, nil
+	pk := fmt.Sprintf("LIST_MEMBERS#%s", listID)
+	sk := memberUsername
+	return r.memberRepo.Exists(ctx, pk, sk)
 }
 
 // GetAccountLists retrieves all lists that contain an account (for backward compatibility)
@@ -483,7 +446,7 @@ func (r *ListRepository) GetAccountListsPaginated(ctx context.Context, accountID
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, "", nil
 		}
-		return nil, "", fmt.Errorf("failed to query account lists: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityList, "account lists query")
 	}
 
 	// Generate next cursor
@@ -534,7 +497,7 @@ func (r *ListRepository) GetAccountListsForUser(ctx context.Context, accountID, 
 		if dmerrors.IsNotFound(err) {
 			return []*storage.List{}, nil
 		}
-		return nil, fmt.Errorf("failed to query account lists: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityList, "account lists query")
 	}
 
 	// Filter by username and get full list details
@@ -569,15 +532,8 @@ func (r *ListRepository) GetAccountListsForUser(ctx context.Context, accountID, 
 
 // CountListMembers counts the number of members in a list
 func (r *ListRepository) CountListMembers(ctx context.Context, listID string) (int, error) {
-	count, err := r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
-		Count()
-
-	if err != nil {
-		return 0, fmt.Errorf("failed to count list members: %w", err)
-	}
-
-	return int(count), nil
+	pk := fmt.Sprintf("LIST_MEMBERS#%s", listID)
+	return r.memberRepo.Count(ctx, pk)
 }
 
 // RemoveAccountFromAllLists removes an account from all lists
@@ -593,7 +549,7 @@ func (r *ListRepository) RemoveAccountFromAllLists(ctx context.Context, accountI
 		if dmerrors.IsNotFound(err) {
 			return nil // No lists to remove from
 		}
-		return fmt.Errorf("failed to query account lists: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityList, "member removal query")
 	}
 
 	// Remove from each list
@@ -658,8 +614,8 @@ func (r *ListRepository) AddAccountsToList(ctx context.Context, listID string, a
 			ListUsername: list.Username,
 		}
 
-		// Save to DynamoDB
-		if err := r.db.WithContext(ctx).Model(member).Create(); err != nil {
+		// Use BaseRepository Create method
+		if err := r.memberRepo.Create(ctx, member); err != nil {
 			r.logger.Error("failed to add account to list",
 				zap.String("list_id", listID),
 				zap.String("account_id", accountID),
@@ -695,16 +651,10 @@ func (r *ListRepository) RemoveAccountsFromList(ctx context.Context, listID stri
 
 // GetListAccounts retrieves all account IDs in a list
 func (r *ListRepository) GetListAccounts(ctx context.Context, listID string) ([]string, error) {
-	var members []models.ListMember
-	err := r.db.WithContext(ctx).Model(&models.ListMember{}).
-		Where("PK", "=", fmt.Sprintf("LIST_MEMBERS#%s", listID)).
-		Scan(&members)
-
+	pk := fmt.Sprintf("LIST_MEMBERS#%s", listID)
+	members, err := r.memberRepo.FindByPK(ctx, pk)
 	if err != nil {
-		if dmerrors.IsNotFound(err) {
-			return []string{}, nil
-		}
-		return nil, fmt.Errorf("failed to query list members: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityList, "member accounts query")
 	}
 
 	// Extract account IDs
@@ -726,7 +676,7 @@ func (r *ListRepository) GetListTimeline(ctx context.Context, listID string, opt
 	// First get all members of the list
 	membersResult, err := r.GetListMembers(ctx, listID, interfaces.PaginationOptions{Limit: 100})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get list members: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityList, listID)
 	}
 
 	if err := common.ValidateSliceNotEmpty("membersResult.Items", membersResult.Items); err != nil {

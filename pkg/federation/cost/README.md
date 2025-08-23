@@ -55,7 +55,7 @@ budget := &cost.FederationBudget{
 }
 
 // Set thresholds
-thresholds := &cost.CostThresholds{
+thresholds := &cost.Thresholds{
     WarnThresholdPercent:  80,  // Warn at 80% budget
     BlockThresholdPercent: 95,  // Block at 95% budget
 }

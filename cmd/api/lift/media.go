@@ -2,7 +2,7 @@ package lift
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"mime/multipart"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -167,19 +167,19 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 	// Get raw body from request
 	bodyBytes := ctx.Request.Body
 	if err := common.ValidateSliceNotEmpty("request_body", bodyBytes); err != nil {
-		return nil, fmt.Errorf("empty request body")
+		return nil, ErrEmptyRequestBody
 	}
 
 	// Handle base64 decoding for API Gateway
 	bodyBytes, err := h.handleBase64Decoding(bodyBytes)
 	if err != nil {
-		return nil, fmt.Errorf("unable to parse request body: %w", err)
+		return nil, errors.Join(ErrUnableToParseRequestBody, err)
 	}
 
 	// Parse multipart form
 	boundary, err := h.extractBoundary(ctx.Header("Content-Type"))
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract boundary: %w", err)
+		return nil, errors.Join(ErrFailedToExtractBoundary, err)
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
@@ -202,7 +202,7 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 
 	// Validate required file data
 	if err := common.ValidateSliceNotEmpty("mediaData.FileData", mediaData.FileData); err != nil {
-		return nil, fmt.Errorf("no file data found in request")
+		return nil, ErrNoFileDataFoundInRequest
 	}
 
 	return &mediaData, nil

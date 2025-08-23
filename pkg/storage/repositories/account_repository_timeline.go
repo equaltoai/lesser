@@ -41,7 +41,7 @@ func (r *AccountRepository) GetHomeTimeline(ctx context.Context, username string
 		r.logger.Error("failed to get home timeline",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get home timeline: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "home timeline")
 	}
 
 	// Convert to storage type
@@ -75,7 +75,7 @@ func (r *AccountRepository) GetLocalTimeline(ctx context.Context, limit int, max
 	err := query.All(&entries)
 	if err != nil {
 		r.logger.Error("failed to get local timeline", zap.Error(err))
-		return nil, fmt.Errorf("failed to get local timeline: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "local timeline")
 	}
 
 	// Convert to storage type
@@ -119,7 +119,7 @@ func (r *AccountRepository) GetPublicTimeline(ctx context.Context, limit int, ma
 		r.logger.Error("failed to get public timeline",
 			zap.Bool("onlyMedia", onlyMedia),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get public timeline: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "public timeline")
 	}
 
 	// Convert to storage type
@@ -155,7 +155,7 @@ func (r *AccountRepository) GetHashtagTimeline(ctx context.Context, hashtag stri
 		r.logger.Error("failed to get hashtag timeline",
 			zap.String("hashtag", hashtag),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get hashtag timeline: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "hashtag timeline")
 	}
 
 	// Convert to storage type
@@ -200,7 +200,7 @@ func (r *AccountRepository) GetListTimeline(ctx context.Context, username, listI
 		r.logger.Error("failed to get list timeline",
 			zap.String("listID", listID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get list timeline: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "list timeline")
 	}
 
 	// Convert to storage type
@@ -249,7 +249,7 @@ func (r *AccountRepository) AddToTimeline(ctx context.Context, username string, 
 			zap.String("username", username),
 			zap.String("postID", entry.PostID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add to timeline: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, entry.PostID)
 	}
 
 	return nil
@@ -267,7 +267,7 @@ func (r *AccountRepository) RemoveFromTimeline(ctx context.Context, username, ob
 			zap.String("username", username),
 			zap.String("objectID", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to remove from timeline: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityTimelineEntry, objectID)
 	}
 
 	return nil
@@ -299,7 +299,7 @@ func (r *AccountRepository) GetConversations(ctx context.Context, username strin
 		r.logger.Error("failed to get conversations",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get conversations: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityConversation, "conversations")
 	}
 
 	// Convert to storage type
@@ -329,7 +329,7 @@ func (r *AccountRepository) MuteConversation(ctx context.Context, username, conv
 			zap.String("username", username),
 			zap.String("conversationID", conversationID),
 			zap.Error(err))
-		return fmt.Errorf("failed to mute conversation: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityConversation, conversationID)
 	}
 
 	return nil
@@ -347,7 +347,7 @@ func (r *AccountRepository) UnmuteConversation(ctx context.Context, username, co
 			zap.String("username", username),
 			zap.String("conversationID", conversationID),
 			zap.Error(err))
-		return fmt.Errorf("failed to unmute conversation: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityConversation, conversationID)
 	}
 
 	return nil
@@ -370,7 +370,7 @@ func (r *AccountRepository) IsConversationMuted(ctx context.Context, username, c
 			zap.String("username", username),
 			zap.String("conversationID", conversationID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check conversation mute: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityConversation, conversationID)
 	}
 
 	return true, nil
@@ -397,7 +397,7 @@ func (r *AccountRepository) GetTimelineMarkers(ctx context.Context, username str
 				zap.String("username", username),
 				zap.String("timeline", timeline),
 				zap.Error(err))
-			return nil, fmt.Errorf("failed to get timeline marker: %w", err)
+			return nil, ErrorHandler.HandleGetError(err, "timeline marker", timeline)
 		}
 
 		markers[timeline] = &storage.Marker{
@@ -441,7 +441,7 @@ func (r *AccountRepository) UpdateTimelineMarker(ctx context.Context, username, 
 			zap.String("username", username),
 			zap.String("timeline", timeline),
 			zap.Error(err))
-		return fmt.Errorf("failed to update timeline marker: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "timeline marker", timeline)
 	}
 
 	return nil
@@ -504,7 +504,7 @@ func (r *AccountRepository) getList(ctx context.Context, username, listID string
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get list: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityList, listID)
 	}
 
 	return &list, nil

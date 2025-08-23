@@ -18,31 +18,35 @@ import (
 
 // RouteOptimizerRepository handles route optimizer data persistence
 type RouteOptimizerRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.RouteDeliveryResult]
+	optimizationDecisionRepo *BaseRepository[*models.OptimizationDecision]
+	logger                   *zap.Logger
 }
 
 // NewRouteOptimizerRepository creates a new route optimizer repository
 func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logger) *RouteOptimizerRepository {
+	baseRepo := NewBaseRepository[*models.RouteDeliveryResult](db, tableName, logger)
+	baseRepo.SetRepoName("route_optimizer")
+	
+	optDecisionRepo := NewBaseRepository[*models.OptimizationDecision](db, tableName, logger)
+	optDecisionRepo.SetRepoName("optimization_decision")
+	
 	return &RouteOptimizerRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository:           baseRepo,
+		optimizationDecisionRepo: optDecisionRepo,
+		logger:                   logger,
 	}
 }
 
 // recordDeliveryResultInternal stores a delivery result for route learning
 func (r *RouteOptimizerRepository) recordDeliveryResultInternal(ctx context.Context, result *models.RouteDeliveryResult) error {
-	result.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(result).Create()
+	err := r.Create(ctx, result)
 	if err != nil {
 		r.logger.Error("Failed to record delivery result",
 			zap.String("routeID", result.RouteID),
 			zap.String("messageID", result.MessageID),
 			zap.Error(err))
-		return fmt.Errorf("record delivery result: %w", err)
+		return ErrorHandler.HandleCreateError(err, "route optimizer", result.RouteID)
 	}
 
 	r.logger.Debug("Recorded delivery result",
@@ -59,7 +63,7 @@ func (r *RouteOptimizerRepository) GetRouteResults(ctx context.Context, routeID 
 
 	pk := fmt.Sprintf("ROUTE#%s", routeID)
 
-	query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "RESULT#").
 		OrderBy("SK", "DESC"). // Most recent first
@@ -71,7 +75,7 @@ func (r *RouteOptimizerRepository) GetRouteResults(ctx context.Context, routeID 
 		r.logger.Error("Failed to get route results",
 			zap.String("routeID", routeID),
 			zap.Error(err))
-		return nil, fmt.Errorf("get route results: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "route optimizer", "route results")
 	}
 
 	r.logger.Debug("Retrieved route results",
@@ -87,7 +91,7 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 
 	sinceKey := fmt.Sprintf("%d", since.Unix())
 
-	query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "RESULTS").
 		Where("GSI1SK", ">", sinceKey).
@@ -100,7 +104,7 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 		r.logger.Error("Failed to get recent results",
 			zap.Time("since", since),
 			zap.Error(err))
-		return nil, fmt.Errorf("get recent results: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "route optimizer", "recent results")
 	}
 
 	r.logger.Debug("Retrieved recent results",
@@ -119,7 +123,7 @@ func (r *RouteOptimizerRepository) storeOptimizationDecisionInternal(ctx context
 		r.logger.Error("Failed to store optimization decision",
 			zap.Time("timestamp", decision.Timestamp),
 			zap.Error(err))
-		return fmt.Errorf("store optimization decision: %w", err)
+		return ErrorHandler.HandleCreateError(err, "optimization decision", "decision")
 	}
 
 	r.logger.Debug("Stored optimization decision",
@@ -136,7 +140,7 @@ func (r *RouteOptimizerRepository) GetOptimizationDecisions(ctx context.Context,
 
 	sinceKey := fmt.Sprintf("DECISION#%d", since.UnixNano())
 
-	query := r.db.WithContext(ctx).Model(&models.OptimizationDecision{}).
+	query := r.optimizationDecisionRepo.GetDB().WithContext(ctx).Model(&models.OptimizationDecision{}).
 		Where("PK", "=", "OPTIMIZATION").
 		Where("SK", ">", sinceKey).
 		OrderBy("SK", "DESC"). // Most recent first
@@ -148,7 +152,7 @@ func (r *RouteOptimizerRepository) GetOptimizationDecisions(ctx context.Context,
 		r.logger.Error("Failed to get optimization decisions",
 			zap.Time("since", since),
 			zap.Error(err))
-		return nil, fmt.Errorf("get optimization decisions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "optimization decision", "decisions")
 	}
 
 	r.logger.Debug("Retrieved optimization decisions",
@@ -265,7 +269,7 @@ func (r *RouteOptimizerRepository) StoreOptimizationDecision(ctx context.Context
 
 	decisionJSON, err := json.Marshal(decisionData)
 	if err != nil {
-		return fmt.Errorf("marshal decision data: %w", err)
+		return ErrorHandler.HandleCreateError(err, "optimization decision", "marshal data")
 	}
 
 	decision := &models.OptimizationDecision{
@@ -312,7 +316,7 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 	// Query strategy depends on whether we're filtering by specific route
 	if routeID != "" {
 		// Query by specific route using primary key
-		query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 			Where("PK", "=", fmt.Sprintf("ROUTE#%s", routeID)).
 			Where("SK", ">=", fmt.Sprintf("RESULT#%d", start.UnixNano()))
 
@@ -327,12 +331,12 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 			r.logger.Error("Failed to get route-specific metrics",
 				zap.String("routeID", routeID),
 				zap.Error(err))
-			return nil, fmt.Errorf("get route metrics: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "route optimizer", "route metrics")
 		}
 	} else {
 		// Query across all routes using GSI1
 		startKey := fmt.Sprintf("%d", start.Unix())
-		query := r.db.WithContext(ctx).Model(&models.RouteDeliveryResult{}).
+		query := r.GetDB().WithContext(ctx).Model(&models.RouteDeliveryResult{}).
 			Index("GSI1").
 			Where("GSI1PK", "=", "RESULTS").
 			Where("GSI1SK", ">=", startKey)
@@ -350,7 +354,7 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 				zap.Time("start", start),
 				zap.Time("end", end),
 				zap.Error(err))
-			return nil, fmt.Errorf("get all route metrics: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, "route optimizer", "all route metrics")
 		}
 	}
 

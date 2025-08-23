@@ -12,19 +12,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// RecoveryRepository implements recovery operations using DynamORM
+// RecoveryRepository implements recovery operations using DynamORM with BaseRepository pattern
 type RecoveryRepository struct {
-	db        core.DB
-	logger    *zap.Logger
-	tableName string
+	*BaseRepository[*models.RecoveryRequest]
 }
 
 // NewRecoveryRepository creates a new recovery repository
 func NewRecoveryRepository(db core.DB, tableName string, logger *zap.Logger) *RecoveryRepository {
 	return &RecoveryRepository{
-		db:        db,
-		logger:    logger,
-		tableName: tableName,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.RecoveryRequest](
+			db, tableName, logger, nil, "RecoveryRepository"),
 	}
 }
 
@@ -41,11 +38,13 @@ func (r *RecoveryRepository) StoreTrustee(ctx context.Context, username string, 
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityTrustee, "trustee keys")
+	}
 
-	// Create the trustee
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to store trustee: %w", err)
+	// Create the trustee using DynamORM
+	if err := r.BaseRepository.db.WithContext(ctx).Model(model).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityTrustee, trustee.ActorID)
 	}
 
 	return nil
@@ -56,7 +55,7 @@ func (r *RecoveryRepository) GetTrustees(ctx context.Context, username string) (
 	var trustees []models.Trustee
 
 	pk := fmt.Sprintf("USER#%s", username)
-	err := r.db.WithContext(ctx).Model(&models.Trustee{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Trustee{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "TRUSTEE#").
 		All(&trustees)
@@ -65,7 +64,7 @@ func (r *RecoveryRepository) GetTrustees(ctx context.Context, username string) (
 		if errors.IsNotFound(err) {
 			return []*storage.TrusteeConfig{}, nil
 		}
-		return nil, fmt.Errorf("failed to query trustees: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTrustee, "trustees")
 	}
 
 	// Convert models to storage types
@@ -87,11 +86,11 @@ func (r *RecoveryRepository) DeleteTrustee(ctx context.Context, username, truste
 	pk := fmt.Sprintf("USER#%s", username)
 	sk := fmt.Sprintf("TRUSTEE#%s", trusteeActorID)
 
-	if err := r.db.WithContext(ctx).Model(&models.Trustee{}).
+	if err := r.BaseRepository.db.WithContext(ctx).Model(&models.Trustee{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		Delete(); err != nil {
-		return fmt.Errorf("failed to delete trustee: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityTrustee, trusteeActorID)
 	}
 
 	return nil
@@ -104,22 +103,24 @@ func (r *RecoveryRepository) UpdateTrusteeConfirmed(ctx context.Context, usernam
 
 	// Get the existing trustee
 	var model models.Trustee
-	err := r.db.WithContext(ctx).Model(&models.Trustee{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Trustee{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&model)
 
 	if err != nil {
-		return fmt.Errorf("failed to get trustee for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityTrustee, trusteeActorID)
 	}
 
 	// Update the confirmed status
 	model.Confirmed = confirmed
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityTrustee, "trustee keys")
+	}
 
 	// Save the changes
-	if err := r.db.WithContext(ctx).Model(&model).Update(); err != nil {
-		return fmt.Errorf("failed to update trustee confirmed status: %w", err)
+	if err := r.BaseRepository.db.WithContext(ctx).Model(&model).Update(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityTrustee, trusteeActorID)
 	}
 
 	return nil
@@ -152,7 +153,7 @@ func (r *RecoveryRepository) StoreRecoveryRequest(ctx context.Context, request *
 
 	// Create the recovery request
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to store recovery request: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityRecoveryRequest, request.ID)
 	}
 
 	return nil
@@ -163,16 +164,13 @@ func (r *RecoveryRepository) GetRecoveryRequest(ctx context.Context, requestID s
 	var model models.RecoveryRequest
 
 	pk := fmt.Sprintf("RECOVERY#%s", requestID)
-	err := r.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "REQUEST").
-		First(&model)
+	err := r.Get(ctx, pk, "REQUEST", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get recovery request: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityRecoveryRequest, requestID)
 	}
 
 	// Convert model to storage type
@@ -210,15 +208,7 @@ func (r *RecoveryRepository) UpdateRecoveryRequest(ctx context.Context, request 
 // DeleteRecoveryRequest deletes a recovery request
 func (r *RecoveryRepository) DeleteRecoveryRequest(ctx context.Context, requestID string) error {
 	pk := fmt.Sprintf("RECOVERY#%s", requestID)
-
-	if err := r.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "REQUEST").
-		Delete(); err != nil {
-		return fmt.Errorf("failed to delete recovery request: %w", err)
-	}
-
-	return nil
+	return r.Delete(ctx, pk, "REQUEST")
 }
 
 // GetActiveRecoveryRequests gets all active recovery requests for a user
@@ -229,7 +219,7 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 	now := time.Now()
 
 	// Query using GSI1
-	err := r.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryRequest{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", gsi1pk).
 		Where("GSI1SK", "begins_with", "RECOVERY#").
@@ -239,7 +229,7 @@ func (r *RecoveryRepository) GetActiveRecoveryRequests(ctx context.Context, user
 		if errors.IsNotFound(err) {
 			return []*storage.SocialRecoveryRequest{}, nil
 		}
-		return nil, fmt.Errorf("failed to query recovery requests: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityRecoveryRequest, "active requests")
 	}
 
 	// Filter for active (pending and not expired) requests
@@ -287,11 +277,13 @@ func (r *RecoveryRepository) StoreRecoveryCode(ctx context.Context, username str
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityRecoveryCode, "keys")
+	}
 
 	// Create the recovery code
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to store recovery code: %w", err)
+	if err := r.BaseRepository.db.WithContext(ctx).Model(model).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityRecoveryCode, username)
 	}
 
 	return nil
@@ -302,7 +294,7 @@ func (r *RecoveryRepository) GetRecoveryCodes(ctx context.Context, username stri
 	var codes []models.RecoveryCode
 
 	pk := fmt.Sprintf("USER#%s", username)
-	err := r.db.WithContext(ctx).Model(&models.RecoveryCode{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryCode{}).
 		Where("PK", "=", pk).
 		Where("SK", "begins_with", "RECOVERY_CODE#").
 		All(&codes)
@@ -311,7 +303,7 @@ func (r *RecoveryRepository) GetRecoveryCodes(ctx context.Context, username stri
 		if errors.IsNotFound(err) {
 			return []*storage.RecoveryCodeItem{}, nil
 		}
-		return nil, fmt.Errorf("failed to query recovery codes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityRecoveryCode, "codes")
 	}
 
 	// Convert models to storage types
@@ -346,7 +338,7 @@ func (r *RecoveryRepository) MarkRecoveryCodeUsed(ctx context.Context, username,
 	}
 
 	if targetCode == nil {
-		return fmt.Errorf("recovery code not found")
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRecoveryCode, codeHash)
 	}
 
 	// Update the code with used timestamp
@@ -356,22 +348,24 @@ func (r *RecoveryRepository) MarkRecoveryCodeUsed(ctx context.Context, username,
 
 	// Get the existing recovery code
 	var codeModel models.RecoveryCode
-	err = r.db.WithContext(ctx).Model(&models.RecoveryCode{}).
+	err = r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryCode{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&codeModel)
 
 	if err != nil {
-		return fmt.Errorf("failed to get recovery code for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityRecoveryCode, username)
 	}
 
 	// Update the used timestamp
 	codeModel.UsedAt = &now
-	codeModel.UpdateKeys()
+	if err := codeModel.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityRecoveryCode, "keys")
+	}
 
 	// Save the changes
-	if err := r.db.WithContext(ctx).Model(&codeModel).Update(); err != nil {
-		return fmt.Errorf("failed to mark recovery code as used: %w", err)
+	if err := r.BaseRepository.db.WithContext(ctx).Model(&codeModel).Update(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityRecoveryCode, username)
 	}
 
 	return nil
@@ -389,11 +383,11 @@ func (r *RecoveryRepository) DeleteAllRecoveryCodes(ctx context.Context, usernam
 	pk := fmt.Sprintf("USER#%s", username)
 	for _, code := range codes {
 		sk := fmt.Sprintf("RECOVERY_CODE#%d", code.Position)
-		if err := r.db.WithContext(ctx).Model(&models.RecoveryCode{}).
+		if err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryCode{}).
 			Where("PK", "=", pk).
 			Where("SK", "=", sk).
 			Delete(); err != nil {
-			return fmt.Errorf("failed to delete recovery code: %w", err)
+			return ErrorHandler.HandleDeleteError(err, EntityRecoveryCode, username)
 		}
 	}
 
@@ -429,11 +423,13 @@ func (r *RecoveryRepository) StoreRecoveryToken(ctx context.Context, key string,
 	}
 
 	// Update keys (this will set SK and TTL)
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityRecoveryToken, "keys")
+	}
 
 	// Create the recovery token
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to store recovery token: %w", err)
+	if err := r.BaseRepository.db.WithContext(ctx).Model(model).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityRecoveryToken, key)
 	}
 
 	return nil
@@ -443,16 +439,16 @@ func (r *RecoveryRepository) StoreRecoveryToken(ctx context.Context, key string,
 func (r *RecoveryRepository) GetRecoveryToken(ctx context.Context, key string) (map[string]any, error) {
 	var model models.RecoveryToken
 
-	err := r.db.WithContext(ctx).Model(&models.RecoveryToken{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryToken{}).
 		Where("PK", "=", key).
 		Where("SK", "=", "TOKEN").
 		First(&model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("recovery token not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityRecoveryToken, key)
 		}
-		return nil, fmt.Errorf("failed to get recovery token: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityRecoveryToken, key)
 	}
 
 	return model.Data, nil
@@ -460,11 +456,11 @@ func (r *RecoveryRepository) GetRecoveryToken(ctx context.Context, key string) (
 
 // DeleteRecoveryToken deletes a recovery token
 func (r *RecoveryRepository) DeleteRecoveryToken(ctx context.Context, key string) error {
-	if err := r.db.WithContext(ctx).Model(&models.RecoveryToken{}).
+	if err := r.BaseRepository.db.WithContext(ctx).Model(&models.RecoveryToken{}).
 		Where("PK", "=", key).
 		Where("SK", "=", "TOKEN").
 		Delete(); err != nil {
-		return fmt.Errorf("failed to delete recovery token: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityRecoveryToken, key)
 	}
 
 	return nil

@@ -6,7 +6,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -81,14 +81,15 @@ func (s *SignatureService) getCachedPublicKey(ctx context.Context, actorURL stri
 	// Parse the cached PEM key
 	publicKey, err := ParsePublicKeyPEM(cache.GetPublicKeyPEM())
 	if err != nil {
-		log.Warn("failed to parse cached public key, invalidating cache",
-			zap.Error(err),
-			zap.String("key_id", cache.KeyID))
+		log.Error("cached public key is invalid, invalidating cache",
+			zap.String("key_id", cache.KeyID),
+			zap.String("actor_url", actorURL),
+			zap.Error(err))
 		// Invalid cached key - remove it
 		if invalidateErr := s.publicKeyCacheRepo.InvalidateCache(ctx, actorURL); invalidateErr != nil {
 			log.Warn("failed to invalidate cache", zap.Error(invalidateErr))
 		}
-		return nil, "", "", fmt.Errorf("invalid cached public key: %w", err)
+		return nil, "", "", errors.Join(ErrInvalidCachedPublicKey, err)
 	}
 
 	log.Debug("using cached public key",
@@ -143,7 +144,11 @@ func (s *SignatureService) fetchPublicKeyWithRetry(ctx context.Context, actorURL
 		return publicKey, keyID, algorithm, nil
 	}
 
-	return nil, "", "", fmt.Errorf("failed to fetch public key after %d attempts: %w", maxRetries, lastErr)
+	log.Error("public key fetch failed after all retry attempts",
+		zap.String("actor_url", actorURL),
+		zap.Int("max_retries", maxRetries),
+		zap.Error(lastErr))
+	return nil, "", "", errors.Join(ErrPublicKeyFetchFailed, lastErr)
 }
 
 // fetchActorPublicKeyWithPEM fetches an actor's public key from their profile and returns the PEM data
@@ -157,7 +162,11 @@ func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actor
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
 	if err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to create request: %w", err)
+		log.Error("failed to create HTTP request for actor fetch",
+			zap.String("actor_url", actorURL),
+			zap.String("method", http.MethodGet),
+			zap.Error(err))
+		return nil, "", "", "", errors.Join(ErrRequestCreationFailed, err)
 	}
 
 	req.Header.Set("Accept", "application/activity+json, application/ld+json")
@@ -166,7 +175,11 @@ func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actor
 	// Make request
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to fetch actor: %w", err)
+		log.Error("HTTP request failed during actor fetch",
+			zap.String("actor_url", actorURL),
+			zap.String("method", req.Method),
+			zap.Error(err))
+		return nil, "", "", "", errors.Join(ErrFetchActorHTTPFailed, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -175,24 +188,43 @@ func (s *SignatureService) fetchActorPublicKeyWithPEM(ctx context.Context, actor
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, "", "", "", fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
+		log.Error("actor fetch returned non-OK status",
+			zap.String("actor_url", actorURL),
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("status", resp.Status))
+		return nil, "", "", "", ErrFetchActorHTTPStatusFailed
 	}
 
 	// Parse actor
 	var actor activitypub.Actor
 	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to parse actor: %w", err)
+		log.Error("failed to parse ActivityPub actor response",
+			zap.String("actor_url", actorURL),
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("content_type", resp.Header.Get("Content-Type")),
+			zap.Error(err))
+		return nil, "", "", "", errors.Join(ErrActorUnmarshalFailed, err)
 	}
 
 	// Extract public key
 	if actor.PublicKey == nil || actor.PublicKey.PublicKeyPem == "" {
-		return nil, "", "", "", fmt.Errorf("actor has no public key")
+		log.Error("actor does not have a public key for signature verification",
+			zap.String("actor_url", actorURL),
+			zap.String("actor_id", actor.ID),
+			zap.Bool("has_public_key_object", actor.PublicKey != nil),
+			zap.Bool("has_pem_data", actor.PublicKey != nil && actor.PublicKey.PublicKeyPem != ""))
+		return nil, "", "", "", ErrActorHasNoPublicKey
 	}
 
 	// Parse PEM-encoded public key
 	publicKey, err := ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
 	if err != nil {
-		return nil, "", "", "", fmt.Errorf("failed to parse public key: %w", err)
+		log.Error("failed to parse actor's PEM-encoded public key",
+			zap.String("actor_url", actorURL),
+			zap.String("key_id", actor.PublicKey.ID),
+			zap.Int("pem_length", len(actor.PublicKey.PublicKeyPem)),
+			zap.Error(err))
+		return nil, "", "", "", errors.Join(ErrPublicKeyParseFailed, err)
 	}
 
 	// Determine algorithm based on key type (use enhanced detection)
@@ -213,7 +245,11 @@ func (s *SignatureService) verifyWithAlgorithm(req *http.Request, publicKey cryp
 		sigHeader := req.Header.Get(SignatureHeader)
 		sig, err := ParseSignatureHeader(sigHeader)
 		if err != nil {
-			return fmt.Errorf("failed to parse signature: %w", err)
+			s.logger.Error("failed to parse signature header for enhanced verification",
+				zap.String("algorithm", algorithm),
+				zap.String("signature_header", sigHeader),
+				zap.Error(err))
+			return errors.Join(ErrSignatureParseFailed, err)
 		}
 
 		return VerifyHTTPSignatureEnhanced(req, publicKey, sig)
@@ -242,7 +278,8 @@ func (s *SignatureService) VerifyDigestWithCompatibility(req *http.Request, body
 
 	// Support both SHA-256 and sha-256 for compatibility
 	if algorithm != "sha-256" {
-		return common.AuthenticationError{Message: fmt.Sprintf("unsupported digest algorithm: %s", algorithm)}
+		s.logger.Error("unsupported digest algorithm", zap.String("algorithm", algorithm))
+		return common.AuthenticationError{Message: "unsupported digest algorithm"}
 	}
 
 	// Calculate actual digest

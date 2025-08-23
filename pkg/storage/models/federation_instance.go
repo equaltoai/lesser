@@ -56,7 +56,7 @@ type FederationInstanceRegistry struct {
 }
 
 // UpdateKeys ensures GSI keys are properly set before saving
-func (f *FederationInstanceRegistry) UpdateKeys() {
+func (f *FederationInstanceRegistry) UpdateKeys() error {
 	// Set primary keys
 	f.PK = fmt.Sprintf("INSTANCE#%s", f.Domain)
 	f.SK = SKMetadata
@@ -71,6 +71,18 @@ func (f *FederationInstanceRegistry) UpdateKeys() {
 
 	// Set TTL (1 year from now)
 	f.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
+	
+	return nil
+}
+
+// GetPK returns the partition key
+func (f *FederationInstanceRegistry) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key
+func (f *FederationInstanceRegistry) GetSK() string {
+	return f.SK
 }
 
 // FederationInstanceRegistryHealthHistory represents health history records
@@ -94,10 +106,21 @@ type FederationInstanceRegistryHealthHistory struct {
 }
 
 // UpdateKeys ensures keys are properly set for health history
-func (h *FederationInstanceRegistryHealthHistory) UpdateKeys() {
+func (h *FederationInstanceRegistryHealthHistory) UpdateKeys() error {
 	h.PK = fmt.Sprintf("INSTANCE#%s", h.extractInstanceIDFromPK())
 	h.SK = fmt.Sprintf("HEALTH#%d", h.Timestamp.UnixNano())
 	h.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
+	return nil
+}
+
+// GetPK returns the partition key
+func (h *FederationInstanceRegistryHealthHistory) GetPK() string {
+	return h.PK
+}
+
+// GetSK returns the sort key
+func (h *FederationInstanceRegistryHealthHistory) GetSK() string {
+	return h.SK
 }
 
 // extractInstanceIDFromPK extracts instance ID from PK (assumes it's already set)

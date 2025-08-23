@@ -150,7 +150,7 @@ var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	logger    *zap.Logger
-	repos     interface{}
+	repos     interface{} //nolint:unused // dependency injection pattern - available for processor extensions
 	handler   *DLQProcessorHandler
 )
 

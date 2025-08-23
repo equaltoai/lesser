@@ -377,8 +377,8 @@ type MockLikeRepository struct {
 	mock.Mock
 }
 
-func (m *MockLikeRepository) CreateLike(ctx context.Context, actor, object string) (*models.Like, error) {
-	args := m.Called(ctx, actor, object)
+func (m *MockLikeRepository) CreateLike(ctx context.Context, actor, object, statusAuthorID string) (*models.Like, error) {
+	args := m.Called(ctx, actor, object, statusAuthorID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

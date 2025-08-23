@@ -3,17 +3,17 @@ package streaming
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CostTracker interface for tracking AWS costs
@@ -39,7 +39,8 @@ type BandwidthTracker struct {
 
 // NewBandwidthTracker creates a new bandwidth tracker
 func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, costTracker CostTracker, cloudWatch *cloudwatch.Client) *BandwidthTracker {
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}

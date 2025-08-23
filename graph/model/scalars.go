@@ -1,10 +1,10 @@
 package model
 
 import (
-	"fmt"
 	"io"
-	"log"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // Time is a custom GraphQL scalar
@@ -21,7 +21,7 @@ func (t *Time) UnmarshalGQL(v any) error {
 		*t = Time(parsed)
 		return nil
 	default:
-		return fmt.Errorf("time must be a string")
+		return ErrTimeNotString
 	}
 }
 
@@ -30,7 +30,7 @@ func (t Time) MarshalGQL(w io.Writer) {
 	if _, err := w.Write([]byte(`"` + time.Time(t).Format(time.RFC3339) + `"`)); err != nil {
 		// Log error but don't return it as the interface doesn't support it
 		// This is typical for GraphQL marshalers
-		log.Printf("Warning: failed to write time to GraphQL response: %v", err)
+		zap.L().Warn("failed to write time to GraphQL response", zap.Error(err))
 	}
 }
 
@@ -44,7 +44,7 @@ func (c *Cursor) UnmarshalGQL(v any) error {
 		*c = Cursor(v)
 		return nil
 	default:
-		return fmt.Errorf("cursor must be a string")
+		return ErrCursorNotString
 	}
 }
 
@@ -53,6 +53,6 @@ func (c Cursor) MarshalGQL(w io.Writer) {
 	if _, err := w.Write([]byte(`"` + string(c) + `"`)); err != nil {
 		// Log error but don't return it as the interface doesn't support it
 		// This is typical for GraphQL marshalers
-		log.Printf("Warning: failed to write cursor to GraphQL response: %v", err)
+		zap.L().Warn("failed to write cursor to GraphQL response", zap.Error(err))
 	}
 }

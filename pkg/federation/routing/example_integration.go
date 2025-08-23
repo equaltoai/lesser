@@ -2,10 +2,12 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -15,9 +17,11 @@ import (
 func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Logger) *Manager {
 	// Create repositories
 	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
-	circuitBreakerRepo := repositories.NewCircuitBreakerRepository(db, tableName, logger)
+	circuitBreakerRepo := repositories.NewCircuitBreakerRepositoryBasic(db, tableName, logger)
 	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
-	federationCostRepo := repositories.NewFederationCostRepository(db, tableName, logger)
+	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
+	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
+	federationCostRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
 
 	// Create a mock federation instance repository for the example
 	instanceRepo := &MockFederationInstanceRepository{
@@ -195,7 +199,8 @@ func (m *MockFederationInstanceRepository) GetInstance(_ context.Context, instan
 		return instance, nil
 	}
 
-	return nil, fmt.Errorf("instance not found: %s", instanceID)
+	m.logger.Error("instance not found in mock repository", zap.String("instance_id", instanceID))
+	return nil, errors.Join(ErrInstanceNotFound, errors.New("instance "+instanceID))
 }
 
 // RegisterInstance adds a new instance to the mock repository

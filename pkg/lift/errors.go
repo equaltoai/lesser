@@ -1,10 +1,16 @@
 package lift
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/common"
+)
+
+// Base error constants
+var (
+	ErrTenantContextRequired = errors.New("tenant context required")
 )
 
 // Domain-specific error constructors using Lift patterns
@@ -119,3 +125,13 @@ func TimeoutError(operation string) *lift.LiftError {
 		504,
 	).WithDetail("operation", operation)
 }
+
+// Testing-specific error constants
+var (
+	ErrTestSetupFailed             = errors.New("test setup failed")
+	ErrIntegrationTestFailed       = errors.New("integration test execution failed")
+	ErrTestValidationFailed        = errors.New("test validation failed")
+	ErrTestCleanupFailed          = errors.New("test cleanup failed")
+	ErrTestExpectedSuccess        = errors.New("expected success response")
+	ErrTestUnexpectedStatusCode   = errors.New("unexpected status code")
+)

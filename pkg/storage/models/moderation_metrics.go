@@ -34,8 +34,18 @@ func (ModerationMetricsEntry) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (m *ModerationMetricsEntry) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *ModerationMetricsEntry) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *ModerationMetricsEntry) UpdateKeys() {
+func (m *ModerationMetricsEntry) UpdateKeys() error {
 	// Primary key - metrics by date
 	m.PK = fmt.Sprintf("METRICS#%s", m.Date)
 	m.SK = fmt.Sprintf("STATS#%s#%s", m.Hour, m.MetricType)
@@ -51,6 +61,7 @@ func (m *ModerationMetricsEntry) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // ModerationFalsePositive represents a false positive record
@@ -82,8 +93,18 @@ func (ModerationFalsePositive) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (m *ModerationFalsePositive) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *ModerationFalsePositive) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *ModerationFalsePositive) UpdateKeys() {
+func (m *ModerationFalsePositive) UpdateKeys() error {
 	// Primary key - false positives by date
 	m.PK = fmt.Sprintf("METRICS#%s", m.Date)
 	m.SK = fmt.Sprintf("FP#%s", m.ContentID)
@@ -99,6 +120,7 @@ func (m *ModerationFalsePositive) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // ModerationDecisionSample represents a decision sample for analysis
@@ -133,8 +155,18 @@ func (ModerationDecisionSample) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (m *ModerationDecisionSample) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *ModerationDecisionSample) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *ModerationDecisionSample) UpdateKeys() {
+func (m *ModerationDecisionSample) UpdateKeys() error {
 	// Primary key - samples by date
 	m.PK = fmt.Sprintf("SAMPLES#%s", m.Date)
 	m.SK = fmt.Sprintf("%d#%s", m.Timestamp.UnixNano(), m.ContentID)
@@ -150,6 +182,7 @@ func (m *ModerationDecisionSample) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // ModerationPatternStats represents pattern matching statistics
@@ -182,8 +215,18 @@ func (ModerationPatternStats) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (m *ModerationPatternStats) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *ModerationPatternStats) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *ModerationPatternStats) UpdateKeys() {
+func (m *ModerationPatternStats) UpdateKeys() error {
 	// Primary key - pattern stats by ID
 	m.PK = fmt.Sprintf("PATTERN_STATS#%s", m.PatternID)
 	m.SK = SKStats
@@ -199,6 +242,7 @@ func (m *ModerationPatternStats) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // Helper types for moderation metrics

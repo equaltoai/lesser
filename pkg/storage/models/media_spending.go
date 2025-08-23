@@ -230,7 +230,7 @@ func (ms *MediaSpending) setPeriodTimes() error {
 		// Parse YYYY-MM format
 		t, err := time.Parse(common.MonthFormat, ms.Period)
 		if err != nil {
-			return fmt.Errorf("invalid monthly period format: %s", ms.Period)
+			return fmt.Errorf("%w: %s", ErrInvalidMonthlyPeriodFormat, ms.Period)
 		}
 		ms.PeriodStartAt = t
 		ms.PeriodEndAt = t.AddDate(0, 1, 0).Add(-time.Nanosecond) // End of month
@@ -238,12 +238,12 @@ func (ms *MediaSpending) setPeriodTimes() error {
 		// Parse YYYY-MM-DD format
 		t, err := time.Parse(common.DateFormat, ms.Period)
 		if err != nil {
-			return fmt.Errorf("invalid daily period format: %s", ms.Period)
+			return fmt.Errorf("%w: %s", ErrInvalidDailyPeriodFormat, ms.Period)
 		}
 		ms.PeriodStartAt = t
 		ms.PeriodEndAt = t.Add(24*time.Hour - time.Nanosecond) // End of day
 	default:
-		return fmt.Errorf("invalid period type: %s", ms.PeriodType)
+		return fmt.Errorf("%w: %s", ErrInvalidPeriodType, ms.PeriodType)
 	}
 
 	return nil
@@ -258,7 +258,7 @@ func (ms *MediaSpending) Validate() error {
 		return err
 	}
 	if ms.PeriodType != PeriodMonthly && ms.PeriodType != PeriodDaily {
-		return fmt.Errorf("PeriodType must be 'monthly' or 'daily'")
+		return ErrInvalidPeriodTypeValue
 	}
 
 	// Validate that individual spending amounts sum to total
@@ -272,7 +272,7 @@ func (ms *MediaSpending) Validate() error {
 	if ms.TotalSpendMicros < 0 || ms.ProcessingSpendMicros < 0 ||
 		ms.StorageSpendMicros < 0 || ms.BandwidthSpendMicros < 0 ||
 		ms.ComputeSpendMicros < 0 {
-		return fmt.Errorf("spending amounts cannot be negative")
+		return ErrNegativeSpendingAmounts
 	}
 
 	return nil
@@ -313,7 +313,7 @@ func (mst *MediaSpendingTransaction) Validate() error {
 		return err
 	}
 	if mst.CostMicros < 0 {
-		return fmt.Errorf("CostMicros cannot be negative")
+		return ErrNegativeCostMicros
 	}
 	if err := common.ValidateRequiredParam("category", strings.TrimSpace(mst.Category)); err != nil {
 		return err
@@ -324,7 +324,7 @@ func (mst *MediaSpendingTransaction) Validate() error {
 		ResourceProcessing: true, ResourceStorage: true, ResourceBandwidth: true, ResourceCompute: true,
 	}
 	if !validCategories[mst.Category] {
-		return fmt.Errorf("invalid category: %s", mst.Category)
+		return fmt.Errorf("%w: %s", ErrInvalidSpendingCategory, mst.Category)
 	}
 
 	return nil
@@ -447,4 +447,74 @@ func (ms *MediaSpending) GetRemainingBudget() int64 {
 		return 0
 	}
 	return remaining
+}
+
+// === BaseModel Interface Implementation for MediaSpending ===
+
+// GetPK returns the partition key for this media spending record
+func (ms *MediaSpending) GetPK() string {
+	return ms.PK
+}
+
+// GetSK returns the sort key for this media spending record
+func (ms *MediaSpending) GetSK() string {
+	return ms.SK
+}
+
+// UpdateKeys ensures all key fields are properly set
+func (ms *MediaSpending) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("UserID", ms.UserID); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaSpendingUserIDRequired, err)
+	}
+	if err := common.ValidateRequiredParam("Period", ms.Period); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaSpendingPeriodRequired, err)
+	}
+
+	// Set primary keys
+	ms.PK = "MEDIA_SPENDING#" + ms.UserID
+	ms.SK = "PERIOD#" + ms.Period
+
+	// Update GSI keys
+	ms.setupGSIKeys()
+
+	return nil
+}
+
+// === BaseModel Interface Implementation for MediaSpendingTransaction ===
+
+// GetPK returns the partition key for this media spending transaction
+func (mst *MediaSpendingTransaction) GetPK() string {
+	return mst.PK
+}
+
+// GetSK returns the sort key for this media spending transaction
+func (mst *MediaSpendingTransaction) GetSK() string {
+	return mst.SK
+}
+
+// UpdateKeys ensures all key fields are properly set
+func (mst *MediaSpendingTransaction) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("UserID", mst.UserID); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaSpendingUserIDRequired, err)
+	}
+	if err := common.ValidateRequiredParam("TransactionID", mst.TransactionID); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaSpendingTransactionIDRequired, err)
+	}
+
+	// Set primary keys
+	mst.PK = "SPENDING_TXN#" + mst.UserID
+	now := mst.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	mst.SK = fmt.Sprintf("TXN#%s#%s", now.Format("20060102150405"), mst.TransactionID)
+
+	// Set up GSI keys
+	dateStr := now.Format(common.DateFormat)
+	mst.GSI1PK = "TXN_TIME#" + dateStr
+	mst.GSI1SK = fmt.Sprintf("%s#%s#%s", now.Format(time.RFC3339), mst.UserID, mst.TransactionID)
+
+	return nil
 }

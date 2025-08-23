@@ -257,12 +257,12 @@ func (sm *GraphQLSubscriptionManager) processCostEvents(subscription *GraphQLSub
 		if costUpdate == nil {
 			return nil
 		}
-		
+
 		// Apply threshold filter if specified
 		if threshold != nil && costUpdate.OperationCost < *threshold {
 			return nil
 		}
-		
+
 		return costUpdate
 	})
 }

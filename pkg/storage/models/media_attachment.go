@@ -90,16 +90,16 @@ func (m *MediaAttachment) BeforeUpdate() error {
 // Validate performs validation on the MediaAttachment
 func (m *MediaAttachment) Validate() error {
 	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(m.MediaID)); err != nil {
-		return fmt.Errorf("MediaID is required")
+		return ErrMediaAttachmentIDRequired
 	}
 	if err := common.ValidateRequiredParam("EntityType", strings.TrimSpace(m.EntityType)); err != nil {
-		return fmt.Errorf("EntityType is required")
+		return ErrMediaAttachmentEntityTypeRequired
 	}
 	if err := common.ValidateRequiredParam("EntityID", strings.TrimSpace(m.EntityID)); err != nil {
-		return fmt.Errorf("EntityID is required")
+		return ErrMediaAttachmentEntityIDRequired
 	}
 	if m.Order < 0 {
-		return fmt.Errorf("order must be non-negative")
+		return ErrMediaAttachmentOrderNegative
 	}
 
 	// Validate entity type
@@ -112,14 +112,14 @@ func (m *MediaAttachment) Validate() error {
 		}
 	}
 	if !isValid {
-		return fmt.Errorf("invalid entity type: %s", m.EntityType)
+		return fmt.Errorf("%w: %s", ErrMediaAttachmentInvalidEntityType, m.EntityType)
 	}
 
 	// Validate focal point format if provided
 	if m.FocalPoint != "" {
 		parts := strings.Split(m.FocalPoint, ",")
 		if len(parts) != 2 {
-			return fmt.Errorf("focal point must be in x,y format")
+			return ErrMediaAttachmentInvalidFocalPoint
 		}
 	}
 

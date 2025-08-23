@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -37,7 +38,7 @@ type ExportProcessor struct {
 	db               core.DB
 	repos            storageCore.RepositoryStorage
 	exportRepo       *repositories.ExportRepository
-	costTrackingRepo *repositories.CostTrackingRepository
+	costTrackingRepo *repositories.TrackingRepository
 	s3Client         *s3.Client
 	logger           *zap.Logger
 	tableName        string
@@ -74,13 +75,7 @@ func main() {
 		Version:     "1.0.0",
 	})
 
-	// Load AWS config
-	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background(),
-		awsconfig.WithRegion(lambdaCtx.Config.Region),
-	)
-	if err != nil {
-		lambdaCtx.Logger.Fatal("failed to load AWS config", zap.Error(err))
-	}
+	// AWS config no longer needed - DynamORM handles configuration internally
 
 	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())
@@ -89,7 +84,7 @@ func main() {
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, awsConfig, lambdaCtx.Logger)
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -98,7 +93,7 @@ func main() {
 	exportRepo := repositories.NewExportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize cost tracking repository
-	costTrackingRepo := repositories.NewCostTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Create processor instance
 	processor = &ExportProcessor{
@@ -211,7 +206,7 @@ func (ep *ExportProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to load AWS config: %w", err)
+		return errors.Join(ErrAWSConfigLoad, err)
 	}
 
 	// Initialize S3 client
@@ -314,17 +309,18 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 		contentType = "application/zip"
 
 	default:
-		return fmt.Errorf("unsupported export format: %s", event.Format)
+		ep.logger.Error("unsupported export format", zap.String("format", event.Format))
+	return ErrUnsupportedExportFormat
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to generate export: %w", err)
+		return errors.Join(ErrGenerateExport, err)
 	}
 
 	// Upload to S3 and track costs
 	s3Key := fmt.Sprintf("exports/%s/%s/%s", event.Username, event.ExportID, filename)
 	if err := ep.uploadToS3(ctx, s3Key, exportData, contentType, exportCostTracking); err != nil {
-		return fmt.Errorf("failed to upload export: %w", err)
+		return errors.Join(ErrS3Upload, err)
 	}
 
 	// Update export cost tracking with file metrics
@@ -339,7 +335,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 		Key:    aws.String(s3Key),
 	}, s3.WithPresignExpires(24*time.Hour))
 	if err != nil {
-		return fmt.Errorf("failed to generate pre-signed URL: %w", err)
+		return errors.Join(ErrS3PresignedURL, err)
 	}
 
 	// Update export job as completed
@@ -352,7 +348,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 	}
 
 	if err := ep.exportRepo.UpdateExportStatus(ctx, event.ExportID, "completed", completionData, ""); err != nil {
-		return fmt.Errorf("failed to update export status: %w", err)
+		return errors.Join(ErrUpdateStatus, err)
 	}
 
 	ep.logger.Info("export completed",
@@ -375,7 +371,7 @@ func (ep *ExportProcessor) generateCSVExport(ctx context.Context, event ExportGe
 
 	writer.Flush()
 	if err := writer.Error(); err != nil {
-		return nil, 0, fmt.Errorf("CSV writer error: %w", err)
+		return nil, 0, errors.Join(ErrCSVWriter, err)
 	}
 	return buf.Bytes(), recordCount, nil
 }
@@ -398,7 +394,8 @@ func (ep *ExportProcessor) writeCSVData(ctx context.Context, writer *csv.Writer,
 	case "domain_blocks":
 		return ep.writeDomainBlocksCSV(ctx, writer, event.Username)
 	default:
-		return 0, fmt.Errorf("CSV export not supported for type: %s", event.Type)
+		ep.logger.Error("CSV export not supported for type", zap.String("type", event.Type))
+		return 0, ErrCSVExportNotSupported
 	}
 }
 
@@ -695,7 +692,7 @@ func (ep *ExportProcessor) generateActivityPubExport(ctx context.Context, event 
 
 	if err := zipWriter.Close(); err != nil {
 		ep.logger.Error("failed to close zip writer", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to close zip writer: %w", err)
+		return nil, 0, errors.Join(ErrZipWriter, err)
 	}
 	return buf.Bytes(), recordCount, nil
 }
@@ -823,7 +820,7 @@ func (ep *ExportProcessor) generateMastodonExport(ctx context.Context, event Exp
 
 	if err := zipWriter.Close(); err != nil {
 		ep.logger.Error("failed to close zip writer", zap.Error(err))
-		return nil, 0, fmt.Errorf("failed to close zip writer: %w", err)
+		return nil, 0, errors.Join(ErrZipWriter, err)
 	}
 	return buf.Bytes(), recordCount, nil
 }
@@ -833,7 +830,7 @@ func (ep *ExportProcessor) getActor(ctx context.Context, username string) (*acti
 	// Get actor using storage client (already migrated to DynamORM)
 	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, errors.Join(ErrGetActor, err)
 	}
 
 	return actor, nil
@@ -848,7 +845,7 @@ func (ep *ExportProcessor) getFollowers(ctx context.Context, username string) ([
 		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get followers", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get followers: %w", err)
+			return nil, errors.Join(ErrGetFollowers, err)
 		}
 
 		// Convert actor IDs to Mastodon handles for CSV export
@@ -875,7 +872,7 @@ func (ep *ExportProcessor) getFollowing(ctx context.Context, username string) ([
 		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get following", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get following: %w", err)
+			return nil, errors.Join(ErrGetFollowing, err)
 		}
 
 		// Convert actor IDs to Mastodon handles for CSV export
@@ -902,7 +899,7 @@ func (ep *ExportProcessor) getBlocks(ctx context.Context, username string) ([]st
 		blocks, nextCursor, err := ep.repos.Social().GetBlockedUsers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get blocked actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get blocked actors: %w", err)
+			return nil, errors.Join(ErrGetBlocks, err)
 		}
 
 		for _, block := range blocks {
@@ -934,7 +931,7 @@ func (ep *ExportProcessor) getMutes(ctx context.Context, username string) ([]Mut
 		mutes, nextCursor, err := ep.repos.Social().GetMutedUsers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get muted actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get muted actors: %w", err)
+			return nil, errors.Join(ErrGetMutes, err)
 		}
 
 		for _, mute := range mutes {
@@ -958,7 +955,7 @@ func (ep *ExportProcessor) getListsWithMembers(ctx context.Context, username str
 	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get lists: %w", err)
+		return nil, errors.Join(ErrGetLists, err)
 	}
 
 	result := make(map[string][]string)
@@ -1022,7 +1019,7 @@ func (ep *ExportProcessor) fetchBookmarkBatch(ctx context.Context, username, cur
 		ep.logger.Error("failed to get bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("get bookmarks: %w", err)
+		return nil, "", errors.Join(ErrGetBookmarks, err)
 	}
 	return bookmarkIDs, nextCursor, nil
 }
@@ -1144,7 +1141,7 @@ func (ep *ExportProcessor) getOutbox(ctx context.Context, username string, dateR
 		activities, nextCursor, err := ep.repos.Activity().GetOutboxActivities(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get outbox activities", zap.String("username", username), zap.Error(err))
-			return nil, 0, fmt.Errorf("get outbox activities: %w", err)
+			return nil, 0, errors.Join(ErrGetOutbox, err)
 		}
 
 		// Filter by date range if specified
@@ -1180,7 +1177,7 @@ func (ep *ExportProcessor) getFollowingActors(ctx context.Context, username stri
 		following, nextCursor, err := ep.repos.Relationship().GetFollowing(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get following actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get following actors: %w", err)
+			return nil, errors.Join(ErrGetFollowingActors, err)
 		}
 
 		// Keep raw actor IDs for ActivityPub format
@@ -1205,7 +1202,7 @@ func (ep *ExportProcessor) getFollowersActors(ctx context.Context, username stri
 		followers, nextCursor, err := ep.repos.Relationship().GetFollowers(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get follower actors", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get follower actors: %w", err)
+			return nil, errors.Join(ErrGetFollowerActors, err)
 		}
 
 		// Keep raw actor IDs for ActivityPub format
@@ -1229,7 +1226,7 @@ func (ep *ExportProcessor) getLikes(ctx context.Context, username string) ([]any
 	actor, err := ep.repos.Account().GetActor(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get actor", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get actor: %w", err)
+		return nil, errors.Join(ErrGetActor, err)
 	}
 
 	for {
@@ -1239,7 +1236,7 @@ func (ep *ExportProcessor) getLikes(ctx context.Context, username string) ([]any
 				zap.String("username", username),
 				zap.String("actor_id", actor.ID),
 				zap.Error(err))
-			return nil, fmt.Errorf("get actor likes: %w", err)
+			return nil, errors.Join(ErrGetActorLikes, err)
 		}
 
 		// Convert likes to Like activities
@@ -1293,7 +1290,7 @@ func (ep *ExportProcessor) getListsForExport(ctx context.Context, username strin
 	lists, err := ep.repos.List().GetListsForUser(ctx, username)
 	if err != nil {
 		ep.logger.Error("failed to get lists", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("get lists: %w", err)
+		return nil, errors.Join(ErrGetLists, err)
 	}
 
 	// Convert to export format
@@ -1403,7 +1400,7 @@ func (ep *ExportProcessor) getDomainBlocks(ctx context.Context, username string)
 		domains, nextCursor, err := ep.repos.DomainBlock().GetUserDomainBlocks(ctx, username, 1000, cursor)
 		if err != nil {
 			ep.logger.Error("failed to get domain blocks", zap.String("username", username), zap.Error(err))
-			return nil, fmt.Errorf("get domain blocks: %w", err)
+			return nil, errors.Join(ErrGetDomainBlocks, err)
 		}
 
 		allDomainBlocks = append(allDomainBlocks, domains...)
@@ -1460,7 +1457,7 @@ func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) 
 		ep.logger.Error("failed to get user media",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("get user media: %w", err)
+		return nil, errors.Join(ErrGetUserMedia, err)
 	}
 
 	// Convert to proper media type
@@ -1646,11 +1643,11 @@ func (ep *ExportProcessor) downloadFromS3(ctx context.Context, s3Key string) (*s
 func (ep *ExportProcessor) addFileToZip(zipWriter *zip.Writer, fileName string, content io.Reader) error {
 	zipFile, err := zipWriter.Create(fileName)
 	if err != nil {
-		return fmt.Errorf("create ZIP entry: %w", err)
+		return errors.Join(ErrZipEntryCreate, err)
 	}
 
 	if _, err := io.Copy(zipFile, content); err != nil {
-		return fmt.Errorf("copy to ZIP: %w", err)
+		return errors.Join(ErrZipCopy, err)
 	}
 
 	return nil

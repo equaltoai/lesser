@@ -26,7 +26,7 @@ type BaseTransformer[TSource, TTarget any] struct {
 func (bt *BaseTransformer[TSource, TTarget]) Transform(ctx context.Context, source TSource) (TTarget, error) {
 	if bt.TransformFunc == nil {
 		var zero TTarget
-		return zero, fmt.Errorf("transform function not set")
+		return zero, ErrTransformFunctionNotSet
 	}
 	return bt.TransformFunc(ctx, source)
 }
@@ -41,7 +41,7 @@ func (bt *BaseTransformer[TSource, TTarget]) TransformList(ctx context.Context, 
 	for _, source := range sources {
 		transformed, err := bt.Transform(ctx, source)
 		if err != nil {
-			return nil, fmt.Errorf("failed to transform item: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrTransformItemFailed, err)
 		}
 		results = append(results, transformed)
 	}

@@ -6,8 +6,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -86,7 +86,7 @@ func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
 		return
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 		h.logger.Debug("Authenticated search", zap.String("username", claims.Username))
 	}
@@ -266,7 +266,7 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 	
 	// Use centralized transformation framework - ELIMINATES 8+ LINES OF DUPLICATE CODE
 	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-	transformCtx := context.WithValue(ctx.Context, "baseURL", h.cfg.BaseURL())
+	transformCtx := context.WithValue(ctx.Context, baseURLContextKey, h.cfg.BaseURL())
 	
 	status, err := transformer.Transform(transformCtx, statusMap)
 	if err != nil {
@@ -373,7 +373,7 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -635,16 +635,11 @@ func (h *Handler) HandleGetInstanceV2Lift(ctx *lift.Context) error {
 	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		// Check if we're in production mode
-		env := os.Getenv("ENV")
-		if err := common.ValidateRequiredParam("ENV", env); err != nil {
-			env = os.Getenv("ENVIRONMENT")
-		}
+		env := h.cfg.Stage
 		if env == "production" || env == "prod" {
 			// In production, VAPID keys are required for push notifications
 			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{
-				"error": "VAPID keys not configured - push notifications unavailable",
-			})
+			return common.RespondInternalServerError(ctx, "VAPID keys not configured - push notifications unavailable")
 		}
 
 		// In non-production, auto-generate VAPID keys if they don't exist
@@ -770,7 +765,7 @@ func (h *Handler) HandleGetNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -833,7 +828,7 @@ func (h *Handler) HandleClearNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -872,7 +867,7 @@ func (h *Handler) HandleDismissNotificationLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications", auth.ScopeWrite})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -909,7 +904,7 @@ func (h *Handler) HandleGetInstanceCostsLift(ctx *lift.Context) error {
 	h.logger.Info("HandleGetInstanceCostsLift called")
 
 	// Initialize cost storage if not already done
-	costTableName := os.Getenv("COST_HISTORY_TABLE_NAME")
+	costTableName := h.cfg.CostHistoryTableName
 	if err := common.ValidateRequiredParam("COST_HISTORY_TABLE_NAME", costTableName); err != nil {
 		// Return placeholder data if cost tracking is not configured
 		response := map[string]any{
@@ -1075,7 +1070,7 @@ func (h *Handler) HandleGetInstanceConfigurationLift(ctx *lift.Context) error {
 	}
 
 	// Add VAPID key if available
-	vapidKey := os.Getenv("VAPID_PUBLIC_KEY")
+	vapidKey := h.cfg.VAPIDPublicKey
 	if vapidKey != "" {
 		config["vapid_key"] = vapidKey
 	}
@@ -1119,7 +1114,7 @@ func (h *Handler) getActiveMonthlyUsers(ctx *lift.Context) int {
 // getAdminAccount returns the admin account for the instance
 func (h *Handler) getAdminAccount(ctx *lift.Context) any {
 	// Get admin username from config
-	adminUsername := os.Getenv("ADMIN_USERNAME")
+	adminUsername := h.cfg.AdminUsername
 	if err := common.ValidateRequiredParam("ADMIN_USERNAME", adminUsername); err != nil {
 		return nil
 	}
@@ -1192,13 +1187,13 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Generate ECDSA P-256 key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate VAPID private key: %w", err)
+		return nil, errors.Join(ErrFailedToGenerateVAPIDPrivateKey, err)
 	}
 
 	// Convert to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert to ECDH key: %w", err)
+		return nil, errors.Join(ErrFailedToConvertToECDHKey, err)
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
@@ -1215,9 +1210,6 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Determine the subject (domain)
 	domain := h.cfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		domain = os.Getenv("DOMAIN_NAME")
-	}
-	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		domain = "localhost" // fallback for development
 	}
 
@@ -1233,7 +1225,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Store the keys
 	err = h.repos.PushSubscription().SetVAPIDKeys(ctx, vapidKeys)
 	if err != nil {
-		return nil, fmt.Errorf("failed to store VAPID keys: %w", err)
+		return nil, errors.Join(ErrFailedToStoreVAPIDKeys, err)
 	}
 
 	h.logger.Info("successfully generated and stored new VAPID keys",
@@ -1249,7 +1241,7 @@ func (h *Handler) HandleGetGroupedNotificationsLift(ctx *lift.Context) error {
 	// Authenticate user with read:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"read:notifications", auth.ScopeRead})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)
@@ -1454,7 +1446,7 @@ func (h *Handler) HandleMarkGroupAsReadLift(ctx *lift.Context) error {
 	// Authenticate user with write:notifications scope
 	username, err := h.authenticateUser(ctx, []string{"write:notifications"})
 	if err != nil {
-		if err.Error() == "insufficient scope" {
+		if err.Error() == ErrInsufficientScope {
 			return common.RespondForbidden(ctx, err.Error())
 		}
 		return common.RespondMissingAuth(ctx)

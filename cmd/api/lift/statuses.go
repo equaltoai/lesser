@@ -3,6 +3,7 @@ package lift
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -210,7 +211,7 @@ func (h *Handler) authenticateStatusUpdate(ctx *lift.Context) (*auth.Claims, *ac
 		return nil, nil, common.RespondUnauthorized(ctx, "missing token")
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, nil, common.RespondUnauthorized(ctx, err.Error())
@@ -449,7 +450,7 @@ func (h *Handler) HandleGetStatusLift(ctx *lift.Context) error {
 	var viewerUsername string
 	token := h.getBearerTokenLift(ctx)
 	if token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			viewerUsername = claims.Username
 		}
@@ -547,7 +548,7 @@ func (h *Handler) HandleGetPublicTimelineLift(ctx *lift.Context) error {
 	var viewerUsername string
 	token := h.getBearerTokenLift(ctx)
 	if token != "" {
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		if claims, err := oauthSvc.ValidateAccessToken(token); err == nil {
 			viewerUsername = claims.Username
 		}
@@ -1193,7 +1194,7 @@ func (h *Handler) extractUsernameFromToken(ctx *lift.Context) string {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			// Validate token
-			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
 				return claims.Username
@@ -1249,7 +1250,11 @@ func (h *Handler) deliverUpdateActivity(ctx context.Context, updateActivity *act
 	// Determine delivery recipients based on the updated note
 	recipients, err := h.determineUpdateDeliveryRecipients(ctx, actor, note)
 	if err != nil {
-		return fmt.Errorf("failed to determine delivery recipients: %w", err)
+		h.logger.Error("failed to determine delivery recipients",
+			zap.String("activity_id", updateActivity.ID),
+			zap.String("actor_id", actor.ID),
+			zap.Error(err))
+		return errors.Join(ErrFailedToDetermineDeliveryRecipients, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {
@@ -1332,7 +1337,7 @@ func (h *Handler) deliverUpdateToRecipient(ctx context.Context, updateActivity *
 
 	// Create federation storage and delivery service
 	federationStorage := federation.NewDynamORMFederationStorage(h.repos.GetDB(), h.repos.GetTableName())
-	deliveryService := federation.NewDeliveryService(federationStorage)
+	deliveryService := federation.NewDeliveryService(federationStorage, h.cfg)
 
 	// Set recipient in activity To field for delivery
 	updateActivity.To = []string{recipientID}

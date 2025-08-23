@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
@@ -27,20 +29,21 @@ import (
 
 func main() {
 	ctx := context.Background()
-	
+
 	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "init-deploy",
 		LambdaType:  common.LambdaTypeBasic,
 		Version:     "1.0.0",
 	})
 
-	// Get domain from environment or command line
-	domain := os.Getenv("DOMAIN")
+	// Get domain from centralized config or command line
+	appCfg := config.Get()
+	domain := appCfg.Domain
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		if err := common.ValidateSliceNotEmpty("os.Args", os.Args[1:]); err == nil {
 			domain = os.Args[1]
 		} else {
-			lambdaCtx.Logger.Fatal("DOMAIN environment variable or command line argument required")
+			lambdaCtx.Logger.Fatal("DOMAIN configuration or command line argument required")
 		}
 	}
 
@@ -106,7 +109,7 @@ func main() {
 	}
 
 	// Create repository factory
-	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, cfg, lambdaCtx.Logger)
+	repos, err := factory.NewRepositoryFactory(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	if err != nil {
 		lambdaCtx.Logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -164,13 +167,13 @@ func generateVAPIDKeys() (string, string, error) {
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to generate private key: %w", err)
+		return "", "", errors.Join(ErrFailedToGeneratePrivateKey, err)
 	}
 
 	// Encode private key to PEM
 	privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to marshal private key: %w", err)
+		return "", "", errors.Join(ErrFailedToMarshalPrivateKey, err)
 	}
 
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
@@ -181,7 +184,7 @@ func generateVAPIDKeys() (string, string, error) {
 	// Convert ECDSA key to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to convert to ECDH key: %w", err)
+		return "", "", errors.Join(ErrFailedToConvertToECDHKey, err)
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 
@@ -220,7 +223,7 @@ func storeSecret(ctx context.Context, client *secretsmanager.Client, secretName,
 			SecretString: aws.String(secretValue),
 		})
 		if updateErr != nil {
-			return fmt.Errorf("failed to create or update secret: %w", updateErr)
+			return errors.Join(ErrFailedToCreateOrUpdateSecret, updateErr)
 		}
 	}
 

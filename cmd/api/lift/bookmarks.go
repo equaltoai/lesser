@@ -2,6 +2,7 @@ package lift
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -13,10 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	// ErrInsufficientScope is returned when the OAuth token has insufficient scope
-	ErrInsufficientScope = "insufficient scope"
-)
 
 // bookmarkAction performs the bookmark action for a status using the Notes service
 func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, error) {
@@ -34,7 +31,7 @@ func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, err
 	// Convert the storage Status model to API Status model
 	apiStatus, err := h.convertStorageStatusToAPI(result.Status, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert status: %w", err)
+		return nil, errors.Join(ErrFailedToConvertStatus, err)
 	}
 
 	return apiStatus, nil

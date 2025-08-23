@@ -57,7 +57,7 @@ func (h *RelationshipHelper) DeleteRelationship(
 			zap.String("actor", actorActor),
 			zap.String("target", targetActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete %s: %w", h.RelationType, err)
+		return ErrorHandler.HandleDeleteError(err, h.RelationType, fmt.Sprintf("%s_%s", actorActor, targetActor))
 	}
 
 	h.Logger.Info(fmt.Sprintf("deleted %s relationship", h.RelationType),
@@ -91,7 +91,7 @@ func (h *RelationshipHelper) CheckRelationship(
 			zap.String("actor", actorActor),
 			zap.String("target", targetActor),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check %s status: %w", h.RelationType, err)
+		return false, ErrorHandler.HandleGetError(err, h.RelationType, fmt.Sprintf("%s_%s", actorActor, targetActor))
 	}
 
 	return true, nil
@@ -105,7 +105,7 @@ func (h *RelationshipHelper) GetRelatedUsers(
 	cursor string,
 	pkFormat string,
 	modelType interface{},
-	objectFieldName string, // "Object" for both blocks and mutes
+	_ string, // "Object" for both blocks and mutes
 ) ([]string, string, error) {
 	limit = NormalizePaginationLimit(limit)
 	actorUsername := extractUsernameFromActor(actorActor)
@@ -127,7 +127,7 @@ func (h *RelationshipHelper) GetRelatedUsers(
 		h.Logger.Error(fmt.Sprintf("failed to get %sed users", h.RelationType),
 			zap.String("actor", actorActor),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get %sed users: %w", h.RelationType, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, h.RelationType, fmt.Sprintf("related_users_%s", actorActor))
 	}
 
 	// Generate next cursor
@@ -166,7 +166,7 @@ func (h *RelationshipHelper) GetUsersWhoRelated(
 	gsiIndex string,
 	gsiPKFormat string,
 	modelType interface{},
-	actorFieldName string, // "Actor" for both blocks and mutes
+	_ string, // "Actor" for both blocks and mutes
 ) ([]string, string, error) {
 	limit = NormalizePaginationLimit(limit)
 	targetUsername := extractUsernameFromActor(targetActor)
@@ -189,7 +189,7 @@ func (h *RelationshipHelper) GetUsersWhoRelated(
 		h.Logger.Error(fmt.Sprintf("failed to get users who %sed actor", h.RelationType),
 			zap.String("target_actor", targetActor),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get users who %sed actor: %w", h.RelationType, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, h.RelationType, fmt.Sprintf("who_related_%s", targetActor))
 	}
 
 	// Generate next cursor

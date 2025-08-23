@@ -10,15 +10,13 @@ import (
 
 // StreamingCloudWatchRepository handles streaming CloudWatch metrics caching
 type StreamingCloudWatchRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	*BaseRepository[*models.StreamingCloudWatchMetrics]
 }
 
 // NewStreamingCloudWatchRepository creates a new streaming CloudWatch repository
-func NewStreamingCloudWatchRepository(db core.DB, logger *zap.Logger) *StreamingCloudWatchRepository {
+func NewStreamingCloudWatchRepository(db core.DB, tableName string, logger *zap.Logger) *StreamingCloudWatchRepository {
 	return &StreamingCloudWatchRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepository[*models.StreamingCloudWatchMetrics](db, tableName, logger),
 	}
 }
 
@@ -30,12 +28,12 @@ func (r *StreamingCloudWatchRepository) GetQualityBreakdown(_ context.Context, _
 }
 
 // CacheQualityBreakdown stores quality breakdown metrics in cache
-func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(_ context.Context, mediaID string, qualityMetrics map[string]models.QualityMetric) error {
-	// For now, just log the cache operation - implementation can be added later
-	r.logger.Debug("would cache quality breakdown metrics",
-		zap.String("media_id", mediaID),
-		zap.Int("quality_count", len(qualityMetrics)))
-	return nil
+func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(ctx context.Context, mediaID string, qualityMetrics map[string]models.QualityMetric) error {
+	// Create metrics entry
+	metrics := &models.StreamingCloudWatchMetrics{}
+	metrics.SetQualityBreakdown(mediaID, qualityMetrics)
+	
+	return r.Create(ctx, metrics)
 }
 
 // GetGeographicData retrieves cached geographic distribution metrics

@@ -23,6 +23,13 @@ import (
 	"go.uber.org/zap"
 )
 
+// contextKey is the type for context keys to avoid untyped string context keys
+type contextKey string
+
+const (
+	baseURLContextKey contextKey = "baseURL"
+)
+
 // Admin action constants
 const (
 	actionSuspend = "suspend"
@@ -1550,7 +1557,7 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 
 		// Convert status using transformation framework - ELIMINATES 6+ LINES OF DUPLICATE CODE
 		transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
-		transformCtx := context.WithValue(ctx, "baseURL", h.cfg.BaseURL())
+		transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
 		
 		apiStatus, err := transformer.Transform(transformCtx, statusMap)
 		if err != nil {

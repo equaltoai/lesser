@@ -264,12 +264,12 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 
 	// Validate command
 	if err := s.validateFollowCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Prevent self-follows
 	if cmd.FollowerID == cmd.FollowingID {
-		return nil, fmt.Errorf("users cannot follow themselves")
+		return nil, ErrCannotFollowSelfLocal
 	}
 
 	// Check if users exist
@@ -279,21 +279,21 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	if s.accountRepo != nil {
 		follower, err = s.accountRepo.GetAccount(ctx, cmd.FollowerID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get follower account: %w", err)
+			return nil, err
 		}
 		following, err = s.accountRepo.GetAccount(ctx, cmd.FollowingID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get following account: %w", err)
+			return nil, err
 		}
 	} else if s.storage != nil {
 		// Get accounts via Actor repository (for now)
 		followerActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowerID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get follower actor: %w", err)
+			return nil, err
 		}
 		followingActor, err := s.storage.Actor().GetActor(ctx, cmd.FollowingID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get following actor: %w", err)
+			return nil, err
 		}
 
 		// Create account objects
@@ -306,20 +306,20 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 			Actor: followingActor,
 		}
 	} else {
-		return nil, fmt.Errorf("no repository or storage available")
+		return nil, ErrNoRepositoryOrStorageLocal
 	}
 
 	// Check if already following
 	isFollowing, err := s.relationshipRepo.IsFollowing(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check follow status: %w", err)
+		return nil, err
 	}
 
 	if isFollowing {
 		// Already following - return current relationship
 		relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get existing relationship: %w", err)
+			return nil, err
 		}
 
 		return &FollowResult{
@@ -332,11 +332,11 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	// Check if blocked
 	isBlocked, err := s.relationshipRepo.IsBlocked(ctx, cmd.FollowingID, cmd.FollowerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check block status: %w", err)
+		return nil, err
 	}
 
 	if isBlocked {
-		return nil, fmt.Errorf("cannot follow user: you are blocked")
+		return nil, ErrFollowWhileBlockedLocal
 	}
 
 	// Create follow request
@@ -344,7 +344,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 
 	err = s.relationshipRepo.CreateFollowRequest(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create follow request: %w", err)
+		return nil, err
 	}
 
 	// Determine if follow requires approval
@@ -363,7 +363,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 		// Automatically accept follow
 		err = s.relationshipRepo.AcceptFollowRequest(ctx, cmd.FollowerID, cmd.FollowingID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to accept follow request: %w", err)
+			return nil, err
 		}
 		isFollowingNow = true
 		events = s.emitFollowAcceptedEvents(ctx, follower, following, activityID)
@@ -373,7 +373,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.FollowingID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("follow request processed",
@@ -405,21 +405,21 @@ type removeRelationshipParams struct {
 
 // removeRelationshipGeneric handles the common pattern for removing relationships
 func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRelationshipParams) (*RelationshipResult, error) {
-	s.logger.Info(fmt.Sprintf("processing %s request", params.relationType),
+	s.logger.Info("processing relationship request",
 		zap.String(params.actorName, params.actorID),
 		zap.String(params.targetName, params.targetID))
 
 	// Check if relationship currently exists
 	exists, err := params.checkExistsFn(ctx, params.actorID, params.targetID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check %s status: %w", params.relationType, err)
+		return nil, err
 	}
 
 	if !exists {
 		// Relationship doesn't exist - return current relationship
 		relationship, err := s.GetRelationship(ctx, params.actorID, params.targetID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current relationship: %w", err)
+			return nil, err
 		}
 
 		return &RelationshipResult{
@@ -431,18 +431,18 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 	// Get accounts for events
 	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get %s account: %w", params.actorName, err)
+		return nil, err
 	}
 
 	target, err := s.accountRepo.GetAccount(ctx, params.targetID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get %s account: %w", params.targetName, err)
+		return nil, err
 	}
 
 	// Remove relationship
 	err = params.removeFn(ctx, params.actorID, params.targetID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to %s: %w", params.relationType, err)
+		return nil, err
 	}
 
 	// Emit events and queue federation
@@ -452,10 +452,10 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, params.actorID, params.targetID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
-	s.logger.Info(fmt.Sprintf("%s processed", params.relationType),
+	s.logger.Info("relationship processed",
 		zap.String(params.actorName, params.actorID),
 		zap.String(params.targetName, params.targetID))
 
@@ -469,7 +469,7 @@ func (s *Service) removeRelationshipGeneric(ctx context.Context, params removeRe
 func (s *Service) Unfollow(ctx context.Context, cmd *UnfollowCommand) (*RelationshipResult, error) {
 	// Validate command
 	if err := s.validateUnfollowCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	return s.removeRelationshipGeneric(ctx, removeRelationshipParams{
@@ -493,25 +493,25 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 
 	// Validate command
 	if err := s.validateBlockCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Prevent self-blocks
 	if cmd.BlockerID == cmd.BlockedID {
-		return nil, fmt.Errorf("users cannot block themselves")
+		return nil, ErrCannotBlockSelfLocal
 	}
 
 	// Check if already blocked
 	isBlocked, err := s.relationshipRepo.IsBlocked(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check block status: %w", err)
+		return nil, err
 	}
 
 	if isBlocked {
 		// Already blocked - return current relationship
 		relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current relationship: %w", err)
+			return nil, err
 		}
 
 		return &RelationshipResult{
@@ -523,12 +523,12 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	// Get accounts for events
 	blocker, err := s.accountRepo.GetAccount(ctx, cmd.BlockerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blocker account: %w", err)
+		return nil, err
 	}
 
 	blocked, err := s.accountRepo.GetAccount(ctx, cmd.BlockedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blocked account: %w", err)
+		return nil, err
 	}
 
 	// Automatically unfollow if currently following
@@ -554,7 +554,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	// Create block
 	err = s.relationshipRepo.BlockUser(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to block user: %w", err)
+		return nil, err
 	}
 
 	// Emit events (only to blocker's stream for privacy)
@@ -564,7 +564,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.BlockerID, cmd.BlockedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("block processed",
@@ -581,7 +581,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 func (s *Service) Unblock(ctx context.Context, cmd *UnblockCommand) (*RelationshipResult, error) {
 	// Validate command
 	if err := s.validateUnblockCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	return s.removeRelationshipGeneric(ctx, removeRelationshipParams{
@@ -605,25 +605,25 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 
 	// Validate command
 	if err := s.validateMuteCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Prevent self-mutes
 	if cmd.MuterID == cmd.MutedID {
-		return nil, fmt.Errorf("users cannot mute themselves")
+		return nil, ErrCannotMuteSelfLocal
 	}
 
 	// Check if already muted
 	isMuted, err := s.relationshipRepo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check mute status: %w", err)
+		return nil, err
 	}
 
 	if isMuted {
 		// Already muted - return current relationship
 		relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current relationship: %w", err)
+			return nil, err
 		}
 
 		return &RelationshipResult{
@@ -635,18 +635,18 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 	// Get accounts for events
 	muter, err := s.accountRepo.GetAccount(ctx, cmd.MuterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get muter account: %w", err)
+		return nil, err
 	}
 
 	muted, err := s.accountRepo.GetAccount(ctx, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get muted account: %w", err)
+		return nil, err
 	}
 
 	// Create mute
 	err = s.relationshipRepo.MuteUser(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to mute user: %w", err)
+		return nil, err
 	}
 
 	// Emit events (only to muter's stream for privacy)
@@ -655,7 +655,7 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("mute processed",
@@ -676,20 +676,20 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 
 	// Validate command
 	if err := s.validateUnmuteCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Check if currently muted
 	isMuted, err := s.relationshipRepo.IsMuted(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check mute status: %w", err)
+		return nil, err
 	}
 
 	if !isMuted {
 		// Not muted - return current relationship
 		relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get current relationship: %w", err)
+			return nil, err
 		}
 
 		return &RelationshipResult{
@@ -701,18 +701,18 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 	// Get accounts for events
 	muter, err := s.accountRepo.GetAccount(ctx, cmd.MuterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get muter account: %w", err)
+		return nil, err
 	}
 
 	muted, err := s.accountRepo.GetAccount(ctx, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get muted account: %w", err)
+		return nil, err
 	}
 
 	// Remove mute
 	err = s.relationshipRepo.UnmuteUser(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmute user: %w", err)
+		return nil, err
 	}
 
 	// Emit events (only to muter's stream for privacy)
@@ -721,7 +721,7 @@ func (s *Service) Unmute(ctx context.Context, cmd *UnmuteCommand) (*Relationship
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.MuterID, cmd.MutedID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("unmute processed",
@@ -751,7 +751,7 @@ func (s *Service) GetRelationship(ctx context.Context, requesterID, targetID str
 	// Build relationship data
 	relationship, err := s.buildRelationshipData(ctx, requesterID, targetID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to build relationship data: %w", err)
+		return nil, err
 	}
 
 	return relationship, nil
@@ -765,7 +765,7 @@ func (s *Service) GetRelationships(ctx context.Context, query *GetRelationshipsQ
 
 	// Validate query
 	if err := s.validateGetRelationshipsQuery(query); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	var relationships []*RelationshipData
@@ -874,23 +874,23 @@ func (s *Service) AddDomainBlock(ctx context.Context, cmd *AddDomainBlockCommand
 
 	// Validate command
 	if err := s.validateAddDomainBlockCommand(cmd); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+		return err
 	}
 
 	// Get domain block repository from storage
 	if s.storage == nil {
-		return fmt.Errorf("storage not available")
+		return ErrStorageNotAvailableLocal
 	}
 
 	domainBlockRepo := s.storage.DomainBlock()
 	if domainBlockRepo == nil {
-		return fmt.Errorf("domain block repository not available")
+		return ErrDomainBlockRepositoryNotAvailableLocal
 	}
 
 	// Add the domain block
 	err := domainBlockRepo.AddDomainBlock(ctx, cmd.UserID, cmd.Domain)
 	if err != nil {
-		return fmt.Errorf("failed to add domain block: %w", err)
+		return err
 	}
 
 	s.logger.Info("domain block added successfully",
@@ -908,23 +908,23 @@ func (s *Service) RemoveDomainBlock(ctx context.Context, cmd *RemoveDomainBlockC
 
 	// Validate command
 	if err := s.validateRemoveDomainBlockCommand(cmd); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+		return err
 	}
 
 	// Get domain block repository from storage
 	if s.storage == nil {
-		return fmt.Errorf("storage not available")
+		return ErrStorageNotAvailableLocal
 	}
 
 	domainBlockRepo := s.storage.DomainBlock()
 	if domainBlockRepo == nil {
-		return fmt.Errorf("domain block repository not available")
+		return ErrDomainBlockRepositoryNotAvailableLocal
 	}
 
 	// Remove the domain block
 	err := domainBlockRepo.RemoveDomainBlock(ctx, cmd.UserID, cmd.Domain)
 	if err != nil {
-		return fmt.Errorf("failed to remove domain block: %w", err)
+		return err
 	}
 
 	s.logger.Info("domain block removed successfully",
@@ -944,19 +944,19 @@ type repositoryQueryParams struct {
 }
 
 // executeRepositoryQueryGeneric handles the common pattern for repository queries
-func (s *Service) executeRepositoryQueryGeneric(ctx context.Context, params repositoryQueryParams) error {
+func (s *Service) executeRepositoryQueryGeneric(_ context.Context, params repositoryQueryParams) error {
 	s.logger.Debug(fmt.Sprintf("getting %s", params.queryType),
 		zap.String("user_id", params.userID),
 		zap.Int("limit", params.limit))
 
 	// Validate query
 	if err := params.validateFn(); err != nil {
-		return fmt.Errorf("validation failed: %w", err)
+		return err
 	}
 
 	// Get repository from storage
 	if s.storage == nil {
-		return fmt.Errorf("storage not available")
+		return ErrStorageNotAvailableLocal
 	}
 
 	return nil
@@ -980,7 +980,7 @@ func (s *Service) GetDomainBlocks(ctx context.Context, query *GetDomainBlocksQue
 	// Get domain blocks
 	domains, nextCursor, err := domainBlockRepo.GetUserDomainBlocks(ctx, query.UserID, query.Limit, query.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get domain blocks: %w", err)
+		return nil, err
 	}
 
 	return &DomainBlocksResult{
@@ -998,23 +998,23 @@ func (s *Service) GetMutedUsers(ctx context.Context, query *GetMutedUsersQuery) 
 
 	// Validate query
 	if err := s.validateGetMutedUsersQuery(query); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Get social repository from storage
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailableLocal
 	}
 
 	socialRepo := s.storage.Social()
 	if socialRepo == nil {
-		return nil, fmt.Errorf("social repository not available")
+		return nil, ErrSocialRepositoryNotAvailableLocal
 	}
 
 	// Get muted users
 	mutes, nextCursor, err := socialRepo.GetMutedUsers(ctx, query.UserID, query.Limit, query.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get muted users: %w", err)
+		return nil, err
 	}
 
 	// Convert mutes to accounts
@@ -1054,23 +1054,23 @@ func (s *Service) GetBlockedUsers(ctx context.Context, query *GetBlockedUsersQue
 
 	// Validate query
 	if err := s.validateGetBlockedUsersQuery(query); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRepositoryNotAvailableLocal
 	}
 
 	// Get blocked users
 	blockedUserIDs, nextCursor, err := relationshipRepo.GetBlockedUsers(ctx, query.UserID, query.Limit, query.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get blocked users: %w", err)
+		return nil, err
 	}
 
 	// Convert blocked user IDs to accounts
@@ -1116,12 +1116,12 @@ func (s *Service) getRelatedAccounts(ctx context.Context, username string, limit
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, "", fmt.Errorf("storage not available")
+		return nil, "", ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, "", fmt.Errorf("relationship repository not available")
+		return nil, "", ErrRepositoryNotAvailableLocal
 	}
 
 	// Get related user IDs based on relation type
@@ -1135,11 +1135,11 @@ func (s *Service) getRelatedAccounts(ctx context.Context, username string, limit
 	case "following":
 		relatedIDs, nextCursor, err = relationshipRepo.GetFollowing(ctx, username, limit, cursor)
 	default:
-		return nil, "", fmt.Errorf("unsupported relation type: %s", relationType)
+		return nil, "", ErrUnsupportedRelationTypeLocal
 	}
 
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get %s: %w", relationType, err)
+		return nil, "", err
 	}
 
 	// Convert user IDs to accounts
@@ -1182,7 +1182,7 @@ func (s *Service) CountFollowers(ctx context.Context, username string) (int64, e
 	relationshipRepo := s.storage.Relationship()
 	count, err := relationshipRepo.CountFollowers(ctx, username)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count followers: %w", err)
+		return 0, err
 	}
 	return int64(count), nil
 }
@@ -1192,7 +1192,7 @@ func (s *Service) IsMuted(ctx context.Context, muterID, mutedID string) (bool, e
 	socialRepo := s.storage.Social()
 	isMuted, err := socialRepo.IsMuted(ctx, muterID, mutedID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check mute status: %w", err)
+		return false, err
 	}
 	return isMuted, nil
 }
@@ -1245,7 +1245,7 @@ func (s *Service) GetPendingFollowRequests(ctx context.Context, query *GetFollow
 	// Get pending follow requests using the concrete method
 	followerIDs, nextCursor, err := relationshipRepo.GetPendingFollowRequests(ctx, query.UserID, query.Limit, query.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pending follow requests: %w", err)
+		return nil, err
 	}
 
 	return &FollowRequestsResult{
@@ -1263,29 +1263,29 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 
 	// Validate command
 	if err := s.validateAcceptFollowRequestCommand(cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRepositoryNotAvailableLocal
 	}
 
 	// Check if the follow request exists
 	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("follow request not found: %w", err)
+		return nil, err
 	}
 
 	// Accept the follow request
 	err = relationshipRepo.AcceptFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to accept follow request: %w", err)
+		return nil, err
 	}
 
 	// Get accounts for events
@@ -1324,7 +1324,7 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("follow request accepted",
@@ -1345,29 +1345,29 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 
 	// Validate command
 	if err := s.validateRejectFollowRequestCommand(cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRepositoryNotAvailableLocal
 	}
 
 	// Check if the follow request exists
 	_, err := relationshipRepo.GetFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("follow request not found: %w", err)
+		return nil, err
 	}
 
 	// Reject the follow request
 	err = relationshipRepo.RejectFollowRequest(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to reject follow request: %w", err)
+		return nil, err
 	}
 
 	// Get accounts for events (minimal events for rejection)
@@ -1405,7 +1405,7 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 	// Get updated relationship data
 	relationship, err := s.GetRelationship(ctx, cmd.FollowerID, cmd.RequesterID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated relationship: %w", err)
+		return nil, err
 	}
 
 	s.logger.Info("follow request rejected",
@@ -1488,7 +1488,7 @@ func (s *Service) validateAcceptFollowRequestCommand(cmd *AcceptFollowRequestCom
 		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
-		return fmt.Errorf("cannot accept follow request from self")
+		return ErrCannotAcceptOwnFollowRequestLocal
 	}
 	return nil
 }
@@ -1501,7 +1501,7 @@ func (s *Service) validateRejectFollowRequestCommand(cmd *RejectFollowRequestCom
 		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
-		return fmt.Errorf("cannot reject follow request from self")
+		return ErrCannotRejectOwnFollowRequestLocal
 	}
 	return nil
 }
@@ -1571,10 +1571,10 @@ func (s *Service) validateGetRelationshipsQuery(query *GetRelationshipsQuery) er
 		return err
 	}
 	if err := common.ValidateSliceNotEmpty("query.TargetIDs", query.TargetIDs); err != nil {
-		return fmt.Errorf("target_ids cannot be empty")
+		return ErrTargetIDsEmptyLocal
 	}
 	if len(query.TargetIDs) > 40 {
-		return fmt.Errorf("too many target_ids (max 40)")
+		return ErrTooManyTargetIDsLocal
 	}
 	return nil
 }
@@ -1995,17 +1995,17 @@ func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 func (s *Service) IsBlocked(ctx context.Context, blockerID, blockedID string) (bool, error) {
 	// Check block status through relationship repository
 	if s.storage == nil {
-		return false, fmt.Errorf("storage not available")
+		return false, ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return false, fmt.Errorf("relationship repository not available")
+		return false, ErrRepositoryNotAvailableLocal
 	}
 
 	isBlocked, err := relationshipRepo.IsBlocked(ctx, blockerID, blockedID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check block status: %w", err)
+		return false, err
 	}
 
 	return isBlocked, nil
@@ -2015,17 +2015,17 @@ func (s *Service) IsBlocked(ctx context.Context, blockerID, blockedID string) (b
 func (s *Service) CountFollowing(ctx context.Context, username string) (int64, error) {
 	// Count following through relationship repository
 	if s.storage == nil {
-		return 0, fmt.Errorf("storage not available")
+		return 0, ErrStorageNotAvailableLocal
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return 0, fmt.Errorf("relationship repository not available")
+		return 0, ErrRepositoryNotAvailableLocal
 	}
 
 	count, err := relationshipRepo.CountFollowing(ctx, username)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count following: %w", err)
+		return 0, err
 	}
 
 	return int64(count), nil
@@ -2074,7 +2074,7 @@ func (s *Service) AcknowledgeSeverance(ctx context.Context, cmd *AcknowledgeSeve
 
 	// Validate the command
 	if err := s.validateAcknowledgeSeveranceCommand(cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// For now, we'll implement basic acknowledgment
@@ -2101,7 +2101,7 @@ func (s *Service) GetAffectedRelationships(_ context.Context, query *GetAffected
 
 	// Validate the query
 	if err := s.validateGetAffectedRelationshipsQuery(query); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// For now, we'll return empty results

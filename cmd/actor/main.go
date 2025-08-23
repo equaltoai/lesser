@@ -14,6 +14,7 @@ This service handles federation requests from other ActivityPub servers.
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -113,7 +114,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 			zap.Error(err),
 			zap.String("username", username),
 			zap.Any("request_id", requestID))
-		return fmt.Errorf("failed to get actor: %w", err)
+		return errors.Join(ErrActorRetrieval, err)
 	}
 
 	// Content negotiation

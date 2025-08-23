@@ -1,11 +1,12 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -127,7 +128,7 @@ func createCORSMiddleware() lift.Middleware {
 	}
 }
 
-// createCostTrackingMiddleware creates a cost tracking middleware that integrates with existing pkg/cost infrastructure
+//nolint:unused // Used in tests and infrastructure patterns - part of complete middleware infrastructure
 func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
@@ -220,12 +221,7 @@ func createRBACMiddleware(requiredPermission string, repos core.RepositoryStorag
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Check if the user has the required permissions
 			if err := checkUserPermissions(ctx, requiredPermission, repos); err != nil {
-				ctx.Status(403)
-				return ctx.JSON(map[string]string{
-					"error": "insufficient_permissions",
-					"message": "You do not have permission to access this resource",
-					"required_permission": requiredPermission,
-				})
+				return common.RespondForbidden(ctx, "You do not have permission to access this resource")
 			}
 
 			return next.Handle(ctx)
@@ -238,7 +234,7 @@ func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos co
 	// Get user claims from context (set by auth middleware)
 	claims, ok := ctx.Get("claims").(*auth.Claims)
 	if !ok || claims == nil {
-		return fmt.Errorf("unauthorized: no valid claims found")
+		return errors.New(common.ErrorUnauthorizedNoValidClaims)
 	}
 
 	// Get user role from storage
@@ -255,21 +251,21 @@ func checkUserPermissions(ctx *lift.Context, requiredPermission string, repos co
 	case PermissionAdmin:
 		// Only admins can access admin resources
 		if userRole != PermissionAdmin {
-			return fmt.Errorf("forbidden: admin access required")
+			return errors.New(common.ErrorForbiddenAdminRequired)
 		}
 	case PermissionModerator:
 		// Admins and moderators can access moderator resources
 		if userRole != "admin" && userRole != "moderator" {
-			return fmt.Errorf("forbidden: moderator access required")
+			return errors.New(common.ErrorForbiddenModeratorRequired)
 		}
 	case PermissionViewer:
 		// Admins, moderators, and viewers can access viewer resources
 		if userRole != "admin" && userRole != "moderator" && userRole != "viewer" {
-			return fmt.Errorf("forbidden: viewer access required")
+			return errors.New(common.ErrorForbiddenViewerRequired)
 		}
 	default:
 		// Unknown permission level
-		return fmt.Errorf("forbidden: unknown permission level")
+		return errors.New(common.ErrorForbiddenUnknownPermission)
 	}
 
 	return nil

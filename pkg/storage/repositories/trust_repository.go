@@ -8,22 +8,38 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
 )
 
-// TrustRepository handles trust-related operations using DynamORM
+// TrustRepository handles trust-related operations using BaseRepository pattern
 type TrustRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	*BaseRepository[*models.TrustRelationship]
+	scoreRepo  *BaseRepository[*models.TrustScore]
+	updateRepo *BaseRepository[*models.TrustUpdate]
+	logger     *zap.Logger
 }
 
-// NewTrustRepository creates a new trust repository
-func NewTrustRepository(db core.DB, logger *zap.Logger) *TrustRepository {
+// NewTrustRepository creates a new trust repository with BaseRepository pattern
+func NewTrustRepository(db core.DB, tableName string, logger *zap.Logger) *TrustRepository {
 	return &TrustRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepository[*models.TrustRelationship](db, tableName, logger),
+		scoreRepo:      NewBaseRepository[*models.TrustScore](db, tableName, logger),
+		updateRepo:     NewBaseRepository[*models.TrustUpdate](db, tableName, logger),
+		logger:         logger,
+	}
+}
+
+// NewTrustRepositoryWithCostTracking creates a new trust repository with cost tracking
+func NewTrustRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrustRepository {
+	return &TrustRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.TrustRelationship](db, tableName, logger, costService, "trust"),
+		scoreRepo:      NewBaseRepositoryWithCostTracking[*models.TrustScore](db, tableName, logger, costService, "trust_score"),
+		updateRepo:     NewBaseRepositoryWithCostTracking[*models.TrustUpdate](db, tableName, logger, costService, "trust_update"),
+		logger:         logger,
 	}
 }
 
@@ -39,18 +55,11 @@ func convertFromModelEvidence(evidence []models.TrustEvidence) []storage.TrustEv
 	return evidence
 }
 
-// isNotFound checks if an error is a not found error
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return err.Error() == "item not found" || err.Error() == "no items found"
-}
 
 // CreateTrustRelationship creates or updates a trust relationship
 func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
 	if relationship == nil {
-		return fmt.Errorf("relationship cannot be nil")
+		return common.ValidationError{Field: "relationship", Message: "cannot be nil"}
 	}
 
 	r.logger.Debug("creating trust relationship",
@@ -71,9 +80,8 @@ func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relations
 		TTL:        relationship.TTL,
 	}
 
-	model.UpdateKeys()
-
-	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
+	// Use BaseRepository Create method
+	if err := r.BaseRepository.Create(ctx, model); err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err),
 			zap.String("truster", relationship.TrusterID),
 			zap.String("trustee", relationship.TrusteeID),
@@ -94,13 +102,10 @@ func (r *TrustRepository) GetTrustRelationship(ctx context.Context, trusterID, t
 	pk := fmt.Sprintf("TRUST#%s#%s", trusterID, category)
 	sk := fmt.Sprintf("TRUSTEE#%s", trusteeID)
 
-	err := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(model)
-
+	// Use BaseRepository Get method
+	err := r.BaseRepository.Get(ctx, pk, sk, model)
 	if err != nil {
-		if isNotFound(err) {
+		if err.Error() == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
 			return nil, storage.ErrNotFound
 		}
 		return nil, err
@@ -118,12 +123,11 @@ func (r *TrustRepository) UpdateTrustRelationship(ctx context.Context, relations
 
 // DeleteTrustRelationship removes a trust relationship
 func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID, trusteeID, category string) error {
-	model := &models.TrustRelationship{
-		PK: fmt.Sprintf("TRUST#%s#%s", trusterID, category),
-		SK: fmt.Sprintf("TRUSTEE#%s", trusteeID),
-	}
+	pk := fmt.Sprintf("TRUST#%s#%s", trusterID, category)
+	sk := fmt.Sprintf("TRUSTEE#%s", trusteeID)
 
-	if err := r.db.WithContext(ctx).Model(model).Delete(); err != nil {
+	// Use BaseRepository Delete method
+	if err := r.BaseRepository.Delete(ctx, pk, sk); err != nil {
 		r.logger.Error("failed to delete trust relationship", zap.Error(err),
 			zap.String("truster", trusterID),
 			zap.String("trustee", trusteeID),
@@ -139,9 +143,9 @@ func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID
 
 // GetTrustRelationships retrieves all trust relationships for a truster
 func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
-	// Query by truster using the primary key pattern
-	var trustModels []models.TrustRelationship
-	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+	// Use BaseRepository to get underlying DB for complex queries
+	var trustModels []*models.TrustRelationship
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID))
 
 	if cursor != "" {
@@ -165,7 +169,7 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 
 	relationships := make([]*storage.TrustRelationship, 0)
 	for _, model := range trustModels {
-		relationships = append(relationships, r.modelToTrustRelationship(&model))
+		relationships = append(relationships, r.modelToTrustRelationship(model))
 	}
 
 	return relationships, nextCursor, nil
@@ -174,8 +178,8 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 // GetTrustedByRelationships retrieves all relationships where the actor is trusted
 func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Query using GSI1 for reverse lookup
-	var trustModels []models.TrustRelationship
-	query := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+	var trustModels []*models.TrustRelationship
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
@@ -200,7 +204,7 @@ func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trustee
 
 	relationships := make([]*storage.TrustRelationship, 0)
 	for _, model := range trustModels {
-		relationships = append(relationships, r.modelToTrustRelationship(&model))
+		relationships = append(relationships, r.modelToTrustRelationship(model))
 	}
 
 	return relationships, nextCursor, nil
@@ -211,12 +215,9 @@ func (r *TrustRepository) GetTrustScore(ctx context.Context, actorID, category s
 	// Try to get cached score first
 	cacheModel := &models.TrustScore{}
 	pk := fmt.Sprintf("SCORE#%s#%s", actorID, category)
+	sk := "CURRENT"
 
-	err := r.db.WithContext(ctx).Model(cacheModel).
-		Where("PK", "=", pk).
-		Where("SK", "=", "CURRENT").
-		First(cacheModel)
-
+	err := r.scoreRepo.Get(ctx, pk, sk, cacheModel)
 	if err == nil && !cacheModel.CacheTTL.Before(time.Now()) {
 		// Cache hit and not expired
 		return r.modelToTrustScore(cacheModel), nil
@@ -241,7 +242,7 @@ func (r *TrustRepository) GetTrustScore(ctx context.Context, actorID, category s
 // UpdateTrustScore updates a cached trust score
 func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.TrustScore) error {
 	if score == nil {
-		return fmt.Errorf("score cannot be nil")
+		return common.ValidationError{Field: "score", Message: "cannot be nil"}
 	}
 
 	model := &models.TrustScore{
@@ -257,15 +258,13 @@ func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.T
 		CacheTTL:        score.CacheTTL,
 	}
 
-	model.UpdateKeys()
-
-	return r.db.WithContext(ctx).Model(model).Create()
+	return r.scoreRepo.Create(ctx, model)
 }
 
 // RecordTrustUpdate records a trust score update event
 func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage.TrustUpdate) error {
 	if update == nil {
-		return fmt.Errorf("update cannot be nil")
+		return common.ValidationError{Field: "update", Message: "cannot be nil"}
 	}
 
 	model := &models.TrustUpdate{
@@ -277,16 +276,14 @@ func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage
 		Timestamp: update.Timestamp,
 	}
 
-	model.UpdateKeys()
-
-	return r.db.WithContext(ctx).Model(model).Create()
+	return r.updateRepo.Create(ctx, model)
 }
 
 // GetAllTrustRelationships retrieves all trust relationships for admin visualization
 func (r *TrustRepository) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
 	// Scan for all trust relationships
-	var trustModels []models.TrustRelationship
-	err := r.db.WithContext(ctx).Model(&models.TrustRelationship{}).
+	var trustModels []*models.TrustRelationship
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("Type", "=", "RELATIONSHIP").
 		Limit(limit).
 		Scan(&trustModels)
@@ -296,7 +293,7 @@ func (r *TrustRepository) GetAllTrustRelationships(ctx context.Context, limit in
 
 	relationships := make([]*storage.TrustRelationship, len(trustModels))
 	for i, model := range trustModels {
-		relationships[i] = r.modelToTrustRelationship(&model)
+		relationships[i] = r.modelToTrustRelationship(model)
 	}
 
 	return relationships, nil
@@ -319,12 +316,10 @@ func (r *TrustRepository) GetUserTrustScore(ctx context.Context, userID string) 
 // invalidateTrustScoreCache invalidates cached trust scores for an actor
 func (r *TrustRepository) invalidateTrustScoreCache(ctx context.Context, actorID, category string) {
 	// Delete cached score to force recalculation
-	model := &models.TrustScore{
-		PK: fmt.Sprintf("SCORE#%s#%s", actorID, category),
-		SK: "CURRENT",
-	}
+	pk := fmt.Sprintf("SCORE#%s#%s", actorID, category)
+	sk := "CURRENT"
 
-	if err := r.db.WithContext(ctx).Model(model).Delete(); err != nil {
+	if err := r.scoreRepo.Delete(ctx, pk, sk); err != nil {
 		r.logger.Debug("failed to invalidate trust score cache", zap.Error(err),
 			zap.String("actor", actorID),
 			zap.String("category", category))

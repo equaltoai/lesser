@@ -18,7 +18,7 @@ var allowedRedirectHosts = map[string]bool{
 // ValidateRedirectURL validates that a redirect URL is safe and allowed
 func ValidateRedirectURL(redirectURL string, currentHost string) error {
 	if redirectURL == "" {
-		return fmt.Errorf("redirect URL cannot be empty")
+		return ErrRedirectURLEmpty
 	}
 
 	// Parse the URL
@@ -31,11 +31,11 @@ func ValidateRedirectURL(redirectURL string, currentHost string) error {
 	if u.Host == "" {
 		// But check for protocol-relative URLs
 		if strings.HasPrefix(redirectURL, "//") {
-			return fmt.Errorf("protocol-relative URLs not allowed")
+			return ErrProtocolRelativeURLsNotAllowed
 		}
 		// Check for javascript: or data: URLs
 		if u.Scheme == "javascript" || u.Scheme == "data" {
-			return fmt.Errorf("javascript: and data: URLs not allowed")
+			return ErrJavascriptDataURLsNotAllowed
 		}
 		return nil
 	}
@@ -50,7 +50,7 @@ func ValidateRedirectURL(redirectURL string, currentHost string) error {
 		return nil
 	}
 
-	return fmt.Errorf("redirect to external host not allowed: %s", u.Host)
+	return fmt.Errorf("%w: %s", ErrExternalHostNotAllowed, u.Host)
 }
 
 // SafeRedirect performs a safe redirect with validation

@@ -206,12 +206,12 @@ func (m *MockRepoStorage) Status() *repositories.StatusRepository {
 	return args.Get(0).(*repositories.StatusRepository)
 }
 
-func (m *MockRepoStorage) Cost() *repositories.CostTrackingRepository {
+func (m *MockRepoStorage) Cost() *repositories.TrackingRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
 		return nil
 	}
-	return args.Get(0).(*repositories.CostTrackingRepository)
+	return args.Get(0).(*repositories.TrackingRepository)
 }
 
 func (m *MockRepoStorage) WebSocketCost() *repositories.WebSocketCostRepository {
@@ -394,6 +394,22 @@ func (m *MockRepoStorage) StreamingCloudWatch() *repositories.StreamingCloudWatc
 		return nil
 	}
 	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
+}
+
+func (m *MockRepoStorage) DNSCache() *repositories.DNSCacheRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.DNSCacheRepository)
+}
+
+func (m *MockRepoStorage) Filter() *repositories.FilterRepository {
+	args := m.Called()
+	if args.Get(0) == nil {
+		return nil
+	}
+	return args.Get(0).(*repositories.FilterRepository)
 }
 
 // Ensure MockRepoStorage implements RepositoryStorage interface

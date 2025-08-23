@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net/url"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // ParseMultipartForm parses multipart form data from a request body
@@ -21,7 +22,7 @@ func ParseMultipartForm(body string, contentType string) (map[string]string, err
 
 	boundary, ok := params["boundary"]
 	if !ok {
-		return nil, fmt.Errorf("no boundary found in content type")
+		return nil, ErrNoBoundaryInContentType
 	}
 
 	// Create a multipart reader
@@ -51,7 +52,7 @@ func ParseMultipartForm(body string, contentType string) (map[string]string, err
 		}
 
 		if closeErr := part.Close(); closeErr != nil {
-			log.Printf("Warning: failed to close multipart part: %v", closeErr)
+			zap.L().Warn("failed to close multipart part", zap.Error(closeErr))
 		}
 	}
 

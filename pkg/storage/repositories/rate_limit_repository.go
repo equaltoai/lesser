@@ -5,33 +5,60 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// RateLimitRepository handles rate limiting operations using DynamORM
+// RateLimitRepository handles rate limiting operations using BaseRepository pattern
 type RateLimitRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	// Embedded BaseRepository for different rate limit models
+	loginAttempts       *BaseRepository[*models.LoginAttempt]
+	rateLimitLockouts   *BaseRepository[*models.RateLimitLockout]
+	apiRateLimits       *BaseRepository[*models.APIRateLimit]
+	rateLimitViolations *BaseRepository[*models.RateLimitViolation]
+	communityNotes      *BaseRepository[*models.CommunityNote]
+	db                  core.DB
+	tableName           string
+	logger              *zap.Logger
 }
 
-// NewRateLimitRepository creates a new RateLimitRepository
+// NewRateLimitRepository creates a new RateLimitRepository using BaseRepository pattern
 func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger) *RateLimitRepository {
 	return &RateLimitRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		loginAttempts:       NewBaseRepository[*models.LoginAttempt](db, tableName, logger),
+		rateLimitLockouts:   NewBaseRepository[*models.RateLimitLockout](db, tableName, logger),
+		apiRateLimits:       NewBaseRepository[*models.APIRateLimit](db, tableName, logger),
+		rateLimitViolations: NewBaseRepository[*models.RateLimitViolation](db, tableName, logger),
+		communityNotes:      NewBaseRepository[*models.CommunityNote](db, tableName, logger),
+		db:                  db,
+		tableName:           tableName,
+		logger:              logger,
 	}
 }
 
-// RecordLoginAttempt records a login attempt for rate limiting
+// NewRateLimitRepositoryWithCostTracking creates a new RateLimitRepository with cost tracking
+func NewRateLimitRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RateLimitRepository {
+	return &RateLimitRepository{
+		loginAttempts:       NewBaseRepositoryWithCostTracking[*models.LoginAttempt](db, tableName, logger, costService, "rate_limit_login_attempts"),
+		rateLimitLockouts:   NewBaseRepositoryWithCostTracking[*models.RateLimitLockout](db, tableName, logger, costService, "rate_limit_lockouts"),
+		apiRateLimits:       NewBaseRepositoryWithCostTracking[*models.APIRateLimit](db, tableName, logger, costService, "rate_limit_api"),
+		rateLimitViolations: NewBaseRepositoryWithCostTracking[*models.RateLimitViolation](db, tableName, logger, costService, "rate_limit_violations"),
+		communityNotes:      NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, costService, "community_notes"),
+		db:                  db,
+		tableName:           tableName,
+		logger:              logger,
+	}
+}
+
+// RecordLoginAttempt records a login attempt for rate limiting using BaseRepository
 func (r *RateLimitRepository) RecordLoginAttempt(ctx context.Context, identifier string, success bool) error {
 	attempt := models.NewLoginAttempt(identifier, success)
 
-	err := r.db.WithContext(ctx).Model(attempt).Create()
+	err := r.loginAttempts.Create(ctx, attempt)
 	if err != nil {
 		r.logger.Error("failed to record login attempt",
 			zap.String("identifier", identifier),
@@ -49,16 +76,11 @@ func (r *RateLimitRepository) RecordLoginAttempt(ctx context.Context, identifier
 
 // GetLoginAttemptCount returns the number of login attempts since the given time
 func (r *RateLimitRepository) GetLoginAttemptCount(ctx context.Context, identifier string, since time.Time) (int, error) {
-	var attempts []models.LoginAttempt
-
 	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
 	sinceKey := since.Format(time.RFC3339Nano)
 
-	err := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
-		Where("PK", "=", pk).
-		Where("SK", ">", sinceKey).
-		All(&attempts)
-
+	// Use BaseRepository QueryBetween method for range queries
+	attempts, err := r.loginAttempts.QueryBetween(ctx, pk, sinceKey, "~", 0) // "~" is lexically after all timestamps
 	if err != nil {
 		r.logger.Error("failed to get login attempt count",
 			zap.String("identifier", identifier),
@@ -76,16 +98,13 @@ func (r *RateLimitRepository) GetLoginAttemptCount(ctx context.Context, identifi
 	return count, nil
 }
 
-// IsRateLimited checks if an identifier is currently rate limited
+// IsRateLimited checks if an identifier is currently rate limited using BaseRepository
 func (r *RateLimitRepository) IsRateLimited(ctx context.Context, identifier string) (bool, time.Time, error) {
-	var lockout models.RateLimitLockout
-
 	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
+	sk := "LOCKOUT"
 
-	err := r.db.WithContext(ctx).Model(&models.RateLimitLockout{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "LOCKOUT").
-		First(&lockout)
+	lockout := &models.RateLimitLockout{}
+	err := r.rateLimitLockouts.Get(ctx, pk, sk, lockout)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -115,16 +134,12 @@ func (r *RateLimitRepository) IsRateLimited(ctx context.Context, identifier stri
 	return false, time.Time{}, nil
 }
 
-// ClearLoginAttempts clears all login attempts for an identifier
+// ClearLoginAttempts clears all login attempts for an identifier using BaseRepository
 func (r *RateLimitRepository) ClearLoginAttempts(ctx context.Context, identifier string) error {
-	// First, query all attempts for this identifier
-	var attempts []models.LoginAttempt
 	pk := fmt.Sprintf("RATELIMIT#%s", identifier)
 
-	err := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
-		Where("PK", "=", pk).
-		All(&attempts)
-
+	// First, query all attempts for this identifier using BaseRepository
+	attempts, err := r.loginAttempts.FindByPK(ctx, pk)
 	if err != nil {
 		r.logger.Error("failed to query login attempts for clearing",
 			zap.String("identifier", identifier),
@@ -132,29 +147,28 @@ func (r *RateLimitRepository) ClearLoginAttempts(ctx context.Context, identifier
 		return err
 	}
 
-	// Delete each attempt
-	for _, attempt := range attempts {
-		err := r.db.WithContext(ctx).Model(&models.LoginAttempt{}).
-			Where("PK", "=", attempt.PK).
-			Where("SK", "=", attempt.SK).
-			Delete()
-
-		if err != nil {
-			r.logger.Error("failed to delete login attempt",
-				zap.String("identifier", identifier),
-				zap.String("pk", attempt.PK),
-				zap.String("sk", attempt.SK),
-				zap.Error(err))
-			// Continue with other deletions even if one fails
+	// Prepare keys for batch deletion
+	keys := make([]struct{ PK, SK string }, len(attempts))
+	for i, attempt := range attempts {
+		keys[i] = struct{ PK, SK string }{
+			PK: attempt.PK,
+			SK: attempt.SK,
 		}
 	}
 
-	// Also clear any lockout record
-	err = r.db.WithContext(ctx).Model(&models.RateLimitLockout{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", "LOCKOUT").
-		Delete()
+	// Use batch delete from BaseRepository
+	if len(keys) > 0 {
+		err = r.loginAttempts.BatchDelete(ctx, keys)
+		if err != nil {
+			r.logger.Error("failed to batch delete login attempts",
+				zap.String("identifier", identifier),
+				zap.Error(err))
+			// Continue to try deleting lockout record
+		}
+	}
 
+	// Also clear any lockout record using BaseRepository
+	err = r.rateLimitLockouts.Delete(ctx, pk, "LOCKOUT")
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("failed to delete lockout record",
 			zap.String("identifier", identifier),
@@ -169,17 +183,15 @@ func (r *RateLimitRepository) ClearLoginAttempts(ctx context.Context, identifier
 	return nil
 }
 
-// CheckCommunityNoteRateLimit checks if a user can create more community notes today
+// CheckCommunityNoteRateLimit checks if a user can create more community notes today using BaseRepository
 func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, userID string, limit int) (bool, int, error) {
 	// Query notes created by user in last 24 hours using GSI3
-	// This matches the legacy implementation pattern exactly
 	yesterday := time.Now().Add(-24 * time.Hour)
-
-	// Use DynamORM to query CommunityNote model with GSI3
-	var notes []models.CommunityNote
 	gsi3PK := fmt.Sprintf("AUTHOR#%s#NOTES", userID)
 	gsi3SKPrefix := yesterday.Format(time.RFC3339)
 
+	// Use BaseRepository GSI query - need to implement this manually since it's a complex GSI query
+	var notes []*models.CommunityNote
 	err := r.db.WithContext(ctx).Model(&models.CommunityNote{}).
 		Index("gsi3").
 		Where("GSI3PK", "=", gsi3PK).
@@ -211,27 +223,23 @@ func (r *RateLimitRepository) CheckCommunityNoteRateLimit(ctx context.Context, u
 	return canCreate, remaining, nil
 }
 
-// CheckAPIRateLimit checks and updates API rate limiting for a user/endpoint combination
-// This matches the behavior from the original limiter.go implementation
+// CheckAPIRateLimit checks and updates API rate limiting for a user/endpoint combination using BaseRepository
 func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, endpoint string, limit int, window time.Duration) error {
 	now := time.Now()
 	windowStart := now.Truncate(window)
 	key := fmt.Sprintf("%s:%s", userID, endpoint)
 
-	// Get current rate limit data
-	var current models.APIRateLimit
+	// Get current rate limit data using BaseRepository
 	pk := fmt.Sprintf("RATELIMIT#%s", key)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&current)
+	current := &models.APIRateLimit{}
+	err := r.apiRateLimits.Get(ctx, pk, sk, current)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Create new rate limit record
-			current = *models.NewAPIRateLimit(userID, endpoint, windowStart)
+			current = models.NewAPIRateLimit(userID, endpoint, windowStart)
 		} else {
 			r.logger.Error("failed to get API rate limit",
 				zap.String("user_id", userID),
@@ -244,7 +252,7 @@ func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, end
 
 	// Check if explicitly blocked
 	if current.Blocked && now.Before(current.BlockedUntil) {
-		return fmt.Errorf("rate limit exceeded, blocked until %v", current.BlockedUntil)
+		return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, key)
 	}
 
 	// Reset if new window (this shouldn't happen with our PK/SK design, but safety check)
@@ -281,28 +289,28 @@ func (r *RateLimitRepository) CheckAPIRateLimit(ctx context.Context, userID, end
 		}
 		current.LastViolation = now
 
-		// Record the violation
+		// Record the violation using BaseRepository
 		violation := models.NewRateLimitViolation(userID, "", endpoint, "api", int(penaltyDuration.Minutes()))
-		if err := r.db.WithContext(ctx).Model(violation).Create(); err != nil {
+		if err := r.rateLimitViolations.Create(ctx, violation); err != nil {
 			r.logger.Error("failed to record API rate limit violation",
 				zap.String("user_id", userID),
 				zap.String("endpoint", endpoint),
 				zap.Error(err))
 		}
 
-		// Update the record
-		if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+		// Update the record using BaseRepository
+		if err := r.updateAPIRateLimit(ctx, current); err != nil {
 			r.logger.Error("failed to update blocked API rate limit",
 				zap.String("user_id", userID),
 				zap.String("endpoint", endpoint),
 				zap.Error(err))
 		}
 
-		return fmt.Errorf("rate limit exceeded (%d > %d), blocked for %v", current.Count, limit, penaltyDuration)
+		return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, key)
 	}
 
-	// Update counter
-	if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+	// Update counter using BaseRepository
+	if err := r.updateAPIRateLimit(ctx, current); err != nil {
 		r.logger.Error("failed to update API rate limit counter",
 			zap.String("user_id", userID),
 			zap.String("endpoint", endpoint),
@@ -319,15 +327,12 @@ func (r *RateLimitRepository) getRateLimitInfo(ctx context.Context, key string, 
 	windowStart := now.Truncate(window)
 	resetTime = windowStart.Add(window)
 
-	// Get current rate limit data
-	var current models.APIRateLimit
+	// Get current rate limit data using BaseRepository
 	pk := fmt.Sprintf("RATELIMIT#%s", key)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
 
-	err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&current)
+	current := &models.APIRateLimit{}
+	err = r.apiRateLimits.Get(ctx, pk, sk, current)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -366,14 +371,10 @@ func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, e
 	return r.getRateLimitInfo(ctx, key, limit, window, logContext)
 }
 
-// updateAPIRateLimit updates an API rate limit record using DynamORM
+// updateAPIRateLimit updates an API rate limit record using BaseRepository
 func (r *RateLimitRepository) updateAPIRateLimit(ctx context.Context, limit *models.APIRateLimit) error {
-	// Ensure keys are set correctly
-	limit.UpdateKeys()
-
-	// For DynamORM, we can use Create which will overwrite existing items
-	// This acts like a PUT operation in DynamoDB
-	err := r.db.WithContext(ctx).Model(limit).Create()
+	// Use BaseRepository Create method which acts like PUT in DynamoDB
+	err := r.apiRateLimits.Create(ctx, limit)
 	if err != nil {
 		r.logger.Error("failed to create/update API rate limit",
 			zap.String("pk", limit.PK),
@@ -391,20 +392,17 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 	windowStart := now.Truncate(window)
 	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
 
-	// Get current rate limit data
-	var current models.APIRateLimit
+	// Get current rate limit data using BaseRepository
 	pk := fmt.Sprintf("RATELIMIT#%s", key)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&current)
+	current := &models.APIRateLimit{}
+	err := r.apiRateLimits.Get(ctx, pk, sk, current)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Create new rate limit record
-			current = *models.NewFederationRateLimit(domain, endpoint, windowStart)
+			current = models.NewFederationRateLimit(domain, endpoint, windowStart)
 		} else {
 			r.logger.Error("failed to get federation rate limit",
 				zap.String("domain", domain),
@@ -417,7 +415,7 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 
 	// Check if explicitly blocked
 	if current.Blocked && now.Before(current.BlockedUntil) {
-		return fmt.Errorf("federation rate limit exceeded for domain %s, blocked until %v", domain, current.BlockedUntil)
+		return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, domain)
 	}
 
 	// Reset if new window
@@ -454,28 +452,28 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 		}
 		current.LastViolation = now
 
-		// Record the violation
+		// Record the violation using BaseRepository
 		violation := models.NewRateLimitViolation("", domain, endpoint, "federation", int(penaltyDuration.Minutes()))
-		if err := r.db.WithContext(ctx).Model(violation).Create(); err != nil {
+		if err := r.rateLimitViolations.Create(ctx, violation); err != nil {
 			r.logger.Error("failed to record federation rate limit violation",
 				zap.String("domain", domain),
 				zap.String("endpoint", endpoint),
 				zap.Error(err))
 		}
 
-		// Update the rate limit record
-		if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+		// Update the rate limit record using BaseRepository
+		if err := r.updateAPIRateLimit(ctx, current); err != nil {
 			r.logger.Error("failed to update blocked federation rate limit",
 				zap.String("domain", domain),
 				zap.String("endpoint", endpoint),
 				zap.Error(err))
 		}
 
-		return fmt.Errorf("federation rate limit exceeded for domain %s (%d > %d), blocked for %v", domain, current.Count, limit, penaltyDuration)
+		return ErrorHandler.HandleCreateError(storage.ErrRateLimited, EntityRateLimit, domain)
 	}
 
-	// Update counter
-	if err := r.updateAPIRateLimit(ctx, &current); err != nil {
+	// Update counter using BaseRepository
+	if err := r.updateAPIRateLimit(ctx, current); err != nil {
 		r.logger.Error("failed to update federation rate limit counter",
 			zap.String("domain", domain),
 			zap.String("endpoint", endpoint),
@@ -503,15 +501,11 @@ func (r *RateLimitRepository) GetViolationCount(ctx context.Context, userID, dom
 		identifier = fmt.Sprintf("DOMAIN#%s", domain)
 	}
 
-	var violations []models.RateLimitViolation
 	pk := fmt.Sprintf("RATELIMIT_VIOLATION#%s", identifier)
 	sinceKey := time.Now().Add(-since).Format(time.RFC3339Nano)
 
-	err := r.db.WithContext(ctx).Model(&models.RateLimitViolation{}).
-		Where("PK", "=", pk).
-		Where("SK", ">", sinceKey).
-		All(&violations)
-
+	// Use BaseRepository QueryBetween method
+	violations, err := r.rateLimitViolations.QueryBetween(ctx, pk, sinceKey, "~", 0)
 	if err != nil {
 		r.logger.Error("failed to get violation count",
 			zap.String("user_id", userID),
@@ -542,17 +536,19 @@ func (r *RateLimitRepository) calculatePenaltyDuration(violationCount int) time.
 func (r *RateLimitRepository) checkBlockedStatus(ctx context.Context, pkQuery string, usePrefix bool) (bool, time.Time, error) {
 	now := time.Now()
 
-	// Check recent rate limit records for any blocks
-	var rateLimits []models.APIRateLimit
+	// Check recent rate limit records for any blocks using BaseRepository
+	var rateLimits []*models.APIRateLimit
+	var err error
 
-	query := r.db.WithContext(ctx).Model(&models.APIRateLimit{})
 	if usePrefix {
-		query = query.Where("PK", "begins_with", pkQuery)
+		// Use BaseRepository to query with PK prefix - need manual query since BaseRepository doesn't have prefix query
+		err = r.db.WithContext(ctx).Model(&models.APIRateLimit{}).
+			Where("PK", "begins_with", pkQuery).
+			All(&rateLimits)
 	} else {
-		query = query.Where("PK", "=", pkQuery)
+		// Use BaseRepository to query exact PK
+		rateLimits, err = r.apiRateLimits.FindByPK(ctx, pkQuery)
 	}
-
-	err := query.All(&rateLimits)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

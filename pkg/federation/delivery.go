@@ -5,11 +5,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
@@ -31,24 +32,26 @@ type DeliveryService struct {
 	logger     *zap.Logger
 	sqsClient  *sqs.Client
 	queueURL   string
+	cfg        *appConfig.Config
 }
 
 // NewDeliveryService creates a new delivery service
-func NewDeliveryService(store FederationStorage) *DeliveryService {
+func NewDeliveryService(store FederationStorage, cfg *appConfig.Config) *DeliveryService {
 	logger := common.Logger()
 
 	svc := &DeliveryService{
 		store:      store,
 		httpClient: httpclient.NewSecureClient(httpclient.WithLogger(logger)),
 		logger:     logger,
+		cfg:        cfg,
 	}
 
 	// Initialize SQS client if queue URL is configured
-	queueURL := os.Getenv("FEDERATION_QUEUE_URL")
+	queueURL := cfg.FederationQueueURL
 	if queueURL != "" {
-		cfg, err := config.LoadDefaultConfig(context.Background())
+		awsCfg, err := config.LoadDefaultConfig(context.Background())
 		if err == nil {
-			svc.sqsClient = sqs.NewFromConfig(cfg)
+			svc.sqsClient = sqs.NewFromConfig(awsCfg)
 			svc.queueURL = queueURL
 			logger.Info("SQS queue configured for federation delivery",
 				zap.String("queue_url", queueURL))
@@ -124,7 +127,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	body, err := json.Marshal(activity)
 	if err != nil {
 		log.Error("failed to marshal activity", zap.Error(err))
-		return fmt.Errorf("failed to marshal activity: %w", err)
+		return errors.Join(ErrActivityMarshalFailed, err)
 	}
 
 	// Record federation activity for cost tracking
@@ -144,7 +147,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return fmt.Errorf("failed to create request: %w", err)
+		return errors.Join(ErrRequestCreationFailed, err)
 	}
 
 	// Set headers
@@ -160,7 +163,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return fmt.Errorf("failed to get private key: %w", err)
+		return errors.Join(ErrPrivateKeyRetrievalFailed, err)
 	}
 
 	// Parse the private key
@@ -171,7 +174,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return fmt.Errorf("failed to parse private key: %w", err)
+		return errors.Join(ErrPrivateKeyParseFailed, err)
 	}
 
 	// Sign the request with enhanced algorithm selection
@@ -184,7 +187,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return fmt.Errorf("failed to sign request: %w", err)
+		return errors.Join(ErrRequestSigningFailed, err)
 	}
 
 	// Send the request
@@ -195,7 +198,7 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 		federationActivity.ErrorMessage = err.Error()
 		federationActivity.ResponseTime = time.Since(startTime).Milliseconds()
 		go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
-		return fmt.Errorf("failed to send request: %w", err)
+		return errors.Join(ErrHTTPRequestFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -226,7 +229,10 @@ func (d *DeliveryService) DeliverActivity(ctx context.Context, activity *activit
 	go func() { _ = d.store.RecordFederationActivity(context.Background(), federationActivity) }()
 
 	// Return error for non-2xx status codes
-	return fmt.Errorf("delivery failed with status %d: %s", resp.StatusCode, string(respBody))
+	log.Error("delivery failed with non-2xx status",
+		zap.Int("status_code", resp.StatusCode),
+		zap.String("response_body", string(respBody)))
+	return ErrDeliveryHTTPStatusFailed
 }
 
 // DeliverToFollowers delivers an activity to all followers of an actor
@@ -242,7 +248,7 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 	followerUsernames, _, err := d.store.GetFollowers(ctx, actor.PreferredUsername, 1000, "")
 	if err != nil {
 		log.Error("failed to get followers", zap.Error(err))
-		return fmt.Errorf("failed to get followers: %w", err)
+		return errors.Join(ErrGetFollowersFailed, err)
 	}
 
 	log.Info("found followers", zap.Int("count", len(followerUsernames)))
@@ -287,13 +293,15 @@ func (d *DeliveryService) DeliverToFollowers(ctx context.Context, activity *acti
 			log.Error("failed to deliver to inbox",
 				zap.String("inbox", inbox),
 				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, fmt.Errorf("failed to deliver to %s: %w", inbox, err))
+			deliveryErrors = append(deliveryErrors, err)
 			// Continue delivering to other inboxes
 		}
 	}
 
 	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
-		return fmt.Errorf("failed to deliver to %d inboxes", len(deliveryErrors))
+		log.Error("failed to deliver to multiple inboxes",
+			zap.Int("failed_inbox_count", len(deliveryErrors)))
+		return ErrDeliveryToInboxesFailed
 	}
 
 	return nil
@@ -352,12 +360,17 @@ func (d *DeliveryService) DeliverToRecipientsWithPrivacy(ctx context.Context, ac
 
 		// Deliver to individual inboxes (fallback or single recipient)
 		if err := d.deliverToIndividualRecipients(ctx, activity, actor, recipients); err != nil {
-			deliveryErrors = append(deliveryErrors, fmt.Errorf("failed to deliver to domain %s: %w", domain, err))
+			log.Error("failed to deliver to domain",
+				zap.String("domain", domain),
+				zap.Error(err))
+			deliveryErrors = append(deliveryErrors, err)
 		}
 	}
 
 	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
-		return fmt.Errorf("failed to deliver to %d domains: %v", len(deliveryErrors), deliveryErrors)
+		log.Error("failed to deliver to multiple domains",
+			zap.Int("failed_domain_count", len(deliveryErrors)))
+		return ErrDeliveryToDomainsFailed
 	}
 
 	return nil
@@ -404,12 +417,15 @@ func (d *DeliveryService) deliverToIndividualRecipients(ctx context.Context, act
 				zap.String("recipient", recipientID),
 				zap.String("inbox", inboxURL),
 				zap.Error(err))
-			errors = append(errors, fmt.Errorf("failed to deliver to %s: %w", recipientID, err))
+			errors = append(errors, err)
 		}
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("failed to deliver to %d recipients", len(errors))
+		log := common.WithContext(ctx)
+		log.Error("failed to deliver to multiple recipients",
+			zap.Int("failed_recipient_count", len(errors)))
+		return ErrDeliveryToRecipientsFailed
 	}
 
 	return nil
@@ -427,12 +443,14 @@ func (d *DeliveryService) getSharedInboxForDomain(ctx context.Context, domain st
 		return actor.Endpoints.SharedInbox, nil
 	}
 
-	return "", fmt.Errorf("no shared inbox found for domain %s", domain)
+	d.logger.Debug("no shared inbox found for domain",
+		zap.String("domain", domain))
+	return "", ErrNoSharedInboxFound
 }
 
 // isLocalDomain checks if a domain is local to this instance
 func (d *DeliveryService) isLocalDomain(domain string) bool {
-	localDomain := os.Getenv("DOMAIN_NAME")
+	localDomain := d.cfg.Domain
 	return domain == localDomain
 }
 
@@ -447,7 +465,7 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 	// Fetch from remote using secure client
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.Join(ErrRequestCreationFailed, err)
 	}
 
 	req.Header.Set("Accept", ActivityPubAcceptType)
@@ -455,18 +473,22 @@ func (d *DeliveryService) fetchRemoteActor(ctx context.Context, actorID string) 
 
 	resp, err := d.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch actor: %w", err)
+		return nil, errors.Join(ErrFetchRemoteActorFailed, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to fetch actor: status %d: %s", resp.StatusCode, string(body))
+		d.logger.Error("failed to fetch actor with non-2xx status",
+			zap.String("actor_id", actorID),
+			zap.Int("status_code", resp.StatusCode),
+			zap.String("response_body", string(body)))
+		return nil, ErrFetchActorHTTPStatusFailed
 	}
 
 	var actor activitypub.Actor
 	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, fmt.Errorf("failed to decode actor: %w", err)
+		return nil, errors.Join(ErrActorDecodeFailed, err)
 	}
 
 	// Cache the actor (ignore errors)
@@ -508,7 +530,7 @@ func extractDomain(actorID string) string {
 // QueueDelivery queues an activity for async delivery with proper retry handling
 func (d *DeliveryService) QueueDelivery(ctx context.Context, activity *activitypub.Activity, targetInbox string, signingActor *activitypub.Actor) error {
 	// Check delivery mode configuration
-	deliveryMode := os.Getenv("FEDERATION_DELIVERY_MODE")
+	deliveryMode := d.cfg.FederationDeliveryMode
 	if err := common.ValidateRequiredParam("delivery_mode", deliveryMode); err != nil {
 		deliveryMode = "sync" // Default to sync for backwards compatibility
 	}
@@ -710,13 +732,15 @@ func (d *DeliveryService) DeliverDirectMessage(ctx context.Context, activity *ac
 			log.Error("failed to deliver direct message to inbox",
 				zap.String("inbox", inbox),
 				zap.Error(err))
-			deliveryErrors = append(deliveryErrors, fmt.Errorf("failed to deliver to %s: %w", inbox, err))
+			deliveryErrors = append(deliveryErrors, err)
 			// Continue delivering to other inboxes
 		}
 	}
 
 	if err := common.ValidateSliceNotEmpty("delivery_errors", deliveryErrors); err == nil {
-		return fmt.Errorf("failed to deliver direct message to %d inboxes", len(deliveryErrors))
+		log.Error("failed to deliver direct message to multiple inboxes",
+			zap.Int("failed_inbox_count", len(deliveryErrors)))
+		return ErrDeliveryDirectMessageToInboxesFailed
 	}
 
 	return nil

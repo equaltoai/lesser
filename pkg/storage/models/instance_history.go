@@ -49,10 +49,21 @@ func (i *InstanceHistory) TableName() string {
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change
-func (i *InstanceHistory) UpdateKeys() {
+func (i *InstanceHistory) UpdateKeys() error {
 	// GSI1 is used for metric-specific time range queries
 	i.GSI1PK = fmt.Sprintf("METRIC#%s", i.MetricType)
 	i.GSI1SK = fmt.Sprintf("DATE#%s", i.Date)
+	return nil
+}
+
+// GetPK returns the partition key
+func (i *InstanceHistory) GetPK() string {
+	return i.PK
+}
+
+// GetSK returns the sort key
+func (i *InstanceHistory) GetSK() string {
+	return i.SK
 }
 
 // NewDailyInstanceHistory creates a new daily history record

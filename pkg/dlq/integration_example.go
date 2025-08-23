@@ -3,9 +3,6 @@ package dlq
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +10,7 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // ProcessorWithDLQ demonstrates how to integrate DLQ support into existing processors
@@ -102,7 +100,7 @@ func (p *ProcessorWithDLQ) ProcessSQSBatchWithDLQ(ctx context.Context, event eve
 
 	// Return processing errors (DLQ failures don't block processing)
 	if len(errors) > 0 {
-		return fmt.Errorf("batch processing failed: %d of %d messages failed", len(errors), len(event.Records))
+		return fmt.Errorf("%w: %d of %d messages failed", ErrBatchProcessingFailed, len(errors), len(event.Records))
 	}
 
 	return nil
@@ -229,25 +227,31 @@ type DLQConfig struct {
 	TransientErrors []string `json:"transient_errors"` // Error patterns that should be retried
 }
 
-// NewDLQConfigFromEnv creates DLQ config from environment variables
+// NewDLQConfigFromEnv creates DLQ config from centralized configuration
 func NewDLQConfigFromEnv(service string) *DLQConfig {
+	cfg := config.Get()
 	return &DLQConfig{
-		Enabled:         os.Getenv("DLQ_ENABLED") == "true",
+		Enabled:         cfg.DLQEnabled,
 		Service:         service,
-		MaxRetries:      parseIntEnv("DLQ_MAX_RETRIES", 3),
-		RetryDelay:      parseIntEnv("DLQ_RETRY_DELAY", 60),
-		FailFast:        os.Getenv("DLQ_FAIL_FAST") == "true",
-		PermanentErrors: strings.Split(os.Getenv("DLQ_PERMANENT_ERRORS"), ","),
-		TransientErrors: strings.Split(os.Getenv("DLQ_TRANSIENT_ERRORS"), ","),
+		MaxRetries:      cfg.DLQMaxRetries,
+		RetryDelay:      cfg.DLQRetryDelay,
+		FailFast:        cfg.DLQFailFast,
+		PermanentErrors: cfg.DLQPermanentErrors,
+		TransientErrors: cfg.DLQTransientErrors,
 	}
 }
 
-// parseIntEnv parses an integer from environment variable with default
+// parseIntEnv is deprecated - use centralized config instead
+// This function is kept for backward compatibility but should not be used
 func parseIntEnv(key string, defaultValue int) int {
-	if value := os.Getenv(key); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			return parsed
-		}
+	cfg := config.Get()
+	// Map known DLQ keys to config fields
+	switch key {
+	case "DLQ_MAX_RETRIES":
+		return cfg.DLQMaxRetries
+	case "DLQ_RETRY_DELAY":
+		return cfg.DLQRetryDelay
+	default:
+		return defaultValue
 	}
-	return defaultValue
 }

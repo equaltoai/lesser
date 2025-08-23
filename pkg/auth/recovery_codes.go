@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -40,14 +41,14 @@ func (s *RecoveryCodeService) GenerateRecoveryCodes(ctx context.Context, usernam
 	for i := 0; i < count; i++ {
 		code, err := s.generateCode()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate recovery code: %w", err)
+			return nil, errors.Join(ErrRecoveryCodeGeneration, err)
 		}
 		codes[i] = code
 
 		// Store hashed version
 		hashedCode, err := HashPassword(code)
 		if err != nil {
-			return nil, fmt.Errorf("failed to hash recovery code: %w", err)
+			return nil, errors.Join(ErrRecoveryCodeHashing, err)
 		}
 
 		// Store in DynamoDB
@@ -60,14 +61,14 @@ func (s *RecoveryCodeService) GenerateRecoveryCodes(ctx context.Context, usernam
 
 		// Store in DynamoDB
 		if err := s.repos.Recovery().StoreRecoveryCode(ctx, username, recoveryCode); err != nil {
-			return nil, fmt.Errorf("failed to store recovery code: %w", err)
+			return nil, errors.Join(ErrRecoveryCodeStorage, err)
 		}
 	}
 
 	// Clear any existing codes first
 	if err := s.clearExistingCodes(ctx, username); err != nil {
 		s.logger.Error("failed to clear existing codes", zap.String("username", username), zap.Error(err))
-		return nil, fmt.Errorf("failed to clear existing recovery codes: %w", err)
+		return nil, errors.Join(ErrRecoveryCodeClear, err)
 	}
 
 	s.logger.Info("generated recovery codes",
@@ -87,7 +88,7 @@ func (s *RecoveryCodeService) ValidateRecoveryCode(ctx context.Context, username
 	// Get all recovery codes for user
 	codes, err := s.repos.Recovery().GetRecoveryCodes(ctx, username)
 	if err != nil {
-		return false, fmt.Errorf("failed to get recovery codes: %w", err)
+		return false, errors.Join(ErrRecoveryCodeRetrieval, err)
 	}
 
 	// For each stored code:
@@ -101,7 +102,7 @@ func (s *RecoveryCodeService) ValidateRecoveryCode(ctx context.Context, username
 		if err := VerifyPassword(code, storedCode.CodeHash); err == nil {
 			// 3. Mark as used if valid
 			if err := s.repos.Recovery().MarkRecoveryCodeUsed(ctx, username, storedCode.CodeHash); err != nil {
-				return false, fmt.Errorf("failed to mark recovery code as used: %w", err)
+				return false, errors.Join(ErrRecoveryCodeMarkUsed, err)
 			}
 
 			s.logger.Info("recovery code used successfully",

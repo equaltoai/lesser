@@ -277,7 +277,7 @@ func createCostTrackingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 	}
 }
 
-func createTracingMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Middleware {
+func createTracingMiddleware(_ *common.LambdaContext) liftPkg.Middleware {
 	return func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			// Basic tracing implementation - can be enhanced
@@ -327,7 +327,7 @@ func createLatencyTrackingMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Mi
 	}
 }
 
-func createRateLimitMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Middleware {
+func createRateLimitMiddleware(_ *common.LambdaContext) liftPkg.Middleware {
 	return func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			// Basic rate limiting - can be enhanced with ratelimit package

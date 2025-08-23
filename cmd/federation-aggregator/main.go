@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -107,7 +108,7 @@ func (p *FederationAggregatorProcessor) HandleEvent(ctx *lift.Context, event eve
 }
 
 // initializeAWSClients initializes AWS service clients
-func (p *FederationAggregatorProcessor) initializeAWSClients(ctx context.Context) error {
+func (p *FederationAggregatorProcessor) initializeAWSClients(_ context.Context) error {
 	// Use the AWS config from lambdaCtx
 	awsCfg := p.lambdaCtx.AWSServices.Config
 
@@ -137,9 +138,7 @@ func (p *FederationAggregatorProcessor) HandleSQS(ctx *lift.Context, event event
 				zap.String("message_id", record.MessageId),
 				zap.Error(err),
 			)
-			return lift.NewLiftError("MESSAGE_PROCESSING_FAILED",
-				fmt.Sprintf("failed to process message %s: %v", record.MessageId, err),
-				500)
+			return lift.NewLiftError("MESSAGE_PROCESSING_FAILED", "failed to process SQS message", 500).WithCause(err)
 		}
 	}
 
@@ -151,7 +150,7 @@ func (p *FederationAggregatorProcessor) processSQSMessage(ctx context.Context, r
 	// Try to parse as AggregationEvent
 	var aggEvent AggregationEvent
 	if err := json.Unmarshal([]byte(record.Body), &aggEvent); err != nil {
-		return fmt.Errorf("failed to unmarshal aggregation event: %w", err)
+		return errors.Join(ErrAggregationEventUnmarshal, err)
 	}
 
 	return p.handleAggregationEvent(ctx, aggEvent)
@@ -161,7 +160,7 @@ var (
 	lambdaCtx *common.LambdaContext
 	cfg       *config.Config
 	logger    *zap.Logger
-	repos     core.RepositoryStorage
+	repos     core.RepositoryStorage //nolint:unused // dependency injection pattern - available for processor extensions
 	processor *FederationAggregatorProcessor
 	db        dynamormCore.DB
 )
@@ -243,7 +242,7 @@ func (p *FederationAggregatorProcessor) handleCloudWatchEvent(ctx context.Contex
 	// Initialize AWS clients
 	if err := p.initializeAWSClients(ctx); err != nil {
 		p.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return fmt.Errorf("failed to initialize AWS clients: %w", err)
+		return errors.Join(ErrAWSClientsInit, err)
 	}
 
 	p.logger.Info("Processing CloudWatch scheduled event",
@@ -299,7 +298,7 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 
 	// Store aggregation
 	if err := p.storeAggregation(ctx, aggregation); err != nil {
-		return fmt.Errorf("failed to store aggregation: %w", err)
+		return errors.Join(ErrAggregationStore, err)
 	}
 
 	p.logger.Info("Federation aggregation completed",
@@ -327,7 +326,7 @@ func (p *FederationAggregatorProcessor) storeAggregation(_ context.Context, agg 
 		agg.UpdatedAt = time.Now()
 		err = p.db.Model(agg).Update()
 		if err != nil {
-			return fmt.Errorf("failed to store aggregation: %w", err)
+			return errors.Join(ErrAggregationStore, err)
 		}
 	}
 	return nil
@@ -343,7 +342,7 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("failed to marshal aggregation event: %w", err)
+		return errors.Join(ErrAggregationEventMarshal, err)
 	}
 
 	// Option 1: Use SQS for async processing (preferred for resilience)
@@ -385,11 +384,18 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 
 	lambdaResult, err := p.lambdaClient.Invoke(ctx, lambdaInput)
 	if err != nil {
-		return fmt.Errorf("failed to invoke lambda and send SQS message: lambda_err=%w, sqs_err=%v", err, sqsErr)
+		p.logger.Error("both lambda invocation and SQS send failed",
+			zap.Error(err),
+			zap.NamedError("sqs_error", sqsErr),
+		)
+		return errors.Join(ErrLambdaInvocationFailed, err)
 	}
 
 	if lambdaResult.FunctionError != nil {
-		return fmt.Errorf("lambda function returned error: %s", *lambdaResult.FunctionError)
+		p.logger.Error("lambda function error",
+			zap.String("function_error", *lambdaResult.FunctionError),
+		)
+		return ErrLambdaFunctionError
 	}
 
 	p.logger.Info("Successfully triggered aggregation via direct Lambda invocation",
@@ -429,7 +435,7 @@ func (p *FederationAggregatorProcessor) getFilteredActivities(ctx context.Contex
 	// Get all federation activities for the time period
 	activities, err := p.federationActivityRepository.GetRecentActivities(ctx, event.StartTime, 10000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get federation activities: %w", err)
+		return nil, errors.Join(ErrFederationActivitiesGet, err)
 	}
 
 	// Filter activities by end time

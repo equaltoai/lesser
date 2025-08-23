@@ -5,8 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"os"
+	"errors"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -29,16 +28,16 @@ func NewHandler(lambdaCtx *common.LambdaContext) (*Handler, error) {
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
+		return nil, errors.Join(ErrDynamORMInit, err)
 	}
 
 	// Create SQS client
 	sqsClient := sqs.NewFromConfig(lambdaCtx.AWSServices.Config)
-	queueURL := os.Getenv("ENHANCED_RETRY_QUEUE_URL")
+	queueURL := lambdaCtx.Config.EnhancedRetryQueueURL
 
 	// Create federation storage and delivery service
 	federationStorage := federation.NewDynamORMFederationStorage(db, lambdaCtx.Config.DynamoTableName)
-	deliveryService := federation.NewDeliveryService(federationStorage)
+	deliveryService := federation.NewDeliveryService(federationStorage, lambdaCtx.Config)
 
 	// Create enhanced retry processor
 	retryProcessor := federation.NewEnhancedRetryProcessor(deliveryService, sqsClient, queueURL)
@@ -84,7 +83,7 @@ func (h *Handler) processMessage(ctx context.Context, record events.SQSMessage) 
 	// Parse the enhanced retry message
 	var retryMessage federation.EnhancedRetryMessage
 	if err := json.Unmarshal([]byte(record.Body), &retryMessage); err != nil {
-		return fmt.Errorf("failed to unmarshal retry message: %w", err)
+		return errors.Join(ErrUnmarshalRetryMessage, err)
 	}
 
 	h.logger.Info("Processing enhanced retry message",
@@ -95,7 +94,7 @@ func (h *Handler) processMessage(ctx context.Context, record events.SQSMessage) 
 
 	// Process the retry
 	if err := h.retryProcessor.ProcessEnhancedRetry(ctx, &retryMessage); err != nil {
-		return fmt.Errorf("failed to process enhanced retry: %w", err)
+		return errors.Join(ErrProcessEnhancedRetry, err)
 	}
 
 	return nil

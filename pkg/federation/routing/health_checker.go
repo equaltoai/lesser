@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -67,10 +68,14 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 	// Perform HTTP health check
 	req, err := http.NewRequestWithContext(ctx, "GET", instance.InboxURL, nil)
 	if err != nil {
-		health.ErrorMessage = fmt.Sprintf("invalid URL: %v", err)
+		hc.logger.Error("invalid URL for health check", 
+			zap.Error(err),
+			zap.String("domain", instance.Domain),
+			zap.String("inbox_url", instance.InboxURL))
+		health.ErrorMessage = ErrInvalidURL.Error() + ": " + err.Error()
 		// Store the failed health check
 		hc.storeHealthCheck(ctx, instance.Domain, health)
-		return health, err
+		return health, errors.Join(ErrInvalidURL, err)
 	}
 
 	// Add headers
@@ -80,7 +85,7 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 	// Perform request
 	resp, err := hc.httpClient.Do(req)
 	if err != nil {
-		health.ErrorMessage = fmt.Sprintf("request failed: %v", err)
+		health.ErrorMessage = fmt.Sprintf("%s: %v", ErrHealthCheckRequestFailed.Error(), err)
 		// Store the failed health check
 		hc.storeHealthCheck(ctx, instance.Domain, health)
 		return health, nil
@@ -100,10 +105,10 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 
 	// Check status code
 	if resp.StatusCode >= 500 {
-		health.ErrorMessage = fmt.Sprintf("server error: %d", resp.StatusCode)
+		health.ErrorMessage = fmt.Sprintf("%s: %d", ErrServerError.Error(), resp.StatusCode)
 		health.ErrorRate = 1.0
 	} else if resp.StatusCode >= 400 {
-		health.ErrorMessage = fmt.Sprintf("client error: %d", resp.StatusCode)
+		health.ErrorMessage = fmt.Sprintf("%s: %d", ErrClientError.Error(), resp.StatusCode)
 		health.ErrorRate = 0.5
 	}
 
@@ -139,7 +144,11 @@ func (hc *InstanceHealthChecker) GetHealthHistory(instanceID string, duration ti
 	// Use the repository to get health history
 	healthRecords, err := hc.healthRepo.GetHealthHistory(ctx, instanceID, since, 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get health history: %w", err)
+		hc.logger.Error("failed to retrieve health history",
+			zap.Error(err),
+			zap.String("instance_id", instanceID),
+			zap.Duration("duration", duration))
+		return nil, errors.Join(ErrHealthHistoryRetrieveFailed, err)
 	}
 
 	// Convert models to HealthStatus
@@ -191,7 +200,7 @@ func (hc *InstanceHealthChecker) GetAggregatedHealth(instanceID string, window t
 	}
 
 	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
-		return nil, fmt.Errorf("no health data available")
+		return nil, ErrNoHealthDataAvailable
 	}
 
 	agg := &AggregatedHealth{

@@ -8,6 +8,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
+const (
+	// Activity type constants
+	activityTypeCreate = "Create"
+)
+
 // ActivityBuilder builds ActivityPub activities using the builder pattern
 type ActivityBuilder struct {
 	*BaseBuilder
@@ -84,7 +89,7 @@ func (b *ActivityBuilder) WithCC(recipients ...string) *ActivityBuilder {
 func (b *ActivityBuilder) Build() *activitypub.Activity {
 	// Apply defaults
 	if err := common.ValidateRequiredParam("Type", b.activity.Type); err != nil {
-		b.activity.Type = "Create"
+		b.activity.Type = activityTypeCreate
 	}
 	
 	if err := common.ValidateRequiredParam("ID", b.activity.ID); err != nil {
@@ -144,7 +149,7 @@ func (b *ActivityBuilder) BuildAnnounce(actor, object string) *activitypub.Activ
 // BuildCreate creates a Create activity with a Note object
 func (b *ActivityBuilder) BuildCreate(actor string, note *activitypub.Note) *activitypub.Activity {
 	return b.Reset().
-		WithType("Create").
+		WithType(activityTypeCreate).
 		WithActor(actor).
 		WithObject(note).
 		WithTo(note.To...).

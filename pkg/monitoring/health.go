@@ -3,7 +3,6 @@ package monitoring
 import (
 	"context"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"go.uber.org/zap"
 )
 
 // HealthMonitor monitors infrastructure health
@@ -76,7 +76,7 @@ func (hm *HealthMonitor) CheckDynamoDBHealth(ctx context.Context, tableName stri
 
 	latency := time.Since(start)
 	if err := hm.monitor.RecordLatency(ctx, "HealthCheck.DynamoDB", float64(latency.Milliseconds())); err != nil {
-		log.Printf("Warning: Failed to record DynamoDB health check latency: %v", err)
+		zap.L().Warn("failed to record DynamoDB health check latency", zap.Error(err))
 	}
 
 	// Check table status
@@ -129,7 +129,7 @@ func (hm *HealthMonitor) CheckLambdaHealth(ctx context.Context, functionName str
 
 	latency := time.Since(start)
 	if err := hm.monitor.RecordLatency(ctx, "HealthCheck.Lambda", float64(latency.Milliseconds())); err != nil {
-		log.Printf("Warning: Failed to record Lambda health check latency: %v", err)
+		zap.L().Warn("failed to record Lambda health check latency", zap.Error(err))
 	}
 
 	// Check function state
@@ -181,7 +181,7 @@ func (hm *HealthMonitor) CheckSQSHealth(ctx context.Context, queueURL string) er
 
 	latency := time.Since(start)
 	if err := hm.monitor.RecordLatency(ctx, "HealthCheck.SQS", float64(latency.Milliseconds())); err != nil {
-		log.Printf("Warning: Failed to record SQS health check latency: %v", err)
+		zap.L().Warn("failed to record SQS health check latency", zap.Error(err))
 	}
 
 	// Parse queue metrics
@@ -193,7 +193,9 @@ func (hm *HealthMonitor) CheckSQSHealth(ctx context.Context, queueURL string) er
 
 	// Record queue depth metric
 	if err := hm.monitor.RecordSQSQueueDepth(ctx, queueURL, int64(totalMessages)); err != nil {
-		log.Printf("Warning: Failed to record SQS queue depth for %s: %v", queueURL, err)
+		zap.L().Warn("failed to record SQS queue depth", 
+			zap.String("queue_url", queueURL), 
+			zap.Error(err))
 	}
 
 	// Determine health status based on queue depth
@@ -314,15 +316,21 @@ func (hm *HealthMonitor) runHealthChecks(ctx context.Context, components []Healt
 		switch component.Type {
 		case "dynamodb":
 			if err := hm.CheckDynamoDBHealth(ctx, component.Identifier); err != nil {
-				log.Printf("Warning: DynamoDB health check failed for %s: %v", component.Identifier, err)
+				zap.L().Warn("DynamoDB health check failed", 
+					zap.String("component", component.Identifier), 
+					zap.Error(err))
 			}
 		case "lambda":
 			if err := hm.CheckLambdaHealth(ctx, component.Identifier); err != nil {
-				log.Printf("Warning: Lambda health check failed for %s: %v", component.Identifier, err)
+				zap.L().Warn("Lambda health check failed", 
+					zap.String("component", component.Identifier), 
+					zap.Error(err))
 			}
 		case "sqs":
 			if err := hm.CheckSQSHealth(ctx, component.Identifier); err != nil {
-				log.Printf("Warning: SQS health check failed for %s: %v", component.Identifier, err)
+				zap.L().Warn("SQS health check failed", 
+					zap.String("component", component.Identifier), 
+					zap.Error(err))
 			}
 		}
 	}
@@ -347,7 +355,7 @@ func (hm *HealthMonitor) runHealthChecks(ctx context.Context, components []Healt
 			"Environment": hm.monitor.environment,
 		},
 	}); err != nil {
-		log.Printf("Warning: Failed to put system health metric: %v", err)
+		zap.L().Warn("failed to put system health metric", zap.Error(err))
 	}
 }
 
@@ -356,7 +364,9 @@ func parseInt(s string) int {
 	var result int
 	if _, err := fmt.Sscanf(s, "%d", &result); err != nil {
 		// Log warning but return 0 for parsing errors
-		log.Printf("Warning: failed to parse integer from '%s': %v", s, err)
+		zap.L().Warn("failed to parse integer", 
+			zap.String("value", s), 
+			zap.Error(err))
 	}
 	return result
 }

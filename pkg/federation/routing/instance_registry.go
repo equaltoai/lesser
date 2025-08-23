@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -75,7 +76,12 @@ func (ir *InstanceRegistry) RegisterInstance(ctx context.Context, instance *type
 
 	err := ir.repo.CreateInstance(ctx, instance)
 	if err != nil {
-		return fmt.Errorf("register instance: %w", err)
+		ir.logger.Error("instance registration failed",
+			zap.String("instance_id", instance.ID),
+			zap.String("domain", instance.Domain),
+			zap.String("operation", "register"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceRegistrationFailed, err)
 	}
 
 	// Update cache
@@ -125,7 +131,12 @@ func (ir *InstanceRegistry) GetInstanceByDomain(ctx context.Context, domain stri
 func (ir *InstanceRegistry) UpdateInstance(ctx context.Context, instance *types.Instance) error {
 	err := ir.repo.UpdateInstance(ctx, instance)
 	if err != nil {
-		return fmt.Errorf("update instance: %w", err)
+		ir.logger.Error("instance update failed",
+			zap.String("instance_id", instance.ID),
+			zap.String("domain", instance.Domain),
+			zap.String("operation", "update"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceUpdateFailed, err)
 	}
 
 	// Invalidate cache
@@ -138,7 +149,11 @@ func (ir *InstanceRegistry) UpdateInstance(ctx context.Context, instance *types.
 func (ir *InstanceRegistry) UnregisterInstance(ctx context.Context, instanceID string) error {
 	err := ir.repo.DeleteInstance(ctx, instanceID)
 	if err != nil {
-		return fmt.Errorf("unregister instance: %w", err)
+		ir.logger.Error("instance unregistration failed",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "unregister"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceUnregistrationFailed, err)
 	}
 
 	// Remove from cache
@@ -168,7 +183,11 @@ func (ir *InstanceRegistry) GetInstancesByStatus(ctx context.Context, status typ
 func (ir *InstanceRegistry) UpdateInstanceHealth(ctx context.Context, instanceID string, health *types.HealthStatus) error {
 	err := ir.repo.UpdateInstanceHealth(ctx, instanceID, health)
 	if err != nil {
-		return fmt.Errorf("update instance health: %w", err)
+		ir.logger.Error("instance health update failed",
+			zap.String("instance_id", instanceID),
+			zap.String("operation", "health_update"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceHealthUpdateFailed, err)
 	}
 
 	// Invalidate cache
@@ -206,7 +225,11 @@ func (ir *InstanceRegistry) BatchGetInstances(ctx context.Context, instanceIDs [
 	if len(uncachedIDs) > 0 {
 		uncachedInstances, err := ir.repo.BatchGetInstances(ctx, uncachedIDs)
 		if err != nil {
-			return nil, fmt.Errorf("batch get instances: %w", err)
+			ir.logger.Error("instance batch get failed",
+				zap.Strings("uncached_ids", uncachedIDs),
+				zap.String("operation", "batch_get"),
+				zap.Error(err))
+			return nil, errors.Join(ErrInstanceBatchGetFailed, err)
 		}
 
 		for _, instance := range uncachedInstances {
@@ -227,7 +250,12 @@ func (ir *InstanceRegistry) BatchGetInstances(ctx context.Context, instanceIDs [
 func (ir *InstanceRegistry) UpdateInstanceUsage(ctx context.Context, instanceID string, bytesUsed int64) error {
 	err := ir.repo.UpdateInstanceUsage(ctx, instanceID, bytesUsed)
 	if err != nil {
-		return fmt.Errorf("update instance usage: %w", err)
+		ir.logger.Error("instance usage update failed",
+			zap.String("instance_id", instanceID),
+			zap.Int64("bytes_used", bytesUsed),
+			zap.String("operation", "usage_update"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceUsageUpdateFailed, err)
 	}
 
 	// Invalidate cache since usage metrics changed
@@ -250,7 +278,11 @@ func (ir *InstanceRegistry) GetHealthHistory(ctx context.Context, instanceID str
 func (ir *InstanceRegistry) BatchCreateInstances(ctx context.Context, instances []*types.Instance) error {
 	err := ir.repo.BatchCreateInstances(ctx, instances)
 	if err != nil {
-		return fmt.Errorf("batch create instances: %w", err)
+		ir.logger.Error("instance batch create failed",
+			zap.Int("instance_count", len(instances)),
+			zap.String("operation", "batch_create"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceBatchCreateFailed, err)
 	}
 
 	// Update cache for created instances
@@ -268,7 +300,11 @@ func (ir *InstanceRegistry) BatchCreateInstances(ctx context.Context, instances 
 func (ir *InstanceRegistry) BatchUpdateInstancesHealth(ctx context.Context, healthUpdates map[string]*types.HealthStatus) error {
 	err := ir.repo.BatchUpdateInstancesHealth(ctx, healthUpdates)
 	if err != nil {
-		return fmt.Errorf("batch update instances health: %w", err)
+		ir.logger.Error("instance batch health update failed",
+			zap.Int("update_count", len(healthUpdates)),
+			zap.String("operation", "batch_health_update"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceBatchHealthUpdateFailed, err)
 	}
 
 	// Invalidate cache for updated instances
@@ -283,7 +319,11 @@ func (ir *InstanceRegistry) BatchUpdateInstancesHealth(ctx context.Context, heal
 func (ir *InstanceRegistry) BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error {
 	err := ir.repo.BatchUpdateInstancesUsage(ctx, usageUpdates)
 	if err != nil {
-		return fmt.Errorf("batch update instances usage: %w", err)
+		ir.logger.Error("instance batch usage update failed",
+			zap.Int("update_count", len(usageUpdates)),
+			zap.String("operation", "batch_usage_update"),
+			zap.Error(err))
+		return errors.Join(ErrInstanceBatchUsageUpdateFailed, err)
 	}
 
 	// Invalidate cache for updated instances

@@ -219,53 +219,53 @@ func (umc *UserMediaConfig) Validate() error {
 		"free": true, "basic": true, "premium": true, "enterprise": true,
 	}
 	if !validTiers[umc.PlanTier] {
-		return fmt.Errorf("invalid plan tier: %s", umc.PlanTier)
+		return fmt.Errorf("%w: %s", ErrInvalidPlanTier, umc.PlanTier)
 	}
 
 	// Validate file size limits
 	if umc.MaxFileSize <= 0 {
-		return fmt.Errorf("MaxFileSize must be greater than 0")
+		return ErrInvalidFileSize
 	}
 	if umc.MaxVideoSize > umc.MaxFileSize {
-		return fmt.Errorf("MaxVideoSize cannot exceed MaxFileSize")
+		return ErrFileSizeTooLarge
 	}
 	if umc.MaxImageSize > umc.MaxFileSize {
-		return fmt.Errorf("MaxImageSize cannot exceed MaxFileSize")
+		return ErrFileSizeTooLarge
 	}
 	if umc.MaxAudioSize > umc.MaxFileSize {
-		return fmt.Errorf("MaxAudioSize cannot exceed MaxFileSize")
+		return ErrFileSizeTooLarge
 	}
 
 	// Validate duration limits
 	if umc.MaxVideoDuration < 0 {
-		return fmt.Errorf("MaxVideoDuration cannot be negative")
+		return ErrVideoDurationInvalid
 	}
 
 	// Validate upload limits
 	if umc.MaxDailyUploads < 0 || umc.MaxMonthlyUploads < 0 {
-		return fmt.Errorf("upload limits cannot be negative")
+		return ErrUploadLimitsInvalid
 	}
 	if umc.MaxDailyUploads > umc.MaxMonthlyUploads {
-		return fmt.Errorf("MaxDailyUploads cannot exceed MaxMonthlyUploads")
+		return ErrUploadLimitsInvalid
 	}
 
 	// Validate budget limits
 	if umc.MonthlyBudgetMicros < 0 || umc.DailyBudgetMicros < 0 {
-		return fmt.Errorf("budget limits cannot be negative")
+		return ErrBudgetLimitsInvalid
 	}
 
 	// Validate moderation threshold
 	if umc.ModerationThreshold < 0.0 || umc.ModerationThreshold > 1.0 {
-		return fmt.Errorf("ModerationThreshold must be between 0.0 and 1.0")
+		return ErrModerationThresholdInvalid
 	}
 
 	// Validate quality settings
 	validQualities := map[string]bool{"low": true, "medium": true, "high": true}
 	if !validQualities[umc.ImageQuality] {
-		return fmt.Errorf("invalid ImageQuality: %s", umc.ImageQuality)
+		return fmt.Errorf("%w: %s", ErrInvalidQualitySetting, umc.ImageQuality)
 	}
 	if !validQualities[umc.VideoQuality] {
-		return fmt.Errorf("invalid VideoQuality: %s", umc.VideoQuality)
+		return fmt.Errorf("%w: %s", ErrInvalidQualitySetting, umc.VideoQuality)
 	}
 
 	return nil
@@ -374,7 +374,7 @@ func (umc *UserMediaConfig) UpgradePlan(newTier string, expiresAt *time.Time) er
 		// Rollback on validation failure
 		umc.PlanTier = oldTier
 		umc.setDefaults()
-		return fmt.Errorf("failed to upgrade plan: %w", err)
+		return fmt.Errorf("%w: %w", ErrPlanUpgradeFailed, err)
 	}
 
 	return nil
@@ -394,4 +394,30 @@ func (umc *UserMediaConfig) IsTrialExpired() bool {
 		return false
 	}
 	return time.Now().After(*umc.TrialExpiresAt)
+}
+
+// === BaseModel Interface Implementation ===
+
+// GetPK returns the partition key for this user media config
+func (umc *UserMediaConfig) GetPK() string {
+	return umc.PK
+}
+
+// GetSK returns the sort key for this user media config
+func (umc *UserMediaConfig) GetSK() string {
+	return umc.SK
+}
+
+// UpdateKeys ensures all key fields are properly set
+func (umc *UserMediaConfig) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("UserID", umc.UserID); err != nil {
+		return fmt.Errorf("%w: %w", ErrUserIDRequired, err)
+	}
+
+	// Set primary keys
+	umc.PK = "USER_MEDIA_CONFIG#" + umc.UserID
+	umc.SK = SKConfig
+
+	return nil
 }

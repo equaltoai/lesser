@@ -89,7 +89,7 @@ type WebSocketConnection struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (w *WebSocketConnection) UpdateKeys() {
+func (w *WebSocketConnection) UpdateKeys() error {
 	// Set primary keys
 	w.PK = fmt.Sprintf("CONN#%s", w.ConnectionID)
 	w.SK = fmt.Sprintf("CONN#%s", w.ConnectionID)
@@ -103,13 +103,25 @@ func (w *WebSocketConnection) UpdateKeys() {
 	// Set GSI2 keys for state-based queries
 	w.GSI2PK = fmt.Sprintf("STATE#%s", w.State)
 	w.GSI2SK = fmt.Sprintf("CONN#%s", w.ConnectionID)
+	
+	return nil
+}
+
+// GetPK returns the partition key
+func (w *WebSocketConnection) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WebSocketConnection) GetSK() string {
+	return w.SK
 }
 
 // UpdateState changes the connection state and records the timestamp
 func (w *WebSocketConnection) UpdateState(newState ConnectionState) {
 	w.State = newState
 	w.StateChangedAt = time.Now()
-	w.UpdateKeys() // Update GSI2 keys since state changed
+	_ = w.UpdateKeys() // Update GSI2 keys since state changed (ignore error as this is internal)
 }
 
 // IsHealthy returns true if the connection is in a healthy state
@@ -212,7 +224,7 @@ type WebSocketSubscription struct {
 }
 
 // UpdateKeys sets the GSI keys based on the current values
-func (w *WebSocketSubscription) UpdateKeys() {
+func (w *WebSocketSubscription) UpdateKeys() error {
 	// Set primary keys
 	w.PK = fmt.Sprintf("SUB#%s", w.Stream)
 	w.SK = fmt.Sprintf("CONN#%s", w.ConnectionID)
@@ -220,4 +232,16 @@ func (w *WebSocketSubscription) UpdateKeys() {
 	// Set GSI1 keys for connection-based queries
 	w.GSI1PK = fmt.Sprintf("CONN#%s", w.ConnectionID)
 	w.GSI1SK = fmt.Sprintf("STREAM#%s", w.Stream)
+	
+	return nil
+}
+
+// GetPK returns the partition key
+func (w *WebSocketSubscription) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WebSocketSubscription) GetSK() string {
+	return w.SK
 }

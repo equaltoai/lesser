@@ -6,8 +6,8 @@ import (
 )
 
 
-// CostDriver represents a major cost contributor
-type CostDriver struct {
+// Driver represents a major cost contributor
+type Driver struct {
 	// Keys
 	PK string `dynamorm:"pk" json:"-"` // COST#DRIVER
 	SK string `dynamorm:"sk" json:"-"` // {category}#{resource}
@@ -30,7 +30,7 @@ type CostDriver struct {
 }
 
 // UpdateKeys updates the partition and sort keys
-func (c *CostDriver) UpdateKeys() {
+func (c *Driver) UpdateKeys() {
 	c.PK = CostDriverPK
 	c.SK = fmt.Sprintf("%s#%s", c.Category, c.Resource)
 
@@ -38,9 +38,9 @@ func (c *CostDriver) UpdateKeys() {
 	c.TTL = c.MeasuredAt.AddDate(0, 3, 0).Unix()
 }
 
-// NewCostDriver creates a new cost driver
-func NewCostDriver(category, resource string) *CostDriver {
-	driver := &CostDriver{
+// NewDriver creates a new cost driver
+func NewDriver(category, resource string) *Driver {
+	driver := &Driver{
 		Category:      category,
 		Resource:      resource,
 		MeasuredAt:    time.Now().UTC(),
@@ -62,7 +62,7 @@ func GetCostDriversByCategoryKeys(category string) (pk, skPrefix string) {
 }
 
 // CalculateTrend determines the trend based on previous cost
-func (c *CostDriver) CalculateTrend() {
+func (c *Driver) CalculateTrend() {
 	if c.PreviousCost == 0 {
 		c.Trend = TrendStable
 		return
@@ -80,7 +80,7 @@ func (c *CostDriver) CalculateTrend() {
 }
 
 // SetVolumeMetric sets a volume metric value
-func (c *CostDriver) SetVolumeMetric(metric string, value int64) {
+func (c *Driver) SetVolumeMetric(metric string, value int64) {
 	if c.VolumeMetrics == nil {
 		c.VolumeMetrics = make(map[string]int64)
 	}
@@ -88,7 +88,7 @@ func (c *CostDriver) SetVolumeMetric(metric string, value int64) {
 }
 
 // GetCostPerUnit calculates cost per unit for a given metric
-func (c *CostDriver) GetCostPerUnit(metric string) float64 {
+func (c *Driver) GetCostPerUnit(metric string) float64 {
 	if value, ok := c.VolumeMetrics[metric]; ok && value > 0 {
 		return c.Cost / float64(value)
 	}
@@ -96,7 +96,7 @@ func (c *CostDriver) GetCostPerUnit(metric string) float64 {
 }
 
 // DetermineCostType sets the Type field based on category and resource
-func (c *CostDriver) DetermineCostType() {
+func (c *Driver) DetermineCostType() {
 	switch c.Category {
 	case ResourceStorage:
 		c.Type = fmt.Sprintf("Storage - %s", c.Resource)
@@ -116,12 +116,12 @@ func (c *CostDriver) DetermineCostType() {
 }
 
 // IsSignificant checks if this driver is a significant cost contributor
-func (c *CostDriver) IsSignificant() bool {
+func (c *Driver) IsSignificant() bool {
 	return c.PercentOfTotal > 5 || c.Cost > 50
 }
 
 // FormatCostSummary returns a human-readable cost summary
-func (c *CostDriver) FormatCostSummary() string {
+func (c *Driver) FormatCostSummary() string {
 	summary := fmt.Sprintf("%s: $%.2f (%.1f%%)", c.Type, c.Cost, c.PercentOfTotal)
 
 	switch c.Trend {

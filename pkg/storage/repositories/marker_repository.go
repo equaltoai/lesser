@@ -3,29 +3,34 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
 )
 
-// MarkerRepository implements marker operations using DynamORM
+// MarkerRepository implements marker operations using DynamORM with BaseRepository
 type MarkerRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Marker]
 }
 
 // NewMarkerRepository creates a new marker repository
 func NewMarkerRepository(db core.DB, tableName string, logger *zap.Logger) *MarkerRepository {
 	return &MarkerRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.Marker](db, tableName, logger),
+	}
+}
+
+// NewMarkerRepositoryWithCostTracking creates a new marker repository with cost tracking
+func NewMarkerRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MarkerRepository {
+	return &MarkerRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Marker](db, tableName, logger, costService, "marker"),
 	}
 }
 
@@ -34,7 +39,7 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 	// Get current marker to check version (matches legacy behavior exactly)
 	existingMarkers, err := r.GetMarkers(ctx, username, []string{timeline})
 	if err != nil {
-		r.logger.Error("failed to get existing marker", zap.Error(err))
+		r.BaseRepository.logger.Error("failed to get existing marker", zap.Error(err))
 		// Continue anyway, might be first marker (matches legacy behavior)
 	}
 
@@ -55,16 +60,13 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 		UpdatedAt:  time.Now(), // Set explicitly to match legacy
 	}
 
-	// Set up the keys using the UpdateKeys method
-	markerModel.UpdateKeys()
-
-	// Save using DynamORM - this will call BeforeCreate/BeforeUpdate hooks
-	err = r.db.WithContext(ctx).Model(markerModel).Create()
+	// Save using BaseRepository - this will call UpdateKeys() and BeforeCreate hooks
+	err = r.Create(ctx, markerModel)
 	if err != nil {
-		return fmt.Errorf("failed to save marker: %w", err)
+		return fmt.Errorf("%w: %w", ErrMarkerSaveFailed, err)
 	}
 
-	r.logger.Debug("saved marker",
+	r.BaseRepository.logger.Debug("saved marker",
 		zap.String("username", username),
 		zap.String("timeline", timeline),
 		zap.String("last_read_id", lastReadID),
@@ -92,16 +94,18 @@ func (r *MarkerRepository) GetMarkers(ctx context.Context, username string, time
 		queryModel.UpdateKeys()
 
 		var markerModel models.Marker
-		err := r.db.WithContext(ctx).Model(&models.Marker{}).Where("PK = ? AND SK = ?", queryModel.PK, queryModel.SK).First(&markerModel)
+		err := r.Get(ctx, queryModel.PK, queryModel.SK, &markerModel)
 
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Skip this timeline, continue to next (matches legacy behavior)
 				continue
 			}
-			r.logger.Warn("failed to get marker",
-				zap.String("timeline", timeline),
-				zap.Error(err))
+			// BaseRepository.Get wraps not found errors, so check the string
+			if strings.Contains(err.Error(), "not found") {
+				continue
+			}
+			// Log actual errors and continue (matches legacy behavior)
 			continue
 		}
 

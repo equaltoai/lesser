@@ -54,8 +54,18 @@ type FederationCostActivity struct {
 	TTL          int64     `json:"ttl,omitempty" dynamorm:"ttl"`
 }
 
+// GetPK returns the partition key for BaseRepository compatibility
+func (f *FederationCostActivity) GetPK() string {
+	return f.PK
+}
+
+// GetSK returns the sort key for BaseRepository compatibility
+func (f *FederationCostActivity) GetSK() string {
+	return f.SK
+}
+
 // UpdateKeys updates the GSI keys for federation cost activity
-func (f *FederationCostActivity) UpdateKeys() {
+func (f *FederationCostActivity) UpdateKeys() error {
 	now := f.Timestamp
 	if now.IsZero() {
 		now = time.Now()
@@ -71,6 +81,8 @@ func (f *FederationCostActivity) UpdateKeys() {
 
 	// Set TTL to 90 days
 	f.TTL = now.Add(90 * 24 * time.Hour).Unix()
+	
+	return nil
 }
 
 // FederationCost represents aggregated federation cost data

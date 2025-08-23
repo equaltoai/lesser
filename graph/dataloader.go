@@ -2,6 +2,7 @@ package graph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -82,7 +83,7 @@ func newTrustScoreLoader(repos core.RepositoryStorage, logger *zap.Logger) *data
 			// Key format: "actorID:category"
 			keyParts := strings.Split(key.String(), ":")
 			if len(keyParts) != 2 {
-				results[i] = &dataloader.Result{Error: fmt.Errorf("invalid trust score key format: %s", key.String())}
+				results[i] = &dataloader.Result{Error: errors.Join(ErrInvalidTrustScoreKey, errors.New(key.String()))}
 				continue
 			}
 

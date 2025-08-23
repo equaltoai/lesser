@@ -16,8 +16,19 @@ type StatusEngagement struct {
 }
 
 // UpdateKeys updates GSI keys for StatusEngagement - no GSIs needed for this model
-func (s *StatusEngagement) UpdateKeys() {
+func (s *StatusEngagement) UpdateKeys() error {
 	// No GSIs for this model
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (s *StatusEngagement) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (s *StatusEngagement) GetSK() string {
+	return s.SK
 }
 
 // LinkShare tracks when links are shared in statuses
@@ -32,8 +43,19 @@ type LinkShare struct {
 }
 
 // UpdateKeys updates GSI keys for LinkShare - no GSIs needed for this model
-func (l *LinkShare) UpdateKeys() {
+func (l *LinkShare) UpdateKeys() error {
 	// No GSIs for this model
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (l *LinkShare) GetPK() string {
+	return l.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (l *LinkShare) GetSK() string {
+	return l.SK
 }
 
 // EngagementMetrics tracks engagement metrics for platform usage analysis
@@ -68,10 +90,21 @@ type EngagementMetrics struct {
 }
 
 // UpdateKeys updates GSI keys for EngagementMetrics
-func (e *EngagementMetrics) UpdateKeys() {
+func (e *EngagementMetrics) UpdateKeys() error {
 	// GSI8 is used for date range queries
 	e.GSI8PK = e.PK
 	e.GSI8SK = e.SK
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (e *EngagementMetrics) GetPK() string {
+	return e.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (e *EngagementMetrics) GetSK() string {
+	return e.SK
 }
 
 // TableName returns the DynamoDB table name

@@ -1,4 +1,4 @@
-// Package marshalers provides custom DynamoDB marshaling utilities with encryption support for sensitive data.
+// Package marshalers provides custom DynamoDB marshaling utilities with encryption support for sensitive data using DynamORM.
 package marshalers
 
 import (
@@ -9,24 +9,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/shopspring/decimal"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
-// Marshaler interface for custom DynamoDB marshaling
+// Marshaler interface for custom DynamORM marshaling
 type Marshaler interface {
-	MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error)
+	MarshalDynamORM() (interface{}, error)
 }
 
-// Unmarshaler interface for custom DynamoDB unmarshaling
+// Unmarshaler interface for custom DynamORM unmarshaling
 type Unmarshaler interface {
-	UnmarshalDynamoDB(map[string]*dynamodb.AttributeValue) error
+	UnmarshalDynamORM(interface{}) error
 }
 
 // MarshalUnmarshaler combines both interfaces
@@ -54,47 +52,59 @@ func NewPreciseTimeNow(precision time.Duration) PreciseTime {
 	return NewPreciseTime(time.Now(), precision)
 }
 
-// MarshalDynamoDB implements the Marshaler interface for PreciseTime
-func (pt PreciseTime) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
+// MarshalDynamORM implements the Marshaler interface for PreciseTime
+func (pt PreciseTime) MarshalDynamORM() (interface{}, error) {
 	truncated := pt.Truncate(pt.Precision)
 
 	// Store as a map with timestamp and precision
-	return map[string]*dynamodb.AttributeValue{
-		"M": {
-			M: map[string]*dynamodb.AttributeValue{
-				"timestamp": {S: aws.String(truncated.Format(time.RFC3339Nano))},
-				"precision": {N: aws.String(strconv.FormatInt(int64(pt.Precision), 10))},
-			},
-		},
+	return map[string]interface{}{
+		"timestamp": truncated.Format(time.RFC3339Nano),
+		"precision": int64(pt.Precision),
 	}, nil
 }
 
-// UnmarshalDynamoDB implements the Unmarshaler interface for PreciseTime
-func (pt *PreciseTime) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) error {
-	if av["M"] == nil || av["M"].M == nil {
+// UnmarshalDynamORM implements the Unmarshaler interface for PreciseTime
+func (pt *PreciseTime) UnmarshalDynamORM(data interface{}) error {
+	dataMap, ok := data.(map[string]interface{})
+	if !ok {
 		return fmt.Errorf("invalid PreciseTime format: expected map")
 	}
 
-	m := av["M"].M
-
 	// Parse timestamp
-	if m["timestamp"] == nil || m["timestamp"].S == nil {
+	timestampRaw, exists := dataMap["timestamp"]
+	if !exists {
 		return fmt.Errorf("invalid PreciseTime format: missing timestamp")
 	}
+	
+	timestampStr, ok := timestampRaw.(string)
+	if !ok {
+		return fmt.Errorf("invalid PreciseTime format: timestamp must be string")
+	}
 
-	t, err := time.Parse(time.RFC3339Nano, *m["timestamp"].S)
+	t, err := time.Parse(time.RFC3339Nano, timestampStr)
 	if err != nil {
 		return fmt.Errorf("invalid PreciseTime timestamp: %w", err)
 	}
 
 	// Parse precision
-	if m["precision"] == nil || m["precision"].N == nil {
+	precisionRaw, exists := dataMap["precision"]
+	if !exists {
 		return fmt.Errorf("invalid PreciseTime format: missing precision")
 	}
 
-	precisionNanos, err := strconv.ParseInt(*m["precision"].N, 10, 64)
-	if err != nil {
-		return fmt.Errorf("invalid PreciseTime precision: %w", err)
+	var precisionNanos int64
+	switch v := precisionRaw.(type) {
+	case int64:
+		precisionNanos = v
+	case float64:
+		precisionNanos = int64(v)
+	case string:
+		precisionNanos, err = strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid PreciseTime precision: %w", err)
+		}
+	default:
+		return fmt.Errorf("invalid PreciseTime precision type: %T", v)
 	}
 
 	pt.Time = t
@@ -142,47 +152,54 @@ func NewMoneyFromString(amount, currency string) (Money, error) {
 	}, nil
 }
 
-// MarshalDynamoDB implements the Marshaler interface for Money
-func (m Money) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
+// MarshalDynamORM implements the Marshaler interface for Money
+func (m Money) MarshalDynamORM() (interface{}, error) {
 	if err := common.ValidateRequiredParam("m.Currency", m.Currency); err != nil {
 		return nil, fmt.Errorf("currency is required")
 	}
 
-	return map[string]*dynamodb.AttributeValue{
-		"M": {
-			M: map[string]*dynamodb.AttributeValue{
-				"amount":   {N: aws.String(m.Amount.String())},
-				"currency": {S: aws.String(m.Currency)},
-			},
-		},
+	return map[string]interface{}{
+		"amount":   m.Amount.String(),
+		"currency": m.Currency,
 	}, nil
 }
 
-// UnmarshalDynamoDB implements the Unmarshaler interface for Money
-func (m *Money) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) error {
-	if av["M"] == nil || av["M"].M == nil {
+// UnmarshalDynamORM implements the Unmarshaler interface for Money
+func (m *Money) UnmarshalDynamORM(data interface{}) error {
+	dataMap, ok := data.(map[string]interface{})
+	if !ok {
 		return fmt.Errorf("invalid Money format: expected map")
 	}
 
-	mapVal := av["M"].M
-
 	// Parse amount
-	if mapVal["amount"] == nil || mapVal["amount"].N == nil {
+	amountRaw, exists := dataMap["amount"]
+	if !exists {
 		return fmt.Errorf("invalid Money format: missing amount")
 	}
 
-	amount, err := decimal.NewFromString(*mapVal["amount"].N)
+	amountStr, ok := amountRaw.(string)
+	if !ok {
+		return fmt.Errorf("invalid Money format: amount must be string")
+	}
+
+	amount, err := decimal.NewFromString(amountStr)
 	if err != nil {
 		return fmt.Errorf("invalid Money amount: %w", err)
 	}
 
 	// Parse currency
-	if mapVal["currency"] == nil || mapVal["currency"].S == nil {
+	currencyRaw, exists := dataMap["currency"]
+	if !exists {
 		return fmt.Errorf("invalid Money format: missing currency")
 	}
 
+	currency, ok := currencyRaw.(string)
+	if !ok {
+		return fmt.Errorf("invalid Money format: currency must be string")
+	}
+
 	m.Amount = amount
-	m.Currency = *mapVal["currency"].S
+	m.Currency = currency
 
 	return nil
 }
@@ -236,11 +253,12 @@ type AESEncryptor struct {
 	key []byte
 }
 
-// NewAESEncryptor creates a new AES encryptor from environment variable
+// NewAESEncryptor creates a new AES encryptor from centralized config
 func NewAESEncryptor() (*AESEncryptor, error) {
-	keyBase64 := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
+	cfg := config.Get()
+	keyBase64 := cfg.DynamoDBEncryptionKey
 	if err := common.ValidateRequiredParam("keyBase64", keyBase64); err != nil {
-		return nil, fmt.Errorf("DYNAMODB_ENCRYPTION_KEY environment variable not set")
+		return nil, fmt.Errorf("DYNAMODB_ENCRYPTION_KEY not configured")
 	}
 
 	key, err := base64.StdEncoding.DecodeString(keyBase64)
@@ -318,8 +336,8 @@ func NewEncryptedString(value string, encryptor Encryptor) EncryptedString {
 	}
 }
 
-// MarshalDynamoDB implements the Marshaler interface for EncryptedString
-func (es EncryptedString) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
+// MarshalDynamORM implements the Marshaler interface for EncryptedString
+func (es EncryptedString) MarshalDynamORM() (interface{}, error) {
 	if es.encryptor == nil {
 		return nil, fmt.Errorf("encryptor is required")
 	}
@@ -329,22 +347,28 @@ func (es EncryptedString) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue
 		return nil, fmt.Errorf("encryption failed: %w", err)
 	}
 
-	return map[string]*dynamodb.AttributeValue{
-		"B": {B: encrypted},
-	}, nil
+	// Return base64 encoded data for DynamORM
+	return base64.StdEncoding.EncodeToString(encrypted), nil
 }
 
-// UnmarshalDynamoDB implements the Unmarshaler interface for EncryptedString
-func (es *EncryptedString) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) error {
-	if av["B"] == nil || len(av["B"].B) == 0 {
-		return fmt.Errorf("invalid EncryptedString format: expected binary data")
+// UnmarshalDynamORM implements the Unmarshaler interface for EncryptedString
+func (es *EncryptedString) UnmarshalDynamORM(data interface{}) error {
+	encryptedStr, ok := data.(string)
+	if !ok {
+		return fmt.Errorf("invalid EncryptedString format: expected base64 encoded string")
 	}
 
 	if es.encryptor == nil {
 		return fmt.Errorf("encryptor is required for decryption")
 	}
 
-	decrypted, err := es.encryptor.Decrypt(av["B"].B)
+	// Decode base64 data
+	encrypted, err := base64.StdEncoding.DecodeString(encryptedStr)
+	if err != nil {
+		return fmt.Errorf("failed to decode encrypted data: %w", err)
+	}
+
+	decrypted, err := es.encryptor.Decrypt(encrypted)
 	if err != nil {
 		return fmt.Errorf("decryption failed: %w", err)
 	}
@@ -373,12 +397,10 @@ func NewJSONField(data any) JSONField {
 	return JSONField{Data: data}
 }
 
-// MarshalDynamoDB implements the Marshaler interface for JSONField
-func (jf JSONField) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
+// MarshalDynamORM implements the Marshaler interface for JSONField
+func (jf JSONField) MarshalDynamORM() (interface{}, error) {
 	if jf.Data == nil {
-		return map[string]*dynamodb.AttributeValue{
-			"NULL": {NULL: aws.Bool(true)},
-		}, nil
+		return nil, nil
 	}
 
 	jsonBytes, err := json.Marshal(jf.Data)
@@ -386,35 +408,33 @@ func (jf JSONField) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, erro
 		return nil, fmt.Errorf("failed to marshal JSON: %w", err)
 	}
 
-	return map[string]*dynamodb.AttributeValue{
-		"S": {S: aws.String(string(jsonBytes))},
-	}, nil
+	return string(jsonBytes), nil
 }
 
-// UnmarshalDynamoDB implements the Unmarshaler interface for JSONField
-func (jf *JSONField) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) error {
-	if av["NULL"] != nil && aws.BoolValue(av["NULL"].NULL) {
+// UnmarshalDynamORM implements the Unmarshaler interface for JSONField
+func (jf *JSONField) UnmarshalDynamORM(data interface{}) error {
+	if data == nil {
 		jf.Data = nil
 		return nil
 	}
 
-	if av["S"] == nil || av["S"].S == nil {
+	jsonStr, ok := data.(string)
+	if !ok {
 		return fmt.Errorf("invalid JSONField format: expected string")
 	}
 
-	jsonStr := *av["S"].S
 	if err := common.ValidateRequiredParam("jsonStr", jsonStr); err != nil {
 		jf.Data = nil
 		return nil
 	}
 
 	// Unmarshal into interface{} to preserve type information
-	var data interface{}
-	if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+	var jsonData interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &jsonData); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON: %w", err)
 	}
 
-	jf.Data = data
+	jf.Data = jsonData
 	return nil
 }
 
@@ -476,43 +496,43 @@ func NewStringSet(values ...string) StringSet {
 	return StringSet{Values: result}
 }
 
-// MarshalDynamoDB implements the Marshaler interface for StringSet
-func (ss StringSet) MarshalDynamoDB() (map[string]*dynamodb.AttributeValue, error) {
+// MarshalDynamORM implements the Marshaler interface for StringSet
+func (ss StringSet) MarshalDynamORM() (interface{}, error) {
 	if err := common.ValidateSliceNotEmpty("ss.Values", ss.Values); err != nil {
-		return map[string]*dynamodb.AttributeValue{
-			"NULL": {NULL: aws.Bool(true)},
-		}, nil
+		return nil, nil
 	}
 
-	stringSet := make([]*string, len(ss.Values))
-	for i, v := range ss.Values {
-		stringSet[i] = aws.String(v)
-	}
-
-	return map[string]*dynamodb.AttributeValue{
-		"SS": {SS: stringSet},
-	}, nil
+	return ss.Values, nil
 }
 
-// UnmarshalDynamoDB implements the Unmarshaler interface for StringSet
-func (ss *StringSet) UnmarshalDynamoDB(av map[string]*dynamodb.AttributeValue) error {
-	if av["NULL"] != nil && aws.BoolValue(av["NULL"].NULL) {
+// UnmarshalDynamORM implements the Unmarshaler interface for StringSet
+func (ss *StringSet) UnmarshalDynamORM(data interface{}) error {
+	if data == nil {
 		ss.Values = nil
 		return nil
 	}
 
-	if av["SS"] == nil {
-		return fmt.Errorf("invalid StringSet format: expected string set")
+	values, ok := data.([]interface{})
+	if !ok {
+		// Try []string directly
+		stringValues, ok := data.([]string)
+		if !ok {
+			return fmt.Errorf("invalid StringSet format: expected array")
+		}
+		ss.Values = stringValues
+		return nil
 	}
 
-	values := make([]string, len(av["SS"].SS))
-	for i, v := range av["SS"].SS {
-		if v != nil {
-			values[i] = *v
+	stringValues := make([]string, len(values))
+	for i, v := range values {
+		if str, ok := v.(string); ok {
+			stringValues[i] = str
+		} else {
+			return fmt.Errorf("invalid StringSet element at index %d: expected string, got %T", i, v)
 		}
 	}
 
-	ss.Values = values
+	ss.Values = stringValues
 	return nil
 }
 

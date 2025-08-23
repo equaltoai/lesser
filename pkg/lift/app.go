@@ -2,11 +2,11 @@
 package lift
 
 import (
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/equaltoai/lesser/pkg/cost"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
@@ -27,8 +27,9 @@ type AppConfig struct {
 
 // DefaultConfig returns a default configuration suitable for most HTTP APIs
 func DefaultConfig() AppConfig {
+	globalCfg := appconfig.Get()
 	return AppConfig{
-		Debug:              os.Getenv("DEBUG") == "true",
+		Debug:              globalCfg.DebugMode,
 		Timeout:            30 * time.Second,
 		EnableCORS:         true,
 		EnableMetrics:      true,

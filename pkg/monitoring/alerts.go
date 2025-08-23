@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +16,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/observability"
 )
 
 // AlertSeverity represents the severity level of an alert
@@ -164,13 +164,14 @@ func NewAlertManagerWithConfig(config *AlertManagerConfig) *AlertManager {
 		}
 	}
 
-	// Try to configure from environment if not provided
+	// Try to configure from centralized config if not provided
+	appCfg := appconfig.Get()
 	if err := common.ValidateRequiredParam("am.snsTopicArn", am.snsTopicArn); err != nil {
-		am.snsTopicArn = os.Getenv("ALERT_SNS_TOPIC_ARN")
+		am.snsTopicArn = appCfg.AlertSNSTopicArn
 	}
-	if am.webhookConfig == nil && os.Getenv("ALERT_WEBHOOK_URL") != "" {
+	if am.webhookConfig == nil && appCfg.AlertWebhookURL != "" {
 		am.webhookConfig = &WebhookConfig{
-			URL:     os.Getenv("ALERT_WEBHOOK_URL"),
+			URL:     appCfg.AlertWebhookURL,
 			Headers: map[string]string{"Content-Type": "application/json"},
 			Timeout: 10 * time.Second,
 		}
@@ -396,7 +397,7 @@ func (am *AlertManager) CheckErrorRate(ctx context.Context, service string, erro
 		Title:       fmt.Sprintf("[%s] High Error Rate: %s (%.1f%%)", priority, service, errorRate),
 		Description: fmt.Sprintf("Error rate %.1f%% exceeds %s threshold of %.1f%%. Review logs and investigate failed requests immediately.", errorRate, priority, threshold),
 		Service:     service,
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		RunbookURL:  observability.RunbookHighErrorRate,
 		Metadata: map[string]interface{}{
 			"error_rate_percent": errorRate,
@@ -468,7 +469,7 @@ func (am *AlertManager) CheckLatency(ctx context.Context, service string, latenc
 		Title:       fmt.Sprintf("[%s] High Latency: %s %s (%.0fms)", priority, service, percentile, latencyMs),
 		Description: fmt.Sprintf("%s latency %.0fms exceeds %s threshold of %.0fms. Check for performance bottlenecks and resource constraints.", percentile, latencyMs, priority, threshold),
 		Service:     service,
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		RunbookURL:  observability.RunbookHighLatency,
 		Metadata: map[string]interface{}{
 			"latency_ms":        latencyMs,
@@ -520,7 +521,7 @@ func (am *AlertManager) CheckCost(ctx context.Context, costMicroCents float64) {
 		Title:       fmt.Sprintf("High Cost Detected ($%.2f)", costDollars),
 		Description: fmt.Sprintf("Cost $%.2f exceeds threshold of $%.2f", costDollars, thresholdDollars),
 		Service:     "billing",
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		Metadata: map[string]interface{}{
 			"cost_microcents":      costMicroCents,
 			"cost_dollars":         costDollars,
@@ -549,7 +550,7 @@ func (am *AlertManager) CheckHealth(ctx context.Context, service string, isHealt
 		Title:       fmt.Sprintf("Health Check Failed: %s", service),
 		Description: fmt.Sprintf("Service %s is unhealthy: %s", service, errorMsg),
 		Service:     service,
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		Metadata: map[string]interface{}{
 			"healthy":       false,
 			"error_message": errorMsg,
@@ -571,7 +572,7 @@ func (am *AlertManager) CheckSecurity(ctx context.Context, eventType string, sev
 		Title:       fmt.Sprintf("Security Event: %s", eventType),
 		Description: fmt.Sprintf("Security event detected: %s", eventType),
 		Service:     "security",
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		Metadata:    details,
 	}
 
@@ -609,7 +610,7 @@ func (am *AlertManager) CheckCapacity(ctx context.Context, resource string, util
 		Title:       fmt.Sprintf("High %s Utilization (%.1f%%)", resource, utilization),
 		Description: fmt.Sprintf("%s utilization %.1f%% exceeds threshold of %.1f%%", resource, utilization, threshold),
 		Service:     "infrastructure",
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		Metadata: map[string]interface{}{
 			"resource":            resource,
 			"utilization_percent": utilization,
@@ -657,7 +658,7 @@ func (am *AlertManager) CheckQueueDepth(ctx context.Context, queueName string, d
 		Title:       fmt.Sprintf("[%s] Queue Backlog: %s (%d messages)", priority, queueName, depth),
 		Description: fmt.Sprintf("Queue depth %d exceeds %s threshold of %d. Messages may be backing up due to processing issues.", depth, priority, threshold),
 		Service:     "queue",
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		RunbookURL:  observability.RunbookQueueBacklog,
 		Metadata: map[string]interface{}{
 			"queue_name":        queueName,
@@ -710,7 +711,7 @@ func (am *AlertManager) CheckFederationHealth(ctx context.Context, instance stri
 		Title:       fmt.Sprintf("[%s] Federation Issues: %s (%.1f%% failure rate)", priority, instance, failureRate),
 		Description: fmt.Sprintf("Federation failure rate %.1f%% with %s exceeds %s threshold of %.1f%%. Check network connectivity and remote instance health.", failureRate, instance, priority, threshold),
 		Service:     "federation",
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		RunbookURL:  observability.RunbookFederationIssue,
 		Metadata: map[string]interface{}{
 			"instance":          instance,
@@ -759,7 +760,7 @@ func (am *AlertManager) CheckColdStarts(ctx context.Context, service string, col
 		Title:       fmt.Sprintf("[%s] Excessive Cold Starts: %s (%d/min)", priority, service, coldStartsPerMinute),
 		Description: fmt.Sprintf("Cold starts %d/min exceeds %s threshold of %d. Consider provisioned concurrency or optimization.", coldStartsPerMinute, priority, threshold),
 		Service:     service,
-		Region:      os.Getenv("AWS_REGION"),
+		Region:      appconfig.Get().Region,
 		RunbookURL:  observability.RunbookColdStartIssue,
 		Metadata: map[string]interface{}{
 			"cold_starts_per_minute": coldStartsPerMinute,

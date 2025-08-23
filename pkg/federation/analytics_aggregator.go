@@ -2,7 +2,7 @@ package federation
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -82,7 +82,8 @@ func (a *AnalyticsAggregator) RecordMetric(ctx context.Context, domain string, m
 	// Store the raw metric using detailed storage
 	err := a.federationRepo.StoreDetailedFederationMetrics(ctx, rawMetric)
 	if err != nil {
-		return fmt.Errorf("failed to store raw federation metric: %w", err)
+		a.logger.Error("failed to store federation metric", zap.Error(err), zap.String("domain", domain))
+		return errors.Join(ErrFederationMetricStoreFailed, err)
 	}
 
 	// Trigger 5-minute aggregation if we're at a 5-minute boundary
@@ -139,7 +140,8 @@ func (a *AnalyticsAggregator) GetDomainHealthStatus(ctx context.Context, domain 
 	// Get recent health score
 	healthScore, err := a.federationRepo.GetDomainHealthScore(ctx, domain)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get health score: %w", err)
+		a.logger.Error("failed to retrieve health score", zap.Error(err), zap.String("domain", domain))
+		return nil, errors.Join(ErrHealthScoreRetrieveFailed, err)
 	}
 
 	// Get recent metrics for additional context
@@ -148,7 +150,8 @@ func (a *AnalyticsAggregator) GetDomainHealthStatus(ctx context.Context, domain 
 
 	recentMetrics, err := a.federationRepo.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
+		a.logger.Error("failed to retrieve recent metrics", zap.Error(err), zap.String("domain", domain), zap.Duration("period", 30*time.Minute))
+		return nil, errors.Join(ErrRecentMetricsRetrieveFailed, err)
 	}
 
 	status := &DomainHealthStatus{
@@ -231,7 +234,8 @@ func (a *AnalyticsAggregator) GetUnhealthyDomains(ctx context.Context, threshold
 
 	unhealthyMetrics, err := a.federationRepo.GetUnhealthyDomains(ctx, threshold)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get unhealthy domains: %w", err)
+		a.logger.Error("failed to retrieve unhealthy domains", zap.Error(err), zap.Float64("threshold", threshold))
+		return nil, errors.Join(ErrUnhealthyDomainsRetrieveFailed, err)
 	}
 
 	var result []*DomainHealthStatus

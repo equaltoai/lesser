@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -37,34 +36,7 @@ type WebFingerHandler struct {
 	lambdaCtx  *common.LambdaContext
 }
 
-// initWebFingerServices initializes webfinger-specific services
-func initWebFingerServices(lambdaCtx *common.LambdaContext) error {
-	// This function is kept for compatibility but doesn't need to do anything
-	// since reputation service is now created directly in NewWebFingerHandler
-	return nil
-}
 
-// configureWebFingerRoutes configures the webfinger-specific routes
-func configureWebFingerRoutes(app *liftPkg.App, lambdaCtx *common.LambdaContext) error {
-	// Extract services from Lambda context
-	repos := lambdaCtx.Repos.(core.RepositoryStorage)
-	// Reputation service is now passed directly in the handler
-
-	wh := &WebFingerHandler{
-		actorRepo:  repos.Actor(),
-		userRepo:   repos.User(),
-		statusRepo: repos.Status(),
-		repos:      repos,
-		logger:     lambdaCtx.Logger,
-		cfg:        lambdaCtx.Config,
-		repService: nil, // Will be set by the calling code
-		lambdaCtx:  lambdaCtx,
-	}
-
-	// Register all webfinger routes
-	wh.RegisterRoutes(app)
-	return nil
-}
 
 // parseWebFingerResource parses a WebFinger resource identifier
 // Expected format: acct:username@domain
@@ -412,19 +384,6 @@ func (wh *WebFingerHandler) getPostCount(ctx *liftPkg.Context) (int, error) {
 	return int(count), nil
 }
 
-// createWebFingerMiddleware creates webfinger-specific middleware
-func createWebFingerMiddleware(lambdaCtx *common.LambdaContext) []liftPkg.Middleware {
-	var middleware []liftPkg.Middleware
-	
-	// Add federation rate limiting if not disabled
-	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
-		repos := lambdaCtx.Repos.(core.RepositoryStorage)
-		middleware = append(middleware, ratelimit.FederationRateLimitMiddleware(repos))
-		lambdaCtx.Logger.Info("enabled federation rate limiting middleware for webfinger service")
-	}
-	
-	return middleware
-}
 
 // NewWebFingerHandler creates a new webfinger handler with standardized initialization
 func NewWebFingerHandler() *WebFingerHandler {
@@ -532,7 +491,7 @@ func main() {
 	})
 
 	// Add federation rate limiting middleware if enabled
-	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+	if !cfg.DisableFederationRateLimiting {
 		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
 		logger.Info("enabled federation rate limiting middleware for webfinger service")
 	}

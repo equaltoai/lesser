@@ -21,12 +21,23 @@ type LoginAttempt struct {
 }
 
 // UpdateKeys updates the DynamoDB keys for the LoginAttempt model
-func (la *LoginAttempt) UpdateKeys() {
+func (la *LoginAttempt) UpdateKeys() error {
 	// PK is set when creating the record (RATELIMIT#{identifier})
 	// SK is set when creating the record (timestamp in RFC3339Nano)
 	if err := common.ValidateRequiredParam("type", la.Type); err != nil {
 		la.Type = "LoginAttempt"
 	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (la *LoginAttempt) GetPK() string {
+	return la.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (la *LoginAttempt) GetSK() string {
+	return la.SK
 }
 
 // NewLoginAttempt creates a new LoginAttempt record
@@ -55,11 +66,22 @@ type RateLimitLockout struct {
 }
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitLockout model
-func (rll *RateLimitLockout) UpdateKeys() {
+func (rll *RateLimitLockout) UpdateKeys() error {
 	// PK and SK are set when creating the record
 	if err := common.ValidateRequiredParam("type", rll.Type); err != nil {
 		rll.Type = "RateLimitLockout"
 	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (rll *RateLimitLockout) GetPK() string {
+	return rll.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (rll *RateLimitLockout) GetSK() string {
+	return rll.SK
 }
 
 // NewRateLimitLockout creates a new RateLimitLockout record
@@ -98,11 +120,22 @@ type APIRateLimit struct {
 }
 
 // UpdateKeys updates the DynamoDB keys for the APIRateLimit model
-func (arl *APIRateLimit) UpdateKeys() {
+func (arl *APIRateLimit) UpdateKeys() error {
 	// PK and SK are set when creating/updating the record
 	if err := common.ValidateRequiredParam("type", arl.Type); err != nil {
 		arl.Type = "APIRateLimit"
 	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (arl *APIRateLimit) GetPK() string {
+	return arl.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (arl *APIRateLimit) GetSK() string {
+	return arl.SK
 }
 
 // NewAPIRateLimit creates a new APIRateLimit record
@@ -161,10 +194,21 @@ type RateLimitViolation struct {
 }
 
 // UpdateKeys updates the DynamoDB keys for the RateLimitViolation model
-func (rlv *RateLimitViolation) UpdateKeys() {
+func (rlv *RateLimitViolation) UpdateKeys() error {
 	if err := common.ValidateRequiredParam("type", rlv.Type); err != nil {
 		rlv.Type = "RateLimitViolation"
 	}
+	return nil
+}
+
+// GetPK returns the partition key - required for BaseModel interface
+func (rlv *RateLimitViolation) GetPK() string {
+	return rlv.PK
+}
+
+// GetSK returns the sort key - required for BaseModel interface
+func (rlv *RateLimitViolation) GetSK() string {
+	return rlv.SK
 }
 
 // NewRateLimitViolation creates a new rate limit violation record

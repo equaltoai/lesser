@@ -80,8 +80,18 @@ func (EnhancedModerationPattern) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (p *EnhancedModerationPattern) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key
+func (p *EnhancedModerationPattern) GetSK() string {
+	return p.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (p *EnhancedModerationPattern) UpdateKeys() {
+func (p *EnhancedModerationPattern) UpdateKeys() error {
 	p.PK = fmt.Sprintf("ENHANCED_PATTERN#%s", p.PatternID)
 	p.SK = SKMetadata
 
@@ -111,6 +121,7 @@ func (p *EnhancedModerationPattern) UpdateKeys() {
 	if p.TTL == 0 {
 		p.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // CalculateEffectiveness calculates the pattern effectiveness score
@@ -195,8 +206,18 @@ func (PatternCache) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (c *PatternCache) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *PatternCache) GetSK() string {
+	return c.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (c *PatternCache) UpdateKeys() {
+func (c *PatternCache) UpdateKeys() error {
 	c.PK = fmt.Sprintf("PATTERN_CACHE#%s", c.PatternType)
 	c.SK = fmt.Sprintf("COMPILED#%s", c.PatternID)
 
@@ -211,6 +232,7 @@ func (c *PatternCache) UpdateKeys() {
 	if c.TTL == 0 {
 		c.TTL = time.Now().Add(24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // PatternPerformanceMetric tracks detailed performance metrics for patterns
@@ -266,8 +288,18 @@ func (PatternPerformanceMetric) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (m *PatternPerformanceMetric) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key
+func (m *PatternPerformanceMetric) GetSK() string {
+	return m.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (m *PatternPerformanceMetric) UpdateKeys() {
+func (m *PatternPerformanceMetric) UpdateKeys() error {
 	m.PK = fmt.Sprintf("PATTERN_METRICS#%s", m.PatternID)
 	m.SK = fmt.Sprintf("TIME#%s#%02d", m.Date, m.Hour)
 
@@ -286,6 +318,7 @@ func (m *PatternPerformanceMetric) UpdateKeys() {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // CalculateQualityMetrics calculates precision, recall, and F1 score
@@ -352,8 +385,18 @@ func (PatternTestResult) TableName() string {
 	return MainTableName
 }
 
+// GetPK returns the partition key
+func (t *PatternTestResult) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key
+func (t *PatternTestResult) GetSK() string {
+	return t.SK
+}
+
 // UpdateKeys updates the GSI keys based on current field values
-func (t *PatternTestResult) UpdateKeys() {
+func (t *PatternTestResult) UpdateKeys() error {
 	t.PK = fmt.Sprintf("PATTERN_TEST#%s", t.PatternID)
 	t.SK = fmt.Sprintf("TEST#%s", t.TestID)
 
@@ -369,6 +412,7 @@ func (t *PatternTestResult) UpdateKeys() {
 	if t.TTL == 0 {
 		t.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
 }
 
 // IsSecurityTest checks if this is a security-related test

@@ -184,23 +184,23 @@ func (m *Media) Validate() error {
 		return err
 	}
 	if m.FileSize <= 0 {
-		return fmt.Errorf("FileSize must be greater than 0")
+		return ErrFileSizeZero
 	}
 
 	// Check file size limits (50MB)
 	maxSize := int64(50 * 1024 * 1024)
 	if m.FileSize > maxSize {
-		return fmt.Errorf("file size %d exceeds maximum %d bytes", m.FileSize, maxSize)
+		return fmt.Errorf("%w: %d exceeds maximum %d bytes", ErrFileSizeTooLarge, m.FileSize, maxSize)
 	}
 
 	// Validate content type
 	if !isValidMediaType(m.ContentType) {
-		return fmt.Errorf("unsupported content type: %s", m.ContentType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedContentType, m.ContentType)
 	}
 
 	// Validate status
 	if !isValidMediaStatus(m.Status) {
-		return fmt.Errorf("invalid media status: %s", m.Status)
+		return fmt.Errorf("%w: %s", ErrInvalidMediaStatus, m.Status)
 	}
 
 	return nil
@@ -408,4 +408,36 @@ func isValidMediaStatus(status string) bool {
 	}
 
 	return validStatuses[strings.ToLower(status)]
+}
+
+// === BaseModel Interface Implementation ===
+
+// GetPK returns the partition key for this media item
+func (m *Media) GetPK() string {
+	return m.PK
+}
+
+// GetSK returns the sort key for this media item
+func (m *Media) GetSK() string {
+	return m.SK
+}
+
+// UpdateKeys ensures all key fields are properly set
+func (m *Media) UpdateKeys() error {
+	// Validate required fields first
+	if err := common.ValidateRequiredParam("MediaID", m.MediaID); err != nil {
+		return fmt.Errorf("%w: %w", ErrMediaIDRequired, err)
+	}
+	if err := common.ValidateRequiredParam("Version", m.Version); err != nil {
+		m.Version = "original" // Set default if not provided
+	}
+
+	// Set primary keys
+	m.PK = "media#" + m.MediaID
+	m.SK = "version#" + m.Version
+
+	// Update GSI keys
+	m.setupGSIKeys()
+
+	return nil
 }

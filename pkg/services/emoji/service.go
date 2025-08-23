@@ -9,11 +9,11 @@ package emoji
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -126,9 +126,9 @@ func (s *Service) GetEmoji(ctx context.Context, query *GetEmojiQuery) (*storage.
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, query.Shortcode)
 	if err != nil {
 		if err == storage.ErrNotFound {
-			return nil, fmt.Errorf("emoji not found: %s", query.Shortcode)
+			return nil, errors.ErrEmojiNotFound
 		}
-		return nil, fmt.Errorf("failed to get emoji: %w", err)
+		return nil, errors.ErrGetEmoji
 	}
 
 	return emoji, nil
@@ -144,7 +144,7 @@ func (s *Service) ListEmojis(ctx context.Context, query *ListEmojisQuery) (*List
 	// Get all emojis from repository
 	emojis, err := s.emojiRepo.GetCustomEmojis(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list emojis: %w", err)
+		return nil, errors.ErrListEmojis
 	}
 
 	// Apply filters
@@ -171,7 +171,7 @@ func (s *Service) CreateEmoji(ctx context.Context, cmd *CreateEmojiCommand) (*Re
 	// Check if emoji already exists
 	existing, _ := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if existing != nil {
-		return nil, fmt.Errorf("emoji with shortcode %s already exists", cmd.Shortcode)
+		return nil, errors.ErrEmojiAlreadyExists
 	}
 
 	// Create the emoji
@@ -187,7 +187,7 @@ func (s *Service) CreateEmoji(ctx context.Context, cmd *CreateEmojiCommand) (*Re
 	}
 
 	if err := s.emojiRepo.CreateCustomEmoji(ctx, emoji); err != nil {
-		return nil, fmt.Errorf("failed to create emoji: %w", err)
+		return nil, errors.ErrCreateEmoji
 	}
 
 	// Emit events for real-time updates
@@ -208,14 +208,14 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Re
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
 		if err == storage.ErrNotFound {
-			return nil, fmt.Errorf("emoji not found: %s", cmd.Shortcode)
+			return nil, errors.ErrEmojiNotFound
 		}
-		return nil, fmt.Errorf("failed to get emoji: %w", err)
+		return nil, errors.ErrGetEmoji
 	}
 
 	// Check if it's a local emoji (can only update local emojis)
 	if emoji.Domain != "" {
-		return nil, fmt.Errorf("cannot update remote emoji")
+		return nil, errors.ErrCannotUpdateRemoteEmoji
 	}
 
 	// Apply updates
@@ -241,7 +241,7 @@ func (s *Service) UpdateEmoji(ctx context.Context, cmd *UpdateEmojiCommand) (*Re
 
 	// Update in repository
 	if err := s.emojiRepo.UpdateCustomEmoji(ctx, emoji); err != nil {
-		return nil, fmt.Errorf("failed to update emoji: %w", err)
+		return nil, errors.ErrUpdateEmoji
 	}
 
 	// Emit events for real-time updates
@@ -262,19 +262,19 @@ func (s *Service) DeleteEmoji(ctx context.Context, cmd *DeleteEmojiCommand) erro
 	emoji, err := s.emojiRepo.GetCustomEmoji(ctx, cmd.Shortcode)
 	if err != nil {
 		if err == storage.ErrNotFound {
-			return fmt.Errorf("emoji not found: %s", cmd.Shortcode)
+			return errors.ErrEmojiNotFound
 		}
-		return fmt.Errorf("failed to get emoji: %w", err)
+		return errors.ErrGetEmoji
 	}
 
 	// Check if it's a local emoji (can only delete local emojis)
 	if emoji.Domain != "" {
-		return fmt.Errorf("cannot delete remote emoji")
+		return errors.ErrCannotDeleteRemoteEmoji
 	}
 
 	// Delete from repository
 	if err := s.emojiRepo.DeleteCustomEmoji(ctx, cmd.Shortcode); err != nil {
-		return fmt.Errorf("failed to delete emoji: %w", err)
+		return errors.ErrDeleteEmoji
 	}
 
 	// Emit events for real-time updates
@@ -293,9 +293,9 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	remoteEmoji, err := s.emojiRepo.GetRemoteEmoji(ctx, cmd.Shortcode, cmd.Domain)
 	if err != nil {
 		if err == storage.ErrNotFound {
-			return nil, fmt.Errorf("remote emoji not found: %s@%s", cmd.Shortcode, cmd.Domain)
+			return nil, errors.ErrRemoteEmojiNotFound
 		}
-		return nil, fmt.Errorf("failed to get remote emoji: %w", err)
+		return nil, errors.ErrGetRemoteEmoji
 	}
 
 	// Determine new shortcode
@@ -312,7 +312,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	// Check if local emoji with new shortcode already exists
 	existing, _ := s.emojiRepo.GetCustomEmoji(ctx, newShortcode)
 	if existing != nil {
-		return nil, fmt.Errorf("emoji with shortcode %s already exists", newShortcode)
+		return nil, errors.ErrEmojiAlreadyExists
 	}
 
 	// Create local copy
@@ -328,7 +328,7 @@ func (s *Service) CopyRemoteEmoji(ctx context.Context, cmd *CopyEmojiCommand) (*
 	}
 
 	if err := s.emojiRepo.CreateCustomEmoji(ctx, localEmoji); err != nil {
-		return nil, fmt.Errorf("failed to create local emoji copy: %w", err)
+		return nil, errors.ErrCreateLocalEmojiCopy
 	}
 
 	// Emit events
@@ -358,7 +358,7 @@ func (s *Service) SearchEmojis(ctx context.Context, query *SearchEmojisQuery) (*
 	// Perform the search using the repository's sophisticated search
 	emojis, err := s.emojiRepo.SearchEmojis(ctx, query.Query, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search emojis: %w", err)
+		return nil, errors.ErrSearchEmojis
 	}
 
 	return &ListResult{
@@ -386,7 +386,7 @@ func (s *Service) GetPopularEmojis(ctx context.Context, query *GetPopularEmojisQ
 	// Get popular emojis from repository
 	emojis, err := s.emojiRepo.GetPopularEmojis(ctx, query.Domain, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get popular emojis: %w", err)
+		return nil, errors.ErrGetPopularEmojis
 	}
 
 	return &ListResult{
@@ -410,7 +410,7 @@ func (s *Service) IncrementUsage(ctx context.Context, cmd *IncrementUsageCommand
 				zap.String("shortcode", cmd.Shortcode))
 			return nil
 		}
-		return fmt.Errorf("failed to increment emoji usage: %w", err)
+		return errors.ErrIncrementEmojiUsage
 	}
 
 	return nil
@@ -452,7 +452,7 @@ func (s *Service) filterEmojis(emojis []*storage.CustomEmoji, query *ListEmojisQ
 // validateShortcode validates emoji shortcode format
 func (s *Service) validateShortcode(shortcode string) error {
 	if err := common.ValidateIntRange("shortcode_length", len(shortcode), 2, 30); err != nil {
-		return fmt.Errorf("shortcode %s", err.Error())
+		return errors.ErrInvalidShortcode
 	}
 
 	// Check for valid characters (alphanumeric and underscore)
@@ -465,7 +465,7 @@ func (s *Service) validateShortcode(shortcode string) error {
 	lower := strings.ToLower(shortcode)
 	for _, word := range reserved {
 		if lower == word {
-			return fmt.Errorf("shortcode '%s' is reserved", shortcode)
+			return errors.ErrReservedShortcode
 		}
 	}
 

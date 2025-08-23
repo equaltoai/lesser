@@ -93,7 +93,7 @@ func (c *Canonicalizer) Canonicalize(input interface{}) ([]byte, error) {
 	// Step 1: Parse and normalize input
 	normalized, err := c.normalizeInput(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to normalize input: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrNormalizeInput, err)
 	}
 	
 	// Step 2: Remove signature fields if requested
@@ -104,7 +104,7 @@ func (c *Canonicalizer) Canonicalize(input interface{}) ([]byte, error) {
 	// Step 3: Convert to N-Quads representation
 	nquads, err := c.toNQuads(normalized)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert to N-Quads: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrConvertToNQuads, err)
 	}
 	
 	// Step 4: Sort N-Quads lexicographically
@@ -124,7 +124,7 @@ func (c *Canonicalizer) CanonicalizeToJSON(input interface{}) ([]byte, error) {
 	// Step 1: Parse and normalize input
 	normalized, err := c.normalizeInput(input)
 	if err != nil {
-		return nil, fmt.Errorf("failed to normalize input: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrNormalizeInput, err)
 	}
 	
 	// Step 2: Remove signature fields if requested
@@ -135,7 +135,7 @@ func (c *Canonicalizer) CanonicalizeToJSON(input interface{}) ([]byte, error) {
 	// Step 3: Canonicalize JSON structure
 	canonical, err := c.canonicalizeJSONStructure(normalized)
 	if err != nil {
-		return nil, fmt.Errorf("failed to canonicalize JSON structure: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrCanonicalizeJSONStructure, err)
 	}
 	
 	// Step 4: Marshal with deterministic ordering
@@ -148,25 +148,25 @@ func (c *Canonicalizer) normalizeInput(input interface{}) (interface{}, error) {
 	case []byte:
 		var parsed interface{}
 		if err := json.Unmarshal(v, &parsed); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrParseJSON, err)
 		}
 		return c.normalizeValue(parsed), nil
 	case string:
 		var parsed interface{}
 		if err := json.Unmarshal([]byte(v), &parsed); err != nil {
-			return nil, fmt.Errorf("failed to parse JSON string: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrParseJSONString, err)
 		}
 		return c.normalizeValue(parsed), nil
 	default:
 		// Convert to JSON and back to normalize types
 		data, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal input: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrMarshalInput, err)
 		}
 		
 		var parsed interface{}
 		if err := json.Unmarshal(data, &parsed); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal normalized: %w", err)
+			return nil, fmt.Errorf("%w: %w", ErrUnmarshalNormalized, err)
 		}
 		
 		return c.normalizeValue(parsed), nil

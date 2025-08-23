@@ -222,6 +222,17 @@ func (t *Timeline) GetSortKey() string {
 }
 
 // UpdateKeys updates the GSI keys for this timeline entry (required by DynamORM)
-func (t *Timeline) UpdateKeys() {
+func (t *Timeline) UpdateKeys() error {
 	t.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key for this timeline entry (required by BaseModel interface)
+func (t *Timeline) GetPK() string {
+	return t.PK
+}
+
+// GetSK returns the sort key for this timeline entry (required by BaseModel interface)  
+func (t *Timeline) GetSK() string {
+	return t.SK
 }

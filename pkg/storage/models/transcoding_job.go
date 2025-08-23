@@ -185,13 +185,13 @@ func (tj *TranscodingJob) calculateEfficiencyMetrics() {
 // Validate performs validation on the TranscodingJob
 func (tj *TranscodingJob) Validate() error {
 	if err := common.ValidateRequiredParam("JobID", strings.TrimSpace(tj.JobID)); err != nil {
-		return fmt.Errorf("JobID is required")
+		return ErrTranscodingJobIDRequired
 	}
 	if err := common.ValidateRequiredParam("MediaID", strings.TrimSpace(tj.MediaID)); err != nil {
-		return fmt.Errorf("MediaID is required")
+		return ErrTranscodingMediaIDRequired
 	}
 	if err := common.ValidateRequiredParam("UserID", strings.TrimSpace(tj.UserID)); err != nil {
-		return fmt.Errorf("UserID is required")
+		return ErrTranscodingUserIDRequired
 	}
 
 	// Validate job type
@@ -199,7 +199,7 @@ func (tj *TranscodingJob) Validate() error {
 		"video": true, "audio": true, "image": true,
 	}
 	if !validJobTypes[tj.JobType] {
-		return fmt.Errorf("invalid job type: %s", tj.JobType)
+		return fmt.Errorf("%w: %s", ErrInvalidJobType, tj.JobType)
 	}
 
 	// Validate status
@@ -207,17 +207,17 @@ func (tj *TranscodingJob) Validate() error {
 		"processing": true, "completed": true, "failed": true,
 	}
 	if !validStatuses[tj.Status] {
-		return fmt.Errorf("invalid status: %s", tj.Status)
+		return fmt.Errorf("%w: %s", ErrInvalidJobStatus, tj.Status)
 	}
 
 	// Validate sizes are non-negative
 	if tj.InputSize < 0 || tj.TotalOutputSize < 0 {
-		return fmt.Errorf("sizes cannot be negative")
+		return ErrNegativeSize
 	}
 
 	// Validate costs are non-negative
 	if tj.TotalCostMicros < 0 || tj.EstimatedCostMicros < 0 {
-		return fmt.Errorf("costs cannot be negative")
+		return ErrNegativeCost
 	}
 
 	return nil
@@ -349,4 +349,33 @@ func (tj *TranscodingJob) GetServiceCostBreakdown() map[string]int64 {
 		"lambda":       tj.LambdaCostMicros,
 		"rekognition":  tj.RekognitionCostMicros,
 	}
+}
+
+// === BaseModel Interface Implementation ===
+
+// GetPK returns the partition key for this transcoding job
+func (tj *TranscodingJob) GetPK() string {
+	return tj.PK
+}
+
+// GetSK returns the sort key for this transcoding job
+func (tj *TranscodingJob) GetSK() string {
+	return tj.SK
+}
+
+// UpdateKeys ensures all key fields are properly set
+func (tj *TranscodingJob) UpdateKeys() error {
+	// Validate required fields
+	if err := common.ValidateRequiredParam("JobID", tj.JobID); err != nil {
+		return fmt.Errorf("%w: %w", ErrTranscodingJobIDRequired, err)
+	}
+
+	// Set primary keys
+	tj.PK = "TRANSCODING_JOB#" + tj.JobID
+	tj.SK = "JOB_METRICS"
+
+	// Update GSI keys
+	tj.setupGSIKeys()
+
+	return nil
 }

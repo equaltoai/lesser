@@ -1,7 +1,6 @@
 package activitypub
 
 import (
-	"fmt"
 	"net/url"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -153,7 +152,7 @@ func ValidateActivity(activity *Activity) error {
 	default:
 		return common.ValidationError{
 			Field:   "type",
-			Message: fmt.Sprintf("invalid activity type: %s", activity.Type),
+			Message: "invalid activity type: " + activity.Type,
 		}
 	}
 

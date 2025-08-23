@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -48,16 +47,11 @@ func (h *Handler) HandleGetInstanceV1Lift(ctx *lift.Context) error {
 	vapidKeys, err := h.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		// Check if we're in production mode
-		env := os.Getenv("ENV")
-		if err := common.ValidateRequiredParam("env", env); err != nil {
-			env = os.Getenv("ENVIRONMENT")
-		}
+		env := h.cfg.Stage
 		if env == EnvProduction || env == EnvProd {
 			// In production, VAPID keys are required for push notifications
 			h.logger.Error("VAPID keys are required in production but not found", zap.Error(err))
-			return ctx.Status(500).JSON(map[string]string{
-				"error": "VAPID keys not configured - push notifications unavailable",
-			})
+			return common.RespondInternalServerError(ctx, "VAPID keys not configured - push notifications unavailable")
 		}
 
 		h.logger.Warn("failed to get VAPID keys", zap.Error(err))

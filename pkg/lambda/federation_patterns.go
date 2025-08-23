@@ -171,7 +171,7 @@ func (fdp *FederationDeliveryPattern) processMessage(ctx *liftPkg.Context, msg e
 		)
 		return DeliveryResult{
 			Success: false,
-			Error:   fmt.Errorf("invalid message format: %w", err),
+			Error:   fmt.Errorf("%w: %w", ErrInvalidMessageFormat, err),
 		}
 	}
 
@@ -202,13 +202,13 @@ func (fdp *FederationDeliveryPattern) processMessage(ctx *liftPkg.Context, msg e
 // validateDeliveryMessage validates required fields in delivery message
 func (fdp *FederationDeliveryPattern) validateDeliveryMessage(msg ActivityDeliveryMessage) error {
 	if msg.Activity == nil {
-		return fmt.Errorf("missing activity in message")
+		return ErrMissingActivity
 	}
 	if msg.Actor == nil {
-		return fmt.Errorf("missing actor in message")
+		return ErrMissingActor
 	}
 	if err := common.ValidateRequiredParam("targetInbox", msg.TargetInbox); err != nil {
-		return fmt.Errorf("missing target inbox in message")
+		return ErrMissingTargetInbox
 	}
 	return nil
 }
@@ -444,7 +444,7 @@ func (fdp *FederationDeliveryPattern) deliverToFollowersAndRecipients(ctx contex
 	// Also deliver to specific recipients
 	if err := fdp.federationService.DeliverToRecipients(ctx, activity, actor); err != nil {
 		fdp.logger.Error("failed to deliver to recipients", zap.Error(err))
-		return err
+		return fmt.Errorf("%w: %w", ErrDeliveryToRecipients, err)
 	}
 
 	return nil

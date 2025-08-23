@@ -186,21 +186,21 @@ func (lt *LambdaTracker) CalculateCost(operation LambdaOperation) Cost {
 	}
 }
 
-// CostSummary provides aggregated cost information
-type CostSummary struct {
+// Summary provides aggregated cost information across all services
+type Summary struct {
 	TotalCostMicroCents       int64                   `json:"total_cost_microcents"`
 	ServiceBreakdown          map[string]int64        `json:"service_breakdown"`
 	OperationBreakdown        map[string]int64        `json:"operation_breakdown"`
 	HourlyBreakdown           map[string]int64        `json:"hourly_breakdown"`
-	TopCostDrivers            []CostDriver            `json:"top_cost_drivers"`
-	CostTrends                []CostTrendPoint        `json:"cost_trends"`
+	TopDrivers            []Driver            `json:"top_drivers"`
+	CostTrends                []TrendPoint        `json:"cost_trends"`
 	BudgetUtilization         float64                 `json:"budget_utilization"`
 	ProjectedMonthlyCost      int64                   `json:"projected_monthly_cost"`
 	RecommendedOptimizations  []OptimizationSuggestion `json:"optimizations"`
 }
 
-// CostDriver represents a significant contributor to costs
-type CostDriver struct {
+// Driver represents a significant contributor to costs in the system
+type Driver struct {
 	Service           string  `json:"service"`
 	Operation         string  `json:"operation"`
 	CostMicroCents    int64   `json:"cost_microcents"`
@@ -209,8 +209,8 @@ type CostDriver struct {
 	AverageCost       int64   `json:"average_cost"`
 }
 
-// CostTrendPoint represents a point in cost trends over time
-type CostTrendPoint struct {
+// TrendPoint represents a point in cost trends over time for analysis
+type TrendPoint struct {
 	Timestamp       time.Time `json:"timestamp"`
 	CostMicroCents  int64     `json:"cost_microcents"`
 	OperationCount  int64     `json:"operation_count"`
@@ -225,20 +225,20 @@ type OptimizationSuggestion struct {
 	Effort          string  `json:"effort"`          // "Low", "Medium", "High"
 }
 
-// Repository interface for cost tracking storage
-type CostTrackingRepository interface {
+// TrackingRepository interface for cost tracking storage
+type TrackingRepository interface {
 	// Store cost records
 	StoreCost(ctx context.Context, cost *Cost) error
 	StoreCostBatch(ctx context.Context, costs []*Cost) error
 	
 	// Retrieve cost information
-	GetCostSummary(ctx context.Context, startTime, endTime time.Time) (*CostSummary, error)
+	GetCostSummary(ctx context.Context, startTime, endTime time.Time) (*Summary, error)
 	GetServiceCosts(ctx context.Context, service string, startTime, endTime time.Time) ([]*Cost, error)
 	GetUserCosts(ctx context.Context, userID string, startTime, endTime time.Time) ([]*Cost, error)
 	
 	// Cost analysis
-	GetTopCostDrivers(ctx context.Context, startTime, endTime time.Time, limit int) ([]CostDriver, error)
-	GetCostTrends(ctx context.Context, startTime, endTime time.Time, granularity string) ([]CostTrendPoint, error)
+	GetTopDrivers(ctx context.Context, startTime, endTime time.Time, limit int) ([]Driver, error)
+	GetCostTrends(ctx context.Context, startTime, endTime time.Time, granularity string) ([]TrendPoint, error)
 	GetOptimizationSuggestions(ctx context.Context, lookbackDays int) ([]OptimizationSuggestion, error)
 }
 

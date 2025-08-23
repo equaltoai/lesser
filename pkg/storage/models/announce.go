@@ -58,7 +58,7 @@ func (a *Announce) BeforeCreate() error {
 }
 
 // UpdateKeys sets the primary and GSI keys
-func (a *Announce) UpdateKeys() {
+func (a *Announce) UpdateKeys() error {
 	// Primary keys
 	a.PK = fmt.Sprintf("OBJECT#%s#ANNOUNCES", a.Object)
 	a.SK = fmt.Sprintf(KeyPatternActor, a.Actor)
@@ -66,6 +66,17 @@ func (a *Announce) UpdateKeys() {
 	// GSI4 for actor's announces
 	a.GSI4PK = fmt.Sprintf("ACTOR#%s#ANNOUNCES", a.Actor)
 	a.GSI4SK = fmt.Sprintf("PUBLISHED#%s#OBJECT#%s", a.Published.Format(time.RFC3339), a.Object)
+	return nil
+}
+
+// GetPK returns the primary key for BaseRepository interface
+func (a *Announce) GetPK() string {
+	return a.PK
+}
+
+// GetSK returns the sort key for BaseRepository interface
+func (a *Announce) GetSK() string {
+	return a.SK
 }
 
 // generateRandomID generates a random hex string of specified length

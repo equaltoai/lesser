@@ -6,6 +6,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mime"
 	"path/filepath"
@@ -141,7 +142,7 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 
 	// Validate the command
 	if err := s.validateUploadCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, errors.Join(ErrMediaValidationFailed, err)
 	}
 
 	// Create media record
@@ -195,7 +196,7 @@ func (s *Service) UploadMedia(ctx context.Context, cmd *UploadMediaCommand) (*Re
 
 	// Store the media record
 	if err := s.mediaRepo.CreateMedia(ctx, media); err != nil {
-		return nil, fmt.Errorf("failed to store media record: %w", err)
+		return nil, errors.Join(ErrMediaStorageFailed, err)
 	}
 
 	s.logger.Info("uploaded media successfully",
@@ -227,18 +228,18 @@ func (s *Service) UpdateMedia(ctx context.Context, cmd *UpdateMediaCommand) (*Up
 
 	// Validate the command
 	if err := s.validateUpdateCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, errors.Join(ErrMediaValidationFailed, err)
 	}
 
 	// Get existing media
 	media, err := s.mediaRepo.GetMedia(ctx, cmd.MediaID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get media: %w", err)
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
 	}
 
 	// Verify ownership
 	if media.UserID != cmd.UserID {
-		return nil, fmt.Errorf("unauthorized: only the media owner can update metadata")
+		return nil, ErrMediaUnauthorizedAccess
 	}
 
 	// Update metadata
@@ -247,7 +248,7 @@ func (s *Service) UpdateMedia(ctx context.Context, cmd *UpdateMediaCommand) (*Up
 
 	// Store the updated media
 	if err := s.mediaRepo.UpdateMedia(ctx, media); err != nil {
-		return nil, fmt.Errorf("failed to update media: %w", err)
+		return nil, errors.Join(ErrMediaUpdateFailed, err)
 	}
 
 	s.logger.Info("updated media successfully",
@@ -271,7 +272,7 @@ func (s *Service) GetMedia(ctx context.Context, query *GetMediaQuery) (*models.M
 	// Get the media
 	media, err := s.mediaRepo.GetMedia(ctx, query.MediaID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get media: %w", err)
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
 	}
 
 	// Apply privacy checks
@@ -307,33 +308,33 @@ func (s *Service) validateUploadCommand(_ context.Context, cmd *UploadMediaComma
 		return err
 	}
 
-	if err := common.ValidateSliceNotEmpty("file_data", cmd.FileData); err != nil {
-		return fmt.Errorf("file_data is required")
+	if len(cmd.FileData) == 0 {
+		return ErrMediaFileDataRequired
 	}
 
 	// Validate file size
 	if int64(len(cmd.FileData)) > s.maxFileSize {
-		return fmt.Errorf("file size %d exceeds maximum %d bytes", len(cmd.FileData), s.maxFileSize)
+		return ErrMediaFileTooLarge
 	}
 
 	// Validate content type
 	if !s.isValidMediaType(cmd.ContentType) {
-		return fmt.Errorf("unsupported content type: %s", cmd.ContentType)
+		return ErrMediaUnsupportedType
 	}
 
 	// Validate file extension matches content type
 	if !s.validateFileExtension(cmd.FileName, cmd.ContentType) {
-		return fmt.Errorf("file extension does not match content type")
+		return ErrMediaFileExtensionMismatch
 	}
 
 	// Validate description using proper validation function
 	if err := common.ValidateMediaDescription(cmd.Description); err != nil {
-		return fmt.Errorf("invalid media description: %v", err)
+		return common.ErrValidation("description", fmt.Sprintf("Invalid media description: %v", err)).InternalError
 	}
 
 	// Validate focus point format if provided
 	if cmd.Focus != "" && !s.isValidFocusPoint(cmd.Focus) {
-		return fmt.Errorf("invalid focus point format (expected 'x,y' where x,y are between -1.0 and 1.0)")
+		return common.ErrValidation("focus", "Focus point format must be 'x,y' where x,y are between -1.0 and 1.0").InternalError
 	}
 
 	return nil
@@ -350,12 +351,12 @@ func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateMediaComma
 
 	// Validate description using proper validation function
 	if err := common.ValidateMediaDescription(cmd.Description); err != nil {
-		return fmt.Errorf("invalid media description: %v", err)
+		return common.ErrValidation("description", fmt.Sprintf("Invalid media description: %v", err)).InternalError
 	}
 
 	// Validate focus point format if provided
 	if cmd.Focus != "" && !s.isValidFocusPoint(cmd.Focus) {
-		return fmt.Errorf("invalid focus point format (expected 'x,y' where x,y are between -1.0 and 1.0)")
+		return common.ErrValidation("focus", "Focus point format must be 'x,y' where x,y are between -1.0 and 1.0").InternalError
 	}
 
 	return nil
@@ -465,7 +466,7 @@ func (s *Service) checkMediaAccess(ctx context.Context, media *models.Media, vie
 
 	// Media is generally accessible if it's in "ready" status
 	if !media.IsReady() {
-		return fmt.Errorf("media not ready for viewing")
+		return ErrMediaNotReady
 	}
 
 	return nil
@@ -587,7 +588,7 @@ func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media)
 			zap.String("job_id", jobID),
 			zap.String("content_type", media.ContentType),
 			zap.Error(err))
-		return fmt.Errorf("failed to queue media processing: %w", err)
+		return errors.Join(ErrMediaProcessingQueueFailed, err)
 	}
 
 	s.logger.Info("queued media processing job",
@@ -620,7 +621,7 @@ func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media)
 func (s *Service) MarkMediaProcessed(ctx context.Context, mediaID string, variants map[string]models.MediaVariant) error {
 	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
 	if err != nil {
-		return fmt.Errorf("failed to get media: %w", err)
+		return errors.Join(ErrMediaRetrievalFailed, err)
 	}
 
 	// Update media status
@@ -633,7 +634,7 @@ func (s *Service) MarkMediaProcessed(ctx context.Context, mediaID string, varian
 
 	// Store updates
 	if err := s.mediaRepo.UpdateMedia(ctx, media); err != nil {
-		return fmt.Errorf("failed to update media: %w", err)
+		return errors.Join(ErrMediaUpdateFailed, err)
 	}
 
 	// Emit processed event
@@ -650,7 +651,7 @@ func (s *Service) MarkMediaProcessed(ctx context.Context, mediaID string, varian
 func (s *Service) MarkMediaFailed(ctx context.Context, mediaID string, errorMsg string) error {
 	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
 	if err != nil {
-		return fmt.Errorf("failed to get media: %w", err)
+		return errors.Join(ErrMediaRetrievalFailed, err)
 	}
 
 	// Update media status
@@ -658,7 +659,7 @@ func (s *Service) MarkMediaFailed(ctx context.Context, mediaID string, errorMsg 
 
 	// Store updates
 	if err := s.mediaRepo.UpdateMedia(ctx, media); err != nil {
-		return fmt.Errorf("failed to update media: %w", err)
+		return errors.Join(ErrMediaUpdateFailed, err)
 	}
 
 	// Emit failed event
@@ -679,12 +680,12 @@ func (s *Service) GetStreamingURL(ctx context.Context, mediaID string) (*model.M
 	// Get the media record
 	media, err := s.mediaRepo.GetMedia(ctx, mediaID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get media: %w", err)
+		return nil, errors.Join(ErrMediaRetrievalFailed, err)
 	}
 
 	// Verify media is ready for streaming
 	if !media.IsReady() {
-		return nil, fmt.Errorf("media not ready for streaming")
+		return nil, ErrMediaNotReadyForStreaming
 	}
 
 	// Get the media URL (use CDN if available, otherwise construct S3 URL)

@@ -95,7 +95,7 @@ func (r *AccountRepository) GetRecentLoginAttempts(ctx context.Context, username
 		r.logger.Error("failed to get recent login attempts",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get recent login attempts: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "login attempt", "recent attempts")
 	}
 
 	// Convert to storage type
@@ -146,7 +146,7 @@ func (r *AccountRepository) CreatePasswordResetToken(ctx context.Context, userna
 		r.logger.Error("failed to create password reset token",
 			zap.String("username", username),
 			zap.Error(err))
-		return "", fmt.Errorf("failed to create password reset token: %w", err)
+		return "", ErrorHandler.HandleCreateError(err, "password reset token", username)
 	}
 
 	return token, nil
@@ -169,7 +169,7 @@ func (r *AccountRepository) ValidatePasswordResetToken(ctx context.Context, toke
 		r.logger.Error("failed to validate password reset token",
 			zap.String("token", token),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to validate password reset token: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "password reset token", token)
 	}
 
 	// Check if expired
@@ -205,7 +205,7 @@ func (r *AccountRepository) ResetPassword(ctx context.Context, token, newPasswor
 		"password_hash": newPasswordHash,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update password: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "password", reset.Username)
 	}
 
 	// Mark token as used - get the model first then update
@@ -244,7 +244,7 @@ func (r *AccountRepository) GetUserSessions(ctx context.Context, username string
 		r.logger.Error("failed to get user sessions",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user sessions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
 	}
 
 	// Convert to storage type
@@ -292,7 +292,7 @@ func (r *AccountRepository) CreateSession(ctx context.Context, username, ipAddre
 		r.logger.Error("failed to create session",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
 
 	return &storage.Session{
@@ -324,7 +324,7 @@ func (r *AccountRepository) InvalidateSession(ctx context.Context, username, ses
 			zap.String("username", username),
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get session: %w", err)
+		return ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}
 
 	// Update the session
@@ -340,7 +340,7 @@ func (r *AccountRepository) InvalidateSession(ctx context.Context, username, ses
 			zap.String("username", username),
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("failed to invalidate session: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
 	}
 
 	return nil
@@ -391,7 +391,7 @@ func (r *AccountRepository) GetUserByRecoveryCode(ctx context.Context, recoveryC
 	if err != nil {
 		r.logger.Error("failed to query recovery codes",
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query recovery codes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "recovery code", "query")
 	}
 
 	// Check each recovery code hash against the provided code
@@ -488,7 +488,7 @@ func (r *AccountRepository) IsRateLimited(ctx context.Context, key string) (bool
 		if errors.IsNotFound(err) {
 			return false, time.Time{}, nil
 		}
-		return false, time.Time{}, fmt.Errorf("failed to check rate limit: %w", err)
+		return false, time.Time{}, ErrorHandler.HandleQueryError(err, "rate limit", "check")
 	}
 
 	// Check if lockout is still active
@@ -510,7 +510,7 @@ func (r *AccountRepository) RecordLoginAttempt(ctx context.Context, key string, 
 			zap.String("key", key),
 			zap.Bool("success", success),
 			zap.Error(err))
-		return fmt.Errorf("failed to record login attempt: %w", err)
+		return ErrorHandler.HandleCreateError(err, "login attempt", "attempt")
 	}
 
 	r.logger.Debug("recorded login attempt",
@@ -529,7 +529,7 @@ func (r *AccountRepository) ClearLoginAttempts(ctx context.Context, key string) 
 	err := query.Scan(&attempts)
 
 	if err != nil {
-		return fmt.Errorf("failed to query login attempts: %w", err)
+		return ErrorHandler.HandleQueryError(err, "login attempt", "query")
 	}
 
 	// Delete all items
@@ -571,7 +571,7 @@ func (r *AccountRepository) GetLoginAttemptCount(ctx context.Context, key string
 	err := query.Scan(&attempts)
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count login attempts: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "login attempt", "count")
 	}
 
 	return len(attempts), nil
@@ -595,7 +595,7 @@ func (r *AccountRepository) GetSession(ctx context.Context, sessionID string) (*
 		r.logger.Error("failed to get session",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get session: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}
 
 	// Convert to storage type
@@ -636,7 +636,7 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 		r.logger.Error("failed to get session for update",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get session for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}
 
 	// Update the session fields
@@ -656,7 +656,7 @@ func (r *AccountRepository) UpdateSession(ctx context.Context, sessionID, refres
 		r.logger.Error("failed to update session",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update session: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
 	}
 
 	r.logger.Debug("session updated successfully",
@@ -679,7 +679,7 @@ func (r *AccountRepository) DeleteSession(ctx context.Context, sessionID string)
 		r.logger.Error("failed to delete session",
 			zap.String("sessionID", sessionID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete session: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntitySession, sessionID)
 	}
 
 	r.logger.Debug("session deleted successfully",
@@ -704,7 +704,7 @@ func (r *AccountRepository) GetSessionByRefreshToken(ctx context.Context, refres
 		r.logger.Error("failed to query session by refresh token",
 			zap.String("refreshToken", refreshToken[:minInt(len(refreshToken), 10)]+"..."), // Log only first 10 chars for security
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query session by refresh token: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "refresh token")
 	}
 
 	if err := common.ValidateSliceNotEmpty("sessions", sessions); err != nil {
@@ -763,7 +763,7 @@ func hashTokenForGSI(token string) string {
 // CreateDevice creates a new device record
 func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.Device) error {
 	if device == nil {
-		return fmt.Errorf("device cannot be nil")
+		return ErrorHandler.HandleCreateError(ErrDeviceValidationFailed, "device", "nil")
 	}
 
 	// Convert storage.Device to models.Device
@@ -797,7 +797,7 @@ func (r *AccountRepository) CreateDevice(ctx context.Context, device *storage.De
 			zap.String("username", device.Username),
 			zap.String("deviceID", device.DeviceID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create device: %w", err)
+		return ErrorHandler.HandleCreateError(err, "device", device.DeviceID)
 	}
 
 	r.logger.Debug("device created successfully",
@@ -824,11 +824,11 @@ func (r *AccountRepository) GetDevice(ctx context.Context, deviceID string) (*st
 		r.logger.Error("failed to scan for device",
 			zap.String("deviceID", deviceID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to scan for device: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "device", deviceID)
 	}
 
 	if err := common.ValidateSliceNotEmpty("devices", devices); err != nil {
-		return nil, fmt.Errorf("device not found")
+		return nil, ErrorHandler.HandleGetError(ErrDeviceNotFound, "device", deviceID)
 	}
 
 	device := devices[0]
@@ -860,7 +860,7 @@ func (r *AccountRepository) GetDevice(ctx context.Context, deviceID string) (*st
 // UpdateDevice updates an existing device
 func (r *AccountRepository) UpdateDevice(ctx context.Context, device *storage.Device) error {
 	if device == nil {
-		return fmt.Errorf("device cannot be nil")
+		return ErrorHandler.HandleUpdateError(ErrDeviceValidationFailed, "device", "nil")
 	}
 
 	// Get the existing device first
@@ -872,13 +872,13 @@ func (r *AccountRepository) UpdateDevice(ctx context.Context, device *storage.De
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("device not found")
+			return ErrorHandler.HandleGetError(err, "device", device.DeviceID)
 		}
 		r.logger.Error("failed to get device for update",
 			zap.String("username", device.Username),
 			zap.String("deviceID", device.DeviceID),
 			zap.Error(err))
-		return fmt.Errorf("failed to get device for update: %w", err)
+		return ErrorHandler.HandleGetError(err, "device", device.DeviceID)
 	}
 
 	// Update fields that legacy UpdateDevice modified
@@ -896,7 +896,7 @@ func (r *AccountRepository) UpdateDevice(ctx context.Context, device *storage.De
 			zap.String("username", device.Username),
 			zap.String("deviceID", device.DeviceID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update device: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "device", device.DeviceID)
 	}
 
 	r.logger.Debug("device updated successfully",
@@ -919,7 +919,7 @@ func (r *AccountRepository) GetUserDevices(ctx context.Context, username string)
 		r.logger.Error("failed to query user devices",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query user devices: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "device", username)
 	}
 
 	// Convert models.Device slice to storage.Device slice
@@ -956,7 +956,7 @@ func (r *AccountRepository) GetUserDevices(ctx context.Context, username string)
 // CreateSessionFromStruct creates a new user session from storage.Session struct
 func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session *storage.Session) error {
 	if session == nil {
-		return fmt.Errorf("session cannot be nil")
+		return ErrorHandler.HandleCreateError(ErrSessionValidationFailed, EntitySession, "nil")
 	}
 
 	// Create a models.Session from the storage.Session
@@ -984,7 +984,7 @@ func (r *AccountRepository) CreateSessionFromStruct(ctx context.Context, session
 			zap.String("sessionID", session.SessionID),
 			zap.String("username", session.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to create session from struct: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
 
 	r.logger.Debug("session created from struct successfully",
@@ -1071,7 +1071,7 @@ func (r *AccountRepository) DeleteRecoveryToken(ctx context.Context, key string)
 // StoreWebAuthnChallenge stores a WebAuthn challenge
 func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challenge *storage.WebAuthnChallenge) error {
 	if challenge == nil {
-		return fmt.Errorf("challenge cannot be nil")
+		return ErrorHandler.HandleCreateError(ErrWebAuthnValidationFailed, EntityWebAuthnChallenge, "nil")
 	}
 
 	// Convert storage.WebAuthnChallenge to models.WebAuthnChallenge
@@ -1094,7 +1094,7 @@ func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challeng
 	// Call BeforeCreate to set keys and TTL
 	err := modelChallenge.BeforeCreate()
 	if err != nil {
-		return fmt.Errorf("failed to prepare challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnChallenge, challenge.Challenge)
 	}
 
 	// Store in DynamoDB
@@ -1104,7 +1104,7 @@ func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challeng
 			zap.String("challenge", challenge.Challenge),
 			zap.String("userID", challenge.UserID),
 			zap.Error(err))
-		return fmt.Errorf("failed to store WebAuthn challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnChallenge, challenge.Challenge)
 	}
 
 	r.logger.Debug("WebAuthn challenge stored successfully",
@@ -1117,7 +1117,7 @@ func (r *AccountRepository) StoreWebAuthnChallenge(ctx context.Context, challeng
 // StoreWebAuthnCredential stores a WebAuthn credential
 func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credential *storage.WebAuthnCredential) error {
 	if credential == nil {
-		return fmt.Errorf("credential cannot be nil")
+		return ErrorHandler.HandleCreateError(ErrWebAuthnValidationFailed, EntityWebAuthnCredential, "nil")
 	}
 
 	// Convert storage.WebAuthnCredential to models.WebAuthnCredential
@@ -1144,7 +1144,7 @@ func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credent
 	// Call BeforeCreate to set keys
 	err := modelCredential.BeforeCreate()
 	if err != nil {
-		return fmt.Errorf("failed to prepare credential: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnCredential, credential.ID)
 	}
 
 	// Store in DynamoDB
@@ -1154,7 +1154,7 @@ func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credent
 			zap.String("credentialID", credential.ID),
 			zap.String("userID", credential.UserID),
 			zap.Error(err))
-		return fmt.Errorf("failed to store WebAuthn credential: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnCredential, credential.ID)
 	}
 
 	r.logger.Debug("WebAuthn credential stored successfully",
@@ -1167,7 +1167,7 @@ func (r *AccountRepository) StoreWebAuthnCredential(ctx context.Context, credent
 // UpdateWebAuthnCredential updates a WebAuthn credential
 func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, credentialID string, signCount uint32) error {
 	if err := common.ValidateRequiredParam("credentialID", credentialID); err != nil {
-		return fmt.Errorf("credentialID cannot be empty")
+		return ErrorHandler.HandleUpdateError(ErrWebAuthnValidationFailed, EntityWebAuthnCredential, "empty")
 	}
 
 	// We need to find the credential first since we don't have the username
@@ -1179,11 +1179,11 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 		r.logger.Error("failed to find WebAuthn credential for update",
 			zap.String("credentialID", credentialID),
 			zap.Error(err))
-		return fmt.Errorf("failed to find WebAuthn credential: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	if err := common.ValidateSliceNotEmpty("credentials", credentials); err != nil {
-		return fmt.Errorf("WebAuthn credential not found")
+		return ErrorHandler.HandleGetError(ErrWebAuthnCredentialNotFound, EntityWebAuthnCredential, credentialID)
 	}
 
 	// Update the credential
@@ -1197,7 +1197,7 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 			zap.String("credentialID", credentialID),
 			zap.Uint32("signCount", signCount),
 			zap.Error(err))
-		return fmt.Errorf("failed to update WebAuthn credential: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	r.logger.Debug("WebAuthn credential updated successfully",
@@ -1210,10 +1210,10 @@ func (r *AccountRepository) UpdateWebAuthnCredential(ctx context.Context, creden
 // UpdateWalletLastUsed updates when a wallet was last used
 func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, address string) error {
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return fmt.Errorf("username and address cannot be empty")
+		return ErrorHandler.HandleUpdateError(ErrWalletValidationFailed, EntityWalletCredential, "username")
 	}
 	if err := common.ValidateRequiredParam("address", address); err != nil {
-		return fmt.Errorf("username and address cannot be empty")
+		return ErrorHandler.HandleUpdateError(ErrWalletValidationFailed, EntityWalletCredential, "address")
 	}
 
 	// Get the existing wallet credential
@@ -1222,13 +1222,13 @@ func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, 
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("wallet credential not found")
+			return ErrorHandler.HandleGetError(err, EntityWalletCredential, address)
 		}
 		r.logger.Error("failed to get wallet credential for update",
 			zap.String("username", username),
 			zap.String("address", address),
 			zap.Error(err))
-		return fmt.Errorf("failed to get wallet credential: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityWalletCredential, address)
 	}
 
 	// Update the last used timestamp
@@ -1240,7 +1240,7 @@ func (r *AccountRepository) UpdateWalletLastUsed(ctx context.Context, username, 
 			zap.String("username", username),
 			zap.String("address", address),
 			zap.Error(err))
-		return fmt.Errorf("failed to update wallet last used: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityWalletCredential, address)
 	}
 
 	r.logger.Debug("wallet last used updated successfully",
@@ -1268,7 +1268,7 @@ func (r *AccountRepository) GetLinkedProviders(ctx context.Context, username str
 		r.logger.Error("failed to get linked providers",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get linked providers: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "provider", username)
 	}
 
 	// Extract unique provider names from active accounts

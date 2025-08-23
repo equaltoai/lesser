@@ -127,8 +127,6 @@ func (p *apiGatewayPublisher) PublishToUser(ctx context.Context, userID string, 
 		"stream":  event.Stream,
 	}
 	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
-
-	return nil
 }
 
 // PublishToStream publishes an event to all connections subscribed to a stream
@@ -168,8 +166,6 @@ func (p *apiGatewayPublisher) PublishToStream(ctx context.Context, streamName st
 		"stream": streamName,
 	}
 	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
-
-	return nil
 }
 
 // PublishToConversation publishes an event to all participants in a conversation
@@ -204,8 +200,6 @@ func (p *apiGatewayPublisher) PublishToConversation(ctx context.Context, convers
 		"conversation_id": conversationID,
 	}
 	return helper.PublishToConnections(ctx, connections, event, p.publishToConnection, logContext)
-
-	return nil
 }
 
 // publishToConnection sends an event to a specific WebSocket connection

@@ -12,47 +12,38 @@ import (
 	"go.uber.org/zap"
 )
 
-// TimelineRepository handles timeline operations using DynamORM
+// TimelineRepository handles timeline operations using DynamORM with BaseRepository consolidation
 type TimelineRepository struct {
-	db          core.DB
-	tableName   string
-	logger      *zap.Logger
-	batchHelper *BatchOperationHelper
+	*BaseRepository[*models.Timeline]
 }
 
-// NewTimelineRepository creates a new timeline repository
+// NewTimelineRepository creates a new timeline repository with BaseRepository pattern
 func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger) *TimelineRepository {
 	return &TimelineRepository{
-		db:          db,
-		tableName:   tableName,
-		logger:      logger,
-		batchHelper: NewBatchOperationHelper(db, tableName, logger),
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Timeline](
+			db, tableName, logger, nil, "TimelineRepository"),
 	}
 }
 
-// CreateTimelineEntry creates a new timeline entry
-func (r *TimelineRepository) CreateTimelineEntry(_ context.Context, entry *models.Timeline) error {
+// CreateTimelineEntry creates a new timeline entry using BaseRepository
+func (r *TimelineRepository) CreateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
 	if err := entry.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare timeline entry for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "prepare creation")
 	}
 
-	err := r.db.Model(entry).Create()
-	if err != nil {
-		return fmt.Errorf("failed to create timeline entry: %w", err)
-	}
-
-	return nil
+	return r.Create(ctx, entry)
 }
 
-// CreateTimelineEntries creates multiple timeline entries in batch
+// CreateTimelineEntries creates multiple timeline entries in batch using BaseRepository
 func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries []*models.Timeline) error {
-	// Convert to []interface{} for the batch helper
-	items := make([]interface{}, len(entries))
-	for i, entry := range entries {
-		items[i] = entry
+	// Prepare entries for creation
+	for _, entry := range entries {
+		if err := entry.BeforeCreate(); err != nil {
+			return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "prepare creation")
+		}
 	}
-
-	return r.batchHelper.BatchCreateItems(ctx, items, "timeline entries")
+	
+	return r.BatchCreate(ctx, entries)
 }
 
 // GetHomeTimeline retrieves home timeline entries for a user
@@ -87,7 +78,7 @@ func (r *TimelineRepository) GetPublicTimeline(_ context.Context, local bool, li
 	var entries []*models.Timeline
 	err := query.All(&entries)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get public timeline entries: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "public timeline")
 	}
 
 	// Generate next cursor
@@ -120,41 +111,26 @@ func (r *TimelineRepository) GetHashtagTimeline(ctx context.Context, hashtag str
 	return r.getTimelineEntries(ctx, "HASHTAG", timelineID, limit, cursor)
 }
 
-// getTimelineEntries is a helper method to retrieve timeline entries
-func (r *TimelineRepository) getTimelineEntries(_ context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
+// getTimelineEntries is a helper method to retrieve timeline entries using BaseRepository pagination
+func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
-	query := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", pk).
-		OrderBy("SK", "ASC") // ASC because we use reverse timestamp
-
-	// Handle cursor-based pagination
-	if cursor != "" {
-		// With reverse timestamp, we use > for getting older entries
-		query = query.Where("SK", ">", cursor)
+	
+	opts := BasePaginationOptions{
+		Limit:  limit,
+		Cursor: cursor,
+		Order:  "ASC", // ASC because we use reverse timestamp
 	}
-
-	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var entries []*models.Timeline
-	err := query.All(&entries)
+	
+	result, err := r.FindWithPagination(ctx, pk, opts)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "timeline entries")
 	}
-
-	// Generate next cursor
-	var nextCursor string
-	if err := common.ValidateSliceLength("entries", entries, limit); err != nil {
-		// We got more results than requested, so there are more pages
-		nextCursor = entries[limit-1].SK
-		entries = entries[:limit] // Trim to requested limit
-	}
-
-	return entries, nextCursor, nil
+	
+	return result.Items, result.NextCursor, nil
 }
 
 // getTimelineEntriesByGSI is a consolidated function that handles timeline queries by different GSI patterns
-func (r *TimelineRepository) getTimelineEntriesByGSI(ctx context.Context, indexName, pkField, skField, keyPrefix, value string, limit int, cursor, errorContext string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) getTimelineEntriesByGSI(_ context.Context, indexName, pkField, skField, keyPrefix, value string, limit int, cursor, errorContext string) ([]*models.Timeline, string, error) {
 	query := r.db.Model(&models.Timeline{}).
 		Index(indexName).
 		Where(pkField, "=", keyPrefix+value).
@@ -170,7 +146,7 @@ func (r *TimelineRepository) getTimelineEntriesByGSI(ctx context.Context, indexN
 	var entries []*models.Timeline
 	err := query.All(&entries)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get timeline entries by %s: %w", errorContext, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, errorContext)
 	}
 
 	// Generate next cursor
@@ -214,91 +190,67 @@ func (r *TimelineRepository) GetTimelineEntriesByLanguage(ctx context.Context, l
 	return r.getTimelineEntriesByGSI(ctx, "language-timeline-index", "GSI4PK", "GSI4SK", "LANGUAGE#", language, limit, cursor, "language")
 }
 
-// GetTimelineEntry retrieves a specific timeline entry
-func (r *TimelineRepository) GetTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
+// GetTimelineEntry retrieves a specific timeline entry using BaseRepository
+func (r *TimelineRepository) GetTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) (*models.Timeline, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 	// Use reverse timestamp like the model does
 	reverseTimestamp := 9999999999 - timelineAt.Unix()
 	sk := fmt.Sprintf("%010d#%s", reverseTimestamp, entryID)
 
 	var entry models.Timeline
-	err := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&entry)
+	err := r.Get(ctx, pk, sk, &entry)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get timeline entry: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityTimelineEntry, entryID)
 	}
 
 	return &entry, nil
 }
 
-// UpdateTimelineEntry updates an existing timeline entry
-func (r *TimelineRepository) UpdateTimelineEntry(_ context.Context, entry *models.Timeline) error {
+// UpdateTimelineEntry updates an existing timeline entry using BaseRepository
+func (r *TimelineRepository) UpdateTimelineEntry(ctx context.Context, entry *models.Timeline) error {
 	if err := entry.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare timeline entry for update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityTimelineEntry, "prepare update")
 	}
 
-	err := r.db.Model(entry).Update()
-	if err != nil {
-		return fmt.Errorf("failed to update timeline entry: %w", err)
-	}
-
-	return nil
+	return r.Update(ctx, entry)
 }
 
-// DeleteTimelineEntry deletes a specific timeline entry
-func (r *TimelineRepository) DeleteTimelineEntry(_ context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
+// DeleteTimelineEntry deletes a specific timeline entry using BaseRepository
+func (r *TimelineRepository) DeleteTimelineEntry(ctx context.Context, timelineType, timelineID, entryID string, timelineAt time.Time) error {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 	// Use reverse timestamp like the model does
 	reverseTimestamp := 9999999999 - timelineAt.Unix()
 	sk := fmt.Sprintf("%010d#%s", reverseTimestamp, entryID)
 
-	entry := &models.Timeline{
-		PK: pk,
-		SK: sk,
-	}
-
-	err := r.db.Model(entry).Delete()
-	if err != nil {
-		return fmt.Errorf("failed to delete timeline entry: %w", err)
-	}
-
-	return nil
+	return r.Delete(ctx, pk, sk)
 }
 
-// DeleteTimelineEntriesByPost deletes all timeline entries for a specific post
+// DeleteTimelineEntriesByPost deletes all timeline entries for a specific post using BaseRepository
 func (r *TimelineRepository) DeleteTimelineEntriesByPost(ctx context.Context, postID string) error {
 	// First, get all timeline entries for this post
 	entries, _, err := r.GetTimelineEntriesByPost(ctx, postID, 1000, "")
 	if err != nil {
-		return fmt.Errorf("failed to get timeline entries for deletion: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "deletion query")
 	}
 
 	if err := common.ValidateSliceNotEmpty("entries", entries); err != nil {
 		return nil // Nothing to delete
 	}
 
-	// Use batch delete for efficient bulk deletion
-	keys := make([]any, len(entries))
+	// Convert to keys for BaseRepository.BatchDelete
+	keys := make([]struct{ PK, SK string }, len(entries))
 	for i, entry := range entries {
-		// Create key structs with PK and SK for deletion
-		keys[i] = &models.Timeline{
+		keys[i] = struct{ PK, SK string }{
 			PK: entry.PK,
 			SK: entry.SK,
 		}
 	}
 
-	// Use DynamORM's batch delete functionality
-	err = r.db.Model(&models.Timeline{}).BatchDelete(keys)
+	// Use BaseRepository's batch delete functionality
+	err = r.BatchDelete(ctx, keys)
 	if err != nil {
-		return fmt.Errorf("failed to batch delete timeline entries: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityTimelineEntry, "batch delete")
 	}
-
-	r.logger.Info("batch deleted timeline entries for post",
-		zap.String("post_id", postID),
-		zap.Int("deleted_count", len(entries)),
-	)
 
 	return nil
 }
@@ -312,22 +264,14 @@ func (r *TimelineRepository) DeleteExpiredTimelineEntries(_ context.Context, bef
 	return nil
 }
 
-// CountTimelineEntries counts the number of entries in a timeline
-func (r *TimelineRepository) CountTimelineEntries(_ context.Context, timelineType, timelineID string) (int, error) {
+// CountTimelineEntries counts the number of entries in a timeline using BaseRepository
+func (r *TimelineRepository) CountTimelineEntries(ctx context.Context, timelineType, timelineID string) (int, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
-
-	count, err := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", pk).
-		Count()
-	if err != nil {
-		return 0, fmt.Errorf("failed to count timeline entries: %w", err)
-	}
-
-	return int(count), nil
+	return r.Count(ctx, pk)
 }
 
-// GetTimelineEntriesInRange retrieves timeline entries within a time range
-func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
+// GetTimelineEntriesInRange retrieves timeline entries within a time range using BaseRepository
+func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, timelineType, timelineID string, startTime, endTime time.Time, limit int) ([]*models.Timeline, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
 	// Use reverse timestamp like the model does
 	startReverseTimestamp := 9999999999 - startTime.Unix()
@@ -336,71 +280,61 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(_ context.Context, timeli
 	startSK := fmt.Sprintf("%010d#", endReverseTimestamp) // Earlier time becomes larger reverse timestamp
 	endSK := fmt.Sprintf("%010d#", startReverseTimestamp) // Later time becomes smaller reverse timestamp
 
-	var entries []*models.Timeline
-	err := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", "DESC").
-		Limit(limit).
-		All(&entries)
+	entries, err := r.QueryBetween(ctx, pk, startSK, endSK, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get timeline entries in range: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "range query")
 	}
 
 	return entries, nil
 }
 
-// GetTimelineEntriesWithFilters retrieves timeline entries with various filters
-func (r *TimelineRepository) GetTimelineEntriesWithFilters(_ context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
-	query := r.db.Model(&models.Timeline{}).
-		Where("PK", "=", fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)).
-		OrderBy("SK", "ASC") // ASC because we use reverse timestamp
-
-	// Apply filters
+// GetTimelineEntriesWithFilters retrieves timeline entries with various filters using BaseRepository
+func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
+	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
+	
+	// Build filter map for BaseRepository's QueryWithFilter
+	filterMap := make(map[string]interface{})
+	
 	if filters.OnlyMedia {
-		query = query.Filter("HasMedia", "=", true)
+		filterMap["HasMedia"] = true
 	}
-
+	
 	if filters.ExcludeReplies {
-		query = query.Filter("IsReply", "=", false)
+		filterMap["IsReply"] = false
 	}
-
+	
 	if filters.ExcludeBoosts {
-		query = query.Filter("IsBoost", "=", false)
+		filterMap["IsBoost"] = false
 	}
-
+	
 	if filters.Language != "" {
-		query = query.Filter("Language", "=", filters.Language)
+		filterMap["Language"] = filters.Language
 	}
-
+	
 	if filters.MinID != "" {
 		// Convert minID to timestamp for comparison
 		if timestamp, err := strconv.ParseInt(filters.MinID, 10, 64); err == nil {
-			query = query.Filter("TimelineAt", ">=", time.Unix(timestamp, 0))
+			filterMap["TimelineAt"] = map[string]interface{}{
+				"op":    ">=",
+				"value": time.Unix(timestamp, 0),
+			}
 		}
 	}
-
+	
 	if filters.MaxID != "" {
 		// Convert maxID to timestamp for comparison
 		if timestamp, err := strconv.ParseInt(filters.MaxID, 10, 64); err == nil {
-			query = query.Filter("TimelineAt", "<=", time.Unix(timestamp, 0))
+			filterMap["TimelineAt"] = map[string]interface{}{
+				"op":    "<=", 
+				"value": time.Unix(timestamp, 0),
+			}
 		}
 	}
 
-	// Handle cursor-based pagination
-	if cursor != "" {
-		// With reverse timestamp, we use > for getting older entries
-		query = query.Where("SK", ">", cursor)
-	}
-
 	// Get one more item than requested to determine if there are more results
-	query = query.Limit(limit + 1)
-
-	var entries []*models.Timeline
-	err := query.All(&entries)
+	entries, err := r.QueryWithFilter(ctx, pk, filterMap, limit+1)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get filtered timeline entries: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "filtered")
 	}
 
 	// Generate next cursor
@@ -436,7 +370,7 @@ func (r *TimelineRepository) GetConversations(ctx context.Context, username stri
 	var participantRecords []*models.ConversationParticipantRecord
 	err := query.All(&participantRecords)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get conversation participant records: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityConversation, "participants")
 	}
 
 	// Extract conversations from participant records

@@ -4,7 +4,6 @@ package common
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"go.uber.org/zap"
@@ -144,16 +143,13 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
 	
-	// Get table name from options or environment
+	// Get table name from options or config
 	tableName := options.TableName
 	if tableName == "" {
-		tableName = os.Getenv("DYNAMODB_TABLE")
-		if tableName == "" {
-			tableName = cfg.DynamoTableName
-		}
+		tableName = cfg.DynamoTableName
 	}
 	if tableName == "" {
-		return fmt.Errorf("DYNAMODB_TABLE is required for storage initialization")
+		return ErrDynamoTableRequired
 	}
 	
 	logger.Debug("initializing storage services", 
@@ -202,7 +198,7 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 	cfg := lambdaCtx.Config
 	
 	// Skip if metrics are disabled globally
-	if os.Getenv("DISABLE_METRICS") == "true" {
+	if cfg.DisableMetrics {
 		logger.Info("metrics disabled globally, skipping observability initialization")
 		return nil
 	}
@@ -400,71 +396,71 @@ func (lambdaCtx *LambdaContext) CreateStandardizedLambdaHandler(handler func(ctx
 // These functions would be implemented using type assertions to call the actual service methods
 // They're placeholders to avoid import cycles while maintaining clean interfaces
 
-func initializeDynamORM(ctx context.Context, region string, optimizeForLambda bool) (interface{}, error) {
+func initializeDynamORM(_ context.Context, _ string, _ bool) (interface{}, error) {
 	// Implementation would import dynamorm and initialize client
 	// Returns interface{} to avoid import cycles
-	return nil, fmt.Errorf("DynamORM initialization to be implemented in service-specific code")
+	return nil, ErrDynamORMNotImplemented
 }
 
-func initializeRepositoryFactory(db interface{}, tableName string, awsServices interface{}, logger *zap.Logger) (interface{}, error) {
+func initializeRepositoryFactory(_ interface{}, _ string, _ interface{}, _ *zap.Logger) (interface{}, error) {
 	// Implementation would import factory and create repository storage
-	return nil, fmt.Errorf("repository factory initialization to be implemented in service-specific code")
+	return nil, ErrRepositoryFactoryNotImplemented
 }
 
-func initializeEMFMetrics(logger *zap.Logger, namespace, serviceName string, cfg interface{}) interface{} {
+func initializeEMFMetrics(_ *zap.Logger, _, _ string, _ interface{}) interface{} {
 	// Implementation would import observability and create EMF metrics
 	return nil
 }
 
-func initializeHealthChecker(logger *zap.Logger, awsServices interface{}, serviceName, version, tableName string) interface{} {
+func initializeHealthChecker(_ *zap.Logger, _ interface{}, _, _, _ string) interface{} {
 	// Implementation would import observability and create health checker
 	return nil
 }
 
-func initializeTracingManager(logger *zap.Logger, serviceName, version string) interface{} {
+func initializeTracingManager(_ *zap.Logger, _, _ string) interface{} {
 	// Implementation would import observability and create tracing manager
 	return nil
 }
 
-func initializeMetricsCollector(awsServices interface{}, logger *zap.Logger, serviceName string) interface{} {
+func initializeMetricsCollector(_ interface{}, _ *zap.Logger, _ string) interface{} {
 	// Implementation would import observability and create metrics collector
 	return nil
 }
 
-func initializeLatencyTracking(logger *zap.Logger, repos interface{}, serviceName string) (interface{}, interface{}) {
+func initializeLatencyTracking(_ *zap.Logger, _ interface{}, _ string) (interface{}, interface{}) {
 	// Implementation would import observability and create latency tracking services
 	return nil, nil
 }
 
-func initializeAlertManager(logger *zap.Logger) interface{} {
+func initializeAlertManager(_ *zap.Logger) interface{} {
 	// Implementation would import monitoring and create alert manager
 	return nil
 }
 
-func initializeAuthServices(repos interface{}) (interface{}, interface{}, error) {
+func initializeAuthServices(_ interface{}) (interface{}, interface{}, error) {
 	// Implementation would import auth and create auth service and middleware
-	return nil, nil, fmt.Errorf("auth services initialization to be implemented in service-specific code")
+	return nil, nil, ErrAuthServicesNotImplemented
 }
 
-func initializeFederationServices(repos interface{}, logger *zap.Logger) (interface{}, interface{}, interface{}, interface{}) {
+func initializeFederationServices(_ interface{}, _ *zap.Logger) (interface{}, interface{}, interface{}, interface{}) {
 	// Implementation would import federation and create federation services
 	return nil, nil, nil, nil
 }
 
-func initializeStreamingServices(db interface{}, tableName string, logger *zap.Logger) interface{} {
+func initializeStreamingServices(_ interface{}, _ string, _ *zap.Logger) interface{} {
 	// Implementation would import streaming and create stream queue
 	return nil
 }
 
-func flushEMFMetrics(emfMetrics interface{}) {
+func flushEMFMetrics(_ interface{}) {
 	// Implementation would flush EMF metrics
 }
 
-func flushMetricsCollector(metricsCollector interface{}) {
+func flushMetricsCollector(_ interface{}) {
 	// Implementation would flush metrics collector
 }
 
-func isTracingEnabled(tracingManager interface{}) bool {
+func isTracingEnabled(_ interface{}) bool {
 	// Implementation would check if tracing is enabled
 	return false
 }

@@ -2,14 +2,13 @@ package dynamorm
 
 import (
 	"context"
-	"log"
-	"os"
 	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -81,19 +80,21 @@ func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
 		initMetrics.initialized = true
 		initMetrics.mu.Unlock()
 
-		log.Printf("DynamORM Lambda initialization completed in %v (models: %d, connections: %d)",
-			initMetrics.coldStartTime, initMetrics.modelCount, initMetrics.connectionCount)
+		zap.L().Info("DynamORM Lambda initialization completed",
+			zap.Duration("cold_start_time", initMetrics.coldStartTime),
+			zap.Int("model_count", initMetrics.modelCount),
+			zap.Int("connection_count", initMetrics.connectionCount))
 	}()
 
 	// Set runtime optimizations for Lambda
 	optimizeRuntime()
 
-	log.Println("Initializing Lambda-optimized DynamORM client...")
+	zap.L().Info("initializing Lambda-optimized DynamORM client")
 
 	// Get the Lambda-optimized client
 	lambdaDB, err := GetLambdaClient(context.Background())
 	if err != nil {
-		log.Printf("Failed to initialize DynamORM: %v", err)
+		zap.L().Error("failed to initialize DynamORM", zap.Error(err))
 		return nil, err
 	}
 
@@ -106,7 +107,7 @@ func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
 	// Pre-register models to reduce cold start time
 	if len(opts.Models) > 0 {
 		if err := preRegisterModelsParallel(lambdaDB, opts.Models); err != nil {
-			log.Printf("Failed to pre-register models: %v", err)
+			zap.L().Error("failed to pre-register models", zap.Error(err))
 			return db, err
 		}
 		initMetrics.modelCount = len(opts.Models)
@@ -119,7 +120,7 @@ func LambdaInitWithOptions(opts *LambdaInitOptions) (core.DB, error) {
 			count = 2 // Default connection count
 		}
 		if err := prewarmConnections(db, count); err != nil {
-			log.Printf("Failed to prewarm connections: %v", err)
+			zap.L().Error("failed to prewarm connections", zap.Error(err))
 			// Non-fatal error - continue with initialization
 		}
 		initMetrics.connectionCount = count
@@ -141,8 +142,9 @@ func optimizeRuntime() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Set GC percentage higher to reduce GC overhead during initialization
-	oldGCPercent := os.Getenv("GOGC")
-	if err := common.ValidateRequiredParam("oldGCPercent", oldGCPercent); err != nil {
+	// Only override if GOGC is not explicitly set in environment
+	cfg := config.Get()
+	if cfg.Stage == "dev" || cfg.Stage == "prod" {
 		debug.SetGCPercent(500) // Reduce GC frequency during init
 
 		// Reset after initialization using a goroutine
@@ -193,7 +195,7 @@ func preRegisterModelsParallel(lambdaDB *dynamorm.LambdaDB, models []any) error 
 
 // prewarmConnections creates and validates connections to reduce cold start latency
 func prewarmConnections(db core.DB, count int) error {
-	log.Printf("Prewarming %d connections...", count)
+	zap.L().Info("prewarming connections", zap.Int("count", count))
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, count)

@@ -3,13 +3,13 @@ package ratelimit
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -185,8 +185,9 @@ func trackCostIfEnabled(ctx *lift.Context, config *Config, rateLimitErr error) {
 		return
 	}
 	
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
-	if err := common.ValidateRequiredParam("table_name", tableName); err != nil {
+	globalCfg := appconfig.Get()
+	tableName := globalCfg.DynamoTableName
+	if tableName == "" {
 		tableName = "lesser-main"
 	}
 	

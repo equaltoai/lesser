@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -12,19 +13,37 @@ import (
 	"go.uber.org/zap"
 )
 
-// AnnouncementRepository handles announcement operations using DynamORM
+// AnnouncementRepository handles announcement operations using DynamORM with BaseRepository
 type AnnouncementRepository struct {
+	// Use BaseRepository for Announcement model
+	*BaseRepository[*models.Announcement]
 	db        core.DB
-	tableName string
 	logger    *zap.Logger
+	tableName string
 }
 
 // NewAnnouncementRepository creates a new announcement repository
 func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger) *AnnouncementRepository {
+	// Use cost tracking version of BaseRepository
+	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, nil, "AnnouncementRepository")
+	
 	return &AnnouncementRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: baseRepo,
+		db:             db,
+		logger:         logger,
+		tableName:      tableName,
+	}
+}
+
+// NewAnnouncementRepositoryWithCostTracking creates a new announcement repository with cost tracking
+func NewAnnouncementRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AnnouncementRepository {
+	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, costService, "AnnouncementRepository")
+	
+	return &AnnouncementRepository{
+		BaseRepository: baseRepo,
+		db:             db,
+		logger:         logger,
+		tableName:      tableName,
 	}
 }
 
@@ -150,7 +169,7 @@ func (r *AnnouncementRepository) CreateAnnouncement(ctx context.Context, announc
 	}
 
 	if err := modelAnnouncement.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare announcement for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, "announcement", announcement.ID)
 	}
 
 	// Update the original announcement with generated ID and timestamps
@@ -158,11 +177,10 @@ func (r *AnnouncementRepository) CreateAnnouncement(ctx context.Context, announc
 	announcement.PublishedAt = modelAnnouncement.PublishedAt
 	announcement.UpdatedAt = modelAnnouncement.UpdatedAt
 
-	err := r.db.WithContext(ctx).Model(modelAnnouncement).Create()
+	// Use BaseRepository Create method for cost tracking
+	err := r.Create(ctx, modelAnnouncement)
 	if err != nil {
-		// Check for conditional check failed (already exists)
-		// DynamORM doesn't have this specific check, so we'll skip it for now
-		return fmt.Errorf("failed to create announcement: %w", err)
+		return ErrorHandler.HandleCreateError(err, "announcement", announcement.ID)
 	}
 
 	return nil
@@ -171,16 +189,16 @@ func (r *AnnouncementRepository) CreateAnnouncement(ctx context.Context, announc
 // GetAnnouncement retrieves a single announcement by ID
 func (r *AnnouncementRepository) GetAnnouncement(ctx context.Context, id string) (*storage.Announcement, error) {
 	var modelAnnouncement models.Announcement
-	err := r.db.WithContext(ctx).Model(&models.Announcement{}).
-		Where("PK", "=", fmt.Sprintf("ANNOUNCEMENT#%s", id)).
-		Where("SK", "=", "ANNOUNCEMENT").
-		First(&modelAnnouncement)
-
+	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
+	sk := "ANNOUNCEMENT"
+	
+	// Use BaseRepository Get method for cost tracking
+	err := r.Get(ctx, pk, sk, &modelAnnouncement)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get announcement: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "announcement", id)
 	}
 
 	// Convert models.Announcement to storage.Announcement
@@ -246,7 +264,7 @@ func (r *AnnouncementRepository) GetAnnouncementsPaginated(ctx context.Context, 
 			// Return empty slice when no announcements found
 			return []*storage.Announcement{}, "", nil
 		}
-		return nil, "", fmt.Errorf("failed to query announcements with GSI: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "announcement", "status query")
 	}
 
 	// Generate next cursor
@@ -323,7 +341,7 @@ func (r *AnnouncementRepository) GetAnnouncementsByAdmin(ctx context.Context, ad
 			// Return empty slice when no announcements found
 			return []*storage.Announcement{}, "", nil
 		}
-		return nil, "", fmt.Errorf("failed to query announcements by admin with GSI: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "announcement", "admin query")
 	}
 
 	// Generate next cursor
@@ -391,17 +409,16 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 	}
 
 	if err := modelAnnouncement.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update announcement keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "announcement", announcement.ID)
 	}
 
-	// DynamORM doesn't have Condition method, so we'll use regular Update
-	err := r.db.WithContext(ctx).Model(modelAnnouncement).Update()
-
+	// Use BaseRepository Update method for cost tracking
+	err := r.Update(ctx, modelAnnouncement)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to update announcement: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "announcement", announcement.ID)
 	}
 
 	return nil
@@ -409,19 +426,17 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 
 // DeleteAnnouncement deletes an announcement
 func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id string) error {
-	// Delete the announcement
-	modelAnnouncement := &models.Announcement{ID: id}
-	if err := modelAnnouncement.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update announcement keys for deletion: %w", err)
-	}
-
-	err := r.db.WithContext(ctx).Model(modelAnnouncement).Delete()
-
+	// Delete the announcement using BaseRepository
+	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
+	sk := "ANNOUNCEMENT"
+	
+	// Use BaseRepository Delete method for cost tracking
+	err := r.Delete(ctx, pk, sk)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
-		return fmt.Errorf("failed to delete announcement: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "announcement", id)
 	}
 
 	// Clean up related dismissals and reactions
@@ -483,12 +498,12 @@ func (r *AnnouncementRepository) DismissAnnouncement(ctx context.Context, userna
 	}
 
 	if err := dismissal.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare dismissal for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, "announcement dismissal", announcementID)
 	}
 
 	err := r.db.WithContext(ctx).Model(dismissal).Create()
 	if err != nil {
-		return fmt.Errorf("failed to dismiss announcement: %w", err)
+		return ErrorHandler.HandleCreateError(err, "announcement dismissal", announcementID)
 	}
 
 	return nil
@@ -506,7 +521,7 @@ func (r *AnnouncementRepository) IsDismissed(ctx context.Context, username, anno
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check dismissal: %w", err)
+		return false, ErrorHandler.HandleGetError(err, "announcement dismissal", announcementID)
 	}
 
 	return true, nil
@@ -525,7 +540,7 @@ func (r *AnnouncementRepository) GetDismissedAnnouncements(ctx context.Context, 
 			// Return empty slice when no dismissals found
 			return []string{}, nil
 		}
-		return nil, fmt.Errorf("failed to query dismissed announcements: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "announcement dismissal", "user dismissed")
 	}
 
 	announcementIDs := make([]string, len(dismissals))
@@ -545,7 +560,7 @@ func (r *AnnouncementRepository) AddAnnouncementReaction(ctx context.Context, us
 	}
 
 	if err := reaction.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare reaction for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, "announcement reaction", emojiName)
 	}
 
 	err := r.db.WithContext(ctx).Model(reaction).Create()
@@ -566,7 +581,7 @@ func (r *AnnouncementRepository) RemoveAnnouncementReaction(ctx context.Context,
 		EmojiName:      emojiName,
 	}
 	if err := reaction.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update reaction keys: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "announcement reaction", emojiName)
 	}
 
 	err := r.db.WithContext(ctx).Model(reaction).Delete()
@@ -575,7 +590,7 @@ func (r *AnnouncementRepository) RemoveAnnouncementReaction(ctx context.Context,
 			// Reaction not found - not an error
 			return nil
 		}
-		return fmt.Errorf("failed to remove reaction: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "announcement reaction", emojiName)
 	}
 
 	return nil
@@ -593,7 +608,7 @@ func (r *AnnouncementRepository) GetAnnouncementReactions(ctx context.Context, a
 			// Return empty map when no reactions found
 			return make(map[string][]string), nil
 		}
-		return nil, fmt.Errorf("failed to query reactions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "announcement reaction", "reactions query")
 	}
 
 	// Organize reactions by emoji name

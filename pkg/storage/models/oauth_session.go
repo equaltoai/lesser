@@ -83,7 +83,7 @@ func (o *OAuthAuthSession) BeforeCreate() error {
 		var genErr error
 		o.SessionID, genErr = generateSecureOAuthToken(32)
 		if genErr != nil {
-			return fmt.Errorf("failed to generate session ID: %w", genErr)
+			return fmt.Errorf("%w: %w", ErrOAuthSessionIDGenerationFailed, genErr)
 		}
 	}
 
@@ -92,7 +92,7 @@ func (o *OAuthAuthSession) BeforeCreate() error {
 		var genErr error
 		o.CSRFToken, genErr = generateSecureOAuthToken(24)
 		if genErr != nil {
-			return fmt.Errorf("failed to generate CSRF token: %w", genErr)
+			return fmt.Errorf("%w: %w", ErrOAuthCSRFTokenGenerationFailed, genErr)
 		}
 	}
 
@@ -114,6 +114,22 @@ func (o *OAuthAuthSession) BeforeCreate() error {
 	o.setupGSIKeys()
 
 	return o.Validate()
+}
+
+// UpdateKeys implements BaseModel interface - updates the GSI keys
+func (o *OAuthAuthSession) UpdateKeys() error {
+	o.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the partition key for BaseModel interface
+func (o *OAuthAuthSession) GetPK() string {
+	return o.PK
+}
+
+// GetSK returns the sort key for BaseModel interface
+func (o *OAuthAuthSession) GetSK() string {
+	return o.SK
 }
 
 // BeforeUpdate sets up the model before update
@@ -159,7 +175,7 @@ func (o *OAuthAuthSession) Validate() error {
 		return err
 	}
 	if o.ExpiresAt <= 0 {
-		return fmt.Errorf("ExpiresAt must be set")
+		return ErrExpiresAtRequired
 	}
 
 	return nil

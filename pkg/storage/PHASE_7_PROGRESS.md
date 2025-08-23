@@ -15,7 +15,7 @@ Phase 7 focuses on removing all legacy code including direct AWS SDK usage and t
 
 ### ✅ Phase 7.3: Replace AWS SDK DynamoDB in Lift Handlers (COMPLETE)
 Successfully migrated ALL DynamoDB usage:
-1. **metrics.go** - Migrated to CostTrackingRepository
+1. **metrics.go** - Migrated to TrackingRepository
    - Added GetCostsByDateRange, GetDailyAggregates, GetMonthlyAggregate methods
 2. **ai.go** - Migrated to AIRepository  
    - Created new AIRepository with all required methods
@@ -23,7 +23,7 @@ Successfully migrated ALL DynamoDB usage:
 3. **exports.go** - Migrated to ExportRepository
    - Updated Export model with GSI support
    - Added GetUserExportsByStatus method
-4. **misc.go** - Migrated to CostTrackingRepository
+4. **misc.go** - Migrated to TrackingRepository
    - Reused the same repository methods from metrics.go migration
 5. **imports.go** - Migrated to ImportRepository
    - Updated Import model with GSI support

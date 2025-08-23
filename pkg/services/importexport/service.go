@@ -10,9 +10,11 @@ package importexport
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	serviceerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -185,7 +187,7 @@ type ImportListResult struct {
 func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*ExportResult, error) {
 	// Validate command
 	if err := s.validateCreateExportCommand(cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, errors.Join(serviceerrors.ErrExportValidationFailed, err)
 	}
 
 	// Create export record
@@ -214,7 +216,7 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 			zap.String("username", cmd.Username),
 			zap.String("type", cmd.Type),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create export: %w", err)
+		return nil, errors.Join(serviceerrors.ErrCreateExport, err)
 	}
 
 	// Queue for processing
@@ -224,9 +226,9 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 			zap.Error(err))
 		// Update status to failed
 		export.Status = "failed"
-		export.Error = fmt.Sprintf("Failed to queue: %v", err)
+		export.Error = "Failed to queue: " + err.Error()
 		_ = s.exportRepo.UpdateExportStatus(ctx, export.ID, "failed", nil, export.Error)
-		return nil, fmt.Errorf("failed to queue export: %w", err)
+		return nil, errors.Join(serviceerrors.ErrQueueExport, err)
 	}
 
 	// Emit event for real-time updates
@@ -254,12 +256,12 @@ func (s *Service) CreateExport(ctx context.Context, cmd *CreateExportCommand) (*
 func (s *Service) GetExport(ctx context.Context, query *GetExportQuery) (*ExportResult, error) {
 	export, err := s.exportRepo.GetExport(ctx, query.ExportID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get export: %w", err)
+		return nil, errors.Join(serviceerrors.ErrGetExport, err)
 	}
 
 	// Verify ownership
 	if export.Username != query.Username {
-		return nil, fmt.Errorf("unauthorized")
+		return nil, common.ErrForbidden(serviceerrors.ErrExportAccessForbidden)
 	}
 
 	result := &ExportResult{
@@ -293,7 +295,7 @@ func (s *Service) GetExport(ctx context.Context, query *GetExportQuery) (*Export
 func (s *Service) ListExports(ctx context.Context, query *ListExportsQuery) (*ExportListResult, error) {
 	exports, nextCursor, err := s.exportRepo.GetExportsForUser(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list exports: %w", err)
+		return nil, errors.Join(serviceerrors.ErrListExports, err)
 	}
 
 	return &ExportListResult{
@@ -307,7 +309,7 @@ func (s *Service) ListExports(ctx context.Context, query *ListExportsQuery) (*Ex
 func (s *Service) UpdateExportProgress(ctx context.Context, exportID string, processed, total int) error {
 	export, err := s.exportRepo.GetExport(ctx, exportID)
 	if err != nil {
-		return fmt.Errorf("failed to get export: %w", err)
+		return errors.Join(serviceerrors.ErrGetExport, err)
 	}
 
 	// Update status using repository method
@@ -316,7 +318,7 @@ func (s *Service) UpdateExportProgress(ctx context.Context, exportID string, pro
 	}
 
 	if err := s.exportRepo.UpdateExportStatus(ctx, exportID, "processing", completionData, ""); err != nil {
-		return fmt.Errorf("failed to update export: %w", err)
+		return errors.Join(serviceerrors.ErrUpdateExportProgress, err)
 	}
 
 	// Emit progress event
@@ -336,7 +338,7 @@ func (s *Service) UpdateExportProgress(ctx context.Context, exportID string, pro
 func (s *Service) CompleteExport(ctx context.Context, exportID string, fileURL string, fileSize int64) error {
 	export, err := s.exportRepo.GetExport(ctx, exportID)
 	if err != nil {
-		return fmt.Errorf("failed to get export: %w", err)
+		return errors.Join(serviceerrors.ErrGetExport, err)
 	}
 
 	// Update status using repository method
@@ -348,7 +350,7 @@ func (s *Service) CompleteExport(ctx context.Context, exportID string, fileURL s
 	}
 
 	if err := s.exportRepo.UpdateExportStatus(ctx, exportID, "completed", completionData, ""); err != nil {
-		return fmt.Errorf("failed to update export: %w", err)
+		return errors.Join(serviceerrors.ErrUpdateExportStatus, err)
 	}
 
 	// Emit completion event
@@ -370,16 +372,16 @@ func (s *Service) validateCreateExportCommand(cmd *CreateExportCommand) error {
 	// Check if user exists
 	account, err := s.accountRepo.GetAccount(context.Background(), cmd.Username)
 	if err != nil || account == nil {
-		return fmt.Errorf("user not found")
+		return serviceerrors.ErrUserNotFound
 	}
 
 	// Validate date range if provided
 	if cmd.DateRange != nil {
 		if cmd.DateRange.Start.After(cmd.DateRange.End) {
-			return fmt.Errorf("invalid date range: start date after end date")
+			return serviceerrors.ErrInvalidDateRangeOrder
 		}
 		if cmd.DateRange.End.After(time.Now()) {
-			return fmt.Errorf("invalid date range: end date in the future")
+			return serviceerrors.ErrInvalidDateRangeFuture
 		}
 	}
 
@@ -432,7 +434,7 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 		s.logger.Error("failed to get export for cancellation",
 			zap.String("export_id", cmd.ExportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("export not found: %w", err)
+		return nil, errors.Join(serviceerrors.ErrExportNotFound, err)
 	}
 
 	// Verify ownership
@@ -441,18 +443,18 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 			zap.String("export_id", cmd.ExportID),
 			zap.String("owner", export.Username),
 			zap.String("requester", cmd.Username))
-		return nil, fmt.Errorf("not authorized to cancel this export")
+		return nil, serviceerrors.ErrNotAuthorizedCancelExport
 	}
 
 	// Check if export can be cancelled
 	if export.Status == "completed" {
-		return nil, fmt.Errorf("cannot cancel completed export")
+		return nil, serviceerrors.ErrCannotCancelCompletedExport
 	}
 	if export.Status == "cancelled" {
-		return nil, fmt.Errorf("export is already cancelled")
+		return nil, serviceerrors.ErrExportAlreadyCancelled
 	}
 	if export.Status == "failed" {
-		return nil, fmt.Errorf("cannot cancel failed export")
+		return nil, serviceerrors.ErrCannotCancelFailedExport
 	}
 
 	// Update export status to cancelled
@@ -461,7 +463,7 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 		s.logger.Error("failed to update export status to cancelled",
 			zap.String("export_id", cmd.ExportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to cancel export: %w", err)
+		return nil, errors.Join(serviceerrors.ErrCancelExport, err)
 	}
 
 	// Get updated export
@@ -470,7 +472,7 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 		s.logger.Error("failed to get cancelled export",
 			zap.String("export_id", cmd.ExportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get cancelled export: %w", err)
+		return nil, errors.Join(serviceerrors.ErrGetCancelledExport, err)
 	}
 
 	// Emit cancellation event
@@ -531,7 +533,7 @@ func (s *Service) CreateImport(ctx context.Context, cmd *CreateImportCommand) (*
 			zap.String("username", cmd.Username),
 			zap.String("type", cmd.Type),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create import: %w", err)
+		return nil, errors.Join(serviceerrors.ErrCreateImport, err)
 	}
 
 	// Queue the import job for async processing
@@ -593,7 +595,7 @@ func (s *Service) GetImport(ctx context.Context, query *GetImportQuery) (*Import
 		s.logger.Error("failed to get import",
 			zap.String("import_id", query.ImportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("import not found: %w", err)
+		return nil, errors.Join(serviceerrors.ErrImportNotFound, err)
 	}
 
 	// Verify ownership
@@ -602,7 +604,7 @@ func (s *Service) GetImport(ctx context.Context, query *GetImportQuery) (*Import
 			zap.String("import_id", query.ImportID),
 			zap.String("owner", importRecord.Username),
 			zap.String("requester", query.Username))
-		return nil, fmt.Errorf("not authorized to access this import")
+		return nil, serviceerrors.ErrNotAuthorizedAccessImport
 	}
 
 	return &ImportResult{
@@ -625,7 +627,7 @@ func (s *Service) ListImports(ctx context.Context, query *ListImportsQuery) (*Im
 		s.logger.Error("failed to list imports",
 			zap.String("username", query.Username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to list imports: %w", err)
+		return nil, errors.Join(serviceerrors.ErrListImports, err)
 	}
 
 	// Filter by status if specified

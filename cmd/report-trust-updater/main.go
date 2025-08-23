@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -63,7 +64,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	// Get the report to validate it exists
 	report, err := r.GetReport(ctx, reportID)
 	if err != nil {
-		return fmt.Errorf("failed to get report: %w", err)
+		return errors.Join(ErrReportRetrieval, err)
 	}
 
 	// Determine if the report was valid based on the decision
@@ -230,7 +231,7 @@ func (rtu *ReportTrustUpdater) extractRecordKeys(record events.DynamoDBEventReco
 	skAttr, skExists := record.Change.NewImage["SK"]
 
 	if !pkExists || !skExists {
-		return "", "", fmt.Errorf("missing keys")
+		return "", "", ErrMissingKeys
 	}
 
 	pk := rtu.getStringFromAttribute(pkAttr)

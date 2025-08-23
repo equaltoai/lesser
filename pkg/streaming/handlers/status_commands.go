@@ -33,50 +33,71 @@ func NewStatusCommandHandlerV2(notesService *notes.Service, logger *zap.Logger) 
 
 // initializeExecutors sets up the command executors for each command type
 func (sch *StatusCommandHandlerV2) initializeExecutors() {
-	// Helper function to get string from payload
-	getString := func(payload map[string]interface{}, key, defaultVal string) string {
-		if val, ok := payload[key].(string); ok {
-			return val
-		}
-		return defaultVal
-	}
+	// Initialize payload helpers
+	payloadHelpers := createPayloadHelpers()
 	
-	// Helper function to get bool from payload
-	getBool := func(payload map[string]interface{}, key string, defaultVal bool) bool {
-		if val, ok := payload[key].(bool); ok {
-			return val
-		}
-		return defaultVal
-	}
-	
-	// Helper function to get string slice from payload
-	getStringSlice := func(payload map[string]interface{}, key string) []string {
-		if val, ok := payload[key].([]interface{}); ok {
-			result := make([]string, 0, len(val))
-			for _, v := range val {
-				if s, ok := v.(string); ok {
-					result = append(result, s)
-				}
+	// Initialize all status command executors
+	sch.initializeCreateExecutor(payloadHelpers)
+	sch.initializeDeleteExecutor(payloadHelpers)
+	sch.initializeFavoriteExecutors(payloadHelpers)
+	sch.initializeReblogExecutors(payloadHelpers)
+	sch.initializeBookmarkExecutors(payloadHelpers)
+	sch.initializeMuteExecutors(payloadHelpers)
+	sch.initializePinExecutors(payloadHelpers)
+}
+
+// payloadHelpers contains helper functions for extracting data from payloads
+type payloadHelpers struct {
+	getString      func(map[string]interface{}, string, string) string
+	getBool        func(map[string]interface{}, string, bool) bool
+	getStringSlice func(map[string]interface{}, string) []string
+}
+
+// createPayloadHelpers creates the payload helper functions
+func createPayloadHelpers() payloadHelpers {
+	return payloadHelpers{
+		getString: func(payload map[string]interface{}, key, defaultVal string) string {
+			if val, ok := payload[key].(string); ok {
+				return val
 			}
-			return result
-		}
-		return []string{}
+			return defaultVal
+		},
+		getBool: func(payload map[string]interface{}, key string, defaultVal bool) bool {
+			if val, ok := payload[key].(bool); ok {
+				return val
+			}
+			return defaultVal
+		},
+		getStringSlice: func(payload map[string]interface{}, key string) []string {
+			if val, ok := payload[key].([]interface{}); ok {
+				result := make([]string, 0, len(val))
+				for _, v := range val {
+					if s, ok := v.(string); ok {
+						result = append(result, s)
+					}
+				}
+				return result
+			}
+			return []string{}
+		},
 	}
-	
-	// Create Status executor
+}
+
+// initializeCreateExecutor initializes the create status executor
+func (sch *StatusCommandHandlerV2) initializeCreateExecutor(h payloadHelpers) {
 	sch.executors[streaming.CmdCreateStatus] = &SimpleStatusExecutor{
 		requiresAuth:   true,
 		requiredFields: []string{"status"},
 		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
 			return &notes.CreateNoteCommand{
 				AuthorID:    conn.UserID,
-				Content:     getString(payload, "status", ""),
-				InReplyToID: getString(payload, "in_reply_to_id", ""),
-				MediaIDs:    getStringSlice(payload, "media_ids"),
-				Sensitive:   getBool(payload, "sensitive", false),
-				SpoilerText: getString(payload, "spoiler_text", ""),
-				Visibility:  getString(payload, "visibility", "public"),
-				Language:    getString(payload, "language", ""),
+				Content:     h.getString(payload, "status", ""),
+				InReplyToID: h.getString(payload, "in_reply_to_id", ""),
+				MediaIDs:    h.getStringSlice(payload, "media_ids"),
+				Sensitive:   h.getBool(payload, "sensitive", false),
+				SpoilerText: h.getString(payload, "spoiler_text", ""),
+				Visibility:  h.getString(payload, "visibility", "public"),
+				Language:    h.getString(payload, "language", ""),
 			}
 		},
 		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
@@ -88,14 +109,16 @@ func (sch *StatusCommandHandlerV2) initializeExecutors() {
 		},
 		responseKey: "",
 	}
-	
-	// Delete Status executor
+}
+
+// initializeDeleteExecutor initializes the delete status executor
+func (sch *StatusCommandHandlerV2) initializeDeleteExecutor(h payloadHelpers) {
 	sch.executors[streaming.CmdDeleteStatus] = &SimpleStatusExecutor{
 		requiresAuth:   true,
 		requiredFields: []string{"id"},
 		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
 			return &notes.DeleteNoteCommand{
-				StatusID:  getString(payload, "id", ""),
+				StatusID:  h.getString(payload, "id", ""),
 				DeleterID: conn.UserID,
 			}
 		},
@@ -112,205 +135,178 @@ func (sch *StatusCommandHandlerV2) initializeExecutors() {
 		},
 		responseKey: "",
 	}
-	
+}
+
+// initializeFavoriteExecutors initializes favorite and unfavorite executors
+func (sch *StatusCommandHandlerV2) initializeFavoriteExecutors(h payloadHelpers) {
 	// Favorite Status executor
-	sch.executors[streaming.CmdFavoriteStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.LikeNoteCommand{
-				StatusID: getString(payload, "id", ""),
-				LikerID:  conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.LikeNote(ctx, cmd.(*notes.LikeNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
+	sch.executors[streaming.CmdFavoriteStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "LikeNoteCommand", sch.notesService.LikeNote)
 	
 	// Unfavorite Status executor
-	sch.executors[streaming.CmdUnfavoriteStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.UnlikeNoteCommand{
-				StatusID:  getString(payload, "id", ""),
-				UnlikerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.UnlikeNote(ctx, cmd.(*notes.UnlikeNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
-	
+	sch.executors[streaming.CmdUnfavoriteStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "UnlikeNoteCommand", sch.notesService.UnlikeNote)
+}
+
+// initializeReblogExecutors initializes reblog and unreblog executors
+func (sch *StatusCommandHandlerV2) initializeReblogExecutors(h payloadHelpers) {
 	// Reblog Status executor
-	sch.executors[streaming.CmdReblogStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.ReblogNoteCommand{
-				StatusID:    getString(payload, "id", ""),
-				RebloggerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.ReblogNote(ctx, cmd.(*notes.ReblogNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
+	sch.executors[streaming.CmdReblogStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "ReblogNoteCommand", sch.notesService.ReblogNote)
 	
 	// Unreblog Status executor
-	sch.executors[streaming.CmdUnreblogStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.UnreblogNoteCommand{
-				StatusID:      getString(payload, "id", ""),
-				UnrebloggerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.UnreblogNote(ctx, cmd.(*notes.UnreblogNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
-	
+	sch.executors[streaming.CmdUnreblogStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "UnreblogNoteCommand", sch.notesService.UnreblogNote)
+}
+
+// initializeBookmarkExecutors initializes bookmark and unbookmark executors
+func (sch *StatusCommandHandlerV2) initializeBookmarkExecutors(h payloadHelpers) {
 	// Bookmark Status executor
-	sch.executors[streaming.CmdBookmarkStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.BookmarkNoteCommand{
-				StatusID:     getString(payload, "id", ""),
-				BookmarkerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.BookmarkNote(ctx, cmd.(*notes.BookmarkNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
+	sch.executors[streaming.CmdBookmarkStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "BookmarkNoteCommand", sch.notesService.BookmarkNote)
 	
 	// Unbookmark Status executor
-	sch.executors[streaming.CmdUnbookmarkStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.UnbookmarkNoteCommand{
-				StatusID:       getString(payload, "id", ""),
-				UnbookmarkerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.UnbookmarkNote(ctx, cmd.(*notes.UnbookmarkNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
-	
+	sch.executors[streaming.CmdUnbookmarkStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "UnbookmarkNoteCommand", sch.notesService.UnbookmarkNote)
+}
+
+// initializeMuteExecutors initializes mute and unmute executors
+func (sch *StatusCommandHandlerV2) initializeMuteExecutors(h payloadHelpers) {
 	// Mute Status executor
-	sch.executors[streaming.CmdMuteStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.MuteNoteCommand{
-				StatusID: getString(payload, "id", ""),
-				MuterID:  conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.MuteNote(ctx, cmd.(*notes.MuteNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
+	sch.executors[streaming.CmdMuteStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "MuteNoteCommand", sch.notesService.MuteNote)
 	
 	// Unmute Status executor
-	sch.executors[streaming.CmdUnmuteStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.UnmuteNoteCommand{
-				StatusID: getString(payload, "id", ""),
-				MuterID:  conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.UnmuteNote(ctx, cmd.(*notes.UnmuteNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
-	
+	sch.executors[streaming.CmdUnmuteStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "UnmuteNoteCommand", sch.notesService.UnmuteNote)
+}
+
+// initializePinExecutors initializes pin and unpin executors
+func (sch *StatusCommandHandlerV2) initializePinExecutors(h payloadHelpers) {
 	// Pin Status executor
-	sch.executors[streaming.CmdPinStatus] = &SimpleStatusExecutor{
-		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.PinNoteCommand{
-				StatusID: getString(payload, "id", ""),
-				PinnerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.PinNote(ctx, cmd.(*notes.PinNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
-	}
+	sch.executors[streaming.CmdPinStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "PinNoteCommand", sch.notesService.PinNote)
 	
 	// Unpin Status executor
-	sch.executors[streaming.CmdUnpinStatus] = &SimpleStatusExecutor{
+	sch.executors[streaming.CmdUnpinStatus] = sch.createSimpleStatusExecutor(
+		h, "id", "UnpinNoteCommand", sch.notesService.UnpinNote)
+}
+
+// createSimpleStatusExecutor is a factory function for creating standard status executors
+func (sch *StatusCommandHandlerV2) createSimpleStatusExecutor(
+	h payloadHelpers,
+	idField, cmdType string,
+	serviceMethod interface{},
+) *SimpleStatusExecutor {
+	return &SimpleStatusExecutor{
 		requiresAuth:   true,
-		requiredFields: []string{"id"},
-		commandBuilder: func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
-			return &notes.UnpinNoteCommand{
-				StatusID: getString(payload, "id", ""),
-				PinnerID: conn.UserID,
-			}
-		},
-		executor: func(ctx context.Context, cmd interface{}) (interface{}, error) {
-			result, err := sch.notesService.UnpinNote(ctx, cmd.(*notes.UnpinNoteCommand))
-			if err != nil {
-				return nil, err
-			}
-			return result.Status, nil
-		},
-		responseKey: "",
+		requiredFields: []string{idField},
+		commandBuilder: sch.createCommandBuilder(h, idField, cmdType),
+		executor:       sch.createServiceExecutor(serviceMethod),
+		responseKey:    "",
+	}
+}
+
+// createCommandBuilder creates a command builder function for the given command type
+func (sch *StatusCommandHandlerV2) createCommandBuilder(
+	h payloadHelpers,
+	idField, cmdType string,
+) func(*streaming.ConnectionInfo, map[string]interface{}) interface{} {
+	return func(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{} {
+		return sch.buildCommand(h, conn, payload, idField, cmdType)
+	}
+}
+
+// buildCommand creates the appropriate command struct based on the command type
+func (sch *StatusCommandHandlerV2) buildCommand(
+	h payloadHelpers,
+	conn *streaming.ConnectionInfo,
+	payload map[string]interface{},
+	idField, cmdType string,
+) interface{} {
+	statusID := h.getString(payload, idField, "")
+	userID := conn.UserID
+	
+	switch cmdType {
+	case "LikeNoteCommand":
+		return &notes.LikeNoteCommand{StatusID: statusID, LikerID: userID}
+	case "UnlikeNoteCommand":
+		return &notes.UnlikeNoteCommand{StatusID: statusID, UnlikerID: userID}
+	case "ReblogNoteCommand":
+		return &notes.ReblogNoteCommand{StatusID: statusID, RebloggerID: userID}
+	case "UnreblogNoteCommand":
+		return &notes.UnreblogNoteCommand{StatusID: statusID, UnrebloggerID: userID}
+	case "BookmarkNoteCommand":
+		return &notes.BookmarkNoteCommand{StatusID: statusID, BookmarkerID: userID}
+	case "UnbookmarkNoteCommand":
+		return &notes.UnbookmarkNoteCommand{StatusID: statusID, UnbookmarkerID: userID}
+	case "MuteNoteCommand":
+		return &notes.MuteNoteCommand{StatusID: statusID, MuterID: userID}
+	case "UnmuteNoteCommand":
+		return &notes.UnmuteNoteCommand{StatusID: statusID, MuterID: userID}
+	case "PinNoteCommand":
+		return &notes.PinNoteCommand{StatusID: statusID, PinnerID: userID}
+	case "UnpinNoteCommand":
+		return &notes.UnpinNoteCommand{StatusID: statusID, PinnerID: userID}
+	default:
+		return nil
+	}
+}
+
+// createServiceExecutor creates an executor function that calls the appropriate service method
+func (sch *StatusCommandHandlerV2) createServiceExecutor(
+	serviceMethod interface{},
+) func(context.Context, interface{}) (interface{}, error) {
+	return func(ctx context.Context, cmd interface{}) (interface{}, error) {
+		result, err := sch.callServiceMethod(ctx, cmd, serviceMethod)
+		if err != nil {
+			return nil, err
+		}
+		return sch.extractResponseFromResult(result), nil
+	}
+}
+
+// callServiceMethod dynamically calls the appropriate service method
+func (sch *StatusCommandHandlerV2) callServiceMethod(
+	ctx context.Context,
+	cmd interface{},
+	serviceMethod interface{},
+) (interface{}, error) {
+	switch method := serviceMethod.(type) {
+	case func(context.Context, *notes.LikeNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.LikeNoteCommand))
+	case func(context.Context, *notes.UnlikeNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.UnlikeNoteCommand))
+	case func(context.Context, *notes.ReblogNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.ReblogNoteCommand))
+	case func(context.Context, *notes.UnreblogNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.UnreblogNoteCommand))
+	case func(context.Context, *notes.BookmarkNoteCommand) (*notes.BookmarkResult, error):
+		return method(ctx, cmd.(*notes.BookmarkNoteCommand))
+	case func(context.Context, *notes.UnbookmarkNoteCommand) (*notes.BookmarkResult, error):
+		return method(ctx, cmd.(*notes.UnbookmarkNoteCommand))
+	case func(context.Context, *notes.MuteNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.MuteNoteCommand))
+	case func(context.Context, *notes.UnmuteNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.UnmuteNoteCommand))
+	case func(context.Context, *notes.PinNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.PinNoteCommand))
+	case func(context.Context, *notes.UnpinNoteCommand) (*notes.LikeResult, error):
+		return method(ctx, cmd.(*notes.UnpinNoteCommand))
+	default:
+		return nil, fmt.Errorf("unsupported service method type")
+	}
+}
+
+// extractResponseFromResult extracts the Status field from service results
+func (sch *StatusCommandHandlerV2) extractResponseFromResult(result interface{}) interface{} {
+	switch res := result.(type) {
+	case *notes.LikeResult:
+		return res.Status
+	case *notes.BookmarkResult:
+		return res.Status
+	default:
+		return result
 	}
 }
 

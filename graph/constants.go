@@ -181,3 +181,9 @@ const (
 const (
 	TextType = "text"
 )
+
+// DynamoDB operation constants
+const (
+	DynamoOperationRead  = "read"
+	DynamoOperationQuery = "query"
+)

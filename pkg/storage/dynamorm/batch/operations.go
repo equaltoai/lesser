@@ -38,37 +38,45 @@ const (
 	DefaultWorkers    = 5   // Default number of worker goroutines
 )
 
-// BatchOperation represents the type of batch operation
-type BatchOperation int
+// Operation represents the type of batch operation being performed.
+// It defines whether the batch processor should handle write, delete, or read operations.
+type Operation int
 
 const (
-	OperationWrite BatchOperation = iota
+	// OperationWrite indicates a batch write operation for creating or updating items
+	OperationWrite Operation = iota
+	// OperationDelete indicates a batch delete operation for removing items
 	OperationDelete
+	// OperationRead indicates a batch read operation for retrieving items
 	OperationRead
 )
 
-// BatchProcessor provides efficient batch operations with configurable batch sizes and operation types
-type BatchProcessor struct {
+// Processor provides efficient batch operations with configurable batch sizes and operation types.
+// It handles write, delete, and read operations in batches while tracking costs and providing
+// parallel processing capabilities for improved performance.
+type Processor struct {
 	client    core.DB
 	batchSize int
 	logger    *zap.Logger
 	tracker   CostTracker
-	operation BatchOperation
+	operation Operation
 }
 
 // BatchWriter provides efficient batch write operations with configurable batch sizes
 //
 //nolint:revive // Batch prefix clarifies this is batch-specific writer
 type BatchWriter struct {
-	*BatchProcessor
+	*Processor
 }
 
-// BatchProcessorConfig holds configuration for BatchProcessor
-type BatchProcessorConfig struct {
+// ProcessorConfig holds configuration for Processor instances.
+// It defines the batch size, logging, cost tracking, and operation type
+// settings for batch processing operations.
+type ProcessorConfig struct {
 	BatchSize int
 	Logger    *zap.Logger
 	Tracker   CostTracker
-	Operation BatchOperation
+	Operation Operation
 }
 
 // BatchWriterConfig holds configuration for BatchWriter
@@ -80,8 +88,8 @@ type BatchWriterConfig struct {
 	Tracker   CostTracker
 }
 
-// NewBatchProcessor creates a new BatchProcessor with the specified configuration
-func NewBatchProcessor(client core.DB, config BatchProcessorConfig) *BatchProcessor {
+// NewProcessor creates a new Processor with the specified configuration
+func NewProcessor(client core.DB, config ProcessorConfig) *Processor {
 	batchSize := config.BatchSize
 	if config.Operation == OperationRead {
 		if batchSize <= 0 || batchSize > MaxBatchReadSize {
@@ -93,7 +101,7 @@ func NewBatchProcessor(client core.DB, config BatchProcessorConfig) *BatchProces
 		}
 	}
 
-	return &BatchProcessor{
+	return &Processor{
 		client:    client,
 		batchSize: batchSize,
 		logger:    config.Logger,
@@ -104,13 +112,13 @@ func NewBatchProcessor(client core.DB, config BatchProcessorConfig) *BatchProces
 
 // NewBatchWriter creates a new BatchWriter with the specified configuration
 func NewBatchWriter(client core.DB, config BatchWriterConfig) *BatchWriter {
-	processor := NewBatchProcessor(client, BatchProcessorConfig{
+	processor := NewProcessor(client, ProcessorConfig{
 		BatchSize: config.BatchSize,
 		Logger:    config.Logger,
 		Tracker:   config.Tracker,
 		Operation: OperationWrite,
 	})
-	return &BatchWriter{BatchProcessor: processor}
+	return &BatchWriter{Processor: processor}
 }
 
 // NewDefaultBatchWriter creates a BatchWriter with default settings
@@ -142,7 +150,7 @@ type BatchError struct {
 }
 
 // ProcessItems processes items in batches, handling different operation types
-func (bp *BatchProcessor) ProcessItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
+func (bp *Processor) ProcessItems(ctx context.Context, items []any) (*BatchWriteResult, error) {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
@@ -201,7 +209,7 @@ func (bw *BatchWriter) WriteItems(ctx context.Context, items []any) (*BatchWrite
 }
 
 // ProcessItemsParallel processes items in parallel using worker pools
-func (bp *BatchProcessor) ProcessItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
+func (bp *Processor) ProcessItemsParallel(ctx context.Context, items []any, workers int) (*BatchWriteResult, error) {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return &BatchWriteResult{}, nil
 	}
@@ -303,7 +311,7 @@ type batchResult struct {
 }
 
 // getOperationName returns the operation name for logging
-func (bp *BatchProcessor) getOperationName() string {
+func (bp *Processor) getOperationName() string {
 	switch bp.operation {
 	case OperationWrite:
 		return "write"
@@ -317,7 +325,7 @@ func (bp *BatchProcessor) getOperationName() string {
 }
 
 // getCapacityFieldName returns the appropriate capacity field name for logging
-func (bp *BatchProcessor) getCapacityFieldName() string {
+func (bp *Processor) getCapacityFieldName() string {
 	switch bp.operation {
 	case OperationRead:
 		return "consumed_rcu"
@@ -327,7 +335,7 @@ func (bp *BatchProcessor) getCapacityFieldName() string {
 }
 
 // worker processes batches from the work channel
-func (bp *BatchProcessor) worker(ctx context.Context, workChan <-chan batchWork, resultChan chan<- batchResult, wg *sync.WaitGroup) {
+func (bp *Processor) worker(ctx context.Context, workChan <-chan batchWork, resultChan chan<- batchResult, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	for work := range workChan {
@@ -365,7 +373,7 @@ func (bp *BatchProcessor) worker(ctx context.Context, workChan <-chan batchWork,
 }
 
 // processBatch processes a single batch of items based on operation type
-func (bp *BatchProcessor) processBatch(_ context.Context, items []any, startIndex int, result *BatchWriteResult) error {
+func (bp *Processor) processBatch(_ context.Context, items []any, startIndex int, result *BatchWriteResult) error {
 	if err := common.ValidateSliceNotEmpty("items", items); err != nil {
 		return nil
 	}
@@ -718,7 +726,7 @@ func (bwp *BatchWriterWithProgress) WriteItemsParallelWithProgress(ctx context.C
 // Helper functions
 
 // logError logs an error if logger is available
-func (bp *BatchProcessor) logError(message string, err error, fields ...zap.Field) {
+func (bp *Processor) logError(message string, err error, fields ...zap.Field) {
 	if bp.logger != nil {
 		allFields := append(fields, zap.Error(err))
 		bp.logger.Error(message, allFields...)
@@ -737,7 +745,7 @@ func (br *BatchReader) logError(message string, err error, fields ...zap.Field) 
 //
 //nolint:revive // Batch prefix clarifies this is batch-specific deleter
 type BatchDeleter struct {
-	*BatchProcessor
+	*Processor
 }
 
 // BatchDeleterConfig holds configuration for BatchDeleter
@@ -751,13 +759,13 @@ type BatchDeleterConfig struct {
 
 // NewBatchDeleter creates a new BatchDeleter with the specified configuration
 func NewBatchDeleter(client core.DB, config BatchDeleterConfig) *BatchDeleter {
-	processor := NewBatchProcessor(client, BatchProcessorConfig{
+	processor := NewProcessor(client, ProcessorConfig{
 		BatchSize: config.BatchSize,
 		Logger:    config.Logger,
 		Tracker:   config.Tracker,
 		Operation: OperationDelete,
 	})
-	return &BatchDeleter{BatchProcessor: processor}
+	return &BatchDeleter{Processor: processor}
 }
 
 // NewDefaultBatchDeleter creates a BatchDeleter with default settings

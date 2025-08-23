@@ -38,7 +38,7 @@ func (Conversation) TableName() string {
 // BeforeCreate sets up the keys before creating a conversation
 func (c *Conversation) BeforeCreate() error {
 	if err := common.ValidateRequiredParam("c.ID", c.ID); err != nil {
-		return fmt.Errorf("conversation ID is required")
+		return ErrConversationIDRequired
 	}
 
 	c.PK = fmt.Sprintf(KeyPatternConversation, c.ID)
@@ -59,9 +59,20 @@ func (c *Conversation) BeforeCreate() error {
 }
 
 // UpdateKeys updates GSI keys - for conversation, this is mainly used for participant records
-func (c *Conversation) UpdateKeys() {
+func (c *Conversation) UpdateKeys() error {
 	// For the main conversation record, GSI keys are empty
 	// GSI keys are only used for participant records which are created separately
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *Conversation) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *Conversation) GetSK() string {
+	return c.SK
 }
 
 // ConversationParticipantRecord represents a participant's view of a conversation
@@ -87,7 +98,7 @@ func (ConversationParticipantRecord) TableName() string {
 // BeforeCreate sets up the keys for a participant record
 func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error {
 	if p.Conversation == nil || p.ID == "" {
-		return fmt.Errorf("conversation data is required")
+		return ErrConversationDataRequired
 	}
 
 	p.PK = fmt.Sprintf("USER_CONVERSATIONS#%s", participantID)
@@ -96,6 +107,22 @@ func (p *ConversationParticipantRecord) BeforeCreate(participantID string) error
 	p.GSI1SK = fmt.Sprintf("PARTICIPANT#%s", participantID)
 
 	return nil
+}
+
+// UpdateKeys updates the GSI keys for the participant record
+func (p *ConversationParticipantRecord) UpdateKeys() error {
+	// Keys are set in BeforeCreate
+	return nil
+}
+
+// GetPK returns the partition key
+func (p *ConversationParticipantRecord) GetPK() string {
+	return p.PK
+}
+
+// GetSK returns the sort key
+func (p *ConversationParticipantRecord) GetSK() string {
+	return p.SK
 }
 
 // ConversationParticipantKey is used for looking up conversations by exact participants
@@ -112,4 +139,20 @@ type ConversationParticipantKey struct {
 // TableName returns the DynamoDB table name
 func (ConversationParticipantKey) TableName() string {
 	return MainTableName
+}
+
+// UpdateKeys updates the composite keys based on conversation ID
+func (k *ConversationParticipantKey) UpdateKeys() error {
+	// Keys are set when creating the lookup key
+	return nil
+}
+
+// GetPK returns the partition key
+func (k *ConversationParticipantKey) GetPK() string {
+	return k.PK
+}
+
+// GetSK returns the sort key
+func (k *ConversationParticipantKey) GetSK() string {
+	return k.SK
 }

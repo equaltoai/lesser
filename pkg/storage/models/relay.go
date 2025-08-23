@@ -32,7 +32,7 @@ type Relay struct {
 }
 
 // UpdateKeys updates the composite keys based on the relay data
-func (r *Relay) UpdateKeys() {
+func (r *Relay) UpdateKeys() error {
 	// Primary key: RELAY#url
 	r.PK = fmt.Sprintf("RELAY#%s", r.URL)
 	r.SK = SKInfo
@@ -52,4 +52,16 @@ func (r *Relay) UpdateKeys() {
 		r.GSI2PK = fmt.Sprintf("RELAY_DOMAIN#%s", r.Domain)
 		r.GSI2SK = r.URL
 	}
+	
+	return nil
+}
+
+// GetPK returns the partition key
+func (r *Relay) GetPK() string {
+	return r.PK
+}
+
+// GetSK returns the sort key
+func (r *Relay) GetSK() string {
+	return r.SK
 }

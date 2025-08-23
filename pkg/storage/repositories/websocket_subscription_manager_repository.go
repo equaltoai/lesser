@@ -3,27 +3,23 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// WebSocketSubscriptionManagerRepository handles WebSocket event subscriptions using DynamORM
+// WebSocketSubscriptionManagerRepository handles WebSocket event subscriptions using BaseRepository
 type WebSocketSubscriptionManagerRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.WebSocketEventConnection]
 }
 
 // NewWebSocketSubscriptionManagerRepository creates a new repository instance
 func NewWebSocketSubscriptionManagerRepository(db core.DB, tableName string, logger *zap.Logger) *WebSocketSubscriptionManagerRepository {
 	return &WebSocketSubscriptionManagerRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.WebSocketEventConnection](db, tableName, logger),
 	}
 }
 
@@ -37,11 +33,9 @@ func (r *WebSocketSubscriptionManagerRepository) HandleConnect(ctx context.Conte
 		TTL:          time.Now().Add(24 * time.Hour).Unix(), // Expire after 24 hours
 	}
 
-	connection.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(connection).Create()
+	err := r.Create(ctx, connection)
 	if err != nil {
-		return fmt.Errorf("failed to store connection: %w", err)
+		return ErrorHandler.HandleCreateError(err, "websocket connection", connectionID)
 	}
 
 	return nil
@@ -58,14 +52,12 @@ func (r *WebSocketSubscriptionManagerRepository) HandleDisconnect(ctx context.Co
 	}
 
 	// Remove the connection itself
-	connection := &models.WebSocketEventConnection{
-		ConnectionID: connectionID,
-	}
-	connection.UpdateKeys()
+	pk := fmt.Sprintf("CONNECTION#%s", connectionID)
+	sk := "METADATA"
 
-	err := r.db.WithContext(ctx).Model(connection).Delete()
+	err := r.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete connection: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "websocket connection", connectionID)
 	}
 
 	return nil
@@ -74,17 +66,15 @@ func (r *WebSocketSubscriptionManagerRepository) HandleDisconnect(ctx context.Co
 // GetConnection retrieves a WebSocket connection by connection ID
 func (r *WebSocketSubscriptionManagerRepository) GetConnection(ctx context.Context, connectionID string) (*models.WebSocketEventConnection, error) {
 	var connection models.WebSocketEventConnection
+	pk := fmt.Sprintf("CONNECTION#%s", connectionID)
+	sk := "METADATA"
 
-	err := r.db.WithContext(ctx).Model(&models.WebSocketEventConnection{}).
-		Where("PK", "=", fmt.Sprintf("CONNECTION#%s", connectionID)).
-		Where("SK", "=", "METADATA").
-		First(&connection)
-
+	err := r.Get(ctx, pk, sk, &connection)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("connection not found")
+		if strings.Contains(err.Error(), "not found") {
+			return nil, ErrorHandler.HandleGetError(err, "websocket connection", connectionID)
 		}
-		return nil, fmt.Errorf("failed to get connection: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "websocket connection", connectionID)
 	}
 
 	return &connection, nil
@@ -100,11 +90,10 @@ func (r *WebSocketSubscriptionManagerRepository) CreateSubscription(ctx context.
 		TTL:              time.Now().Add(24 * time.Hour).Unix(),
 	}
 
-	subscription.UpdateKeys()
-
-	err := r.db.WithContext(ctx).Model(subscription).Create()
+	// Use GetDB() for subscriptions since BaseRepository is typed for connections
+	err := r.GetDB().WithContext(ctx).Model(subscription).Create()
 	if err != nil {
-		return fmt.Errorf("failed to store subscription: %w", err)
+		return ErrorHandler.HandleCreateError(err, "websocket subscription", connectionID)
 	}
 
 	return nil
@@ -118,9 +107,9 @@ func (r *WebSocketSubscriptionManagerRepository) DeleteSubscription(ctx context.
 	}
 	subscription.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(subscription).Delete()
+	err := r.GetDB().WithContext(ctx).Model(subscription).Delete()
 	if err != nil {
-		return fmt.Errorf("failed to delete subscription: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "websocket subscription", connectionID)
 	}
 
 	return nil
@@ -132,7 +121,7 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 
 	// Since DynamORM doesn't support BeginsWith, we'll get all and filter
 	// For a more efficient implementation, you'd want to scan/query differently
-	err := r.db.WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
 		Where("PK", "=", fmt.Sprintf("CONNECTION#%s", connectionID)).
 		All(&subscriptions)
 
@@ -146,10 +135,10 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 	subscriptions = filteredSubscriptions
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventSubscription{}, nil
 		}
-		return nil, fmt.Errorf("failed to get subscriptions for connection: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "websocket subscription", "connection")
 	}
 
 	return subscriptions, nil
@@ -159,15 +148,15 @@ func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForConnection(c
 func (r *WebSocketSubscriptionManagerRepository) GetSubscriptionsForType(ctx context.Context, subscriptionType string) ([]models.WebSocketEventSubscription, error) {
 	var subscriptions []models.WebSocketEventSubscription
 
-	err := r.db.WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventSubscription{}).
 		Where("GSI1PK", "=", fmt.Sprintf("SUBSCRIPTION#%s", subscriptionType)).
 		All(&subscriptions)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventSubscription{}, nil
 		}
-		return nil, fmt.Errorf("failed to get subscriptions for type: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "websocket subscription", "subscription type")
 	}
 
 	return subscriptions, nil
@@ -178,7 +167,7 @@ func (r *WebSocketSubscriptionManagerRepository) CleanupSubscriptions(ctx contex
 	// Get all subscriptions for this connection
 	subscriptions, err := r.GetSubscriptionsForConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to query subscriptions for cleanup: %w", err)
+		return ErrorHandler.HandleQueryError(err, "websocket subscription", "cleanup")
 	}
 
 	// Delete each subscription
@@ -201,17 +190,16 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.C
 	var eventConnections []models.WebSocketEventConnection
 
 	// Use GSI2 to query all connected connections efficiently
-	err := r.db.WithContext(ctx).Model(&models.WebSocketConnection{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketConnection{}).
 		Index("gsi2").
 		Where("GSI2PK", "=", "STATE#connected").
 		All(&connections)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return []models.WebSocketEventConnection{}, nil
 		}
-		r.logger.Error("failed to get connected websocket connections", zap.Error(err))
-		return nil, fmt.Errorf("failed to get connected connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "websocket connection", "connected connections")
 	}
 
 	// Convert WebSocketConnection to WebSocketEventConnection
@@ -241,16 +229,16 @@ func (r *WebSocketSubscriptionManagerRepository) GetUserConnections(ctx context.
 	var connections []models.WebSocketEventConnection
 
 	// Query connections by GSI2 (UserID index)
-	err := r.db.WithContext(ctx).Model(&models.WebSocketEventConnection{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.WebSocketEventConnection{}).
 		Where("GSI2PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Where("GSI2SK", "begins_with", "CONNECTION#").
 		All(&connections)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			return []string{}, nil
 		}
-		return nil, fmt.Errorf("failed to get user connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "websocket connection", "user connections")
 	}
 
 	// Extract connection IDs and filter for active connections

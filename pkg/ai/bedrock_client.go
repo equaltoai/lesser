@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrock"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/equaltoai/lesser/pkg/common"
+	appconfig "github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -264,7 +264,7 @@ func (c *BedrockClient) parseReputationResponse(completion string) (*ReputationA
 	}
 
 	if startIdx == -1 || endIdx == -1 {
-		return nil, fmt.Errorf("no JSON found in response")
+		return nil, ErrNoJSONFoundInResponse
 	}
 
 	jsonStr := completion[startIdx:endIdx]
@@ -365,15 +365,17 @@ func (c *BedrockClient) isClaudeModel() bool {
 // Helper functions for configuration
 
 func getAWSRegion() string {
-	if region := os.Getenv("AWS_REGION"); region != "" {
-		return region
+	cfg := appconfig.Get()
+	if cfg.Region != "" {
+		return cfg.Region
 	}
 	return "us-east-1" // Default region
 }
 
 func getBedrockModelID() string {
-	if modelID := os.Getenv("BEDROCK_MODEL_ID"); modelID != "" {
-		return modelID
+	cfg := appconfig.Get()
+	if cfg.BedrockModelID != "" {
+		return cfg.BedrockModelID
 	}
 	// Default to Claude 3 Haiku for cost-effective analysis
 	return "anthropic.claude-3-haiku-20240307-v1:0"

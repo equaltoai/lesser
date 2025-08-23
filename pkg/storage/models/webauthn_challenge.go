@@ -42,3 +42,27 @@ func (w *WebAuthnChallenge) BeforeCreate() error {
 
 	return nil
 }
+
+// GetPK returns the partition key
+func (w *WebAuthnChallenge) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WebAuthnChallenge) GetSK() string {
+	return w.SK
+}
+
+// UpdateKeys updates the primary and sort keys based on the model data
+func (w *WebAuthnChallenge) UpdateKeys() error {
+	w.PK = "CHALLENGE#" + w.Challenge
+	w.SK = "WEBAUTHN"
+	w.ItemType = "WebAuthnChallenge"
+
+	// Set TTL if not already set (5 minute expiry)
+	if w.TTL == 0 && !w.ExpiresAt.IsZero() {
+		w.TTL = w.ExpiresAt.Unix()
+	}
+
+	return nil
+}

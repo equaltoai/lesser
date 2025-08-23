@@ -3,8 +3,8 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -30,6 +30,7 @@ const requestIDKey contextKey = "request_id"
 type StatusIndexer struct {
 	db           dynamormCore.DB
 	tableName    string
+	domain       string
 	logger       *zap.Logger
 	aiService    *ai.AIService
 	likeRepo     *repositories.LikeRepository
@@ -42,6 +43,7 @@ func NewStatusIndexer(db dynamormCore.DB, tableName, domain string, aiService *a
 	return &StatusIndexer{
 		db:           db,
 		tableName:    tableName,
+		domain:       domain,
 		logger:       logger,
 		aiService:    aiService,
 		likeRepo:     repositories.NewLikeRepository(db, tableName, logger),
@@ -80,7 +82,11 @@ func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(event.Records))
+		si.logger.Error("partial batch processing failure",
+			zap.String("request_id", requestID),
+			zap.Int("failed_records", len(errors)),
+			zap.Int("total_records", len(event.Records)))
+		return ErrPartialBatchFailure
 	}
 
 	return nil
@@ -115,7 +121,7 @@ func (si *StatusIndexer) processRecord(ctx context.Context, record events.Dynamo
 	// Process the status if valid
 	if details.objectID != "" && details.content != "" {
 		if err := si.processStatusEvent(ctx, details.objectID, details.content, details.authorID, details.authorUsername, details.published); err != nil {
-			return fmt.Errorf("failed to process status event: %w", err)
+			return errors.Join(ErrProcessStatusEvent, err)
 		}
 	}
 
@@ -170,12 +176,12 @@ func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecor
 func (si *StatusIndexer) extractObjectFromRecord(record events.DynamoDBEventRecord) (map[string]events.DynamoDBAttributeValue, error) {
 	newImage := record.Change.NewImage
 	if newImage == nil {
-		return nil, fmt.Errorf("no new image")
+		return nil, ErrNoNewImage
 	}
 
 	objectData, ok := newImage["Object"]
 	if !ok || objectData.DataType() != events.DataTypeMap {
-		return nil, fmt.Errorf("no object data")
+		return nil, ErrNoObjectData
 	}
 
 	return objectData.Map(), nil
@@ -504,7 +510,7 @@ func (si *StatusIndexer) getReplyCount(ctx context.Context, statusID string) (in
 		All(&objects)
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count replies: %w", err)
+		return 0, errors.Join(ErrCountReplies, err)
 	}
 
 	return len(objects), nil
@@ -642,9 +648,9 @@ func (si *StatusIndexer) updateTrendingHashtag(ctx context.Context, tag string, 
 
 // getDomain returns the domain name for URL generation
 func (si *StatusIndexer) getDomain() string {
-	// Get domain from environment variable
-	if domain := os.Getenv("DOMAIN_NAME"); domain != "" {
-		return domain
+	// Use domain from configuration
+	if si.domain != "" {
+		return si.domain
 	}
 	return "localhost" // Fallback
 }

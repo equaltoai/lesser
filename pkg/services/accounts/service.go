@@ -6,6 +6,7 @@ package accounts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -19,6 +20,82 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
+)
+
+// Standardized error constants for account operations
+// These align with the constants in pkg/services/errors.go
+var (
+	// Input validation errors
+	ErrValidationFailed  = errors.New("validation failed")
+	ErrEmptySearchQuery  = errors.New("search query cannot be empty")
+	ErrUsernameRequired  = errors.New("username is required")
+	ErrUpdaterIDRequired = errors.New("updater_id is required")
+
+	// Account operations
+	ErrGetAccount                    = errors.New("failed to get account")
+	ErrUpdateProfile                 = errors.New("failed to update profile")
+	ErrStoreAccount                  = errors.New("failed to store account")
+	ErrGetPreferences                = errors.New("failed to get preferences")
+	ErrUpdatePreferences             = errors.New("failed to update preferences")
+	ErrAccountNotFound               = errors.New("account not found")
+	ErrSearchAccounts                = errors.New("failed to search accounts")
+	ErrProfileFieldNameEmpty         = errors.New("profile field name cannot be empty")
+	ErrProfileFieldNameTooLong       = errors.New("profile field name too long (max 255 characters)")
+	ErrProfileFieldValueTooLong      = errors.New("profile field value too long (max 255 characters)")
+	ErrInvalidExpandMediaSetting     = errors.New("invalid expand media setting")
+	ErrInvalidTimelineOrder          = errors.New("invalid timeline order")
+	ErrAccountNoActivityPubActor     = errors.New("account has no ActivityPub actor")
+
+	// Actor operations
+	ErrGetActor           = errors.New("failed to get actor")
+	ErrGetFollowersAccounts = errors.New("failed to get followers")
+	ErrGetFollowingList     = errors.New("failed to get following list")
+	ErrGetViewerActor       = errors.New("failed to get viewer actor")
+	ErrGetViewerFollowing   = errors.New("failed to get viewer following")
+
+	// Repository availability errors
+	ErrRelationshipRepositoryNotAvailable = errors.New("relationship repository not available")
+	ErrActorRepositoryNotAvailable        = errors.New("actor repository not available")
+
+	// Account relationships
+	ErrTargetAccountNotFound = errors.New("target account not found")
+	ErrAccountAlreadyPinned  = errors.New("account already pinned")
+	ErrPinAccount           = errors.New("failed to pin account")
+	ErrUnpinAccount         = errors.New("failed to unpin account")
+	ErrGetAccountPins       = errors.New("failed to get account pins")
+	ErrSetAccountNote       = errors.New("failed to set account note")
+	ErrRemoveFollower       = errors.New("failed to remove follower")
+
+	// Account creation
+	ErrEmailRequired           = errors.New("email is required")
+	ErrMustAgreeToTerms        = errors.New("must agree to terms of service")
+	ErrUsernameAlreadyTaken    = errors.New("username already taken")
+	ErrGenerateKeypair         = errors.New("failed to generate keypair")
+	ErrEncodePublicKey         = errors.New("failed to encode public key")
+	ErrHashPassword            = errors.New("failed to hash password")
+	ErrCreateAccount           = errors.New("failed to create account")
+	ErrCryptoServiceNotConfigured = errors.New("crypto service not configured")
+	ErrAuthServiceNotConfigured   = errors.New("auth service not configured")
+	ErrStorageNotAvailable        = errors.New("storage not available")
+
+	// User operations
+	ErrCheckAccountPinned         = errors.New("failed to check if account is pinned")
+	ErrGetUser                   = errors.New("failed to get user")
+	ErrGetUserPreferences        = errors.New("failed to get user preferences")
+	ErrCheckDomainBlockedByUser  = errors.New("failed to check if domain is blocked by user")
+	ErrGetFieldVerification      = errors.New("failed to get field verification")
+	ErrGetAccountNote            = errors.New("failed to get account note")
+	ErrUserRepositoryNotAvailable = errors.New("user repository not available")
+	ErrDomainBlockRepositoryNotAvailable = errors.New("domain block repository not available")
+	ErrAccountRepositoryNotAvailable     = errors.New("account repository not available")
+
+	// Permission errors
+	ErrCannotUpdateProfileForOtherUser     = errors.New("cannot update profile for another user")
+	ErrCannotUpdatePreferencesForOtherUser = errors.New("cannot update preferences for another user")
+	ErrCannotPinAccountForOtherUser        = errors.New("cannot pin account for another user")
+	ErrCannotUnpinAccountForOtherUser      = errors.New("cannot unpin account for another user")
+	ErrCannotSetNoteForOtherUser           = errors.New("cannot set note for another user")
+	ErrCannotRemoveFollowerForOtherUser    = errors.New("cannot remove follower for another user")
 )
 
 // Collection type constants
@@ -363,28 +440,28 @@ func (s *Service) UpdateProfile(ctx context.Context, cmd *UpdateProfileCommand) 
 
 	// Validate the command
 	if err := s.validateUpdateProfileCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, ErrValidationFailed
 	}
 
 	// Get existing account
 	account, err := s.storage.Account().GetAccount(ctx, cmd.Username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account: %w", err)
+		return nil, ErrGetAccount
 	}
 
 	// Verify permission (only account owner can update)
 	if account.User.Username != cmd.UpdaterID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can update their profile")
+		return nil, common.ErrForbidden(ErrCannotUpdateProfileForOtherUser)
 	}
 
 	// Update profile fields
 	if err := s.updateAccountProfile(account, cmd); err != nil {
-		return nil, fmt.Errorf("failed to update profile: %w", err)
+		return nil, ErrUpdateProfile
 	}
 
 	// Store the updated account
 	if err := s.storage.Account().UpdateAccount(ctx, account); err != nil {
-		return nil, fmt.Errorf("failed to store account: %w", err)
+		return nil, ErrStoreAccount
 	}
 
 	s.logger.Info("updated profile successfully",
@@ -408,7 +485,7 @@ func (s *Service) GetPreferences(ctx context.Context, query *GetPreferencesQuery
 	// Get preferences from storage
 	preferences, err := s.storage.Account().GetAccountPreferences(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get preferences: %w", err)
+		return nil, ErrGetPreferences
 	}
 
 	// If no preferences found, return defaults
@@ -441,12 +518,12 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 
 	// Validate the command
 	if err := s.validateUpdatePreferencesCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, ErrValidationFailed
 	}
 
 	// Verify permission (only account owner can update preferences)
 	if cmd.Username != cmd.UpdaterID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can update their preferences")
+		return nil, common.ErrForbidden(ErrCannotUpdatePreferencesForOtherUser)
 	}
 
 	// Build preferences map from command
@@ -466,7 +543,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, cmd *UpdatePreferencesC
 
 	// Update preferences
 	if err := s.storage.Account().UpdateAccountPreferences(ctx, cmd.Username, preferences); err != nil {
-		return nil, fmt.Errorf("failed to update preferences: %w", err)
+		return nil, ErrUpdatePreferences
 	}
 
 	s.logger.Info("updated preferences successfully",
@@ -489,12 +566,12 @@ func (s *Service) GetAccount(ctx context.Context, username string) (*storage.Acc
 	// Get the account
 	account, err := s.storage.Account().GetAccount(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account: %w", err)
+		return nil, ErrGetAccount
 	}
 
 	// Check if account is suspended or deleted - hide from public
 	if account.User.Suspended {
-		return nil, fmt.Errorf("account not found") // Don't reveal it's suspended
+		return nil, ErrAccountNotFound // Don't reveal it's suspended
 	}
 
 	// Return the account directly since we simplified the method
@@ -510,13 +587,13 @@ func (s *Service) SearchAccounts(ctx context.Context, query *SearchAccountsQuery
 
 	// Validate search query
 	if err := common.ValidateRequiredParam("query", strings.TrimSpace(query.Query)); err != nil {
-		return nil, fmt.Errorf("search query cannot be empty")
+		return nil, ErrEmptySearchQuery
 	}
 
 	// Perform the search
 	result, err := s.storage.Account().SearchAccounts(ctx, query.Query, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search accounts: %w", err)
+		return nil, ErrSearchAccounts
 	}
 
 	// Filter results based on privacy and other criteria
@@ -549,14 +626,14 @@ func (s *Service) SearchAccounts(ctx context.Context, query *SearchAccountsQuery
 
 // Private helper methods
 
-func (s *Service) validateUpdateProfileCommand(ctx context.Context, cmd *UpdateProfileCommand) error {
+func (s *Service) validateUpdateProfileCommand(_ context.Context, cmd *UpdateProfileCommand) error {
 	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
-		return fmt.Errorf("username is required")
+		return ErrUsernameRequired
 	}
 
 	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
-		return fmt.Errorf("updater_id is required")
+		return ErrUpdaterIDRequired
 	}
 
 	// Use Mastodon business logic for profile validation
@@ -572,15 +649,15 @@ func (s *Service) validateUpdateProfileCommand(ctx context.Context, cmd *UpdateP
 		return err
 	}
 
-	for i, field := range cmd.Fields {
+	for _, field := range cmd.Fields {
 		if err := common.ValidateRequiredParam("field_name", strings.TrimSpace(field.Name)); err != nil {
-			return fmt.Errorf("profile field %d name cannot be empty", i+1)
+			return ErrProfileFieldNameEmpty
 		}
 		if err := common.ValidateStringLength("field_name", field.Name, 0, 255); err != nil {
-			return fmt.Errorf("profile field %d name too long (max 255 characters)", i+1)
+			return ErrProfileFieldNameTooLong
 		}
 		if err := common.ValidateStringLength("field_value", field.Value, 0, 255); err != nil {
-			return fmt.Errorf("profile field %d value too long (max 255 characters)", i+1)
+			return ErrProfileFieldValueTooLong
 		}
 	}
 
@@ -589,11 +666,11 @@ func (s *Service) validateUpdateProfileCommand(ctx context.Context, cmd *UpdateP
 
 func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *UpdatePreferencesCommand) error {
 	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
-		return fmt.Errorf("username is required")
+		return ErrUsernameRequired
 	}
 
 	if err := common.ValidateRequiredParam("updater_id", cmd.UpdaterID); err != nil {
-		return fmt.Errorf("updater_id is required")
+		return ErrUpdaterIDRequired
 	}
 
 	validVisibilities := map[string]bool{
@@ -603,7 +680,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	}
 
 	if cmd.DefaultPostingVisibility != "" && !validVisibilities[cmd.DefaultPostingVisibility] {
-		return fmt.Errorf("invalid default posting visibility: %s", cmd.DefaultPostingVisibility)
+		return common.ErrValidation("default_posting_visibility", fmt.Sprintf("Visibility '%s' is not valid", cmd.DefaultPostingVisibility)).InternalError
 	}
 
 	validExpandMedia := map[string]bool{
@@ -613,7 +690,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	}
 
 	if cmd.ExpandMedia != "" && !validExpandMedia[cmd.ExpandMedia] {
-		return fmt.Errorf("invalid expand media setting: %s", cmd.ExpandMedia)
+		return ErrInvalidExpandMediaSetting
 	}
 
 	validTimelineOrder := map[string]bool{
@@ -622,7 +699,7 @@ func (s *Service) validateUpdatePreferencesCommand(_ context.Context, cmd *Updat
 	}
 
 	if cmd.PreferredTimelineOrder != "" && !validTimelineOrder[cmd.PreferredTimelineOrder] {
-		return fmt.Errorf("invalid timeline order: %s", cmd.PreferredTimelineOrder)
+		return ErrInvalidTimelineOrder
 	}
 
 	return nil
@@ -636,7 +713,7 @@ func (s *Service) updateAccountProfile(account *storage.Account, cmd *UpdateProf
 
 	// Update Actor fields (ActivityPub profile)
 	if account.Actor == nil {
-		return fmt.Errorf("account has no ActivityPub actor")
+		return ErrAccountNoActivityPubActor
 	}
 
 	if cmd.DisplayName != "" {
@@ -834,7 +911,7 @@ func (s *Service) LookupAccount(ctx context.Context, query *LookupAccountQuery) 
 	// Get the account
 	account, err := s.storage.Account().GetAccount(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("account not found: %w", err)
+		return nil, ErrAccountNotFound
 	}
 
 	// Apply privacy filtering based on viewer
@@ -852,30 +929,30 @@ func (s *Service) GetFollowers(ctx context.Context, query *GetFollowersQuery) (*
 	// Verify target account exists
 	_, err := s.storage.Account().GetAccount(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("account not found: %w", err)
+		return nil, ErrAccountNotFound
 	}
 
 	// Get followers using relationship repository
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
 	// Get actor for the target account
 	actorRepo := s.storage.Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryNotAvailable
 	}
 
 	targetActor, err := actorRepo.GetActor(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrGetActor
 	}
 
 	// Get followers
 	followerIDs, cursor, err := relationshipRepo.GetFollowers(ctx, targetActor.ID, query.Pagination.Limit, query.Pagination.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get followers: %w", err)
+		return nil, ErrGetFollowersAccounts
 	}
 
 	// Convert follower IDs to accounts
@@ -919,13 +996,13 @@ func (s *Service) GetFollowing(ctx context.Context, query *GetFollowingQuery) (*
 	// Verify target account exists
 	_, err := s.storage.Account().GetAccount(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("account not found: %w", err)
+		return nil, ErrAccountNotFound
 	}
 
 	// Get following relationships from storage
 	followingUsernames, nextCursor, err := s.storage.Relationship().GetFollowing(ctx, query.Username, query.Pagination.Limit, query.Pagination.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get following list: %w", err)
+		return nil, ErrGetFollowingList
 	}
 
 	// Convert relationship results to accounts
@@ -966,25 +1043,25 @@ func (s *Service) GetFamiliarFollowers(ctx context.Context, query *GetFamiliarFo
 	// Get relationship repository
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
 	// Get actor repository
 	actorRepo := s.storage.Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryNotAvailable
 	}
 
 	// Get viewer's actor to get who they follow
 	viewerActor, err := actorRepo.GetActor(ctx, query.ViewerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get viewer actor: %w", err)
+		return nil, ErrGetViewerActor
 	}
 
 	// Get who the viewer follows (their following list)
 	viewerFollowing, _, err := relationshipRepo.GetFollowing(ctx, viewerActor.ID, 1000, "") // Get up to 1000 following
 	if err != nil {
-		return nil, fmt.Errorf("failed to get viewer following: %w", err)
+		return nil, ErrGetViewerFollowing
 	}
 
 	// Create a set of who the viewer follows for quick lookup
@@ -1065,13 +1142,13 @@ func (s *Service) PinAccount(ctx context.Context, cmd *PinAccountCommand) (*Rela
 
 	// Verify permission
 	if cmd.Username != cmd.PinnerID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can pin accounts")
+		return nil, common.ErrForbidden(ErrCannotPinAccountForOtherUser)
 	}
 
 	// Verify target account exists
 	targetAccount, err := s.storage.Account().GetAccount(ctx, cmd.TargetAccount)
 	if err != nil {
-		return nil, fmt.Errorf("target account not found: %w", err)
+		return nil, ErrTargetAccountNotFound
 	}
 
 	// Create pin using repository
@@ -1084,9 +1161,9 @@ func (s *Service) PinAccount(ctx context.Context, cmd *PinAccountCommand) (*Rela
 
 	if err := s.storage.Account().CreateAccountPin(ctx, pin); err != nil {
 		if strings.Contains(err.Error(), "already pinned") {
-			return nil, fmt.Errorf("account already pinned")
+			return nil, ErrAccountAlreadyPinned
 		}
-		return nil, fmt.Errorf("failed to pin account: %w", err)
+		return nil, ErrPinAccount
 	}
 
 	// Get actual relationship status after pinning
@@ -1123,18 +1200,18 @@ func (s *Service) UnpinAccount(ctx context.Context, cmd *UnpinAccountCommand) (*
 
 	// Verify permission
 	if cmd.Username != cmd.PinnerID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can unpin accounts")
+		return nil, common.ErrForbidden(ErrCannotUnpinAccountForOtherUser)
 	}
 
 	// Verify target account exists
 	targetAccount, err := s.storage.Account().GetAccount(ctx, cmd.TargetAccount)
 	if err != nil {
-		return nil, fmt.Errorf("target account not found: %w", err)
+		return nil, ErrTargetAccountNotFound
 	}
 
 	// Delete pin using repository
 	if err := s.storage.Account().DeleteAccountPin(ctx, cmd.Username, targetAccount.Actor.ID); err != nil {
-		return nil, fmt.Errorf("failed to unpin account: %w", err)
+		return nil, ErrUnpinAccount
 	}
 
 	// Get complete relationship status
@@ -1165,7 +1242,7 @@ func (s *Service) GetAccountPins(ctx context.Context, query *GetAccountPinsQuery
 	// Get account pins from storage
 	pins, err := s.storage.Social().GetAccountPins(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get account pins: %w", err)
+		return nil, ErrGetAccountPins
 	}
 
 	// Convert pins to accounts
@@ -1211,13 +1288,13 @@ func (s *Service) SetAccountNote(ctx context.Context, cmd *SetAccountNoteCommand
 
 	// Verify permission
 	if cmd.Username != cmd.SetterID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can set notes")
+		return nil, common.ErrForbidden(ErrCannotSetNoteForOtherUser)
 	}
 
 	// Verify target account exists
 	targetAccount, err := s.storage.Account().GetAccount(ctx, cmd.TargetAccount)
 	if err != nil {
-		return nil, fmt.Errorf("target account not found: %w", err)
+		return nil, ErrTargetAccountNotFound
 	}
 
 	// Create or update account note
@@ -1230,7 +1307,7 @@ func (s *Service) SetAccountNote(ctx context.Context, cmd *SetAccountNoteCommand
 	}
 
 	if err := s.storage.Account().CreateAccountNote(ctx, note); err != nil {
-		return nil, fmt.Errorf("failed to set account note: %w", err)
+		return nil, ErrSetAccountNote
 	}
 
 	// Get complete relationship status including the new note
@@ -1262,30 +1339,30 @@ func (s *Service) RemoveFollower(ctx context.Context, cmd *RemoveFollowerCommand
 
 	// Verify permission
 	if cmd.Username != cmd.RemoverID {
-		return nil, fmt.Errorf("unauthorized: only the account owner can remove followers")
+		return nil, common.ErrForbidden(ErrCannotRemoveFollowerForOtherUser)
 	}
 
 	// Get relationship repository
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, fmt.Errorf("relationship repository not available")
+		return nil, ErrRelationshipRepositoryNotAvailable
 	}
 
 	// Get actor repository
 	actorRepo := s.storage.Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryNotAvailable
 	}
 
 	// Get actors for both accounts
 	removerActor, err := actorRepo.GetActor(ctx, cmd.RemoverID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get remover actor: %w", err)
+		return nil, ErrGetActor
 	}
 
 	followerActor, err := actorRepo.GetActor(ctx, cmd.FollowerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get follower actor: %w", err)
+		return nil, ErrGetActor
 	}
 
 	// Remove the follower relationship
@@ -1294,7 +1371,7 @@ func (s *Service) RemoveFollower(ctx context.Context, cmd *RemoveFollowerCommand
 	removerUsername := cmd.RemoverID
 	err = relationshipRepo.DeleteRelationship(ctx, followerUsername, removerUsername)
 	if err != nil {
-		return nil, fmt.Errorf("failed to remove follower: %w", err)
+		return nil, ErrRemoveFollower
 	}
 
 	// Get updated relationship status
@@ -1356,7 +1433,7 @@ func (s *Service) GetActivityPubCollection(ctx context.Context, query *GetActivi
 	// Verify account exists
 	account, err := s.storage.Account().GetAccount(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("account not found: %w", err)
+		return nil, ErrAccountNotFound
 	}
 
 	// Check privacy permissions
@@ -1538,27 +1615,27 @@ func (s *Service) buildNextPageID(collectionID, nextCursor string) string {
 func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountCommand) (*RegisterAccountResult, error) {
 	// Validate command
 	if err := s.validateRegisterAccountCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, ErrValidationFailed
 	}
 
 	// Check if username is already taken
 	existingAccount, _ := s.storage.Account().GetAccount(ctx, cmd.Username)
 	if existingAccount != nil {
-		return nil, fmt.Errorf("username already taken")
+		return nil, ErrUsernameAlreadyTaken
 	}
 
 	// Generate RSA keypair for the actor
 	privateKey, err := s.generateRSAKeyPair()
 	if err != nil {
 		s.logger.Error("failed to generate RSA keypair", zap.Error(err))
-		return nil, fmt.Errorf("failed to generate keypair: %w", err)
+		return nil, ErrGenerateKeypair
 	}
 
 	// Encode public key to PEM format
 	publicKeyPEM, err := s.encodePublicKeyPEM(privateKey)
 	if err != nil {
 		s.logger.Error("failed to encode public key", zap.Error(err))
-		return nil, fmt.Errorf("failed to encode public key: %w", err)
+		return nil, ErrEncodePublicKey
 	}
 
 	// Create user object
@@ -1577,7 +1654,7 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	if cmd.Password != "" {
 		passwordHash, err := s.hashPassword(cmd.Password)
 		if err != nil {
-			return nil, fmt.Errorf("failed to hash password: %w", err)
+			return nil, ErrHashPassword
 		}
 		user.PasswordHash = passwordHash
 	}
@@ -1612,10 +1689,10 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 	// Save to storage
 	if err := s.storage.Account().CreateAccount(ctx, account); err != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			return nil, fmt.Errorf("username is already taken")
+			return nil, ErrUsernameAlreadyTaken
 		}
 		s.logger.Error("failed to create account", zap.Error(err))
-		return nil, fmt.Errorf("failed to create account: %w", err)
+		return nil, ErrCreateAccount
 	}
 
 	// Record registration activity for metrics
@@ -1637,16 +1714,16 @@ func (s *Service) RegisterAccount(ctx context.Context, cmd *RegisterAccountComma
 // validateRegisterAccountCommand validates the registration command
 func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *RegisterAccountCommand) error {
 	if err := common.ValidateRequiredParam("username", cmd.Username); err != nil {
-		return fmt.Errorf("username is required")
+		return ErrUsernameRequired
 	}
 	if err := common.ValidateStringLength("username", cmd.Username, 3, 30); err != nil {
 		return err
 	}
 	if err := common.ValidateRequiredParam("email", cmd.Email); err != nil {
-		return fmt.Errorf("email is required")
+		return ErrEmailRequired
 	}
 	if !cmd.Agreement {
-		return fmt.Errorf("must agree to terms of service")
+		return ErrMustAgreeToTerms
 	}
 	// Additional validation can be added here
 	return nil
@@ -1655,21 +1732,21 @@ func (s *Service) validateRegisterAccountCommand(_ context.Context, cmd *Registe
 // Helper methods for account registration
 func (s *Service) generateRSAKeyPair() (interface{}, error) {
 	if s.crypto == nil {
-		return nil, fmt.Errorf("crypto service not configured")
+		return nil, ErrCryptoServiceNotConfigured
 	}
 	return s.crypto.GenerateRSAKeyPair(2048)
 }
 
 func (s *Service) encodePublicKeyPEM(publicKey interface{}) ([]byte, error) {
 	if s.crypto == nil {
-		return nil, fmt.Errorf("crypto service not configured")
+		return nil, ErrCryptoServiceNotConfigured
 	}
 	return s.crypto.EncodePublicKeyPEM(publicKey)
 }
 
 func (s *Service) hashPassword(password string) (string, error) {
 	if s.auth == nil {
-		return "", fmt.Errorf("auth service not configured")
+		return "", ErrAuthServiceNotConfigured
 	}
 	return s.auth.HashPassword(password)
 }
@@ -2013,17 +2090,17 @@ type GetAccountMetadataResult struct {
 // GetAccountMetadata retrieves an account with its metadata
 func (s *Service) GetAccountMetadata(ctx context.Context, query *GetAccountMetadataQuery) (*GetAccountMetadataResult, error) {
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailable
 	}
 
 	actorRepo := s.storage.Actor()
 	if actorRepo == nil {
-		return nil, fmt.Errorf("actor repository not available")
+		return nil, ErrActorRepositoryNotAvailable
 	}
 
 	actor, err := actorRepo.GetActor(ctx, query.Username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrGetActor
 	}
 
 	return &GetAccountMetadataResult{
@@ -2041,17 +2118,17 @@ type IsAccountPinnedQuery struct {
 // IsAccountPinned checks if a user has pinned an account
 func (s *Service) IsAccountPinned(ctx context.Context, userID, pinnedActorID string) (bool, error) {
 	if s.storage == nil {
-		return false, fmt.Errorf("storage not available")
+		return false, ErrStorageNotAvailable
 	}
 
 	userRepo := s.storage.User()
 	if userRepo == nil {
-		return false, fmt.Errorf("user repository not available")
+		return false, ErrUserRepositoryNotAvailable
 	}
 
 	isPinned, err := userRepo.IsAccountPinned(ctx, userID, pinnedActorID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if account is pinned: %w", err)
+		return false, ErrCheckAccountPinned
 	}
 
 	return isPinned, nil
@@ -2071,17 +2148,17 @@ type GetUserResult struct {
 // GetUser retrieves a user by username
 func (s *Service) GetUser(ctx context.Context, username string) (*storage.User, error) {
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailable
 	}
 
 	userRepo := s.storage.User()
 	if userRepo == nil {
-		return nil, fmt.Errorf("user repository not available")
+		return nil, ErrUserRepositoryNotAvailable
 	}
 
 	user, err := userRepo.GetUser(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, ErrGetUser
 	}
 	return user, nil
 }
@@ -2101,17 +2178,17 @@ type GetPreferenceResult struct {
 // GetPreference retrieves a user preference value
 func (s *Service) GetPreference(ctx context.Context, userID, key string) (string, error) {
 	if s.storage == nil {
-		return "", fmt.Errorf("storage not available")
+		return "", ErrStorageNotAvailable
 	}
 
 	userRepo := s.storage.User()
 	if userRepo == nil {
-		return "", fmt.Errorf("user repository not available")
+		return "", ErrUserRepositoryNotAvailable
 	}
 
 	preferences, err := userRepo.GetUserPreferences(ctx, userID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get user preferences: %w", err)
+		return "", ErrGetUserPreferences
 	}
 
 	if preferences == nil {
@@ -2142,12 +2219,12 @@ type GetFollowRequestStateResult struct {
 // GetFollowRequestState retrieves the state of a follow request
 func (s *Service) GetFollowRequestState(ctx context.Context, requesterID, targetID string) (string, error) {
 	if s.storage == nil {
-		return "", fmt.Errorf("storage not available")
+		return "", ErrStorageNotAvailable
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return "", fmt.Errorf("relationship repository not available")
+		return "", ErrRelationshipRepositoryNotAvailable
 	}
 
 	// Check if there's a pending follow request
@@ -2174,18 +2251,18 @@ type IsBlockedDomainResult struct {
 // IsBlockedDomain checks if a domain is blocked for a user
 func (s *Service) IsBlockedDomain(ctx context.Context, userID, targetDomain string) (bool, error) {
 	if s.storage == nil {
-		return false, fmt.Errorf("storage not available")
+		return false, ErrStorageNotAvailable
 	}
 
 	domainBlockRepo := s.storage.DomainBlock()
 	if domainBlockRepo == nil {
-		return false, fmt.Errorf("domain block repository not available")
+		return false, ErrDomainBlockRepositoryNotAvailable
 	}
 
 	// Check user-level domain block (userID is typically the username in this context)
 	blocked, err := domainBlockRepo.IsBlockedDomain(ctx, userID, targetDomain)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if domain is blocked by user: %w", err)
+		return false, ErrCheckDomainBlockedByUser
 	}
 
 	return blocked, nil
@@ -2206,17 +2283,17 @@ type GetFieldVerificationResult struct {
 // GetFieldVerification retrieves field verification information
 func (s *Service) GetFieldVerification(ctx context.Context, username, fieldName string) (*storage.ActorField, error) {
 	if s.storage == nil {
-		return nil, fmt.Errorf("storage not available")
+		return nil, ErrStorageNotAvailable
 	}
 
 	accountRepo := s.storage.Account()
 	if accountRepo == nil {
-		return nil, fmt.Errorf("account repository not available")
+		return nil, ErrAccountRepositoryNotAvailable
 	}
 
 	field, err := accountRepo.GetFieldVerification(ctx, username, fieldName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get field verification: %w", err)
+		return nil, ErrGetFieldVerification
 	}
 	return field, nil
 }
@@ -2236,17 +2313,17 @@ type GetAccountNoteResult struct {
 // GetAccountNote retrieves a private note set on an account
 func (s *Service) GetAccountNote(ctx context.Context, currentUsername, targetActorID string) (string, error) {
 	if s.storage == nil {
-		return "", fmt.Errorf("storage not available")
+		return "", ErrStorageNotAvailable
 	}
 
 	userRepo := s.storage.User()
 	if userRepo == nil {
-		return "", fmt.Errorf("user repository not available")
+		return "", ErrUserRepositoryNotAvailable
 	}
 
 	note, err := userRepo.GetAccountNote(ctx, currentUsername, targetActorID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get account note: %w", err)
+		return "", ErrGetAccountNote
 	}
 
 	if note == nil {
@@ -2317,10 +2394,10 @@ type relationshipData struct {
 // validateRelationshipStorage checks if storage and relationship repo are available
 func (s *Service) validateRelationshipStorage() error {
 	if s.storage == nil {
-		return fmt.Errorf("storage not available")
+		return ErrStorageNotAvailable
 	}
 	if s.storage.Relationship() == nil {
-		return fmt.Errorf("relationship repository not available")
+		return ErrRelationshipRepositoryNotAvailable
 	}
 	return nil
 }

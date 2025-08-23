@@ -2,29 +2,22 @@ package repositories
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"io"
-	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	lesserconfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/marshalers"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -35,20 +28,23 @@ type ActorRepositoryDeps interface {
 	SetPreference(ctx context.Context, username, key string, value any) error
 }
 
-// ActorRepository implements actor operations using DynamORM
+// ActorRepository implements actor operations using BaseRepository pattern
 type ActorRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
-	deps      ActorRepositoryDeps
+	*BaseRepository[*models.Actor]
+	deps ActorRepositoryDeps
 }
 
 // NewActorRepository creates a new actor repository
 func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *ActorRepository {
 	return &ActorRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.Actor](db, tableName, logger),
+	}
+}
+
+// NewActorRepositoryWithCostTracking creates a new actor repository with cost tracking
+func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActorRepository {
+	return &ActorRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Actor](db, tableName, logger, costService, "ActorRepository"),
 	}
 }
 
@@ -97,16 +93,16 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 		actorModel.GSI3SK = username
 	}
 
-	// Create the actor using DynamORM
-	err := r.db.WithContext(ctx).Model(actorModel).Create()
+	// Create the actor using BaseRepository
+	err := r.Create(ctx, actorModel)
 	if err != nil {
-		if errors.IsConditionFailed(err) {
+		if dynamormerrors.IsConditionFailed(err) {
 			return common.ConflictError{
 				Resource: "actor",
 				Message:  fmt.Sprintf("actor %s already exists", username),
 			}
 		}
-		return fmt.Errorf("failed to create actor: %w", err)
+		return ErrorHandler.HandleCreateError(err, "actor", username)
 	}
 
 	return nil
@@ -114,17 +110,14 @@ func (r *ActorRepository) CreateActor(ctx context.Context, actor *activitypub.Ac
 
 // GetActor retrieves an actor by username
 func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activitypub.Actor, error) {
-	var actorModel models.Actor
+	actorModel := &models.Actor{}
 
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return nil, common.ActorNotFoundError{Username: username}
 		}
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	return actorModel.Actor, nil
@@ -132,17 +125,14 @@ func (r *ActorRepository) GetActor(ctx context.Context, username string) (*activ
 
 // GetActorWithMetadata retrieves an actor with metadata
 func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username string) (*activitypub.Actor, *storage.ActorMetadata, error) {
-	var actorModel models.Actor
+	actorModel := &models.Actor{}
 
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return nil, nil, common.ActorNotFoundError{Username: username}
 		}
-		return nil, nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	metadata := &storage.ActorMetadata{
@@ -157,17 +147,18 @@ func (r *ActorRepository) GetActorWithMetadata(ctx context.Context, username str
 
 // GetActorByNumericID retrieves an actor by numeric ID
 func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID string) (*activitypub.Actor, error) {
-	// First get the numeric ID mapping
+	// First get the numeric ID mapping using BaseRepository pattern
+	// Note: This uses a different model type, so we use direct query
 	var mapping models.NumericIDMapping
-	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
 		Where("PK", "=", "NUMERIC_ID#"+numericID).
 		Where("SK", "=", "METADATA").
 		First(&mapping)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("actor not found: %s", numericID)
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityActor, numericID)
 		}
-		return nil, fmt.Errorf("failed to get numeric ID mapping: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "numeric ID mapping", numericID)
 	}
 
 	// Now get the actual actor using the username
@@ -176,18 +167,19 @@ func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID str
 
 // GetActorPrivateKey retrieves an actor's private key
 func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username string) (string, error) {
-	var actorModel models.Actor
+	actorModel := &models.Actor{}
 
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+	// Use direct query for Select functionality (BaseRepository doesn't support Select)
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("PrivateKey").
-		First(&actorModel)
+		First(actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return "", common.ActorNotFoundError{Username: username}
 		}
-		return "", fmt.Errorf("failed to get actor private key: %w", err)
+		return "", ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Decrypt private key if it's encrypted
@@ -211,29 +203,26 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 	if err := common.ValidateActorEntity(actor.ID, actor.PreferredUsername); err != nil {
 		return err
 	}
-	
+
 	username := actor.PreferredUsername
 
 	// Get existing actor first
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	actorModel := &models.Actor{}
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
 		}
-		return fmt.Errorf("failed to get existing actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Update the actor data
 	actorModel.Actor = actor
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, actorModel)
 	if err != nil {
-		return fmt.Errorf("failed to update actor: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	return nil
@@ -242,26 +231,23 @@ func (r *ActorRepository) UpdateActor(ctx context.Context, actor *activitypub.Ac
 // UpdateActorLastStatusTime updates the last status timestamp
 func (r *ActorRepository) UpdateActorLastStatusTime(ctx context.Context, username string) error {
 	// Get existing actor first
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	actorModel := &models.Actor{}
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
 		}
-		return fmt.Errorf("failed to get existing actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Update last status time
 	now := time.Now()
 	actorModel.LastStatusAt = &now
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, actorModel)
 	if err != nil {
-		return fmt.Errorf("failed to update actor last status time: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	return nil
@@ -270,25 +256,22 @@ func (r *ActorRepository) UpdateActorLastStatusTime(ctx context.Context, usernam
 // SetActorFields updates the profile fields for an actor
 func (r *ActorRepository) SetActorFields(ctx context.Context, username string, fields []storage.ActorField) error {
 	// Get existing actor first
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	actorModel := &models.Actor{}
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
 		}
-		return fmt.Errorf("failed to get existing actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Convert and update fields
 	actorModel.Fields = convertStorageActorFields(fields)
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, actorModel)
 	if err != nil {
-		return fmt.Errorf("failed to update actor fields: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	return nil
@@ -296,16 +279,13 @@ func (r *ActorRepository) SetActorFields(ctx context.Context, username string, f
 
 // DeleteActor deletes an actor
 func (r *ActorRepository) DeleteActor(ctx context.Context, username string) error {
-	// Delete the actor using DynamORM
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		Delete()
+	// Delete the actor using BaseRepository
+	err := r.Delete(ctx, "ACTOR#"+username, "PROFILE")
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			return common.ActorNotFoundError{Username: username}
 		}
-		return fmt.Errorf("failed to delete actor: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityActor, username)
 	}
 
 	return nil
@@ -324,28 +304,28 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 	// Try username search first using GSI1
 	if len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("username-search-index").
 			Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefix).
 			Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
-			return nil, fmt.Errorf("failed to search actors by username: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityActor, "search by username")
 		}
 	}
 
 	// If no results and query could be a display name, try name search
 	if len(actors) == 0 && len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("name-search-index").
 			Where("GSI2PK", "=", "NAME_SEARCH#"+prefix).
 			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
 			Limit(limit).
 			All(&actors)
 		if err != nil {
-			return nil, fmt.Errorf("failed to search actors by name: %w", err)
+			return nil, ErrorHandler.HandleQueryError(err, EntityActor, "search by name")
 		}
 	}
 
@@ -370,14 +350,14 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 	prefixKey := normalizedPrefix[:2]
 
 	var actors []models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("username-search-index").
 		Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefixKey).
 		Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
 		Limit(10).
 		All(&actors)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get search suggestions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityActor, "search suggestions")
 	}
 
 	suggestions := make([]storage.SearchSuggestion, 0, len(actors))
@@ -430,356 +410,54 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 	return result
 }
 
-// KMSEncryptor implements envelope encryption using AWS KMS
-type KMSEncryptor struct {
-	kmsClient    *kms.Client
-	keyID        string
-	mutex        sync.RWMutex
-	dataKeyCache map[string]*dataKeyCacheEntry
-	logger       *zap.Logger
-}
 
-// dataKeyCacheEntry represents a cached data key with TTL
-type dataKeyCacheEntry struct {
-	key       []byte
-	encrypted []byte
-	expiresAt time.Time
-}
-
-// NewKMSEncryptor creates a new KMS encryptor with data key caching
-func NewKMSEncryptor(keyID string) (*KMSEncryptor, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Load AWS config
-	cfg, err := awsconfig.LoadDefaultConfig(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load AWS config: %w", err)
-	}
-
-	// Create KMS client
-	kmsClient := kms.NewFromConfig(cfg)
-
-	// Verify key exists and access
-	_, err = kmsClient.DescribeKey(ctx, &kms.DescribeKeyInput{
-		KeyId: aws.String(keyID),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to access KMS key %s: %w", keyID, err)
-	}
-
-	return &KMSEncryptor{
-		kmsClient:    kmsClient,
-		keyID:        keyID,
-		dataKeyCache: make(map[string]*dataKeyCacheEntry),
-		logger:       zap.L().Named("kms-encryptor"),
-	}, nil
-}
-
-// Encrypt encrypts plaintext using envelope encryption
-func (e *KMSEncryptor) Encrypt(plaintext []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Generate or get cached data key
-	dataKey, encryptedDataKey, err := e.getDataKey(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get data key: %w", err)
-	}
-	defer e.clearKey(dataKey) // Clear from memory
-
-	// Encrypt data locally with AES-GCM
-	block, err := aes.NewCipher(dataKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	ciphertext := gcm.Seal(nonce, nonce, plaintext, nil)
-
-	// Format: [encryptedDataKeyLength(4 bytes)][encryptedDataKey][ciphertext]
-	result := make([]byte, 4+len(encryptedDataKey)+len(ciphertext))
-
-	// Store encrypted data key length (big endian)
-	result[0] = byte(len(encryptedDataKey) >> 24)
-	result[1] = byte(len(encryptedDataKey) >> 16)
-	result[2] = byte(len(encryptedDataKey) >> 8)
-	result[3] = byte(len(encryptedDataKey))
-
-	// Store encrypted data key
-	copy(result[4:4+len(encryptedDataKey)], encryptedDataKey)
-
-	// Store ciphertext
-	copy(result[4+len(encryptedDataKey):], ciphertext)
-
-	return result, nil
-}
-
-// Decrypt decrypts ciphertext using envelope encryption
-func (e *KMSEncryptor) Decrypt(ciphertext []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if len(ciphertext) < 4 {
-		return nil, fmt.Errorf("ciphertext too short")
-	}
-
-	// Extract encrypted data key length
-	encryptedKeyLen := int(ciphertext[0])<<24 | int(ciphertext[1])<<16 | int(ciphertext[2])<<8 | int(ciphertext[3])
-	if len(ciphertext) < 4+encryptedKeyLen {
-		return nil, fmt.Errorf("invalid ciphertext format")
-	}
-
-	// Extract encrypted data key and encrypted data
-	encryptedDataKey := ciphertext[4 : 4+encryptedKeyLen]
-	encryptedData := ciphertext[4+encryptedKeyLen:]
-
-	// Decrypt data key with KMS (with retry)
-	dataKey, err := e.decryptDataKeyWithRetry(ctx, encryptedDataKey, 3)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt data key: %w", err)
-	}
-	defer e.clearKey(dataKey) // Clear from memory
-
-	// Decrypt data locally with AES-GCM
-	block, err := aes.NewCipher(dataKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
-	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	nonceSize := gcm.NonceSize()
-	if len(encryptedData) < nonceSize {
-		return nil, fmt.Errorf("encrypted data too short")
-	}
-
-	nonce, encryptedData := encryptedData[:nonceSize], encryptedData[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, encryptedData, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt: %w", err)
-	}
-
-	return plaintext, nil
-}
-
-// getDataKey gets or generates a data encryption key with caching
-func (e *KMSEncryptor) getDataKey(ctx context.Context) ([]byte, []byte, error) {
-	cacheKey := "default" // For simplicity, using single cache key
-
-	// Check cache first
-	e.mutex.RLock()
-	if entry, exists := e.dataKeyCache[cacheKey]; exists && time.Now().Before(entry.expiresAt) {
-		// Return cached key copy
-		keyCopy := make([]byte, len(entry.key))
-		copy(keyCopy, entry.key)
-		encryptedCopy := make([]byte, len(entry.encrypted))
-		copy(encryptedCopy, entry.encrypted)
-		e.mutex.RUnlock()
-		return keyCopy, encryptedCopy, nil
-	}
-	e.mutex.RUnlock()
-
-	// Generate new data key with retry
-	key, encrypted, err := e.generateDataKeyWithRetry(ctx, 3)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Cache the key (5 minute TTL)
-	e.mutex.Lock()
-	e.dataKeyCache[cacheKey] = &dataKeyCacheEntry{
-		key:       key,
-		encrypted: encrypted,
-		expiresAt: time.Now().Add(5 * time.Minute),
-	}
-	e.mutex.Unlock()
-
-	// Return copies
-	keyCopy := make([]byte, len(key))
-	copy(keyCopy, key)
-	encryptedCopy := make([]byte, len(encrypted))
-	copy(encryptedCopy, encrypted)
-
-	return keyCopy, encryptedCopy, nil
-}
-
-// generateDataKeyWithRetry generates a new data key with retry logic
-func (e *KMSEncryptor) generateDataKeyWithRetry(ctx context.Context, maxRetries int) ([]byte, []byte, error) {
-	var lastErr error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff
-			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return nil, nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		resp, err := e.kmsClient.GenerateDataKey(ctx, &kms.GenerateDataKeyInput{
-			KeyId:   aws.String(e.keyID),
-			KeySpec: "AES_256",
-			EncryptionContext: map[string]string{
-				"service":   "lesser",
-				"component": "actor-private-key",
-				"version":   "1.0",
-			},
-		})
-
-		if err != nil {
-			lastErr = err
-			e.logger.Warn("KMS GenerateDataKey failed",
-				zap.Int("attempt", attempt+1),
-				zap.Error(err))
-			continue
-		}
-
-		return resp.Plaintext, resp.CiphertextBlob, nil
-	}
-
-	return nil, nil, fmt.Errorf("failed to generate data key after %d attempts: %w", maxRetries+1, lastErr)
-}
-
-// decryptDataKeyWithRetry decrypts a data key with retry logic
-func (e *KMSEncryptor) decryptDataKeyWithRetry(ctx context.Context, encryptedKey []byte, maxRetries int) ([]byte, error) {
-	var lastErr error
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Exponential backoff
-			backoff := time.Duration(attempt*attempt) * 100 * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(backoff):
-			}
-		}
-
-		resp, err := e.kmsClient.Decrypt(ctx, &kms.DecryptInput{
-			CiphertextBlob: encryptedKey,
-			EncryptionContext: map[string]string{
-				"service":   "lesser",
-				"component": "actor-private-key",
-				"version":   "1.0",
-			},
-		})
-
-		if err != nil {
-			lastErr = err
-			e.logger.Warn("KMS Decrypt failed",
-				zap.Int("attempt", attempt+1),
-				zap.Error(err))
-			continue
-		}
-
-		return resp.Plaintext, nil
-	}
-
-	return nil, fmt.Errorf("failed to decrypt data key after %d attempts: %w", maxRetries+1, lastErr)
-}
-
-// clearKey securely clears encryption key from memory
-func (e *KMSEncryptor) clearKey(key []byte) {
-	for i := range key {
-		key[i] = 0
-	}
-}
-
-// CleanupCache removes expired entries from the data key cache
-func (e *KMSEncryptor) CleanupCache() {
-	e.mutex.Lock()
-	defer e.mutex.Unlock()
-
-	now := time.Now()
-	for key, entry := range e.dataKeyCache {
-		if now.After(entry.expiresAt) {
-			// Clear sensitive data before removal
-			e.clearKey(entry.key)
-			e.clearKey(entry.encrypted)
-			delete(e.dataKeyCache, key)
-		}
-	}
-}
-
-// getEncryptor returns an encryptor for private key encryption
-// Prioritizes KMS, falls back to AES encryption gracefully
+// getEncryptor returns an encryptor for private key encryption using DynamORM AES encryption
 func getEncryptor() (marshalers.Encryptor, error) {
-	// First check for KMS
-	if kmsKeyID := lesserconfig.Get().KMSKeyID; kmsKeyID != "" {
-		kmsEncryptor, err := NewKMSEncryptor(kmsKeyID)
-		if err != nil {
-			// Log KMS error but continue to AES fallback
-			zap.L().Warn("Failed to initialize KMS encryptor, falling back to AES",
-				zap.String("keyID", kmsKeyID),
-				zap.Error(err))
-		} else {
-			zap.L().Info("Using KMS encryption for actor private keys",
-				zap.String("keyID", kmsKeyID))
-			return kmsEncryptor, nil
-		}
-	}
-
-	// Fallback to AES encryption
-	encryptionKey := os.Getenv("DYNAMODB_ENCRYPTION_KEY")
+	// Use DynamORM AES encryption from centralized config
+	cfg := lesserconfig.Get()
+	encryptionKey := cfg.DynamoDBEncryptionKey
 	if err := common.ValidateRequiredParam("encryption_key", encryptionKey); err != nil {
-		// Try alternative env var
-		encryptionKey = os.Getenv("ACTOR_PRIVATE_KEY_ENCRYPTION")
+		// Try alternative config field
+		encryptionKey = cfg.ActorPrivateKeyEncryption
 	}
 
 	if encryptionKey != "" {
 		// Decode base64 key
 		key, err := base64.StdEncoding.DecodeString(encryptionKey)
 		if err != nil {
-			return nil, fmt.Errorf("invalid encryption key format: %w", err)
+			return nil, ErrorHandler.HandleCreateError(err, "encryption key", "AES format")
 		}
-		zap.L().Info("Using AES encryption for actor private keys")
+		zap.L().Info("Using DynamORM AES encryption for actor private keys")
 		return marshalers.NewAESEncryptorWithKey(key)
 	}
 
-	return nil, fmt.Errorf("no encryption key available (neither KMS nor AES)")
+	err := errors.New("no encryption key available - DYNAMODB_ENCRYPTION_KEY not configured")
+	return nil, ErrorHandler.HandleCreateError(err, "encryptor", "configuration")
 }
 
 // GetActorByUsername retrieves an actor by username
-func (r *ActorRepository) GetActorByUsername(_ context.Context, username string) (*activitypub.Actor, error) {
-	// Query for the actor
-	var actorModel models.Actor
+func (r *ActorRepository) GetActorByUsername(ctx context.Context, username string) (*activitypub.Actor, error) {
+	// Query for the actor using BaseRepository
+	actorModel := &models.Actor{}
 
-	query := r.db.Model(&actorModel).
-		Where("PK = ? AND SK = ?",
-			fmt.Sprintf("ACTOR#%s", username),
-			"PROFILE")
-
-	if err := query.First(&actorModel); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("actor not found")
+	err := r.Get(ctx, fmt.Sprintf("ACTOR#%s", username), "PROFILE", actorModel)
+	if err != nil {
+		if dynamormerrors.IsNotFound(err) {
+			return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 		}
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Convert to ActivityPub actor
-	return r.modelToActivityPubActor(&actorModel)
+	return r.modelToActivityPubActor(actorModel)
 }
 
 // modelToActivityPubActor converts a model to an ActivityPub actor
 func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activitypub.Actor, error) {
 	// The actor is stored as a JSON field in the model
 	if model.Actor == nil {
-		return nil, fmt.Errorf("actor data is missing")
+		err := errors.New("actor data is missing")
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, "actor data")
 	}
 
 	// Return the stored actor directly
@@ -790,7 +468,7 @@ func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activit
 //
 //nolint:dupl // Account suggestion algorithms are shared between actor repositories
 func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
-	log := r.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
+	log := r.BaseRepository.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
 
 	if r.deps == nil {
 		log.Warn("dependencies not set, returning empty suggestions")
@@ -953,7 +631,7 @@ func (r *ActorRepository) loadActorIfDiscoverable(ctx context.Context, actorID s
 	if err := common.ValidateEntityID(actorID, "actor"); err != nil {
 		return nil
 	}
-	
+
 	username := r.extractUsernameFromActorID(actorID)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
 		return nil
@@ -1024,40 +702,38 @@ type MigrationInfo struct {
 
 // UpdateAlsoKnownAs updates the AlsoKnownAs field for an actor
 func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string, alsoKnownAs []string) error {
-	log := r.logger.With(
+	log := r.BaseRepository.logger.With(
 		zap.String("method", "UpdateAlsoKnownAs"),
 		zap.String("username", username),
 		zap.Int("also_known_as_count", len(alsoKnownAs)),
 	)
 
 	// Get existing actor first
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	actorModel := &models.Actor{}
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			log.Error("actor not found for alsoKnownAs update")
 			return common.ActorNotFoundError{Username: username}
 		}
 		log.Error("failed to get existing actor", zap.Error(err))
-		return fmt.Errorf("failed to get existing actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Update the alsoKnownAs field in the embedded actor
 	if actorModel.Actor == nil {
 		log.Error("actor data is nil")
-		return fmt.Errorf("actor data is missing")
+		err := errors.New("actor data is missing")
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	actorModel.Actor.AlsoKnownAs = alsoKnownAs
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, actorModel)
 	if err != nil {
 		log.Error("failed to update actor alsoKnownAs", zap.Error(err))
-		return fmt.Errorf("failed to update actor alsoKnownAs: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	log.Info("updated actor alsoKnownAs successfully")
@@ -1066,40 +742,38 @@ func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string
 
 // UpdateMovedTo updates the MovedTo field for an actor
 func (r *ActorRepository) UpdateMovedTo(ctx context.Context, username string, movedTo string) error {
-	log := r.logger.With(
+	log := r.BaseRepository.logger.With(
 		zap.String("method", "UpdateMovedTo"),
 		zap.String("username", username),
 		zap.String("moved_to", movedTo),
 	)
 
 	// Get existing actor first
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
-		Where("PK", "=", "ACTOR#"+username).
-		Where("SK", "=", "PROFILE").
-		First(&actorModel)
+	actorModel := &models.Actor{}
+	err := r.Get(ctx, "ACTOR#"+username, "PROFILE", actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			log.Error("actor not found for movedTo update")
 			return common.ActorNotFoundError{Username: username}
 		}
 		log.Error("failed to get existing actor", zap.Error(err))
-		return fmt.Errorf("failed to get existing actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Update the movedTo field in the embedded actor
 	if actorModel.Actor == nil {
 		log.Error("actor data is nil")
-		return fmt.Errorf("actor data is missing")
+		err := errors.New("actor data is missing")
+		return ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	actorModel.Actor.MovedTo = movedTo
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&actorModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, actorModel)
 	if err != nil {
 		log.Error("failed to update actor movedTo", zap.Error(err))
-		return fmt.Errorf("failed to update actor movedTo: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, username)
 	}
 
 	log.Info("updated actor movedTo successfully")
@@ -1108,26 +782,27 @@ func (r *ActorRepository) UpdateMovedTo(ctx context.Context, username string, mo
 
 // CheckAlsoKnownAs checks if targetActorID is in the AlsoKnownAs slice for the given username
 func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string, targetActorID string) (bool, error) {
-	log := r.logger.With(
+	log := r.BaseRepository.logger.With(
 		zap.String("method", "CheckAlsoKnownAs"),
 		zap.String("username", username),
 		zap.String("target_actor_id", targetActorID),
 	)
 
 	// Get existing actor
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+	actorModel := &models.Actor{}
+	// Use direct query for Select functionality (BaseRepository doesn't support Select)
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("Actor"). // Only select the Actor field for efficiency
-		First(&actorModel)
+		First(actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			log.Debug("actor not found for alsoKnownAs check")
 			return false, common.ActorNotFoundError{Username: username}
 		}
 		log.Error("failed to get actor", zap.Error(err))
-		return false, fmt.Errorf("failed to get actor: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Check if the embedded actor data exists
@@ -1150,31 +825,33 @@ func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string,
 
 // GetActorMigrationInfo returns migration information for an actor
 func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username string) (*MigrationInfo, error) {
-	log := r.logger.With(
+	log := r.BaseRepository.logger.With(
 		zap.String("method", "GetActorMigrationInfo"),
 		zap.String("username", username),
 	)
 
 	// Get existing actor
-	var actorModel models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+	actorModel := &models.Actor{}
+	// Use direct query for Select functionality (BaseRepository doesn't support Select)
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("Actor"). // Only select the Actor field for efficiency
-		First(&actorModel)
+		First(actorModel)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			log.Error("actor not found for migration info")
 			return nil, common.ActorNotFoundError{Username: username}
 		}
 		log.Error("failed to get actor", zap.Error(err))
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Check if the embedded actor data exists
 	if actorModel.Actor == nil {
 		log.Error("actor data is nil")
-		return nil, fmt.Errorf("actor data is missing")
+		err := errors.New("actor data is missing")
+		return nil, ErrorHandler.HandleGetError(err, EntityActor, username)
 	}
 
 	// Create and return migration info
@@ -1193,7 +870,7 @@ func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username st
 
 // RemoveAccountSuggestion removes an account from suggestions for a user
 func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
-	log := r.logger.With(
+	log := r.BaseRepository.logger.With(
 		zap.String("method", "RemoveAccountSuggestion"),
 		zap.String("user_id", userID),
 		zap.String("target_id", targetID),
@@ -1201,7 +878,8 @@ func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, t
 
 	if r.deps == nil {
 		log.Error("dependencies not set")
-		return fmt.Errorf("dependencies not available")
+		err := errors.New("dependencies not available")
+		return ErrorHandler.HandleGetError(err, "dependencies", userID)
 	}
 
 	// Store the dismissed suggestion in user preferences
@@ -1210,7 +888,7 @@ func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, t
 	err := r.deps.SetPreference(ctx, userID, dismissedKey, true)
 	if err != nil {
 		log.Error("failed to store dismissed suggestion preference", zap.Error(err))
-		return fmt.Errorf("failed to remove account suggestion: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "suggestion preference", targetID)
 	}
 
 	log.Info("account suggestion removed")
@@ -1227,7 +905,7 @@ func (r *ActorRepository) getDiscoverableActors(ctx context.Context, limit int) 
 
 // getRecentActiveActors returns recently active actors using the activity index
 func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
-	log := r.logger.With(zap.String("method", "getRecentActiveActors"))
+	log := r.BaseRepository.logger.With(zap.String("method", "getRecentActiveActors"))
 
 	// Query using the activity index (GSI5) to get recently active actors
 	// Try multiple days to get enough results
@@ -1239,7 +917,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 		dateKey := "ACTIVE#" + searchDate.Format(common.DateFormat)
 
 		var actors []models.Actor
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("activity-index").
 			Where("GSI5PK", "=", dateKey).
 			OrderBy("GSI5SK", "DESC"). // Get most recent first
@@ -1285,7 +963,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 
 // getPopularActors returns actors sorted by popularity (follower count)
 func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
-	log := r.logger.With(zap.String("method", "getPopularActors"))
+	log := r.BaseRepository.logger.With(zap.String("method", "getPopularActors"))
 
 	// Query popularity buckets starting from highest
 	buckets := []string{"10K+", "1K+", "100+", "10+", "0-9"}
@@ -1297,7 +975,7 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 		}
 
 		var actors []models.Actor
-		err := r.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("popularity-index").
 			Where("GSI4PK", "=", "ACTOR_RANK#"+bucket).
 			OrderBy("GSI4SK", "DESC"). // Highest follower count first
@@ -1346,21 +1024,22 @@ func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 //
 //nolint:dupl // Remote actor caching patterns are shared between actor repositories
 func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
-	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
+	log := r.BaseRepository.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
 
+	// Use direct query for RemoteActor (different model type)
 	var remoteActor models.RemoteActor
 
-	err := r.db.WithContext(ctx).Model(&models.RemoteActor{}).
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RemoteActor{}).
 		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
 		Where("SK", "=", "PROFILE").
 		First(&remoteActor)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormerrors.IsNotFound(err) {
 			// Extract username from handle for error (consistent with legacy)
 			username := strings.Split(handle, "@")[0]
 			return nil, common.ActorNotFoundError{Username: username}
 		}
-		return nil, fmt.Errorf("failed to get cached remote actor: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "remote actor", handle)
 	}
 
 	// Check if the cache has expired (consistent with legacy behavior)

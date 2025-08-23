@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
@@ -14,19 +15,29 @@ import (
 	"go.uber.org/zap"
 )
 
-// PollRepository implements the PollRepository interface using DynamORM
+// PollRepository implements the PollRepository interface using DynamORM with BaseRepository
 type PollRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Poll]
+	voteRepo *BaseRepository[*models.PollVote]
 }
 
 // NewPollRepository creates a new PollRepository
 func NewPollRepository(db core.DB, tableName string, logger *zap.Logger) *PollRepository {
 	return &PollRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Poll](
+			db, tableName, logger, nil, "PollRepository"),
+		voteRepo: NewBaseRepositoryWithCostTracking[*models.PollVote](
+			db, tableName, logger, nil, "PollVoteRepository"),
+	}
+}
+
+// NewPollRepositoryWithCostTracking creates a new PollRepository with cost tracking
+func NewPollRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PollRepository {
+	return &PollRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Poll](
+			db, tableName, logger, costService, "PollRepository"),
+		voteRepo: NewBaseRepositoryWithCostTracking[*models.PollVote](
+			db, tableName, logger, costService, "PollVoteRepository"),
 	}
 }
 
@@ -45,7 +56,7 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 
 	// Validate poll
 	if len(poll.Options) < 2 || len(poll.Options) > 4 {
-		return fmt.Errorf("poll must have between 2 and 4 options")
+		return common.ValidationError{Field: "options", Message: "poll must have between 2 and 4 options"}
 	}
 
 	// Generate poll ID if not provided
@@ -84,17 +95,10 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 		Votes:       make(map[string][]int), // Initialize empty votes map
 	}
 
-	// Update keys
-	if err := model.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update poll keys: %w", err)
-	}
-
-	// Create the poll
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Create using BaseRepository (handles key updates and cost tracking)
+	err := r.Create(ctx, model)
 	if err != nil {
-		log.Error("failed to create poll",
-			zap.Error(err))
-		return fmt.Errorf("failed to create poll: %w", err)
+		return ErrorHandler.HandleCreateError(err, "poll", poll.ID)
 	}
 
 	log.Info("poll created successfully",
@@ -105,24 +109,18 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 
 // GetPoll retrieves a poll by ID
 func (r *PollRepository) GetPoll(ctx context.Context, pollID string) (*storage.Poll, error) {
-	log := r.logger.With(
-		zap.String("method", "GetPoll"),
-		zap.String("poll_id", pollID),
-	)
 
 	var model models.Poll
-	err := r.db.WithContext(ctx).Model(&models.Poll{}).
-		Where("PK", "=", fmt.Sprintf("POLL#%s", pollID)).
-		Where("SK", "=", "METADATA").
-		First(&model)
-
+	pk := fmt.Sprintf("POLL#%s", pollID)
+	sk := "METADATA"
+	
+	// Use BaseRepository Get method
+	err := r.Get(ctx, pk, sk, &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("poll not found: %s", pollID)
+			return nil, ErrorHandler.HandleNotFound(err, "poll", pollID)
 		}
-		log.Error("failed to get poll",
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get poll: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "poll", pollID)
 	}
 
 	// Convert to storage poll
@@ -161,22 +159,17 @@ func (r *PollRepository) GetPollByStatusID(ctx context.Context, statusID string)
 		zap.String("status_id", statusID),
 	)
 
-	var pollModels []models.Poll
-	err := r.db.WithContext(ctx).Model(&models.Poll{}).
-		Index("GSI1").
-		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		Where("GSI1SK", "=", "POLL").
-		Limit(1).
-		All(&pollModels)
+	gsiPK := fmt.Sprintf("STATUS#%s", statusID)
+	pollModels, err := r.QueryGSI(ctx, "GSI1", gsiPK, 1)
 
 	if err != nil {
 		log.Error("failed to query poll by status ID",
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query poll: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "poll", "status")
 	}
 
 	if err := common.ValidateSliceNotEmpty("poll_models", pollModels); err != nil {
-		return nil, fmt.Errorf("poll not found for status: %s", statusID)
+		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, "poll", statusID)
 	}
 
 	model := pollModels[0]
@@ -222,39 +215,38 @@ func (r *PollRepository) VoteOnPoll(ctx context.Context, pollID string, voterID 
 	// Get the poll first
 	poll, err := r.GetPoll(ctx, pollID)
 	if err != nil {
-		return fmt.Errorf("failed to get poll: %w", err)
+		return ErrorHandler.HandleGetError(err, "poll", pollID)
 	}
 
 	// Check if poll has expired
 	if poll.ExpiresAt != nil && time.Now().After(*poll.ExpiresAt) {
-		return fmt.Errorf("poll has expired")
+		return common.ValidationError{Field: "expires_at", Message: "poll has expired"}
 	}
 
 	// Validate choices
 	for _, choice := range choices {
 		if choice < 0 || choice >= len(poll.Options) {
-			return fmt.Errorf("invalid choice index: %d", choice)
+			return common.ValidationError{Field: "choices", Message: fmt.Sprintf("invalid choice index: %d", choice)}
 		}
 	}
 
 	// Check multiple choice constraint
 	if !poll.Multiple && len(choices) > 1 {
-		return fmt.Errorf("poll does not allow multiple choices")
+		return common.ValidationError{Field: "multiple", Message: "poll does not allow multiple choices"}
 	}
 
 	// Check if user already voted by querying vote records
-	existingVote := &models.PollVote{}
-	err = r.db.WithContext(ctx).Model(&models.PollVote{}).
-		Where("PK", "=", fmt.Sprintf("POLL#%s", pollID)).
-		Where("SK", "=", fmt.Sprintf("VOTE#%s", voterID)).
-		First(existingVote)
-
+	var existingVote models.PollVote
+	pk := fmt.Sprintf("POLL#%s", pollID)
+	sk := fmt.Sprintf("VOTE#%s", voterID)
+	
+	err = r.voteRepo.Get(ctx, pk, sk, &existingVote)
 	if err == nil {
 		// Vote already exists
-		return fmt.Errorf("user has already voted on this poll")
+		return common.ValidationError{Field: "voter", Message: "user has already voted on this poll"}
 	} else if !errors.IsNotFound(err) {
 		// Some other error occurred
-		return fmt.Errorf("failed to check existing vote: %w", err)
+		return ErrorHandler.HandleGetError(err, "poll vote", voterID)
 	}
 
 	// Create vote record
@@ -263,12 +255,12 @@ func (r *PollRepository) VoteOnPoll(ctx context.Context, pollID string, voterID 
 		Choices: choices,
 		VotedAt: time.Now(),
 	}
-	voteModel.UpdateKeys(pollID)
+	voteModel.SetPollID(pollID) // Set keys using new method
 
-	// Create vote
-	err = r.db.WithContext(ctx).Model(voteModel).Create()
+	// Create vote using BaseRepository
+	err = r.voteRepo.Create(ctx, voteModel)
 	if err != nil {
-		return fmt.Errorf("failed to record vote: %w", err)
+		return ErrorHandler.HandleCreateError(err, "poll vote", voterID)
 	}
 
 	// Update poll vote counts
@@ -300,16 +292,13 @@ func (r *PollRepository) GetPollVotes(ctx context.Context, pollID string) (map[s
 		zap.String("poll_id", pollID),
 	)
 
-	var voteModels []models.PollVote
-	err := r.db.WithContext(ctx).Model(&models.PollVote{}).
-		Where("PK", "=", fmt.Sprintf("POLL#%s", pollID)).
-		Where("SK", "begins_with", "VOTE#").
-		All(&voteModels)
+	pk := fmt.Sprintf("POLL#%s", pollID)
+	voteModels, err := r.voteRepo.QueryWithSKPrefix(ctx, pk, "VOTE#", 0)
 
 	if err != nil {
 		log.Error("failed to query votes",
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query votes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "poll vote", "voting")
 	}
 
 	votes := make(map[string][]int)
@@ -329,18 +318,17 @@ func (r *PollRepository) HasUserVoted(ctx context.Context, pollID string, userID
 	)
 
 	var voteModel models.PollVote
-	err := r.db.WithContext(ctx).Model(&models.PollVote{}).
-		Where("PK", "=", fmt.Sprintf("POLL#%s", pollID)).
-		Where("SK", "=", fmt.Sprintf("VOTE#%s", userID)).
-		First(&voteModel)
-
+	pk := fmt.Sprintf("POLL#%s", pollID)
+	sk := fmt.Sprintf("VOTE#%s", userID)
+	
+	err := r.voteRepo.Get(ctx, pk, sk, &voteModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return false, nil, nil
 		}
 		log.Error("failed to check vote",
 			zap.Error(err))
-		return false, nil, fmt.Errorf("failed to check vote: %w", err)
+		return false, nil, ErrorHandler.HandleGetError(err, "poll vote", userID)
 	}
 
 	return true, voteModel.Choices, nil
@@ -348,7 +336,6 @@ func (r *PollRepository) HasUserVoted(ctx context.Context, pollID string, userID
 
 // updatePollCounts updates the vote counts on a poll
 func (r *PollRepository) updatePollCounts(ctx context.Context, poll *storage.Poll) error {
-	// Create DynamORM model
 	// Calculate total votes from the per-option counts
 	totalVotes := 0
 	for _, count := range poll.VotesCount {
@@ -375,15 +362,10 @@ func (r *PollRepository) updatePollCounts(ctx context.Context, poll *storage.Pol
 		Votes:       make(map[string][]int), // We don't maintain voter->choices map
 	}
 
-	// Update keys
-	if err := model.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update poll keys: %w", err)
-	}
-
-	// Update the poll
-	err := r.db.WithContext(ctx).Model(model).Update()
+	// Update using BaseRepository (handles key updates and cost tracking)
+	err := r.Update(ctx, model)
 	if err != nil {
-		return fmt.Errorf("failed to update poll: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "poll", poll.ID)
 	}
 
 	return nil

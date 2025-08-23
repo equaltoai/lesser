@@ -237,14 +237,14 @@ func TestGetHomeTimeline_Parameters(t *testing.T) {
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
 	mockQuery.On("Where", "SK", ">", "cursor123").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery) // limit + 1 for pagination
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	// Execute
 	_, _, err := repo.GetHomeTimeline(context.Background(), "testuser", 20, "cursor123")
 
 	// Assert
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -263,7 +263,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	mockQuery.On("Where", "GSI1PK", "=", "TIMELINE#PUBLIC#LOCAL").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 
 	// Test local timeline
 	_, _, err := repo.GetPublicTimeline(context.Background(), true, 20, "")
@@ -275,7 +275,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	mockQuery.On("Where", "GSI1PK", "=", "TIMELINE#PUBLIC#FEDERATED").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 
 	// Test federated timeline
 	_, _, err = repo.GetPublicTimeline(context.Background(), false, 20, "")
@@ -299,12 +299,12 @@ func TestGetListTimeline_Parameters(t *testing.T) {
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
 	mockQuery.On("Where", "SK", ">", "cursor456").Return(mockQuery)
 	mockQuery.On("Limit", 11).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetListTimeline(context.Background(), "list123", 10, "cursor456")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -322,12 +322,12 @@ func TestGetDirectTimeline_Parameters(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "timeline#DIRECT#alice").Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 16).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetDirectTimeline(context.Background(), "alice", 15, "")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -345,7 +345,7 @@ func TestGetHashtagTimeline_LocalFlag(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "timeline#HASHTAG#photography#LOCAL").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 
 	// Test local hashtag timeline
 	_, _, err := repo.GetHashtagTimeline(context.Background(), "photography", true, 20, "")
@@ -356,7 +356,7 @@ func TestGetHashtagTimeline_LocalFlag(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "timeline#HASHTAG#photography").Return(mockQuery).Once()
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery).Once()
 	mockQuery.On("Limit", 21).Return(mockQuery).Once()
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error")).Once()
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError).Once()
 
 	// Test federated hashtag timeline
 	_, _, err = repo.GetHashtagTimeline(context.Background(), "photography", false, 20, "")
@@ -381,12 +381,12 @@ func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Where", "GSI1SK", ">", "cursor789").Return(mockQuery)
 	mockQuery.On("Limit", 51).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesByPost(context.Background(), "post123", 50, "cursor789")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries by post")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesByPostQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -405,12 +405,12 @@ func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
 	mockQuery.On("Where", "GSI2PK", "=", "ACTOR#actor456").Return(mockQuery)
 	mockQuery.On("OrderBy", "GSI2SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 26).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesByActor(context.Background(), "actor456", 25, "")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries by actor")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesByActorQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -431,12 +431,12 @@ func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
 	mockQuery.On("OrderBy", "GSI3SK", "ASC").Return(mockQuery)
 	mockQuery.On("Where", "GSI3SK", ">", "cursor999").Return(mockQuery)
 	mockQuery.On("Limit", 31).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesByVisibility(context.Background(), "public", 30, "cursor999")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries by visibility")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesByVisibilityQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -455,12 +455,12 @@ func TestGetTimelineEntriesByLanguage_Parameters(t *testing.T) {
 	mockQuery.On("Where", "GSI4PK", "=", "LANGUAGE#en").Return(mockQuery)
 	mockQuery.On("OrderBy", "GSI4SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 41).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesByLanguage(context.Background(), "en", 40, "")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries by language")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesByLanguageQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -479,12 +479,12 @@ func TestGetTimelineEntry_Parameters(t *testing.T) {
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "timeline#HOME#alice").Return(mockQuery)
 	mockQuery.On("Where", "SK", "=", mock.Anything).Return(mockQuery) // SK contains timestamp
-	mockQuery.On("First", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("First", mock.Anything).Return(ErrTestMockError)
 
 	_, err := repo.GetTimelineEntry(context.Background(), "HOME", "alice", "entry123", now)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entry")
+	assert.Contains(t, err.Error(), ErrTimelineEntryQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -560,12 +560,12 @@ func TestDeleteTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockQuery.On("Where", "GSI1PK", "=", "POST#post123").Return(mockQuery)
 	mockQuery.On("OrderBy", "GSI1SK", "ASC").Return(mockQuery)
 	mockQuery.On("Limit", 1001).Return(mockQuery) // 1000 + 1
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	err := repo.DeleteTimelineEntriesByPost(context.Background(), "post123")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries for deletion")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesForDeletionQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -583,12 +583,12 @@ func TestDeleteExpiredTimelineEntries_Parameters(t *testing.T) {
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Filter", "ExpiresAt", "<", mock.Anything).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	err := repo.DeleteExpiredTimelineEntries(context.Background(), before)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to scan for expired timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineExpiredEntriesScanFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -604,12 +604,12 @@ func TestCountTimelineEntries_Parameters(t *testing.T) {
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
 	mockQuery.On("Where", "PK", "=", "timeline#HOME#alice").Return(mockQuery)
-	mockQuery.On("Count").Return(int64(0), fmt.Errorf("mock error"))
+	mockQuery.On("Count").Return(int64(0), ErrTestMockError)
 
 	_, err := repo.CountTimelineEntries(context.Background(), "HOME", "alice")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to count timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineCountQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -632,12 +632,12 @@ func TestGetTimelineEntriesInRange_Parameters(t *testing.T) {
 	mockQuery.On("Where", "SK", "<=", mock.Anything).Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 20).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, err := repo.GetTimelineEntriesInRange(context.Background(), "PUBLIC", "FEDERATED", start, end, 20)
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get timeline entries in range")
+	assert.Contains(t, err.Error(), ErrTimelineEntriesInRangeQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -671,12 +671,12 @@ func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
 	mockQuery.On("Filter", "TimelineAt", "<=", mock.Anything).Return(mockQuery)
 	mockQuery.On("Where", "SK", ">", "cursor123").Return(mockQuery)
 	mockQuery.On("Limit", 21).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesWithFilters(context.Background(), "HOME", "alice", filters, 20, "cursor123")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get filtered timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineFilteredEntriesQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -696,12 +696,12 @@ func TestGetTimelineEntriesWithFilters_NoFilters(t *testing.T) {
 	mockQuery.On("Where", "PK", "=", "timeline#HOME#bob").Return(mockQuery)
 	mockQuery.On("OrderBy", "SK", "DESC").Return(mockQuery)
 	mockQuery.On("Limit", 11).Return(mockQuery)
-	mockQuery.On("All", mock.Anything).Return(fmt.Errorf("mock error"))
+	mockQuery.On("All", mock.Anything).Return(ErrTestMockError)
 
 	_, _, err := repo.GetTimelineEntriesWithFilters(context.Background(), "HOME", "bob", filters, 10, "")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to get filtered timeline entries")
+	assert.Contains(t, err.Error(), ErrTimelineFilteredEntriesQueryFailed.Error())
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)

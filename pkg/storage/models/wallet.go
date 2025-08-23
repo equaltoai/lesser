@@ -40,12 +40,23 @@ func (w *WalletChallenge) BeforeCreate() error {
 	return nil
 }
 
+// GetPK returns the partition key
+func (w *WalletChallenge) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WalletChallenge) GetSK() string {
+	return w.SK
+}
+
 // UpdateKeys updates the primary and sort keys based on the model data
-func (w *WalletChallenge) UpdateKeys() {
+func (w *WalletChallenge) UpdateKeys() error {
 	w.PK = fmt.Sprintf("WALLET_CHALLENGE#%s", w.ID)
 	w.SK = "CHALLENGE"
 	// Set TTL to expiration time
 	w.TTL = w.ExpiresAt.Unix()
+	return nil
 }
 
 // WalletCredential represents a linked wallet
@@ -87,14 +98,25 @@ func (w *WalletCredential) BeforeUpdate() error {
 	return nil
 }
 
+// GetPK returns the partition key
+func (w *WalletCredential) GetPK() string {
+	return w.PK
+}
+
+// GetSK returns the sort key
+func (w *WalletCredential) GetSK() string {
+	return w.SK
+}
+
 // UpdateKeys updates the primary and sort keys based on the model data
-func (w *WalletCredential) UpdateKeys() {
+func (w *WalletCredential) UpdateKeys() error {
 	// Normalize address to lowercase
 	address := strings.ToLower(w.Address)
 
 	// Primary key for user's wallets
 	w.PK = fmt.Sprintf(KeyPatternUser, w.Username)
 	w.SK = fmt.Sprintf("WALLET#%s", address)
+	return nil
 }
 
 // WalletIndex represents a reverse index for wallet->user lookup

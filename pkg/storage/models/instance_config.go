@@ -18,10 +18,21 @@ type InstanceConfig struct {
 }
 
 // UpdateKeys updates the DynamoDB keys (no GSI needed for this simple structure)
-func (c *InstanceConfig) UpdateKeys() {
+func (c *InstanceConfig) UpdateKeys() error {
 	// Keys are set explicitly when creating/updating records
 	// PK will be "INSTANCE#CONFIG"
 	// SK will be "RULES" or "EXTENDED_DESC"
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *InstanceConfig) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key  
+func (c *InstanceConfig) GetSK() string {
+	return c.SK
 }
 
 // NewInstanceRulesConfig creates a new config for storing rules
@@ -61,9 +72,20 @@ type AIInstanceConfig struct {
 }
 
 // UpdateKeys updates the DynamoDB keys
-func (c *AIInstanceConfig) UpdateKeys() {
+func (c *AIInstanceConfig) UpdateKeys() error {
 	c.PK = "INSTANCE#CONFIG"
 	c.SK = "AI_CONFIG"
+	return nil
+}
+
+// GetPK returns the partition key
+func (c *AIInstanceConfig) GetPK() string {
+	return c.PK
+}
+
+// GetSK returns the sort key
+func (c *AIInstanceConfig) GetSK() string {
+	return c.SK
 }
 
 // NewAIInstanceConfig creates a new AI config with defaults

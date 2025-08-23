@@ -6,9 +6,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -116,7 +116,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	// Initialize repositories
 	communityNoteRepo := repositories.NewCommunityNoteRepository(db, cfg.DynamoTableName, logger)
 	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
-	aiCostRepo := repositories.NewAICostRepository(db, logger)
+	aiCostRepo := repositories.NewAICostRepository(db, cfg.DynamoTableName, logger)
 	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
 
 	// Use pre-initialized AWS clients
@@ -130,7 +130,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	}
 
 	// WebSocket endpoint for broadcasting updates
-	wsEndpoint := getEnv("WEBSOCKET_ENDPOINT", "")
+	wsEndpoint := cfg.SQSQueueURL // Reuse config field for WebSocket endpoint
 	var apiGatewayClient *apigatewaymanagementapi.Client
 	if wsEndpoint != "" {
 		apiGatewayClient = apigatewaymanagementapi.NewFromConfig(lambdaCtx.AWSServices.Config, func(o *apigatewaymanagementapi.Options) {
@@ -157,7 +157,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 }
 
 var (
-	originalProcessor *NoteProcessor
+	originalProcessor *NoteProcessor //nolint:unused // Reserved for alternative implementation pattern
 )
 
 // HandleStream processes DynamoDB stream events with Lift-style patterns
@@ -216,7 +216,11 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(event.Records))
+		np.logger.Error("partial batch failure in stream processing",
+			zap.Int("failed_records", len(errors)),
+			zap.Int("total_records", len(event.Records)),
+		)
+		return ErrPartialBatchFailure
 	}
 
 	return nil
@@ -234,7 +238,7 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 	// Get the note from DynamoDB using repository
 	note, err := np.communityNoteRepo.GetCommunityNote(ctx, noteID)
 	if err != nil {
-		return fmt.Errorf("failed to get note: %w", err)
+		return errors.Join(ErrGetNote, err)
 	}
 
 	np.logger.Info("processing new note",
@@ -264,13 +268,13 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 
 	// 5. Update note with analysis results (score will be updated by repository)
 	if err := np.updateNoteAnalysis(ctx, note, analysis, sourceQuality); err != nil {
-		return fmt.Errorf("failed to update note analysis: %w", err)
+		return errors.Join(ErrUpdateNoteAnalysis, err)
 	}
 
 	// 6. Check visibility and update status
 	status := np.determineVisibilityStatus(initialScore)
 	if err := np.communityNoteRepo.UpdateCommunityNoteScore(ctx, note.ID, initialScore, status); err != nil {
-		return fmt.Errorf("failed to update note score: %w", err)
+		return errors.Join(ErrUpdateNoteScore, err)
 	}
 
 	// 7. If visible, broadcast to WebSocket subscribers
@@ -339,7 +343,7 @@ func (np *NoteProcessor) extractUsernameFromActorID(actorID string) string {
 // calculateAccountAgeScore calculates reputation score based on account age
 func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username string) float64 {
 	// Get user from user repository using shared database connection
-	userRepo := repositories.NewUserRepository(np.communityNoteRepo.GetDB(), np.communityNoteRepo.GetTableName(), np.logger)
+	userRepo := repositories.NewUserRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
 	
 	user, err := userRepo.GetUser(ctx, username)
 	if err != nil {
@@ -366,7 +370,7 @@ func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username 
 // calculateSocialScore calculates reputation score based on social metrics
 func (np *NoteProcessor) calculateSocialScore(ctx context.Context, username string) float64 {
 	// Get relationship repository
-	relationshipRepo := repositories.NewRelationshipRepository(np.communityNoteRepo.GetDB(), np.communityNoteRepo.GetTableName(), np.logger)
+	relationshipRepo := repositories.NewRelationshipRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
 	
 	// Get follower count
 	followers, err := relationshipRepo.GetFollowerCount(ctx, username)
@@ -508,7 +512,7 @@ func (np *NoteProcessor) calculateVotingHistoryScore(ctx context.Context, userna
 // calculateModerationPenalty calculates reputation penalty based on moderation actions
 func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, username string) float64 {
 	// Get moderation repository and query actual moderation actions
-	moderationRepo := repositories.NewModerationRepository(np.communityNoteRepo.GetDB(), np.communityNoteRepo.GetTableName(), np.logger)
+	moderationRepo := repositories.NewModerationRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
 	
 	// Look at last 90 days of moderation actions against this user (not by them)
 	since := time.Now().AddDate(0, 0, -90)
@@ -659,7 +663,7 @@ func (np *NoteProcessor) analyzeContentWithCostTracking(ctx context.Context, not
 		LanguageCode: languageCode,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to detect sentiment: %w", err)
+		return nil, errors.Join(ErrDetectSentiment, err)
 	}
 
 	// Calculate sentiment score (0-1)
@@ -783,13 +787,13 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 	// Get the note
 	note, err := np.communityNoteRepo.GetCommunityNote(ctx, noteID)
 	if err != nil {
-		return fmt.Errorf("failed to get note: %w", err)
+		return errors.Join(ErrGetNote, err)
 	}
 
 	// Get all votes
 	votes, err := np.communityNoteRepo.GetCommunityNoteVotes(ctx, noteID)
 	if err != nil {
-		return fmt.Errorf("failed to get votes: %w", err)
+		return errors.Join(ErrGetVotes, err)
 	}
 
 	// Calculate new score
@@ -798,7 +802,7 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 
 	// Update the note
 	if err := np.communityNoteRepo.UpdateCommunityNoteScore(ctx, noteID, newScore, newStatus); err != nil {
-		return fmt.Errorf("failed to update note score: %w", err)
+		return errors.Join(ErrUpdateNoteScore, err)
 	}
 
 	// Update vote counts
@@ -948,12 +952,6 @@ func (np *NoteProcessor) determineAction(note *storage.CommunityNote) string {
 	}
 }
 
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
 
 func (np *NoteProcessor) generateID() string {
 	b := make([]byte, 16)
@@ -965,11 +963,7 @@ func (np *NoteProcessor) generateID() string {
 }
 
 func (np *NoteProcessor) getDomainURL() string {
-	domain := getEnv("DOMAIN_NAME", "localhost:8080")
-	if strings.HasPrefix(domain, "http") {
-		return domain
-	}
-	return "https://" + domain
+	return np.baseURL
 }
 
 func (np *NoteProcessor) convertToComprehendLanguageCode(language string) types.LanguageCode {
@@ -1017,7 +1011,7 @@ func (np *NoteProcessor) updateNoteAnalysis(ctx context.Context, note *storage.C
 		sourceQuality,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to update note analysis: %w", err)
+		return errors.Join(ErrUpdateNoteAnalysis, err)
 	}
 
 	np.logger.Info("updated note AI analysis",
@@ -1331,9 +1325,9 @@ func minInt(a, b int) int {
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
+	cfg       *config.Config //nolint:unused // Reserved for dependency injection pattern
 	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage
+	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
 	processor *NoteProcessor
 )
 

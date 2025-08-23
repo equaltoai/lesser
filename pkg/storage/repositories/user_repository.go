@@ -29,34 +29,32 @@ type UserRepositoryDeps interface {
 	RemoveFollow(ctx context.Context, followerUsername, username string) error
 }
 
-// UserRepository implements user operations using DynamORM with cost tracking
+// UserRepository implements user operations using BaseRepository[*models.User] pattern
 type UserRepository struct {
-	db           core.DB
-	tableName    string
-	logger       *zap.Logger
-	costService  *cost.TrackingService
+	*BaseRepository[*models.User]
 	deps         UserRepositoryDeps
 	urlValidator *URLValidator
+	logger       *zap.Logger // Keep reference for complex business logic
+	tableName    string      // Keep reference for cost tracking
 }
 
 // NewUserRepository creates a new user repository
 func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRepository {
 	return &UserRepository{
-		db:           db,
-		tableName:    tableName,
-		logger:       logger,
-		urlValidator: NewURLValidator(logger),
+		BaseRepository: NewBaseRepository[*models.User](db, tableName, logger),
+		urlValidator:   NewURLValidator(logger),
+		logger:         logger,
+		tableName:      tableName,
 	}
 }
 
 // NewUserRepositoryWithCostTracking creates a new user repository with cost tracking
 func NewUserRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *UserRepository {
 	return &UserRepository{
-		db:           db,
-		tableName:    tableName,
-		logger:       logger,
-		costService:  costService,
-		urlValidator: NewURLValidator(logger),
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, costService, "UserRepository"),
+		urlValidator:   NewURLValidator(logger),
+		logger:         logger,
+		tableName:      tableName,
 	}
 }
 
@@ -65,7 +63,7 @@ func (r *UserRepository) SetDependencies(deps UserRepositoryDeps) {
 	r.deps = deps
 }
 
-// CreateUser creates a new user in DynamoDB
+// CreateUser creates a new user in DynamoDB using BaseRepository pattern
 func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) error {
 	// Validate user entity using centralized validation
 	if err := common.ValidateUserEntity(user.Username, user.Email); err != nil {
@@ -86,16 +84,16 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 		RecoveryMethods: user.RecoveryMethods,
 	}
 
-	// Create the user using DynamORM
-	err := r.db.WithContext(ctx).Model(userModel).Create()
+	// Create the user using BaseRepository
+	err := r.Create(ctx, userModel)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
-			return common.ConflictError{
+			return ErrorHandler.HandleCreateError(common.ConflictError{
 				Resource: "user",
 				Message:  fmt.Sprintf("user %s already exists", user.Username),
-			}
+			}, EntityUser, user.Username)
 		}
-		return fmt.Errorf("failed to create user: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
 	}
 
 	// Update the original user with timestamps
@@ -105,22 +103,21 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 	return nil
 }
 
-// GetUser retrieves a user by username
+// GetUser retrieves a user by username using BaseRepository pattern
 func (r *UserRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
-	var userModel models.User
+	userModel := &models.User{}
+	pk := "USER#" + username
+	sk := "METADATA"
 
-	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Where("PK", "=", "USER#"+username).
-		Where("SK", "=", "METADATA").
-		First(&userModel)
+	err := r.Get(ctx, pk, sk, userModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("user not found: %s", username)
+			return nil, ErrorHandler.HandleGetError(common.UserNotFoundError{Username: username}, EntityUser, username)
 		}
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
-	return r.modelToStorage(&userModel), nil
+	return r.modelToStorage(userModel), nil
 }
 
 // GetUserByEmail retrieves a user by email address
@@ -131,71 +128,70 @@ func (r *UserRepository) GetUserByEmail(ctx context.Context, email string) (*sto
 	}
 
 	var userModels []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("email-index").
 		Where("GSI2PK", "=", "EMAIL#"+strings.ToLower(email)).
 		Limit(1).
 		All(&userModels)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query user by email: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityUser, "by email")
 	}
 
 	if err := common.ValidateSliceNotEmpty("user_models", userModels); err != nil {
-		return nil, fmt.Errorf("user not found with email: %s", email)
+		return nil, ErrorHandler.HandleGetError(common.UserNotFoundError{Username: email}, EntityUser, email)
 	}
 
 	return r.modelToStorage(&userModels[0]), nil
 }
 
-// UpdateUser updates an existing user
+// UpdateUser updates an existing user using BaseRepository pattern
 func (r *UserRepository) UpdateUser(ctx context.Context, username string, updates map[string]any) error {
 	// Validate username parameter
 	if err := common.ValidateUsernameParamID(username); err != nil {
 		return err
 	}
-	
+
 	// Validate updates map
 	if err := common.ValidateSliceNotEmpty("updates", updates); err != nil {
-		return common.ValidationError{Field: "Updates", Message: "no updates provided"}
+		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "Updates", Message: "no updates provided"}, EntityUser, "updates validation")
 	}
 
-	// Get existing user first
-	var userModel models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Where("PK", "=", "USER#"+username).
-		Where("SK", "=", "METADATA").
-		First(&userModel)
+	// Get existing user first using BaseRepository
+	userModel := &models.User{}
+	pk := "USER#" + username
+	sk := "METADATA"
+
+	err := r.Get(ctx, pk, sk, userModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("user not found: %s", username)
+			return ErrorHandler.HandleGetError(common.UserNotFoundError{Username: username}, EntityUser, username)
 		}
-		return fmt.Errorf("failed to get existing user: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityUser, username)
 	}
 
 	// Apply updates to the model
-	r.applyUpdates(&userModel, updates)
+	r.applyUpdates(userModel, updates)
 
-	// Update using DynamORM
-	err = r.db.WithContext(ctx).Model(&userModel).Update()
+	// Update using BaseRepository
+	err = r.Update(ctx, userModel)
 	if err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityUser, userModel.Username)
 	}
 
 	return nil
 }
 
-// DeleteUser deletes a user
+// DeleteUser deletes a user using BaseRepository pattern
 func (r *UserRepository) DeleteUser(ctx context.Context, username string) error {
-	// Delete the user using DynamORM
-	err := r.db.WithContext(ctx).Model(&models.User{}).
-		Where("PK", "=", "USER#"+username).
-		Where("SK", "=", "METADATA").
-		Delete()
+	pk := "USER#" + username
+	sk := "METADATA"
+
+	err := r.Delete(ctx, pk, sk)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("user not found: %s", username)
+			return ErrorHandler.HandleGetError(common.UserNotFoundError{Username: username}, EntityUser, username)
 		}
-		return fmt.Errorf("failed to delete user: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
 
 	return nil
@@ -209,7 +205,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 	}
 
 	var userModels []models.User
-	query := r.db.WithContext(ctx).Model(&models.User{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
 		Where("GSI1PK", "=", "USERS").
 		Limit(int(limit) + 1) // Request one extra to detect if there are more pages
@@ -221,7 +217,7 @@ func (r *UserRepository) ListUsers(ctx context.Context, limit int32, cursor stri
 
 	err := query.All(&userModels)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to list users: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityUser, "list")
 	}
 
 	// Convert to storage.User slice
@@ -256,13 +252,13 @@ func (r *UserRepository) GetActiveUserCount(ctx context.Context, days int) (int6
 	// Query users who have been active within the specified days
 	// Use the last_activity index if available, otherwise fall back to status check
 	var userModels []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("activity-index").
 		Where("GSI3PK", "=", "ACTIVITY").
 		Where("GSI3SK", ">=", fmt.Sprintf("%d", cutoffTimestamp)).
 		All(&userModels)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count active users: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count active")
 	}
 
 	return int64(len(userModels)), nil
@@ -274,14 +270,14 @@ func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 
 	// Use GSI1 (user-list-index) where all users have GSI1PK = "USERS"
 	// This is much more efficient than scanning the main table
-	count, err := r.db.WithContext(ctx).Model(&models.User{}).
+	count, err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("user-list-index").
 		Where("GSI1PK", "=", "USERS").
 		Count()
 
 	if err != nil {
 		r.logger.Error("failed to count total users", zap.Error(err))
-		return 0, fmt.Errorf("failed to count total users: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityUser, "count total")
 	}
 
 	r.logger.Debug("retrieved total user count", zap.Int64("count", count))
@@ -292,18 +288,18 @@ func (r *UserRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
 func (r *UserRepository) GetUserByProviderID(ctx context.Context, provider, providerID string) (*storage.User, error) {
 	// Query the ProviderAccount by provider and providerID using GSI1
 	var providerAccounts []models.ProviderAccount
-	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("provider-index").
 		Where("GSI1PK", "=", "PROVIDER#"+provider).
 		Where("GSI1SK", "=", providerID+"#").
 		Limit(1).
 		All(&providerAccounts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query provider account: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
 	}
 
 	if err := common.ValidateSliceNotEmpty("provider_accounts", providerAccounts); err != nil {
-		return nil, fmt.Errorf("user not found with provider %s:%s", provider, providerID)
+		return nil, ErrorHandler.HandleGetError(common.UserNotFoundError{Username: fmt.Sprintf("%s:%s", provider, providerID)}, EntityUser, providerID)
 	}
 
 	// Now get the user by UserID
@@ -327,15 +323,15 @@ func (r *UserRepository) LinkProviderAccount(ctx context.Context, username, prov
 	}
 
 	// Create the provider account using DynamORM
-	err = r.db.WithContext(ctx).Model(providerAccount).Create()
+	err = r.GetDB().WithContext(ctx).Model(providerAccount).Create()
 	if err != nil {
 		if errors.IsConditionFailed(err) {
-			return common.ConflictError{
+			return ErrorHandler.HandleCreateError(common.ConflictError{
 				Resource: "provider_account",
 				Message:  fmt.Sprintf("provider account %s:%s already linked", provider, providerID),
-			}
+			}, "provider account", providerID)
 		}
-		return fmt.Errorf("failed to link provider account: %w", err)
+		return ErrorHandler.HandleCreateError(err, "provider account", providerID)
 	}
 
 	return nil
@@ -346,12 +342,12 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 	// Find the provider account for this user and provider
 	// First get all provider accounts for this user
 	var allProviderAccounts []models.ProviderAccount
-	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
 		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&allProviderAccounts)
 	if err != nil {
-		return fmt.Errorf("failed to query provider accounts: %w", err)
+		return ErrorHandler.HandleQueryError(err, "provider account", "query")
 	}
 
 	// Filter by provider manually since DynamORM might not support begins_with
@@ -363,14 +359,14 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 	}
 
 	if err := common.ValidateSliceNotEmpty("provider_accounts", providerAccounts); err != nil {
-		return fmt.Errorf("provider account not found for user %s and provider %s", username, provider)
+		return ErrorHandler.HandleGetError(common.ValidationError{Field: "provider account", Message: fmt.Sprintf("not found for user %s and provider %s", username, provider)}, "provider account", username)
 	}
 
 	// Delete the provider account(s) for this provider
 	for _, pa := range providerAccounts {
-		err = r.db.WithContext(ctx).Model(&pa).Delete()
+		err = r.GetDB().WithContext(ctx).Model(&pa).Delete()
 		if err != nil {
-			return fmt.Errorf("failed to unlink provider account: %w", err)
+			return ErrorHandler.HandleDeleteError(err, "provider account", username)
 		}
 	}
 
@@ -381,12 +377,12 @@ func (r *UserRepository) UnlinkProviderAccount(ctx context.Context, username, pr
 func (r *UserRepository) GetLinkedProviders(ctx context.Context, username string) ([]string, error) {
 	// Query all provider accounts for this user
 	var providerAccounts []models.ProviderAccount
-	err := r.db.WithContext(ctx).Model(&models.ProviderAccount{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ProviderAccount{}).
 		Index("user-providers-index").
 		Where("GSI2PK", "=", "USER_PROVIDERS#"+username).
 		All(&providerAccounts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query provider accounts: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "provider account", "query")
 	}
 
 	// Extract unique provider names
@@ -467,83 +463,6 @@ func (r *UserRepository) applyUpdates(userModel *models.User, updates map[string
 	}
 }
 
-// GetDNSCache retrieves a cached DNS lookup result
-func (r *UserRepository) GetDNSCache(ctx context.Context, hostname string) (*storage.DNSCacheEntry, error) {
-	// Create model with keys set
-	dnsCache := &models.DNSCache{
-		Hostname: hostname,
-	}
-	dnsCache.UpdateKeys()
-
-	// Query for the entry using DynamORM pattern
-	err := r.db.WithContext(ctx).Model(&models.DNSCache{}).
-		Where("PK", "=", dnsCache.PK).
-		Where("SK", "=", dnsCache.SK).
-		First(&dnsCache)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Return nil when not found (matching legacy behavior)
-			return nil, nil
-		}
-		r.logger.Error("failed to get DNS cache entry",
-			zap.String("hostname", hostname),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get DNS cache entry: %w", err)
-	}
-
-	// Check if the entry has expired
-	if dnsCache.ExpiresAt > 0 && time.Now().Unix() > dnsCache.ExpiresAt {
-		// Entry has expired, return nil (matching legacy behavior)
-		return nil, nil
-	}
-
-	// Convert to storage model
-	entry := &storage.DNSCacheEntry{
-		Hostname:   dnsCache.Hostname,
-		IPs:        dnsCache.IPs,
-		ResolvedAt: dnsCache.ResolvedAt,
-		TTL:        int64(dnsCache.TTL),
-	}
-
-	return entry, nil
-}
-
-// SetDNSCache stores a DNS lookup result in the cache
-func (r *UserRepository) SetDNSCache(ctx context.Context, entry *storage.DNSCacheEntry) error {
-	if entry == nil {
-		return fmt.Errorf("DNS cache entry cannot be nil")
-	}
-
-	// Calculate expiration time for DynamoDB TTL (Unix timestamp)
-	expiresAt := time.Now().Add(time.Duration(entry.TTL) * time.Second).Unix()
-
-	// Create DynamORM model
-	dnsCache := &models.DNSCache{
-		Hostname:   entry.Hostname,
-		IPs:        entry.IPs,
-		ResolvedAt: entry.ResolvedAt,
-		TTL:        int(entry.TTL),
-		ExpiresAt:  expiresAt,
-	}
-	dnsCache.UpdateKeys()
-
-	// Save to DynamoDB using DynamORM pattern
-	if err := r.db.WithContext(ctx).Model(dnsCache).Create(); err != nil {
-		r.logger.Error("failed to set DNS cache entry",
-			zap.String("hostname", entry.Hostname),
-			zap.Error(err))
-		return fmt.Errorf("failed to set DNS cache entry: %w", err)
-	}
-
-	r.logger.Debug("DNS cache entry stored",
-		zap.String("hostname", entry.Hostname),
-		zap.Int("ip_count", len(entry.IPs)),
-		zap.Int64("ttl_seconds", entry.TTL))
-
-	return nil
-}
-
 // CreateAccountPin creates a new account pin (endorsed account)
 func (r *UserRepository) CreateAccountPin(ctx context.Context, pin *storage.AccountPin) error {
 	if pin.CreatedAt.IsZero() {
@@ -556,7 +475,7 @@ func (r *UserRepository) CreateAccountPin(ctx context.Context, pin *storage.Acco
 		return err
 	}
 	if exists {
-		return fmt.Errorf("account already pinned")
+		return ErrorHandler.HandleCreateError(common.ConflictError{Resource: "account pin", Message: "account already pinned"}, "account pin", "already exists")
 	}
 
 	// Create the model
@@ -569,7 +488,7 @@ func (r *UserRepository) CreateAccountPin(ctx context.Context, pin *storage.Acco
 	pinModel.UpdateKeys()
 
 	// Create in DynamoDB
-	err = r.db.WithContext(ctx).Model(pinModel).Create()
+	err = r.GetDB().WithContext(ctx).Model(pinModel).Create()
 	if err != nil {
 		r.logger.Error("failed to create account pin", zap.Error(err))
 		return err
@@ -588,7 +507,7 @@ func (r *UserRepository) DeleteAccountPin(ctx context.Context, username, pinnedA
 	pin.UpdateKeys()
 
 	// Delete from DynamoDB
-	err := r.db.WithContext(ctx).Model(pin).Delete()
+	err := r.GetDB().WithContext(ctx).Model(pin).Delete()
 	if err != nil {
 		r.logger.Error("failed to delete account pin", zap.Error(err))
 		return err
@@ -603,7 +522,7 @@ func (r *UserRepository) GetAccountPins(ctx context.Context, username string) ([
 	var pins []models.AccountPin
 	pk := fmt.Sprintf("ACCOUNT_PIN#%s", username)
 
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.AccountPin{}).
 		Where("PK", "=", pk).
 		Filter("SK", "BEGINS_WITH", "PIN#").
 		All(&pins)
@@ -637,7 +556,7 @@ func (r *UserRepository) IsAccountPinned(ctx context.Context, username, actorID 
 
 	// Check if exists
 	var found models.AccountPin
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.AccountPin{}).
 		Where("PK", "=", pin.PK).
 		Where("SK", "=", pin.SK).
 		First(&found)
@@ -673,7 +592,7 @@ func (r *UserRepository) CreateAccountNote(ctx context.Context, note *storage.Ac
 	noteModel.UpdateKeys()
 
 	// Create in DynamoDB
-	err := r.db.WithContext(ctx).Model(noteModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(noteModel).Create()
 	if err != nil {
 		r.logger.Error("failed to create account note", zap.Error(err))
 		return err
@@ -693,7 +612,7 @@ func (r *UserRepository) GetAccountNote(ctx context.Context, username, targetAct
 
 	// Query from DynamoDB
 	var found models.AccountNote
-	err := r.db.WithContext(ctx).Model(&models.AccountNote{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.AccountNote{}).
 		Where("PK", "=", note.PK).
 		Where("SK", "=", note.SK).
 		First(&found)
@@ -731,7 +650,7 @@ func (r *UserRepository) UpdateAccountNote(ctx context.Context, note *storage.Ac
 	noteModel.UpdateKeys()
 
 	// Update in DynamoDB (Put overwrites existing)
-	err := r.db.WithContext(ctx).Model(noteModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(noteModel).Create()
 	if err != nil {
 		r.logger.Error("failed to update account note", zap.Error(err))
 		return err
@@ -750,7 +669,7 @@ func (r *UserRepository) DeleteAccountNote(ctx context.Context, username, target
 	note.UpdateKeys()
 
 	// Delete from DynamoDB
-	err := r.db.WithContext(ctx).Model(note).Delete()
+	err := r.GetDB().WithContext(ctx).Model(note).Delete()
 	if err != nil {
 		r.logger.Error("failed to delete account note", zap.Error(err))
 		return err
@@ -771,10 +690,10 @@ func (r *UserRepository) StoreReputation(ctx context.Context, actorID string, re
 	}
 
 	// Store in DynamoDB
-	err := r.db.WithContext(ctx).Model(repModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(repModel).Create()
 	if err != nil {
 		r.logger.Error("failed to store reputation", zap.Error(err))
-		return fmt.Errorf("failed to store reputation: %w", err)
+		return ErrorHandler.HandleCreateError(err, "reputation", actorID)
 	}
 
 	return nil
@@ -786,7 +705,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 	if err := common.ValidateEntityID(actorID, "actor"); err != nil {
 		return nil, nil // Return nil (not error) when invalid actorID for backward compatibility
 	}
-	
+
 	username := extractUsernameFromActorID(actorID)
 	if err := common.ValidateEntityID(username, "user"); err != nil {
 		return nil, nil // Return nil (not error) when invalid actorID
@@ -798,7 +717,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 
 	// Query for latest reputation (most recent first)
 	var reputations []models.Reputation
-	err := r.db.WithContext(ctx).
+	err := r.GetDB().WithContext(ctx).
 		Model(&models.Reputation{}).
 		Where("PK", "=", pk).
 		Filter("SK", "BEGINS_WITH", skPrefix).
@@ -808,7 +727,7 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 
 	if err != nil {
 		r.logger.Error("failed to query reputation", zap.Error(err))
-		return nil, fmt.Errorf("failed to query reputation: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "reputation", "query")
 	}
 
 	// No reputation found
@@ -820,14 +739,14 @@ func (r *UserRepository) GetReputation(ctx context.Context, actorID string) (*st
 	repInterface, err := reputations[0].ToStorageReputation()
 	if err != nil {
 		r.logger.Error("failed to unmarshal reputation", zap.Error(err))
-		return nil, fmt.Errorf("failed to unmarshal reputation: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "reputation", "unmarshal")
 	}
 
 	// Convert interface back to storage.Reputation
 	var reputation storage.Reputation
 	repJSON, _ := json.Marshal(repInterface)
 	if err := json.Unmarshal(repJSON, &reputation); err != nil {
-		return nil, fmt.Errorf("failed to convert reputation: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "reputation", "convert")
 	}
 
 	return &reputation, nil
@@ -847,7 +766,7 @@ func (r *UserRepository) GetReputationHistory(ctx context.Context, actorID strin
 
 	// Query for reputation history
 	var reputations []models.Reputation
-	query := r.db.WithContext(ctx).
+	query := r.GetDB().WithContext(ctx).
 		Model(&models.Reputation{}).
 		Where("PK", "=", pk).
 		Filter("SK", "BEGINS_WITH", skPrefix).
@@ -860,7 +779,7 @@ func (r *UserRepository) GetReputationHistory(ctx context.Context, actorID strin
 	err := query.All(&reputations)
 	if err != nil {
 		r.logger.Error("failed to query reputation history", zap.Error(err))
-		return nil, fmt.Errorf("failed to query reputation history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "reputation", "history")
 	}
 
 	// Convert to storage.Reputation slice
@@ -932,7 +851,7 @@ func (r *UserRepository) CreateVouch(_ context.Context, vouch *storage.Vouch) er
 	// Marshal vouch to JSON
 	vouchJSON, err := json.Marshal(vouch)
 	if err != nil {
-		return fmt.Errorf("failed to marshal vouch: %w", err)
+		return ErrorHandler.HandleCreateError(err, "vouch", "marshal")
 	}
 
 	// Create DynamORM model
@@ -946,8 +865,8 @@ func (r *UserRepository) CreateVouch(_ context.Context, vouch *storage.Vouch) er
 	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, expiresAt)
 
 	// Create in DynamoDB
-	if err := r.db.Model(vouchModel).Create(); err != nil {
-		return fmt.Errorf("failed to store vouch: %w", err)
+	if err := r.GetDB().Model(vouchModel).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "vouch", "store")
 	}
 
 	return nil
@@ -957,13 +876,13 @@ func (r *UserRepository) CreateVouch(_ context.Context, vouch *storage.Vouch) er
 func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.Vouch, error) {
 	// Query by primary key
 	var vouchModels []*models.Vouch
-	err := r.db.Model(&models.Vouch{}).
+	err := r.GetDB().Model(&models.Vouch{}).
 		Where("PK", "=", fmt.Sprintf("VOUCH#%s", vouchID)).
 		Where("SK", "=", "METADATA").
 		Scan(&vouchModels)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get vouch: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "vouch", "get")
 	}
 
 	// Return nil if not found
@@ -980,7 +899,7 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 
 	var vouch storage.Vouch
 	if err := json.Unmarshal([]byte(vouchModel.VouchData), &vouch); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal vouch data: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "vouch", "unmarshal")
 	}
 
 	return &vouch, nil
@@ -989,7 +908,7 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 // queryVouchesByGSI is a helper function to query vouches using a specific GSI
 func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiIndex, keyPrefix, errorContext string) ([]*storage.Vouch, error) {
 	// Query the specified GSI for vouches
-	query := r.db.Model(&models.Vouch{}).
+	query := r.GetDB().Model(&models.Vouch{}).
 		Index(gsiIndex).
 		Where(fmt.Sprintf("%sPK", strings.ToUpper(gsiIndex[:4])), "=", fmt.Sprintf("%s#%s", keyPrefix, actorID))
 
@@ -1001,7 +920,7 @@ func (r *UserRepository) queryVouchesByGSI(actorID string, activeOnly bool, gsiI
 	// Execute query
 	var vouchModels []*models.Vouch
 	if err := query.Scan(&vouchModels); err != nil {
-		return nil, fmt.Errorf("failed to query vouches %s: %w", errorContext, err)
+		return nil, ErrorHandler.HandleQueryError(err, "vouch", errorContext)
 	}
 
 	// Convert to storage.Vouch slice
@@ -1040,7 +959,7 @@ func (r *UserRepository) UpdateVouchStatus(ctx context.Context, vouchID string, 
 		return err
 	}
 	if vouch == nil {
-		return fmt.Errorf("vouch not found")
+		return ErrorHandler.HandleGetError(common.ValidationError{Field: "vouch", Message: "not found"}, "vouch", vouchID)
 	}
 
 	// Update vouch fields
@@ -1051,7 +970,7 @@ func (r *UserRepository) UpdateVouchStatus(ctx context.Context, vouchID string, 
 	// Marshal updated vouch
 	vouchJSON, err := json.Marshal(vouch)
 	if err != nil {
-		return fmt.Errorf("failed to marshal vouch: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "vouch", "marshal")
 	}
 
 	// Create model with updated data
@@ -1068,8 +987,8 @@ func (r *UserRepository) UpdateVouchStatus(ctx context.Context, vouchID string, 
 	vouchModel.UpdateKeys(vouch.ID, vouch.From, vouch.To, vouch.Active, vouch.CreatedAt, expiresAt)
 
 	// Update in DynamoDB
-	if err := r.db.Model(vouchModel).Update(); err != nil {
-		return fmt.Errorf("failed to update vouch status: %w", err)
+	if err := r.GetDB().Model(vouchModel).Update(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, "vouch", "status")
 	}
 
 	return nil
@@ -1082,14 +1001,14 @@ func (r *UserRepository) GetMonthlyVouchCount(_ context.Context, actorID string,
 	endOfMonth := startOfMonth.AddDate(0, 1, 0)
 
 	// Query GSI1 with date range filter
-	query := r.db.Model(&models.Vouch{}).
+	query := r.GetDB().Model(&models.Vouch{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "=", fmt.Sprintf("VOUCHER#%s", actorID))
 
 	// Execute query - we'll filter in memory since DynamORM doesn't support BETWEEN on non-key attributes
 	var vouchModels []*models.Vouch
 	if err := query.Scan(&vouchModels); err != nil {
-		return 0, fmt.Errorf("failed to query monthly vouch count: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "vouch", "monthly count")
 	}
 
 	// Count vouches in the specified month
@@ -1140,8 +1059,8 @@ func (r *UserRepository) CreateTrustRelationship(ctx context.Context, relationsh
 	model.UpdateKeys()
 
 	// Save to DynamoDB
-	if err := r.db.Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to create trust relationship: %w", err)
+	if err := r.GetDB().Model(model).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "trust relationship", "create")
 	}
 
 	r.logger.Debug("Created trust relationship",
@@ -1162,7 +1081,7 @@ func (r *UserRepository) GetTrustRelationship(_ context.Context, trusterID, trus
 	model := &models.TrustRelationship{}
 
 	// Query using primary key
-	err := r.db.Model(model).
+	err := r.GetDB().Model(model).
 		Where("PK", "=", fmt.Sprintf("TRUST#%s#%s", trusterID, category)).
 		Where("SK", "=", fmt.Sprintf("TRUSTEE#%s", trusteeID)).
 		First(model)
@@ -1171,7 +1090,7 @@ func (r *UserRepository) GetTrustRelationship(_ context.Context, trusterID, trus
 		if errors.IsNotFound(err) {
 			return nil, nil // Return nil when not found, not error
 		}
-		return nil, fmt.Errorf("failed to get trust relationship: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "trust relationship", "get")
 	}
 
 	// Convert to storage type
@@ -1192,8 +1111,8 @@ func (r *UserRepository) DeleteTrustRelationship(ctx context.Context, trusterID,
 		SK: fmt.Sprintf("TRUSTEE#%s", trusteeID),
 	}
 
-	if err := r.db.Model(model).Delete(); err != nil {
-		return fmt.Errorf("failed to delete trust relationship: %w", err)
+	if err := r.GetDB().Model(model).Delete(); err != nil {
+		return ErrorHandler.HandleDeleteError(err, "trust relationship", "delete")
 	}
 
 	r.logger.Debug("Deleted trust relationship",
@@ -1212,7 +1131,7 @@ func (r *UserRepository) DeleteTrustRelationship(ctx context.Context, trusterID,
 func (r *UserRepository) GetTrustRelationships(_ context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// We need to scan with filter since we want all categories
 	// DynamORM doesn't support begins_with, so we'll filter in memory
-	query := r.db.Model(&models.TrustRelationship{}).
+	query := r.GetDB().Model(&models.TrustRelationship{}).
 		Filter("Type", "=", "RELATIONSHIP").
 		Limit(limit * 2) // Get more to account for filtering
 
@@ -1223,7 +1142,7 @@ func (r *UserRepository) GetTrustRelationships(_ context.Context, trusterID stri
 	var models []*models.TrustRelationship
 	err := query.Scan(&models)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to scan trust relationships: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "scan")
 	}
 
 	// Filter by truster ID in memory
@@ -1248,7 +1167,7 @@ func (r *UserRepository) GetTrustRelationships(_ context.Context, trusterID stri
 func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Use GSI1 to query by trustee
 	// DynamORM doesn't support begins_with, so we'll filter in memory
-	query := r.db.Model(&models.TrustRelationship{}).
+	query := r.GetDB().Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
 		Filter("Type", "=", "RELATIONSHIP").
 		Limit(limit * 2) // Get more to account for filtering
@@ -1260,7 +1179,7 @@ func (r *UserRepository) GetTrustedByRelationships(_ context.Context, trusteeID 
 	var models []*models.TrustRelationship
 	err := query.Scan(&models)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to scan trusted-by relationships: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "trust relationship", "scan trusted-by")
 	}
 
 	// Filter by trustee ID in memory
@@ -1287,7 +1206,7 @@ func (r *UserRepository) GetTrustScore(ctx context.Context, actorID, category st
 	cacheModel := &models.TrustScore{}
 	cacheKey := fmt.Sprintf("SCORE#%s#%s", actorID, category)
 
-	err := r.db.Model(cacheModel).
+	err := r.GetDB().Model(cacheModel).
 		Where("PK", "=", cacheKey).
 		Where("SK", "=", "CURRENT").
 		First(cacheModel)
@@ -1338,8 +1257,8 @@ func (r *UserRepository) UpdateTrustScore(_ context.Context, score *storage.Trus
 	model.UpdateKeys()
 
 	// Save to DynamoDB
-	if err := r.db.Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to update trust score: %w", err)
+	if err := r.GetDB().Model(model).Create(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, "trust score", "update")
 	}
 
 	return nil
@@ -1368,8 +1287,8 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	model.UpdateKeys()
 
 	// Save to DynamoDB
-	if err := r.db.Model(model).Create(); err != nil {
-		return fmt.Errorf("failed to record trust update: %w", err)
+	if err := r.GetDB().Model(model).Create(); err != nil {
+		return ErrorHandler.HandleCreateError(err, "trust update", "record")
 	}
 
 	r.logger.Debug("Recorded trust update",
@@ -1385,13 +1304,13 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 // GetAllTrustRelationships retrieves all trust relationships for admin visualization
 func (r *UserRepository) GetAllTrustRelationships(_ context.Context, limit int) ([]*storage.TrustRelationship, error) {
 	// Scan with filter for type
-	query := r.db.Model(&models.TrustRelationship{}).
+	query := r.GetDB().Model(&models.TrustRelationship{}).
 		Filter("Type", "=", "RELATIONSHIP").
 		Limit(limit)
 
 	var models []*models.TrustRelationship
 	if err := query.Scan(&models); err != nil {
-		return nil, fmt.Errorf("failed to scan all trust relationships: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "trust relationship", "scan all")
 	}
 
 	// Convert to storage types
@@ -1420,7 +1339,7 @@ func (r *UserRepository) invalidateTrustScoreCache(_ context.Context, actorID, c
 		SK: "CURRENT",
 	}
 
-	if err := r.db.Model(model).Delete(); err != nil {
+	if err := r.GetDB().Model(model).Delete(); err != nil {
 		r.logger.Warn("Failed to invalidate trust score cache",
 			zap.String("actor", actorID),
 			zap.String("category", category),
@@ -1771,7 +1690,7 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 	prefModel.Username = username
 	prefModel.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(&models.UserPreferences{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.UserPreferences{}).
 		Where("PK", "=", prefModel.PK).
 		Where("SK", "=", prefModel.SK).
 		First(&prefModel)
@@ -1797,7 +1716,7 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 		r.logger.Error("failed to get user preferences",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user preferences: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "user preferences", "get")
 	}
 
 	// Convert models.UserPreferencesStorage to storage.UserPreferences
@@ -1839,12 +1758,12 @@ func (r *UserRepository) UpdateUserPreferences(ctx context.Context, username str
 	prefModel.FromStorage(username, modelStorage)
 
 	// Create or update the preferences using DynamORM
-	err := r.db.WithContext(ctx).Model(prefModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(prefModel).Create()
 	if err != nil {
 		r.logger.Error("failed to update user preferences",
 			zap.String("username", username),
 			zap.Error(err))
-		return fmt.Errorf("failed to update preferences: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "user preferences", "update")
 	}
 
 	r.logger.Debug("updated user preferences",
@@ -1897,7 +1816,7 @@ func (r *UserRepository) updatePreferenceField(prefs *storage.UserPreferences, k
 	case PrefKeyReblogFilters:
 		return r.setReblogFiltersPreference(&prefs.ReblogFilters, value, key)
 	default:
-		return fmt.Errorf("unknown preference key: %s", key)
+		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "preference key", Message: fmt.Sprintf("unknown key: %s", key)}, "user preferences", key)
 	}
 }
 
@@ -1932,7 +1851,7 @@ func (r *UserRepository) GetPreference(ctx context.Context, username, key string
 	case PrefKeyReblogFilters:
 		return prefs.ReblogFilters, nil
 	default:
-		return nil, fmt.Errorf("unknown preference key: %s", key)
+		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "preference key", Message: fmt.Sprintf("unknown key: %s", key)}, "user preferences", key)
 	}
 }
 
@@ -2016,10 +1935,10 @@ func (r *UserRepository) setStringPreference(field *string, value any, key strin
 	if err := common.ValidatePreferenceValue(key, value); err != nil {
 		return err
 	}
-	
+
 	v, ok := value.(string)
 	if !ok {
-		return fmt.Errorf("invalid type for %s preference: expected string", key)
+		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "preference type", Message: fmt.Sprintf("expected string for %s", key)}, "user preferences", key)
 	}
 	*field = v
 	return nil
@@ -2031,10 +1950,10 @@ func (r *UserRepository) setBoolPreference(field *bool, value any, key string) e
 	if err := common.ValidatePreferenceValue(key, value); err != nil {
 		return err
 	}
-	
+
 	v, ok := value.(bool)
 	if !ok {
-		return fmt.Errorf("invalid type for %s preference: expected bool", key)
+		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "preference type", Message: fmt.Sprintf("expected bool for %s", key)}, "user preferences", key)
 	}
 	*field = v
 	return nil
@@ -2046,10 +1965,10 @@ func (r *UserRepository) setReblogFiltersPreference(field *map[string]bool, valu
 	if err := common.ValidatePreferenceValue(key, value); err != nil {
 		return err
 	}
-	
+
 	v, ok := value.(map[string]bool)
 	if !ok {
-		return fmt.Errorf("invalid type for %s preference: expected map[string]bool", key)
+		return ErrorHandler.HandleUpdateError(common.ValidationError{Field: "preference type", Message: fmt.Sprintf("expected map[string]bool for %s", key)}, "user preferences", key)
 	}
 	*field = v
 	return nil
@@ -2063,27 +1982,27 @@ func (r *UserRepository) AcceptFollow(ctx context.Context, followerUsername, fol
 
 	// 1. Update the relationship state to "accepted"
 	var relationship models.RelationshipRecord
-	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followedUsername)).
 		First(&relationship)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("follow relationship not found")
+			return ErrorHandler.HandleGetError(common.ValidationError{Field: "follow relationship", Message: "not found"}, "follow relationship", followerUsername)
 		}
 		r.logger.Error("failed to get follow relationship", zap.Error(err))
-		return fmt.Errorf("failed to get follow relationship: %w", err)
+		return ErrorHandler.HandleGetError(err, "follow relationship", followerUsername)
 	}
 
 	// Update the relationship state
 	relationship.Accept()
 
 	// Save the updated relationship
-	err = r.db.WithContext(ctx).Model(&relationship).Update()
+	err = r.GetDB().WithContext(ctx).Model(&relationship).Update()
 	if err != nil {
 		r.logger.Error("failed to update relationship state", zap.Error(err))
-		return fmt.Errorf("failed to update relationship state: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "follow relationship", "state")
 	}
 
 	// 2. Update follower count for the followed user (increment)
@@ -2117,27 +2036,27 @@ func (r *UserRepository) RejectFollow(ctx context.Context, followerUsername, fol
 
 	// Update the relationship state to "rejected"
 	var relationship models.RelationshipRecord
-	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerUsername)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", followedUsername)).
 		First(&relationship)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Errorf("follow relationship not found")
+			return ErrorHandler.HandleGetError(common.ValidationError{Field: "follow relationship", Message: "not found"}, "follow relationship", followerUsername)
 		}
 		r.logger.Error("failed to get follow relationship", zap.Error(err))
-		return fmt.Errorf("failed to get follow relationship: %w", err)
+		return ErrorHandler.HandleGetError(err, "follow relationship", followerUsername)
 	}
 
 	// Update the relationship state
 	relationship.Reject()
 
 	// Save the updated relationship
-	err = r.db.WithContext(ctx).Model(&relationship).Update()
+	err = r.GetDB().WithContext(ctx).Model(&relationship).Update()
 	if err != nil {
 		r.logger.Error("failed to update relationship state", zap.Error(err))
-		return fmt.Errorf("failed to update relationship state: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "follow relationship", "state")
 	}
 
 	r.logger.Info("successfully rejected follow request",
@@ -2159,7 +2078,7 @@ const (
 func (r *UserRepository) updateActorCount(ctx context.Context, username string, delta int, countType countUpdateType) error {
 	// Get the current actor
 	var actor models.Actor
-	err := r.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", fmt.Sprintf("ACTOR#%s", username)).
 		Where("SK", "=", "PROFILE").
 		First(&actor)
@@ -2171,7 +2090,7 @@ func (r *UserRepository) updateActorCount(ctx context.Context, username string, 
 				zap.String("count_type", string(countType)))
 			return nil // Don't error if actor doesn't exist
 		}
-		return fmt.Errorf("failed to get actor: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityActor, "get")
 	}
 
 	// Update the appropriate count
@@ -2193,13 +2112,13 @@ func (r *UserRepository) updateActorCount(ctx context.Context, username string, 
 
 	// Update keys to reflect new counts
 	if err := actor.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update actor keys after count change: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityActor, "keys")
 	}
 
 	// Save the updated actor
-	err = r.db.WithContext(ctx).Model(&actor).Update()
+	err = r.GetDB().WithContext(ctx).Model(&actor).Update()
 	if err != nil {
-		return fmt.Errorf("failed to update %s count: %w", string(countType), err)
+		return ErrorHandler.HandleUpdateError(err, string(countType), "count")
 	}
 
 	r.logger.Debug("updated count",
@@ -2242,14 +2161,14 @@ func (r *UserRepository) CreateConversationMute(ctx context.Context, mute *stora
 	muteModel.UpdateKeys()
 
 	// Create the mute
-	err := r.db.WithContext(ctx).Model(muteModel).Create()
+	err := r.GetDB().WithContext(ctx).Model(muteModel).Create()
 
 	if err != nil {
 		// Check if it's a duplicate (condition check failed)
 		if errors.IsConditionFailed(err) {
-			return fmt.Errorf("conversation already muted")
+			return ErrorHandler.HandleCreateError(common.ConflictError{Resource: "conversation mute", Message: "conversation already muted"}, "conversation mute", mute.ConversationID)
 		}
-		return fmt.Errorf("failed to create conversation mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, "conversation mute", mute.ConversationID)
 	}
 
 	return nil
@@ -2268,13 +2187,13 @@ func (r *UserRepository) DeleteConversationMute(ctx context.Context, username, c
 	}
 	muteModel.UpdateKeys()
 
-	err := r.db.WithContext(ctx).Model(&models.ConversationMute{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
 		Where("PK", "=", muteModel.PK).
 		Where("SK", "=", muteModel.SK).
 		Delete()
 
 	if err != nil {
-		return fmt.Errorf("failed to delete conversation mute: %w", err)
+		return ErrorHandler.HandleDeleteError(err, "conversation mute", conversationID)
 	}
 
 	return nil
@@ -2290,7 +2209,7 @@ func (r *UserRepository) IsConversationMuted(ctx context.Context, username, conv
 	muteModel.UpdateKeys()
 
 	var result models.ConversationMute
-	err := r.db.WithContext(ctx).Model(&models.ConversationMute{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
 		Where("PK", "=", muteModel.PK).
 		Where("SK", "=", muteModel.SK).
 		First(&result)
@@ -2299,7 +2218,7 @@ func (r *UserRepository) IsConversationMuted(ctx context.Context, username, conv
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check conversation mute: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "conversation mute", "check")
 	}
 
 	// Check if the mute has expired
@@ -2319,12 +2238,12 @@ func (r *UserRepository) GetMutedConversations(ctx context.Context, username str
 	pk := fmt.Sprintf("USER#%s#CONV_MUTES", username)
 
 	var mutes []models.ConversationMute
-	err := r.db.WithContext(ctx).Model(&models.ConversationMute{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
 		Where("PK", "=", pk).
 		All(&mutes)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to query muted conversations: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "conversation mute", "query")
 	}
 
 	// Filter out expired mutes and extract conversation IDs
@@ -2357,7 +2276,7 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 			zap.String("userID", userID),
 			zap.String("targetID", targetID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check notification mute status: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, "notification mute", "check")
 	}
 
 	// Check if target is in muted notifications list
@@ -2372,7 +2291,7 @@ func (r *UserRepository) IsNotificationMuted(ctx context.Context, userID, target
 
 	// Check for dedicated notification preferences first
 	var notifPrefs models.NotificationPreferences
-	err = r.db.WithContext(ctx).Model(&models.NotificationPreferences{}).
+	err = r.GetDB().WithContext(ctx).Model(&models.NotificationPreferences{}).
 		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
 		Where("SK", "=", "NOTIFICATION_PREFS").
 		First(&notifPrefs)
@@ -2430,13 +2349,13 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 	remoteActor.UpdateKeys()
 
 	// Create in DynamoDB using DynamORM
-	err := r.db.WithContext(ctx).Model(remoteActor).Create()
+	err := r.GetDB().WithContext(ctx).Model(remoteActor).Create()
 	if err != nil {
 		r.logger.Error("failed to cache remote actor",
 			zap.String("handle", handle),
 			zap.String("actor_id", actor.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to cache remote actor: %w", err)
+		return ErrorHandler.HandleCreateError(err, "remote actor cache", actor.ID)
 	}
 
 	r.logger.Debug("remote actor cached successfully",
@@ -2467,7 +2386,7 @@ func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID 
 
 	// Create the bookmark using DynamORM with condition check to prevent duplicates
 	// Note: DynamORM Create will overwrite if the same keys exist, so we need to check first
-	err := r.db.WithContext(ctx).Model(bookmark).Create()
+	err := r.GetDB().WithContext(ctx).Model(bookmark).Create()
 	if err != nil {
 		// Check if already bookmarked by trying a conditional create
 		// Since DynamORM doesn't have built-in conditional creates, we log and continue
@@ -2483,7 +2402,7 @@ func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID 
 			return nil
 		}
 		// For other errors, return them to the caller
-		return fmt.Errorf("failed to create bookmark: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityBookmark, objectID)
 	}
 
 	r.logger.Info("bookmark created successfully",
@@ -2503,7 +2422,7 @@ func (r *UserRepository) RemoveBookmark(ctx context.Context, username, objectID 
 	pk := fmt.Sprintf("BOOKMARK#%s", username)
 
 	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", pk).
 		Filter("ObjectID", "=", objectID).
 		All(&bookmarks)
@@ -2513,12 +2432,12 @@ func (r *UserRepository) RemoveBookmark(ctx context.Context, username, objectID 
 			zap.String("username", username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to query bookmark: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
 	}
 
 	// Delete all found bookmarks (should typically be 0 or 1)
 	for _, bookmark := range bookmarks {
-		err = r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		err = r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
 			Where("PK", "=", bookmark.PK).
 			Where("SK", "=", bookmark.SK).
 			Delete()
@@ -2528,7 +2447,7 @@ func (r *UserRepository) RemoveBookmark(ctx context.Context, username, objectID 
 				zap.String("username", username),
 				zap.String("object_id", objectID),
 				zap.Error(err))
-			return fmt.Errorf("failed to delete bookmark: %w", err)
+			return ErrorHandler.HandleDeleteError(err, EntityBookmark, objectID)
 		}
 	}
 
@@ -2555,7 +2474,7 @@ func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limi
 
 	// Build query
 	pk := fmt.Sprintf("BOOKMARK#%s", username)
-	query := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC"). // Newest first (descending order)
 		Limit(limit + 1)       // Request one extra to determine if there's a next page
@@ -2573,7 +2492,7 @@ func (r *UserRepository) GetBookmarks(ctx context.Context, username string, limi
 		r.logger.Error("failed to query bookmarks",
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query bookmarks: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
 	}
 
 	// Extract object IDs
@@ -2611,7 +2530,7 @@ func (r *UserRepository) IsBookmarked(ctx context.Context, username, objectID st
 	pk := fmt.Sprintf("BOOKMARK#%s", username)
 
 	var bookmarks []models.Bookmark
-	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Bookmark{}).
 		Where("PK", "=", pk).
 		Filter("ObjectID", "=", objectID).
 		Limit(1).
@@ -2622,7 +2541,7 @@ func (r *UserRepository) IsBookmarked(ctx context.Context, username, objectID st
 			zap.String("username", username),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to query bookmark: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityBookmark, "query")
 	}
 
 	isBookmarked := len(bookmarks) > 0
@@ -2642,7 +2561,7 @@ func (r *UserRepository) DeleteFromTimeline(ctx context.Context, timelineType, t
 
 	// Query for the specific entry
 	var entry models.Timeline
-	err := r.db.WithContext(ctx).Model(&models.Timeline{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Timeline{}).
 		Where("PK", "=", pk).
 		Filter("EntryID", "=", entryID).
 		First(&entry)
@@ -2652,18 +2571,18 @@ func (r *UserRepository) DeleteFromTimeline(ctx context.Context, timelineType, t
 			// Entry not found, nothing to delete
 			return nil
 		}
-		return fmt.Errorf("failed to find timeline entry: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityTimelineEntry, entryID)
 	}
 
 	// Now delete the entry using its PK and SK
-	err = r.db.WithContext(ctx).Model(&entry).Delete()
+	err = r.GetDB().WithContext(ctx).Model(&entry).Delete()
 	if err != nil {
 		r.logger.Error("failed to delete timeline entry",
 			zap.String("timeline_type", timelineType),
 			zap.String("timeline_id", timelineID),
 			zap.String("entry_id", entryID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete timeline entry: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityTimelineEntry, entryID)
 	}
 
 	r.logger.Debug("deleted timeline entry",
@@ -2688,14 +2607,14 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 	var expiredEntries []*models.Timeline
 
 	// Scan for expired entries (this is expensive - consider using TTL instead)
-	err := r.db.WithContext(ctx).Model(&models.Timeline{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Timeline{}).
 		Filter("ExpiresAt", "<", before).
 		All(&expiredEntries)
 	if err != nil {
 		r.logger.Error("failed to scan for expired timeline entries",
 			zap.Time("before", before),
 			zap.Error(err))
-		return fmt.Errorf("failed to scan for expired timeline entries: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "scan expired")
 	}
 
 	if err := common.ValidateSliceNotEmpty("expired_entries", expiredEntries); err != nil {
@@ -2715,23 +2634,23 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 	// Perform batch deletion using DynamORM batch operations
 	// Use centralized cost tracker if available, fallback to legacy tracker
 	var costTracker batch.CostTracker
-	if r.costService != nil {
+	if r.GetCostService() != nil {
 		costTracker = &centralizedCostTracker{
-			costService: r.costService,
+			costService: r.GetCostService(),
 			tableName:   r.tableName,
 			logger:      r.logger,
 		}
 	} else {
 		costTracker = &timelineCostTracker{logger: r.logger}
 	}
-	
-	result, err := batch.BatchDeleteWithCostTracking(ctx, r.db, keys, costTracker, r.logger)
+
+	result, err := batch.BatchDeleteWithCostTracking(ctx, r.GetDB(), keys, costTracker, r.logger)
 	if err != nil {
 		r.logger.Error("failed to batch delete expired timeline entries",
 			zap.Time("before", before),
 			zap.Int("total_entries", len(expiredEntries)),
 			zap.Error(err))
-		return fmt.Errorf("failed to batch delete timeline entries: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityTimelineEntry, "batch")
 	}
 
 	deletedCount := result.ProcessedItems
@@ -2752,7 +2671,7 @@ func (r *UserRepository) DeleteExpiredTimelineEntries(ctx context.Context, befor
 // getTimelineEntries is a generic function to retrieve timeline entries with pagination
 func (r *UserRepository) getTimelineEntries(ctx context.Context, pk, errorContext string, limit int, cursor string) ([]*storage.TimelineEntry, string, error) {
 	// Build query
-	query := r.db.WithContext(ctx).Model(&models.Timeline{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.Timeline{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC") // Most recent first
 
@@ -2767,7 +2686,7 @@ func (r *UserRepository) getTimelineEntries(ctx context.Context, pk, errorContex
 	var entries []*models.Timeline
 	err := query.All(&entries)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get %s timeline entries: %w", errorContext, err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, errorContext)
 	}
 
 	// Generate next cursor
@@ -2838,7 +2757,7 @@ func (r *UserRepository) GetFollowRequestState(ctx context.Context, followerID, 
 
 	// Check if there's a follow relationship
 	var relationship models.RelationshipRecord
-	err := r.db.WithContext(ctx).Model(&models.RelationshipRecord{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.RelationshipRecord{}).
 		Where("PK", "=", fmt.Sprintf("FOLLOW#%s", followerID)).
 		Where("SK", "=", fmt.Sprintf("FOLLOWING#%s", targetID)).
 		First(&relationship)
@@ -2847,7 +2766,7 @@ func (r *UserRepository) GetFollowRequestState(ctx context.Context, followerID, 
 		if errors.IsNotFound(err) {
 			return "none", nil
 		}
-		return "", fmt.Errorf("failed to get follow request state: %w", err)
+		return "", ErrorHandler.HandleGetError(err, "follow request", "state")
 	}
 
 	// Return the relationship state
@@ -2883,7 +2802,7 @@ func (r *UserRepository) GetPendingFollowRequests(ctx context.Context, username 
 
 	if r.deps == nil {
 		log.Error("dependencies not set")
-		return nil, "", fmt.Errorf("dependencies not available")
+		return nil, "", ErrorHandler.HandleGetError(common.ValidationError{Field: "dependencies", Message: "not available"}, "dependencies", "get")
 	}
 
 	// Delegate to RelationshipRepository through deps
@@ -2899,7 +2818,7 @@ func (r *UserRepository) ListUsersByRole(ctx context.Context, role string) ([]*s
 
 	// Query for users by role using GSI
 	var userModels []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("users-by-role").
 		Where("UserRole", "=", role).
 		All(&userModels)
@@ -2935,7 +2854,7 @@ func (r *UserRepository) RemoveFromFollowers(ctx context.Context, username, foll
 
 	if r.deps == nil {
 		log.Error("dependencies not set")
-		return fmt.Errorf("dependencies not available")
+		return ErrorHandler.HandleCreateError(common.ValidationError{Field: "dependencies", Message: "not available"}, "dependencies", "create")
 	}
 
 	// This is an alias for RemoveFollow with parameters in the order expected by the interface
@@ -2981,7 +2900,7 @@ func (r *UserRepository) FanOutPost(ctx context.Context, activity *activitypub.A
 	if len(entries) > 0 {
 		if err := r.deps.CreateTimelineEntries(ctx, entries); err != nil {
 			log.Error("failed to write to timelines", zap.Error(err), zap.Int("entry_count", len(entries)))
-			return fmt.Errorf("failed to write to timelines: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "write")
 		}
 	}
 
@@ -3075,14 +2994,14 @@ func (r *UserRepository) extractObjectMetadata(object map[string]interface{}, lo
 	// Validate required fields
 	if common.ValidateRequiredParam(metadata.objectID, "objectID") != nil || common.ValidateRequiredParam(metadata.attributedTo, "attributedTo") != nil {
 		log.Error("missing required fields in object", zap.Any("object", object))
-		return nil, fmt.Errorf("object missing required fields")
+		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "object", Message: "missing required fields"}, EntityObject, "validation")
 	}
 
 	// Extract username from actor ID
 	metadata.username = extractUsernameFromActorID(metadata.attributedTo)
 	if common.ValidateRequiredParam(metadata.username, "username") != nil {
 		log.Error("failed to extract username from actor", zap.String("actor", metadata.attributedTo))
-		return nil, fmt.Errorf("invalid actor ID")
+		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "actor ID", Message: "invalid format"}, EntityActor, "validation")
 	}
 
 	// Determine visibility
@@ -3229,7 +3148,7 @@ func (r *UserRepository) createFollowerTimelineEntries(ctx context.Context, user
 		followers, nextCursor, err := r.deps.GetFollowers(ctx, username, 100, cursor)
 		if err != nil {
 			log.Error("failed to get followers", zap.Error(err))
-			return nil, fmt.Errorf("failed to get followers: %w", err)
+			return nil, ErrorHandler.HandleGetError(err, EntityFollow, "followers")
 		}
 
 		// Create timeline entry for each follower
@@ -3268,7 +3187,7 @@ func (r *UserRepository) createListTimelineEntries(ctx context.Context, username
 	lists, err := r.deps.GetListsContainingAccount(ctx, username, "")
 	if err != nil {
 		log.Error("failed to get lists containing account", zap.Error(err))
-		return nil, fmt.Errorf("failed to get lists containing account: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityList, "account lists")
 	}
 
 	var entries []*models.Timeline
@@ -3333,14 +3252,14 @@ func (r *UserRepository) extractAccountFromReply(ctx context.Context, inReplyTo 
 			return parts[1] // Return the username part
 		}
 	}
-	
+
 	// Use enhanced URL extraction for ActivityPub URLs and other patterns
 	if r.urlValidator != nil {
 		if username, err := r.urlValidator.EnhancedExtractAccountFromReply(ctx, inReplyTo); err == nil && username != "" {
 			return username
 		}
 	}
-	
+
 	// Fallback to legacy path extraction
 	return r.extractUsernameFromURLPath(inReplyTo)
 }
@@ -3351,13 +3270,13 @@ func (r *UserRepository) extractUsernameFromURLPath(inReplyTo string) string {
 	if !strings.HasPrefix(inReplyTo, "http") {
 		return ""
 	}
-	
+
 	// Try to extract username from common ActivityPub URL patterns
 	parts := strings.Split(inReplyTo, "/")
 	if len(parts) < 3 {
 		return ""
 	}
-	
+
 	// Look for patterns like /users/username, /@username, /actors/username
 	for i, part := range parts {
 		if (part == "users" || part == "actors" || part == "profile") && i+1 < len(parts) {
@@ -3367,7 +3286,7 @@ func (r *UserRepository) extractUsernameFromURLPath(inReplyTo string) string {
 			return strings.TrimPrefix(part, "@")
 		}
 	}
-	
+
 	// If no pattern matches, try the last path segment if it looks like a username
 	lastPart := parts[len(parts)-1]
 	if len(lastPart) > 0 && len(lastPart) <= 50 {
@@ -3376,7 +3295,7 @@ func (r *UserRepository) extractUsernameFromURLPath(inReplyTo string) string {
 			return lastPart
 		}
 	}
-	
+
 	return ""
 }
 
@@ -3386,7 +3305,7 @@ func (r *UserRepository) ValidateAndNormalizeUserFields(ctx context.Context, fie
 		r.logger.Warn("URL validator not initialized, returning fields unchanged")
 		return fields, nil, nil
 	}
-	
+
 	return r.urlValidator.ValidateAndNormalizeProfileURLs(ctx, fields)
 }
 
@@ -3394,9 +3313,9 @@ func (r *UserRepository) ValidateAndNormalizeUserFields(ctx context.Context, fie
 func (r *UserRepository) ExtractProfileURLs(ctx context.Context, fields []map[string]string) ([]*URLExtractionResult, error) {
 	if r.urlValidator == nil {
 		r.logger.Warn("URL validator not initialized")
-		return nil, fmt.Errorf("URL validator not available")
+		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "URL validator", Message: "not available"}, "URL validator", "get")
 	}
-	
+
 	return r.urlValidator.ExtractProfileURLs(ctx, fields)
 }
 
@@ -3404,9 +3323,9 @@ func (r *UserRepository) ExtractProfileURLs(ctx context.Context, fields []map[st
 func (r *UserRepository) ValidateUserURL(ctx context.Context, rawURL string) (*URLExtractionResult, error) {
 	if r.urlValidator == nil {
 		r.logger.Warn("URL validator not initialized")
-		return nil, fmt.Errorf("URL validator not available")
+		return nil, ErrorHandler.HandleGetError(common.ValidationError{Field: "URL validator", Message: "not available"}, "URL validator", "get")
 	}
-	
+
 	return r.urlValidator.ExtractAndValidateURL(ctx, rawURL)
 }
 
@@ -3429,45 +3348,45 @@ func generateURLWarnings(validationTags []string) []string {
 // validateAndUpdateProfileURL validates and normalizes a profile URL
 func (r *UserRepository) validateAndUpdateProfileURL(ctx context.Context, updates map[string]any) ([]string, error) {
 	var warnings []string
-	
+
 	rawURL, exists := updates["url"]
 	if !exists {
 		return warnings, nil
 	}
-	
+
 	urlStr, ok := rawURL.(string)
 	if !ok || common.ValidateRequiredParam(urlStr, "urlStr") != nil {
 		return warnings, nil
 	}
-	
+
 	if r.urlValidator == nil {
 		return warnings, nil
 	}
-	
+
 	result, err := r.urlValidator.ExtractAndValidateURL(ctx, urlStr)
 	if err != nil {
-		return warnings, fmt.Errorf("failed to validate profile URL: %w", err)
+		return warnings, ErrorHandler.HandleGetError(err, "profile URL", "validation")
 	}
-	
+
 	if !result.IsValid {
-		return warnings, fmt.Errorf("invalid profile URL format")
+		return warnings, ErrorHandler.HandleGetError(common.ValidationError{Field: "profile URL", Message: "invalid format"}, "profile URL", "validation")
 	}
-	
+
 	updates["url"] = result.NormalizedURL
 	warnings = append(warnings, generateURLWarnings(result.ValidationTags)...)
-	
+
 	return warnings, nil
 }
 
 // validateAndUpdateProfileFields validates and normalizes profile fields containing URLs
 func (r *UserRepository) validateAndUpdateProfileFields(ctx context.Context, updates map[string]any) ([]string, error) {
 	var warnings []string
-	
+
 	rawFields, exists := updates["fields"]
 	if !exists {
 		return warnings, nil
 	}
-	
+
 	fields, ok := rawFields.([]map[string]string)
 	if !ok {
 		return warnings, nil
@@ -3475,48 +3394,48 @@ func (r *UserRepository) validateAndUpdateProfileFields(ctx context.Context, upd
 	if err := common.ValidateSliceNotEmpty("fields", fields); err != nil {
 		return warnings, nil
 	}
-	
+
 	if r.urlValidator == nil {
 		return warnings, nil
 	}
-	
+
 	normalizedFields, fieldWarnings, err := r.urlValidator.ValidateAndNormalizeProfileURLs(ctx, fields)
 	if err != nil {
 		r.logger.Error("failed to validate profile fields", zap.Error(err))
 		// Continue with original fields rather than failing
 		return warnings, nil
 	}
-	
+
 	updates["fields"] = normalizedFields
 	warnings = append(warnings, fieldWarnings...)
-	
+
 	return warnings, nil
 }
 
 // UpdateUserWithURLValidation updates user profile with URL validation and normalization
 func (r *UserRepository) UpdateUserWithURLValidation(ctx context.Context, username string, updates map[string]any) ([]string, error) {
 	var allWarnings []string
-	
+
 	// Validate and normalize profile URL if present
 	urlWarnings, err := r.validateAndUpdateProfileURL(ctx, updates)
 	if err != nil {
 		return allWarnings, err
 	}
 	allWarnings = append(allWarnings, urlWarnings...)
-	
+
 	// Validate and normalize fields if present
 	fieldWarnings, err := r.validateAndUpdateProfileFields(ctx, updates)
 	if err != nil {
 		return allWarnings, err
 	}
 	allWarnings = append(allWarnings, fieldWarnings...)
-	
+
 	// Perform the actual update
 	err = r.UpdateUser(ctx, username, updates)
 	if err != nil {
-		return allWarnings, fmt.Errorf("failed to update user: %w", err)
+		return allWarnings, ErrorHandler.HandleUpdateError(err, EntityUser, username)
 	}
-	
+
 	return allWarnings, nil
 }
 
@@ -3646,7 +3565,7 @@ func (c *centralizedCostTracker) CalculateCost() batch.CostMetrics {
 // TrackDynamoWrite tracks DynamoDB write operations through centralized service
 func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
 	c.writes += int64(items)
-	
+
 	if c.costService != nil {
 		operation := cost.DynamoOperation{
 			Type:               "BatchWriteItem",
@@ -3657,12 +3576,12 @@ func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("user_batch_delete_%d", time.Now().UnixNano()),
 		}
-		
+
 		// Track through centralized service (async to not block operation)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			
+
 			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
 				c.logger.Warn("failed to track batch delete cost through centralized service",
 					zap.Int("items", items),
@@ -3670,7 +3589,7 @@ func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
 			}
 		}()
 	}
-	
+
 	if c.logger != nil {
 		c.logger.Debug("tracked timeline delete operations via centralized framework",
 			zap.Int("deleted_items", items),
@@ -3681,7 +3600,7 @@ func (c *centralizedCostTracker) TrackDynamoWrite(items int) {
 // TrackDynamoRead tracks DynamoDB read operations through centralized service
 func (c *centralizedCostTracker) TrackDynamoRead(items int) {
 	c.reads += int64(items)
-	
+
 	if c.costService != nil {
 		operation := cost.DynamoOperation{
 			Type:               "BatchGetItem",
@@ -3692,12 +3611,12 @@ func (c *centralizedCostTracker) TrackDynamoRead(items int) {
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("user_batch_read_%d", time.Now().UnixNano()),
 		}
-		
+
 		// Track through centralized service (async to not block operation)
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			
+
 			if err := c.costService.TrackDynamoOperation(ctx, operation); err != nil {
 				c.logger.Warn("failed to track batch read cost through centralized service",
 					zap.Int("items", items),
@@ -3741,43 +3660,15 @@ func (t *timelineCostTracker) TrackDynamoRead(items int) {
 
 // SetCostService allows setting or updating the cost service
 func (r *UserRepository) SetCostService(costService *cost.TrackingService) {
-	r.costService = costService
+	r.BaseRepository.SetCostService(costService)
 }
 
 // TrackRead provides a simple way to track read operations
 func (r *UserRepository) TrackRead(ctx context.Context, operationType string, readUnits int64) error {
-	if r.costService == nil {
-		return nil // Silently skip if no cost service
-	}
-	
-	operation := cost.DynamoOperation{
-		Type:               operationType,
-		TableName:          r.tableName,
-		ConsumedReadUnits:  readUnits,
-		ConsumedWriteUnits: 0,
-		ItemCount:          1,
-		Timestamp:          time.Now(),
-		OperationID:        fmt.Sprintf("user_%s_%d", operationType, time.Now().UnixNano()),
-	}
-	
-	return r.costService.TrackDynamoOperation(ctx, operation)
+	return r.BaseRepository.TrackRead(ctx, operationType, readUnits)
 }
 
 // TrackWrite provides a simple way to track write operations
 func (r *UserRepository) TrackWrite(ctx context.Context, operationType string, writeUnits int64) error {
-	if r.costService == nil {
-		return nil // Silently skip if no cost service
-	}
-	
-	operation := cost.DynamoOperation{
-		Type:               operationType,
-		TableName:          r.tableName,
-		ConsumedReadUnits:  0,
-		ConsumedWriteUnits: writeUnits,
-		ItemCount:          1,
-		Timestamp:          time.Now(),
-		OperationID:        fmt.Sprintf("user_%s_%d", operationType, time.Now().UnixNano()),
-	}
-	
-	return r.costService.TrackDynamoOperation(ctx, operation)
+	return r.BaseRepository.TrackWrite(ctx, operationType, writeUnits)
 }

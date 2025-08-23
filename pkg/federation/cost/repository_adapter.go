@@ -2,7 +2,6 @@ package cost
 
 import (
 	"context"
-	"os"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -11,6 +10,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // repositoryAdapter implements the Storage interface using DynamORM directly
@@ -24,7 +24,8 @@ type repositoryAdapter struct {
 
 // NewRepositoryAdapter creates a new repository adapter
 func NewRepositoryAdapter(db core.DB, logger *zap.Logger, costTracker *cost.Tracker) Storage {
-	tableName := os.Getenv("DYNAMO_TABLE_NAME")
+	cfg := config.Get()
+	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}

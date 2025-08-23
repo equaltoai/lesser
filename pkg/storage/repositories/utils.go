@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // KeyUtils provides utilities for generating consistent DynamoDB keys
@@ -229,7 +230,7 @@ func (p *PaginationUtils) DecodeCursor(cursor string) (pk, sk string, err error)
 
 	// Validate cursor format
 	if err := common.ValidateRepositoryCursor(cursor); err != nil {
-		return "", "", fmt.Errorf("invalid cursor: %w", err)
+		return "", "", ErrorHandler.HandleGetError(err, "pagination cursor", cursor)
 	}
 
 	// Decode from base64
@@ -240,13 +241,13 @@ func (p *PaginationUtils) DecodeCursor(cursor string) (pk, sk string, err error)
 		if len(parts) == 2 {
 			return parts[0], parts[1], nil
 		}
-		return "", "", fmt.Errorf("invalid cursor format")
+		return "", "", ErrorHandler.HandleGetError(storage.ErrInvalidInput, "pagination cursor", cursor)
 	}
 
 	// Parse the decoded cursor
 	parts := strings.Split(string(decoded), "|")
 	if len(parts) < 2 {
-		return "", "", fmt.Errorf("invalid cursor format")
+		return "", "", ErrorHandler.HandleGetError(storage.ErrInvalidInput, "pagination cursor", cursor)
 	}
 
 	// Return pk and sk (ignore timestamp if present for now)

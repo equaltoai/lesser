@@ -1,3 +1,5 @@
+// Package common provides standardized error response functions for HTTP APIs.
+// It consolidates error handling patterns to maintain consistency across the application.
 package common
 
 import (
@@ -16,7 +18,7 @@ type StandardErrorResponse struct {
 // Common error response patterns consolidated into reusable functions
 // This consolidates the 400+ occurrences of ctx.Status(4XX).JSON(map[string]string{"error": "..."})
 
-// Authentication Errors (401)
+// RespondUnauthorized handles authentication errors (401)
 func RespondUnauthorized(ctx *lift.Context, message ...string) error {
 	msg := "Unauthorized"
 	if len(message) > 0 && message[0] != "" {
@@ -25,6 +27,7 @@ func RespondUnauthorized(ctx *lift.Context, message ...string) error {
 	return ctx.Status(401).JSON(StandardErrorResponse{Error: msg})
 }
 
+// RespondUnauthorizedWithDescription handles authentication errors (401) with additional description
 func RespondUnauthorizedWithDescription(ctx *lift.Context, description string) error {
 	return ctx.Status(401).JSON(StandardErrorResponse{
 		Error:       "Unauthorized",
@@ -32,20 +35,22 @@ func RespondUnauthorizedWithDescription(ctx *lift.Context, description string) e
 	})
 }
 
-// Common unauthorized variants found in codebase
+// RespondMissingAuth handles authentication required errors by returning a 401 unauthorized response
 func RespondMissingAuth(ctx *lift.Context) error {
 	return RespondUnauthorized(ctx, "authentication required")
 }
 
+// RespondInvalidToken handles invalid token errors by returning a 401 unauthorized response
 func RespondInvalidToken(ctx *lift.Context) error {
 	return RespondUnauthorized(ctx, "invalid token")
 }
 
+// RespondExpiredToken handles expired token errors by returning a 401 unauthorized response
 func RespondExpiredToken(ctx *lift.Context) error {
 	return RespondUnauthorized(ctx, "token expired")
 }
 
-// Authorization/Permission Errors (403)
+// RespondForbidden handles authorization/permission errors (403) with optional custom message
 func RespondForbidden(ctx *lift.Context, message ...string) error {
 	msg := "Forbidden"
 	if len(message) > 0 && message[0] != "" {
@@ -54,7 +59,7 @@ func RespondForbidden(ctx *lift.Context, message ...string) error {
 	return ctx.Status(403).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Common forbidden variants found in codebase
+// RespondInsufficientScope handles insufficient OAuth scope errors by returning a 403 forbidden response
 func RespondInsufficientScope(ctx *lift.Context, requiredScope ...string) error {
 	msg := "insufficient scope"
 	if len(requiredScope) > 0 {
@@ -63,19 +68,22 @@ func RespondInsufficientScope(ctx *lift.Context, requiredScope ...string) error 
 	return RespondForbidden(ctx, msg)
 }
 
+// RespondNotAuthorized handles general authorization errors by returning a 403 forbidden response
 func RespondNotAuthorized(ctx *lift.Context, resource string) error {
 	return RespondForbidden(ctx, fmt.Sprintf("not authorized to access %s", resource))
 }
 
+// RespondNotAuthorizedToModify handles modification authorization errors by returning a 403 forbidden response
 func RespondNotAuthorizedToModify(ctx *lift.Context, resource string) error {
 	return RespondForbidden(ctx, fmt.Sprintf("not authorized to modify %s", resource))
 }
 
+// RespondNotAuthorizedToDelete handles deletion authorization errors by returning a 403 forbidden response
 func RespondNotAuthorizedToDelete(ctx *lift.Context, resource string) error {
 	return RespondForbidden(ctx, fmt.Sprintf("not authorized to delete %s", resource))
 }
 
-// Validation/Bad Request Errors (400)
+// RespondBadRequest handles validation and bad request errors (400) with optional custom message
 func RespondBadRequest(ctx *lift.Context, message ...string) error {
 	msg := "Bad Request"
 	if len(message) > 0 && message[0] != "" {
@@ -84,6 +92,7 @@ func RespondBadRequest(ctx *lift.Context, message ...string) error {
 	return ctx.Status(400).JSON(StandardErrorResponse{Error: msg})
 }
 
+// RespondValidationError handles validation failed errors by returning a 400 bad request response
 func RespondValidationError(ctx *lift.Context, err error) error {
 	msg := "Validation failed"
 	if err != nil {
@@ -92,28 +101,32 @@ func RespondValidationError(ctx *lift.Context, err error) error {
 	return ctx.Status(400).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Common bad request variants found in codebase
+// RespondMissingParameter handles missing required parameter errors by returning a 400 bad request response
 func RespondMissingParameter(ctx *lift.Context, paramName string) error {
 	return RespondBadRequest(ctx, fmt.Sprintf("missing required parameter: %s", paramName))
 }
 
+// RespondInvalidParameter handles invalid parameter errors by returning a 400 bad request response
 func RespondInvalidParameter(ctx *lift.Context, paramName string) error {
 	return RespondBadRequest(ctx, fmt.Sprintf("invalid parameter: %s", paramName))
 }
 
+// RespondMissingAccountID handles missing account ID errors by returning a 400 bad request response
 func RespondMissingAccountID(ctx *lift.Context) error {
 	return RespondBadRequest(ctx, "missing account id")
 }
 
+// RespondMissingStatusID handles missing status ID errors by returning a 400 bad request response
 func RespondMissingStatusID(ctx *lift.Context) error {
 	return RespondBadRequest(ctx, "missing status id")
 }
 
+// RespondInvalidRequest handles general invalid request errors by returning a 400 bad request response
 func RespondInvalidRequest(ctx *lift.Context) error {
 	return RespondBadRequest(ctx, "invalid request")
 }
 
-// Resource Not Found Errors (404)
+// RespondNotFound handles resource not found errors (404) with optional custom resource name
 func RespondNotFound(ctx *lift.Context, resource ...string) error {
 	msg := "Not Found"
 	if len(resource) > 0 && resource[0] != "" {
@@ -122,37 +135,42 @@ func RespondNotFound(ctx *lift.Context, resource ...string) error {
 	return ctx.Status(404).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Common not found variants found in codebase
+// RespondAccountNotFound handles account not found errors by returning a 404 not found response
 func RespondAccountNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "account")
 }
 
+// RespondStatusNotFound handles status not found errors by returning a 404 not found response
 func RespondStatusNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "status")
 }
 
+// RespondUserNotFound handles user not found errors by returning a 404 not found response
 func RespondUserNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "user")
 }
 
+// RespondActorNotFound handles actor not found errors by returning a 404 not found response
 func RespondActorNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "actor")
 }
 
+// RespondFilterNotFound handles filter not found errors by returning a 404 not found response
 func RespondFilterNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "filter")
 }
 
+// RespondConversationNotFound handles conversation not found errors by returning a 404 not found response
 func RespondConversationNotFound(ctx *lift.Context) error {
 	return RespondNotFound(ctx, "conversation")
 }
 
-// Method Not Allowed (405)
+// RespondMethodNotAllowed handles HTTP method not allowed errors by returning a 405 response
 func RespondMethodNotAllowed(ctx *lift.Context) error {
 	return ctx.Status(405).JSON(StandardErrorResponse{Error: "Method Not Allowed"})
 }
 
-// Conflict Errors (409)
+// RespondConflict handles resource conflict errors (409) with optional custom message
 func RespondConflict(ctx *lift.Context, message ...string) error {
 	msg := "Conflict"
 	if len(message) > 0 && message[0] != "" {
@@ -161,11 +179,12 @@ func RespondConflict(ctx *lift.Context, message ...string) error {
 	return ctx.Status(409).JSON(StandardErrorResponse{Error: msg})
 }
 
+// RespondAlreadyExists handles resource already exists conflicts by returning a 409 conflict response
 func RespondAlreadyExists(ctx *lift.Context, resource string) error {
 	return RespondConflict(ctx, fmt.Sprintf("%s already exists", resource))
 }
 
-// Gone Errors (410)
+// RespondGone handles resource gone errors (410) with optional custom message
 func RespondGone(ctx *lift.Context, message ...string) error {
 	msg := "Gone"
 	if len(message) > 0 && message[0] != "" {
@@ -174,7 +193,7 @@ func RespondGone(ctx *lift.Context, message ...string) error {
 	return ctx.Status(410).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Unprocessable Entity (422)
+// RespondUnprocessableEntity handles unprocessable entity errors (422) with optional custom message
 func RespondUnprocessableEntity(ctx *lift.Context, message ...string) error {
 	msg := "Unprocessable Entity"
 	if len(message) > 0 && message[0] != "" {
@@ -183,21 +202,22 @@ func RespondUnprocessableEntity(ctx *lift.Context, message ...string) error {
 	return ctx.Status(422).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Common 422 variants found in codebase
+// RespondStatusTooLong handles status text too long errors by returning a 422 unprocessable entity response
 func RespondStatusTooLong(ctx *lift.Context) error {
 	return RespondUnprocessableEntity(ctx, "status text too long")
 }
 
+// RespondInvalidContent handles invalid content errors by returning a 422 unprocessable entity response
 func RespondInvalidContent(ctx *lift.Context) error {
 	return RespondUnprocessableEntity(ctx, "invalid content")
 }
 
-// Rate Limiting (429)
+// RespondRateLimited handles rate limit exceeded errors by returning a 429 response
 func RespondRateLimited(ctx *lift.Context) error {
 	return ctx.Status(429).JSON(StandardErrorResponse{Error: "Rate limit exceeded"})
 }
 
-// Server Errors (500)
+// RespondInternalServerError handles internal server errors (500) with optional custom message
 func RespondInternalServerError(ctx *lift.Context, message ...string) error {
 	msg := "Internal server error"
 	if len(message) > 0 && message[0] != "" {
@@ -206,28 +226,32 @@ func RespondInternalServerError(ctx *lift.Context, message ...string) error {
 	return ctx.Status(500).JSON(StandardErrorResponse{Error: msg})
 }
 
-// Common server error variants found in codebase
+// RespondDatabaseError handles database errors by returning a 500 internal server error response
 func RespondDatabaseError(ctx *lift.Context) error {
 	return RespondInternalServerError(ctx, "database error")
 }
 
+// RespondFailedToCreate handles resource creation failures by returning a 500 internal server error response
 func RespondFailedToCreate(ctx *lift.Context, resource string) error {
 	return RespondInternalServerError(ctx, fmt.Sprintf("failed to create %s", resource))
 }
 
+// RespondFailedToUpdate handles resource update failures by returning a 500 internal server error response
 func RespondFailedToUpdate(ctx *lift.Context, resource string) error {
 	return RespondInternalServerError(ctx, fmt.Sprintf("failed to update %s", resource))
 }
 
+// RespondFailedToDelete handles resource deletion failures by returning a 500 internal server error response
 func RespondFailedToDelete(ctx *lift.Context, resource string) error {
 	return RespondInternalServerError(ctx, fmt.Sprintf("failed to delete %s", resource))
 }
 
+// RespondFailedToGet handles resource retrieval failures by returning a 500 internal server error response
 func RespondFailedToGet(ctx *lift.Context, resource string) error {
 	return RespondInternalServerError(ctx, fmt.Sprintf("failed to get %s", resource))
 }
 
-// Service Unavailable (503)
+// RespondServiceUnavailable handles service unavailable errors (503) with optional service name
 func RespondServiceUnavailable(ctx *lift.Context, service ...string) error {
 	msg := "Service Unavailable"
 	if len(service) > 0 && service[0] != "" {
@@ -267,14 +291,14 @@ func RespondValidationOrError(ctx *lift.Context, err error) error {
 func containsValidationKeywords(errMsg string) bool {
 	keywords := []string{"cannot be blank", "too long", "invalid format", "must be", "required"}
 	for _, keyword := range keywords {
-		if len(errMsg) > 0 && errMsg[0:min(len(keyword), len(errMsg))] == keyword {
+		if len(errMsg) > 0 && errMsg[0:minInt(len(keyword), len(errMsg))] == keyword {
 			return true
 		}
 	}
 	return false
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}
@@ -354,13 +378,13 @@ func RespondGetError(ctx *lift.Context, resource string, err error) error {
 }
 
 // Error type checking helpers (these would need to be implemented based on actual error types)
-func isConflictError(err error) bool {
+func isConflictError(_ error) bool {
 	// Implementation would check for specific conflict error types
 	// This is a placeholder for the actual logic
 	return false
 }
 
-func isNotFoundError(err error) bool {
+func isNotFoundError(_ error) bool {
 	// Implementation would check for specific not found error types
 	// This is a placeholder for the actual logic
 	return false
@@ -374,17 +398,17 @@ func RespondWithErrorMessage(ctx *lift.Context, statusCode int, message string) 
 }
 
 // RespondWithErrorAndDescription creates a detailed error response
-func RespondWithErrorAndDescription(ctx *lift.Context, statusCode int, error, description string) error {
+func RespondWithErrorAndDescription(ctx *lift.Context, statusCode int, errorMsg, description string) error {
 	return ctx.Status(statusCode).JSON(StandardErrorResponse{
-		Error:       error,
+		Error:       errorMsg,
 		Description: description,
 	})
 }
 
 // RespondWithErrorCode creates an error response with an error code
-func RespondWithErrorCode(ctx *lift.Context, statusCode int, error, code string) error {
+func RespondWithErrorCode(ctx *lift.Context, statusCode int, errorMsg, code string) error {
 	return ctx.Status(statusCode).JSON(StandardErrorResponse{
-		Error: error,
+		Error: errorMsg,
 		Code:  code,
 	})
 }
@@ -437,3 +461,8 @@ var (
 	ErrorFailedToDelete     = "failed to delete"
 	ErrorFailedToGet        = "failed to get"
 )
+
+// RespondSuccess handles successful responses with data
+func RespondSuccess(ctx *lift.Context, data interface{}) error {
+	return ctx.Status(200).JSON(data)
+}

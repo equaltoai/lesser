@@ -2,45 +2,45 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SessionLifecycleManager handles session creation, refresh, and cleanup
 type SessionLifecycleManager struct {
-	sessionManager *SessionManager
+	sessionManager  *SessionManager
 	securityManager *SessionSecurityManager
-	repos          StorageProvider
-	logger         *zap.Logger
-	config         *SessionLifecycleConfig
+	repos           StorageProvider
+	logger          *zap.Logger
+	config          *SessionLifecycleConfig
 }
 
 // SessionLifecycleConfig holds lifecycle management configuration
 type SessionLifecycleConfig struct {
 	// Session durations
-	SessionDuration          time.Duration // Default session lifetime
-	MaxSessionDuration       time.Duration // Maximum session lifetime (hard limit)
-	InactivityTimeout        time.Duration // Auto-logout after inactivity
-	RefreshTokenDuration     time.Duration // Refresh token lifetime
-	
+	SessionDuration      time.Duration // Default session lifetime
+	MaxSessionDuration   time.Duration // Maximum session lifetime (hard limit)
+	InactivityTimeout    time.Duration // Auto-logout after inactivity
+	RefreshTokenDuration time.Duration // Refresh token lifetime
+
 	// Cleanup settings
-	CleanupInterval          time.Duration // How often to run cleanup
+	CleanupInterval           time.Duration // How often to run cleanup
 	ExpiredSessionGracePeriod time.Duration // Grace period for expired sessions
-	MaxInactiveSessions      int           // Max inactive sessions per user
-	
+	MaxInactiveSessions       int           // Max inactive sessions per user
+
 	// Security settings
-	RequireRefreshRotation   bool          // Rotate refresh tokens on use
-	SessionFixationPrevention bool          // Regenerate session IDs on login
-	ConcurrentSessionLimit   int           // Max concurrent sessions per user
-	
+	RequireRefreshRotation    bool // Rotate refresh tokens on use
+	SessionFixationPrevention bool // Regenerate session IDs on login
+	ConcurrentSessionLimit    int  // Max concurrent sessions per user
+
 	// Extension policies
-	AllowSessionExtension    bool          // Allow extending session lifetime
-	ExtensionThreshold       time.Duration // When to extend sessions automatically
-	MaxSessionExtensions     int           // Max extensions per session
+	AllowSessionExtension bool          // Allow extending session lifetime
+	ExtensionThreshold    time.Duration // When to extend sessions automatically
+	MaxSessionExtensions  int           // Max extensions per session
 }
 
 // DefaultSessionLifecycleConfig provides secure defaults
@@ -57,18 +57,18 @@ func DefaultSessionLifecycleConfig() *SessionLifecycleConfig {
 		SessionFixationPrevention: true,
 		ConcurrentSessionLimit:    10,
 		AllowSessionExtension:     true,
-		ExtensionThreshold:        6 * time.Hour,       // Extend when < 6 hours left
-		MaxSessionExtensions:      3,                   // Max 3 extensions
+		ExtensionThreshold:        6 * time.Hour, // Extend when < 6 hours left
+		MaxSessionExtensions:      3,             // Max 3 extensions
 	}
 }
 
 // SessionExtension represents a session extension event
 type SessionExtension struct {
-	SessionID    string    `json:"session_id"`
-	ExtendedBy   time.Duration `json:"extended_by"`
-	ExtendedAt   time.Time `json:"extended_at"`
-	Reason       string    `json:"reason"`
-	ExtensionCount int     `json:"extension_count"`
+	SessionID      string        `json:"session_id"`
+	ExtendedBy     time.Duration `json:"extended_by"`
+	ExtendedAt     time.Time     `json:"extended_at"`
+	Reason         string        `json:"reason"`
+	ExtensionCount int           `json:"extension_count"`
 }
 
 // NewSessionLifecycleManager creates a new session lifecycle manager
@@ -76,13 +76,13 @@ func NewSessionLifecycleManager(sessionManager *SessionManager, securityManager 
 	if config == nil {
 		config = DefaultSessionLifecycleConfig()
 	}
-	
+
 	return &SessionLifecycleManager{
 		sessionManager:  sessionManager,
 		securityManager: securityManager,
-		repos:          repos,
-		logger:         logger,
-		config:         config,
+		repos:           repos,
+		logger:          logger,
+		config:          config,
 	}
 }
 
@@ -90,7 +90,8 @@ func NewSessionLifecycleManager(sessionManager *SessionManager, securityManager 
 func (slm *SessionLifecycleManager) CreateSessionWithLifecycle(ctx context.Context, username, deviceName, userAgent, ipAddress, authMethod string) (*Session, error) {
 	// Check concurrent session limits
 	if err := slm.enforceConcurrentSessionLimits(ctx, username); err != nil {
-		return nil, fmt.Errorf("concurrent session limit exceeded: %w", err)
+		slm.logger.Error("concurrent session limit exceeded", zap.String("username", username), zap.Error(err))
+		return nil, errors.Join(ErrConcurrentSessionLimitExceeded, err)
 	}
 
 	// Create device fingerprint for security tracking
@@ -107,7 +108,8 @@ func (slm *SessionLifecycleManager) CreateSessionWithLifecycle(ctx context.Conte
 	// Create the session using the session manager
 	session, err := slm.sessionManager.CreateSession(ctx, username, deviceName, userAgent, ipAddress, authMethod)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create session: %w", err)
+		slm.logger.Error("failed to create session", zap.String("username", username), zap.String("authMethod", authMethod), zap.Error(err))
+		return nil, errors.Join(ErrSessionCreationFailed, err)
 	}
 
 	// Apply session fixation prevention if enabled
@@ -139,7 +141,8 @@ func (slm *SessionLifecycleManager) RefreshSessionWithRotation(ctx context.Conte
 	// Validate the refresh token
 	session, err := slm.sessionManager.ValidateRefreshToken(ctx, refreshToken)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid refresh token: %w", err)
+		slm.logger.Error("invalid refresh token provided", zap.Error(err))
+		return nil, "", errors.Join(ErrInvalidRefreshTokenProvided, err)
 	}
 
 	// Generate device fingerprint for security validation
@@ -148,7 +151,8 @@ func (slm *SessionLifecycleManager) RefreshSessionWithRotation(ctx context.Conte
 	// Perform security validation
 	securityResult, err := slm.securityManager.ValidateSessionSecurity(ctx, session, currentFingerprint)
 	if err != nil {
-		return nil, "", fmt.Errorf("security validation failed: %w", err)
+		slm.logger.Error("session security validation failed", zap.String("sessionID", session.SessionID), zap.Error(err))
+		return nil, "", errors.Join(ErrSessionSecurityCheckFailed, err)
 	}
 
 	if !securityResult.Valid {
@@ -156,12 +160,12 @@ func (slm *SessionLifecycleManager) RefreshSessionWithRotation(ctx context.Conte
 			"risk_factors": securityResult.RiskFactors,
 			"trust_score":  securityResult.TrustScore,
 		})
-		return nil, "", fmt.Errorf("session security validation failed: %v", securityResult.RiskFactors)
+		return nil, "", ErrSessionSecurityValidationFailed
 	}
 
 	// Check if session can be extended
 	if !slm.canExtendSession(session) {
-		return nil, "", fmt.Errorf("session cannot be extended (max lifetime reached)")
+		return nil, "", ErrSessionMaxLifetimeReached
 	}
 
 	// Rotate refresh token if required
@@ -169,7 +173,8 @@ func (slm *SessionLifecycleManager) RefreshSessionWithRotation(ctx context.Conte
 	if slm.config.RequireRefreshRotation {
 		newRefreshToken, err = slm.sessionManager.RotateRefreshToken(ctx, session)
 		if err != nil {
-			return nil, "", fmt.Errorf("failed to rotate refresh token: %w", err)
+			slm.logger.Error("failed to rotate refresh token", zap.String("sessionID", session.SessionID), zap.Error(err))
+			return nil, "", errors.Join(ErrRefreshTokenRotationFailed, err)
 		}
 	} else {
 		newRefreshToken = refreshToken
@@ -198,11 +203,11 @@ func (slm *SessionLifecycleManager) RefreshSessionWithRotation(ctx context.Conte
 // ExtendSession extends a session's lifetime
 func (slm *SessionLifecycleManager) extendSession(ctx context.Context, session *Session) error {
 	if !slm.config.AllowSessionExtension {
-		return fmt.Errorf("session extension is disabled")
+		return ErrSessionExtensionDisabled
 	}
 
 	if !slm.canExtendSession(session) {
-		return fmt.Errorf("session cannot be extended")
+		return ErrSessionCannotBeExtended
 	}
 
 	// Calculate extension duration
@@ -220,10 +225,10 @@ func (slm *SessionLifecycleManager) extendSession(ctx context.Context, session *
 
 	// Log extension
 	extension := &SessionExtension{
-		SessionID:    session.SessionID,
-		ExtendedBy:   extensionDuration,
-		ExtendedAt:   time.Now(),
-		Reason:       "automatic_extension",
+		SessionID:      session.SessionID,
+		ExtendedBy:     extensionDuration,
+		ExtendedAt:     time.Now(),
+		Reason:         "automatic_extension",
 		ExtensionCount: slm.getSessionExtensionCount(session) + 1,
 	}
 
@@ -290,7 +295,8 @@ func (slm *SessionLifecycleManager) CleanupExpiredSessions(_ context.Context) er
 func (slm *SessionLifecycleManager) enforceConcurrentSessionLimits(ctx context.Context, username string) error {
 	sessions, err := slm.sessionManager.repos.Account().GetUserSessions(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get user sessions: %w", err)
+		slm.logger.Error("failed to get user sessions", zap.String("username", username), zap.Error(err))
+		return errors.Join(ErrUserSessionsRetrieval, err)
 	}
 
 	// Count active sessions
@@ -305,7 +311,8 @@ func (slm *SessionLifecycleManager) enforceConcurrentSessionLimits(ctx context.C
 	if activeCount >= slm.config.ConcurrentSessionLimit {
 		// Remove oldest session to make room
 		if err := slm.removeOldestSession(ctx, username, sessions); err != nil {
-			return fmt.Errorf("failed to remove oldest session: %w", err)
+			slm.logger.Error("failed to remove oldest session", zap.String("username", username), zap.Error(err))
+			return errors.Join(ErrOldestSessionRemoval, err)
 		}
 	}
 

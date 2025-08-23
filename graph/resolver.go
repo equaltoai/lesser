@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/equaltoai/lesser/pkg/ai"
@@ -28,6 +27,7 @@ type Resolver struct {
 	CostTracker         *cost.Tracker
 	UnifiedTracker      *cost.UnifiedTracker // Centralized cost tracking
 	TableName           string               // DynamoDB table name
+	S3BucketName        string               // S3 bucket name
 	MastodonConv        mastodon.Converter
 	Logger              *zap.Logger
 	SubscriptionManager *SubscriptionManager // For GraphQL subscriptions
@@ -91,27 +91,24 @@ func (r *Resolver) trackDynamoOperation(ctx context.Context, operation string, u
 	if r.UnifiedTracker == nil {
 		return
 	}
-	
+
 	tableName := r.TableName
 	if tableName == "" {
-		tableName = os.Getenv("DYNAMO_TABLE_NAME")
-		if tableName == "" {
-			tableName = "lesser-main"
-		}
+		tableName = "lesser-main"
 	}
-	
+
 	var err error
 	switch operation {
-	case "read":
+	case DynamoOperationRead:
 		err = r.UnifiedTracker.TrackDynamoRead(ctx, tableName, units)
 	case "write":
 		err = r.UnifiedTracker.TrackDynamoWrite(ctx, tableName, units)
-	case "query":
+	case DynamoOperationQuery:
 		err = r.UnifiedTracker.TrackDynamoQuery(ctx, tableName, units)
 	case "scan":
 		err = r.UnifiedTracker.TrackDynamoScan(ctx, tableName, units)
 	}
-	
+
 	if err != nil {
 		r.Logger.Warn("Failed to track cost", zap.String("operation", operation), zap.Error(err))
 	}
@@ -122,12 +119,12 @@ func (r *Resolver) trackS3Operation(ctx context.Context, operation string, units
 	if r.UnifiedTracker == nil {
 		return
 	}
-	
-	bucketName := os.Getenv("S3_BUCKET_NAME")
+
+	bucketName := r.S3BucketName
 	if bucketName == "" {
 		bucketName = "lesser-media"
 	}
-	
+
 	var err error
 	switch operation {
 	case "get":
@@ -137,7 +134,7 @@ func (r *Resolver) trackS3Operation(ctx context.Context, operation string, units
 	case "delete":
 		err = r.UnifiedTracker.TrackS3Delete(ctx, bucketName)
 	}
-	
+
 	if err != nil {
 		r.Logger.Warn("Failed to track S3 cost", zap.String("operation", operation), zap.Error(err))
 	}

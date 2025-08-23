@@ -13,8 +13,8 @@ Migrated to use standardized Lambda initialization and Lift framework.
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -97,12 +97,12 @@ func init() {
 	db := lambdaCtx.DynamoDB.(dynamormCore.DB)
 	tableName := cfg.DynamoTableName
 
-	connectionsTable := os.Getenv("CONNECTIONS_TABLE")
+	connectionsTable := cfg.ConnectionsTable
 	if err := common.ValidateRequiredParam("connections_table", connectionsTable); err != nil {
 		connectionsTable = "lesser-streaming-connections"
 	}
 
-	subscriptionsTable := os.Getenv("SUBSCRIPTIONS_TABLE")
+	subscriptionsTable := cfg.SubscriptionsTable
 	if err := common.ValidateRequiredParam("subscriptions_table", subscriptionsTable); err != nil {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
@@ -220,7 +220,7 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 		return sh.handleMessage(ctx.Request.Context(), event)
 	default:
 		logger.Warn("unknown route key", zap.String("routeKey", event.RequestContext.RouteKey))
-		return lift.NewLiftError("UNKNOWN_ROUTE", "unknown WebSocket route", 400)
+		return lift.NewLiftError("UNKNOWN_ROUTE", ErrUnknownRoute.Error(), 400)
 	}
 }
 
@@ -256,7 +256,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 		// Create minimal audit logger for OAuth service
 		// Use storageFactory from the handler
 		auditLogger := auth.NewAuditLogger(sh.storageFactory, sh.logger, auth.DefaultAuditConfig())
-		authService := auth.NewOAuthService(os.Getenv("JWT_SECRET"), sh.storageFactory, auditLogger)
+		authService := auth.NewOAuthService(sh.cfg.JWTSecret, sh.cfg, sh.storageFactory, auditLogger)
 		claims, err := authService.ValidateAccessToken(token)
 		if err != nil {
 			sh.logger.Warn("invalid token", zap.Error(err))
@@ -277,7 +277,7 @@ func (sh *StreamingHandler) handleConnect(ctx context.Context, event events.APIG
 	// Create connection record using DynamORM repository
 	if err := sh.connectionRepo.WriteConnection(ctx, event.RequestContext.ConnectionID, userID, username, []string{}); err != nil {
 		sh.logger.Error("failed to write connection", zap.Error(err))
-		return fmt.Errorf("failed to write connection: %w", err)
+		return errors.Join(streaming.ErrConnectionWriteFailed, err)
 	}
 
 	// IMPORTANT: Do not send any messages during $connect
@@ -328,7 +328,7 @@ func (sh *StreamingHandler) handleDisconnect(ctx context.Context, event events.A
 	// Delete connection using DynamORM repository
 	if err := sh.connectionRepo.DeleteConnection(ctx, event.RequestContext.ConnectionID); err != nil {
 		logger.Error("failed to delete connection", zap.Error(err))
-		return fmt.Errorf("failed to delete connection: %w", err)
+		return errors.Join(streaming.ErrConnectionDeleteFailed, err)
 	}
 
 	// Clean up any subscriptions
@@ -353,14 +353,14 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	var message StreamMessage
 	if err := common.ParseRequestBody([]byte(event.Body), &message); err != nil {
 		logger.Error("failed to parse message", zap.Error(err))
-		return sh.sendError(event.RequestContext.ConnectionID, "Invalid message format")
+		return sh.sendError(event.RequestContext.ConnectionID, ErrInvalidMessageFormat.Error())
 	}
 
 	// Get connection details using DynamORM repository
 	connection, err := sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
-		return sh.sendError(event.RequestContext.ConnectionID, "Connection not found")
+		return sh.sendError(event.RequestContext.ConnectionID, ErrConnectionNotFound.Error())
 	}
 
 	// Update last activity
@@ -381,7 +381,7 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 		err = sh.handleCommand(ctx, connection, message)
 	default:
 		logger.Warn("unknown message type", zap.String("type", message.Type))
-		err = sh.sendError(event.RequestContext.ConnectionID, "Unknown message type")
+		err = sh.sendError(event.RequestContext.ConnectionID, ErrUnknownMessageType.Error())
 	}
 
 	// Track message processing cost
@@ -435,7 +435,8 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 	}
 
 	if !isValid {
-		return sh.sendError(connection.ConnectionID, "Invalid stream: "+message.Stream)
+		logger.Error("invalid stream name", zap.String("stream", message.Stream))
+		return sh.sendError(connection.ConnectionID, ErrInvalidStream.Error())
 	}
 
 	// Check authorization for stream
@@ -443,7 +444,8 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 		message.Stream == "direct" || strings.HasPrefix(message.Stream, "list:") {
 		// These streams require authentication
 		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
-			return sh.sendError(connection.ConnectionID, "Authentication required for stream: "+message.Stream)
+			logger.Error("authentication required for stream", zap.String("stream", message.Stream))
+			return sh.sendError(connection.ConnectionID, ErrAuthenticationRequired.Error())
 		}
 	}
 
@@ -452,14 +454,14 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 		connection.Streams = append(connection.Streams, message.Stream)
 		if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
 			logger.Error("failed to update connection streams", zap.Error(err))
-			return sh.sendError(connection.ConnectionID, "Failed to subscribe")
+			return sh.sendError(connection.ConnectionID, ErrFailedToSubscribe.Error())
 		}
 	}
 
 	// Store subscription using DynamORM repository
 	if err := sh.connectionRepo.WriteSubscription(ctx, connection.ConnectionID, connection.UserID, message.Stream); err != nil {
 		logger.Error("failed to write subscription", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, "Failed to subscribe")
+		return sh.sendError(connection.ConnectionID, ErrFailedToSubscribe.Error())
 	}
 
 	// Send confirmation
@@ -473,7 +475,7 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 
 	if err := sh.sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
 		logger.Error("failed to send confirmation", zap.Error(err))
-		return fmt.Errorf("failed to send confirmation: %w", err)
+		return errors.Join(streaming.ErrConfirmationSendFailed, err)
 	}
 
 	logger.Info("subscribed to stream")
@@ -498,7 +500,7 @@ func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *m
 
 	if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
 		logger.Error("failed to update connection streams", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, "Failed to unsubscribe")
+		return sh.sendError(connection.ConnectionID, ErrFailedToUnsubscribe.Error())
 	}
 
 	// Remove subscription using DynamORM repository
@@ -518,7 +520,7 @@ func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *m
 
 	if err := sh.sendMessageToConnection(connection.ConnectionID, confirmMsg); err != nil {
 		logger.Error("failed to send confirmation", zap.Error(err))
-		return fmt.Errorf("failed to send confirmation: %w", err)
+		return errors.Join(streaming.ErrConfirmationSendFailed, err)
 	}
 
 	logger.Info("unsubscribed from stream")
@@ -535,7 +537,7 @@ func (sh *StreamingHandler) handlePing(connectionID string) error {
 
 	if err := sh.sendMessageToConnection(connectionID, pongMessage); err != nil {
 		sh.logger.Error("failed to send pong", zap.Error(err))
-		return fmt.Errorf("failed to send pong: %w", err)
+		return errors.Join(streaming.ErrPongSendFailed, err)
 	}
 
 	return nil
@@ -552,7 +554,7 @@ func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *model
 	command, err := sh.parseCommand(message)
 	if err != nil {
 		logger.Error("failed to parse command", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, "Invalid command format")
+		return sh.sendError(connection.ConnectionID, ErrInvalidCommandFormat.Error())
 	}
 
 	// Create connection info for the command handler
@@ -568,7 +570,7 @@ func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *model
 	response, err := sh.commandRouter.HandleCommand(ctx, connInfo, command)
 	if err != nil {
 		logger.Error("command execution failed", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, "Command execution failed")
+		return sh.sendError(connection.ConnectionID, ErrCommandExecutionFailed.Error())
 	}
 
 	// Send the response back to the client
@@ -588,10 +590,10 @@ func (sh *StreamingHandler) parseCommand(message StreamMessage) (*streaming.Comm
 		if idStr, ok := id.(string); ok {
 			command.ID = idStr
 		} else {
-			return nil, fmt.Errorf("command id must be a string")
+			return nil, streaming.ErrCommandIDMustBeString
 		}
 	} else {
-		return nil, fmt.Errorf("command id is required")
+		return nil, streaming.ErrCommandIDRequired
 	}
 
 	// Get command type (required)
@@ -599,10 +601,10 @@ func (sh *StreamingHandler) parseCommand(message StreamMessage) (*streaming.Comm
 		if cmdTypeStr, ok := cmdType.(string); ok {
 			command.Type = cmdTypeStr
 		} else {
-			return nil, fmt.Errorf("command type must be a string")
+			return nil, streaming.ErrCommandTypeMustBeString
 		}
 	} else {
-		return nil, fmt.Errorf("command type is required")
+		return nil, streaming.ErrCommandTypeRequired
 	}
 
 	// Get command payload (optional)
@@ -657,7 +659,7 @@ func (sh *StreamingHandler) sendCommandResponse(connectionID string, response *s
 
 func (sh *StreamingHandler) sendMessageToConnection(connectionID string, message StreamMessage) error {
 	if sh.apiClient == nil {
-		return fmt.Errorf("API Gateway client not initialized")
+		return streaming.ErrAPIGatewayClientNotInit
 	}
 
 	messageBytes, err := json.Marshal(message)
@@ -683,7 +685,7 @@ func (sh *StreamingHandler) sendError(connectionID string, errorMessage string) 
 	}
 
 	if err := sh.sendMessageToConnection(connectionID, errMsg); err != nil {
-		return fmt.Errorf("failed to send error message: %w", err)
+		return errors.Join(streaming.ErrErrorMessageSendFailed, err)
 	}
 
 	return nil

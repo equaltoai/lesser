@@ -15,9 +15,9 @@ import (
 
 // getImportExportItemsForUser is a shared helper for getting items with pagination
 func getImportExportItemsForUser(
+	_ context.Context,
 	db core.DB,
 	logger *zap.Logger,
-	ctx context.Context,
 	username string,
 	limit int,
 	cursor string,
@@ -39,7 +39,7 @@ func getImportExportItemsForUser(
 			logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
 				zap.String("username", username),
 				zap.Error(err))
-			return nil, "", fmt.Errorf("failed to get %ss for user: %w", itemType, err)
+			return nil, "", ErrorHandler.HandleQueryError(err, EntityExport, username)
 		}
 
 		var nextCursor string
@@ -52,35 +52,35 @@ func getImportExportItemsForUser(
 			zap.Int("count", len(exports)))
 
 		return exports, nextCursor, nil
-	} else {
-		var imports []*models.Import
-		query := db.Model(&models.Import{}).
-			Where("Username", "=", username).
-			Limit(limit)
-
-		if cursor != "" {
-			query = query.Where("CreatedAt", ">", cursor)
-		}
-
-		err := query.Scan(&imports)
-		if err != nil {
-			logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
-				zap.String("username", username),
-				zap.Error(err))
-			return nil, "", fmt.Errorf("failed to get %ss for user: %w", itemType, err)
-		}
-
-		var nextCursor string
-		if len(imports) == limit {
-			nextCursor = imports[len(imports)-1].CreatedAt.Format(time.RFC3339)
-		}
-
-		logger.Debug(fmt.Sprintf("retrieved %ss for user", itemType),
-			zap.String("username", username),
-			zap.Int("count", len(imports)))
-
-		return imports, nextCursor, nil
 	}
+	
+	var imports []*models.Import
+	query := db.Model(&models.Import{}).
+		Where("Username", "=", username).
+		Limit(limit)
+
+	if cursor != "" {
+		query = query.Where("CreatedAt", ">", cursor)
+	}
+
+	err := query.Scan(&imports)
+	if err != nil {
+		logger.Error(fmt.Sprintf("failed to get %ss for user", itemType),
+			zap.String("username", username),
+			zap.Error(err))
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityImport, username)
+	}
+
+	var nextCursor string
+	if len(imports) == limit {
+		nextCursor = imports[len(imports)-1].CreatedAt.Format(time.RFC3339)
+	}
+
+	logger.Debug(fmt.Sprintf("retrieved %ss for user", itemType),
+		zap.String("username", username),
+		zap.Int("count", len(imports)))
+
+	return imports, nextCursor, nil
 }
 
 // ImportExportItem interface for models that support import/export operations
@@ -91,9 +91,9 @@ type ImportExportItem interface {
 
 // getImportExportItemsByStatus is a generic helper for getting items by status
 func getImportExportItemsByStatus[T ImportExportItem](
+	_ context.Context,
 	db core.DB,
 	logger *zap.Logger,
-	ctx context.Context,
 	username string,
 	statuses []string,
 	itemType string,
@@ -110,7 +110,11 @@ func getImportExportItemsByStatus[T ImportExportItem](
 		logger.Error(fmt.Sprintf("failed to query %ss by GSI1", itemType),
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get %ss for user: %w", itemType, err)
+		if itemType == "export" {
+			return nil, ErrorHandler.HandleQueryError(err, EntityExport, username)
+		} else {
+			return nil, ErrorHandler.HandleQueryError(err, EntityImport, username)
+		}
 	}
 
 	// Filter by status
@@ -156,9 +160,9 @@ type CostTrackingItem interface {
 
 // getCostsByDateRange is a generic helper for getting cost data by date range
 func getCostsByDateRange[T CostTrackingItem](
+	_ context.Context,
 	db core.DB,
 	logger *zap.Logger,
-	ctx context.Context,
 	startDate, endDate time.Time,
 	limit int,
 	itemType string,
@@ -206,9 +210,9 @@ func getCostsByDateRange[T CostTrackingItem](
 
 // getUserCosts is a generic helper for getting user cost data
 func getUserCosts[T any](
+	_ context.Context,
 	db core.DB,
 	logger *zap.Logger,
-	ctx context.Context,
 	username string,
 	startDate, endDate time.Time,
 	limit int,
@@ -233,7 +237,11 @@ func getUserCosts[T any](
 		logger.Error(fmt.Sprintf("failed to get user %s costs", itemType),
 			zap.String("username", username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user %s costs: %w", itemType, err)
+		if itemType == "export" {
+			return nil, ErrorHandler.HandleQueryError(err, EntityExportCostTracking, username)
+		} else {
+			return nil, ErrorHandler.HandleQueryError(err, EntityImportCostTracking, username)
+		}
 	}
 
 	return costTrackingRecords, nil
@@ -247,9 +255,9 @@ type CostTrackable interface {
 
 // getHighCostOperations is a generic helper for getting high cost operations
 func getHighCostOperations[T CostTrackable](
+	ctx context.Context,
 	db core.DB,
 	logger *zap.Logger,
-	ctx context.Context,
 	thresholdMicroCents int64,
 	startDate, endDate time.Time,
 	limit int,
@@ -257,7 +265,7 @@ func getHighCostOperations[T CostTrackable](
 	modelPtr T,
 ) ([]T, error) {
 	// Get all recent costs
-	allCosts, err := getCostsByDateRange(db, logger, ctx, startDate, endDate, limit*10, itemType, modelPtr)
+	allCosts, err := getCostsByDateRange(ctx, db, logger, startDate, endDate, limit*10, itemType, modelPtr)
 	if err != nil {
 		return nil, err
 	}

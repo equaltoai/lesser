@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
@@ -42,58 +41,90 @@ func MapError(err error) error {
 		return nil
 	}
 
-	// Check for common error messages since DynamORM doesn't export error constants
+	// Check for DynamORM specific errors first
+	if isDynamORMNotFoundError(err) {
+		return storage.ErrNotFound
+	}
+
+	// Check for common error messages
 	errMsg := err.Error()
 
 	// Not found errors
-	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") {
+	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") || 
+		strings.Contains(errMsg, "record not found") {
 		return storage.ErrNotFound
 	}
 
 	// Validation errors
-	if strings.Contains(errMsg, "validation failed") {
+	if strings.Contains(errMsg, "validation failed") || strings.Contains(errMsg, "validation error") {
 		return storage.ErrInvalidInput
 	}
 
 	// Conditional check errors
-	if strings.Contains(errMsg, "conditional check failed") {
+	if strings.Contains(errMsg, "conditional check failed") || 
+		strings.Contains(errMsg, "condition failed") {
 		return ErrConditionalCheckFailed
 	}
 
 	// Transaction errors
-	if strings.Contains(errMsg, "transaction canceled") {
+	if strings.Contains(errMsg, "transaction canceled") || 
+		strings.Contains(errMsg, "transaction failed") {
 		return ErrTransactionCanceled
 	}
 
 	// Key errors
-	if strings.Contains(errMsg, "missing key") || strings.Contains(errMsg, "invalid key") {
+	if strings.Contains(errMsg, "missing key") || strings.Contains(errMsg, "invalid key") ||
+		strings.Contains(errMsg, "key required") {
 		return ErrInvalidKey
 	}
 
-	// Check for AWS DynamoDB specific errors
-	var provisionedThroughputExceeded *types.ProvisionedThroughputExceededException
-	if errors.As(err, &provisionedThroughputExceeded) {
+	// Throttling errors
+	if strings.Contains(errMsg, "throttl") || strings.Contains(errMsg, "rate limit") ||
+		strings.Contains(errMsg, "capacity exceed") {
 		return ErrThrottling
 	}
 
-	var resourceNotFound *types.ResourceNotFoundException
-	if errors.As(err, &resourceNotFound) {
+	// Resource not found errors
+	if strings.Contains(errMsg, "resource not found") || strings.Contains(errMsg, "table not found") {
 		return ErrResourceNotFound
 	}
 
-	var transactionCanceled *types.TransactionCanceledException
-	if errors.As(err, &transactionCanceled) {
-		return ErrTransactionCanceled
+	// Batch operation errors
+	if strings.Contains(errMsg, "batch") && strings.Contains(errMsg, "failed") {
+		return ErrBatchOperationFailed
 	}
 
-	// ValidationException is not directly accessible in aws-sdk-go-v2
-	// Check for validation error message patterns instead
+	// General validation errors
 	if strings.Contains(errMsg, "validation") || strings.Contains(errMsg, "invalid") {
 		return ErrValidation
 	}
 
 	// Default to internal error with original error message
 	return fmt.Errorf("%w: %v", ErrInternal, err)
+}
+
+// isDynamORMNotFoundError checks if the error is a DynamORM not found error
+func isDynamORMNotFoundError(err error) bool {
+	// Check for DynamORM error patterns that indicate not found
+	// Note: core.ErrNotFound may not be exported, so check error strings
+	
+	// Check error message patterns that indicate not found
+	errMsg := strings.ToLower(err.Error())
+	notFoundPatterns := []string{
+		"record not found",
+		"item not found", 
+		"no rows",
+		"no items found",
+		"does not exist",
+	}
+	
+	for _, pattern := range notFoundPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // MapErrorWithContext maps DynamORM errors to storage errors with additional context

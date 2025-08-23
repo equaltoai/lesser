@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,7 +65,8 @@ type HTTPSignature struct {
 func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 	// Validate signature header format using centralized validation
 	if err := common.ValidateActivityPubSignature(header); err != nil {
-		return nil, fmt.Errorf("invalid signature header format: %w", err)
+		common.Logger().Error("invalid signature header format", zap.Error(err))
+		return nil, errors.Join(ErrInvalidSignatureHeaderFormatWrapper, err)
 	}
 
 	sig := &HTTPSignature{}
@@ -74,7 +76,7 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 	for _, part := range parts {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
 		if len(kv) != 2 {
-			return nil, fmt.Errorf("invalid signature header format")
+			return nil, ErrInvalidSignatureHeaderFormat
 		}
 
 		key := strings.TrimSpace(kv[0])
@@ -90,7 +92,8 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 		case "signature":
 			decoded, err := base64.StdEncoding.DecodeString(value)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode signature: %w", err)
+				common.Logger().Error("failed to decode base64 signature", zap.Error(err), zap.String("signature", value))
+				return nil, errors.Join(ErrDecodeSignatureFailed, err)
 			}
 			sig.Signature = decoded
 		}
@@ -98,10 +101,10 @@ func ParseSignatureHeader(header string) (*HTTPSignature, error) {
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("keyId", sig.KeyID); err != nil {
-		return nil, fmt.Errorf("missing keyId in signature")
+		return nil, ErrMissingKeyID
 	}
 	if err := common.ValidateSliceNotEmpty("signature", sig.Signature); err != nil {
-		return nil, fmt.Errorf("missing signature value")
+		return nil, ErrMissingSignatureValue
 	}
 	if err := common.ValidateRequiredParam("algorithm", sig.Algorithm); err != nil {
 		sig.Algorithm = DefaultAlgorithm
@@ -135,7 +138,8 @@ func buildSignatureString(req *http.Request, headers []string) (string, error) {
 			// Get header value (case-insensitive)
 			value = req.Header.Get(header)
 			if err := common.ValidateRequiredParam(fmt.Sprintf("header_%s", header), value); err != nil {
-				return "", fmt.Errorf("required header '%s' not found", header)
+				common.Logger().Error("required header not found", zap.String("header", header))
+				return "", errors.Join(ErrRequiredHeaderNotFound, err)
 			}
 		}
 
@@ -173,7 +177,8 @@ func verifyTimestamp(dateStr string) error {
 	now := time.Now()
 	diff := now.Sub(requestTime)
 	if err := common.ValidateFloatRange("clock_skew", diff.Seconds(), -MaxClockSkew.Seconds(), MaxClockSkew.Seconds()); err != nil {
-		return common.AuthenticationError{Message: fmt.Sprintf("request timestamp out of range: %v", diff)}
+		common.Logger().Error("request timestamp out of acceptable range", zap.Duration("diff", diff), zap.Duration("max_skew", MaxClockSkew))
+		return common.AuthenticationError{Message: "request timestamp out of range"}
 	}
 
 	return nil
@@ -189,7 +194,7 @@ func calculateDigest(body []byte) string {
 func ParsePublicKeyPEM(pemData []byte) (crypto.PublicKey, error) {
 	block, _ := pem.Decode(pemData)
 	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block")
+		return nil, ErrFailedToParsePEMBlock
 	}
 
 	switch block.Type {
@@ -198,7 +203,8 @@ func ParsePublicKeyPEM(pemData []byte) (crypto.PublicKey, error) {
 	case "RSA PUBLIC KEY":
 		return x509.ParsePKCS1PublicKey(block.Bytes)
 	default:
-		return nil, fmt.Errorf("unsupported key type: %s", block.Type)
+		common.Logger().Error("unsupported public key type", zap.String("type", block.Type))
+		return nil, errors.Join(ErrUnsupportedKeyType, errors.New(block.Type))
 	}
 }
 
@@ -206,7 +212,7 @@ func ParsePublicKeyPEM(pemData []byte) (crypto.PublicKey, error) {
 func ParsePrivateKeyPEM(pemData []byte) (crypto.PrivateKey, error) {
 	block, _ := pem.Decode(pemData)
 	if block == nil {
-		return nil, fmt.Errorf("failed to parse PEM block")
+		return nil, ErrFailedToParsePEMBlock
 	}
 
 	switch block.Type {
@@ -215,7 +221,8 @@ func ParsePrivateKeyPEM(pemData []byte) (crypto.PrivateKey, error) {
 	case "RSA PRIVATE KEY":
 		return x509.ParsePKCS1PrivateKey(block.Bytes)
 	default:
-		return nil, fmt.Errorf("unsupported key type: %s", block.Type)
+		common.Logger().Error("unsupported private key type", zap.String("type", block.Type))
+		return nil, errors.Join(ErrUnsupportedKeyType, errors.New(block.Type))
 	}
 }
 
@@ -227,7 +234,8 @@ func VerifyHTTPSignature(req *http.Request, publicKey crypto.PublicKey) error {
 	sigHeader := req.Header.Get(SignatureHeader)
 	sig, err := ParseSignatureHeader(sigHeader)
 	if err != nil {
-		return fmt.Errorf("failed to parse signature: %w", err)
+		common.Logger().Error("failed to parse signature header", zap.Error(err))
+		return errors.Join(ErrSignatureParseFailed, err)
 	}
 
 	// Verify timestamp if date header is included
@@ -266,7 +274,8 @@ func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID stri
 		// Read body
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read request body: %w", err)
+			common.Logger().Error("failed to read request body", zap.Error(err))
+			return errors.Join(ErrReadRequestBodyFailed, err)
 		}
 
 		// Reset body for future reads
@@ -286,12 +295,13 @@ func SignHTTPRequest(req *http.Request, privateKey crypto.PrivateKey, keyID stri
 // GenerateRSAKeyPair generates a new RSA key pair
 func GenerateRSAKeyPair(bits int) (*rsa.PrivateKey, error) {
 	if bits < 2048 {
-		return nil, fmt.Errorf("key size must be at least 2048 bits")
+		return nil, ErrKeySizeTooSmall
 	}
 
 	privateKey, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate RSA key pair: %w", err)
+		common.Logger().Error("failed to generate RSA key pair", zap.Error(err), zap.Int("bits", bits))
+		return nil, errors.Join(ErrRSAKeyGenFailed, err)
 	}
 
 	return privateKey, nil
@@ -301,7 +311,8 @@ func GenerateRSAKeyPair(bits int) (*rsa.PrivateKey, error) {
 func EncodePublicKeyPEM(publicKey *rsa.PublicKey) ([]byte, error) {
 	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal public key: %w", err)
+		common.Logger().Error("failed to marshal public key", zap.Error(err))
+		return nil, errors.Join(ErrMarshalPublicKeyFailed, err)
 	}
 
 	publicKeyPEM := pem.EncodeToMemory(&pem.Block{
@@ -316,7 +327,8 @@ func EncodePublicKeyPEM(publicKey *rsa.PublicKey) ([]byte, error) {
 func EncodePrivateKeyPEM(privateKey *rsa.PrivateKey) ([]byte, error) {
 	privateKeyBytes, err := x509.MarshalPKCS8PrivateKey(privateKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal private key: %w", err)
+		common.Logger().Error("failed to marshal private key", zap.Error(err))
+		return nil, errors.Join(ErrMarshalPrivateKeyFailed, err)
 	}
 
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
@@ -345,7 +357,8 @@ func VerifyDigest(req *http.Request, body []byte) error {
 
 	// Only support SHA-256 for now
 	if algorithm != "SHA-256" {
-		return common.AuthenticationError{Message: fmt.Sprintf("unsupported digest algorithm: %s", algorithm)}
+		common.Logger().Error("unsupported digest algorithm", zap.String("algorithm", algorithm))
+		return common.AuthenticationError{Message: "unsupported digest algorithm"}
 	}
 
 	// Calculate actual digest

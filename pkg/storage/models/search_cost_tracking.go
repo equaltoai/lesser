@@ -66,7 +66,7 @@ type SearchCostTracking struct {
 }
 
 // UpdateKeys sets the composite keys for search cost tracking
-func (sct *SearchCostTracking) UpdateKeys() {
+func (sct *SearchCostTracking) UpdateKeys() error {
 	if sct.Timestamp.IsZero() {
 		sct.Timestamp = time.Now()
 	}
@@ -89,6 +89,17 @@ func (sct *SearchCostTracking) UpdateKeys() {
 	if sct.TTL == 0 {
 		sct.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (sct *SearchCostTracking) GetPK() string {
+	return sct.PK
+}
+
+// GetSK returns the sort key
+func (sct *SearchCostTracking) GetSK() string {
+	return sct.SK
 }
 
 // SearchBudget tracks search budgets and limits per user
@@ -132,7 +143,7 @@ type SearchBudget struct {
 }
 
 // UpdateKeys sets the composite keys for search budget tracking
-func (sb *SearchBudget) UpdateKeys() {
+func (sb *SearchBudget) UpdateKeys() error {
 	// PK: SEARCH_BUDGET#user_id
 	sb.PK = fmt.Sprintf("SEARCH_BUDGET#%s", sb.UserID)
 
@@ -154,6 +165,17 @@ func (sb *SearchBudget) UpdateKeys() {
 			sb.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 		}
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (sb *SearchBudget) GetPK() string {
+	return sb.PK
+}
+
+// GetSK returns the sort key
+func (sb *SearchBudget) GetSK() string {
+	return sb.SK
 }
 
 // CanMakeRequest checks if user can make a search request within budget
@@ -255,7 +277,7 @@ type SearchCostAggregation struct {
 }
 
 // UpdateKeys sets the composite keys for search cost aggregation
-func (sca *SearchCostAggregation) UpdateKeys() {
+func (sca *SearchCostAggregation) UpdateKeys() error {
 	// PK: SEARCH_AGG#date#aggregation_type
 	sca.PK = fmt.Sprintf("SEARCH_AGG#%s#%s", sca.Date, sca.AggregationType)
 
@@ -268,6 +290,17 @@ func (sca *SearchCostAggregation) UpdateKeys() {
 	if sca.TTL == 0 {
 		sca.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (sca *SearchCostAggregation) GetPK() string {
+	return sca.PK
+}
+
+// GetSK returns the sort key
+func (sca *SearchCostAggregation) GetSK() string {
+	return sca.SK
 }
 
 // SearchQueryStats tracks statistics for specific search queries
@@ -311,7 +344,7 @@ type SearchQueryStats struct {
 }
 
 // UpdateKeys sets the composite keys for search query stats
-func (sqs *SearchQueryStats) UpdateKeys() {
+func (sqs *SearchQueryStats) UpdateKeys() error {
 	// PK: SEARCH_STATS#query_hash
 	sqs.PK = fmt.Sprintf("SEARCH_STATS#%s", sqs.QueryHash)
 
@@ -333,4 +366,15 @@ func (sqs *SearchQueryStats) UpdateKeys() {
 			sqs.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 		}
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (sqs *SearchQueryStats) GetPK() string {
+	return sqs.PK
+}
+
+// GetSK returns the sort key
+func (sqs *SearchQueryStats) GetSK() string {
+	return sqs.SK
 }

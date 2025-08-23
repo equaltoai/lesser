@@ -37,10 +37,8 @@ type FederationBudget struct {
 	InstanceOverrides    map[string]float64 `json:"instance_overrides"`
 }
 
-// CostThresholds defines alerting thresholds
-//
-//nolint:revive // Cost prefix clarifies this is for cost thresholds
-type CostThresholds struct {
+// Thresholds defines alerting thresholds
+type Thresholds struct {
 	WarnThresholdPercent  float64 `json:"warn_threshold_percent"`  // e.g., 80
 	BlockThresholdPercent float64 `json:"block_threshold_percent"` // e.g., 95
 }

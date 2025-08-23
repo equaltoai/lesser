@@ -6,6 +6,7 @@ package notes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -253,13 +254,13 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Validate the command
 	if err := s.validateCreateCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Get author account
 	author, err := s.accountRepo.GetAccount(ctx, cmd.AuthorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get author account: %w", err)
+		return nil, ErrGetAuthorAccount
 	}
 
 	// Generate unique status ID
@@ -302,7 +303,7 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 
 	// Store the status
 	if err := s.noteRepo.CreateStatus(ctx, status); err != nil {
-		return nil, fmt.Errorf("failed to create status: %w", err)
+		return nil, errors.Join(ErrCreateStatus, err)
 	}
 
 	// Create poll if poll options are provided
@@ -354,17 +355,20 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 	// Get existing status
 	status, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, ErrGetStatus
 	}
 
 	// Verify permission (only author can update)
 	if status.AuthorID != cmd.UpdaterID {
-		return nil, fmt.Errorf("unauthorized: only the author can update their posts")
+		s.logger.Warn("user cannot update post owned by another user",
+			zap.String("updater_id", cmd.UpdaterID),
+			zap.String("author_id", status.AuthorID))
+		return nil, common.ErrForbidden(ErrCannotUpdatePostOwnedByOther)
 	}
 
 	// Validate the update
 	if err := s.validateUpdateCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Update status fields
@@ -383,7 +387,7 @@ func (s *Service) UpdateNote(ctx context.Context, cmd *UpdateNoteCommand) (*Note
 
 	// Store the updated status
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
-		return nil, fmt.Errorf("failed to update status: %w", err)
+		return nil, ErrUpdateStatus
 	}
 
 	s.logger.Info("updated note successfully",
@@ -408,7 +412,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 	// Get existing status
 	status, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return fmt.Errorf("failed to get status: %w", err)
+		return ErrGetStatus
 	}
 
 	// Check if already deleted
@@ -427,7 +431,10 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 		}
 		
 		if !isAdmin {
-			return fmt.Errorf("unauthorized: only the author or admin can delete posts")
+			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
+				zap.String("deleter_id", cmd.DeleterID),
+				zap.String("author_id", status.AuthorID))
+			return common.ErrForbidden(ErrCannotDeletePostOwnedByOther)
 		}
 	}
 
@@ -439,7 +446,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 
 	// Store the deletion
 	if err := s.noteRepo.UpdateStatus(ctx, status); err != nil {
-		return fmt.Errorf("failed to delete status: %w", err)
+		return ErrDeleteStatus
 	}
 
 	s.logger.Info("deleted note successfully",
@@ -460,12 +467,12 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 	// Get the status
 	status, err := s.noteRepo.GetStatus(ctx, statusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, ErrGetStatus
 	}
 
 	// Check if deleted
 	if status.Deleted {
-		return nil, fmt.Errorf("status not found") // Don't reveal it was deleted
+		return nil, ErrStatusNotFound // Don't reveal it was deleted
 	}
 
 	// Return the status directly since we simplified the method
@@ -475,7 +482,7 @@ func (s *Service) GetNote(ctx context.Context, statusID string) (*models.Status,
 // GetNoteWithViewer retrieves a note with viewer context for privacy checking
 func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*models.Status, error) {
 	if err := common.ValidateRequiredParam("status_id", query.StatusID); err != nil {
-		return nil, fmt.Errorf("status_id is required")
+		return nil, ErrStatusIDRequired
 	}
 
 	s.logger.Debug("getting note with viewer context",
@@ -485,22 +492,22 @@ func (s *Service) GetNoteWithViewer(ctx context.Context, query *GetNoteQuery) (*
 	// Get the status
 	status, err := s.noteRepo.GetStatus(ctx, query.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get status: %w", err)
+		return nil, ErrGetStatus
 	}
 
 	// Check if deleted
 	if status.Deleted {
-		return nil, fmt.Errorf("status not found") // Don't reveal it was deleted
+		return nil, ErrStatusNotFound // Don't reveal it was deleted
 	}
 
 	// Check privacy permissions
 	canView, err := s.checkViewPermissions(ctx, status, query.ViewerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check view permissions: %w", err)
+		return nil, ErrCheckViewPermissions
 	}
 
 	if !canView {
-		return nil, fmt.Errorf("status not found") // Don't reveal access denied
+		return nil, ErrStatusNotFound // Don't reveal access denied
 	}
 
 	return status, nil
@@ -533,7 +540,7 @@ func (s *Service) checkViewPermissions(ctx context.Context, status *models.Statu
 				zap.String("viewer_id", viewerID),
 				zap.String("author", status.AuthorUsername),
 				zap.Error(err))
-			return false, fmt.Errorf("failed to check following relationship: %w", err)
+			return false, ErrCheckFollowingRelationship
 		}
 		return isFollowing, nil
 	}
@@ -588,33 +595,33 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		result, err = s.noteRepo.GetPublicTimeline(ctx, query.Pagination)
 	case "home":
 		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
-			return nil, fmt.Errorf("home timeline requires viewer_id")
+			return nil, ErrHomeTimelineRequiresViewerID
 		}
 		result, err = s.noteRepo.GetHomeTimeline(ctx, query.ViewerID, query.Pagination)
 	case "user":
 		if err := common.ValidateRequiredParam("author_id", query.AuthorID); err != nil {
-			return nil, fmt.Errorf("user timeline requires author_id")
+			return nil, ErrUserTimelineRequiresAuthorID
 		}
 		result, err = s.noteRepo.GetUserTimeline(ctx, query.AuthorID, query.Pagination)
 	case "conversations":
 		if err := common.ValidateRequiredParam("conversation_id", query.ConversationID); err != nil {
-			return nil, fmt.Errorf("conversations timeline requires conversation_id")
+			return nil, ErrConversationsTimelineRequiresConversationID
 		}
 		result, err = s.noteRepo.GetConversationThread(ctx, query.ConversationID, query.Pagination)
 	case "direct":
 		if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
-			return nil, fmt.Errorf("direct timeline requires viewer_id")
+			return nil, ErrDirectTimelineRequiresViewerID
 		}
 		// Direct messages are handled differently - we get conversations first, then statuses
 		return s.getDirectTimeline(ctx, query)
 	case "hashtag":
 		if err := common.ValidateRequiredParam("hashtag", query.Hashtag); err != nil {
-			return nil, fmt.Errorf("hashtag timeline requires hashtag")
+			return nil, ErrHashtagTimelineRequiresHashtag
 		}
 		result, err = s.noteRepo.GetStatusesByHashtag(ctx, query.Hashtag, query.Pagination)
 	case "list":
 		if err := common.ValidateRequiredParam("list_id", query.ListID); err != nil {
-			return nil, fmt.Errorf("list timeline requires list_id")
+			return nil, ErrListTimelineRequiresListID
 		}
 		// Get list timeline - statuses from members of the list
 		listResult, listErr := s.getListTimeline(ctx, query)
@@ -623,11 +630,13 @@ func (s *Service) ListNotes(ctx context.Context, query *ListNotesQuery) (*Result
 		}
 		return listResult, nil
 	default:
-		return nil, fmt.Errorf("unsupported timeline type: %s", query.TimelineType)
+		s.logger.Warn("unsupported timeline type",
+			zap.String("timeline_type", query.TimelineType))
+		return nil, ErrUnsupportedTimelineType
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get timeline: %w", err)
+		return nil, ErrGetTimeline
 	}
 
 	// Filter results based on privacy and other criteria
@@ -686,18 +695,20 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 	// Validate basic command structure
 	validationResult := common.ValidateCommand(ctx, cmd, rules)
 	if !validationResult.IsValid {
-		return fmt.Errorf("validation failed: %s", strings.Join(validationResult.Errors, "; "))
+		s.logger.Warn("notes validation failed",
+			zap.Strings("validation_errors", validationResult.Errors))
+		return ErrNotesValidationFailed
 	}
 
 	// Use Mastodon business logic for content validation
 	if err := s.mastodonLogic.ValidateStatusContent(cmd.Content, len(cmd.MediaIDs), len(cmd.PollOptions)); err != nil {
-		return fmt.Errorf("status content validation failed: %w", err)
+		return err
 	}
 
 	// Use business logic for visibility validation
 	visibility := common.VisibilityLevel(cmd.Visibility)
 	if err := common.ValidateBusinessVisibility(visibility, cmd.AuthorID); err != nil {
-		return fmt.Errorf("visibility validation failed: %w", err)
+		return err
 	}
 
 	// Validate spoiler text if provided using business logic
@@ -706,7 +717,7 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 			MaxLength: 500, // Spoiler text limit
 		}
 		if err := common.ValidateBusinessContent(cmd.SpoilerText, rules); err != nil {
-			return fmt.Errorf("spoiler text validation failed: %w", err)
+			return ErrSpoilerTextValidationFailed
 		}
 	}
 
@@ -714,20 +725,20 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 	if cmd.InReplyToID != "" {
 		_, err := s.noteRepo.GetStatus(ctx, cmd.InReplyToID)
 		if err != nil {
-			return fmt.Errorf("invalid in_reply_to_id: %w", err)
+			return ErrInvalidInReplyToID
 		}
 	}
 
 	return nil
 }
 
-func (s *Service) validateUpdateCommand(ctx context.Context, cmd *UpdateNoteCommand) error {
+func (s *Service) validateUpdateCommand(_ context.Context, cmd *UpdateNoteCommand) error {
 	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
-		return fmt.Errorf("content cannot be empty")
+		return ErrContentCannotBeEmpty
 	}
 	if err := common.ValidateStringLength("content", cmd.Content, 0, 5000); err != nil {
-		return fmt.Errorf("content too long (max 5000 characters)")
+		return ErrContentTooLong
 	}
 
 	// Additional Mastodon-specific validation
@@ -738,7 +749,7 @@ func (s *Service) validateUpdateCommand(ctx context.Context, cmd *UpdateNoteComm
 	// Use business logic validation for spoiler text
 	if cmd.SpoilerText != "" {
 		if err := common.ValidateStringLength("spoiler_text", cmd.SpoilerText, 0, 160); err != nil {
-			return fmt.Errorf("spoiler text validation failed: %w", err)
+			return ErrSpoilerTextValidationFailed
 		}
 	}
 
@@ -1014,7 +1025,7 @@ type GetUpdateHistoryResult struct {
 // GetUpdateHistory retrieves the edit history for a status
 func (s *Service) GetUpdateHistory(ctx context.Context, query *GetUpdateHistoryQuery) (*GetUpdateHistoryResult, error) {
 	if err := common.ValidateRequiredParam("status_id", query.StatusID); err != nil {
-		return nil, fmt.Errorf("status ID is required")
+		return nil, ErrStatusIDRequired
 	}
 
 	// Normalize the status ID to object ID
@@ -1151,12 +1162,12 @@ func (s *Service) BookmarkNote(ctx context.Context, cmd *BookmarkNoteCommand) (*
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Add bookmark through account repository
 	if err := s.accountRepo.AddBookmark(ctx, cmd.BookmarkerID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to bookmark status: %w", err)
+		return nil, ErrBookmarkStatus
 	}
 
 	// Emit events
@@ -1173,12 +1184,12 @@ func (s *Service) UnbookmarkNote(ctx context.Context, cmd *UnbookmarkNoteCommand
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Remove bookmark through account repository
 	if err := s.accountRepo.RemoveBookmark(ctx, cmd.UnbookmarkerID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to unbookmark status: %w", err)
+		return nil, ErrUnbookmarkStatus
 	}
 
 	// Emit events
@@ -1195,7 +1206,7 @@ func (s *Service) GetBookmarks(ctx context.Context, query *GetBookmarksQuery) (*
 	// Get bookmarked statuses through account repository
 	result, err := s.accountRepo.GetBookmarkedStatuses(ctx, query.UserID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get bookmarks: %w", err)
+		return nil, ErrGetBookmarks
 	}
 
 	return &Result{
@@ -1321,7 +1332,7 @@ type noteActionParams struct {
 	statusID    string
 	actorID     string
 	actorType   string
-	actionFn    func(context.Context, string, string) error
+	actionFn    func(context.Context, string, string, string) error
 	emitEventsFn func(context.Context, *models.Status, string) []*streaming.Event
 	errorMsg    string
 }
@@ -1331,13 +1342,17 @@ func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActio
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, params.statusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Get actor's account
 	actor, err := s.accountRepo.GetAccount(ctx, params.actorID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get %s account: %w", params.actorType, err)
+		s.logger.Error("failed to get actor account",
+			zap.String("actor_id", params.actorID),
+			zap.String("actor_type", params.actorType),
+			zap.Error(err))
+		return nil, errors.Join(ErrGetAuthorAccount, err)
 	}
 
 	// Create actor and object URLs
@@ -1345,8 +1360,13 @@ func (s *Service) executeNoteActionGeneric(ctx context.Context, params noteActio
 	objectURL := fmt.Sprintf("https://%s/users/%s/statuses/%s", s.domainName, note.AuthorUsername, params.statusID)
 
 	// Execute the action through repository interface
-	if err := params.actionFn(ctx, actorURL, objectURL); err != nil {
-		return nil, fmt.Errorf("%s: %w", params.errorMsg, err)
+	if err := params.actionFn(ctx, actorURL, objectURL, note.AuthorUsername); err != nil {
+		s.logger.Error("action execution failed",
+			zap.String("error_msg", params.errorMsg),
+			zap.String("actor_id", params.actorID),
+			zap.String("status_id", params.statusID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
 	// Emit events
@@ -1387,13 +1407,13 @@ func (s *Service) GetLikers(ctx context.Context, query *GetLikersQuery) (*UsersR
 	// Get the status first to validate it exists
 	_, err := s.noteRepo.GetStatus(ctx, query.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Get likers through repository interface
 	users, pagination, err := s.getLikers(ctx, query.StatusID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get likers: %w", err)
+		return nil, ErrGetLikers
 	}
 
 	return &UsersResult{
@@ -1427,13 +1447,13 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Get reblogger's account
 	reblogger, err := s.accountRepo.GetAccount(ctx, cmd.RebloggerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get reblogger account: %w", err)
+		return nil, ErrGetRebloggerAccount
 	}
 
 	// Create actor and object URLs for the reblog
@@ -1442,7 +1462,7 @@ func (s *Service) ReblogNote(ctx context.Context, cmd *ReblogNoteCommand) (*Like
 
 	// Create the reblog through repository interface
 	if err := s.createReblog(ctx, actorURL, objectURL, cmd.RebloggerID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to reblog status: %w", err)
+		return nil, ErrReblogStatus
 	}
 
 	// Emit events
@@ -1471,13 +1491,13 @@ func (s *Service) GetRebloggers(ctx context.Context, query *GetRebloggersQuery) 
 	// Get the status first to validate it exists
 	_, err := s.noteRepo.GetStatus(ctx, query.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Get rebloggers through repository interface
 	users, pagination, err := s.getRebloggers(ctx, query.StatusID, query.Pagination)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get rebloggers: %w", err)
+		return nil, ErrGetRebloggers
 	}
 
 	return &UsersResult{
@@ -1516,17 +1536,25 @@ func (s *Service) executePinActionGeneric(ctx context.Context, params pinActionP
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, params.statusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Verify the user owns the status (can only pin/unpin own statuses)
 	if note.AuthorID != params.pinnerID {
-		return nil, fmt.Errorf("unauthorized: can only pin/unpin own statuses")
+		s.logger.Warn("user cannot pin/unpin status owned by another user",
+			zap.String("pinner_id", params.pinnerID),
+			zap.String("author_id", note.AuthorID))
+		return nil, common.ErrForbidden(ErrCannotPinPostOwnedByOther)
 	}
 
 	// Execute the action through repository interface
 	if err := params.actionFn(ctx, params.pinnerID, params.statusID); err != nil {
-		return nil, fmt.Errorf("%s: %w", params.errorMsg, err)
+		s.logger.Error("pin action execution failed",
+			zap.String("error_msg", params.errorMsg),
+			zap.String("pinner_id", params.pinnerID),
+			zap.String("status_id", params.statusID),
+			zap.Error(err))
+		return nil, errors.Join(ErrExecuteAction, err)
 	}
 
 	// Emit events
@@ -1594,12 +1622,12 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Mute the status through repository interface
 	if err := s.muteStatus(ctx, cmd.MuterID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to mute status: %w", err)
+		return nil, ErrMuteStatus
 	}
 
 	// Emit mute events (conversation muted)
@@ -1628,12 +1656,12 @@ func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*Like
 	// Get the status first to validate it exists
 	note, err := s.noteRepo.GetStatus(ctx, cmd.StatusID)
 	if err != nil {
-		return nil, fmt.Errorf("status not found: %w", err)
+		return nil, ErrStatusNotFound
 	}
 
 	// Unmute the status through repository interface
 	if err := s.unmuteStatus(ctx, cmd.MuterID, cmd.StatusID); err != nil {
-		return nil, fmt.Errorf("failed to unmute status: %w", err)
+		return nil, ErrUnmuteStatus
 	}
 
 	// Emit unmute events (conversation unmuted)
@@ -1659,18 +1687,18 @@ func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*Like
 
 // Private helper methods - these need to be implemented to interface with repositories
 
-func (s *Service) createLike(ctx context.Context, actorURL, objectURL string) error {
-	_, err := s.likeRepo.CreateLike(ctx, actorURL, objectURL)
+func (s *Service) createLike(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
+	_, err := s.likeRepo.CreateLike(ctx, actorURL, objectURL, statusAuthorID)
 	if err != nil {
-		return fmt.Errorf("failed to create like: %w", err)
+		return ErrCreateLike
 	}
 	return nil
 }
 
-func (s *Service) deleteLike(ctx context.Context, actorURL, objectURL string) error {
+func (s *Service) deleteLike(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
 	err := s.likeRepo.DeleteLike(ctx, actorURL, objectURL)
 	if err != nil {
-		return fmt.Errorf("failed to delete like: %w", err)
+		return ErrDeleteLike
 	}
 	return nil
 }
@@ -1679,7 +1707,7 @@ func (s *Service) getLikers(ctx context.Context, statusID string, pagination int
 	// Get likes for the status
 	likes, nextCursor, err := s.likeRepo.GetObjectLikes(ctx, statusID, pagination.Limit, pagination.Cursor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get likes: %w", err)
+		return nil, nil, ErrGetLikes
 	}
 
 	// Extract unique actor IDs and get their accounts
@@ -1710,15 +1738,15 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 	}
 	err := s.socialRepo.CreateAnnounce(ctx, announce)
 	if err != nil {
-		return fmt.Errorf("failed to create reblog: %w", err)
+		return ErrCreateReblog
 	}
 	return nil
 }
 
-func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL string) error {
+func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
 	err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL)
 	if err != nil {
-		return fmt.Errorf("failed to delete reblog: %w", err)
+		return ErrDeleteReblog
 	}
 	return nil
 }
@@ -1727,7 +1755,7 @@ func (s *Service) getRebloggers(ctx context.Context, statusID string, pagination
 	// Get announces for the status
 	announces, nextCursor, err := s.socialRepo.GetStatusAnnounces(ctx, statusID, pagination.Limit, pagination.Cursor)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get announces: %w", err)
+		return nil, nil, ErrGetAnnounces
 	}
 
 	// Extract unique actor IDs and get their accounts
@@ -1758,7 +1786,7 @@ func (s *Service) pinStatus(ctx context.Context, userID, statusID string) error 
 	}
 	err := s.socialRepo.CreateStatusPin(ctx, pin)
 	if err != nil {
-		return fmt.Errorf("failed to pin status: %w", err)
+		return ErrPinStatus
 	}
 	return nil
 }
@@ -1766,7 +1794,7 @@ func (s *Service) pinStatus(ctx context.Context, userID, statusID string) error 
 func (s *Service) unpinStatus(ctx context.Context, userID, statusID string) error {
 	err := s.socialRepo.DeleteStatusPin(ctx, userID, statusID)
 	if err != nil {
-		return fmt.Errorf("failed to unpin status: %w", err)
+		return ErrUnpinStatus
 	}
 	return nil
 }
@@ -1791,7 +1819,7 @@ func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error
 		s.logger.Warn("conversation repository not available",
 			zap.String("user_id", userID),
 			zap.String("conversation_id", conversationID))
-		return fmt.Errorf("conversation service not available")
+		return ErrConversationServiceNotAvailable
 	}
 
 	err := s.conversationRepo.CreateConversationMute(ctx, mute)
@@ -1807,7 +1835,7 @@ func (s *Service) muteStatus(ctx context.Context, userID, statusID string) error
 			zap.String("user_id", userID),
 			zap.String("conversation_id", conversationID),
 			zap.Error(err))
-		return fmt.Errorf("failed to mute conversation: %w", err)
+		return ErrMuteConversation
 	}
 
 	s.logger.Info("muted conversation",
@@ -1829,7 +1857,7 @@ func (s *Service) unmuteStatus(ctx context.Context, userID, statusID string) err
 		s.logger.Warn("conversation repository not available",
 			zap.String("user_id", userID),
 			zap.String("conversation_id", conversationID))
-		return fmt.Errorf("conversation service not available")
+		return ErrConversationServiceNotAvailable
 	}
 
 	// Delete the conversation mute
@@ -1846,7 +1874,7 @@ func (s *Service) unmuteStatus(ctx context.Context, userID, statusID string) err
 			zap.String("user_id", userID),
 			zap.String("conversation_id", conversationID),
 			zap.Error(err))
-		return fmt.Errorf("failed to unmute conversation: %w", err)
+		return ErrUnmuteConversation
 	}
 
 	s.logger.Info("unmuted conversation",
@@ -1915,7 +1943,7 @@ func (s *Service) getListTimeline(_ context.Context, query *ListNotesQuery) (*Re
 
 func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) (*Result, error) {
 	if s.conversationRepo == nil {
-		return nil, fmt.Errorf("conversation service not available")
+		return nil, ErrConversationServiceNotAvailable
 	}
 
 	// Get user's conversations first
@@ -1925,7 +1953,7 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 	}
 	result, err := s.conversationRepo.GetUserConversations(ctx, query.ViewerID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get conversations: %w", err)
+		return nil, ErrGetConversations
 	}
 	conversations := result.Items
 	nextCursor := result.NextCursor
@@ -1998,24 +2026,24 @@ func (s *Service) getDirectTimeline(ctx context.Context, query *ListNotesQuery) 
 // GetFavoritedNotes returns the favorited/liked statuses for a user
 func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) (*Result, error) {
 	if err := common.ValidateRequiredParam("viewer_id", query.ViewerID); err != nil {
-		return nil, fmt.Errorf("viewer_id is required for favorited timeline")
+		return nil, ErrViewerIDRequiredForFavoritedTimeline
 	}
 
 	// Get the viewer's actor to use their actor ID for likes
 	account, err := s.accountRepo.GetAccount(ctx, query.ViewerID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get viewer account: %w", err)
+		return nil, ErrGetViewerAccount
 	}
 
 	// Get liked objects using Like repository
 	if s.likeRepo == nil {
-		return nil, fmt.Errorf("like repository not available")
+		return nil, ErrLikeRepositoryNotAvailable
 	}
 
 	// Get the likes for the actor
 	likes, nextCursor, err := s.likeRepo.GetActorLikes(ctx, account.Actor.ID, query.Pagination.Limit, query.Pagination.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get liked objects: %w", err)
+		return nil, ErrGetLikedObjects
 	}
 
 	// Collect the liked status IDs
@@ -2036,7 +2064,7 @@ func (s *Service) GetFavoritedNotes(ctx context.Context, query *ListNotesQuery) 
 	// Get the actual status objects
 	statuses, err := s.noteRepo.GetStatusesByIDs(ctx, statusIDs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get statuses: %w", err)
+		return nil, ErrGetStatuses
 	}
 
 	// Filter out deleted statuses
@@ -2093,7 +2121,7 @@ func (s *Service) CreateScheduledNote(ctx context.Context, cmd *CreateScheduledN
 
 	// Validate command
 	if err := s.validateCreateScheduledNoteCommand(ctx, cmd); err != nil {
-		return nil, fmt.Errorf("validation failed: %w", err)
+		return nil, err
 	}
 
 	// Create scheduled status
@@ -2113,7 +2141,7 @@ func (s *Service) CreateScheduledNote(ctx context.Context, cmd *CreateScheduledN
 
 	// Store in repository
 	if err := s.scheduledRepo.CreateScheduledStatus(ctx, scheduled); err != nil {
-		return nil, fmt.Errorf("failed to create scheduled status: %w", err)
+		return nil, ErrCreateScheduledStatus
 	}
 
 	s.logger.Info("created scheduled note successfully",
@@ -2130,18 +2158,18 @@ func (s *Service) CreateScheduledNote(ctx context.Context, cmd *CreateScheduledN
 }
 
 // validateCreateScheduledNoteCommand validates the create scheduled note command
-func (s *Service) validateCreateScheduledNoteCommand(ctx context.Context, cmd *CreateScheduledNoteCommand) error {
+func (s *Service) validateCreateScheduledNoteCommand(_ context.Context, cmd *CreateScheduledNoteCommand) error {
 	// Use centralized validation patterns from business logic
 	if err := common.ValidateRequiredParam("content", strings.TrimSpace(cmd.Content)); err != nil {
-		return fmt.Errorf("content cannot be empty")
+		return ErrContentCannotBeEmpty
 	}
 	if err := common.ValidateStringLength("content", cmd.Content, 0, 500); err != nil {
-		return fmt.Errorf("content too long (max 500 characters)")
+		return ErrContentTooLongShort
 	}
 
 	// Validate scheduled time using business logic 
 	if cmd.ScheduledAt.Before(time.Now()) {
-		return fmt.Errorf("scheduled time must be in the future")
+		return ErrScheduledTimeInPast
 	}
 
 	// Additional Mastodon-specific validation
@@ -2200,7 +2228,7 @@ func (s *Service) GetSearchSuggestions(ctx context.Context, query *GetSearchSugg
 	// Get suggestions from the search repository
 	modelSuggestions, err := s.searchRepo.GetSearchSuggestions(ctx, query.Prefix, query.Limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get search suggestions: %w", err)
+		return nil, ErrGetSearchSuggestions
 	}
 
 	// Convert models to storage types
@@ -2235,7 +2263,7 @@ type CreateCommunityNoteResult struct {
 func (s *Service) CreateCommunityNote(ctx context.Context, cmd *CreateCommunityNoteCommand) (*CreateCommunityNoteResult, error) {
 	// Create community note through repository
 	if err := s.communityNoteRepo.CreateCommunityNote(ctx, cmd.Note); err != nil {
-		return nil, fmt.Errorf("failed to create community note: %w", err)
+		return nil, ErrCreateCommunityNote
 	}
 
 	return &CreateCommunityNoteResult{
@@ -2258,7 +2286,7 @@ func (s *Service) GetVisibleCommunityNotes(ctx context.Context, query *GetVisibl
 	// Get visible notes through repository
 	notes, err := s.communityNoteRepo.GetVisibleCommunityNotes(ctx, query.ObjectID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get visible community notes: %w", err)
+		return nil, ErrGetVisibleCommunityNotes
 	}
 
 	return &GetVisibleCommunityNotesResult{
@@ -2281,7 +2309,7 @@ func (s *Service) GetCommunityNote(ctx context.Context, query *GetCommunityNoteQ
 	// Get note through repository
 	note, err := s.communityNoteRepo.GetCommunityNote(ctx, query.NoteID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get community note: %w", err)
+		return nil, ErrGetCommunityNote
 	}
 
 	return &GetCommunityNoteResult{
@@ -2303,7 +2331,7 @@ type CreateCommunityNoteVoteResult struct {
 func (s *Service) CreateCommunityNoteVote(ctx context.Context, cmd *CreateCommunityNoteVoteCommand) (*CreateCommunityNoteVoteResult, error) {
 	// Create vote through repository
 	if err := s.communityNoteRepo.CreateCommunityNoteVote(ctx, cmd.Vote); err != nil {
-		return nil, fmt.Errorf("failed to create community note vote: %w", err)
+		return nil, ErrCreateCommunityNoteVote
 	}
 
 	return &CreateCommunityNoteVoteResult{
@@ -2329,7 +2357,7 @@ func (s *Service) GetCommunityNotesByAuthor(ctx context.Context, query *GetCommu
 	// Get notes through repository
 	notes, nextCursor, err := s.communityNoteRepo.GetCommunityNotesByAuthor(ctx, query.AuthorID, query.Limit, query.Cursor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get community notes by author: %w", err)
+		return nil, ErrGetCommunityNotesByAuthor
 	}
 
 	return &GetCommunityNotesByAuthorResult{
@@ -2348,7 +2376,7 @@ func (s *Service) CountNotesByAuthor(ctx context.Context, authorID string) (int6
 	// Count statuses through repository
 	count, err := s.noteRepo.CountStatusesByAuthor(ctx, authorID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count statuses by author: %w", err)
+		return 0, ErrCountStatusesByAuthor
 	}
 
 	return int64(count), nil
@@ -2371,7 +2399,7 @@ func (s *Service) GetUserTimeline(ctx context.Context, actorID string, opts inte
 	// Get timeline through status repository
 	result, err := s.noteRepo.GetUserTimeline(ctx, actorID, opts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user timeline: %w", err)
+		return nil, ErrGetUserTimeline
 	}
 
 	return &GetUserTimelineResult{
@@ -2390,7 +2418,7 @@ func (s *Service) CountReplies(ctx context.Context, statusID string) (int, error
 	// Count replies through repository
 	count, err := s.noteRepo.CountReplies(ctx, statusID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to count replies: %w", err)
+		return 0, ErrCountReplies
 	}
 
 	return count, nil
@@ -2406,7 +2434,7 @@ func (s *Service) GetBoostCount(ctx context.Context, statusID string) (int64, er
 	// Get boost count through like repository
 	count, err := s.likeRepo.GetBoostCount(ctx, statusID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get boost count: %w", err)
+		return 0, ErrGetBoostCount
 	}
 
 	return int64(count), nil
@@ -2422,7 +2450,7 @@ func (s *Service) GetLikeCount(ctx context.Context, statusID string) (int64, err
 	// Get like count through like repository
 	count, err := s.likeRepo.GetLikeCount(ctx, statusID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get like count: %w", err)
+		return 0, ErrGetLikeCount
 	}
 
 	return int64(count), nil
@@ -2439,7 +2467,7 @@ func (s *Service) HasLiked(ctx context.Context, userID, statusID string) (bool, 
 	// Check through like repository
 	hasLiked, err := s.likeRepo.HasLiked(ctx, userID, statusID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if user has liked: %w", err)
+		return false, ErrCheckUserHasLiked
 	}
 
 	return hasLiked, nil
@@ -2456,7 +2484,7 @@ func (s *Service) HasReblogged(ctx context.Context, userID, statusID string) (bo
 	// Check through like repository
 	hasReblogged, err := s.likeRepo.HasReblogged(ctx, userID, statusID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if user has reblogged: %w", err)
+		return false, ErrCheckUserHasReblogged
 	}
 
 	return hasReblogged, nil
@@ -2473,7 +2501,7 @@ func (s *Service) IsBookmarked(ctx context.Context, userID, statusID string) (bo
 	// Check through user repository
 	isBookmarked, err := s.userRepo.IsBookmarked(ctx, userID, statusID)
 	if err != nil {
-		return false, fmt.Errorf("failed to check if user has bookmarked: %w", err)
+		return false, ErrCheckUserHasBookmarked
 	}
 
 	return isBookmarked, nil

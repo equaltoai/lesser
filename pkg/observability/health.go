@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/equaltoai/lesser/pkg/config"
 	"go.uber.org/zap"
 )
 
@@ -88,7 +88,7 @@ func (hc *HealthChecker) LivenessHandler(w http.ResponseWriter, _ *http.Request)
 		Timestamp: time.Now(),
 		Version:   hc.version,
 		Service:   hc.service,
-		Region:    os.Getenv("AWS_REGION"),
+		Region:    config.Get().Region,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -133,7 +133,7 @@ func (hc *HealthChecker) ReadinessHandler(w http.ResponseWriter, r *http.Request
 		Timestamp: time.Now(),
 		Version:   hc.version,
 		Service:   hc.service,
-		Region:    os.Getenv("AWS_REGION"),
+		Region:    config.Get().Region,
 		Checks:    checks,
 	}
 
@@ -215,7 +215,7 @@ func (hc *HealthChecker) DetailedHandler(w http.ResponseWriter, r *http.Request)
 		Timestamp: time.Now(),
 		Version:   hc.version,
 		Service:   hc.service,
-		Region:    os.Getenv("AWS_REGION"),
+		Region:    config.Get().Region,
 		Checks:    checks,
 		Summary:   summary,
 	}

@@ -3,7 +3,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -27,7 +27,7 @@ type TrendAggregatorHandler struct {
 func NewTrendAggregatorHandler(db core.DB, logger *zap.Logger) *TrendAggregatorHandler {
 	return &TrendAggregatorHandler{
 		db:           db,
-		trendingRepo: repositories.NewTrendingRepository(db, logger),
+		trendingRepo: repositories.NewTrendingRepository(db, logger, nil),
 		logger:       logger,
 	}
 }
@@ -113,7 +113,7 @@ func (h *TrendAggregatorHandler) aggregateHashtagTrends(ctx context.Context, sin
 	// 1. Get recent hashtag usage from repository
 	hashtags, err := h.trendingRepo.GetRecentHashtags(ctx, since, 1000)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get recent hashtags: %w", err)
+		return 0, errors.Join(ErrHashtagRetrieval, err)
 	}
 
 	h.logger.Debug("retrieved recent hashtags for aggregation",
@@ -196,7 +196,7 @@ func (h *TrendAggregatorHandler) aggregateStatusTrends(ctx context.Context, sinc
 	// 1. Get recent statuses with engagement from repository
 	statuses, err := h.trendingRepo.GetRecentStatusesWithEngagement(ctx, since, 1000)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get recent statuses: %w", err)
+		return 0, errors.Join(ErrStatusRetrieval, err)
 	}
 
 	h.logger.Debug("retrieved recent statuses for aggregation",
@@ -260,7 +260,7 @@ func (h *TrendAggregatorHandler) aggregateLinkTrends(ctx context.Context, since 
 	// 1. Get recent links from repository
 	links, err := h.trendingRepo.GetRecentLinks(ctx, since, 1000)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get recent links: %w", err)
+		return 0, errors.Join(ErrLinkRetrieval, err)
 	}
 
 	h.logger.Debug("retrieved recent links for aggregation",

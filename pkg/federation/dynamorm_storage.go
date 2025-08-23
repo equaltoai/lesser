@@ -2,6 +2,7 @@ package federation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,8 +13,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // DynamORMFederationStorage implements FederationStorage using DynamORM repositories.
@@ -72,10 +74,14 @@ func (s *DynamORMFederationStorage) GetCachedRemoteActor(ctx context.Context, ac
 		First(&remoteActor)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get cached remote actor: %w", err)
+		zap.L().Error("failed to get cached remote actor",
+			zap.String("handle", handle),
+			zap.String("actorID", actorID),
+			zap.Error(err))
+		return nil, errors.Join(ErrRemoteActorCacheRetrieveFailed, err)
 	}
 
 	// Check if cache has expired
@@ -106,16 +112,24 @@ func (s *DynamORMFederationStorage) CacheRemoteActor(ctx context.Context, handle
 	err := s.db.WithContext(ctx).Model(remoteActor).Create()
 	if err != nil {
 		// If already exists, update it
-		if errors.IsConditionFailed(err) {
+		if dynamormErrors.IsConditionFailed(err) {
 			err = s.db.WithContext(ctx).Model(remoteActor).
 				Where("PK", "=", remoteActor.PK).
 				Where("SK", "=", remoteActor.SK).
 				Update()
 			if err != nil {
-				return fmt.Errorf("failed to update cached remote actor: %w", err)
+				zap.L().Error("failed to update cached remote actor",
+					zap.String("handle", handle),
+					zap.String("actorID", actor.ID),
+					zap.Error(err))
+				return errors.Join(ErrRemoteActorCacheUpdateFailed, err)
 			}
 		} else {
-			return fmt.Errorf("failed to cache remote actor: %w", err)
+			zap.L().Error("failed to cache remote actor",
+				zap.String("handle", handle),
+				zap.String("actorID", actor.ID),
+				zap.Error(err))
+			return errors.Join(ErrRemoteActorCacheStoreFailed, err)
 		}
 	}
 

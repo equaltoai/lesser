@@ -60,8 +60,18 @@ type EmojiModel struct {
 	AltText             string    `json:"alt_text,omitempty"`   // Alternative text for accessibility
 }
 
+// GetPK returns the partition key
+func (e *EmojiModel) GetPK() string {
+	return e.PK
+}
+
+// GetSK returns the sort key
+func (e *EmojiModel) GetSK() string {
+	return e.SK
+}
+
 // UpdateKeys updates the composite keys based on the business fields
-func (e *EmojiModel) UpdateKeys() {
+func (e *EmojiModel) UpdateKeys() error {
 	// Primary keys
 	if e.Domain != "" {
 		// Remote emoji: include domain in primary key
@@ -102,6 +112,8 @@ func (e *EmojiModel) UpdateKeys() {
 	e.GSI4PK = fmt.Sprintf("USAGE#%s", domainKey)
 	// Sort by usage count (padded for lexicographic sorting) + shortcode
 	e.GSI4SK = fmt.Sprintf("SCORE#%010d#%s", e.UsageCount, e.Shortcode)
+	
+	return nil
 }
 
 // generateSearchPrefix creates a search prefix from the shortcode for efficient prefix queries
@@ -119,7 +131,7 @@ func (e *EmojiModel) IncrementUsage() {
 	// Recalculate popularity score (simple algorithm)
 	e.PopularityScore = e.calculatePopularityScore()
 	// Update keys to reflect new usage count
-	e.UpdateKeys()
+	_ = e.UpdateKeys() // Ignore error for backwards compatibility
 }
 
 // calculatePopularityScore calculates a popularity score based on usage and recency

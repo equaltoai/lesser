@@ -160,7 +160,7 @@ func (n *Notification) Validate() error {
 		return err
 	}
 	if !isValidNotificationType(n.Type) {
-		return fmt.Errorf("invalid notification type: %s", n.Type)
+		return fmt.Errorf("%w: %s", ErrInvalidNotificationType, n.Type)
 	}
 	if err := common.ValidateRequiredParam("ActorID", strings.TrimSpace(n.ActorID)); err != nil {
 		return err
@@ -367,6 +367,17 @@ func NewFollowRequestNotification(userID, requesterID string) *Notification {
 }
 
 // UpdateKeys updates the GSI keys for this notification (required by DynamORM)
-func (n *Notification) UpdateKeys() {
+func (n *Notification) UpdateKeys() error {
 	n.setupGSIKeys()
+	return nil
+}
+
+// GetPK returns the primary key for BaseRepository interface
+func (n *Notification) GetPK() string {
+	return n.PK
+}
+
+// GetSK returns the sort key for BaseRepository interface
+func (n *Notification) GetSK() string {
+	return n.SK
 }

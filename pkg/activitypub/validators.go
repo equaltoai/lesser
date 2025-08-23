@@ -2,11 +2,11 @@ package activitypub
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"net"
 	"net/url"
 	"regexp"
 	"strings"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 const (
@@ -17,9 +17,6 @@ const (
 )
 
 var (
-	// Username: 1-30 chars, alphanumeric + underscore + hyphen, no double underscore
-	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9_\-]{0,28}[a-zA-Z0-9])?$`)
-
 	// Domain: valid hostname
 	domainRegex = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
 
@@ -41,21 +38,21 @@ func ValidateUsername(username string) error {
 // ValidateDomain validates a domain name format
 func ValidateDomain(domain string) error {
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		return fmt.Errorf("domain cannot be empty")
+		return ErrEmptyDomain
 	}
 
 	// Check IP addresses are not used as domains
 	if net.ParseIP(domain) != nil {
-		return fmt.Errorf("IP addresses cannot be used as domains")
+		return ErrIPAddressAsDomain
 	}
 
 	if !domainRegex.MatchString(domain) {
-		return fmt.Errorf("invalid domain format")
+		return ErrInvalidDomainFormat
 	}
 
 	// Additional checks
 	if strings.Contains(domain, "..") {
-		return fmt.Errorf("invalid domain: consecutive dots")
+		return ErrConsecutiveDots
 	}
 
 	return nil
@@ -65,22 +62,22 @@ func ValidateDomain(domain string) error {
 func ValidateActorID(actorID string) error {
 	u, err := url.Parse(actorID)
 	if err != nil {
-		return fmt.Errorf("invalid actor ID URL: %w", err)
+		return fmt.Errorf("%w: %s", ErrInvalidActorIDURL, err.Error())
 	}
 
 	// Must be HTTPS in production
 	if u.Scheme != HTTPSScheme && u.Scheme != HTTPScheme {
-		return fmt.Errorf("actor ID must use HTTP(S)")
+		return ErrActorIDScheme
 	}
 
 	// Validate domain part
 	if err := ValidateDomain(u.Hostname()); err != nil {
-		return fmt.Errorf("invalid domain in actor ID: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidDomainInActorID, err)
 	}
 
 	// Path must not be empty
 	if u.Path == "" || u.Path == "/" {
-		return fmt.Errorf("actor ID must have a path")
+		return ErrActorIDMissingPath
 	}
 
 	return nil
@@ -90,18 +87,18 @@ func ValidateActorID(actorID string) error {
 func ValidateWebfinger(resource string) error {
 	matches := webfingerRegex.FindStringSubmatch(resource)
 	if len(matches) != 3 {
-		return fmt.Errorf("invalid webfinger format (expected acct:user@domain)")
+		return ErrInvalidWebfingerFormat
 	}
 
 	username := matches[1]
 	domain := matches[2]
 
 	if err := ValidateUsername(username); err != nil {
-		return fmt.Errorf("invalid username in webfinger: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidUsernameInWebfinger, err)
 	}
 
 	if err := ValidateDomain(domain); err != nil {
-		return fmt.Errorf("invalid domain in webfinger: %w", err)
+		return fmt.Errorf("%w: %w", ErrInvalidDomainInWebfinger, err)
 	}
 
 	return nil

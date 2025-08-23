@@ -12,6 +12,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	// Batch operation string constants
+	operationDelete = "delete"
+)
+
 // SQSBatchProcessor processes SQS message batches in Lambda
 type SQSBatchProcessor struct {
 	db           core.DB
@@ -139,7 +144,7 @@ func (p *SQSBatchProcessor) processMessage(ctx context.Context, record events.SQ
 	switch batchMsg.Operation {
 	case "create", "upsert":
 		return p.processBatchWrite(ctx, batchMsg.Items, record.MessageId)
-	case "delete":
+	case operationDelete:
 		return p.processBatchDelete(ctx, batchMsg.Items, record.MessageId)
 	default:
 		return fmt.Errorf("unsupported operation: %s", batchMsg.Operation)
@@ -427,7 +432,7 @@ func CreateNotificationMessage(userIDs []string, statusID, authorID, notifType, 
 // CreateBatchDeleteMessage creates a batch delete message
 func CreateBatchDeleteMessage(keys []any, tableName string) *BatchMessage {
 	return &BatchMessage{
-		Operation: "delete",
+		Operation: operationDelete,
 		Items:     keys,
 		TableName: tableName,
 	}

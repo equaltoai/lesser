@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,13 +71,13 @@ func ValidateAccountID(accountID string) error {
 }
 
 // ValidateLimit validates a limit parameter with bounds checking
-func ValidateLimit(limit int, max int) error {
+func ValidateLimit(limit int, maxValue int) error {
 	if limit < 0 {
 		return ValidationError{Field: "limit", Message: "cannot be negative"}
 	}
 
-	if limit > max {
-		return ValidationError{Field: "limit", Message: fmt.Sprintf("cannot be greater than %d", max)}
+	if limit > maxValue {
+		return ValidationError{Field: "limit", Message: fmt.Sprintf("cannot be greater than %d", maxValue)}
 	}
 
 	return nil
@@ -99,7 +100,7 @@ func ParseAndValidateBoolean(value string) (bool, error) {
 
 	value = strings.ToLower(strings.TrimSpace(value))
 	switch value {
-	case "true", "1", "yes", "on":
+	case StringTrue, "1", "yes", "on":
 		return true, nil
 	case "false", "0", "no", "off":
 		return false, nil
@@ -136,20 +137,20 @@ func ValidateMultipleRequiredParams(params map[string]string) error {
 }
 
 // ValidateStringLength validates string length within bounds
-func ValidateStringLength(field, value string, min, max int) error {
+func ValidateStringLength(field, value string, minLen, maxLen int) error {
 	length := len(value)
 
-	if length < min {
+	if length < minLen {
 		return ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("must be at least %d characters long", min),
+			Message: fmt.Sprintf("must be at least %d characters long", minLen),
 		}
 	}
 
-	if length > max {
+	if length > maxLen {
 		return ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("cannot be longer than %d characters", max),
+			Message: fmt.Sprintf("cannot be longer than %d characters", maxLen),
 		}
 	}
 
@@ -176,7 +177,7 @@ func ValidateEnum(field, value string, allowedValues []string) error {
 
 // ParseAndValidateIntWithBounds parses a string to int and validates bounds
 // This consolidates the common pattern: strconv.Atoi(str); err == nil && val > min && val <= max
-func ParseAndValidateIntWithBounds(field, value string, min, max, defaultValue int) (int, error) {
+func ParseAndValidateIntWithBounds(field, value string, minValue, maxValue, defaultValue int) (int, error) {
 	if value == "" {
 		return defaultValue, nil
 	}
@@ -189,17 +190,17 @@ func ParseAndValidateIntWithBounds(field, value string, min, max, defaultValue i
 		}
 	}
 
-	if parsed <= min {
+	if parsed <= minValue {
 		return 0, ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("must be greater than %d", min),
+			Message: fmt.Sprintf("must be greater than %d", minValue),
 		}
 	}
 
-	if parsed > max {
+	if parsed > maxValue {
 		return 0, ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("cannot be greater than %d", max),
+			Message: fmt.Sprintf("cannot be greater than %d", maxValue),
 		}
 	}
 
@@ -273,12 +274,12 @@ func SanitizeInput(input string) string {
 }
 
 // ValidateAndSanitizeString validates string length and sanitizes content
-func ValidateAndSanitizeString(field, value string, min, max int) (string, error) {
+func ValidateAndSanitizeString(field, value string, minLen, maxLen int) (string, error) {
 	// First sanitize
 	cleaned := SanitizeInput(value)
 
 	// Then validate length
-	if err := ValidateStringLength(field, cleaned, min, max); err != nil {
+	if err := ValidateStringLength(field, cleaned, minLen, maxLen); err != nil {
 		return "", err
 	}
 
@@ -589,7 +590,9 @@ func ParseSearchOffset(offsetStr string) (int, error) {
 }
 
 // GetEnvInt gets an integer environment variable with a default value
+// DEPRECATED: Use centralized config.Get() for application configuration instead
 // This consolidates the common pattern: strconv.Atoi(os.Getenv(key)); err == nil
+// Only use this for AWS Lambda runtime variables or when config is not available
 func GetEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intValue, err := strconv.Atoi(value); err == nil {
@@ -655,7 +658,7 @@ func parseTimestampFormat(timestamp string) (interface{}, error) {
 		return true, nil
 	}
 
-	return nil, fmt.Errorf("invalid timestamp format")
+	return nil, ErrInvalidTimestampFormat
 }
 
 // ValidateURL validates URL formats used in repositories
@@ -846,7 +849,7 @@ func ValidateAccountBio(bio string) error {
 
 // ValidateBooleanString validates boolean-like strings
 func ValidateBooleanString(value string) bool {
-	return value == "true" || value == "1" || value == "yes"
+	return value == StringTrue || value == "1" || value == "yes"
 }
 
 // ValidateHTTPScheme validates HTTP/HTTPS schemes
@@ -877,33 +880,28 @@ func ValidateStatusState(status string) error {
 
 // ValidateSliceNotEmpty validates that a slice is not empty
 func ValidateSliceNotEmpty(fieldName string, slice interface{}) error {
-	switch s := slice.(type) {
-	case []string:
-		if len(s) == 0 {
-			return ValidationError{Field: fieldName, Message: "cannot be empty"}
-		}
-	case []interface{}:
-		if len(s) == 0 {
-			return ValidationError{Field: fieldName, Message: "cannot be empty"}
-		}
-	default:
-		return ValidationError{Field: fieldName, Message: "unsupported slice type"}
+	// Use reflection to handle any slice type
+	v := reflect.ValueOf(slice)
+	if v.Kind() != reflect.Slice {
+		return ValidationError{Field: fieldName, Message: "expected a slice"}
 	}
+	
+	if v.Len() == 0 {
+		return ValidationError{Field: fieldName, Message: "cannot be empty"}
+	}
+	
 	return nil
 }
 
 // ValidateSliceLength validates slice length against bounds
 func ValidateSliceLength(fieldName string, slice interface{}, maxLength int) error {
-	var length int
-	switch s := slice.(type) {
-	case []string:
-		length = len(s)
-	case []interface{}:
-		length = len(s)
-	default:
-		return ValidationError{Field: fieldName, Message: "unsupported slice type"}
+	// Use reflection to handle any slice type
+	v := reflect.ValueOf(slice)
+	if v.Kind() != reflect.Slice {
+		return ValidationError{Field: fieldName, Message: "expected a slice"}
 	}
 	
+	length := v.Len()
 	if length > maxLength {
 		return ValidationError{Field: fieldName, Message: fmt.Sprintf("cannot contain more than %d items", maxLength)}
 	}
@@ -1070,11 +1068,11 @@ func ValidatePreferenceValue(key string, value interface{}) error {
 }
 
 // ValidateFloatRange validates that a float value is within the specified range
-func ValidateFloatRange(field string, value, min, max float64) error {
-	if value < min || value > max {
+func ValidateFloatRange(field string, value, minValue, maxValue float64) error {
+	if value < minValue || value > maxValue {
 		return ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("must be between %.2f and %.2f", min, max),
+			Message: fmt.Sprintf("must be between %.2f and %.2f", minValue, maxValue),
 		}
 	}
 
@@ -1082,11 +1080,11 @@ func ValidateFloatRange(field string, value, min, max float64) error {
 }
 
 // ValidateIntRange validates that an int value is within the specified range
-func ValidateIntRange(field string, value, min, max int) error {
-	if value < min || value > max {
+func ValidateIntRange(field string, value, minValue, maxValue int) error {
+	if value < minValue || value > maxValue {
 		return ValidationError{
 			Field:   field,
-			Message: fmt.Sprintf("must be between %d and %d", min, max),
+			Message: fmt.Sprintf("must be between %d and %d", minValue, maxValue),
 		}
 	}
 
@@ -1095,8 +1093,8 @@ func ValidateIntRange(field string, value, min, max int) error {
 
 
 // ValidateContentOrAttachments validates that either content or attachments are provided
-func ValidateContentOrAttachments(content string, attachmentIds []string) error {
-	if len(content) == 0 && len(attachmentIds) == 0 {
+func ValidateContentOrAttachments(content string, attachmentIDs []string) error {
+	if len(content) == 0 && len(attachmentIDs) == 0 {
 		return ValidationError{Field: "content", Message: "content or media attachments required"}
 	}
 	return nil

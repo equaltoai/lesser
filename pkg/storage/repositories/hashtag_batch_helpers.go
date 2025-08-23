@@ -8,7 +8,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamoerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -37,7 +37,7 @@ func deleteOldRecordsBatch(
 	case "hashtag_usage":
 		return deleteOldHashtagUsageRecordsBatch(ctx, db, logger, before, config)
 	default:
-		return 0, fmt.Errorf("unknown model type: %s", config.ModelType)
+		return 0, ErrorHandler.HandleQueryError(fmt.Errorf("%w: %s", ErrHashtagBatchUnknownModelType, config.ModelType), EntityHashtag, config.ModelType)
 	}
 }
 
@@ -75,10 +75,10 @@ func deleteOldHashtagTrendRecordsBatch(
 		Scan(&trends)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamoerrors.IsNotFound(err) {
 			return 0, nil
 		}
-		return 0, fmt.Errorf("failed to query old hashtag trends: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old hashtag trends scan")
 	}
 
 	// Use batch delete for efficiency
@@ -103,10 +103,10 @@ func deleteOldTrendingHashtagRecordsBatch(
 		Scan(&trends)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamoerrors.IsNotFound(err) {
 			return 0, nil
 		}
-		return 0, fmt.Errorf("failed to query old trending hashtags: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old trending hashtags scan")
 	}
 
 	// Batch delete trending hashtags
@@ -131,10 +131,10 @@ func deleteOldHashtagUsageRecordsBatch(
 		Scan(&usageRecords)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamoerrors.IsNotFound(err) {
 			return 0, nil
 		}
-		return 0, fmt.Errorf("failed to query old hashtag usage: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityHashtag, "old hashtag usage scan")
 	}
 
 	// Batch delete usage records
@@ -177,6 +177,8 @@ func deleteBatch(ctx context.Context, db core.DB, items []any) error {
 	for _, item := range items {
 		if err := db.WithContext(ctx).Model(item).Delete(); err != nil {
 			// Continue with other items rather than failing the whole batch
+			// Note: Individual delete failures don't stop the batch process
+			continue
 		}
 	}
 

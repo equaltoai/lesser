@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -573,7 +572,7 @@ func main() {
 	})
 
 	// Add federation rate limiting middleware (fourth in chain)
-	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+	if !cfg.DisableFederationRateLimiting {
 		app.Use(ratelimit.FederationRateLimitMiddleware(repos))
 		logger.Info("enabled federation rate limiting middleware for collections service")
 	}

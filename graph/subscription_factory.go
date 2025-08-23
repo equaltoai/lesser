@@ -2,7 +2,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/streaming"
@@ -32,7 +31,7 @@ func (sm *GraphQLSubscriptionManager) createGenericEventBusSubscription(
 	// Subscribe to the event bus
 	subscriber, err := sm.eventBus.Subscribe(config.ID, config.Filter, config.BufferSize)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to event bus: %w", err)
+		return ErrEventBusSubscriptionFailedWithContext(err)
 	}
 
 	// Create subscription context with cancellation

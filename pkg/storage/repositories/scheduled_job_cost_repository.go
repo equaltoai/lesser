@@ -14,17 +14,16 @@ import (
 
 // ScheduledJobCostRepository handles scheduled job cost tracking persistence
 type ScheduledJobCostRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.ScheduledJobCostRecord]
+	logger *zap.Logger
 }
 
 // NewScheduledJobCostRepository creates a new scheduled job cost repository
 func NewScheduledJobCostRepository(db core.DB, tableName string, logger *zap.Logger) *ScheduledJobCostRepository {
+	baseRepo := NewBaseRepository[*models.ScheduledJobCostRecord](db, tableName, logger)
 	return &ScheduledJobCostRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: baseRepo,
+		logger:         logger,
 	}
 }
 
@@ -32,11 +31,11 @@ func NewScheduledJobCostRepository(db core.DB, tableName string, logger *zap.Log
 func (r *ScheduledJobCostRepository) Create(ctx context.Context, record *models.ScheduledJobCostRecord) error {
 	// Call BeforeCreate to set up the model
 	if err := record.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrScheduledJobCostBeforeCreateFailed, err)
 	}
 
-	// Create the scheduled job cost record
-	err := r.db.WithContext(ctx).Model(record).Create()
+	// Create the scheduled job cost record using BaseRepository
+	err := r.BaseRepository.Create(ctx, record)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create scheduled job cost record")
 	}
@@ -56,11 +55,11 @@ func (r *ScheduledJobCostRepository) Create(ctx context.Context, record *models.
 func (r *ScheduledJobCostRepository) Update(ctx context.Context, record *models.ScheduledJobCostRecord) error {
 	// Call BeforeUpdate to set up the model
 	if err := record.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrScheduledJobCostBeforeUpdateFailed, err)
 	}
 
-	// Update the scheduled job cost record
-	err := r.db.WithContext(ctx).Model(record).Update()
+	// Update the scheduled job cost record using BaseRepository
+	err := r.BaseRepository.Update(ctx, record)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to update scheduled job cost record")
 	}
@@ -81,11 +80,7 @@ func (r *ScheduledJobCostRepository) Get(ctx context.Context, jobName, schedule 
 	pk := fmt.Sprintf("SCHEDULED_JOB_COST#%s#%s", jobName, schedule)
 	sk := fmt.Sprintf("RUN#%s#%s", timestamp.Format("20060102150405"), id)
 
-	err := r.db.WithContext(ctx).Model(record).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(record)
-
+	err := r.BaseRepository.Get(ctx, pk, sk, record)
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get scheduled job cost record")
 	}
@@ -101,7 +96,7 @@ func (r *ScheduledJobCostRepository) GetByID(ctx context.Context, id string) (*m
 	for _, status := range statuses {
 		var statusRecords []*models.ScheduledJobCostRecord
 
-		err := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
+		err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-status-index").
 			Where("GSI1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
 			Where("GSI1SK", "contains", fmt.Sprintf("#%s", id)).
@@ -122,7 +117,7 @@ func (r *ScheduledJobCostRepository) GetByID(ctx context.Context, id string) (*m
 		}
 	}
 
-	return nil, fmt.Errorf("scheduled job cost record not found with ID: %s", id)
+	return nil, fmt.Errorf("%w: %s", ErrScheduledJobCostNotFound, id)
 }
 
 // ListByJob lists scheduled job cost records for a specific job within a time range
@@ -134,7 +129,7 @@ func (r *ScheduledJobCostRepository) ListByJob(ctx context.Context, jobName, sch
 	startSK := fmt.Sprintf("RUN#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("RUN#%s", endTime.Format("20060102150405"))
 
-	query := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -157,7 +152,7 @@ func (r *ScheduledJobCostRepository) ListByStatus(ctx context.Context, status st
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 		Index("job-status-index").
 		Where("GSI1PK", "=", fmt.Sprintf("SCHEDULED_JOB_STATUS#%s", status)).
 		Where("GSI1SK", ">=", startSK).
@@ -183,7 +178,7 @@ func (r *ScheduledJobCostRepository) ListByDateRange(ctx context.Context, startD
 		dateStr := currentDate.Format("20060102")
 
 		var dailyRecords []*models.ScheduledJobCostRecord
-		query := r.db.WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
+		query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ScheduledJobCostRecord{}).
 			Index("job-date-index").
 			Where("GSI2PK", "=", fmt.Sprintf("SCHEDULED_JOB_DATE#%s", dateStr)).
 			OrderBy("GSI2SK", "DESC").
@@ -469,11 +464,11 @@ func (r *ScheduledJobCostRepository) GetJobPerformanceTrends(ctx context.Context
 func (r *ScheduledJobCostRepository) CreateAggregation(ctx context.Context, aggregation *models.ScheduledJobCostAggregation) error {
 	// Call BeforeCreate to set up the model
 	if err := aggregation.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrScheduledJobCostBeforeCreateFailed, err)
 	}
 
 	// Create the aggregation
-	err := r.db.WithContext(ctx).Model(aggregation).Create()
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(aggregation).Create()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create scheduled job cost aggregation")
 	}
@@ -492,11 +487,11 @@ func (r *ScheduledJobCostRepository) CreateAggregation(ctx context.Context, aggr
 func (r *ScheduledJobCostRepository) UpdateAggregation(ctx context.Context, aggregation *models.ScheduledJobCostAggregation) error {
 	// Call BeforeUpdate to set up the model
 	if err := aggregation.BeforeUpdate(); err != nil {
-		return fmt.Errorf("before update validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrScheduledJobCostBeforeUpdateFailed, err)
 	}
 
 	// Update the aggregation
-	err := r.db.WithContext(ctx).Model(aggregation).Update()
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(aggregation).Update()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to update scheduled job cost aggregation")
 	}
@@ -511,7 +506,7 @@ func (r *ScheduledJobCostRepository) GetAggregation(ctx context.Context, period,
 	pk := fmt.Sprintf("SCHEDULED_JOB_AGG#%s#%s", period, jobName)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
 
-	err := r.db.WithContext(ctx).Model(aggregation).
+	err := r.BaseRepository.GetDB().WithContext(ctx).Model(aggregation).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(aggregation)
@@ -528,7 +523,7 @@ func (r *ScheduledJobCostRepository) AggregateJobCosts(ctx context.Context, jobN
 	// Get all job cost records in the window
 	records, err := r.ListByJob(ctx, jobName, "all", windowStart, windowEnd, 10000)
 	if err != nil {
-		return fmt.Errorf("failed to list job costs for aggregation: %w", err)
+		return fmt.Errorf("%w: %w", ErrScheduledJobCostAggregationFailed, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("records", records); err != nil {

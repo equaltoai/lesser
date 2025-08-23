@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -20,7 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	dynamormcore "github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -155,7 +156,11 @@ func (rt *RelationshipTracker) AnalyzeRelationshipStrength(ctx context.Context, 
 	// Get edge data
 	edges, err := rt.storage.Federation().GetFederationEdges(ctx, []string{sourceDomain, targetDomain})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get federation edges: %w", err)
+		rt.logger.Error("Failed to get federation edges",
+			zap.String("source_domain", sourceDomain),
+			zap.String("target_domain", targetDomain),
+			zap.Error(err))
+		return nil, errors.Join(ErrGetFederationEdgesFailed, err)
 	}
 
 	var sourceToTarget, targetToSource *storage.FederationEdge
@@ -202,7 +207,10 @@ func (rt *RelationshipTracker) GenerateRecommendations(ctx context.Context, doma
 	// Get connections for this domain
 	connections, err := rt.storage.Federation().GetInstanceConnections(ctx, domain, "")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connections: %w", err)
+		rt.logger.Error("Failed to get connections",
+			zap.String("domain", domain),
+			zap.Error(err))
+		return nil, errors.Join(ErrGetConnectionsFailed, err)
 	}
 
 	// Analyze for problematic connections
@@ -263,7 +271,12 @@ func (rt *RelationshipTracker) trackUserRelationship(ctx context.Context, attemp
 	// Get or create relationship
 	rel, err := rt.getOrCreateRelationship(ctx, attempt.UserID, attempt.TargetDomain, attempt.ActivityType, relID)
 	if err != nil {
-		return fmt.Errorf("failed to get/create relationship: %w", err)
+		rt.logger.Error("Failed to get/create relationship",
+			zap.String("user_id", attempt.UserID),
+			zap.String("target_domain", attempt.TargetDomain),
+			zap.String("activity_type", attempt.ActivityType),
+			zap.Error(err))
+		return errors.Join(ErrGetCreateRelationshipFailed, err)
 	}
 
 	// Update success rate and metrics
@@ -289,7 +302,10 @@ func (rt *RelationshipTracker) trackInstanceRelationship(ctx context.Context, at
 	// Update 15-minute aggregate
 	agg, err := rt.getOrCreateAggregate(ctx, attempt.TargetDomain, "15min")
 	if err != nil {
-		return fmt.Errorf("failed to get/create aggregate: %w", err)
+		rt.logger.Error("Failed to get/create aggregate",
+			zap.String("target_domain", attempt.TargetDomain),
+			zap.Error(err))
+		return errors.Join(ErrGetCreateAggregateFailed, err)
 	}
 
 	// Update aggregate metrics
@@ -339,11 +355,16 @@ func (rt *RelationshipTracker) getOrCreateRelationship(ctx context.Context, user
 		Where("SK", "=", sk).
 		First(&rel)
 
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to query relationship: %w", err)
+	if err != nil && !dynamormerrors.IsNotFound(err) {
+		rt.logger.Error("Failed to query relationship",
+			zap.String("user_id", userID),
+			zap.String("target_instance", targetInstance),
+			zap.String("rel_type", relType),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryRelationshipFailed, err)
 	}
 
-	if errors.IsNotFound(err) {
+	if dynamormerrors.IsNotFound(err) {
 		// Create new relationship
 		now := time.Now()
 		rel = models.FederationRelationship{
@@ -386,11 +407,15 @@ func (rt *RelationshipTracker) getOrCreateAggregate(ctx context.Context, instanc
 		Where("SK", "=", sk).
 		First(&agg)
 
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to query aggregate: %w", err)
+	if err != nil && !dynamormerrors.IsNotFound(err) {
+		rt.logger.Error("Failed to query aggregate",
+			zap.String("instance_domain", instanceDomain),
+			zap.String("period", period),
+			zap.Error(err))
+		return nil, errors.Join(ErrQueryAggregateFailed, err)
 	}
 
-	if errors.IsNotFound(err) {
+	if dynamormerrors.IsNotFound(err) {
 		// Create new aggregate
 		agg = models.FederationRelationshipAggregate{
 			InstanceDomain:   instanceDomain,
@@ -411,7 +436,12 @@ func (rt *RelationshipTracker) saveRelationship(ctx context.Context, rel *models
 
 	err := rt.db.WithContext(ctx).Model(rel).Create()
 	if err != nil {
-		return fmt.Errorf("failed to save relationship: %w", err)
+		rt.logger.Error("Failed to save relationship",
+			zap.String("rel_id", rel.ID),
+			zap.String("user_id", rel.UserID),
+			zap.String("target_instance", rel.TargetInstance),
+			zap.Error(err))
+		return errors.Join(ErrSaveRelationshipFailed, err)
 	}
 
 	// Update cache
@@ -429,7 +459,11 @@ func (rt *RelationshipTracker) saveAggregate(ctx context.Context, agg *models.Fe
 
 	err := rt.db.WithContext(ctx).Model(agg).Create()
 	if err != nil {
-		return fmt.Errorf("failed to save aggregate: %w", err)
+		rt.logger.Error("Failed to save aggregate",
+			zap.String("instance_domain", agg.InstanceDomain),
+			zap.String("period", agg.Period),
+			zap.Error(err))
+		return errors.Join(ErrSaveAggregateFailed, err)
 	}
 
 	return nil
@@ -524,7 +558,9 @@ func (rt *RelationshipTracker) archiveDormantRelationships(ctx context.Context) 
 		Scan(&relationships)
 
 	if err != nil {
-		return fmt.Errorf("failed to query dormant relationships: %w", err)
+		rt.logger.Error("Failed to query dormant relationships",
+			zap.Error(err))
+		return errors.Join(ErrQueryDormantRelationshipsFailed, err)
 	}
 
 	for _, rel := range relationships {
@@ -755,7 +791,7 @@ func (rt *RelationshipTracker) GetUserRelationships(ctx context.Context, userID 
 		rt.logger.Error("Failed to query user relationships",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query user relationships: %w", err)
+		return nil, errors.Join(ErrQueryUserRelationshipsFailed, err)
 	}
 
 	// Convert to pointer slice
@@ -790,7 +826,7 @@ func (rt *RelationshipTracker) GetRelationshipsByState(ctx context.Context, stat
 		rt.logger.Error("Failed to query relationships by state",
 			zap.String("state", string(state)),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query relationships by state: %w", err)
+		return nil, errors.Join(ErrQueryRelationshipsByStateFailed, err)
 	}
 
 	// Convert to pointer slice
@@ -807,14 +843,24 @@ func (rt *RelationshipTracker) ForceStateTransition(ctx context.Context, userID,
 	relID := rt.generateRelationshipID(userID, targetInstance, relType)
 	rel, err := rt.getOrCreateRelationship(ctx, userID, targetInstance, relType, relID)
 	if err != nil {
-		return fmt.Errorf("failed to get relationship: %w", err)
+		rt.logger.Error("Failed to get relationship",
+			zap.String("user_id", userID),
+			zap.String("target_instance", targetInstance),
+			zap.String("rel_type", relType),
+			zap.Error(err))
+		return errors.Join(ErrGetRelationshipFailed, err)
 	}
 
 	oldState := rel.State
 	rel.TransitionToState(newState)
 
 	if err := rt.saveRelationship(ctx, rel); err != nil {
-		return fmt.Errorf("failed to save state transition: %w", err)
+		rt.logger.Error("Failed to save state transition",
+			zap.String("user_id", userID),
+			zap.String("target_instance", targetInstance),
+			zap.String("rel_type", relType),
+			zap.Error(err))
+		return errors.Join(ErrSaveStateTransitionFailed, err)
 	}
 
 	rt.logger.Info("Forced state transition",
@@ -831,7 +877,10 @@ func (rt *RelationshipTracker) GetHealthScore(ctx context.Context, targetInstanc
 	// Get recent 15-minute aggregate
 	agg, err := rt.getOrCreateAggregate(ctx, targetInstance, "15min")
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to get aggregate: %w", err)
+		rt.logger.Error("Failed to get aggregate",
+			zap.String("target_instance", targetInstance),
+			zap.Error(err))
+		return 0.0, errors.Join(ErrGetAggregateFailed, err)
 	}
 
 	// Calculate health score based on success rate and response time
@@ -859,7 +908,11 @@ func (rt *RelationshipTracker) GetUnhealthyRelationships(ctx context.Context, th
 	// Get all active relationships
 	activeRelationships, err := rt.GetRelationshipsByState(ctx, models.StateActive, limit*2) // Get more to filter
 	if err != nil {
-		return nil, fmt.Errorf("failed to get active relationships: %w", err)
+		rt.logger.Error("Failed to get active relationships",
+			zap.Float64("threshold", threshold),
+			zap.Int("limit", limit),
+			zap.Error(err))
+		return nil, errors.Join(ErrGetActiveRelationshipsFailed, err)
 	}
 
 	// Filter for unhealthy relationships
@@ -887,11 +940,16 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 		Where("SK", "=", "INDEX").
 		First(&index)
 
-	if errors.IsNotFound(err) {
+	if dynamormerrors.IsNotFound(err) {
 		// No archived relationship, create a new active one
 		return rt.ForceStateTransition(ctx, userID, targetInstance, relType, models.StateActive)
 	} else if err != nil {
-		return fmt.Errorf("failed to check for archived relationship: %w", err)
+		rt.logger.Error("Failed to check for archived relationship",
+			zap.String("user_id", userID),
+			zap.String("target_instance", targetInstance),
+			zap.String("rel_type", relType),
+			zap.Error(err))
+		return errors.Join(ErrCheckArchivedRelationshipFailed, err)
 	}
 
 	// Restore from S3 archive if ArchiveLocation is set
@@ -914,7 +972,12 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 
 			// Save the restored relationship
 			if err := rt.saveRelationship(ctx, restoredRel); err != nil {
-				return fmt.Errorf("failed to save restored relationship: %w", err)
+				rt.logger.Error("Failed to save restored relationship",
+					zap.String("user_id", userID),
+					zap.String("target_instance", targetInstance),
+					zap.String("rel_type", relType),
+					zap.Error(err))
+				return errors.Join(ErrSaveRestoredRelationshipFailed, err)
 			}
 
 			// Delete the index entry (relationship is now active)
@@ -959,7 +1022,12 @@ func (rt *RelationshipTracker) ReactivateRelationship(ctx context.Context, userI
 
 	// Save the reactivated relationship
 	if err := rt.saveRelationship(ctx, rel); err != nil {
-		return fmt.Errorf("failed to save reactivated relationship: %w", err)
+		rt.logger.Error("Failed to save reactivated relationship",
+			zap.String("user_id", userID),
+			zap.String("target_instance", targetInstance),
+			zap.String("rel_type", relType),
+			zap.Error(err))
+		return errors.Join(ErrSaveReactivatedRelationshipFailed, err)
 	}
 
 	// Delete the index entry (relationship is now active)
@@ -1075,7 +1143,10 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 	// Marshal to JSON
 	jsonData, err := json.Marshal(archiveData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal archive data: %w", err)
+		rt.logger.Error("Failed to marshal archive data",
+			zap.String("rel_id", rel.ID),
+			zap.Error(err))
+		return errors.Join(ErrMarshalArchiveDataFailed, err)
 	}
 
 	// Compress with gzip for cost optimization
@@ -1085,10 +1156,16 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 		if closeErr := gzipWriter.Close(); closeErr != nil {
 			rt.logger.Warn("Failed to close gzip writer after error", zap.Error(closeErr))
 		}
-		return fmt.Errorf("failed to compress data: %w", err)
+		rt.logger.Error("Failed to compress data",
+			zap.String("rel_id", rel.ID),
+			zap.Error(err))
+		return errors.Join(ErrCompressDataFailed, err)
 	}
 	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip writer: %w", err)
+		rt.logger.Error("Failed to close gzip writer",
+			zap.String("rel_id", rel.ID),
+			zap.Error(err))
+		return errors.Join(ErrCloseGzipWriterFailed, err)
 	}
 
 	// Generate S3 key with organized structure: s3://bucket/federation-archives/YYYY/MM/DD/instanceID-timestamp.json.gz
@@ -1159,7 +1236,11 @@ func (rt *RelationshipTracker) archiveToS3(ctx context.Context, rel *models.Fede
 			zap.Error(err))
 	}
 
-	return fmt.Errorf("failed to archive to S3 after %d attempts: %w", maxRetries, lastErr)
+	rt.logger.Error("Failed to archive to S3 after retries",
+		zap.String("rel_id", rel.ID),
+		zap.Int("max_retries", maxRetries),
+		zap.Error(lastErr))
+	return errors.Join(ErrArchiveToS3Failed, lastErr)
 }
 
 // BatchArchiveToS3 archives multiple relationships to S3 in a single compressed file for efficiency
@@ -1214,7 +1295,11 @@ func (rt *RelationshipTracker) archiveInstanceGroup(ctx context.Context, targetI
 	// Marshal and compress
 	jsonData, err := json.Marshal(archiveData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal batch archive data: %w", err)
+		rt.logger.Error("Failed to marshal batch archive data",
+			zap.String("target_instance", targetInstance),
+			zap.Int("count", len(relationships)),
+			zap.Error(err))
+		return errors.Join(ErrMarshalBatchArchiveDataFailed, err)
 	}
 
 	var compressedData bytes.Buffer
@@ -1223,10 +1308,18 @@ func (rt *RelationshipTracker) archiveInstanceGroup(ctx context.Context, targetI
 		if closeErr := gzipWriter.Close(); closeErr != nil {
 			rt.logger.Warn("Failed to close gzip writer after error", zap.Error(closeErr))
 		}
-		return fmt.Errorf("failed to compress batch data: %w", err)
+		rt.logger.Error("Failed to compress batch data",
+			zap.String("target_instance", targetInstance),
+			zap.Int("count", len(relationships)),
+			zap.Error(err))
+		return errors.Join(ErrCompressBatchDataFailed, err)
 	}
 	if err := gzipWriter.Close(); err != nil {
-		return fmt.Errorf("failed to close gzip writer: %w", err)
+		rt.logger.Error("Failed to close gzip writer",
+			zap.String("target_instance", targetInstance),
+			zap.Int("count", len(relationships)),
+			zap.Error(err))
+		return errors.Join(ErrCloseGzipWriterFailed, err)
 	}
 
 	// Generate batch S3 key
@@ -1252,7 +1345,12 @@ func (rt *RelationshipTracker) archiveInstanceGroup(ctx context.Context, targetI
 	}
 
 	if _, err := rt.s3Client.PutObject(ctx, putInput); err != nil {
-		return fmt.Errorf("failed to upload batch archive to S3: %w", err)
+		rt.logger.Error("Failed to upload batch archive to S3",
+			zap.String("target_instance", targetInstance),
+			zap.Int("count", len(relationships)),
+			zap.String("s3_key", s3Key),
+			zap.Error(err))
+		return errors.Join(ErrUploadBatchArchiveToS3Failed, err)
 	}
 
 	// Update all relationships with archive location
@@ -1274,10 +1372,10 @@ func (rt *RelationshipTracker) archiveInstanceGroup(ctx context.Context, targetI
 // restoreFromS3 restores a relationship from S3 archive
 func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocation string) (*models.FederationRelationship, error) {
 	if rt.s3Client == nil {
-		return nil, fmt.Errorf("S3 client not configured for restore operation")
+		return nil, ErrS3ClientNotConfigured
 	}
 	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
-		return nil, fmt.Errorf("S3 client not configured for restore operation")
+		return nil, ErrS3ClientNotConfigured
 	}
 
 	// Download from S3 with retry logic
@@ -1327,7 +1425,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 		// Decompress the data
 		gzipReader, err := gzip.NewReader(result.Body)
 		if err != nil {
-			lastErr = fmt.Errorf("failed to create gzip reader: %w", err)
+			lastErr = errors.Join(ErrCreateGzipReaderFailed, err)
 			rt.logger.Warn("Gzip decompression failed",
 				zap.String("archive_location", archiveLocation),
 				zap.Error(lastErr))
@@ -1339,7 +1437,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 			if closeErr := gzipReader.Close(); closeErr != nil {
 				rt.logger.Warn("Failed to close gzip reader after error", zap.Error(closeErr))
 			}
-			lastErr = fmt.Errorf("failed to read compressed data: %w", err)
+			lastErr = errors.Join(ErrReadCompressedDataFailed, err)
 			rt.logger.Warn("Failed to read compressed data",
 				zap.String("archive_location", archiveLocation),
 				zap.Error(lastErr))
@@ -1351,7 +1449,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 
 		// Parse JSON data
 		if err := json.Unmarshal(compressedData, &archiveData); err != nil {
-			lastErr = fmt.Errorf("failed to unmarshal archive data: %w", err)
+			lastErr = errors.Join(ErrUnmarshalArchiveDataFailed, err)
 			rt.logger.Warn("Failed to unmarshal archive data",
 				zap.String("archive_location", archiveLocation),
 				zap.Error(lastErr))
@@ -1360,7 +1458,7 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 
 		// Success - validate data integrity
 		if err := common.ValidateSliceNotEmpty("archive_relationships", archiveData.Relationships); err != nil {
-			return nil, fmt.Errorf("archive contains no relationships")
+			return nil, ErrArchiveContainsNoRelationships
 		}
 
 		// For single relationship archives, return the first relationship
@@ -1378,16 +1476,20 @@ func (rt *RelationshipTracker) restoreFromS3(ctx context.Context, archiveLocatio
 		return &restoredRel, nil
 	}
 
-	return nil, fmt.Errorf("failed to restore from S3 after %d attempts: %w", maxRetries, lastErr)
+	rt.logger.Error("Failed to restore from S3 after retries",
+		zap.String("archive_location", archiveLocation),
+		zap.Int("max_retries", maxRetries),
+		zap.Error(lastErr))
+	return nil, errors.Join(ErrRestoreFromS3Failed, lastErr)
 }
 
 // restoreMultipleFromS3 restores multiple relationships from a batch S3 archive
 func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiveLocation string) ([]models.FederationRelationship, error) {
 	if rt.s3Client == nil {
-		return nil, fmt.Errorf("S3 client not configured for restore operation")
+		return nil, ErrS3ClientNotConfigured
 	}
 	if err := common.ValidateRequiredParam("archive_bucket", rt.archiveBucket); err != nil {
-		return nil, fmt.Errorf("S3 client not configured for restore operation")
+		return nil, ErrS3ClientNotConfigured
 	}
 
 	getInput := &s3.GetObjectInput{
@@ -1397,7 +1499,10 @@ func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiv
 
 	result, err := rt.s3Client.GetObject(ctx, getInput)
 	if err != nil {
-		return nil, fmt.Errorf("failed to download archive from S3: %w", err)
+		rt.logger.Error("Failed to download archive from S3",
+			zap.String("archive_location", archiveLocation),
+			zap.Error(err))
+		return nil, errors.Join(ErrDownloadArchiveFromS3Failed, err)
 	}
 	defer func() {
 		if closeErr := result.Body.Close(); closeErr != nil {
@@ -1408,7 +1513,10 @@ func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiv
 	// Decompress the data
 	gzipReader, err := gzip.NewReader(result.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+		rt.logger.Error("Failed to create gzip reader",
+			zap.String("archive_location", archiveLocation),
+			zap.Error(err))
+		return nil, errors.Join(ErrCreateGzipReaderFailed, err)
 	}
 	defer func() {
 		if closeErr := gzipReader.Close(); closeErr != nil {
@@ -1418,18 +1526,24 @@ func (rt *RelationshipTracker) restoreMultipleFromS3(ctx context.Context, archiv
 
 	compressedData, err := io.ReadAll(gzipReader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read compressed data: %w", err)
+		rt.logger.Error("Failed to read compressed data",
+			zap.String("archive_location", archiveLocation),
+			zap.Error(err))
+		return nil, errors.Join(ErrReadCompressedDataFailed, err)
 	}
 
 	// Parse JSON data
 	var archiveData ArchiveData
 	if err := json.Unmarshal(compressedData, &archiveData); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal archive data: %w", err)
+		rt.logger.Error("Failed to unmarshal archive data",
+			zap.String("archive_location", archiveLocation),
+			zap.Error(err))
+		return nil, errors.Join(ErrUnmarshalArchiveDataFailed, err)
 	}
 
 	// Validate data integrity
 	if err := common.ValidateSliceNotEmpty("archive_relationships", archiveData.Relationships); err != nil {
-		return nil, fmt.Errorf("archive contains no relationships")
+		return nil, ErrArchiveContainsNoRelationships
 	}
 
 	rt.logger.Info("Successfully restored multiple relationships from S3",
@@ -1455,7 +1569,10 @@ func (rt *RelationshipTracker) cleanupS3Archive(ctx context.Context, archiveLoca
 	}
 
 	if _, err := rt.s3Client.DeleteObject(ctx, deleteInput); err != nil {
-		return fmt.Errorf("failed to delete S3 archive: %w", err)
+		rt.logger.Error("Failed to delete S3 archive",
+			zap.String("archive_location", archiveLocation),
+			zap.Error(err))
+		return errors.Join(ErrDeleteS3ArchiveFailed, err)
 	}
 
 	rt.logger.Info("Successfully deleted S3 archive after restore",
@@ -1515,7 +1632,10 @@ func (rt *RelationshipTracker) BatchRestoreRelationships(ctx context.Context, ar
 	if err := common.ValidateSliceNotEmpty("restored_relationships", allRelationships); err == nil {
 		result, err := batchWriter.WriteItems(ctx, allRelationships)
 		if err != nil {
-			return fmt.Errorf("failed to batch write restored relationships: %w", err)
+			rt.logger.Error("Failed to batch write restored relationships",
+				zap.Int("total_relationships", len(allRelationships)),
+				zap.Error(err))
+			return errors.Join(ErrBatchWriteRestoredRelationshipsFailed, err)
 		}
 
 		rt.logger.Info("Batch restore completed",

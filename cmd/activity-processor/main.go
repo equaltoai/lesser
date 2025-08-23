@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -84,7 +85,7 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 	}
 
 	// Initialize repository factory
-	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, lambdaCtx.AWSServices.Config, logger)
+	repos, err := factory.NewRepositoryFactory(db, cfg.DynamoTableName, logger)
 	if err != nil {
 		logger.Fatal("Failed to create repository factory", zap.Error(err))
 	}
@@ -117,7 +118,7 @@ func NewActivityProcessor(lambdaCtx *common.LambdaContext) *ActivityProcessor {
 func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.DynamoDBEvent) error {
 	// Generate request ID for tracking (Lift pattern)
 	requestID := uuid.New().String()
-	
+
 	// Validate the generated UUID
 	if err := common.ValidateUUID("requestID", requestID); err != nil {
 		ap.logger.Error("failed to generate valid request ID", zap.Error(err))
@@ -226,7 +227,10 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 	// Return error if there are retryable errors (this will cause Lambda to retry)
 	retryableErrors := len(errorList) - len(deadLetterRecords)
 	if retryableErrors > 0 {
-		return fmt.Errorf("batch has %d retryable errors out of %d total records", retryableErrors, len(event.Records))
+		ap.logger.Error("batch has retryable errors", 
+			zap.Int("retryable_errors", retryableErrors),
+			zap.Int("total_records", len(event.Records)))
+		return ErrBatchRetryableErrors
 	}
 
 	ap.logger.Info("batch processing completed successfully",
@@ -254,23 +258,25 @@ func (ap *ActivityProcessor) processRecord(ctx context.Context, record events.Dy
 	switch record.EventName {
 	case activityInsert, activityModify:
 		if record.Change.NewImage == nil {
-			return fmt.Errorf("no new image in record %s", record.EventID)
+			ap.logger.Error("missing new image in record", zap.String("event_id", record.EventID))
+			return ErrMissingNewImage
 		}
 
 		// Convert DynamoDB attribute values using DynamORM
 		if err := stream.UnmarshalItem(record, &activity); err != nil {
-			return fmt.Errorf("failed to unmarshal new image: %w", err)
+			return errors.Join(ErrStreamRecordUnmarshalNew, err)
 		}
 
 	case activityRemove:
 		if record.Change.OldImage == nil {
-			return fmt.Errorf("no old image in remove record %s", record.EventID)
+			ap.logger.Error("missing old image in remove record", zap.String("event_id", record.EventID))
+			return ErrMissingOldImage
 		}
 
 		// Convert DynamoDB attribute values from OldImage for REMOVE events
 		// The UnmarshalItem function already handles this case by checking EventName
 		if err := stream.UnmarshalItem(record, &activity); err != nil {
-			return fmt.Errorf("failed to unmarshal old image: %w", err)
+			return errors.Join(ErrStreamRecordUnmarshalOld, err)
 		}
 
 	default:
@@ -472,7 +478,7 @@ func (ap *ActivityProcessor) processOutboxActivity(ctx context.Context, activity
 	var activityData activitypub.Activity
 	if err := json.Unmarshal([]byte(activity.Activity), &activityData); err != nil {
 		ap.logger.Error("failed to parse activity", zap.Error(err))
-		return fmt.Errorf("failed to parse activity: %w", err)
+		return errors.Join(ErrActivityParsingFailed, err)
 	}
 
 	// Handle timeline fanout based on activity type
@@ -606,7 +612,7 @@ func (ap *ActivityProcessor) fanOutToTimelines(ctx context.Context, activity *ac
 	// Process the object from the activity
 	processedObj, err := ap.processActivityObject(ctx, activity)
 	if err != nil {
-		return fmt.Errorf("failed to process activity object: %w", err)
+		return errors.Join(ErrActivityObjectProcessing, err)
 	}
 
 	if processedObj == nil {
@@ -691,12 +697,12 @@ func (ap *ActivityProcessor) processRemoteObject(remoteObj interface{}, id strin
 func (ap *ActivityProcessor) convertMapToNote(obj map[string]interface{}) (*ProcessedObject, error) {
 	noteData, err := json.Marshal(obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal note: %w", err)
+		return nil, errors.Join(ErrNoteMarshaling, err)
 	}
 
 	note := &activitypub.Note{}
 	if err := json.Unmarshal(noteData, note); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal note: %w", err)
+		return nil, errors.Join(ErrNoteUnmarshaling, err)
 	}
 
 	return ap.processNoteObject(nil, note), nil
@@ -803,7 +809,7 @@ func (ap *ActivityProcessor) createAndFanOutEntries(ctx context.Context, activit
 	// Write entries to timelines
 	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
 		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
-			return fmt.Errorf("failed to write timeline entries: %w", err)
+			return errors.Join(ErrTimelineEntriesWrite, err)
 		}
 	}
 
@@ -936,7 +942,7 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 	// Extract the announced object ID
 	announcedID := ap.extractAnnouncedID(activity)
 	if err := common.ValidateRequiredParam("announcedID", announcedID); err != nil {
-		return fmt.Errorf("no object ID in Announce activity")
+		return ErrMissingAnnounceObjectID
 	}
 
 	// Get the announced content
@@ -949,7 +955,7 @@ func (ap *ActivityProcessor) fanOutAnnounceToTimelines(ctx context.Context, acti
 	// Write all entries
 	if err := common.ValidateSliceNotEmpty("entries", entries); err == nil {
 		if err := ap.timelineRepo.CreateTimelineEntries(ctx, entries); err != nil {
-			return fmt.Errorf("failed to write timeline entries: %w", err)
+			return errors.Join(ErrTimelineEntriesWrite, err)
 		}
 	}
 
@@ -1428,7 +1434,7 @@ func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) 
 	// Get the actor to find followers
 	actor, err := ap.actorRepo.GetActor(ctx, username)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get actor: %w", err)
+		return nil, errors.Join(ErrActorRetrieval, err)
 	}
 
 	// Query followers using the relationship repository
@@ -1439,7 +1445,7 @@ func (ap *ActivityProcessor) getFollowers(ctx context.Context, username string) 
 			zap.String("username", username),
 			zap.String("actor_id", actor.ID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query followers: %w", err)
+		return nil, errors.Join(ErrFollowersQuerying, err)
 	}
 
 	ap.logger.Debug("retrieved followers for timeline fanout",
@@ -1461,9 +1467,9 @@ func containsPublicAddress(slice []string) bool {
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
+	cfg       *config.Config //nolint:unused // Reserved for global configuration access pattern
 	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage
+	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
 	processor *ActivityProcessor
 )
 
@@ -1473,18 +1479,18 @@ func init() {
 		ServiceName: "activity-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Initialize processor
 	processor = NewActivityProcessor(lambdaCtx)
 }
@@ -1614,7 +1620,7 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 			ap.logger.Warn("fetched object failed validation",
 				zap.String("object_url", objectURL),
 				zap.Error(valErr))
-			lastErr = fmt.Errorf("validation failed: %w", valErr)
+			lastErr = errors.Join(ErrObjectValidation, valErr)
 			break // Don't retry validation failures
 		}
 
@@ -1653,29 +1659,32 @@ func (ap *ActivityProcessor) fetchRemoteObjectWithRetry(ctx context.Context, obj
 		zap.Int("attempts", ap.retryAttempts),
 		zap.Error(lastErr))
 
-	return nil, fmt.Errorf("failed after %d attempts: %w", ap.retryAttempts, lastErr)
+	return nil, errors.Join(ErrRemoteObjectFetch, lastErr)
 }
 
 // validateAndProcessRemoteObject validates a fetched remote object and converts it to appropriate types
 func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL string) (any, error) {
 	objMap, ok := obj.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("object is not a map[string]any")
+		return nil, ErrObjectNotMap
 	}
 
 	// Validate basic ActivityPub object requirements
 	id, ok := objMap["id"].(string)
 	if !ok || common.ValidateRequiredParam("id", id) != nil {
-		return nil, fmt.Errorf("object missing or invalid 'id' field")
+		return nil, ErrMissingObjectID
 	}
 
 	if id != expectedURL {
-		return nil, fmt.Errorf("object ID mismatch: expected %s, got %s", expectedURL, id)
+		ap.logger.Error("object ID mismatch", 
+			zap.String("expected", expectedURL),
+			zap.String("got", id))
+		return nil, ErrObjectIDMismatch
 	}
 
 	objectType, ok := objMap["type"].(string)
 	if !ok || common.ValidateRequiredParam("object_type", objectType) != nil {
-		return nil, fmt.Errorf("object missing or invalid 'type' field")
+		return nil, ErrMissingObjectType
 	}
 
 	// Check for required ActivityPub fields based on type
@@ -1690,7 +1699,7 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 
 		// Should have attributedTo
 		if _, hasAttr := objMap["attributedTo"]; !hasAttr {
-			return nil, fmt.Errorf("object missing 'attributedTo' field")
+			return nil, ErrMissingAttributedTo
 		}
 
 		// Try to convert to a Note for easier handling
@@ -1704,14 +1713,14 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 	case "Video", "Audio", "Image":
 		// Media objects should have a URL
 		if _, hasURL := objMap["url"]; !hasURL {
-			return nil, fmt.Errorf("media object missing 'url' field")
+			return nil, ErrMissingMediaURL
 		}
 		return objMap, nil
 
 	case "Event":
 		// Events should have a startTime
 		if _, hasStart := objMap["startTime"]; !hasStart {
-			return nil, fmt.Errorf("event object missing 'startTime' field")
+			return nil, ErrMissingEventStartTime
 		}
 		return objMap, nil
 
@@ -1729,12 +1738,12 @@ func (ap *ActivityProcessor) convertToNote(objMap map[string]any) (*activitypub.
 	// Marshal to JSON then unmarshal to Note for proper type conversion
 	data, err := json.Marshal(objMap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal object: %w", err)
+		return nil, errors.Join(ErrObjectMarshaling, err)
 	}
 
 	var note activitypub.Note
 	if err := common.ParseActivityPubObject(data, &note); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal to Note: %w", err)
+		return nil, errors.Join(ErrObjectUnmarshalingToNote, err)
 	}
 
 	return &note, nil
@@ -1948,7 +1957,7 @@ func (ap *ActivityProcessor) sendToDeadLetterQueue(ctx context.Context, record e
 	}
 
 	if err := ap.db.WithContext(ctx).Model(&dlqRecord).Create(); err != nil {
-		return fmt.Errorf("failed to create DLQ record: %w", err)
+		return errors.Join(ErrDLQRecordCreation, err)
 	}
 
 	ap.logger.Info("record sent to dead letter queue",
@@ -2255,7 +2264,8 @@ func (ap *ActivityProcessor) removeFromAllTimelines(_ context.Context, objectID 
 		zap.Int("error_count", len(errors)))
 
 	if err := common.ValidateSliceNotEmpty("errors", errors); err == nil {
-		return fmt.Errorf("failed to remove from %d timeline types", len(errors))
+		ap.logger.Error("failed to remove from timeline types", zap.Int("timeline_type_count", len(errors)))
+		return ErrTimelineRemovalFailed
 	}
 
 	return nil
@@ -2286,7 +2296,7 @@ func (ap *ActivityProcessor) createTombstone(ctx context.Context, objectID, acto
 	}
 
 	if err := ap.db.WithContext(ctx).Model(&tombstone).Create(); err != nil {
-		return fmt.Errorf("failed to create tombstone: %w", err)
+		return errors.Join(ErrTombstoneCreationFailed, err)
 	}
 
 	ap.logger.Info("created tombstone",

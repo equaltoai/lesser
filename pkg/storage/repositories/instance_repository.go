@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -16,30 +17,42 @@ import (
 	"go.uber.org/zap"
 )
 
-// InstanceRepository implements instance operations using DynamORM
+// InstanceRepository implements instance operations using DynamORM with BaseRepository pattern
 type InstanceRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.InstanceConfig]
+	historyRepo *BaseRepository[*models.InstanceHistory]
+	metricsRepo *BaseRepository[*models.InstanceMetrics]
+	activityRepo *BaseRepository[*models.WeeklyActivity]
+	logger       *zap.Logger
 }
 
 // NewInstanceRepository creates a new instance repository
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
 	return &InstanceRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.InstanceConfig](db, tableName, logger),
+		historyRepo:    NewBaseRepository[*models.InstanceHistory](db, tableName, logger),
+		metricsRepo:    NewBaseRepository[*models.InstanceMetrics](db, tableName, logger),
+		activityRepo:   NewBaseRepository[*models.WeeklyActivity](db, tableName, logger),
+		logger:         logger,
+	}
+}
+
+// NewInstanceRepositoryWithCostTracking creates a new instance repository with cost tracking
+func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceRepository {
+	return &InstanceRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.InstanceConfig](db, tableName, logger, costService, "instance"),
+		historyRepo:    NewBaseRepositoryWithCostTracking[*models.InstanceHistory](db, tableName, logger, costService, "instance_history"),
+		metricsRepo:    NewBaseRepositoryWithCostTracking[*models.InstanceMetrics](db, tableName, logger, costService, "instance_metrics"),
+		activityRepo:   NewBaseRepositoryWithCostTracking[*models.WeeklyActivity](db, tableName, logger, costService, "instance_activity"),
+		logger:         logger,
 	}
 }
 
 // GetInstanceRules retrieves the instance rules
 // Matches legacy: PK="INSTANCE#CONFIG", SK="RULES"
 func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.InstanceRule, error) {
-	var config models.InstanceConfig
-	err := r.db.WithContext(ctx).Model(&models.InstanceConfig{}).
-		Where("PK", "=", storage.InstanceConfigKey).
-		Where("SK", "=", "RULES").
-		First(&config)
+	config := &models.InstanceConfig{}
+	err := r.Get(ctx, storage.InstanceConfigKey, "RULES", config)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -47,7 +60,7 @@ func (r *InstanceRepository) GetInstanceRules(ctx context.Context) ([]storage.In
 			return r.getDefaultInstanceRules(), nil
 		}
 		r.logger.Error("Failed to get instance rules", zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance rules: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance rules", "configuration")
 	}
 
 	// Deserialize JSON rules with validation
@@ -84,15 +97,15 @@ func (r *InstanceRepository) SetInstanceRules(ctx context.Context, rules []stora
 	rulesJSON, err := json.Marshal(processedRules)
 	if err != nil {
 		r.logger.Error("Failed to marshal instance rules", zap.Error(err))
-		return fmt.Errorf("failed to marshal instance rules: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance rules", "configuration")
 	}
 
 	config := models.NewInstanceRulesConfig(string(rulesJSON))
 
-	err = r.db.WithContext(ctx).Model(config).Create()
+	err = r.Create(ctx, config)
 	if err != nil {
 		r.logger.Error("Failed to save instance rules", zap.Error(err))
-		return fmt.Errorf("failed to save instance rules: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance rules", "configuration")
 	}
 
 	return nil
@@ -101,11 +114,8 @@ func (r *InstanceRepository) SetInstanceRules(ctx context.Context, rules []stora
 // GetExtendedDescription retrieves the instance extended description
 // Matches legacy: PK="INSTANCE#CONFIG", SK="EXTENDED_DESC", returns default if not set
 func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string, time.Time, error) {
-	var config models.InstanceConfig
-	err := r.db.WithContext(ctx).Model(&models.InstanceConfig{}).
-		Where("PK", "=", storage.InstanceConfigKey).
-		Where("SK", "=", "EXTENDED_DESC").
-		First(&config)
+	config := &models.InstanceConfig{}
+	err := r.Get(ctx, storage.InstanceConfigKey, "EXTENDED_DESC", config)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -114,7 +124,7 @@ func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string
 			return defaultDesc, time.Now(), nil
 		}
 		r.logger.Error("Failed to get extended description", zap.Error(err))
-		return "", time.Time{}, fmt.Errorf("failed to get extended description: %w", err)
+		return "", time.Time{}, ErrorHandler.HandleGetError(err, "instance metadata", "extended description")
 	}
 
 	// Validate and sanitize the description
@@ -127,10 +137,10 @@ func (r *InstanceRepository) GetExtendedDescription(ctx context.Context) (string
 func (r *InstanceRepository) SetExtendedDescription(ctx context.Context, description string) error {
 	config := models.NewExtendedDescriptionConfig(description)
 
-	err := r.db.WithContext(ctx).Model(config).Create()
+	err := r.Create(ctx, config)
 	if err != nil {
 		r.logger.Error("Failed to save extended description", zap.Error(err))
-		return fmt.Errorf("failed to save extended description: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance metadata", "extended description")
 	}
 
 	return nil
@@ -168,18 +178,15 @@ func (r *InstanceRepository) GetRulesByCategory(ctx context.Context, category st
 // GetTotalUserCount returns the total number of users
 // Since legacy doesn't implement this, use instance metrics pattern
 func (r *InstanceRepository) GetTotalUserCount(ctx context.Context) (int64, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "TOTAL_USERS").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_USERS", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total user count", zap.Error(err))
-		return 0, fmt.Errorf("failed to get total user count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", "total users")
 	}
 
 	return metric.TotalUsers, nil
@@ -187,18 +194,15 @@ func (r *InstanceRepository) GetTotalUserCount(ctx context.Context) (int64, erro
 
 // GetTotalStatusCount returns the total number of statuses
 func (r *InstanceRepository) GetTotalStatusCount(ctx context.Context) (int64, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "TOTAL_STATUSES").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_STATUSES", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total status count", zap.Error(err))
-		return 0, fmt.Errorf("failed to get total status count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", "total statuses")
 	}
 
 	return metric.TotalStatuses, nil
@@ -206,18 +210,15 @@ func (r *InstanceRepository) GetTotalStatusCount(ctx context.Context) (int64, er
 
 // GetTotalDomainCount returns the total number of known domains
 func (r *InstanceRepository) GetTotalDomainCount(ctx context.Context) (int64, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "TOTAL_DOMAINS").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "TOTAL_DOMAINS", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get total domain count", zap.Error(err))
-		return 0, fmt.Errorf("failed to get total domain count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", "total domains")
 	}
 
 	return metric.Value, nil
@@ -226,18 +227,15 @@ func (r *InstanceRepository) GetTotalDomainCount(ctx context.Context) (int64, er
 // GetActiveUserCount returns the number of active users in the last N days
 func (r *InstanceRepository) GetActiveUserCount(ctx context.Context, days int) (int64, error) {
 	metricType := fmt.Sprintf("ACTIVE_USERS_%dD", days)
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", metricType).
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", metricType, metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get active user count", zap.Error(err), zap.Int("days", days))
-		return 0, fmt.Errorf("failed to get active user count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", fmt.Sprintf("active users %dD", days))
 	}
 
 	return metric.Value, nil
@@ -250,18 +248,15 @@ func (r *InstanceRepository) GetDailyActiveUserCount(ctx context.Context) (int64
 
 // GetLocalPostCount returns the number of local posts
 func (r *InstanceRepository) GetLocalPostCount(ctx context.Context) (int64, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "LOCAL_POSTS").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "LOCAL_POSTS", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return 0, nil
 		}
 		r.logger.Error("Failed to get local post count", zap.Error(err))
-		return 0, fmt.Errorf("failed to get local post count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", "local posts")
 	}
 
 	return metric.Value, nil
@@ -269,11 +264,8 @@ func (r *InstanceRepository) GetLocalPostCount(ctx context.Context) (int64, erro
 
 // GetLocalCommentCount returns the number of local comments (posts with InReplyToID)
 func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "LOCAL_COMMENTS").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "LOCAL_COMMENTS", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -282,7 +274,7 @@ func (r *InstanceRepository) GetLocalCommentCount(ctx context.Context) (int64, e
 			return r.countLocalComments(ctx)
 		}
 		r.logger.Error("Failed to get local comment count", zap.Error(err))
-		return 0, fmt.Errorf("failed to get local comment count: %w", err)
+		return 0, ErrorHandler.HandleGetError(err, "instance metrics", "local comments")
 	}
 
 	return metric.Value, nil
@@ -298,7 +290,7 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	
 	// Query the replies-index GSI for all comments
 	// Since we only need the count, we'll use a projection that minimizes data transfer
-	err := r.db.WithContext(ctx).Model(&models.Status{}).
+	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("replies-index").
 		Where("GSI4PK", "begins_with", "REPLIES#").
 		All(&comments)
@@ -311,10 +303,11 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	}
 	
 	// Filter for local comments (comments from local users)
-	localDomain := os.Getenv("DOMAIN_NAME")
+	cfg := config.Get()
+	localDomain := cfg.Domain
 	if err := common.ValidateRequiredParam("local_domain", localDomain); err != nil {
 		// If no domain configured, count all comments
-		r.logger.Debug("No DOMAIN_NAME set, counting all comments as local")
+		r.logger.Debug("No domain configured, counting all comments as local")
 		return int64(len(comments)), nil
 	}
 	
@@ -335,21 +328,18 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 
 // GetWeeklyActivity retrieves weekly activity data for a specific week
 func (r *InstanceRepository) GetWeeklyActivity(ctx context.Context, weekTimestamp int64) (*storage.WeeklyActivity, error) {
-	var activity models.WeeklyActivity
+	activity := &models.WeeklyActivity{}
 
 	// Use the pattern from the model: PK="INSTANCE#ACTIVITY", SK="ACTIVITY#WEEK#{date}"
 	weekStart := time.Unix(weekTimestamp, 0).Format(common.DateFormat)
-	err := r.db.WithContext(ctx).Model(&models.WeeklyActivity{}).
-		Where("PK", "=", "INSTANCE#ACTIVITY").
-		Where("SK", "=", fmt.Sprintf("ACTIVITY#WEEK#%s", weekStart)).
-		First(&activity)
+	err := r.activityRepo.Get(ctx, "INSTANCE#ACTIVITY", fmt.Sprintf("ACTIVITY#WEEK#%s", weekStart), activity)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
 		r.logger.Error("Failed to get weekly activity", zap.Error(err), zap.Int64("week", weekTimestamp))
-		return nil, fmt.Errorf("failed to get weekly activity: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance activity", fmt.Sprintf("week %d", weekTimestamp))
 	}
 
 	return &storage.WeeklyActivity{
@@ -369,14 +359,11 @@ func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType st
 	activity := models.NewWeeklyActivity(week)
 
 	// Try to get existing record first
-	err := r.db.WithContext(ctx).Model(&models.WeeklyActivity{}).
-		Where("PK", "=", activity.PK).
-		Where("SK", "=", activity.SK).
-		First(activity)
+	err := r.activityRepo.Get(ctx, activity.PK, activity.SK, activity)
 
 	if err != nil && !errors.IsNotFound(err) {
 		r.logger.Error("Failed to get existing weekly activity", zap.Error(err))
-		return fmt.Errorf("failed to get existing weekly activity: %w", err)
+		return ErrorHandler.HandleGetError(err, "instance activity", fmt.Sprintf("week %s", week.Format("2006-01-02")))
 	}
 
 	// Update activity counters based on type
@@ -390,10 +377,10 @@ func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType st
 	}
 
 	// Save the updated activity
-	err = r.db.WithContext(ctx).Model(activity).Create()
+	err = r.activityRepo.Create(ctx, activity)
 	if err != nil {
 		r.logger.Error("Failed to record activity", zap.Error(err), zap.String("type", activityType))
-		return fmt.Errorf("failed to record activity: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance activity", activityType)
 	}
 
 	return nil
@@ -404,7 +391,7 @@ func (r *InstanceRepository) RecordActivity(ctx context.Context, activityType st
 func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.ActorRecord, error) {
 	// Look for the first admin user to serve as contact account
 	var users []models.User
-	err := r.db.WithContext(ctx).Model(&models.User{}).
+	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.User{}).
 		Index("role-index").
 		Where("GSI3PK", "=", "ROLE#admin").
 		Limit(1).
@@ -412,7 +399,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 
 	if err != nil {
 		r.logger.Error("Failed to query admin users for contact account", zap.Error(err))
-		return nil, fmt.Errorf("failed to query admin users: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "instance", "admin users")
 	}
 
 	if err := common.ValidateSliceNotEmpty("users", users); err != nil {
@@ -424,7 +411,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 
 	// Get the corresponding actor for this user
 	var actor models.Actor
-	err = r.db.WithContext(ctx).Model(&models.Actor{}).
+	err = r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", fmt.Sprintf("ACTOR#%s", user.Username)).
 		Where("SK", "=", "PROFILE").
 		First(&actor)
@@ -437,7 +424,7 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 		r.logger.Error("Failed to get actor for contact account",
 			zap.String("username", user.Username),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get actor for contact user: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance", "contact actor")
 	}
 
 	// Convert the actor model to storage.ActorRecord format
@@ -453,11 +440,8 @@ func (r *InstanceRepository) GetContactAccount(ctx context.Context) (*storage.Ac
 
 // GetStorageUsage returns current storage usage statistics
 func (r *InstanceRepository) GetStorageUsage(ctx context.Context) (any, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", "INSTANCE#METRICS").
-		Where("SK", "=", "STORAGE_USAGE").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, "INSTANCE#METRICS", "STORAGE_USAGE", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -468,7 +452,7 @@ func (r *InstanceRepository) GetStorageUsage(ctx context.Context) (any, error) {
 			}, nil
 		}
 		r.logger.Error("Failed to get storage usage", zap.Error(err))
-		return nil, fmt.Errorf("failed to get storage usage: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance metrics", "storage usage")
 	}
 
 	return map[string]interface{}{
@@ -490,7 +474,7 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 
 	// Query daily metrics using GSI1
 	var histories []models.InstanceHistory
-	err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+	err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 		Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
@@ -499,7 +483,7 @@ func (r *InstanceRepository) getMetricHistory(ctx context.Context, days int, met
 
 	if err != nil {
 		r.logger.Error(fmt.Sprintf("Failed to get %s", operation), zap.Error(err), zap.Int("days", days))
-		return nil, fmt.Errorf("failed to get %s: %w", operation, err)
+		return nil, ErrorHandler.HandleQueryError(err, "instance metrics", operation)
 	}
 
 	// Convert to expected format using the provided formatter
@@ -542,11 +526,8 @@ func (r *InstanceRepository) GetUserGrowthHistory(ctx context.Context, days int)
 
 // GetDomainStats returns statistics for a specific domain
 func (r *InstanceRepository) GetDomainStats(ctx context.Context, domain string) (any, error) {
-	var metric models.InstanceMetrics
-	err := r.db.WithContext(ctx).Model(&models.InstanceMetrics{}).
-		Where("PK", "=", fmt.Sprintf("DOMAIN#%s", domain)).
-		Where("SK", "=", "STATS").
-		First(&metric)
+	metric := &models.InstanceMetrics{}
+	err := r.metricsRepo.Get(ctx, fmt.Sprintf("DOMAIN#%s", domain), "STATS", metric)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -558,7 +539,7 @@ func (r *InstanceRepository) GetDomainStats(ctx context.Context, domain string) 
 			}, nil
 		}
 		r.logger.Error("Failed to get domain stats", zap.Error(err), zap.String("domain", domain))
-		return nil, fmt.Errorf("failed to get domain stats: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance metrics", fmt.Sprintf("domain %s", domain))
 	}
 
 	return map[string]interface{}{
@@ -593,9 +574,9 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			userHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.db.WithContext(ctx).Model(userHistory).Create(); err != nil {
+		if err := r.historyRepo.Create(ctx, userHistory); err != nil {
 			r.logger.Error("Failed to record daily user metrics", zap.Error(err), zap.String("date", date))
-			return fmt.Errorf("failed to record user metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, "instance metrics", "user metrics")
 		}
 	}
 
@@ -611,9 +592,9 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			storageHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.db.WithContext(ctx).Model(storageHistory).Create(); err != nil {
+		if err := r.historyRepo.Create(ctx, storageHistory); err != nil {
 			r.logger.Error("Failed to record daily storage metrics", zap.Error(err), zap.String("date", date))
-			return fmt.Errorf("failed to record storage metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, "instance metrics", "storage metrics")
 		}
 	}
 
@@ -630,9 +611,9 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			postHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.db.WithContext(ctx).Model(postHistory).Create(); err != nil {
+		if err := r.historyRepo.Create(ctx, postHistory); err != nil {
 			r.logger.Error("Failed to record daily post metrics", zap.Error(err), zap.String("date", date))
-			return fmt.Errorf("failed to record post metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, "instance metrics", "post metrics")
 		}
 	}
 
@@ -647,9 +628,9 @@ func (r *InstanceRepository) RecordDailyMetrics(ctx context.Context, date string
 			fedHistory.CalculateDelta(prevValue)
 		}
 
-		if err := r.db.WithContext(ctx).Model(fedHistory).Create(); err != nil {
+		if err := r.historyRepo.Create(ctx, fedHistory); err != nil {
 			r.logger.Error("Failed to record daily federation metrics", zap.Error(err), zap.String("date", date))
-			return fmt.Errorf("failed to record federation metrics: %w", err)
+			return ErrorHandler.HandleCreateError(err, "instance metrics", "federation metrics")
 		}
 	}
 
@@ -687,7 +668,7 @@ func (r *InstanceRepository) GetMetricsSummary(ctx context.Context, timeRange st
 
 	for _, metricType := range metricTypes {
 		var histories []models.InstanceHistory
-		err := r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+		err := r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 			Index("GSI1").
 			Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 			Where("GSI1SK", ">=", fmt.Sprintf("DATE#%s", startDate)).
@@ -735,12 +716,12 @@ func (r *InstanceRepository) getPreviousDayValue(ctx context.Context, currentDat
 	}
 	prevDate := date.AddDate(0, 0, -1).Format("2006-01-02")
 
-	var history models.InstanceHistory
-	err = r.db.WithContext(ctx).Model(&models.InstanceHistory{}).
+	history := &models.InstanceHistory{}
+	err = r.historyRepo.GetDB().WithContext(ctx).Model(&models.InstanceHistory{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("METRIC#%s", metricType)).
 		Where("GSI1SK", "=", fmt.Sprintf("DATE#%s", prevDate)).
-		First(&history)
+		First(history)
 
 	if err != nil {
 		if errors.IsNotFound(err) {

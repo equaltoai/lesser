@@ -85,13 +85,13 @@ func (cb *CostCircuitBreaker) CheckCost(_ context.Context, estimatedCost float64
 		if time.Since(lastFailTime) > cb.config.RecoveryTimeout {
 			cb.transitionToHalfOpen()
 		} else {
-			return fmt.Errorf("circuit breaker open: cost limit exceeded")
+			return ErrCircuitBreakerOpen
 		}
 	case StateHalfOpen:
 		// Allow limited requests to test recovery
 		if cb.costWindow.getCurrentHourCost() > cb.config.MaxCostPerHour {
 			cb.transitionToOpen()
-			return fmt.Errorf("circuit breaker reopened: cost still too high")
+			return ErrCircuitBreakerReopened
 		}
 	}
 
@@ -105,7 +105,7 @@ func (cb *CostCircuitBreaker) CheckCost(_ context.Context, estimatedCost float64
 	// Check hourly cost limit
 	if cb.costWindow.getCurrentHourCost()+estimatedCost > cb.config.MaxCostPerHour {
 		cb.recordFailure()
-		return fmt.Errorf("hourly cost limit would be exceeded")
+		return ErrHourlyCostLimitExceeded
 	}
 
 	return nil

@@ -14,6 +14,7 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
 )
 
 // WebSocketCostTracker handles cost tracking for WebSocket operations
@@ -338,8 +339,9 @@ func (t *WebSocketCostTracker) PerformCostAggregation(ctx context.Context, perio
 // Helper functions
 
 func getServiceName() string {
-	if name := os.Getenv("SERVICE_NAME"); name != "" {
-		return name
+	cfg := config.Get()
+	if cfg.ServiceName != "" {
+		return cfg.ServiceName
 	}
 	if name := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); name != "" {
 		return name

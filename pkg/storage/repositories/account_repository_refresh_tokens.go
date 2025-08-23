@@ -22,10 +22,10 @@ func (r *AccountRepository) CreateAdvancedRefreshToken(ctx context.Context, user
 	familyBytes := make([]byte, 16)
 
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate token: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, "token generation")
 	}
 	if _, err := rand.Read(familyBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate family: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, "family generation")
 	}
 
 	now := time.Now()
@@ -48,7 +48,7 @@ func (r *AccountRepository) CreateAdvancedRefreshToken(ctx context.Context, user
 			zap.String("userID", userID),
 			zap.String("deviceName", deviceName),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create refresh token: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, userID)
 	}
 
 	r.logger.Info("created advanced refresh token",
@@ -75,7 +75,7 @@ func (r *AccountRepository) GetAdvancedRefreshToken(ctx context.Context, token s
 		r.logger.Error("failed to get advanced refresh token",
 			zap.String("token", token[:8]+"..."),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get refresh token: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityRefreshToken, token[:8]+"...")
 	}
 
 	// Check if token is expired
@@ -119,7 +119,7 @@ func (r *AccountRepository) RotateAdvancedRefreshToken(ctx context.Context, oldT
 	// Generate a new token in the same family
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate new token: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, "rotation token generation")
 	}
 
 	now := time.Now()
@@ -143,7 +143,7 @@ func (r *AccountRepository) RotateAdvancedRefreshToken(ctx context.Context, oldT
 			zap.String("userID", oldToken.UserID),
 			zap.String("family", oldToken.Family),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to create rotated token: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, oldToken.UserID)
 	}
 
 	// Revoke the old token
@@ -170,7 +170,7 @@ func (r *AccountRepository) revokeAdvancedRefreshToken(ctx context.Context, toke
 
 	err := r.db.WithContext(ctx).Model(token).Update()
 	if err != nil {
-		return fmt.Errorf("failed to revoke token: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, token.Token[:8]+"...")
 	}
 
 	return nil
@@ -182,7 +182,7 @@ func (r *AccountRepository) revokeAdvancedRefreshToken(ctx context.Context, toke
 func (r *AccountRepository) RevokeAdvancedTokenFamily(ctx context.Context, family string, reason string) error {
 	tokens, err := r.GetAdvancedTokensByFamily(ctx, family)
 	if err != nil {
-		return fmt.Errorf("failed to get tokens in family: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityRefreshToken, "family tokens")
 	}
 
 	var revokeErrors []error
@@ -199,7 +199,8 @@ func (r *AccountRepository) RevokeAdvancedTokenFamily(ctx context.Context, famil
 	}
 
 	if len(revokeErrors) > 0 {
-		return fmt.Errorf("failed to revoke %d tokens in family", len(revokeErrors))
+		// Create error for multiple token revocation failures
+		return ErrorHandler.HandleDeleteError(revokeErrors[0], EntityRefreshToken, family)
 	}
 
 	r.logger.Info("revoked token family",
@@ -216,7 +217,7 @@ func (r *AccountRepository) RevokeAdvancedTokenFamily(ctx context.Context, famil
 func (r *AccountRepository) RevokeAdvancedUserTokens(ctx context.Context, userID string, reason string) error {
 	tokens, err := r.GetAdvancedTokensByUser(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user tokens: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityRefreshToken, "user tokens")
 	}
 
 	var revokeErrors []error
@@ -233,7 +234,8 @@ func (r *AccountRepository) RevokeAdvancedUserTokens(ctx context.Context, userID
 	}
 
 	if len(revokeErrors) > 0 {
-		return fmt.Errorf("failed to revoke %d user tokens", len(revokeErrors))
+		// Create error for multiple token revocation failures
+		return ErrorHandler.HandleDeleteError(revokeErrors[0], EntityRefreshToken, userID)
 	}
 
 	r.logger.Info("revoked all user tokens",
@@ -258,7 +260,7 @@ func (r *AccountRepository) GetAdvancedTokensByUser(ctx context.Context, userID 
 		r.logger.Error("failed to get tokens by user",
 			zap.String("userID", userID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user tokens: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "user tokens")
 	}
 
 	return tokens, nil
@@ -278,7 +280,7 @@ func (r *AccountRepository) GetAdvancedTokensByFamily(ctx context.Context, famil
 		r.logger.Error("failed to get tokens by family",
 			zap.String("family", family),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get family tokens: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "family tokens")
 	}
 
 	return tokens, nil
@@ -316,7 +318,7 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 		if errors.IsNotFound(err) {
 			return common.ErrTokenNotFound
 		}
-		return fmt.Errorf("failed to get token for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityRefreshToken, tokenValue[:8]+"...")
 	}
 
 	// Update last used info
@@ -331,7 +333,7 @@ func (r *AccountRepository) UpdateAdvancedTokenLastUsed(ctx context.Context, tok
 		r.logger.Error("failed to update token last used",
 			zap.String("token", tokenValue[:8]+"..."),
 			zap.Error(err))
-		return fmt.Errorf("failed to update token: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityRefreshToken, tokenValue[:8]+"...")
 	}
 
 	return nil
@@ -348,7 +350,7 @@ func (r *AccountRepository) CleanupExpiredAdvancedTokens(ctx context.Context) (i
 		All(&allTokens)
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to scan tokens for cleanup: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "cleanup scan")
 	}
 
 	now := time.Now().Unix()

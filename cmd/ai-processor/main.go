@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,23 +21,20 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
-	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
 
 // AIProcessor handles AI-based content analysis for posts and media in the system.
 // It integrates with AWS Bedrock to perform toxicity detection, spam filtering,
 // and automated moderation decisions based on configurable thresholds.
 type AIProcessor struct {
-	db            core.DB
-	tableName     string
-	aiAnalyzer    *ai.AIService // For AI analysis (Comprehend, Rekognition, etc.)
-	aiService     *aiService.Service // For storage and event publishing
-	serviceRegistry *services.Registry
-	logger        *zap.Logger
+	db         core.DB
+	tableName  string
+	aiAnalyzer *ai.AIService      // For AI analysis (Comprehend, Rekognition, etc.)
+	aiService  *aiService.Service // For storage and event publishing
+	logger     *zap.Logger
 }
-
 
 // HandleStreamWithContext processes DynamoDB stream events with explicit context
 func (ap *AIProcessor) HandleStreamWithContext(ctx context.Context, liftCtx *lift.Context, event events.DynamoDBEvent) error {
@@ -73,13 +71,13 @@ func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context,
 	// Extract content from the stream record
 	content, err := ap.extractContent(record)
 	if err != nil {
-		return fmt.Errorf("failed to extract content: %w", err)
+		return errors.Join(ErrContentExtractionFailed, err)
 	}
 
 	// Perform AI analysis using the analyzer (AWS services)
 	analysis, err := ap.aiAnalyzer.AnalyzeContent(ctx, content)
 	if err != nil {
-		return fmt.Errorf("failed to analyze content: %w", err)
+		return errors.Join(ErrAnalysisFailed, err)
 	}
 
 	// Store analysis and publish events using the service layer
@@ -89,7 +87,7 @@ func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context,
 	}
 	_, err = ap.aiService.SaveAnalysis(ctx, saveCmd)
 	if err != nil {
-		return fmt.Errorf("failed to save analysis: %w", err)
+		return errors.Join(ErrAnalysisSaveFailed, err)
 	}
 
 	// Handle moderation action if needed
@@ -146,7 +144,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 	}
 
 	if err := stream.UnmarshalItem(record, &item); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
+		return nil, errors.Join(ErrStreamUnmarshalFailed, err)
 	}
 
 	// Extract object ID from PK
@@ -154,12 +152,19 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 	if len(item.PK) > 7 && item.PK[:7] == "OBJECT#" {
 		objectID = item.PK[7:]
 	} else {
-		return nil, fmt.Errorf("invalid object PK: %s", item.PK)
+		ap.logger.Error("invalid object primary key format",
+			zap.String("pk", item.PK),
+		)
+		return nil, ErrInvalidObjectPK
 	}
 
 	// Skip if not an analyzable type
 	if !ap.isAnalyzableType(item.Type) {
-		return nil, fmt.Errorf("not an analyzable type: %s", item.Type)
+		ap.logger.Debug("object type is not analyzable",
+			zap.String("type", item.Type),
+			zap.String("object_id", objectID),
+		)
+		return nil, ErrNotAnalyzableType
 	}
 
 	// Extract media URLs from attachments
@@ -191,7 +196,7 @@ func (ap *AIProcessor) isAnalyzableType(objectType string) bool {
 
 // storeAnalysis is no longer needed - the service layer handles storage
 
-func (ap *AIProcessor) handleModerationAction(ctx context.Context, liftCtx *lift.Context, analysis *ai.AIAnalysis) error {
+func (ap *AIProcessor) handleModerationAction(ctx context.Context, _ *lift.Context, analysis *ai.AIAnalysis) error {
 	// Create moderation event model for DynamORM
 	moderationEvent := struct {
 		PK              string  `dynamorm:"pk"`
@@ -258,9 +263,9 @@ func (ap *AIProcessor) determineSeverity(analysis *ai.AIAnalysis) string {
 
 var (
 	lambdaCtx *common.LambdaContext
-	cfg       *config.Config
+	cfg       *config.Config //nolint:unused // Reserved for dependency injection pattern
 	logger    *zap.Logger
-	repos     storageCore.RepositoryStorage
+	repos     storageCore.RepositoryStorage //nolint:unused // Reserved for dependency injection pattern
 	processor *AIProcessor
 )
 
@@ -270,18 +275,18 @@ func init() {
 		ServiceName: "ai-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Initialize processor with simplified configuration
 	processor = NewSimplifiedAIProcessor(lambdaCtx)
 }

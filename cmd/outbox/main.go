@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -79,13 +80,13 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Initialize federation-specific services
 	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
 	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		return nil, fmt.Errorf("failed to initialize Lambda services: %w", err)
+		return nil, errors.Join(ErrLambdaServicesInitialization, err)
 	}
 
 	// Extract initialized services with type safety
 	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
 	if !ok {
-		return nil, fmt.Errorf("failed to get repository storage from Lambda context")
+		return nil, ErrRepositoryStorageFromContext
 	}
 
 	// Get individual repositories from the repository storage
@@ -95,18 +96,19 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Create federation-specific repositories manually until they're added to core interface
 	federationActivityRepo := repositories.NewFederationActivityRepository(
 		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
-	federationCostRepo := repositories.NewFederationCostRepository(
-		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
+	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
+	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
+	federationCostRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
 
 	// Extract federation services from Lambda context
 	federationService, ok := lambdaCtx.DeliveryService.(*federation.DeliveryService)
 	if !ok {
-		return nil, fmt.Errorf("failed to get federation delivery service from Lambda context")
+		return nil, ErrFederationServiceFromContext
 	}
 
 	costCalculator, ok := lambdaCtx.CostCalculator.(*federation.CostCalculator)
 	if !ok {
-		return nil, fmt.Errorf("failed to get cost calculator from Lambda context")
+		return nil, ErrCostCalculatorFromContext
 	}
 
 	return &OutboxProcessor{
@@ -219,7 +221,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 			zap.String("message_id", msg.MessageId),
 			zap.Error(err),
 		)
-		return fmt.Errorf("invalid message format: %w", err)
+		return errors.Join(ErrInvalidMessageFormat, err)
 	}
 
 	// Extract domain from target inbox
@@ -234,13 +236,13 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 	// Validate required fields
 	if deliveryMsg.Activity == nil {
-		return fmt.Errorf("missing activity in message")
+		return ErrMissingActivityInMessage
 	}
 	if deliveryMsg.Actor == nil {
-		return fmt.Errorf("missing actor in message")
+		return ErrMissingActorInMessage
 	}
 	if err := common.ValidateRequiredParam("targetInbox", deliveryMsg.TargetInbox); err != nil {
-		return fmt.Errorf("missing target inbox in message")
+		return ErrMissingTargetInbox
 	}
 
 	op.logger.Info("processing federation delivery",
@@ -283,7 +285,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 		// Record cost tracking for budget block
 		costParams.Success = false
-		costParams.ErrorMessage = fmt.Sprintf("Budget limit exceeded: %s", budgetCheck.Message)
+		costParams.ErrorMessage = "Budget limit exceeded: " + budgetCheck.Message
 		costParams.ResponseTimeMs = time.Since(start).Milliseconds()
 		costParams.LambdaDurationMs = time.Since(start).Milliseconds()
 
@@ -294,7 +296,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 			}
 		}()
 
-		return fmt.Errorf("delivery blocked by budget limits: %s", budgetCheck.Message)
+		return ErrDeliveryBudgetLimitExceeded
 	}
 
 	// Attempt delivery with retry logic
@@ -313,7 +315,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 	// Return error for temporary failures to trigger SQS retry
 	if !result.Success && !op.isPermanentError(result.StatusCode) {
-		return fmt.Errorf("delivery failed with retryable error: status %d", result.StatusCode)
+		return ErrDeliveryRetryableFailure
 	}
 
 	return nil
@@ -449,7 +451,7 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 			zap.String("activity_id", msg.Activity.ID),
 			zap.Error(err),
 		)
-		return fmt.Errorf("failed to record federation delivery status: %w", err)
+		return errors.Join(ErrFederationDeliveryStatusRecord, err)
 	}
 
 	op.logger.Info("federation delivery status recorded",
@@ -848,26 +850,26 @@ func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, e
 
 	token, err := jwt.ParseWithClaims(tokenString, &auth.Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, ErrUnexpectedJWTSigningMethod
 		}
 		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse token: %w", err)
+		return nil, errors.Join(ErrJWTTokenParsing, err)
 	}
 
 	if claims, ok := token.Claims.(*auth.Claims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, fmt.Errorf("invalid token")
+	return nil, ErrInvalidToken
 }
 
 
 func main() {
 	processor, err := NewOutboxProcessor()
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize outbox processor: %v", err))
+		panic(errors.Join(ErrOutboxProcessorInitialization, err))
 	}
 
 	app := lift.New()

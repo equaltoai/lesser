@@ -225,7 +225,7 @@ func (h *Handler) HandleGetPredictiveAnalyticsLift(ctx *lift.Context) error {
 	return ctx.JSON(analytics)
 }
 
-// Removed getCostStorageLift - now using CostTrackingRepository
+// Removed getCostStorageLift - now using TrackingRepository
 
 // calculateRequestRateLift calculates current requests per minute from recent data
 func (h *Handler) calculateRequestRateLift(ctx context.Context) float64 {

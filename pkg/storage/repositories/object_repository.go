@@ -16,12 +16,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// ObjectRepository implements object operations using DynamORM
+// ObjectRepository implements object operations using DynamORM with BaseRepository pattern
 type ObjectRepository struct {
-	db          core.DB
-	tableName   string
+	*BaseRepository[*models.Object]
 	domain      string
-	logger      *zap.Logger
 	accountRepo *AccountRepository
 	queryUtils  *QueryUtils
 }
@@ -29,12 +27,10 @@ type ObjectRepository struct {
 // NewObjectRepository creates a new object repository
 func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logger) *ObjectRepository {
 	return &ObjectRepository{
-		db:          db,
-		tableName:   tableName,
-		domain:      domain,
-		logger:      logger,
-		accountRepo: NewAccountRepository(db, tableName, domain, logger),
-		queryUtils:  NewQueryUtils(db, logger),
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Object](db, tableName, logger, nil, "object"),
+		domain:         domain,
+		accountRepo:    NewAccountRepository(db, tableName, domain, logger),
+		queryUtils:     NewQueryUtils(db, logger),
 	}
 }
 
@@ -48,13 +44,13 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 	// Convert the object to ActivityPub base object to extract common fields
 	objJSON, err := json.Marshal(object)
 	if err != nil {
-		return fmt.Errorf("failed to marshal object: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "marshal")
 	}
 
 	// Parse to extract common fields
 	var baseObj activitypub.BaseObject
 	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
-		return fmt.Errorf("failed to parse base object: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "parse")
 	}
 
 	// Also try to extract Note-specific fields if it's a Note
@@ -111,16 +107,13 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 		objModel.ContextJSON = string(contextJSON)
 	}
 
-	// Update GSI keys
-	objModel.UpdateGSIKeys()
-
-	// Store in DynamoDB
-	if err := r.db.WithContext(ctx).Model(objModel).Create(); err != nil {
+	// Store using BaseRepository
+	if err := r.Create(ctx, objModel); err != nil {
 		r.logger.Error("failed to create object",
 			zap.String("object_id", baseObj.ID),
 			zap.String("type", baseObj.Type),
 			zap.Error(err))
-		return fmt.Errorf("failed to create object: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, baseObj.ID)
 	}
 
 	r.logger.Info("stored object",
@@ -135,15 +128,14 @@ func (r *ObjectRepository) CreateObject(ctx context.Context, object any) error {
 func (r *ObjectRepository) GetObject(ctx context.Context, id string) (any, error) {
 	var objModel models.Object
 
-	query := r.db.WithContext(ctx).Model(&objModel).
-		Where("PK", "=", fmt.Sprintf("object#%s", id)).
-		Where("SK", "=", fmt.Sprintf("object#%s", id))
+	pk := fmt.Sprintf("object#%s", id)
+	sk := fmt.Sprintf("object#%s", id)
 
-	if err := query.First(&objModel); err != nil {
-		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("object not found: %s", id)
+	if err := r.Get(ctx, pk, sk, &objModel); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityObject, id)
 		}
-		return nil, fmt.Errorf("failed to get object: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, id)
 	}
 
 	// Convert back to appropriate ActivityPub type
@@ -155,26 +147,25 @@ func (r *ObjectRepository) UpdateObject(ctx context.Context, object any) error {
 	// Similar to CreateObject, extract fields and update
 	objJSON, err := json.Marshal(object)
 	if err != nil {
-		return fmt.Errorf("failed to marshal object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "marshal")
 	}
 
 	var baseObj activitypub.BaseObject
 	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
-		return fmt.Errorf("failed to parse base object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "parse")
 	}
 
 	// Get existing object
 	var objModel models.Object
-	query := r.db.WithContext(ctx).Model(&objModel).
-		Where("PK", "=", fmt.Sprintf("object#%s", baseObj.ID)).
-		Where("SK", "=", fmt.Sprintf("object#%s", baseObj.ID))
+	pk := fmt.Sprintf("object#%s", baseObj.ID)
+	sk := fmt.Sprintf("object#%s", baseObj.ID)
 
-	if err := query.First(&objModel); err != nil {
-		if errors.IsNotFound(err) {
+	if err := r.Get(ctx, pk, sk, &objModel); err != nil {
+		if strings.Contains(err.Error(), "not found") {
 			// Object doesn't exist, create it
 			return r.CreateObject(ctx, object)
 		}
-		return fmt.Errorf("failed to get object for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "object")
 	}
 
 	// Update fields
@@ -188,15 +179,12 @@ func (r *ObjectRepository) UpdateObject(ctx context.Context, object any) error {
 		}
 	}
 
-	// Update in database
-	if err := r.db.WithContext(ctx).Model(&objModel).
-		Where("PK", "=", objModel.PK).
-		Where("SK", "=", objModel.SK).
-		Update(); err != nil {
+	// Update in database using BaseRepository
+	if err := r.Update(ctx, &objModel); err != nil {
 		r.logger.Error("failed to update object",
 			zap.String("object_id", baseObj.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "object")
 	}
 
 	return nil
@@ -207,12 +195,12 @@ func (r *ObjectRepository) UpdateObjectWithHistory(ctx context.Context, object a
 	// Extract object ID
 	objJSON, err := json.Marshal(object)
 	if err != nil {
-		return fmt.Errorf("failed to marshal object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "marshal")
 	}
 
 	var baseObj activitypub.BaseObject
 	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
-		return fmt.Errorf("failed to parse base object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "parse")
 	}
 
 	objectID := baseObj.ID
@@ -224,7 +212,7 @@ func (r *ObjectRepository) UpdateObjectWithHistory(ctx context.Context, object a
 		if strings.Contains(err.Error(), "not found") {
 			return r.CreateObject(ctx, object)
 		}
-		return fmt.Errorf("failed to get existing object: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "object")
 	}
 
 	// Store edit history before updating
@@ -237,7 +225,7 @@ func (r *ObjectRepository) UpdateObjectWithHistory(ctx context.Context, object a
 
 	// Update the object with edited flag
 	if err := r.updateObjectWithEditedFlag(ctx, object); err != nil {
-		return fmt.Errorf("failed to update object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "object")
 	}
 
 	r.logger.Info("updated object with history tracking",
@@ -255,11 +243,11 @@ func (r *ObjectRepository) storeEditHistoryForUpdate(ctx context.Context, object
 	// Serialize the existing object to JSON then deserialize to map
 	objectJSON, err := json.Marshal(existingObject)
 	if err != nil {
-		return fmt.Errorf("failed to serialize existing object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "serialize")
 	}
 
 	if err := json.Unmarshal(objectJSON, &previousState); err != nil {
-		return fmt.Errorf("failed to deserialize existing object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "deserialize")
 	}
 
 	// Get the current version number (start from version 1 for first edit)
@@ -291,22 +279,21 @@ func (r *ObjectRepository) updateObjectWithEditedFlag(ctx context.Context, objec
 	// Similar to UpdateObject, but with edited flag handling
 	objJSON, err := json.Marshal(object)
 	if err != nil {
-		return fmt.Errorf("failed to marshal object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "marshal")
 	}
 
 	var baseObj activitypub.BaseObject
 	if err := json.Unmarshal(objJSON, &baseObj); err != nil {
-		return fmt.Errorf("failed to parse base object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "parse")
 	}
 
 	// Get existing object model
 	var objModel models.Object
-	query := r.db.WithContext(ctx).Model(&objModel).
-		Where("PK", "=", fmt.Sprintf("object#%s", baseObj.ID)).
-		Where("SK", "=", fmt.Sprintf("object#%s", baseObj.ID))
+	pk := fmt.Sprintf("object#%s", baseObj.ID)
+	sk := fmt.Sprintf("object#%s", baseObj.ID)
 
-	if err := query.First(&objModel); err != nil {
-		return fmt.Errorf("failed to get object for update: %w", err)
+	if err := r.Get(ctx, pk, sk, &objModel); err != nil {
+		return ErrorHandler.HandleGetError(err, EntityObject, "object")
 	}
 
 	// Update fields
@@ -331,18 +318,12 @@ func (r *ObjectRepository) updateObjectWithEditedFlag(ctx context.Context, objec
 		}
 	}
 
-	// Update GSI keys
-	objModel.UpdateGSIKeys()
-
-	// Update in database
-	if err := r.db.WithContext(ctx).Model(&objModel).
-		Where("PK", "=", objModel.PK).
-		Where("SK", "=", objModel.SK).
-		Update(); err != nil {
+	// Update in database using BaseRepository
+	if err := r.Update(ctx, &objModel); err != nil {
 		r.logger.Error("failed to update object",
 			zap.String("object_id", baseObj.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to update object: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "object")
 	}
 
 	return nil
@@ -350,17 +331,11 @@ func (r *ObjectRepository) updateObjectWithEditedFlag(ctx context.Context, objec
 
 // DeleteObject deletes an object by ID
 func (r *ObjectRepository) DeleteObject(ctx context.Context, objectID string) error {
-	objModel := &models.Object{
-		PK: fmt.Sprintf("object#%s", objectID),
-		SK: fmt.Sprintf("object#%s", objectID),
-	}
+	pk := fmt.Sprintf("object#%s", objectID)
+	sk := fmt.Sprintf("object#%s", objectID)
 
-	query := r.db.WithContext(ctx).Model(objModel).
-		Where("PK", "=", objModel.PK).
-		Where("SK", "=", objModel.SK)
-
-	if err := query.Delete(); err != nil {
-		if errors.IsNotFound(err) {
+	if err := r.Delete(ctx, pk, sk); err != nil {
+		if strings.Contains(err.Error(), "not found") {
 			r.logger.Debug("object not found for deletion",
 				zap.String("object_id", objectID))
 			return nil
@@ -368,7 +343,7 @@ func (r *ObjectRepository) DeleteObject(ctx context.Context, objectID string) er
 		r.logger.Error("failed to delete object",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete object: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityObject, objectID)
 	}
 
 	r.logger.Info("deleted object",
@@ -379,6 +354,8 @@ func (r *ObjectRepository) DeleteObject(ctx context.Context, objectID string) er
 
 // GetObjectsByActor retrieves objects created by a specific actor
 func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string, cursor string, limit int) ([]any, string, error) {
+	var objects []models.Object
+
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "=", fmt.Sprintf("actor#%s", actorID)).
@@ -391,10 +368,9 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 	// Get one more item than requested to determine if there are more results
 	query = query.Limit(limit + 1)
 
-	var objects []models.Object
 	err := query.All(&objects)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to scan objects: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityObject, "scan")
 	}
 
 	// Generate next cursor
@@ -424,16 +400,16 @@ func (r *ObjectRepository) GetObjectsByActor(ctx context.Context, actorID string
 // CountObjectReplies counts the number of replies to an object
 func (r *ObjectRepository) CountObjectReplies(ctx context.Context, objectID string) (int, error) {
 	// Query objects that have InReplyTo set to this objectID
+	var objects []models.Object
 	query := r.db.WithContext(ctx).Model(&models.Object{}).
 		Index("gsi2-index"). // Assuming GSI2 is used for reply relationships
 		Where("GSI2PK", "=", fmt.Sprintf("reply#%s", objectID))
 
-	var objects []models.Object
 	if err := query.All(&objects); err != nil {
 		r.logger.Error("failed to count object replies",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count object replies: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count replies")
 	}
 
 	count := len(objects)
@@ -449,7 +425,7 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 	// First verify the object exists
 	existingObj, err := r.GetObject(ctx, objectID)
 	if err != nil {
-		return fmt.Errorf("object not found for tombstoning: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, objectID)
 	}
 
 	// Get the object ID from the result
@@ -463,7 +439,7 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 	}
 
 	if err := common.ValidateRequiredParam("object ID", objID); err != nil {
-		return fmt.Errorf("could not extract object ID")
+		return ErrorHandler.HandleCreateError(err, EntityObject, "extract_id")
 	}
 
 	// Create a tombstone object
@@ -484,16 +460,16 @@ func (r *ObjectRepository) TombstoneObject(ctx context.Context, objectID string,
 		r.logger.Error("failed to delete original object for tombstoning",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete original object: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityObject, objectID)
 	}
 
-	// Then create the tombstone
-	if err := r.db.WithContext(ctx).Model(tombstone).Create(); err != nil {
+	// Then create the tombstone using BaseRepository
+	if err := r.Create(ctx, tombstone); err != nil {
 		r.logger.Error("failed to create tombstone",
 			zap.String("object_id", objectID),
 			zap.String("deleted_by", deletedBy),
 			zap.Error(err))
-		return fmt.Errorf("failed to create tombstone: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "tombstone")
 	}
 
 	r.logger.Info("tombstoned object",
@@ -570,7 +546,7 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 		jsonBytes, err := json.Marshal(history.PreviousState)
 		if err != nil {
 			r.logger.Error("failed to marshal previous state", zap.Error(err))
-			return fmt.Errorf("failed to marshal previous state: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityObject, "marshal_state")
 		}
 		previousStateJSON = string(jsonBytes)
 	}
@@ -595,7 +571,7 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 			zap.String("object_id", history.ObjectID),
 			zap.Int("version", history.Version),
 			zap.Error(err))
-		return fmt.Errorf("failed to create update history: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "update_history")
 	}
 
 	r.logger.Info("update history created",
@@ -625,7 +601,7 @@ func (r *ObjectRepository) GetUpdateHistory(ctx context.Context, objectID string
 		r.logger.Error("failed to query update history",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query update history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "update_history")
 	}
 
 	// Convert to storage.UpdateHistory
@@ -699,7 +675,7 @@ func (r *ObjectRepository) GetCollectionItems(ctx context.Context, collection st
 		r.logger.Error("failed to get collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get collection items: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityObject, "collection_items")
 	}
 
 	// Generate next cursor
@@ -743,7 +719,7 @@ func (r *ObjectRepository) IsInCollection(ctx context.Context, collection, itemI
 			zap.String("collection", collection),
 			zap.String("item_id", itemID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check collection membership: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityObject, "collection_membership")
 	}
 
 	return true, nil
@@ -759,7 +735,7 @@ func (r *ObjectRepository) CountCollectionItems(ctx context.Context, collection 
 		r.logger.Error("failed to count collection items",
 			zap.String("collection", collection),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count collection items: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count_collection")
 	}
 
 	return int(count), nil
@@ -777,7 +753,7 @@ func (r *ObjectRepository) CountQuotes(ctx context.Context, noteID string) (int,
 		r.logger.Error("failed to count quotes",
 			zap.String("note_id", noteID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count quotes: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count_quotes")
 	}
 
 	r.logger.Debug("counted quotes for note",
@@ -800,7 +776,7 @@ func (r *ObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID stri
 		r.logger.Error("failed to get quotes for withdrawn count",
 			zap.String("note_id", noteID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to get quotes for withdrawn count: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "withdrawn_quotes")
 	}
 	
 	// Count only withdrawn quotes
@@ -838,7 +814,7 @@ func (r *ObjectRepository) CountReplies(ctx context.Context, objectID string) (i
 			zap.String("object_id", objectID),
 			zap.String("parent_id", parentID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count replies: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "count_replies")
 	}
 
 	r.logger.Debug("counted replies for object",
@@ -879,7 +855,7 @@ func (r *ObjectRepository) CreateQuoteRelationship(ctx context.Context, quote *s
 			zap.String("target_note_id", quote.TargetNoteID),
 			zap.String("quoter_id", quote.QuoterID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create quote relationship: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "quote_relationship")
 	}
 
 	r.logger.Debug("created quote relationship",
@@ -899,7 +875,7 @@ func (r *ObjectRepository) GetMissingReplies(ctx context.Context, statusID strin
 		r.logger.Error("failed to get thread sync record",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get thread sync record: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
 	}
 
 	if syncRecord == nil || len(syncRecord.MissingReplies) == 0 {
@@ -949,7 +925,7 @@ func (r *ObjectRepository) getThreadSyncRecord(ctx context.Context, statusID str
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get thread sync record: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
 	}
 
 	return &sync, nil
@@ -960,7 +936,7 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 	// Get existing sync record or create new one
 	syncRecord, err := r.getThreadSyncRecord(ctx, statusID)
 	if err != nil {
-		return fmt.Errorf("failed to get thread sync record: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "thread_sync")
 	}
 
 	if syncRecord == nil {
@@ -977,7 +953,7 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 		r.logger.Error("failed to mark thread as synced",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return fmt.Errorf("failed to mark thread as synced: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "thread_sync")
 	}
 
 	r.logger.Info("marked thread as synced",
@@ -1005,7 +981,7 @@ func (r *ObjectRepository) GetUserStatusCount(ctx context.Context, userID string
 		r.logger.Error("failed to count user statuses",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count user statuses: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "user_statuses")
 	}
 
 	return int(count), nil
@@ -1049,7 +1025,7 @@ func (r *ObjectRepository) GetReplies(ctx context.Context, objectID string, limi
 			zap.String("object_id", objectID),
 			zap.String("parent_id", parentID),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get replies: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityObject, "replies")
 	}
 
 	// Generate next cursor
@@ -1094,27 +1070,27 @@ func (r *ObjectRepository) IncrementReplyCount(ctx context.Context, objectID str
 			// Object doesn't exist, nothing to increment
 			return nil
 		}
-		return fmt.Errorf("failed to get object for reply count increment: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "reply_count")
 	}
 
 	// Update reply count in object metadata using proper model patterns
 	metadata, err := r.getOrCreateStatusMetadata(ctx, objectID)
 	if err != nil {
-		return fmt.Errorf("failed to get status metadata: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	// Increment reply count atomically
 	metadata.IncrementReplyCount()
 	metadata.UpdatedAt = time.Now()
 
-	// Update the metadata record
+	// Update the metadata record using direct db call (metadata is non-standard model)
 	if err := metadata.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare metadata update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "metadata_prepare")
 	}
 
 	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
-		return fmt.Errorf("failed to update reply count: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "reply_count")
 	}
 
 	// Also update thread context if this is part of a thread
@@ -1144,16 +1120,15 @@ func (r *ObjectRepository) SyncThreadFromRemote(ctx context.Context, statusID st
 
 	// Try to find the status locally first
 	var objectModel models.Object
-	err := r.db.WithContext(ctx).Model(&models.Object{}).
-		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
-		First(&objectModel)
+	pk := fmt.Sprintf("object#%s", statusID)
+	sk := fmt.Sprintf("object#%s", statusID)
+	err := r.Get(ctx, pk, sk, &objectModel)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !strings.Contains(err.Error(), "not found") {
 		r.logger.Error("Failed to query local object for sync",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query local object: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "local_sync")
 	}
 
 	// If found locally, return it as a search result
@@ -1207,7 +1182,7 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 	// Get current missing replies
 	missing, err := r.GetMissingReplies(ctx, statusID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get missing replies: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "missing_replies")
 	}
 
 	r.logger.Info("syncing missing replies from remote",
@@ -1271,7 +1246,7 @@ func (r *ObjectRepository) GetThreadContext(ctx context.Context, statusID string
 		r.logger.Error("failed to get thread context",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get thread context: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_context")
 	}
 
 	// Build ancestors and descendants from the thread context model
@@ -1333,7 +1308,7 @@ func (r *ObjectRepository) GetQuotesForNote(ctx context.Context, noteID string, 
 		r.logger.Error("failed to get quotes for note",
 			zap.String("note_id", noteID),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get quotes for note: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityObject, "note_quotes")
 	}
 
 	// Generate next cursor
@@ -1383,7 +1358,7 @@ func (r *ObjectRepository) IsQuoted(ctx context.Context, actorID, noteID string)
 			zap.String("actor_id", actorID),
 			zap.String("note_id", noteID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to check if quoted: %w", err)
+		return false, ErrorHandler.HandleQueryError(err, EntityObject, "check_quoted")
 	}
 
 	// Check if not withdrawn
@@ -1410,7 +1385,7 @@ func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string
 		r.logger.Error("failed to find quote for withdrawal",
 			zap.String("quote_note_id", quoteNoteID),
 			zap.Error(err))
-		return fmt.Errorf("failed to find quote for withdrawal: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityObject, "quote_withdrawal")
 	}
 
 	// Mark as withdrawn
@@ -1427,7 +1402,7 @@ func (r *ObjectRepository) WithdrawQuote(ctx context.Context, quoteNoteID string
 			zap.String("quote_note_id", quoteNoteID),
 			zap.String("quote_id", quote.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to withdraw quote: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "withdraw_quote")
 	}
 
 	r.logger.Info("withdrew quote",
@@ -1445,20 +1420,20 @@ func (r *ObjectRepository) WithdrawStatusFromQuotes(ctx context.Context, statusI
 	// Get or create status metadata
 	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
 	if err != nil {
-		return fmt.Errorf("failed to get status metadata: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	// Mark as withdrawn from quotes
 	metadata.WithdrawFromQuotes()
 
-	// Update the metadata
+	// Update the metadata using direct db call (metadata is non-standard model)
 	if err := metadata.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare metadata update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "metadata_prepare")
 	}
 
 	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
-		return fmt.Errorf("failed to update status metadata: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "status_metadata")
 	}
 
 	// Withdraw all existing quotes of this status (cascade effect)
@@ -1491,7 +1466,7 @@ func (r *ObjectRepository) UpdateQuotePermissions(ctx context.Context, statusID 
 	// Get or create status metadata
 	metadata, err := r.getOrCreateStatusMetadata(ctx, statusID)
 	if err != nil {
-		return fmt.Errorf("failed to get status metadata: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	// Update quote permissions
@@ -1514,14 +1489,14 @@ func (r *ObjectRepository) UpdateQuotePermissions(ctx context.Context, statusID 
 		permissions.AllowPublic, permissions.AllowFollowers, permissions.AllowMentioned)
 	metadata.QuotePermissions = permissionsJSON
 
-	// Update the metadata
+	// Update the metadata using direct db call (metadata is non-standard model)
 	if err := metadata.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare metadata update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "metadata_prepare")
 	}
 
 	err = r.db.WithContext(ctx).Model(metadata).Update()
 	if err != nil {
-		return fmt.Errorf("failed to update quote permissions: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "quote_permissions")
 	}
 
 	r.logger.Info("updated quote permissions",
@@ -1543,7 +1518,7 @@ func (r *ObjectRepository) IsQuoteAllowed(ctx context.Context, statusID, quoterI
 				zap.String("quoter_id", quoterID))
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to get status metadata: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	// Check if quotes are allowed at all
@@ -1593,7 +1568,7 @@ func (r *ObjectRepository) GetQuoteType(ctx context.Context, statusID string) (s
 				zap.String("status_id", statusID))
 			return "disabled", nil
 		}
-		return "", fmt.Errorf("failed to get status metadata: %w", err)
+		return "", ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	r.logger.Debug("getting quote type",
@@ -1612,7 +1587,7 @@ func (r *ObjectRepository) IsWithdrawnFromQuotes(ctx context.Context, statusID s
 			// No metadata means not withdrawn
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to get status metadata: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityObject, "status_metadata")
 	}
 
 	r.logger.Debug("checking if withdrawn from quotes",
@@ -1641,7 +1616,7 @@ func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID strin
 		r.logger.Error("failed to get quotes of status",
 			zap.String("status_id", statusID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get quotes of status: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "quotes_of_status")
 	}
 
 	// Convert to status search results
@@ -1698,14 +1673,14 @@ func (r *ObjectRepository) getOrCreateStatusMetadata(ctx context.Context, status
 	if errors.IsNotFound(err) {
 		metadata = models.NewStatusMetadata(statusID)
 
-		// Save the new metadata
+		// Save the new metadata using direct db call (metadata is non-standard model)
 		if err := metadata.BeforeCreate(); err != nil {
-			return nil, fmt.Errorf("failed to prepare metadata creation: %w", err)
+			return nil, ErrorHandler.HandleCreateError(err, EntityObject, "metadata_prepare")
 		}
 
 		err = r.db.WithContext(ctx).Model(metadata).Create()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create status metadata: %w", err)
+			return nil, ErrorHandler.HandleCreateError(err, EntityObject, "status_metadata")
 		}
 
 		return metadata, nil
@@ -1838,7 +1813,7 @@ func (r *ObjectRepository) triggerBackgroundFetch(ctx context.Context, statusID 
 
 	// Store the fetch job for background processing
 	if err := r.db.WithContext(ctx).Model(fetchJob).Create(); err != nil {
-		return fmt.Errorf("failed to create background fetch job: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "fetch_job")
 	}
 
 	r.logger.Info("background fetch job created",
@@ -1876,13 +1851,12 @@ func (r *ObjectRepository) getCachedRemoteStatus(ctx context.Context, statusID s
 func (r *ObjectRepository) buildThreadContextFromObjects(ctx context.Context, statusID string) (*storage.ThreadContext, error) {
 	// Get the object to understand its reply relationships
 	var object models.Object
-	err := r.db.WithContext(ctx).Model(&object).
-		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
-		First(&object)
+	pk := fmt.Sprintf("object#%s", statusID)
+	sk := fmt.Sprintf("object#%s", statusID)
+	err := r.Get(ctx, pk, sk, &object)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if strings.Contains(err.Error(), "not found") {
 			// Create minimal context for unknown status
 			return &storage.ThreadContext{
 				StatusID:    statusID,
@@ -1890,7 +1864,7 @@ func (r *ObjectRepository) buildThreadContextFromObjects(ctx context.Context, st
 				Descendants: []string{},
 			}, nil
 		}
-		return nil, fmt.Errorf("failed to get object for thread context: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "thread_context")
 	}
 
 	var ancestors []string
@@ -1922,10 +1896,9 @@ func (r *ObjectRepository) buildAncestorChain(ctx context.Context, startID strin
 
 		// Get next parent
 		var object models.Object
-		err := r.db.WithContext(ctx).Model(&object).
-			Where("PK", "=", fmt.Sprintf("object#%s", currentID)).
-			Where("SK", "=", fmt.Sprintf("object#%s", currentID)).
-			First(&object)
+		pk := fmt.Sprintf("object#%s", currentID)
+		sk := fmt.Sprintf("object#%s", currentID)
+		err := r.Get(ctx, pk, sk, &object)
 
 		if err != nil || object.InReplyTo == nil {
 			break
@@ -2044,10 +2017,9 @@ func (r *ObjectRepository) updateThreadContext(ctx context.Context, statusID, ac
 func (r *ObjectRepository) createThreadContext(ctx context.Context, statusID, action string) error {
 	// Get the object to understand its relationships
 	var object models.Object
-	err := r.db.WithContext(ctx).Model(&object).
-		Where("PK", "=", fmt.Sprintf("object#%s", statusID)).
-		Where("SK", "=", fmt.Sprintf("object#%s", statusID)).
-		First(&object)
+	pk := fmt.Sprintf("object#%s", statusID)
+	sk := fmt.Sprintf("object#%s", statusID)
+	err := r.Get(ctx, pk, sk, &object)
 
 	if err != nil {
 		// Can't create context without object
@@ -2092,7 +2064,7 @@ func (r *ObjectRepository) withdrawExistingQuotes(ctx context.Context, statusID 
 		All(&quotes)
 
 	if err != nil {
-		return fmt.Errorf("failed to find existing quotes: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityObject, "existing_quotes")
 	}
 
 	// Withdraw each quote
@@ -2129,7 +2101,7 @@ func (r *ObjectRepository) updateSearchIndexForWithdrawal(ctx context.Context, s
 
 	// Create invalidation record
 	if err := r.db.WithContext(ctx).Model(searchCache).Create(); err != nil {
-		return fmt.Errorf("failed to update search cache: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityObject, "search_cache")
 	}
 
 	return nil
@@ -2207,7 +2179,7 @@ func (r *ObjectRepository) CreateTombstone(ctx context.Context, tombstone *model
 			zap.String("object_id", tombstone.ID),
 			zap.String("deleted_by", tombstone.DeletedBy),
 			zap.Error(err))
-		return fmt.Errorf("failed to create tombstone: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "tombstone")
 	}
 
 	r.logger.Info("created tombstone",
@@ -2228,12 +2200,12 @@ func (r *ObjectRepository) GetTombstone(ctx context.Context, objectID string) (*
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("tombstone not found for object: %s", objectID)
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityObject, objectID)
 		}
 		r.logger.Error("failed to get tombstone",
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get tombstone: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityObject, "tombstone")
 	}
 
 	return &tombstone, nil
@@ -2271,7 +2243,7 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 			zap.String(logField, logValue),
 			zap.String("gsi", gsiIndex),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get tombstones: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityObject, "tombstones")
 	}
 
 	var nextCursor string
@@ -2281,7 +2253,7 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 		if err := common.ValidateSliceNotEmpty("tombstones", tombstones); err == nil {
 			// Get the SK value from the last tombstone
 			switch skField {
-			case "GSI1SK":
+			case gsi1SKField:
 				nextCursor = tombstones[len(tombstones)-1].GSI1SK
 			case "GSI2SK":
 				nextCursor = tombstones[len(tombstones)-1].GSI2SK
@@ -2294,7 +2266,7 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 
 // GetTombstonesByActor retrieves all tombstones created by a specific actor
 func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	return r.getTombstonesByGSI(ctx, "GSI1", "GSI1PK", "GSI1SK", 
+	return r.getTombstonesByGSI(ctx, "GSI1", "GSI1PK", gsi1SKField, 
 		fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID), "actor_id", actorID, limit, cursor)
 }
 
@@ -2317,7 +2289,7 @@ func (r *ObjectRepository) CleanupExpiredTombstones(ctx context.Context, batchSi
 
 	if err != nil {
 		r.logger.Error("failed to query expired tombstones", zap.Error(err))
-		return 0, fmt.Errorf("failed to query expired tombstones: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "expired_tombstones")
 	}
 
 	cleaned := 0
@@ -2343,7 +2315,7 @@ func (r *ObjectRepository) GetObjectHistory(ctx context.Context, objectID string
 	// Get all update history for the object
 	histories, err := r.GetUpdateHistory(ctx, objectID, 100) // Get all versions
 	if err != nil {
-		return nil, fmt.Errorf("failed to get object history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "object_history")
 	}
 	
 	return histories, nil
@@ -2370,7 +2342,7 @@ func (r *ObjectRepository) ReplaceObjectWithTombstone(ctx context.Context, objec
 
 	// Then create the tombstone
 	if err := r.CreateTombstone(ctx, tombstone); err != nil {
-		return fmt.Errorf("failed to create tombstone after deletion: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityObject, "tombstone_after_deletion")
 	}
 
 	return nil

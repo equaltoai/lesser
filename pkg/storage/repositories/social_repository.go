@@ -16,6 +16,15 @@ import (
 
 // SocialRepository handles all social interaction operations
 type SocialRepository struct {
+	// Base repositories for different model types
+	blockRepo       *BaseRepository[*models.Block]
+	muteRepo        *BaseRepository[*models.Mute]
+	announceRepo    *BaseRepository[*models.Announce]
+	accountPinRepo  *BaseRepository[*models.AccountPin]
+	accountNoteRepo *BaseRepository[*models.AccountNote]
+	statusPinRepo   *BaseRepository[*models.StatusPin]
+	
+	// Keep direct db access for complex queries
 	db     core.DB
 	logger *zap.Logger
 }
@@ -23,8 +32,14 @@ type SocialRepository struct {
 // NewSocialRepository creates a new social repository
 func NewSocialRepository(db core.DB, logger *zap.Logger) *SocialRepository {
 	return &SocialRepository{
-		db:     db,
-		logger: logger,
+		blockRepo:       NewBaseRepository[*models.Block](db, "MainTable", logger),
+		muteRepo:        NewBaseRepository[*models.Mute](db, "MainTable", logger),
+		announceRepo:    NewBaseRepository[*models.Announce](db, "MainTable", logger),
+		accountPinRepo:  NewBaseRepository[*models.AccountPin](db, "MainTable", logger),
+		accountNoteRepo: NewBaseRepository[*models.AccountNote](db, "MainTable", logger),
+		statusPinRepo:   NewBaseRepository[*models.StatusPin](db, "MainTable", logger),
+		db:              db,
+		logger:          logger,
 	}
 }
 
@@ -46,17 +61,16 @@ func (r *SocialRepository) CreateBlock(ctx context.Context, block *storage.Block
 		return err
 	}
 
-	// Create the block
-	err := r.db.WithContext(ctx).Model(model).Create()
-
+	// Use BaseRepository Create method
+	err := r.blockRepo.Create(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Info("block already exists",
 				zap.String("actor", block.Actor),
 				zap.String("blocked", block.Object))
-			return fmt.Errorf("block already exists")
+			return ErrorHandler.HandleCreateError(err, EntityBlock, "already exists")
 		}
-		return fmt.Errorf("failed to create block: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityBlock, "block")
 	}
 
 	r.logger.Info("block created",
@@ -72,13 +86,13 @@ func (r *SocialRepository) DeleteBlock(ctx context.Context, actor, blockedActor 
 	blockerUsername := extractUsername(actor)
 	blockedUsername := extractUsername(blockedActor)
 
-	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		Delete()
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
 
+	// Use BaseRepository Delete method
+	err := r.blockRepo.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete block: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityBlock, blockerUsername)
 	}
 
 	return nil
@@ -90,17 +104,17 @@ func (r *SocialRepository) GetBlock(ctx context.Context, actor, blockedActor str
 	blockerUsername := extractUsername(actor)
 	blockedUsername := extractUsername(blockedActor)
 
-	var block models.Block
-	err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		First(&block)
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
 
+	// Use BaseRepository Get method
+	var block models.Block
+	err := r.blockRepo.Get(ctx, pk, sk, &block)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("block not found")
+			return nil, ErrorHandler.HandleGetError(err, EntityBlock, "not found")
 		}
-		return nil, fmt.Errorf("failed to get block: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityBlock, blockerUsername)
 	}
 
 	return &storage.Block{
@@ -149,7 +163,7 @@ func (r *SocialRepository) GetBlockedUsers(ctx context.Context, actor string, li
 	var blocks []models.Block
 	err := query.All(&blocks)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query blocks: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityBlock, "query")
 	}
 
 	// Generate next cursor
@@ -196,7 +210,7 @@ func (r *SocialRepository) GetBlockedByUsers(ctx context.Context, actor string, 
 	var blocks []models.Block
 	err := query.All(&blocks)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query blocks: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityBlock, "query")
 	}
 
 	// Generate next cursor
@@ -248,14 +262,13 @@ func (r *SocialRepository) CreateMute(ctx context.Context, mute *storage.Mute) e
 		return err
 	}
 
-	// Create the mute
-	err := r.db.WithContext(ctx).Model(model).Create()
-
+	// Use BaseRepository Create method
+	err := r.muteRepo.Create(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
-			return fmt.Errorf("mute already exists")
+			return ErrorHandler.HandleCreateError(err, EntityMute, "already exists")
 		}
-		return fmt.Errorf("failed to create mute: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityMute, "mute")
 	}
 
 	return nil
@@ -263,13 +276,13 @@ func (r *SocialRepository) CreateMute(ctx context.Context, mute *storage.Mute) e
 
 // DeleteMute removes a mute relationship
 func (r *SocialRepository) DeleteMute(ctx context.Context, actor, mutedActor string) error {
-	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedActor)).
-		Delete()
+	pk := fmt.Sprintf("MUTE#%s", actor)
+	sk := fmt.Sprintf("MUTED#%s", mutedActor)
 
+	// Use BaseRepository Delete method
+	err := r.muteRepo.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete mute: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityMute, "delete")
 	}
 
 	return nil
@@ -277,17 +290,17 @@ func (r *SocialRepository) DeleteMute(ctx context.Context, actor, mutedActor str
 
 // GetMute retrieves a specific mute relationship
 func (r *SocialRepository) GetMute(ctx context.Context, actor, mutedActor string) (*storage.Mute, error) {
-	var mute models.Mute
-	err := r.db.WithContext(ctx).Model(&models.Mute{}).
-		Where("PK", "=", fmt.Sprintf("MUTE#%s", actor)).
-		Where("SK", "=", fmt.Sprintf("MUTED#%s", mutedActor)).
-		First(&mute)
+	pk := fmt.Sprintf("MUTE#%s", actor)
+	sk := fmt.Sprintf("MUTED#%s", mutedActor)
 
+	// Use BaseRepository Get method
+	var mute models.Mute
+	err := r.muteRepo.Get(ctx, pk, sk, &mute)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("failed to get mute: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityMute, "get")
 	}
 
 	return &storage.Mute{
@@ -336,7 +349,7 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 	var mutes []models.Mute
 	err := query.All(&mutes)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query muted actors: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityMute, "muted actors")
 	}
 
 	// Generate next cursor
@@ -368,10 +381,10 @@ func (r *SocialRepository) GetMutedUsers(ctx context.Context, actor string, limi
 // CreateAnnounce creates a new Announce activity
 func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage.Announce) error {
 	if err := common.ValidateRequiredParam("actor", announce.Actor); err != nil {
-		return fmt.Errorf("actor and object are required")
+		return ErrorHandler.HandleCreateError(err, EntityAnnounce, "validation")
 	}
 	if err := common.ValidateRequiredParam("object", announce.Object); err != nil {
-		return fmt.Errorf("actor and object are required")
+		return ErrorHandler.HandleCreateError(err, EntityAnnounce, "validation")
 	}
 
 	// Convert to model
@@ -390,14 +403,13 @@ func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage
 		return err
 	}
 
-	// Create the announce
-	err := r.db.WithContext(ctx).Model(model).Create()
-
+	// Use BaseRepository Create method
+	err := r.announceRepo.Create(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
-			return fmt.Errorf("actor %s already announced object %s", announce.Actor, announce.Object)
+			return ErrorHandler.HandleCreateError(err, EntityAnnounce, "already announced")
 		}
-		return fmt.Errorf("failed to create announce: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityAnnounce, "create")
 	}
 
 	// Copy generated values back
@@ -410,13 +422,13 @@ func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage
 
 // DeleteAnnounce removes an Announce activity
 func (r *SocialRepository) DeleteAnnounce(ctx context.Context, actor, object string) error {
-	err := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", object)).
-		Where("SK", "=", fmt.Sprintf("ACTOR#%s", actor)).
-		Delete()
+	pk := fmt.Sprintf("OBJECT#%s#ANNOUNCES", object)
+	sk := fmt.Sprintf("ACTOR#%s", actor)
 
+	// Use BaseRepository Delete method
+	err := r.announceRepo.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete announce: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityAnnounce, "delete")
 	}
 
 	return nil
@@ -424,17 +436,17 @@ func (r *SocialRepository) DeleteAnnounce(ctx context.Context, actor, object str
 
 // GetAnnounce retrieves a specific Announce by actor and object
 func (r *SocialRepository) GetAnnounce(ctx context.Context, actor, object string) (*storage.Announce, error) {
-	var model models.Announce
-	err := r.db.WithContext(ctx).Model(&models.Announce{}).
-		Where("PK", "=", fmt.Sprintf("OBJECT#%s#ANNOUNCES", object)).
-		Where("SK", "=", fmt.Sprintf("ACTOR#%s", actor)).
-		First(&model)
+	pk := fmt.Sprintf("OBJECT#%s#ANNOUNCES", object)
+	sk := fmt.Sprintf("ACTOR#%s", actor)
 
+	// Use BaseRepository Get method
+	var model models.Announce
+	err := r.announceRepo.Get(ctx, pk, sk, &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("announce not found for actor %s on object %s", actor, object)
+			return nil, ErrorHandler.HandleGetError(err, EntityAnnounce, "not found")
 		}
-		return nil, fmt.Errorf("failed to get announce: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityAnnounce, "get")
 	}
 
 	return &storage.Announce{
@@ -466,7 +478,7 @@ func (r *SocialRepository) GetStatusAnnounces(ctx context.Context, objectID stri
 	var announces []models.Announce
 	err := query.All(&announces)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query object announces: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityAnnounce, "object announces")
 	}
 
 	// Generate next cursor
@@ -531,7 +543,7 @@ func (r *SocialRepository) GetActorAnnounces(ctx context.Context, actorID string
 	var announces []models.Announce
 	err := query.All(&announces)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query actor announces: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityAnnounce, "actor announces")
 	}
 
 	// Generate next cursor
@@ -566,7 +578,7 @@ func (r *SocialRepository) CountObjectAnnounces(ctx context.Context, objectID st
 		Count()
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count object announces: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityAnnounce, "count")
 	}
 
 	return int(count), nil
@@ -581,7 +593,7 @@ func (r *SocialRepository) CascadeDeleteAnnounces(ctx context.Context, objectID 
 		Scan(&announces)
 
 	if err != nil {
-		return fmt.Errorf("failed to query announces for deletion: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityAnnounce, "deletion query")
 	}
 
 	// Delete each announce
@@ -613,7 +625,7 @@ func (r *SocialRepository) CreateAccountPin(ctx context.Context, pin *storage.Ac
 		return err
 	}
 	if exists {
-		return fmt.Errorf("account already pinned")
+		return ErrorHandler.HandleCreateError(storage.ErrAlreadyExists, EntityAccountPin, "already exists")
 	}
 
 	// Convert to model
@@ -629,8 +641,8 @@ func (r *SocialRepository) CreateAccountPin(ctx context.Context, pin *storage.Ac
 		return err
 	}
 
-	// Create the pin
-	err = r.db.WithContext(ctx).Model(model).Create()
+	// Use BaseRepository Create method
+	err = r.accountPinRepo.Create(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to create account pin", zap.Error(err))
 		return err
@@ -641,11 +653,11 @@ func (r *SocialRepository) CreateAccountPin(ctx context.Context, pin *storage.Ac
 
 // DeleteAccountPin deletes an account pin
 func (r *SocialRepository) DeleteAccountPin(ctx context.Context, username, pinnedActorID string) error {
-	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
-		Where("PK", "=", fmt.Sprintf("ACCOUNT_PIN#%s", username)).
-		Where("SK", "=", fmt.Sprintf("PIN#%s", pinnedActorID)).
-		Delete()
+	pk := fmt.Sprintf("ACCOUNT_PIN#%s", username)
+	sk := fmt.Sprintf("PIN#%s", pinnedActorID)
 
+	// Use BaseRepository Delete method
+	err := r.accountPinRepo.Delete(ctx, pk, sk)
 	if err != nil {
 		r.logger.Error("failed to delete account pin", zap.Error(err))
 		return err
@@ -751,8 +763,8 @@ func (r *SocialRepository) CreateAccountNote(ctx context.Context, note *storage.
 		return err
 	}
 
-	// Create or update the note
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use BaseRepository Create method
+	err := r.accountNoteRepo.Create(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to create account note", zap.Error(err))
 		return err
@@ -777,8 +789,8 @@ func (r *SocialRepository) UpdateAccountNote(ctx context.Context, note *storage.
 	// Update keys
 	model.UpdateKeys()
 
-	// Update the note (overwrites existing)
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use BaseRepository Create method (overwrites existing in DynamoDB)
+	err := r.accountNoteRepo.Create(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to update account note", zap.Error(err))
 		return err
@@ -789,11 +801,11 @@ func (r *SocialRepository) UpdateAccountNote(ctx context.Context, note *storage.
 
 // DeleteAccountNote deletes a private note on an account
 func (r *SocialRepository) DeleteAccountNote(ctx context.Context, username, targetActorID string) error {
-	err := r.db.WithContext(ctx).Model(&models.AccountNote{}).
-		Where("PK", "=", fmt.Sprintf("ACCOUNT_NOTE#%s", username)).
-		Where("SK", "=", fmt.Sprintf("NOTE#%s", targetActorID)).
-		Delete()
+	pk := fmt.Sprintf("ACCOUNT_NOTE#%s", username)
+	sk := fmt.Sprintf("NOTE#%s", targetActorID)
 
+	// Use BaseRepository Delete method
+	err := r.accountNoteRepo.Delete(ctx, pk, sk)
 	if err != nil {
 		r.logger.Error("failed to delete account note", zap.Error(err))
 		return err
@@ -804,12 +816,12 @@ func (r *SocialRepository) DeleteAccountNote(ctx context.Context, username, targ
 
 // GetAccountNote retrieves a private note on an account
 func (r *SocialRepository) GetAccountNote(ctx context.Context, username, targetActorID string) (*storage.AccountNote, error) {
-	var model models.AccountNote
-	err := r.db.WithContext(ctx).Model(&models.AccountNote{}).
-		Where("PK", "=", fmt.Sprintf("ACCOUNT_NOTE#%s", username)).
-		Where("SK", "=", fmt.Sprintf("NOTE#%s", targetActorID)).
-		First(&model)
+	pk := fmt.Sprintf("ACCOUNT_NOTE#%s", username)
+	sk := fmt.Sprintf("NOTE#%s", targetActorID)
 
+	// Use BaseRepository Get method
+	var model models.AccountNote
+	err := r.accountNoteRepo.Get(ctx, pk, sk, &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, nil
@@ -838,10 +850,10 @@ func (r *SocialRepository) CreateStatusPin(ctx context.Context, pin *storage.Sta
 	// Check if user already has too many pinned statuses (Mastodon limit is typically 5)
 	count, err := r.CountUserPinnedStatuses(ctx, pin.Username)
 	if err != nil {
-		return fmt.Errorf("failed to count pinned statuses: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityStatusPin, "count")
 	}
 	if count >= 5 {
-		return fmt.Errorf("too many pinned statuses (maximum 5)")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityStatusPin, "limit exceeded")
 	}
 
 	// Convert to model
@@ -856,14 +868,13 @@ func (r *SocialRepository) CreateStatusPin(ctx context.Context, pin *storage.Sta
 		return err
 	}
 
-	// Create the status pin
-	err = r.db.WithContext(ctx).Model(model).Create()
-
+	// Use BaseRepository Create method
+	err = r.statusPinRepo.Create(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
-			return fmt.Errorf("status already pinned")
+			return ErrorHandler.HandleCreateError(err, EntityStatusPin, "already exists")
 		}
-		return fmt.Errorf("failed to create status pin: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityStatusPin, "create")
 	}
 
 	return nil
@@ -871,13 +882,13 @@ func (r *SocialRepository) CreateStatusPin(ctx context.Context, pin *storage.Sta
 
 // DeleteStatusPin removes a status pin
 func (r *SocialRepository) DeleteStatusPin(ctx context.Context, username, statusID string) error {
-	err := r.db.WithContext(ctx).Model(&models.StatusPin{}).
-		Where("PK", "=", fmt.Sprintf(storage.UserPinsKey, username)).
-		Where("SK", "=", fmt.Sprintf("STATUS#%s", statusID)).
-		Delete()
+	pk := fmt.Sprintf(storage.UserPinsKey, username)
+	sk := fmt.Sprintf("STATUS#%s", statusID)
 
+	// Use BaseRepository Delete method
+	err := r.statusPinRepo.Delete(ctx, pk, sk)
 	if err != nil {
-		return fmt.Errorf("failed to delete status pin: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityStatusPin, "delete")
 	}
 
 	return nil
@@ -914,7 +925,7 @@ func (r *SocialRepository) GetStatusPinsPaginated(ctx context.Context, username 
 	var pins []models.StatusPin
 	err := query.Scan(&pins)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to query status pins: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityStatusPin, "query")
 	}
 
 	// Generate next cursor
@@ -952,7 +963,7 @@ func (r *SocialRepository) IsStatusPinned(ctx context.Context, username, statusI
 		if errors.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("failed to check status pin: %w", err)
+		return false, ErrorHandler.HandleGetError(err, EntityStatusPin, "check")
 	}
 
 	return true, nil
@@ -964,7 +975,7 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 	// Get existing pins to validate all statusIDs are currently pinned
 	existing, err := r.GetStatusPins(ctx, username)
 	if err != nil {
-		return fmt.Errorf("failed to get existing pins: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityStatusPin, "existing pins")
 	}
 
 	// Create a map of existing pins for validation
@@ -976,13 +987,13 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 	// Validate that all provided statusIDs are currently pinned
 	for _, statusID := range statusIDs {
 		if _, exists := existingMap[statusID]; !exists {
-			return fmt.Errorf("status %s is not currently pinned", statusID)
+			return ErrorHandler.HandleUpdateError(storage.ErrNotFound, EntityStatusPin, statusID)
 		}
 	}
 
 	// Validate we're not missing any pinned statuses
 	if len(statusIDs) != len(existing) {
-		return fmt.Errorf("must provide all pinned status IDs for reordering")
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityStatusPin, "incomplete list")
 	}
 
 	// Re-create pins with new timestamps to establish order
@@ -998,7 +1009,7 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 				zap.String("username", username),
 				zap.String("status_id", statusID),
 				zap.Error(err))
-			return fmt.Errorf("failed to delete existing pin: %w", err)
+			return ErrorHandler.HandleDeleteError(err, EntityStatusPin, "reorder delete")
 		}
 
 		// Create new pin with incremental timestamp
@@ -1014,7 +1025,7 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 				zap.String("username", username),
 				zap.String("status_id", statusID),
 				zap.Error(err))
-			return fmt.Errorf("failed to prepare pin: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityStatusPin, "prepare")
 		}
 
 		err = r.db.WithContext(ctx).Model(newPin).Create()
@@ -1023,7 +1034,7 @@ func (r *SocialRepository) ReorderStatusPins(ctx context.Context, username strin
 				zap.String("username", username),
 				zap.String("status_id", statusID),
 				zap.Error(err))
-			return fmt.Errorf("failed to create reordered pin: %w", err)
+			return ErrorHandler.HandleCreateError(err, EntityStatusPin, "reorder create")
 		}
 	}
 
@@ -1041,7 +1052,7 @@ func (r *SocialRepository) CountUserPinnedStatuses(ctx context.Context, username
 		Count()
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count pinned statuses: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityStatusPin, "count")
 	}
 
 	return int(count), nil

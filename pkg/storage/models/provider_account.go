@@ -125,12 +125,12 @@ func (pa *ProviderAccount) Validate() error {
 
 	// Validate provider type
 	if !isValidProvider(pa.Provider) {
-		return fmt.Errorf("invalid provider: %s", pa.Provider)
+		return fmt.Errorf("%w: %s", ErrInvalidProvider, pa.Provider)
 	}
 
 	// Check token expiry if access token is present
 	if err := common.ValidateRequiredParam("AccessToken", ""); err == nil && pa.AccessToken != "" && !pa.TokenExpiry.IsZero() && pa.TokenExpiry.Before(time.Now()) {
-		return fmt.Errorf("access token has expired")
+		return ErrAccessTokenExpired
 	}
 
 	return nil

@@ -7,7 +7,6 @@ toolchain go1.24.2
 require (
 	github.com/99designs/gqlgen v0.17.78
 	github.com/aws/aws-lambda-go v1.49.0
-	github.com/aws/aws-sdk-go v1.55.7
 	github.com/aws/aws-sdk-go-v2 v1.38.0
 	github.com/aws/aws-sdk-go-v2/config v1.31.0
 	github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign v1.9.1
@@ -20,7 +19,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.45.3
 	github.com/aws/aws-sdk-go-v2/service/comprehend v1.36.4
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.43.3
-	github.com/aws/aws-sdk-go-v2/service/kms v1.43.0
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.72.0
 	github.com/aws/aws-sdk-go-v2/service/mediaconvert v1.30.0
 	github.com/aws/aws-sdk-go-v2/service/rekognition v1.46.3
@@ -28,6 +26,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/secretsmanager v1.35.7
 	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.5
+	github.com/aws/aws-sdk-go-v2/service/transcribe v1.51.0
 	github.com/aws/aws-sdk-go-v2/service/translate v1.29.2
 	github.com/aws/aws-xray-sdk-go v1.8.5
 	github.com/aws/smithy-go v1.22.5
@@ -60,6 +59,7 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/agnivade/levenshtein v1.2.1 // indirect
 	github.com/andybalholm/brotli v1.1.0 // indirect
+	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.3 // indirect

@@ -15,11 +15,11 @@ type UnifiedAuthMiddleware struct {
 
 // MiddlewareConfig holds configuration for unified authentication middleware
 type MiddlewareConfig struct {
-	OAuthService common.OAuthServiceInterface
-	Logger       *zap.Logger
-	ServiceName  string
-	Required     bool // Whether authentication is required or optional
-	RequiredScope string // Required scope for access
+	OAuthService  common.OAuthServiceInterface
+	Logger        *zap.Logger
+	ServiceName   string
+	Required      bool     // Whether authentication is required or optional
+	RequiredScope string   // Required scope for access
 	AllowedScopes []string // Multiple allowed scopes (alternative to RequiredScope)
 }
 
@@ -34,30 +34,30 @@ func NewUnifiedAuthMiddleware(config MiddlewareConfig) *UnifiedAuthMiddleware {
 
 // RequiredAuth creates middleware that requires authentication with a specific scope
 func RequiredAuth(config MiddlewareConfig) lift.Middleware {
-	
+
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Use consolidated authentication pattern
 			authResult := common.ExtractAndValidateAuth(ctx, config.RequiredScope, config.OAuthService)
-			
+
 			if authResult.Error != nil {
 				// Use consolidated error response
 				return common.RespondAuthErrorWithCode(ctx, authResult.ErrorCode, authResult.Error)
 			}
-			
+
 			// Store authentication context for handlers
 			ctx.Set("auth_context", authResult.Context)
 			ctx.Set("username", authResult.Context.Username)
 			ctx.Set("claims", authResult.Context.Claims)
 			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
-			
+
 			if config.Logger != nil {
 				config.Logger.Debug("authentication successful",
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
 					zap.Bool("test_mode", authResult.Context.IsTestMode))
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	}
@@ -65,23 +65,23 @@ func RequiredAuth(config MiddlewareConfig) lift.Middleware {
 
 // RequiredAuthWithMultipleScopes creates middleware that requires one of multiple scopes
 func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
-	
+
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Use consolidated authentication pattern with multiple scopes
 			authResult := common.ExtractAndValidateAuthWithMultipleScopes(ctx, config.AllowedScopes, config.OAuthService)
-			
+
 			if authResult.Error != nil {
 				// Use consolidated error response
 				return common.RespondAuthErrorWithCode(ctx, authResult.ErrorCode, authResult.Error)
 			}
-			
+
 			// Store authentication context for handlers
 			ctx.Set("auth_context", authResult.Context)
 			ctx.Set("username", authResult.Context.Username)
 			ctx.Set("claims", authResult.Context.Claims)
 			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
-			
+
 			if config.Logger != nil {
 				config.Logger.Debug("authentication successful (multiple scopes)",
 					zap.String("username", authResult.Context.Username),
@@ -89,7 +89,7 @@ func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
 					zap.Strings("allowed_scopes", config.AllowedScopes),
 					zap.Bool("test_mode", authResult.Context.IsTestMode))
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	}
@@ -97,12 +97,12 @@ func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
 
 // OptionalAuth creates middleware that provides optional authentication
 func OptionalAuth(config MiddlewareConfig) lift.Middleware {
-	
+
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Use consolidated optional authentication pattern
 			authResult := common.ExtractOptionalAuth(ctx, config.OAuthService)
-			
+
 			// Store authentication context for handlers (may be empty for unauthenticated)
 			ctx.Set("auth_context", authResult.Context)
 			if authResult.Context.Username != "" {
@@ -113,14 +113,14 @@ func OptionalAuth(config MiddlewareConfig) lift.Middleware {
 				ctx.Set("is_authenticated", false)
 			}
 			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
-			
+
 			if config.Logger != nil && authResult.Context.Username != "" {
 				config.Logger.Debug("optional authentication successful",
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
 					zap.Bool("test_mode", authResult.Context.IsTestMode))
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	}
@@ -133,7 +133,7 @@ func WriteAuth(config MiddlewareConfig) lift.Middleware {
 	return RequiredAuth(config)
 }
 
-// ReadAuth creates middleware specifically for read operations  
+// ReadAuth creates middleware specifically for read operations
 func ReadAuth(config MiddlewareConfig) lift.Middleware {
 	// Set required scope for read operations
 	config.RequiredScope = common.ScopeRead

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -133,9 +134,10 @@ func (r *repositoryStorageAdapter) IsFollowing(ctx context.Context, followerUser
 	return relationship != nil, nil
 }
 
-func (r *repositoryStorageAdapter) CreateLike(ctx context.Context, actorID, objectID, _ string) error {
+func (r *repositoryStorageAdapter) CreateLike(ctx context.Context, actorID, objectID, activityID string) error {
 	// The repository's CreateLike returns a Like model, but we only need the error
-	_, err := r.repos.Like().CreateLike(ctx, actorID, objectID)
+	// Use activityID as statusAuthorID for now - this should be enhanced to extract the actual status author
+	_, err := r.repos.Like().CreateLike(ctx, actorID, objectID, activityID)
 	return err
 }
 
@@ -192,7 +194,7 @@ func (r *repositoryStorageAdapter) CreateNotification(ctx context.Context, notif
 	case *models.Notification:
 		notif = n
 	default:
-		return fmt.Errorf("invalid notification type: %T", notification)
+		return ErrInvalidNotificationType
 	}
 
 	return r.repos.Notification().CreateNotification(ctx, notif)
@@ -950,7 +952,7 @@ func (r *repositoryStorageAdapter) calculateFederationScore(ctx context.Context,
 	// This queries recent 5-minute federation analytics time series data
 	healthScore, err := r.repos.Federation().GetDomainHealthScore(ctx, domain)
 	if err != nil {
-		return 0.0, fmt.Errorf("failed to get domain health score: %w", err)
+		return 0.0, errors.Join(ErrGetDomainHealthScore, err)
 	}
 
 	// The health score from FederationRepository is 0-100, but GraphQL expects 0.0-1.0
@@ -974,6 +976,6 @@ func CreateStorageAdapter(repos interface{}) StorageAdapter {
 		return NewRepositoryStorageAdapter(s)
 	default:
 		// For now, only support RepositoryStorage
-		panic("unsupported storage type - only core.RepositoryStorage is supported")
+		panic(ErrUnsupportedStorageType.Error())
 	}
 }

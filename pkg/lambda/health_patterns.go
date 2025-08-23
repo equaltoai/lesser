@@ -35,13 +35,13 @@ func NewHealthCheckPattern(lambdaCtx *common.LambdaContext, startTime time.Time)
 // This eliminates the 80+ line duplication across Lambda functions
 func (hcp *HealthCheckPattern) ConfigureHealthRoutes(app *liftPkg.App) {
 	// Liveness endpoint - basic service availability
-	app.GET("/health/live", hcp.handleLivenessCheck)
+	_ = app.GET("/health/live", hcp.handleLivenessCheck)
 
 	// Readiness endpoint - dependency checks
-	app.GET("/health/ready", hcp.handleReadinessCheck)
+	_ = app.GET("/health/ready", hcp.handleReadinessCheck)
 
 	// Detailed health endpoint - comprehensive diagnostics
-	app.GET("/health/detailed", hcp.handleDetailedHealthCheck)
+	_ = app.GET("/health/detailed", hcp.handleDetailedHealthCheck)
 
 	hcp.logger.Info("health check routes configured",
 		zap.String("service", "lambda-service"),
@@ -141,9 +141,10 @@ func (hcp *HealthCheckPattern) handleDetailedHealthCheck(ctx *liftPkg.Context) e
 	}
 
 	statusCode := 200
-	if status == observability.HealthStatusCritical {
+	switch status {
+	case observability.HealthStatusCritical:
 		statusCode = 503
-	} else if status == observability.HealthStatusWarning {
+	case observability.HealthStatusWarning:
 		statusCode = 200 // Warnings don't fail health checks
 	}
 
@@ -183,7 +184,7 @@ func (hcp *HealthCheckPattern) checkDynamoDBConnectivity(ctx context.Context) ma
 }
 
 // checkAWSServices checks AWS service connectivity
-func (hcp *HealthCheckPattern) checkAWSServices(ctx context.Context) map[string]interface{} {
+func (hcp *HealthCheckPattern) checkAWSServices(_ context.Context) map[string]interface{} {
 	check := map[string]interface{}{
 		"name":   "aws_services",
 		"status": observability.HealthStatusHealthy,
@@ -317,8 +318,8 @@ func DefaultHealthCheckConfig() HealthCheckConfig {
 // ConfigureMinimalHealthRoutes adds only basic health endpoints (for services that don't need full checks)
 func (hcp *HealthCheckPattern) ConfigureMinimalHealthRoutes(app *liftPkg.App) {
 	// Only liveness endpoint for minimal setup
-	app.GET("/health/live", hcp.handleLivenessCheck)
-	app.GET("/health", hcp.handleLivenessCheck) // Alias
+	_ = app.GET("/health/live", hcp.handleLivenessCheck)
+	_ = app.GET("/health", hcp.handleLivenessCheck) // Alias
 
 	hcp.logger.Info("minimal health check routes configured",
 		zap.String("service", "lambda-service"),

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -33,7 +34,7 @@ type SearchIndexer struct {
 // NewSearchIndexer creates a new search indexer instance
 func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
 	costRepo := repositories.NewSearchCostRepository(db, lambdaCtx.Logger)
-	
+
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, lambdaCtx.Logger, "SearchIndexer", "", "")
 
@@ -81,7 +82,12 @@ func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEv
 
 	// Return error if there were any failures
 	if len(errors) > 0 {
-		return fmt.Errorf("partial batch failure: %d of %d records failed", len(errors), len(indexableRecords))
+		si.logger.Error("partial batch failure during search indexing",
+			zap.String("request_id", requestID),
+			zap.Int("failed_records", len(errors)),
+			zap.Int("total_indexable_records", len(indexableRecords)),
+		)
+		return ErrPartialBatchFailure
 	}
 
 	return nil
@@ -140,7 +146,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	// Extract indexable content from the record
 	content, err := si.extractIndexableContent(record)
 	if err != nil {
-		return fmt.Errorf("failed to extract indexable content: %w", err)
+		return errors.Join(ErrExtractIndexableContent, err)
 	}
 
 	// Initialize cost tracking for indexing operation
@@ -161,7 +167,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	if err := si.createSearchIndex(ctx, content); err != nil {
 		// Record failed indexing cost
 		si.recordIndexingCost(ctx, costData, startTime, 0, writeCount, err)
-		return fmt.Errorf("failed to create search index: %w", err)
+		return errors.Join(ErrCreateSearchIndex, err)
 	}
 
 	// Estimate write operations (main index + additional indexes)
@@ -211,7 +217,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 	}
 
 	if err := stream.UnmarshalItem(record, &item); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal stream image: %w", err)
+		return nil, errors.Join(ErrUnmarshalStreamImage, err)
 	}
 
 	// Extract ID from PK
@@ -305,7 +311,7 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 
 	// Store the search index record using Lift context
 	if err := si.db.WithContext(ctx).Model(&searchRecord).Create(); err != nil {
-		return fmt.Errorf("failed to store search index: %w", err)
+		return errors.Join(ErrStoreSearchIndex, err)
 	}
 
 	// Create additional indexes for common search patterns
@@ -342,7 +348,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 		}
 
 		if err := si.db.WithContext(ctx).Model(&actorIndex).Create(); err != nil {
-			return fmt.Errorf("failed to create actor search index: %w", err)
+			return errors.Join(ErrCreateActorSearchIndex, err)
 		}
 	}
 

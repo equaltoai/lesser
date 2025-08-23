@@ -74,7 +74,7 @@ func (r *FeatureRepository) CreateFeature(ctx context.Context, name, description
 
 	// Use BaseRepository Create
 	if err := r.Create(ctx, feature); err != nil {
-		return nil, fmt.Errorf("failed to create feature: %w", err)
+		return nil, ErrorHandler.HandleCreateError(err, EntityFeature, name)
 	}
 
 	return feature, nil
@@ -87,7 +87,7 @@ func (r *FeatureRepository) GetFeature(ctx context.Context, name string) (*Featu
 
 	feature := &Feature{}
 	if err := r.Get(ctx, pk, sk, feature); err != nil {
-		return nil, fmt.Errorf("feature not found: %s", name)
+		return nil, ErrorHandler.HandleGetError(err, EntityFeature, name)
 	}
 
 	return feature, nil
@@ -152,7 +152,7 @@ func (r *FeatureRepository) ListFeatures(ctx context.Context) ([]*Feature, error
 	// Use BaseRepository Query
 	features, err := r.Query(ctx, "FEATURE#", 100)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list features: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityFeature, "list all features")
 	}
 
 	return features, nil

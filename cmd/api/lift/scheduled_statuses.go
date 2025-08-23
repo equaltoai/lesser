@@ -222,19 +222,16 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	// Authenticate request and extract client ID for application tracking
 	username, clientID := h.getAuthenticatedUsernameAndClientID(ctx)
 	if common.ValidateRequiredParam(username, "username") != nil {
-		ctx.Status(401)
-		return nil, fmt.Errorf("unauthorized")
+		return nil, common.RespondUnauthorized(ctx)
 	}
 
 	// Parse scheduled time
 	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam(*statusReq.ScheduledAt, "scheduledAt") != nil {
-		ctx.Status(422)
-		return nil, fmt.Errorf("scheduled_at is required")
+		return nil, common.RespondUnprocessableEntity(ctx, "scheduled_at is required")
 	}
 	// Validate scheduled time format and constraints
 	if err := common.ValidateScheduledTime(*statusReq.ScheduledAt); err != nil {
-		ctx.Status(422)
-		return nil, fmt.Errorf("invalid scheduled_at: %s", err.Error())
+		return nil, common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid scheduled_at: %s", err.Error()))
 	}
 	scheduledAt, _ := time.Parse(time.RFC3339, *statusReq.ScheduledAt) // ValidateScheduledTime already validated this
 
@@ -242,19 +239,17 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 	scheduledService := h.registry.Scheduled()
 	if scheduledService == nil {
 		h.logger.Error("scheduled service not available")
-		ctx.Status(500)
-		return nil, fmt.Errorf("scheduled service unavailable")
+		return nil, common.RespondServiceUnavailable(ctx, "scheduled service")
 	}
 
 	// Parse poll if provided
 	var poll map[string]any
 	if statusReq.Poll != nil {
 		poll = h.convertAPIPollToMap(statusReq.Poll)
-		
+
 		// Validate poll parameters using centralized validation
 		if err := common.ValidatePollParams(poll); err != nil {
-			ctx.Status(422)
-			return nil, fmt.Errorf("invalid poll parameters: %v", err)
+			return nil, common.RespondUnprocessableEntity(ctx, fmt.Sprintf("invalid poll parameters: %v", err))
 		}
 	}
 
@@ -278,11 +273,9 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 			zap.Error(err))
 		// Check error type
 		if strings.Contains(err.Error(), "must be at least") {
-			ctx.Status(422)
-			return nil, fmt.Errorf("%s", err.Error())
+			return nil, common.RespondUnprocessableEntity(ctx, err.Error())
 		}
-		ctx.Status(500)
-		return nil, fmt.Errorf("failed to create scheduled status")
+		return nil, common.RespondInternalServerError(ctx, "failed to create scheduled status")
 	}
 
 	// Convert to API format with media attachments
@@ -342,7 +335,7 @@ func (h *Handler) extractScheduledStatusAuthHeader(ctx *lift.Context) string {
 
 // validateScheduledStatusToken validates the token and checks scope
 func (h *Handler) validateScheduledStatusToken(ctx *lift.Context, token string) (string, error) {
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)
@@ -607,7 +600,6 @@ func (h *Handler) parseScheduledStatusRequest(ctx *lift.Context, req interface{}
 	return nil
 }
 
-
 // getAuthenticatedUsernameAndClientID gets both username and client ID from the authenticated context
 func (h *Handler) getAuthenticatedUsernameAndClientID(ctx *lift.Context) (string, string) {
 	// For test environments, use test username and default client ID
@@ -633,7 +625,7 @@ func (h *Handler) getAuthenticatedUsernameAndClientID(ctx *lift.Context) (string
 	}
 
 	// Validate token and extract claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", ""

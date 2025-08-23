@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -12,24 +14,27 @@ import (
 
 // PatternRepository handles moderation pattern storage operations
 type PatternRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.ModerationPattern]
 }
 
 // NewPatternRepository creates a new pattern repository
 func NewPatternRepository(db core.DB, tableName string, logger *zap.Logger) *PatternRepository {
 	return &PatternRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.ModerationPattern](db, tableName, logger),
+	}
+}
+
+// NewPatternRepositoryWithCostTracking creates a new pattern repository with cost tracking
+func NewPatternRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PatternRepository {
+	return &PatternRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ModerationPattern](db, tableName, logger, costService, "pattern"),
 	}
 }
 
 // CreatePattern creates a new moderation pattern
 func (r *PatternRepository) CreatePattern(ctx context.Context, pattern *models.ModerationPattern) error {
 	if pattern == nil {
-		return fmt.Errorf("pattern cannot be nil")
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityModerationPattern, "create")
 	}
 
 	// Set timestamps
@@ -37,16 +42,13 @@ func (r *PatternRepository) CreatePattern(ctx context.Context, pattern *models.M
 	pattern.UpdatedAt = time.Now()
 	pattern.HitCount = 0
 
-	// Update keys for DynamoDB
-	pattern.UpdateKeys()
-
-	// Save to DynamoDB
-	err := r.db.WithContext(ctx).Model(pattern).Create()
+	// Use BaseRepository Create method
+	err := r.Create(ctx, pattern)
 	if err != nil {
-		return fmt.Errorf("failed to create pattern: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityModerationPattern, pattern.PatternID)
 	}
 
-	r.logger.Info("created moderation pattern",
+	r.BaseRepository.logger.Info("created moderation pattern",
 		zap.String("pattern_id", pattern.PatternID),
 		zap.String("type", pattern.Type))
 
@@ -55,18 +57,14 @@ func (r *PatternRepository) CreatePattern(ctx context.Context, pattern *models.M
 
 // UpdatePattern updates an existing pattern
 func (r *PatternRepository) UpdatePattern(ctx context.Context, patternID string, updates *models.ModerationPattern) error {
-	// Get existing pattern
+	// Get existing pattern using BaseRepository
 	existing := &models.ModerationPattern{}
-	existing.PK = fmt.Sprintf("PATTERN#%s", patternID)
-	existing.SK = SKMetadata
+	pk := fmt.Sprintf("PATTERN#%s", patternID)
+	sk := models.SKMetadata
 
-	err := r.db.WithContext(ctx).Model(existing).
-		Where("PK", "=", existing.PK).
-		Where("SK", "=", existing.SK).
-		First(existing)
-
+	err := r.Get(ctx, pk, sk, existing)
 	if err != nil {
-		return fmt.Errorf("failed to get pattern for update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityModerationPattern, patternID)
 	}
 
 	// Apply updates
@@ -91,10 +89,10 @@ func (r *PatternRepository) UpdatePattern(ctx context.Context, patternID string,
 	existing.Active = updates.Active
 	existing.UpdatedAt = time.Now()
 
-	// Save updates
-	err = r.db.WithContext(ctx).Model(existing).Update()
+	// Save updates using BaseRepository
+	err = r.Update(ctx, existing)
 	if err != nil {
-		return fmt.Errorf("failed to update pattern: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityModerationPattern, patternID)
 	}
 
 	return nil
@@ -103,25 +101,21 @@ func (r *PatternRepository) UpdatePattern(ctx context.Context, patternID string,
 // DeletePattern soft deletes a pattern by marking it inactive
 func (r *PatternRepository) DeletePattern(ctx context.Context, patternID string) error {
 	pattern := &models.ModerationPattern{}
-	pattern.PK = fmt.Sprintf("PATTERN#%s", patternID)
-	pattern.SK = SKMetadata
+	pk := fmt.Sprintf("PATTERN#%s", patternID)
+	sk := models.SKMetadata
 
-	err := r.db.WithContext(ctx).Model(pattern).
-		Where("PK", "=", pattern.PK).
-		Where("SK", "=", pattern.SK).
-		First(pattern)
-
+	err := r.Get(ctx, pk, sk, pattern)
 	if err != nil {
-		return fmt.Errorf("failed to get pattern for deletion: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityModerationPattern, patternID)
 	}
 
 	// Soft delete by marking inactive
 	pattern.Active = false
 	pattern.UpdatedAt = time.Now()
 
-	err = r.db.WithContext(ctx).Model(pattern).Update()
+	err = r.Update(ctx, pattern)
 	if err != nil {
-		return fmt.Errorf("failed to delete pattern: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityModerationPattern, patternID)
 	}
 
 	return nil
@@ -130,16 +124,12 @@ func (r *PatternRepository) DeletePattern(ctx context.Context, patternID string)
 // GetPattern retrieves a single pattern by ID
 func (r *PatternRepository) GetPattern(ctx context.Context, patternID string) (*models.ModerationPattern, error) {
 	pattern := &models.ModerationPattern{}
-	pattern.PK = fmt.Sprintf("PATTERN#%s", patternID)
-	pattern.SK = SKMetadata
+	pk := fmt.Sprintf("PATTERN#%s", patternID)
+	sk := models.SKMetadata
 
-	err := r.db.WithContext(ctx).Model(pattern).
-		Where("PK", "=", pattern.PK).
-		Where("SK", "=", pattern.SK).
-		First(pattern)
-
+	err := r.Get(ctx, pk, sk, pattern)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pattern: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityModerationPattern, patternID)
 	}
 
 	return pattern, nil
@@ -149,20 +139,44 @@ func (r *PatternRepository) GetPattern(ctx context.Context, patternID string) (*
 func (r *PatternRepository) GetPatterns(ctx context.Context, category string, activeOnly bool) ([]*models.ModerationPattern, error) {
 	patterns := []*models.ModerationPattern{}
 
-	query := r.db.WithContext(ctx).Model(&models.ModerationPattern{}).
-		Where("SK", "=", "METADATA")
-
-	// Apply filters
+	// Build filters for BaseRepository QueryWithFilter method
+	filters := make(map[string]interface{})
 	if category != "" {
-		query = query.Filter("Category", "=", category)
+		filters["Category"] = category
 	}
 	if activeOnly {
-		query = query.Filter("Active", "=", true)
+		filters["Active"] = true
+	}
+
+	// For patterns, we need to scan all patterns (PK prefix "PATTERN#") and apply filters
+	// Since patterns don't share a common PK, we'll use the direct DB query approach
+	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ModerationPattern{}).
+		Where("SK", "=", models.SKMetadata)
+
+	// Apply filters
+	for field, value := range filters {
+		query = query.Filter(field, "=", value)
 	}
 
 	err := query.All(&patterns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get patterns: %w", err)
+		r.BaseRepository.logger.Error("failed to get patterns",
+			zap.Error(err),
+			zap.String("category", category),
+			zap.Bool("activeOnly", activeOnly))
+		return nil, ErrorHandler.HandleQueryError(err, EntityModerationPattern, "patterns by filters")
+	}
+
+	// Track cost if available
+	if r.BaseRepository.costService != nil {
+		itemCount := int64(len(patterns))
+		estimatedRU := itemCount
+		if estimatedRU == 0 {
+			estimatedRU = 1
+		}
+		if trackErr := r.TrackRead(ctx, "Scan", estimatedRU); trackErr != nil {
+			r.BaseRepository.logger.Warn("failed to track pattern scan cost", zap.Error(trackErr))
+		}
 	}
 
 	return patterns, nil
@@ -171,25 +185,21 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 // IncrementHitCount increments the hit count for a pattern
 func (r *PatternRepository) IncrementHitCount(ctx context.Context, patternID string) error {
 	pattern := &models.ModerationPattern{}
-	pattern.PK = fmt.Sprintf("PATTERN#%s", patternID)
-	pattern.SK = SKMetadata
+	pk := fmt.Sprintf("PATTERN#%s", patternID)
+	sk := models.SKMetadata
 
-	err := r.db.WithContext(ctx).Model(pattern).
-		Where("PK", "=", pattern.PK).
-		Where("SK", "=", pattern.SK).
-		First(pattern)
-
+	err := r.Get(ctx, pk, sk, pattern)
 	if err != nil {
-		return fmt.Errorf("failed to get pattern for hit count update: %w", err)
+		return ErrorHandler.HandleGetError(err, EntityModerationPattern, patternID)
 	}
 
 	// Increment hit count
 	pattern.HitCount++
 	pattern.LastHit = time.Now()
 
-	err = r.db.WithContext(ctx).Model(pattern).Update()
+	err = r.Update(ctx, pattern)
 	if err != nil {
-		return fmt.Errorf("failed to update hit count: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityModerationPattern, patternID)
 	}
 
 	return nil

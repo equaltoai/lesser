@@ -142,7 +142,7 @@ func initializeManualServices() {
 func initializeGraphQLSpecificServices() {
 	// Initialize AI service (optional)
 	var aiService *ai.AIService
-	if os.Getenv("DISABLE_AI") != envTrue {
+	if !cfg.DisableAI {
 		aiConfig := &ai.AIConfig{
 			ToxicityThreshold:   0.7,
 			NSFWThreshold:       0.8,
@@ -190,6 +190,7 @@ func initializeGraphQLSpecificServices() {
 		CostTracker:    costTracker,
 		UnifiedTracker: unifiedTracker,
 		TableName:      cfg.DynamoTableName,
+		S3BucketName:   cfg.S3BucketName,
 		MastodonConv:   mastodon.NewConverter(cfg.BaseURL()),
 		Logger:         logger,
 		AIService:      aiService,
@@ -214,7 +215,7 @@ func initializeGraphQLSpecificServices() {
 	graphQLHandler.Use(extension.Introspection{})
 
 	// Add Apollo tracing in development
-	if os.Getenv("DEBUG") == envTrue {
+	if cfg.DebugMode {
 		graphQLHandler.Use(apollotracing.Tracer{})
 	}
 
@@ -261,7 +262,7 @@ func handleGraphQL(ctx *lift.Context) error {
 
 // handlePlayground serves the GraphQL playground for development
 func handlePlayground(ctx *lift.Context) error {
-	if os.Getenv("ENABLE_PLAYGROUND") != envTrue {
+	if !cfg.EnablePlayground {
 		return lift.NotFound("Playground not enabled")
 	}
 
@@ -419,7 +420,7 @@ func createCostTrackingMiddleware() lift.Middleware {
 // createAuthMiddleware creates authentication middleware using unified patterns
 func createAuthMiddleware() lift.Middleware {
 	// Create auth service for GraphQL middleware
-	authService, err := auth.NewAuthService(repos)
+	authService, err := auth.NewAuthService(cfg, repos)
 	if err != nil {
 		logger.Fatal("Failed to create auth service for GraphQL middleware", zap.Error(err))
 	}
@@ -453,7 +454,7 @@ func createCORSMiddleware() lift.Middleware {
 func main() {
 	// Create a new Lift application
 	app := lift.New()
-	if os.Getenv("DEBUG") == envTrue {
+	if cfg.DebugMode {
 		app = lift.New(lift.WithDebug())
 	}
 
@@ -514,7 +515,7 @@ func main() {
 	app.Use(common.CreateGraphQLErrorMiddleware(logger))
 
 	// 7. Rate limiting middleware (before auth to catch anonymous users)
-	if os.Getenv("DISABLE_RATE_LIMITING") != "true" {
+	if !cfg.DisableRateLimiting {
 		// Create GraphQL-specific rate limiting config
 		graphqlConfig := ratelimit.DefaultRateLimitConfig()
 		// Add GraphQL-specific limits
@@ -559,11 +560,11 @@ func main() {
 			"service":     "graphql",
 			"version":     "lift-dynamorm",
 			"uptime":      time.Since(initTime).String(),
-			"environment": os.Getenv("ENV"),
+			"environment": cfg.Stage,
 			"features": map[string]bool{
 				"graphql":       true,
 				"subscriptions": true,
-				"playground":    os.Getenv("ENABLE_PLAYGROUND") == envTrue,
+				"playground":    cfg.EnablePlayground,
 				"dataloaders":   true,
 				"cost_tracking": true,
 			},
@@ -582,8 +583,8 @@ func main() {
 		zap.String("version", "lift-dynamorm"),
 		zap.Bool("enabled", true),
 		zap.String("status", "ready"),
-		zap.Bool("playground", os.Getenv("ENABLE_PLAYGROUND") == envTrue),
-		zap.Bool("debug", os.Getenv("DEBUG") == envTrue))
+		zap.Bool("playground", cfg.EnablePlayground),
+		zap.Bool("debug", cfg.DebugMode))
 
 	// Use standardized Lambda handler with observability
 	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {

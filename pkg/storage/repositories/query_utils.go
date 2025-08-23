@@ -331,7 +331,7 @@ func (q *QueryUtils) DeleteWithNotFoundHandling(ctx context.Context, pk, sk stri
 			zap.String("param1", param1),
 			zap.String("param2", param2),
 			zap.Error(err))
-		return fmt.Errorf("failed to %s: %w", operationType, err)
+		return fmt.Errorf("%w: %s: %w", ErrQueryOperationFailed, operationType, err)
 	}
 
 	q.logger.Info(fmt.Sprintf("%s successful", operationType),
@@ -424,7 +424,7 @@ func (q *QueryUtils) CreateWithCondition(ctx context.Context, model interface{})
 }
 
 // GenericQuery performs a type-safe query with automatic struct mapping
-func GenericQuery[T any](q *QueryUtils, ctx context.Context, pk, sk string) (*T, error) {
+func GenericQuery[T any](ctx context.Context, q *QueryUtils, pk, sk string) (*T, error) {
 	var result T
 	err := q.db.WithContext(ctx).Model(&result).
 		Where("PK", "=", pk).
@@ -442,7 +442,7 @@ func GenericQuery[T any](q *QueryUtils, ctx context.Context, pk, sk string) (*T,
 }
 
 // GenericList performs a type-safe list query with pagination
-func GenericList[T any](q *QueryUtils, ctx context.Context, pk, skPrefix string, opts *QueryOptions) (*QueryResult[T], error) {
+func GenericList[T any](ctx context.Context, q *QueryUtils, pk, skPrefix string, opts *QueryOptions) (*QueryResult[T], error) {
 	if opts == nil {
 		opts = &QueryOptions{Limit: 50}
 	}
@@ -487,7 +487,7 @@ func GenericList[T any](q *QueryUtils, ctx context.Context, pk, skPrefix string,
 }
 
 // BatchGet performs a batch get operation for multiple items
-func BatchGet[T any](q *QueryUtils, ctx context.Context, keys []struct{ PK, SK string }) ([]T, error) {
+func BatchGet[T any](ctx context.Context, q *QueryUtils, keys []struct{ PK, SK string }) ([]T, error) {
 	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return nil, nil
 	}
@@ -518,17 +518,15 @@ func BatchGet[T any](q *QueryUtils, ctx context.Context, keys []struct{ PK, SK s
 type QueryBuilder[T any] struct {
 	q         *QueryUtils
 	ctx       context.Context
-	model     T
 	pk        string
 	sk        string
 	skPrefix  string
 	indexName string
 	limit     int
-	cursor    string
 }
 
 // NewQueryBuilder creates a new query builder
-func NewQueryBuilder[T any](q *QueryUtils, ctx context.Context) *QueryBuilder[T] {
+func NewQueryBuilder[T any](ctx context.Context, q *QueryUtils) *QueryBuilder[T] {
 	return &QueryBuilder[T]{
 		q:     q,
 		ctx:   ctx,
@@ -667,7 +665,7 @@ func (q *QueryUtils) AddToCollectionHelper(ctx context.Context, collection strin
 			zap.String("collection", collection),
 			zap.String("item_id", item.ItemID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add to collection: %w", err)
+		return fmt.Errorf("%w: %w", ErrQueryCollectionAddFailed, err)
 	}
 
 	q.logger.Info("added item to collection",
@@ -680,8 +678,8 @@ func (q *QueryUtils) AddToCollectionHelper(ctx context.Context, collection strin
 // QueryAndConvert performs a database query and converts the results to storage types
 // This eliminates the common pattern of: query → error check → convert loop → return
 func QueryAndConvert[M any, S any](
+	_ context.Context,
 	q *QueryUtils,
-	ctx context.Context,
 	queryFunc func() ([]M, error),
 	convertFunc func(M) S,
 	operationName string,
@@ -693,7 +691,7 @@ func QueryAndConvert[M any, S any](
 		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),
 			zap.String("param", operationParam),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to %s: %w", operationName, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrQueryExecutionFailed, operationName, err)
 	}
 
 	// Convert models to storage types
@@ -708,8 +706,8 @@ func QueryAndConvert[M any, S any](
 // QueryWithPKAndSKPrefix eliminates the PK/SK prefix query duplication pattern
 // This consolidates the common "Where PK = X, Where/Filter SK BEGINS_WITH Y" pattern
 func QueryWithPKAndSKPrefix[M any, S any](
-	q *QueryUtils,
 	ctx context.Context,
+	q *QueryUtils,
 	modelFactory func() *M,
 	pkValue, skPrefix string,
 	useFilter bool, // true for Filter("SK", "BEGINS_WITH"), false for Where("SK", "BEGINS_WITH")
@@ -736,7 +734,7 @@ func QueryWithPKAndSKPrefix[M any, S any](
 		q.logger.Error(fmt.Sprintf("Failed to %s", operationName),
 			zap.String("param", operationParam),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to %s: %w", operationName, err)
+		return nil, fmt.Errorf("%w: %s: %w", ErrQueryExecutionFailed, operationName, err)
 	}
 
 	// Convert models to storage types

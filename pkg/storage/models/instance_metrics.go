@@ -46,8 +46,19 @@ func (i *InstanceMetrics) TableName() string {
 }
 
 // UpdateKeys updates the GSI keys when the primary keys change
-func (i *InstanceMetrics) UpdateKeys() {
+func (i *InstanceMetrics) UpdateKeys() error {
 	// GSI1 is used for time-based queries
 	i.GSI1PK = "INSTANCE_METRICS"
 	i.GSI1SK = i.Date
+	return nil
+}
+
+// GetPK returns the partition key
+func (i *InstanceMetrics) GetPK() string {
+	return i.PK
+}
+
+// GetSK returns the sort key
+func (i *InstanceMetrics) GetSK() string {
+	return i.SK
 }

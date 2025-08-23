@@ -115,7 +115,7 @@ func (r *mutationResolver) executeSocialAction(
 			zap.String("user", username),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to %s object: %w", actionName, err)
+		return nil, ErrSocialActionFailedWithContext(actionName, err)
 	}
 
 	// Track costs
@@ -153,7 +153,7 @@ func (r *mutationResolver) executeSocialUndo(
 			zap.String("user", username),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return false, fmt.Errorf("failed to %s object: %w", actionName, err)
+		return false, ErrSocialUndoFailedWithContext(actionName, err)
 	}
 
 	// Track costs
@@ -192,7 +192,7 @@ func (r *mutationResolver) executeListMembershipOperation(
 	}
 
 	if lastResult == nil {
-		return nil, fmt.Errorf("failed to %s any accounts to list", actionName)
+		return nil, ErrListMembershipFailedWithAction(actionName)
 	}
 
 	// Get the updated list
@@ -201,7 +201,7 @@ func (r *mutationResolver) executeListMembershipOperation(
 		ViewerID: username,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated list: %w", err)
+		return nil, ErrGetUpdatedListFailedWithContext(err)
 	}
 
 	// Track cost using centralized tracker
@@ -209,8 +209,8 @@ func (r *mutationResolver) executeListMembershipOperation(
 	return r.convertListToGraphQL(ctx, list), nil
 }
 
-// buildAndSortCostDrivers creates, sorts, and limits cost drivers
-func (r *queryResolver) buildAndSortCostDrivers(drivers []*model.CostDriver) []*model.CostDriver {
+// buildAndSortDrivers creates, sorts, and limits cost drivers
+func (r *queryResolver) buildAndSortDrivers(drivers []*model.Driver) []*model.Driver {
 	// Sort by cost percentage
 	sort.Slice(drivers, func(i, j int) bool {
 		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
@@ -224,30 +224,30 @@ func (r *queryResolver) buildAndSortCostDrivers(drivers []*model.CostDriver) []*
 }
 
 // createReadWriteDrivers creates standard DynamoDB read/write cost drivers
-func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, totalCost float64) []*model.CostDriver {
-	drivers := []*model.CostDriver{}
-	
+func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, totalCost float64) []*model.Driver {
+	drivers := []*model.Driver{}
+
 	if totalReads > 0 && totalCost > 0 {
 		readCost := float64(totalReads) * 0.00025 // Approximate DynamoDB read cost
 		readPercentage := (readCost / totalCost) * 100
-		drivers = append(drivers, &model.CostDriver{
+		drivers = append(drivers, &model.Driver{
 			Type:           "DynamoDB Reads",
 			Cost:           readCost,
 			PercentOfTotal: readPercentage,
 			Trend:          model.TrendStable,
 		})
 	}
-	
+
 	if totalWrites > 0 && totalCost > 0 {
 		writeCost := float64(totalWrites) * 0.00125 // Approximate DynamoDB write cost
 		writePercentage := (writeCost / totalCost) * 100
-		drivers = append(drivers, &model.CostDriver{
-			Type:           "DynamoDB Writes", 
+		drivers = append(drivers, &model.Driver{
+			Type:           "DynamoDB Writes",
 			Cost:           writeCost,
 			PercentOfTotal: writePercentage,
 			Trend:          model.TrendStable,
 		})
 	}
 
-	return r.buildAndSortCostDrivers(drivers)
+	return r.buildAndSortDrivers(drivers)
 }

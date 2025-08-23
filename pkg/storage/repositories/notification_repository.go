@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -13,68 +15,56 @@ import (
 	"go.uber.org/zap"
 )
 
-// NotificationRepository handles notification operations using DynamORM
+// NotificationRepository handles notification operations using DynamORM with BaseRepository
 type NotificationRepository struct {
-	db           core.DB
-	tableName    string
-	logger       *zap.Logger
-	queryHelper  *NotificationQueryHelper
-	batchHelper  *BatchOperationHelper
+	*BaseRepository[*models.Notification]
 }
 
-// NewNotificationRepository creates a new notification repository
+// NewNotificationRepository creates a new notification repository with BaseRepository
 func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationRepository {
 	return &NotificationRepository{
-		db:          db,
-		tableName:   tableName,
-		logger:      logger,
-		queryHelper: NewNotificationQueryHelper(db, tableName, logger),
-		batchHelper: NewBatchOperationHelper(db, tableName, logger),
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Notification](db, tableName, logger, nil, "NotificationRepository"),
 	}
 }
 
-// CreateNotification creates a new notification
+// NewNotificationRepositoryWithCostTracking creates a new notification repository with cost tracking
+func NewNotificationRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
+	return &NotificationRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Notification](db, tableName, logger, costService, "NotificationRepository"),
+	}
+}
+
+// CreateNotification creates a new notification using BaseRepository
 func (r *NotificationRepository) CreateNotification(ctx context.Context, notification *models.Notification) error {
 	if err := notification.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare notification for creation: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityNotification, notification.ID)
 	}
 
-	err := r.db.WithContext(ctx).Model(notification).Create()
-	if err != nil {
-		return fmt.Errorf("failed to create notification: %w", err)
-	}
-
-	return nil
+	return r.Create(ctx, notification)
 }
 
-// GetNotification retrieves a notification by ID
+// GetNotification retrieves a notification by ID using BaseRepository
 func (r *NotificationRepository) GetNotification(ctx context.Context, notificationID string) (*models.Notification, error) {
 	var notification models.Notification
-	err := r.db.WithContext(ctx).Model(&models.Notification{}).
-		Filter("ID", "=", notificationID).
-		First(&notification)
+	// Use notification ID patterns - these need to be determined based on the model
+	pk := fmt.Sprintf("NOTIFICATION#%s", notificationID)
+	sk := "METADATA" // Assuming standard metadata pattern
+	
+	err := r.Get(ctx, pk, sk, &notification)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("failed to get notification: %w", err)
+		return nil, err // BaseRepository handles error formatting
 	}
 
 	return &notification, nil
 }
 
-// UpdateNotification updates an existing notification
+// UpdateNotification updates an existing notification using BaseRepository
 func (r *NotificationRepository) UpdateNotification(ctx context.Context, notification *models.Notification) error {
 	if err := notification.BeforeUpdate(); err != nil {
-		return fmt.Errorf("failed to prepare notification for update: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityNotification, notification.ID)
 	}
 
-	err := r.db.WithContext(ctx).Model(notification).Update()
-	if err != nil {
-		return fmt.Errorf("failed to update notification: %w", err)
-	}
-
-	return nil
+	return r.Update(ctx, notification)
 }
 
 // DeleteNotification deletes a notification
@@ -84,12 +74,12 @@ func (r *NotificationRepository) DeleteNotification(ctx context.Context, notific
 		return err
 	}
 	if notification == nil {
-		return fmt.Errorf("notification not found: %s", notificationID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
 	err = r.db.WithContext(ctx).Model(notification).Delete()
 	if err != nil {
-		return fmt.Errorf("failed to delete notification: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityNotification, notificationID)
 	}
 
 	return nil
@@ -119,7 +109,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 	var notifications []models.Notification
 	err := query.All(&notifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notifications for user: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "user notifications")
 	}
 
 	// Build result
@@ -146,13 +136,49 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, userI
 
 // GetUnreadNotifications retrieves unread notifications for a user with pagination
 func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
-	filters := map[string]interface{}{
-		"IsRead": false,
+	if opts.Limit <= 0 {
+		opts.Limit = 20
+	}
+	if opts.Limit > 100 {
+		opts.Limit = 100
+	}
+	pk := "USER#" + userID
+	query := r.db.WithContext(ctx).Model(&models.Notification{}).
+		Where("PK", "=", pk).
+		Filter("IsRead", "=", false).
+		OrderBy("SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if opts.Cursor != "" {
+		query = query.Where("SK", "<", opts.Cursor)
 	}
 
-	result, err := r.queryHelper.GetPaginatedNotifications(ctx, userID, opts, filters)
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(opts.Limit + 1)
+
+	var notifications []models.Notification
+	err := query.All(&notifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get unread notifications for user: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "unread notifications")
+	}
+
+	// Build result
+	result := &interfaces.PaginatedResult[*models.Notification]{
+		Items: make([]*models.Notification, 0, len(notifications)),
+		Total: -1, // Not calculated
+	}
+
+	// Generate next cursor
+	if len(notifications) > opts.Limit {
+		// We got more results than requested, so there are more pages
+		result.NextCursor = notifications[opts.Limit-1].SK
+		result.HasMore = true
+		notifications = notifications[:opts.Limit] // Trim to requested limit
+	}
+
+	// Convert to pointers
+	for i := range notifications {
+		result.Items = append(result.Items, &notifications[i])
 	}
 
 	return result, nil
@@ -160,13 +186,52 @@ func (r *NotificationRepository) GetUnreadNotifications(ctx context.Context, use
 
 // GetNotificationsByType retrieves notifications by type with pagination
 func (r *NotificationRepository) GetNotificationsByType(ctx context.Context, userID, notificationType string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Notification], error) {
-	filters := map[string]interface{}{
-		"Type": notificationType,
+	if opts.Limit <= 0 {
+		opts.Limit = 20
+	}
+	if opts.Limit > 100 {
+		opts.Limit = 100
 	}
 
-	result, err := r.queryHelper.GetPaginatedNotifications(ctx, userID, opts, filters)
+	// Use GSI1 for efficient type-based queries
+	gsi1pk := "NOTIF_TYPE#" + notificationType
+	query := r.db.WithContext(ctx).Model(&models.Notification{}).
+		Index("type-index").
+		Where("GSI1PK", "=", gsi1pk).
+		Filter("UserID", "=", userID).
+		OrderBy("GSI1SK", "DESC") // Most recent first
+
+	// Handle cursor-based pagination
+	if opts.Cursor != "" {
+		query = query.Where("GSI1SK", "<", opts.Cursor)
+	}
+
+	// Get one more item than requested to determine if there are more results
+	query = query.Limit(opts.Limit + 1)
+
+	var notifications []models.Notification
+	err := query.All(&notifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notifications by type: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "notifications by type")
+	}
+
+	// Build result
+	result := &interfaces.PaginatedResult[*models.Notification]{
+		Items: make([]*models.Notification, 0, len(notifications)),
+		Total: -1, // Not calculated
+	}
+
+	// Generate next cursor
+	if len(notifications) > opts.Limit {
+		// We got more results than requested, so there are more pages
+		result.NextCursor = notifications[opts.Limit-1].GSI1SK
+		result.HasMore = true
+		notifications = notifications[:opts.Limit] // Trim to requested limit
+	}
+
+	// Convert to pointers
+	for i := range notifications {
+		result.Items = append(result.Items, &notifications[i])
 	}
 
 	return result, nil
@@ -179,7 +244,7 @@ func (r *NotificationRepository) MarkNotificationRead(ctx context.Context, notif
 		return err
 	}
 	if notification == nil {
-		return fmt.Errorf("notification not found: %s", notificationID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
 	notification.MarkRead()
@@ -193,7 +258,7 @@ func (r *NotificationRepository) MarkNotificationUnread(ctx context.Context, not
 		return err
 	}
 	if notification == nil {
-		return fmt.Errorf("notification not found: %s", notificationID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
 	notification.MarkUnread()
@@ -212,7 +277,7 @@ func (r *NotificationRepository) MarkAllNotificationsRead(ctx context.Context, u
 		Limit(1000). // Process in chunks
 		All(&notifications)
 	if err != nil {
-		return fmt.Errorf("failed to query unread notifications: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityNotification, "unread notifications query")
 	}
 
 	// Update each notification individually
@@ -242,7 +307,7 @@ func (r *NotificationRepository) MarkNotificationsReadByType(ctx context.Context
 		Limit(1000). // Process in chunks
 		All(&notifications)
 	if err != nil {
-		return fmt.Errorf("failed to query unread notifications by type: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityNotification, "unread by type query")
 	}
 
 	// Update each notification individually
@@ -267,7 +332,7 @@ func (r *NotificationRepository) MarkNotificationPushSent(ctx context.Context, n
 		return err
 	}
 	if notification == nil {
-		return fmt.Errorf("notification not found: %s", notificationID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
 	notification.MarkPushSent()
@@ -281,7 +346,7 @@ func (r *NotificationRepository) MarkNotificationPushFailed(ctx context.Context,
 		return err
 	}
 	if notification == nil {
-		return fmt.Errorf("notification not found: %s", notificationID)
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityNotification, notificationID)
 	}
 
 	notification.MarkPushFailed(errorMsg)
@@ -311,7 +376,7 @@ func (r *NotificationRepository) GetPendingPushNotifications(ctx context.Context
 
 	err := query.All(&notifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pending push notifications: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "pending push notifications")
 	}
 
 	// Build result
@@ -362,7 +427,7 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	var allNotifications []models.Notification
 	err := query.All(&allNotifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notification groups: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "notification groups")
 	}
 
 	// Filter notifications for the specific user and group them
@@ -429,7 +494,7 @@ func (r *NotificationRepository) ConsolidateNotifications(ctx context.Context, g
 		Where("GSI3PK", "=", "NOTIF_GROUP#"+groupKey).
 		All(&notifications)
 	if err != nil {
-		return fmt.Errorf("failed to get notifications for consolidation: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityNotification, "consolidation query")
 	}
 
 	if len(notifications) <= 1 {
@@ -479,7 +544,7 @@ func (r *NotificationRepository) GetUnreadNotificationCount(ctx context.Context,
 		Filter("IsRead", "=", false).
 		Count()
 	if err != nil {
-		return 0, fmt.Errorf("failed to count unread notifications: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "unread count")
 	}
 
 	return count, nil
@@ -495,7 +560,7 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 		Where("PK", "=", pk).
 		All(&notifications)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notifications for counting: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "type counting")
 	}
 
 	// Count by type
@@ -509,13 +574,33 @@ func (r *NotificationRepository) GetNotificationCountsByType(ctx context.Context
 
 // CreateNotifications creates multiple notifications efficiently
 func (r *NotificationRepository) CreateNotifications(ctx context.Context, notifications []*models.Notification) error {
-	// Convert to []interface{} for the batch helper
-	items := make([]interface{}, len(notifications))
-	for i, notification := range notifications {
-		items[i] = notification
+	if len(notifications) == 0 {
+		return nil
 	}
 
-	return r.batchHelper.BatchCreateItems(ctx, items, "notifications")
+	// Prepare notifications for creation
+	for _, notification := range notifications {
+		if err := notification.BeforeCreate(); err != nil {
+			return ErrorHandler.HandleCreateError(err, EntityNotification, notification.ID)
+		}
+	}
+
+	// Use DynamORM's batch create functionality
+	keys := make([]any, len(notifications))
+	for i, notification := range notifications {
+		keys[i] = notification
+	}
+
+	err := r.db.WithContext(ctx).Model(&models.Notification{}).BatchCreate(keys)
+	if err != nil {
+		return ErrorHandler.HandleCreateError(err, EntityNotification, "batch create")
+	}
+
+	r.logger.Info("batch created notifications",
+		zap.Int("notification_count", len(notifications)),
+	)
+
+	return nil
 }
 
 // DeleteNotificationsByType deletes notifications by type for a user
@@ -530,7 +615,7 @@ func (r *NotificationRepository) DeleteNotificationsByType(ctx context.Context, 
 		Limit(1000). // Process in chunks
 		All(&notifications)
 	if err != nil {
-		return fmt.Errorf("failed to query notifications by type: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityNotification, "delete by type query")
 	}
 
 	if err := common.ValidateSliceNotEmpty("notifications", notifications); err != nil {
@@ -550,7 +635,7 @@ func (r *NotificationRepository) DeleteNotificationsByType(ctx context.Context, 
 	// Use DynamORM's batch delete functionality
 	err = r.db.WithContext(ctx).Model(&models.Notification{}).BatchDelete(keys)
 	if err != nil {
-		return fmt.Errorf("failed to batch delete notifications by type: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityNotification, "batch delete by type")
 	}
 
 	r.logger.Info("batch deleted notifications by type",
@@ -573,7 +658,7 @@ func (r *NotificationRepository) DeleteNotificationsByObject(ctx context.Context
 		if errors.IsNotFound(err) {
 			return nil // No notifications to delete
 		}
-		return fmt.Errorf("failed to query notifications for object: %w", err)
+		return ErrorHandler.HandleQueryError(err, EntityNotification, "object notifications")
 	}
 
 	// Delete each notification
@@ -599,7 +684,7 @@ func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context,
 		Limit(1000).
 		All(&expiredNotifications)
 	if err != nil {
-		return 0, fmt.Errorf("failed to scan for expired notifications: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "expired scan")
 	}
 
 	if err := common.ValidateSliceNotEmpty("expiredNotifications", expiredNotifications); err != nil {
@@ -619,7 +704,7 @@ func (r *NotificationRepository) DeleteExpiredNotifications(ctx context.Context,
 	// Use DynamORM's batch delete functionality
 	err = r.db.WithContext(ctx).Model(&models.Notification{}).BatchDelete(keys)
 	if err != nil {
-		return 0, fmt.Errorf("failed to batch delete expired notifications: %w", err)
+		return 0, ErrorHandler.HandleDeleteError(err, EntityNotification, "batch delete expired")
 	}
 
 	r.logger.Info("batch deleted expired notifications",
@@ -690,7 +775,7 @@ func (r *NotificationRepository) ClearOldNotifications(ctx context.Context, user
 	opts := interfaces.PaginationOptions{Limit: 1000}
 	result, err := r.GetUserNotifications(ctx, username, opts)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get notifications: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityNotification, "clear old notifications")
 	}
 
 	deleted := 0
@@ -734,7 +819,7 @@ func (r *NotificationRepository) GetNotificationsAdvanced(ctx context.Context, u
 	var notifications []*models.Notification
 	err := query.Scan(&notifications)
 	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to query notifications: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "advanced query")
 	}
 
 	result.Items = notifications
@@ -770,7 +855,7 @@ func (r *NotificationRepository) GetNotificationPreferences(ctx context.Context,
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get notification preferences: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "notification preferences", userID)
 	}
 
 	return &prefs, nil
@@ -782,7 +867,7 @@ func (r *NotificationRepository) UpdateNotificationPreferences(ctx context.Conte
 
 	err := r.db.WithContext(ctx).Model(prefs).Update()
 	if err != nil {
-		return fmt.Errorf("failed to update notification preferences: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "notification preferences", prefs.Username)
 	}
 
 	return nil
@@ -792,7 +877,7 @@ func (r *NotificationRepository) UpdateNotificationPreferences(ctx context.Conte
 func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, userID string, preferenceType string, enabled bool) error {
 	prefs, err := r.GetNotificationPreferences(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get notification preferences: %w", err)
+		return ErrorHandler.HandleGetError(err, "notification preferences", userID)
 	}
 
 	// Update the specific preference
@@ -816,7 +901,7 @@ func (r *NotificationRepository) SetNotificationPreference(ctx context.Context, 
 		prefs.MentionNotifications = enabled
 		prefs.PushEnabled = enabled
 	default:
-		return fmt.Errorf("unknown preference type: %s", preferenceType)
+		return ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrNotificationUnknownPreferenceType, preferenceType), "notification preferences", preferenceType)
 	}
 
 	return r.UpdateNotificationPreferences(ctx, prefs)

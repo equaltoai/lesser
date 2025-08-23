@@ -48,11 +48,9 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		strength := auth.PasswordStrength(req.Password)
 		if strength < 3 {
 			hints := auth.GeneratePasswordHint(req.Password)
-			return ctx.Status(422).JSON(map[string]string{
-				"error": fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
-					auth.PasswordStrengthLabel(strength),
-					strings.Join(hints, ", ")),
-			})
+			return common.RespondUnprocessableEntity(ctx, fmt.Sprintf("Password is too weak (%s). Suggestions: %s",
+				auth.PasswordStrengthLabel(strength),
+				strings.Join(hints, ", ")))
 		}
 	}
 
@@ -183,19 +181,20 @@ func (h *Handler) handleBase64Decoding(bodyBytes []byte) ([]byte, error) {
 
 	// Neither base64 nor raw multipart
 	h.logger.Error("unable to parse request body", zap.String("body_preview", preview[:mathMin(50, len(preview))]))
-	return nil, fmt.Errorf("unable to parse request body")
+	return nil, ErrUnableToParseRequestBody
 }
 
 // extractBoundary extracts the boundary from content type header
 func (h *Handler) extractBoundary(contentType string) (string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return "", fmt.Errorf("invalid content type: %w", err)
+		h.logger.Error("failed to parse content type", zap.String("content_type", contentType), zap.Error(err))
+		return "", errors.Join(ErrInvalidContentType, err)
 	}
 
 	boundary := params["boundary"]
 	if err := common.ValidateRequiredParam("boundary", boundary); err != nil {
-		return "", fmt.Errorf("missing boundary in content type")
+		return "", ErrMissingBoundaryInContentType
 	}
 
 	return boundary, nil
@@ -358,7 +357,7 @@ func (h *Handler) HandleGetFamiliarFollowersLift(ctx *lift.Context) error {
 	}
 
 	// Validate token and get claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return common.RespondUnauthorized(ctx)
@@ -694,7 +693,7 @@ func (h *Handler) returnActivityPubCollection(ctx *lift.Context, actor *activity
 		if authHeader != "" {
 			token, err := auth.ExtractBearerToken(authHeader)
 			if err == nil {
-				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 				claims, err := oauthSvc.ValidateAccessToken(token)
 				if err != nil || claims.Username != actor.PreferredUsername {
 					// Other users cannot see private followers
@@ -794,7 +793,7 @@ func (h *Handler) checkCollectionAccess(ctx *lift.Context, actor *activitypub.Ac
 		return h.returnEmptyCollection(ctx, actor, collectionType)
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil || claims.Username != actor.PreferredUsername {
 		return h.returnEmptyCollection(ctx, actor, collectionType)
@@ -811,7 +810,8 @@ func (h *Handler) getCollectionData(ctx *lift.Context, actor *activitypub.Actor,
 	case "following":
 		return h.getFollowingData(ctx, actor.PreferredUsername, cursor, limit)
 	default:
-		return nil, "", fmt.Errorf("unsupported collection type: %s", collectionType)
+		h.logger.Error("unsupported collection type requested", zap.String("collection_type", collectionType))
+		return nil, "", ErrUnsupportedCollectionType
 	}
 }
 

@@ -36,16 +36,18 @@ type RelationshipBase struct {
 	logger       *zap.Logger
 	queryUtils   *QueryUtils
 	relType      RelationshipType
+	errorHandler *ErrorUtils
 }
 
 // NewRelationshipBase creates a new relationship base repository
 func NewRelationshipBase(db core.DB, tableName string, logger *zap.Logger, relType RelationshipType) *RelationshipBase {
 	return &RelationshipBase{
-		db:         db,
-		tableName:  tableName,
-		logger:     logger,
-		queryUtils: NewQueryUtils(db, logger),
-		relType:    relType,
+		db:           db,
+		tableName:    tableName,
+		logger:       logger,
+		queryUtils:   NewQueryUtils(db, logger),
+		relType:      relType,
+		errorHandler: ErrorHandler,
 	}
 }
 
@@ -93,7 +95,9 @@ func (r *RelationshipBase) CreateRelationship(ctx context.Context, actor, object
 			zap.String("actor", actor),
 			zap.String("object", object),
 			zap.Error(err))
-		return fmt.Errorf("failed to create %s relationship: %w", r.relType, err)
+		entityType := r.getEntityType()
+		identifier := fmt.Sprintf("%s->%s", actor, object)
+		return r.errorHandler.HandleCreateError(err, entityType, identifier)
 	}
 
 	r.logger.Info("created relationship",
@@ -124,7 +128,9 @@ func (r *RelationshipBase) DeleteRelationship(ctx context.Context, actor, object
 			zap.String("actor", actor),
 			zap.String("object", object),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete %s relationship: %w", r.relType, err)
+		entityType := r.getEntityType()
+		identifier := fmt.Sprintf("%s->%s", actor, object)
+		return r.errorHandler.HandleDeleteError(err, entityType, identifier)
 	}
 
 	r.logger.Info("deleted relationship",
@@ -145,7 +151,9 @@ func (r *RelationshipBase) GetRelationship(ctx context.Context, actor, object st
 		if errors.IsNotFound(err) {
 			return nil, nil // Not found is not an error for existence checks
 		}
-		return nil, fmt.Errorf("failed to get %s relationship: %w", r.relType, err)
+		entityType := r.getEntityType()
+		identifier := fmt.Sprintf("%s->%s", actor, object)
+		return nil, r.errorHandler.HandleGetError(err, entityType, identifier)
 	}
 
 	return &model, nil
@@ -164,7 +172,9 @@ func (r *RelationshipBase) GetRelationshipsByActor(ctx context.Context, actor st
 		Cursor: cursor,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get %s relationships by actor: %w", r.relType, err)
+		entityType := r.getEntityType()
+		queryType := "by actor"
+		return nil, "", r.errorHandler.HandleQueryError(err, entityType, queryType)
 	}
 
 	// Convert map results to models
@@ -192,7 +202,9 @@ func (r *RelationshipBase) GetRelationshipsByObject(ctx context.Context, object 
 		Cursor: cursor,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to get %s relationships by object: %w", r.relType, err)
+		entityType := r.getEntityType()
+		queryType := "by object"
+		return nil, "", r.errorHandler.HandleQueryError(err, entityType, queryType)
 	}
 
 	// Convert map results to models
@@ -279,26 +291,24 @@ func (r *RelationshipBase) generateObjectPK(object string) string {
 }
 
 
-// splitPath splits a URL path into segments
-func splitPath(url string) []string {
-	// Simple path splitting - improve as needed
-	var parts []string
-	current := ""
-	for _, c := range url {
-		if c == '/' {
-			if current != "" {
-				parts = append(parts, current)
-				current = ""
-			}
-		} else {
-			current += string(c)
-		}
+// getEntityType maps RelationshipType to appropriate entity constants
+func (r *RelationshipBase) getEntityType() string {
+	switch r.relType {
+	case RelationshipTypeFollow:
+		return EntityFollow
+	case RelationshipTypeBlock:
+		return EntityBlock
+	case RelationshipTypeMute:
+		return EntityMute
+	case RelationshipTypeBookmark:
+		return EntityBookmark
+	case RelationshipTypeLike, RelationshipTypeFavorite:
+		return "favorite"
+	default:
+		return string(r.relType)
 	}
-	if current != "" {
-		parts = append(parts, current)
-	}
-	return parts
 }
+
 
 // mapToStruct converts a map to a struct - simplified version
 func mapToStruct(m map[string]interface{}, target interface{}) error {

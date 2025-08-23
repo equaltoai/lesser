@@ -7,24 +7,26 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// BlockRepository implements block operations using DynamORM
+// BlockRepository implements block operations using BaseRepository and DynamORM
 type BlockRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.Block]
+	// Keep direct access to fields that domain methods need
+	logger *zap.Logger
+	db     core.DB
 }
 
-// NewBlockRepository creates a new block repository
-func NewBlockRepository(db core.DB, tableName string, logger *zap.Logger) *BlockRepository {
+// NewBlockRepository creates a new block repository with cost tracking
+func NewBlockRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *BlockRepository {
 	return &BlockRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Block](db, tableName, logger, costService, "block"),
+		logger:         logger,
+		db:             db,
 	}
 }
 
@@ -44,10 +46,11 @@ func (r *BlockRepository) CreateBlock(ctx context.Context, blockerActor, blocked
 			zap.String("blocker", blockerActor),
 			zap.String("blocked", blockedActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to prepare block: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityBlock, "prepare block")
 	}
 
-	if err := r.db.WithContext(ctx).Model(block).Create(); err != nil {
+	// Use BaseRepository Create method
+	if err := r.Create(ctx, block); err != nil {
 		// Check if it's a duplicate block
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("block relationship already exists",
@@ -59,7 +62,7 @@ func (r *BlockRepository) CreateBlock(ctx context.Context, blockerActor, blocked
 			zap.String("blocker", blockerActor),
 			zap.String("blocked", blockedActor),
 			zap.Error(err))
-		return fmt.Errorf("failed to create block: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityBlock, activityID)
 	}
 
 	r.logger.Info("created block relationship",
@@ -72,16 +75,58 @@ func (r *BlockRepository) CreateBlock(ctx context.Context, blockerActor, blocked
 
 // DeleteBlock removes a block relationship (for Undo Block)
 func (r *BlockRepository) DeleteBlock(ctx context.Context, blockerActor, blockedActor string) error {
-	helper := NewRelationshipHelper(r.db, r.logger, "block")
-	return helper.DeleteRelationship(ctx, blockerActor, blockedActor, 
-		"ACTOR#%s#BLOCKS", "BLOCKED#%s", &models.Block{})
+	// Extract usernames for key generation
+	blockerUsername := extractUsernameFromActor(blockerActor)
+	blockedUsername := extractUsernameFromActor(blockedActor)
+
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+
+	err := r.Delete(ctx, pk, sk)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			r.logger.Debug("block not found for deletion",
+				zap.String("blocker", blockerActor),
+				zap.String("blocked", blockedActor))
+			return nil // Idempotent - don't fail if block doesn't exist
+		}
+		r.logger.Error("failed to delete block",
+			zap.String("blocker", blockerActor),
+			zap.String("blocked", blockedActor),
+			zap.Error(err))
+		return ErrorHandler.HandleDeleteError(err, EntityBlock, blockerActor)
+	}
+
+	r.logger.Info("deleted block relationship",
+		zap.String("blocker", blockerActor),
+		zap.String("blocked", blockedActor))
+
+	return nil
 }
 
 // IsBlocked checks if one actor has blocked another
 func (r *BlockRepository) IsBlocked(ctx context.Context, blockerActor, blockedActor string) (bool, error) {
-	helper := NewRelationshipHelper(r.db, r.logger, "block")
-	return helper.CheckRelationship(ctx, blockerActor, blockedActor, 
-		"ACTOR#%s#BLOCKS", "BLOCKED#%s", &models.Block{})
+	// Extract usernames for key generation
+	blockerUsername := extractUsernameFromActor(blockerActor)
+	blockedUsername := extractUsernameFromActor(blockedActor)
+
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+
+	var block models.Block
+	err := r.Get(ctx, pk, sk, &block)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check block status",
+			zap.String("blocker", blockerActor),
+			zap.String("blocked", blockedActor),
+			zap.Error(err))
+		return false, ErrorHandler.HandleGetError(err, EntityBlock, blockerActor)
+	}
+
+	return true, nil
 }
 
 // IsBlockedBidirectional checks if either actor has blocked the other
@@ -139,22 +184,20 @@ func (r *BlockRepository) GetBlock(ctx context.Context, blockerActor, blockedAct
 	blockerUsername := extractUsernameFromActor(blockerActor)
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
+	sk := fmt.Sprintf("BLOCKED#%s", blockedUsername)
+
 	var block models.Block
-
-	err := r.db.WithContext(ctx).Model(&block).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Where("SK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		First(&block)
-
+	err := r.Get(ctx, pk, sk, &block)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("block not found")
+			return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityBlock, "not found")
 		}
 		r.logger.Error("failed to get block",
 			zap.String("blocker", blockerActor),
 			zap.String("blocked", blockedActor),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get block: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityBlock, blockerActor)
 	}
 
 	// Convert to storage.Block
@@ -170,37 +213,31 @@ func (r *BlockRepository) GetBlock(ctx context.Context, blockerActor, blockedAct
 // CountBlockedUsers returns the number of users blocked by the given actor
 func (r *BlockRepository) CountBlockedUsers(ctx context.Context, blockerActor string) (int, error) {
 	blockerUsername := extractUsernameFromActor(blockerActor)
+	pk := fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Where("PK", "=", fmt.Sprintf("ACTOR#%s#BLOCKS", blockerUsername)).
-		Count()
-
+	count, err := r.Count(ctx, pk)
 	if err != nil {
 		r.logger.Error("failed to count blocked users",
 			zap.String("blocker", blockerActor),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count blocked users: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityBlock, "count blocked users")
 	}
 
-	return int(count), nil
+	return count, nil
 }
 
 // CountUsersWhoBlocked returns the number of users who have blocked the given actor
 func (r *BlockRepository) CountUsersWhoBlocked(ctx context.Context, blockedActor string) (int, error) {
 	blockedUsername := extractUsernameFromActor(blockedActor)
 
-	count, err := r.db.WithContext(ctx).Model(&models.Block{}).
-		Index("GSI5").
-		Where("GSI5PK", "=", fmt.Sprintf("BLOCKED#%s", blockedUsername)).
-		Count()
-
+	// Use QueryGSI from BaseRepository to count on GSI5
+	blocks, err := r.QueryGSI(ctx, "GSI5", fmt.Sprintf("BLOCKED#%s", blockedUsername), 0)
 	if err != nil {
 		r.logger.Error("failed to count users who blocked actor",
 			zap.String("blocked_actor", blockedActor),
 			zap.Error(err))
-		return 0, fmt.Errorf("failed to count users who blocked actor: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, EntityBlock, "count blockers")
 	}
 
-	return int(count), nil
+	return len(blocks), nil
 }
-

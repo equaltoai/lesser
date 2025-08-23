@@ -143,13 +143,10 @@ func (m *Metrics) BeforeCreate() error {
 	}
 	m.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	m.PK = fmt.Sprintf("metrics#%s", m.Type)
-	timestamp := m.Timestamp.Format("20060102150405")
-	m.SK = fmt.Sprintf("ts#%s#%s", timestamp, m.ID)
-
-	// Set up GSI keys
-	m.setupGSIKeys()
+	// Update all keys
+	if err := m.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return m.Validate()
 }
@@ -163,10 +160,35 @@ func (m *Metrics) BeforeUpdate() error {
 		m.Average = m.Sum / float64(m.Count)
 	}
 
-	// Update GSI keys in case indexed fields changed
-	m.setupGSIKeys()
+	// Update all keys in case indexed fields changed
+	if err := m.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return m.Validate()
+}
+
+// GetPK implements BaseModel interface
+func (m *Metrics) GetPK() string {
+	return m.PK
+}
+
+// GetSK implements BaseModel interface
+func (m *Metrics) GetSK() string {
+	return m.SK
+}
+
+// UpdateKeys implements BaseModel interface and sets up all primary and GSI keys
+func (m *Metrics) UpdateKeys() error {
+	// Set up primary key
+	m.PK = fmt.Sprintf("metrics#%s", m.Type)
+	timestamp := m.Timestamp.Format("20060102150405")
+	m.SK = fmt.Sprintf("ts#%s#%s", timestamp, m.ID)
+
+	// Set up GSI keys
+	m.setupGSIKeys()
+
+	return nil
 }
 
 // setupGSIKeys configures all GSI partition and sort keys
@@ -185,20 +207,39 @@ func (m *Metrics) setupGSIKeys() {
 // Validate performs validation on the Metrics
 func (m *Metrics) Validate() error {
 	if common.ValidateRequiredParam(strings.TrimSpace(m.ID), "ID") != nil {
-		return fmt.Errorf("ID is required")
+		return ErrMetricIDRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(m.Type), "Type") != nil {
-		return fmt.Errorf("type is required")
+		return ErrMetricTypeRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(m.Service), "Service") != nil {
-		return fmt.Errorf("service is required")
+		return ErrMetricServiceRequired
 	}
 	if !isValidMetricType(m.Type) {
-		return fmt.Errorf("invalid metric type: %s", m.Type)
+		return fmt.Errorf("%w: %s", ErrInvalidMetricType, m.Type)
 	}
 	if m.Period != "" && !isValidPeriod(m.Period) {
-		return fmt.Errorf("invalid period: %s", m.Period)
+		return fmt.Errorf("%w: %s", ErrInvalidPeriod, m.Period)
 	}
+
+	return nil
+}
+
+// GetPK implements BaseModel interface for AggregatedMetrics
+func (am *AggregatedMetrics) GetPK() string {
+	return am.PK
+}
+
+// GetSK implements BaseModel interface for AggregatedMetrics
+func (am *AggregatedMetrics) GetSK() string {
+	return am.SK
+}
+
+// UpdateKeys implements BaseModel interface for AggregatedMetrics
+func (am *AggregatedMetrics) UpdateKeys() error {
+	// Set up primary key
+	am.PK = fmt.Sprintf("metrics_agg#%s#%s", am.Period, am.Type)
+	am.SK = fmt.Sprintf("window#%s", am.WindowStart.Format(time.RFC3339))
 
 	return nil
 }
@@ -216,9 +257,10 @@ func (am *AggregatedMetrics) BeforeCreate() error {
 	}
 	am.ExpiresAt = now.Add(time.Duration(ttlDays) * 24 * time.Hour).Unix()
 
-	// Set up primary key
-	am.PK = fmt.Sprintf("metrics_agg#%s#%s", am.Period, am.Type)
-	am.SK = fmt.Sprintf("window#%s", am.WindowStart.Format(time.RFC3339))
+	// Update all keys
+	if err := am.UpdateKeys(); err != nil {
+		return err
+	}
 
 	return am.Validate()
 }
@@ -226,25 +268,31 @@ func (am *AggregatedMetrics) BeforeCreate() error {
 // BeforeUpdate for AggregatedMetrics
 func (am *AggregatedMetrics) BeforeUpdate() error {
 	am.UpdatedAt = time.Now()
+	
+	// Update all keys in case indexed fields changed
+	if err := am.UpdateKeys(); err != nil {
+		return err
+	}
+	
 	return am.Validate()
 }
 
 // Validate for AggregatedMetrics
 func (am *AggregatedMetrics) Validate() error {
 	if common.ValidateRequiredParam(strings.TrimSpace(am.Type), "Type") != nil {
-		return fmt.Errorf("type is required")
+		return ErrMetricTypeRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(am.Period), "Period") != nil {
-		return fmt.Errorf("period is required")
+		return ErrInvalidPeriod
 	}
 	if am.WindowStart.IsZero() {
-		return fmt.Errorf("WindowStart is required")
+		return ErrMetricWindowStartRequired
 	}
 	if am.WindowEnd.IsZero() {
-		return fmt.Errorf("WindowEnd is required")
+		return ErrMetricWindowEndRequired
 	}
 	if am.WindowEnd.Before(am.WindowStart) {
-		return fmt.Errorf("WindowEnd must be after WindowStart")
+		return ErrWindowEndBeforeStart
 	}
 
 	return nil
@@ -475,16 +523,16 @@ func (MetricRecord) TableName() string {
 func (m *MetricRecord) UpdateKeys() error {
 	// Validation
 	if common.ValidateRequiredParam(strings.TrimSpace(m.MetricType), "MetricType") != nil {
-		return fmt.Errorf("MetricType is required")
+		return ErrMetricRecordTypeRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(m.ServiceName), "ServiceName") != nil {
-		return fmt.Errorf("ServiceName is required")
+		return ErrMetricRecordServiceRequired
 	}
 	if m.Timestamp.IsZero() {
-		return fmt.Errorf("timestamp is required")
+		return ErrTimestampRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(m.AggregationLevel), "AggregationLevel") != nil {
-		return fmt.Errorf("AggregationLevel is required")
+		return ErrAggregationLevelRequired
 	}
 
 	// Generate ID if not provided
@@ -580,7 +628,7 @@ func (m *MetricRecord) BeforeCreate() error {
 
 	// Update all keys
 	if err := m.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
 	}
 
 	return m.Validate()
@@ -592,7 +640,7 @@ func (m *MetricRecord) BeforeUpdate() error {
 
 	// Update GSI keys in case indexed fields changed
 	if err := m.UpdateKeys(); err != nil {
-		return fmt.Errorf("failed to update keys: %w", err)
+		return fmt.Errorf("%w: %w", ErrFailedToUpdateKeys, err)
 	}
 
 	return m.Validate()
@@ -601,16 +649,16 @@ func (m *MetricRecord) BeforeUpdate() error {
 // Validate performs validation on the MetricRecord
 func (m *MetricRecord) Validate() error {
 	if common.ValidateRequiredParam(strings.TrimSpace(m.MetricType), "MetricType") != nil {
-		return fmt.Errorf("MetricType is required")
+		return ErrMetricRecordTypeRequired
 	}
 	if common.ValidateRequiredParam(strings.TrimSpace(m.ServiceName), "ServiceName") != nil {
-		return fmt.Errorf("ServiceName is required")
+		return ErrMetricRecordServiceRequired
 	}
 	if m.Timestamp.IsZero() {
-		return fmt.Errorf("timestamp is required")
+		return ErrTimestampRequired
 	}
 	if !isValidAggregationLevel(m.AggregationLevel) {
-		return fmt.Errorf("invalid aggregation level: %s", m.AggregationLevel)
+		return fmt.Errorf("%w: %s", ErrInvalidAggregationLevel, m.AggregationLevel)
 	}
 
 	return nil

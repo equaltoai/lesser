@@ -2,7 +2,6 @@ package dynamorm
 
 import (
 	"context"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -11,6 +10,8 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/session"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	"go.uber.org/zap"
 )
 
 var (
@@ -29,19 +30,19 @@ var (
 // This ensures that the client is only initialized once per Lambda container
 func GetClient(_ context.Context) (core.DB, error) {
 	clientOnce.Do(func() {
-		region := os.Getenv("AWS_REGION")
+		cfg := config.Get()
+		region := cfg.Region
 		if err := common.ValidateRequiredParam("region", region); err != nil {
 			region = "us-east-1" // Default region
 		}
 
-		config := session.Config{
+		sessionConfig := session.Config{
 			Region: region,
 		}
 
-		// For local development, check for local DynamoDB endpoint
-		endpoint := os.Getenv("DYNAMODB_ENDPOINT")
-		if endpoint != "" {
-			config.Endpoint = endpoint
+		// For local development, check for local DynamoDB endpoint from centralized config
+		if cfg.DynamoDBEndpoint != "" {
+			sessionConfig.Endpoint = cfg.DynamoDBEndpoint
 			// Use fake credentials for local development
 			if err := common.ValidateRequiredParam("AWS_ACCESS_KEY_ID", os.Getenv("AWS_ACCESS_KEY_ID")); err != nil {
 				// Set credentials using environment variables instead
@@ -51,7 +52,7 @@ func GetClient(_ context.Context) (core.DB, error) {
 		}
 
 		// Initialize with standard client creation
-		client, clientErr = dynamorm.New(config)
+		client, clientErr = dynamorm.New(sessionConfig)
 	})
 
 	return client, clientErr
@@ -62,7 +63,7 @@ func GetClient(_ context.Context) (core.DB, error) {
 // and includes Lambda-specific optimizations like timeout handling
 func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
 	clientOnce.Do(func() {
-		log.Println("Initializing Lambda-optimized DynamORM client...")
+		zap.L().Info("initializing Lambda-optimized DynamORM client")
 		startTime := time.Now()
 
 		// Create Lambda-optimized client
@@ -70,14 +71,14 @@ func GetLambdaClient(ctx context.Context) (*dynamorm.LambdaDB, error) {
 		lambdaDB, err = dynamorm.NewLambdaOptimized()
 		if err != nil {
 			clientErr = err
-			log.Printf("Failed to initialize DynamORM: %v", err)
+			zap.L().Error("failed to initialize DynamORM", zap.Error(err))
 			return
 		}
 
 		// Store the standard client interface for compatibility
 		client = lambdaDB.WithLambdaTimeoutBuffer(defaultTimeoutBuffer)
 
-		log.Printf("DynamORM initialized in %v", time.Since(startTime))
+		zap.L().Info("DynamORM initialized", zap.Duration("duration", time.Since(startTime)))
 	})
 
 	// Apply Lambda context timeout if available

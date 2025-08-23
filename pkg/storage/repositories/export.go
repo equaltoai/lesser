@@ -40,7 +40,7 @@ func (r *ExportRepository) CreateExport(_ context.Context, export *models.Export
 		r.logger.Error("failed to create export",
 			zap.String("export_id", export.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create export: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityExport, export.ID)
 	}
 
 	r.logger.Info("created export record",
@@ -63,12 +63,12 @@ func (r *ExportRepository) GetExport(_ context.Context, exportID string) (*model
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("export not found: %s", exportID)
+			return nil, ErrorHandler.HandleNotFound(err, EntityExport, exportID)
 		}
 		r.logger.Error("failed to get export",
 			zap.String("export_id", exportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get export: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityExport, exportID)
 	}
 
 	return &export, nil
@@ -78,7 +78,7 @@ func (r *ExportRepository) GetExport(_ context.Context, exportID string) (*model
 func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, status string, completionData map[string]any, errorMsg string) error {
 	// Validate status using centralized validation
 	if err := common.ValidateStatusState(status); err != nil {
-		return fmt.Errorf("invalid status state: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityExport, exportID)
 	}
 
 	export, err := r.GetExport(ctx, exportID)
@@ -128,7 +128,7 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 			zap.String("export_id", exportID),
 			zap.String("status", status),
 			zap.Error(err))
-		return fmt.Errorf("failed to update export status: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityExport, exportID)
 	}
 
 	r.logger.Info("updated export status",
@@ -141,7 +141,7 @@ func (r *ExportRepository) UpdateExportStatus(ctx context.Context, exportID, sta
 
 // GetExportsForUser retrieves all exports for a user
 func (r *ExportRepository) GetExportsForUser(ctx context.Context, username string, limit int, cursor string) ([]*models.Export, string, error) {
-	result, nextCursor, err := getImportExportItemsForUser(r.db, r.logger, ctx, username, limit, cursor, "export", true)
+	result, nextCursor, err := getImportExportItemsForUser(ctx, r.db, r.logger, username, limit, cursor, "export", true)
 	if err != nil {
 		return nil, "", err
 	}
@@ -150,7 +150,7 @@ func (r *ExportRepository) GetExportsForUser(ctx context.Context, username strin
 
 // GetUserExportsByStatus retrieves exports for a user filtered by status
 func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username string, statuses []string) ([]*models.Export, error) {
-	result, err := getImportExportItemsByStatus(r.db, r.logger, ctx, username, statuses, "export", &models.Export{})
+	result, err := getImportExportItemsByStatus(ctx, r.db, r.logger, username, statuses, "export", &models.Export{})
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (r *ExportRepository) GetUserExportsByStatus(ctx context.Context, username 
 // CreateExportCostTracking creates a new export cost tracking record
 func (r *ExportRepository) CreateExportCostTracking(_ context.Context, costTracking *models.ExportCostTracking) error {
 	if err := costTracking.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityExportCostTracking, costTracking.ExportID)
 	}
 
 	err := r.db.Model(costTracking).Create()
@@ -171,7 +171,7 @@ func (r *ExportRepository) CreateExportCostTracking(_ context.Context, costTrack
 			zap.String("export_id", costTracking.ExportID),
 			zap.String("username", costTracking.Username),
 			zap.Error(err))
-		return fmt.Errorf("failed to create export cost tracking: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityExportCostTracking, costTracking.ExportID)
 	}
 
 	r.logger.Debug("created export cost tracking",
@@ -195,7 +195,7 @@ func (r *ExportRepository) GetExportCostTracking(_ context.Context, exportID str
 		r.logger.Error("failed to get export cost tracking",
 			zap.String("export_id", exportID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get export cost tracking: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityExportCostTracking, "by export ID")
 	}
 
 	return costTrackingRecords, nil
@@ -203,7 +203,7 @@ func (r *ExportRepository) GetExportCostTracking(_ context.Context, exportID str
 
 // GetUserExportCosts retrieves export costs for a user within a date range
 func (r *ExportRepository) GetUserExportCosts(ctx context.Context, username string, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	result, err := getUserCosts(r.db, r.logger, ctx, username, startDate, endDate, limit, "export", &models.ExportCostTracking{})
+	result, err := getUserCosts(ctx, r.db, r.logger, username, startDate, endDate, limit, "export", &models.ExportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +212,7 @@ func (r *ExportRepository) GetUserExportCosts(ctx context.Context, username stri
 
 // GetExportCostsByDateRange retrieves export costs for all users within a date range
 func (r *ExportRepository) GetExportCostsByDateRange(ctx context.Context, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	result, err := getCostsByDateRange(r.db, r.logger, ctx, startDate, endDate, limit, "export", &models.ExportCostTracking{})
+	result, err := getCostsByDateRange(ctx, r.db, r.logger, startDate, endDate, limit, "export", &models.ExportCostTracking{})
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func (r *ExportRepository) GetExportCostSummary(ctx context.Context, username st
 
 // GetHighCostExports returns export operations that exceed a cost threshold
 func (r *ExportRepository) GetHighCostExports(ctx context.Context, thresholdMicroCents int64, startDate, endDate time.Time, limit int) ([]*models.ExportCostTracking, error) {
-	result, err := getHighCostOperations(r.db, r.logger, ctx, thresholdMicroCents, startDate, endDate, limit, "export", &models.ExportCostTracking{})
+	result, err := getHighCostOperations(ctx, r.db, r.logger, thresholdMicroCents, startDate, endDate, limit, "export", &models.ExportCostTracking{})
 	if err != nil {
 		return nil, err
 	}

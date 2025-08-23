@@ -77,7 +77,7 @@ func NewActivityPubBusinessLogic(config *FederationConfig, logger *zap.Logger) *
 // ValidateActorURI validates ActivityPub actor URIs
 func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 	if actorURI == "" {
-		return fmt.Errorf("actor URI cannot be empty")
+		return ErrActorURIEmpty
 	}
 
 	parsedURI, err := url.Parse(actorURI)
@@ -87,7 +87,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 
 	// Check HTTPS requirement
 	if rules.RequireHTTPS && parsedURI.Scheme != "https" {
-		return fmt.Errorf("actor URI must use HTTPS: %s", actorURI)
+		return fmt.Errorf("%w: %s", ErrActorURIMustUseHTTPS, actorURI)
 	}
 
 	// Check allowed/blocked domains
@@ -95,7 +95,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 	if len(rules.BlockedDomains) > 0 {
 		for _, blocked := range rules.BlockedDomains {
 			if strings.Contains(domain, blocked) {
-				return fmt.Errorf("actor domain is blocked: %s", domain)
+				return fmt.Errorf("%w: %s", ErrActorDomainBlocked, domain)
 			}
 		}
 	}
@@ -109,7 +109,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 			}
 		}
 		if !allowed {
-			return fmt.Errorf("actor domain not in allowed list: %s", domain)
+			return fmt.Errorf("%w: %s", ErrActorDomainNotAllowed, domain)
 		}
 	}
 
@@ -122,7 +122,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 // ValidateActivityType validates ActivityPub activity types
 func ValidateActivityType(activityType string, rules ActivityPubValidationRules) error {
 	if activityType == "" {
-		return fmt.Errorf("activity type cannot be empty")
+		return ErrActivityTypeEmpty
 	}
 
 	if len(rules.ValidActivityTypes) > 0 {
@@ -131,7 +131,7 @@ func ValidateActivityType(activityType string, rules ActivityPubValidationRules)
 				return nil
 			}
 		}
-		return fmt.Errorf("unsupported activity type: %s", activityType)
+		return fmt.Errorf("%w: %s", ErrUnsupportedActivityType, activityType)
 	}
 
 	// Default allowed activity types
@@ -146,7 +146,7 @@ func ValidateActivityType(activityType string, rules ActivityPubValidationRules)
 		}
 	}
 
-	return fmt.Errorf("unsupported activity type: %s", activityType)
+	return fmt.Errorf("%w: %s", ErrUnsupportedActivityType, activityType)
 }
 
 // 3. Object ID Generation Pattern
@@ -277,7 +277,7 @@ type FederationDeliveryConfig struct {
 }
 
 // CalculateDeliveryTargets calculates delivery targets for an ActivityPub activity
-func CalculateDeliveryTargets(ctx context.Context, audience ActivityPubAudience, actorResolver func(string) (ActivityPubActor, error)) ([]DeliveryTarget, error) {
+func CalculateDeliveryTargets(_ context.Context, audience ActivityPubAudience, actorResolver func(string) (ActivityPubActor, error)) ([]DeliveryTarget, error) {
 	targets := make([]DeliveryTarget, 0)
 	processed := make(map[string]bool) // Avoid duplicates
 
@@ -355,7 +355,7 @@ type HTTPSignatureInfo struct {
 // ParseHTTPSignature parses an HTTP signature header
 func ParseHTTPSignature(signatureHeader string) (*HTTPSignatureInfo, error) {
 	if signatureHeader == "" {
-		return nil, fmt.Errorf("signature header is empty")
+		return nil, ErrSignatureHeaderEmpty
 	}
 
 	info := &HTTPSignatureInfo{}
@@ -385,7 +385,7 @@ func ParseHTTPSignature(signatureHeader string) (*HTTPSignatureInfo, error) {
 	}
 
 	if info.KeyID == "" || info.Signature == "" {
-		return nil, fmt.Errorf("invalid signature: missing keyId or signature")
+		return nil, ErrInvalidSignature
 	}
 
 	return info, nil
@@ -553,64 +553,123 @@ func MapActivityPubError(err error, actorID, objectID string) ActivityPubError {
 
 // ExecuteActivityPubOperation executes a federation operation with standard error handling and retry logic
 func (ap *ActivityPubBusinessLogic) ExecuteActivityPubOperation(ctx context.Context, operation ActivityPubOperation) error {
-	// Validate operation
 	if err := operation.Validate(ctx); err != nil {
 		return fmt.Errorf("activitypub operation validation failed: %w", err)
 	}
 
-	// Execute with retry logic for temporary failures
-	var lastErr error
-	maxRetries := ap.config.MaxRetries
-	if maxRetries == 0 {
-		maxRetries = 3
+	maxRetries := ap.getMaxRetries()
+	return ap.executeWithRetry(ctx, operation, maxRetries)
+}
+
+// getMaxRetries returns the configured max retries or default value
+func (ap *ActivityPubBusinessLogic) getMaxRetries() int {
+	if ap.config.MaxRetries == 0 {
+		return 3
 	}
+	return ap.config.MaxRetries
+}
+
+// executeWithRetry executes the operation with retry logic for temporary failures
+func (ap *ActivityPubBusinessLogic) executeWithRetry(ctx context.Context, operation ActivityPubOperation, maxRetries int) error {
+	var lastErr error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		err := operation.Execute(ctx)
 		if err == nil {
-			// Success - record metrics and return
-			operation.RecordMetrics(ctx, "success", attempt)
+			ap.recordSuccessMetrics(ctx, operation, attempt)
 			return nil
 		}
-
-		// Check if error is temporary and we should retry
-		if fedErr, ok := err.(ActivityPubError); ok {
-			if !fedErr.IsTemporary() || attempt == maxRetries {
-				operation.RecordMetrics(ctx, "failure", attempt)
-				return fedErr
-			}
-
-			// Wait before retry
-			retryDelay := ap.config.RetryDelay
-			if retryDelay == 0 {
-				retryDelay = time.Duration(attempt+1) * 30 * time.Second
-			}
-			if fedErr.RetryAfter > 0 {
-				retryDelay = fedErr.RetryAfter
-			}
-
-			ap.logger.Warn("ActivityPub operation failed, retrying",
-				zap.Error(err),
-				zap.Int("attempt", attempt+1),
-				zap.Duration("retry_after", retryDelay))
-
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(retryDelay):
-				// Continue with retry
-			}
-		} else {
-			// Non-federation error - don't retry
-			operation.RecordMetrics(ctx, "error", attempt)
+		
+		if shouldRetry := ap.handleExecutionError(ctx, operation, err, attempt, maxRetries); !shouldRetry {
 			return err
 		}
-
 		lastErr = err
 	}
 
-	operation.RecordMetrics(ctx, "max_retries_exceeded", maxRetries)
+	ap.recordMaxRetriesExceededMetrics(ctx, operation, maxRetries)
 	return fmt.Errorf("activitypub operation failed after %d retries: %w", maxRetries, lastErr)
+}
+
+// recordSuccessMetrics records success metrics with error logging
+func (ap *ActivityPubBusinessLogic) recordSuccessMetrics(ctx context.Context, operation ActivityPubOperation, attempt int) {
+	if err := operation.RecordMetrics(ctx, "success", attempt); err != nil {
+		zap.L().Error("Failed to record success metrics", zap.Error(err))
+	}
+}
+
+// recordMaxRetriesExceededMetrics records max retries exceeded metrics with error logging
+func (ap *ActivityPubBusinessLogic) recordMaxRetriesExceededMetrics(ctx context.Context, operation ActivityPubOperation, maxRetries int) {
+	if err := operation.RecordMetrics(ctx, "max_retries_exceeded", maxRetries); err != nil {
+		zap.L().Error("Failed to record max retries exceeded metrics", zap.Error(err))
+	}
+}
+
+// handleExecutionError handles errors from operation execution and determines if retry should happen
+func (ap *ActivityPubBusinessLogic) handleExecutionError(ctx context.Context, operation ActivityPubOperation, err error, attempt, maxRetries int) bool {
+	if fedErr, ok := err.(ActivityPubError); ok {
+		return ap.handleFederationError(ctx, operation, fedErr, attempt, maxRetries)
+	}
+	
+	// Non-federation error - don't retry
+	ap.recordErrorMetrics(ctx, operation, attempt)
+	return false
+}
+
+// handleFederationError handles ActivityPub federation errors with retry logic
+func (ap *ActivityPubBusinessLogic) handleFederationError(ctx context.Context, operation ActivityPubOperation, fedErr ActivityPubError, attempt, maxRetries int) bool {
+	if !fedErr.IsTemporary() || attempt == maxRetries {
+		ap.recordFailureMetrics(ctx, operation, attempt)
+		return false
+	}
+
+	retryDelay := ap.calculateRetryDelay(fedErr, attempt)
+	ap.logRetryAttempt(fedErr, attempt, retryDelay)
+	
+	return ap.waitForRetry(ctx, retryDelay)
+}
+
+// recordErrorMetrics records error metrics with logging
+func (ap *ActivityPubBusinessLogic) recordErrorMetrics(ctx context.Context, operation ActivityPubOperation, attempt int) {
+	if err := operation.RecordMetrics(ctx, "error", attempt); err != nil {
+		zap.L().Error("Failed to record error metrics", zap.Error(err))
+	}
+}
+
+// recordFailureMetrics records failure metrics with logging
+func (ap *ActivityPubBusinessLogic) recordFailureMetrics(ctx context.Context, operation ActivityPubOperation, attempt int) {
+	if metricErr := operation.RecordMetrics(ctx, "failure", attempt); metricErr != nil {
+		zap.L().Error("Failed to record failure metrics", zap.Error(metricErr))
+	}
+}
+
+// calculateRetryDelay calculates the delay before retrying based on configuration and error
+func (ap *ActivityPubBusinessLogic) calculateRetryDelay(fedErr ActivityPubError, attempt int) time.Duration {
+	retryDelay := ap.config.RetryDelay
+	if retryDelay == 0 {
+		retryDelay = time.Duration(attempt+1) * 30 * time.Second
+	}
+	if fedErr.RetryAfter > 0 {
+		retryDelay = fedErr.RetryAfter
+	}
+	return retryDelay
+}
+
+// logRetryAttempt logs retry attempt information
+func (ap *ActivityPubBusinessLogic) logRetryAttempt(err error, attempt int, retryDelay time.Duration) {
+	ap.logger.Warn("ActivityPub operation failed, retrying",
+		zap.Error(err),
+		zap.Int("attempt", attempt+1),
+		zap.Duration("retry_after", retryDelay))
+}
+
+// waitForRetry waits for the specified delay or context cancellation
+func (ap *ActivityPubBusinessLogic) waitForRetry(ctx context.Context, retryDelay time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(retryDelay):
+		return true
+	}
 }
 
 // ActivityPubOperation defines the interface for ActivityPub operations

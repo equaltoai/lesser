@@ -301,7 +301,7 @@ func (h *Handler) authenticateQuoteRequest(ctx *lift.Context) (*auth.Claims, err
 		return nil, common.RespondUnauthorized(ctx)
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return nil, common.RespondUnauthorized(ctx)

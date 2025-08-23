@@ -3,17 +3,23 @@ package ai
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
+)
+
+// Error constants for AI service
+var (
+	// ErrSaveAnalysis is returned when AI analysis saving fails
+	ErrSaveAnalysis = errors.New("failed to save AI analysis")
 )
 
 // Service provides AI analysis operations following the service-first architecture
@@ -69,7 +75,7 @@ func (s *Service) SaveAnalysis(ctx context.Context, cmd *SaveAnalysisCommand) (*
 			zap.String("analysis_id", cmd.Analysis.ID),
 			zap.String("object_id", cmd.Analysis.ObjectID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to save analysis: %w", err)
+		return nil, errors.Join(ErrSaveAnalysis, err)
 	}
 
 	// Publish event to EventBus if publisher is configured

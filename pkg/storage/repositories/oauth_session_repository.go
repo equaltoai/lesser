@@ -3,47 +3,37 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"errors"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// OAuthSessionRepository handles OAuth authorization session operations using DynamORM
+// OAuthSessionRepository handles OAuth authorization session operations using BaseRepository
 type OAuthSessionRepository struct {
-	db     core.DB
-	logger *zap.Logger
+	*BaseRepository[*models.OAuthAuthSession]
 }
 
 // NewOAuthSessionRepository creates a new OAuth session repository
-func NewOAuthSessionRepository(db core.DB, logger *zap.Logger) *OAuthSessionRepository {
+func NewOAuthSessionRepository(db core.DB, tableName string, logger *zap.Logger) *OAuthSessionRepository {
 	return &OAuthSessionRepository{
-		db:     db,
-		logger: logger,
+		BaseRepository: NewBaseRepository[*models.OAuthAuthSession](db, tableName, logger),
 	}
 }
 
 // CreateOAuthSession creates a new OAuth authorization session
 func (r *OAuthSessionRepository) CreateOAuthSession(ctx context.Context, session *models.OAuthAuthSession) error {
 	if session == nil {
-		return fmt.Errorf("session cannot be nil")
+		return ErrorHandler.HandleCreateError(errors.New("session cannot be nil"), EntitySession, "nil")
 	}
 
-	err := r.db.WithContext(ctx).Model(session).Create()
+	err := r.Create(ctx, session)
 	if err != nil {
-		r.logger.Error("failed to create OAuth session",
-			zap.String("sessionID", session.SessionID),
-			zap.String("clientID", session.ClientID),
-			zap.Error(err))
-		return fmt.Errorf("failed to create OAuth session: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
-
-	r.logger.Debug("OAuth session created successfully",
-		zap.String("sessionID", session.SessionID),
-		zap.String("clientID", session.ClientID),
-		zap.String("flowStep", session.FlowStep))
 
 	return nil
 }
@@ -51,22 +41,15 @@ func (r *OAuthSessionRepository) CreateOAuthSession(ctx context.Context, session
 // GetOAuthSession retrieves an OAuth session by session ID
 func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID string) (*models.OAuthAuthSession, error) {
 	var session models.OAuthAuthSession
+	pk := fmt.Sprintf("OAUTH_AUTH#%s", sessionID)
+	sk := fmt.Sprintf("SESSION#%s", sessionID)
 
-	err := r.db.WithContext(ctx).Model(&session).
-		Where("PK", "=", fmt.Sprintf("OAUTH_AUTH#%s", sessionID)).
-		Where("SK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
-		First(&session)
-
+	err := r.Get(ctx, pk, sk, &session)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("OAuth session not found",
-				zap.String("sessionID", sessionID))
-			return nil, fmt.Errorf("OAuth session not found")
+		if strings.Contains(err.Error(), "not found") {
+			return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found"), EntitySession, sessionID)
 		}
-		r.logger.Error("failed to get OAuth session",
-			zap.String("sessionID", sessionID),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth session: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntitySession, sessionID)
 	}
 
 	// Check if session is expired
@@ -74,7 +57,7 @@ func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID 
 		r.logger.Debug("OAuth session expired",
 			zap.String("sessionID", sessionID),
 			zap.Time("expiresAt", time.Unix(session.ExpiresAt, 0)))
-		return nil, fmt.Errorf("OAuth session expired")
+		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session expired"), EntitySession, sessionID)
 	}
 
 	return &session, nil
@@ -82,83 +65,56 @@ func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID 
 
 // GetOAuthSessionByState retrieves an OAuth session by OAuth state parameter
 func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, state string) (*models.OAuthAuthSession, error) {
-	var session models.OAuthAuthSession
-
-	err := r.db.WithContext(ctx).Model(&session).
+	var sessions []models.OAuthAuthSession
+	
+	err := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
 		Index("state-index").
 		Where("GSI2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)).
-		First(&session)
+		All(&sessions)
 
-	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("OAuth session not found by state",
-				zap.String("state", state))
-			return nil, fmt.Errorf("OAuth session not found for state")
-		}
-		r.logger.Error("failed to get OAuth session by state",
-			zap.String("state", state),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get OAuth session by state: %w", err)
+	if err != nil || len(sessions) == 0 {
+		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
 	}
+	
+	session := &sessions[0]
 
 	// Check if session is expired
 	if session.IsExpired() {
-		r.logger.Debug("OAuth session expired",
-			zap.String("sessionID", session.SessionID),
-			zap.String("state", state),
-			zap.Time("expiresAt", time.Unix(session.ExpiresAt, 0)))
-		return nil, fmt.Errorf("OAuth session expired")
+		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session expired"), EntityOAuthState, state)
 	}
 
-	return &session, nil
+	return session, nil
 }
 
 // UpdateOAuthSession updates an existing OAuth session
 func (r *OAuthSessionRepository) UpdateOAuthSession(ctx context.Context, session *models.OAuthAuthSession) error {
 	if session == nil {
-		return fmt.Errorf("session cannot be nil")
+		return ErrorHandler.HandleUpdateError(errors.New("session cannot be nil"), EntitySession, "nil")
 	}
 
 	// Touch the session to update last used time
 	session.Touch()
 
-	err := r.db.WithContext(ctx).Model(session).Update()
+	err := r.Update(ctx, session)
 	if err != nil {
-		r.logger.Error("failed to update OAuth session",
-			zap.String("sessionID", session.SessionID),
-			zap.String("flowStep", session.FlowStep),
-			zap.Error(err))
-		return fmt.Errorf("failed to update OAuth session: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntitySession, session.SessionID)
 	}
-
-	r.logger.Debug("OAuth session updated successfully",
-		zap.String("sessionID", session.SessionID),
-		zap.String("flowStep", session.FlowStep))
 
 	return nil
 }
 
 // DeleteOAuthSession deletes an OAuth session
 func (r *OAuthSessionRepository) DeleteOAuthSession(ctx context.Context, sessionID string) error {
-	err := r.db.WithContext(ctx).Model(&models.OAuthAuthSession{}).
-		Where("PK", "=", fmt.Sprintf("OAUTH_AUTH#%s", sessionID)).
-		Where("SK", "=", fmt.Sprintf("SESSION#%s", sessionID)).
-		Delete()
+	pk := fmt.Sprintf("OAUTH_AUTH#%s", sessionID)
+	sk := fmt.Sprintf("SESSION#%s", sessionID)
 
+	err := r.Delete(ctx, pk, sk)
 	if err != nil {
-		if errors.IsNotFound(err) {
-			r.logger.Debug("OAuth session not found for deletion",
-				zap.String("sessionID", sessionID))
+		if strings.Contains(err.Error(), "not found") {
 			return nil // Already deleted is not an error
 		}
-		r.logger.Error("failed to delete OAuth session",
-			zap.String("sessionID", sessionID),
-			zap.Error(err))
-		return fmt.Errorf("failed to delete OAuth session: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntitySession, sessionID)
 	}
-
-	r.logger.Debug("OAuth session deleted successfully",
-		zap.String("sessionID", sessionID))
 
 	return nil
 }
@@ -167,7 +123,7 @@ func (r *OAuthSessionRepository) DeleteOAuthSession(ctx context.Context, session
 func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, username string, limit int) ([]*models.OAuthAuthSession, error) {
 	var sessions []models.OAuthAuthSession
 
-	query := r.db.WithContext(ctx).Model(&models.OAuthAuthSession{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
 		Index("user-sessions-index").
 		Where("GSI1PK", "=", fmt.Sprintf("USER_OAUTH#%s", username))
 
@@ -177,24 +133,16 @@ func (r *OAuthSessionRepository) GetUserOAuthSessions(ctx context.Context, usern
 
 	err := query.All(&sessions)
 	if err != nil {
-		r.logger.Error("failed to get user OAuth sessions",
-			zap.String("username", username),
-			zap.Error(err))
-		return nil, fmt.Errorf("failed to get user OAuth sessions: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntitySession, "user sessions")
 	}
 
 	// Filter out expired sessions
 	var validSessions []*models.OAuthAuthSession
-	for _, session := range sessions {
-		if session.IsValid() {
-			validSessions = append(validSessions, &session)
+	for i := range sessions {
+		if sessions[i].IsValid() {
+			validSessions = append(validSessions, &sessions[i])
 		}
 	}
-
-	r.logger.Debug("retrieved user OAuth sessions",
-		zap.String("username", username),
-		zap.Int("total", len(sessions)),
-		zap.Int("valid", len(validSessions)))
 
 	return validSessions, nil
 }
@@ -226,7 +174,8 @@ func (r *OAuthSessionRepository) AuthorizeOAuthSession(ctx context.Context, sess
 
 	// Check if session can be authorized
 	if !session.CanAuthorize() {
-		return fmt.Errorf("session cannot be authorized in current state: %s", session.FlowStep)
+		err := errors.New("session cannot be authorized in current state: " + session.FlowStep)
+		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
 	}
 
 	// Authorize the session
@@ -256,9 +205,6 @@ func (r *OAuthSessionRepository) CleanupExpiredOAuthSessions(_ context.Context, 
 	
 	// For now, just return 0 since TTL handles cleanup
 	// In a production system, you might scan for expired sessions and delete them
-	r.logger.Debug("OAuth session cleanup called",
-		zap.Int("limit", limit))
-	
 	return 0, nil
 }
 

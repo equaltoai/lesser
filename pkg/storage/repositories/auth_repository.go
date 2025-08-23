@@ -13,21 +13,30 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // AuthRepository handles authentication-related storage operations
 type AuthRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.WebAuthnCredential]
+	// Auth-specific dependencies
+	costService *cost.TrackingService
 }
 
 // NewAuthRepository creates a new auth repository
 func NewAuthRepository(db core.DB, tableName string, logger *zap.Logger) *AuthRepository {
 	return &AuthRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WebAuthnCredential](
+			db, tableName, logger, nil, "AuthRepository"),
+	}
+}
+
+// NewAuthRepositoryWithCostTracking creates a new auth repository with cost tracking
+func NewAuthRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuthRepository {
+	return &AuthRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WebAuthnCredential](
+			db, tableName, logger, costService, "AuthRepository"),
+		costService: costService,
 	}
 }
 
@@ -51,16 +60,18 @@ func (r *AuthRepository) CreateWebAuthnCredential(ctx context.Context, credentia
 		Name:            credential.Name,
 	}
 
-	// BeforeCreate will set up keys
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare WebAuthn credential: %w", err)
+	// Set default timestamps if not provided
+	if model.CreatedAt.IsZero() {
+		model.CreatedAt = time.Now()
+	}
+	if model.LastUsedAt.IsZero() {
+		model.LastUsedAt = model.CreatedAt
 	}
 
-	// Create the item
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use BaseRepository Create method
+	err := r.Create(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to create WebAuthn credential", zap.Error(err))
-		return fmt.Errorf("failed to create WebAuthn credential: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnCredential, credential.CredentialID)
 	}
 
 	r.logger.Debug("created WebAuthn credential",
@@ -81,11 +92,11 @@ func (r *AuthRepository) GetWebAuthnCredential(ctx context.Context, credentialID
 
 	if err != nil {
 		r.logger.Error("failed to get WebAuthn credential", zap.Error(err))
-		return nil, fmt.Errorf("failed to get WebAuthn credential: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	if err := common.ValidateSliceNotEmpty("modelList", modelList); err != nil {
-		return nil, fmt.Errorf("WebAuthn credential not found")
+		return nil, ErrorHandler.HandleGetError(nil, EntityWebAuthnCredential, credentialID)
 	}
 
 	// Convert to storage model
@@ -117,16 +128,11 @@ func (r *AuthRepository) GetUserWebAuthnCredentials(ctx context.Context, userID 
 	// Construct the key prefix
 	pk := "USER#" + userID
 
-	// Query for all WebAuthn credentials
-	var modelList []models.WebAuthnCredential
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "WEBAUTHN_CRED#").
-		All(&modelList)
-
+	// Use BaseRepository QueryWithSKPrefix method
+	modelList, err := r.QueryWithSKPrefix(ctx, pk, "WEBAUTHN_CRED#", 0)
 	if err != nil {
 		r.logger.Error("failed to get user WebAuthn credentials", zap.Error(err))
-		return nil, fmt.Errorf("failed to get user WebAuthn credentials: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityWebAuthnCredential, fmt.Sprintf("user %s", userID))
 	}
 
 	// Convert to storage models
@@ -167,15 +173,10 @@ func (r *AuthRepository) DeleteWebAuthnCredential(ctx context.Context, credentia
 	pk := "USER#" + credential.UserID
 	sk := "WEBAUTHN_CRED#" + credentialID
 
-	// Delete the item
-	err = r.db.WithContext(ctx).Model(&models.WebAuthnCredential{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete()
-
+	// Use BaseRepository Delete method
+	err = r.Delete(ctx, pk, sk)
 	if err != nil {
-		r.logger.Error("failed to delete WebAuthn credential", zap.Error(err))
-		return fmt.Errorf("failed to delete WebAuthn credential: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	r.logger.Debug("deleted WebAuthn credential",
@@ -193,26 +194,27 @@ func (r *AuthRepository) UpdateWebAuthnLastUsed(ctx context.Context, credentialI
 		return err
 	}
 
-	// Construct the key
-	pk := "USER#" + credential.UserID
-	sk := "WEBAUTHN_CRED#" + credentialID
-
-	// Update using DynamORM
+	// Create model with updated fields
 	model := &models.WebAuthnCredential{
-		PK:         pk,
-		SK:         sk,
+		ID:         credentialID,
+		UserID:     credential.UserID,
 		LastUsedAt: time.Now(),
 		SignCount:  signCount,
+		// Preserve other fields from existing credential
+		PublicKey:       credential.PublicKey,
+		AttestationType: credential.AttestationType,
+		AAGUID:          credential.AAGUID,
+		CloneWarning:    credential.CloneWarning,
+		BackupEligible:  credential.BackupEligible,
+		BackupState:     credential.BackupState,
+		CreatedAt:       credential.CreatedAt,
+		Name:            credential.Name,
 	}
 
-	err = r.db.WithContext(ctx).Model(model).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Update()
-
+	// Use BaseRepository Update method
+	err = r.Update(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to update WebAuthn last used", zap.Error(err))
-		return fmt.Errorf("failed to update WebAuthn last used: %w", err)
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnCredential, credentialID)
 	}
 
 	r.logger.Debug("updated WebAuthn last used",
@@ -241,16 +243,10 @@ func (r *AuthRepository) CreateWebAuthnChallenge(ctx context.Context, challenge 
 		Type:      challenge.Type,
 	}
 
-	// BeforeCreate will set up keys and TTL
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare WebAuthn challenge: %w", err)
-	}
-
-	// Create the item
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use helper method for WebAuthnChallenge creation
+	err := r.createWebAuthnChallenge(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to create WebAuthn challenge", zap.Error(err))
-		return fmt.Errorf("failed to create WebAuthn challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWebAuthnChallenge, challenge.Challenge)
 	}
 
 	r.logger.Debug("created WebAuthn challenge",
@@ -267,26 +263,20 @@ func (r *AuthRepository) GetWebAuthnChallenge(ctx context.Context, challengeID s
 	pk := "CHALLENGE#" + challengeID
 	sk := "WEBAUTHN"
 
-	// Query for the item
-	var model models.WebAuthnChallenge
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
+	// Use helper method for WebAuthnChallenge retrieval
+	model, err := r.getWebAuthnChallenge(ctx, pk, sk)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("WebAuthn challenge not found")
+			return nil, ErrorHandler.HandleGetError(nil, EntityWebAuthnChallenge, challengeID)
 		}
-		r.logger.Error("failed to get WebAuthn challenge", zap.Error(err))
-		return nil, fmt.Errorf("failed to get WebAuthn challenge: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWebAuthnChallenge, challengeID)
 	}
 
 	// Check if expired
 	if time.Now().After(model.ExpiresAt) {
 		// Clean up expired challenge
 		_ = r.DeleteWebAuthnChallenge(ctx, challengeID)
-		return nil, fmt.Errorf("WebAuthn challenge expired")
+		return nil, ErrorHandler.HandleGetError(nil, EntityWebAuthnChallenge, challengeID)
 	}
 
 	// Convert to storage model
@@ -311,15 +301,10 @@ func (r *AuthRepository) DeleteWebAuthnChallenge(ctx context.Context, challengeI
 	pk := "CHALLENGE#" + challengeID
 	sk := "WEBAUTHN"
 
-	// Delete the item
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete()
-
+	// Use helper method for WebAuthnChallenge deletion
+	err := r.deleteWebAuthnChallenge(ctx, pk, sk)
 	if err != nil {
-		r.logger.Error("failed to delete WebAuthn challenge", zap.Error(err))
-		return fmt.Errorf("failed to delete WebAuthn challenge: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWebAuthnChallenge, challengeID)
 	}
 
 	r.logger.Debug("deleted WebAuthn challenge", zap.String("challenge", challengeID))
@@ -341,16 +326,18 @@ func (r *AuthRepository) StoreWalletCredential(ctx context.Context, credential *
 		LastUsed: credential.LastUsed,
 	}
 
-	// BeforeCreate will set up keys
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare wallet credential: %w", err)
+	// Set default timestamps
+	if model.LinkedAt.IsZero() {
+		model.LinkedAt = time.Now()
+	}
+	if model.LastUsed.IsZero() {
+		model.LastUsed = model.LinkedAt
 	}
 
-	// Create the item
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use helper method for WalletCredential creation
+	err := r.createWalletCredential(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to store wallet credential", zap.Error(err))
-		return fmt.Errorf("failed to store wallet credential: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWalletCredential, credential.Username)
 	}
 
 	// Also create a reverse index for wallet->user lookup
@@ -425,7 +412,7 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 			Scan(&modelList)
 
 		if err != nil || len(modelList) == 0 {
-			return nil, fmt.Errorf("wallet credential not found")
+			return nil, ErrorHandler.HandleGetError(nil, EntityWalletCredential, address)
 		}
 
 		model := modelList[0]
@@ -444,7 +431,7 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 	username := indexRecords[0].Username
 
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return nil, fmt.Errorf("invalid wallet index record")
+		return nil, ErrorHandler.HandleGetError(nil, EntityWalletCredential, address)
 	}
 
 	// Now get the actual wallet credential
@@ -458,7 +445,7 @@ func (r *AuthRepository) GetWalletByAddress(ctx context.Context, walletType, add
 		First(&model)
 
 	if err != nil {
-		return nil, fmt.Errorf("wallet credential not found: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletCredential, username)
 	}
 
 	return &storage.WalletCredential{
@@ -477,16 +464,11 @@ func (r *AuthRepository) GetUserWallets(ctx context.Context, username string) ([
 	// Construct the key prefix
 	pk := "USER#" + username
 
-	// Query for all wallet credentials
-	var modelList []models.WalletCredential
-	err := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
-		Where("PK", "=", pk).
-		Where("SK", "BEGINS_WITH", "WALLET#").
-		All(&modelList)
-
+	// Use queryWalletCredentials helper method
+	modelList, err := r.queryWalletCredentials(ctx, pk, "WALLET#", 0)
 	if err != nil {
 		r.logger.Error("failed to get user wallets", zap.Error(err))
-		return nil, fmt.Errorf("failed to get user wallets: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityWalletCredential, username)
 	}
 
 	// Convert to storage models
@@ -527,7 +509,7 @@ func (r *AuthRepository) DeleteWalletCredential(ctx context.Context, username, a
 
 	if err != nil {
 		r.logger.Error("failed to delete wallet credential", zap.Error(err))
-		return fmt.Errorf("failed to delete wallet credential: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWalletCredential, username)
 	}
 
 	// Also try to delete the reverse index (best effort)
@@ -576,16 +558,15 @@ func (r *AuthRepository) StoreWalletChallenge(ctx context.Context, challenge *st
 		ExpiresAt: challenge.ExpiresAt,
 	}
 
-	// BeforeCreate will set up keys and TTL
-	if err := model.BeforeCreate(); err != nil {
-		return fmt.Errorf("failed to prepare wallet challenge: %w", err)
+	// Set default timestamps
+	if model.IssuedAt.IsZero() {
+		model.IssuedAt = time.Now()
 	}
 
-	// Create the item
-	err := r.db.WithContext(ctx).Model(model).Create()
+	// Use helper method for WalletChallenge creation
+	err := r.createWalletChallenge(ctx, model)
 	if err != nil {
-		r.logger.Error("failed to store wallet challenge", zap.Error(err))
-		return fmt.Errorf("failed to store wallet challenge: %w", err)
+		return ErrorHandler.HandleCreateError(err, EntityWalletChallenge, challenge.ID)
 	}
 
 	r.logger.Debug("stored wallet challenge",
@@ -601,26 +582,20 @@ func (r *AuthRepository) GetWalletChallenge(ctx context.Context, challengeID str
 	pk := "WALLET_CHALLENGE#" + challengeID
 	sk := "CHALLENGE"
 
-	// Query for the item
-	var model models.WalletChallenge
-	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
+	// Use helper method for WalletChallenge retrieval
+	model, err := r.getWalletChallenge(ctx, pk, sk)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, fmt.Errorf("wallet challenge not found")
+			return nil, ErrorHandler.HandleGetError(nil, EntityWalletChallenge, challengeID)
 		}
-		r.logger.Error("failed to get wallet challenge", zap.Error(err))
-		return nil, fmt.Errorf("failed to get wallet challenge: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, EntityWalletChallenge, challengeID)
 	}
 
 	// Check if expired
 	if time.Now().After(model.ExpiresAt) {
 		// Clean up expired challenge
 		_ = r.DeleteWalletChallenge(ctx, challengeID)
-		return nil, fmt.Errorf("wallet challenge expired")
+		return nil, ErrorHandler.HandleGetError(nil, EntityWalletChallenge, challengeID)
 	}
 
 	// Convert to storage model
@@ -648,15 +623,10 @@ func (r *AuthRepository) DeleteWalletChallenge(ctx context.Context, challengeID 
 	pk := "WALLET_CHALLENGE#" + challengeID
 	sk := "CHALLENGE"
 
-	// Delete the item
-	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete()
-
+	// Use helper method for WalletChallenge deletion
+	err := r.deleteWalletChallenge(ctx, pk, sk)
 	if err != nil {
-		r.logger.Error("failed to delete wallet challenge", zap.Error(err))
-		return fmt.Errorf("failed to delete wallet challenge: %w", err)
+		return ErrorHandler.HandleDeleteError(err, EntityWalletChallenge, challengeID)
 	}
 
 	r.logger.Debug("deleted wallet challenge", zap.String("challenge_id", challengeID))
@@ -718,7 +688,7 @@ func (r *AuthRepository) createReverseIndexWithRetry(ctx context.Context, indexM
 		}
 	}
 
-	return fmt.Errorf("unexpected end of retry loop")
+	return ErrorHandler.HandleCreateError(nil, EntityWalletCredential, "retry")
 }
 
 // isRecoverableIndexError determines if an index creation error is worth retrying
@@ -760,4 +730,310 @@ func (r *AuthRepository) isRecoverableIndexError(err error) bool {
 
 	// Default to recoverable for unknown errors (be optimistic)
 	return true
+}
+
+// === TYPED HELPER METHODS FOR NON-PRIMARY MODELS ===
+// These methods provide type-safe operations for models other than WebAuthnCredential
+
+// createWebAuthnChallenge creates a WebAuthnChallenge using proper typing
+func (r *AuthRepository) createWebAuthnChallenge(ctx context.Context, model *models.WebAuthnChallenge) error {
+	// Update keys before saving
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnChallenge, "keys")
+	}
+
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_createChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create challenge operation cost",
+					zap.String("challenge", model.Challenge),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	// Create the item
+	err := r.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		r.logger.Error("failed to create WebAuthn challenge",
+			zap.Error(err),
+			zap.String("challenge", model.Challenge))
+		return err
+	}
+
+	return nil
+}
+
+// getWebAuthnChallenge retrieves a WebAuthnChallenge by keys
+func (r *AuthRepository) getWebAuthnChallenge(ctx context.Context, pk, sk string) (*models.WebAuthnChallenge, error) {
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "GetItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  1,
+			ConsumedWriteUnits: 0,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_getChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB get challenge operation cost",
+					zap.String("pk", pk),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	var model models.WebAuthnChallenge
+	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&model)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &model, nil
+}
+
+// deleteWebAuthnChallenge deletes a WebAuthnChallenge by keys
+func (r *AuthRepository) deleteWebAuthnChallenge(ctx context.Context, pk, sk string) error {
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "DeleteItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_deleteChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB delete challenge operation cost",
+					zap.String("pk", pk),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+
+	if err != nil {
+		r.logger.Error("failed to delete WebAuthn challenge",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.String("sk", sk))
+		return err
+	}
+
+	return nil
+}
+
+// createWalletCredential creates a WalletCredential using proper typing
+func (r *AuthRepository) createWalletCredential(ctx context.Context, model *models.WalletCredential) error {
+	// Update keys before saving
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityWalletCredential, "keys")
+	}
+
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_createWallet_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create wallet operation cost",
+					zap.String("username", model.Username),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	// Create the item
+	err := r.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		r.logger.Error("failed to create wallet credential",
+			zap.Error(err),
+			zap.String("username", model.Username),
+			zap.String("address", model.Address))
+		return err
+	}
+
+	return nil
+}
+
+// createWalletChallenge creates a WalletChallenge using proper typing
+func (r *AuthRepository) createWalletChallenge(ctx context.Context, model *models.WalletChallenge) error {
+	// Update keys before saving
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, EntityWalletChallenge, "keys")
+	}
+
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "PutItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_createWalletChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB create wallet challenge operation cost",
+					zap.String("challenge_id", model.ID),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	// Create the item
+	err := r.db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		r.logger.Error("failed to create wallet challenge",
+			zap.Error(err),
+			zap.String("challenge_id", model.ID))
+		return err
+	}
+
+	return nil
+}
+
+// queryWalletCredentials queries wallet credentials with SK prefix
+func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefix string, limit int) ([]models.WalletCredential, error) {
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "Query",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  1, // Will be updated based on actual results
+			ConsumedWriteUnits: 0,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_queryWallets_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB wallet query operation cost",
+					zap.String("pk", pk),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	var modelList []models.WalletCredential
+	query := r.db.WithContext(ctx).Model(&models.WalletCredential{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", skPrefix)
+
+	if limit > 0 {
+		query = query.Limit(limit)
+	}
+
+	err := query.All(&modelList)
+	if err != nil {
+		return nil, err
+	}
+
+	return modelList, nil
+}
+
+// getWalletChallenge retrieves a WalletChallenge by keys
+func (r *AuthRepository) getWalletChallenge(ctx context.Context, pk, sk string) (*models.WalletChallenge, error) {
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "GetItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  1,
+			ConsumedWriteUnits: 0,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_getWalletChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB get wallet challenge operation cost",
+					zap.String("pk", pk),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	var model models.WalletChallenge
+	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&model)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &model, nil
+}
+
+// deleteWalletChallenge deletes a WalletChallenge by keys
+func (r *AuthRepository) deleteWalletChallenge(ctx context.Context, pk, sk string) error {
+	// Track cost if available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "DeleteItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: 1,
+			ItemCount:          1,
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("AuthRepository_deleteWalletChallenge_%d", time.Now().UnixNano()),
+		}
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB delete wallet challenge operation cost",
+					zap.String("pk", pk),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		Delete()
+
+	if err != nil {
+		r.logger.Error("failed to delete wallet challenge",
+			zap.Error(err),
+			zap.String("pk", pk),
+			zap.String("sk", sk))
+		return err
+	}
+
+	return nil
 }

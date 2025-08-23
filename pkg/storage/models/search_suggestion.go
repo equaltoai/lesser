@@ -22,7 +22,18 @@ type SearchSuggestion struct {
 }
 
 // UpdateKeys updates the partition and sort keys based on the model's attributes
-func (s *SearchSuggestion) UpdateKeys() {
+func (s *SearchSuggestion) UpdateKeys() error {
 	s.PK = fmt.Sprintf("SEARCH_SUGGEST#%s", s.Type)
 	s.SK = s.Term
+	return nil
+}
+
+// GetPK returns the partition key
+func (s *SearchSuggestion) GetPK() string {
+	return s.PK
+}
+
+// GetSK returns the sort key
+func (s *SearchSuggestion) GetSK() string {
+	return s.SK
 }

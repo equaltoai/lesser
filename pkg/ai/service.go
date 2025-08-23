@@ -982,13 +982,13 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 
 	// Only allow HTTP/HTTPS schemes
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-		return "", fmt.Errorf("invalid URL scheme: %s (only http/https allowed)", parsedURL.Scheme)
+		return "", fmt.Errorf("%w: %s (only http/https allowed)", ErrInvalidURLScheme, parsedURL.Scheme)
 	}
 
 	// Prevent local network access
 	if parsedURL.Host == "localhost" || parsedURL.Host == "127.0.0.1" || strings.HasPrefix(parsedURL.Host, "10.") ||
 		strings.HasPrefix(parsedURL.Host, "192.168.") || strings.HasPrefix(parsedURL.Host, "172.") {
-		return "", fmt.Errorf("access to local networks not allowed")
+		return "", ErrLocalNetworkAccess
 	}
 
 	// Download the image using the validated URL
@@ -1003,7 +1003,7 @@ func (s *AIService) uploadImageToS3(ctx context.Context, imageURL string) (strin
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to download image: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("%w: HTTP %d", ErrImageDownloadHTTP, resp.StatusCode)
 	}
 
 	// Generate unique S3 key for the image
@@ -1223,17 +1223,17 @@ func (s *AIService) GenerateEmbedding(ctx context.Context, text string) ([]float
 		return vector, nil
 	}
 
-	return nil, fmt.Errorf("invalid embedding response format")
+	return nil, ErrInvalidEmbeddingResponse
 }
 
 // GetAnalysis is deprecated - use the service layer for retrieval
 func (s *AIService) GetAnalysis(_ context.Context, _ string) (*AIAnalysis, error) {
 	// This functionality is now in pkg/services/ai
-	return nil, fmt.Errorf("GetAnalysis is deprecated - use service layer")
+	return nil, ErrGetAnalysisDeprecated
 }
 
 // GetAnalysisStats is deprecated - use the service layer for statistics
 func (s *AIService) GetAnalysisStats(_ context.Context, _ string) (*AIStats, error) {
 	// This functionality is now in pkg/services/ai
-	return nil, fmt.Errorf("GetAnalysisStats is deprecated - use service layer")
+	return nil, ErrGetAnalysisStatsDeprecated
 }

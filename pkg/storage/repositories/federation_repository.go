@@ -3,22 +3,24 @@ package repositories
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	appConfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
-	"github.com/pay-theory/dynamorm/pkg/errors"
+	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -30,15 +32,20 @@ const (
 
 // FederationRepository implements federation tracking operations using DynamORM
 type FederationRepository struct {
+	*BaseRepository[*models.FederationCostActivity]
 	db     core.DB
 	logger *zap.Logger
+	cfg    *appConfig.Config
 }
 
 // NewFederationRepository creates a new federation repository
-func NewFederationRepository(db core.DB, logger *zap.Logger) *FederationRepository {
+func NewFederationRepository(db core.DB, logger *zap.Logger, cfg *appConfig.Config) *FederationRepository {
 	return &FederationRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.FederationCostActivity](
+			db, storage.MainTableName, logger, nil, "FederationRepository"),
 		db:     db,
 		logger: logger,
+		cfg:    cfg,
 	}
 }
 
@@ -56,13 +63,13 @@ func (r *FederationRepository) GetInstanceInfo(ctx context.Context, domain strin
 		First(&instance)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
 		r.logger.Error("Failed to get instance info",
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance info: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance info", domain)
 	}
 
 	// Convert to storage type
@@ -105,7 +112,7 @@ func (r *FederationRepository) UpsertInstanceInfo(ctx context.Context, info *sto
 		r.logger.Error("Failed to upsert instance info",
 			zap.String("domain", info.Domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to upsert instance info: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance info", info.Domain)
 	}
 
 	return nil
@@ -124,7 +131,7 @@ func (r *FederationRepository) GetKnownInstances(ctx context.Context, limit int,
 		r.logger.Error("Failed to query known instances",
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query known instances: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "instance", "known instances")
 	}
 
 	// Convert to storage types
@@ -167,7 +174,7 @@ func (r *FederationRepository) GetFederationStatistics(ctx context.Context, star
 			zap.Time("start", startTime),
 			zap.Time("end", endTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query federation statistics: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation", "statistics")
 	}
 
 	// Aggregate statistics
@@ -194,7 +201,7 @@ func (r *FederationRepository) GetInstanceStats(ctx context.Context, domain stri
 	// Get instance info
 	instanceInfo, err := r.GetInstanceInfo(ctx, domain)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance info: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance info", domain)
 	}
 
 	// Get recent activities for error rate calculation
@@ -282,17 +289,14 @@ func (r *FederationRepository) RecordFederationActivity(ctx context.Context, act
 		Timestamp:    activity.Timestamp,
 	}
 
-	// Update keys
-	fedActivity.UpdateKeys()
-
-	// Store the activity
-	err := r.db.WithContext(ctx).Model(fedActivity).Create()
+	// Store the activity using BaseRepository
+	err := r.Create(ctx, fedActivity)
 	if err != nil {
 		r.logger.Error("Failed to record federation activity",
 			zap.String("domain", activity.Domain),
 			zap.String("type", activity.Type),
 			zap.Error(err))
-		return fmt.Errorf("failed to record federation activity: %w", err)
+		return ErrorHandler.HandleCreateError(err, "federation activity", activity.ID)
 	}
 
 	// Update aggregated costs asynchronously
@@ -317,7 +321,7 @@ func (r *FederationRepository) GetFederationCosts(ctx context.Context, startTime
 			zap.Time("start", startTime),
 			zap.Time("end", endTime),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query federation costs: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "federation", "costs")
 	}
 
 	// Convert to storage types
@@ -368,7 +372,7 @@ func (r *FederationRepository) GetInstanceHealthReport(ctx context.Context, doma
 			zap.String("domain", domain),
 			zap.Duration("period", period),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query instance activities: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation", "instance activities")
 	}
 
 	// Calculate metrics
@@ -449,7 +453,7 @@ func (r *FederationRepository) GetCostProjections(ctx context.Context, period st
 		r.logger.Error("Failed to query current costs",
 			zap.String("period", period),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query current costs: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation", "current costs")
 	}
 
 	// Calculate current total cost
@@ -466,10 +470,10 @@ func (r *FederationRepository) GetCostProjections(ctx context.Context, period st
 	projectedCost := currentCost * (1 + growthRate)
 
 	// Identify top cost drivers
-	topDrivers := []storage.CostDriver{}
+	topDrivers := []storage.Driver{}
 
 	for domain, cost := range domainCosts {
-		driver := storage.CostDriver{
+		driver := storage.Driver{
 			Type:           "Federation Traffic",
 			Domain:         domain,
 			Cost:           cost,
@@ -518,7 +522,7 @@ func (r *FederationRepository) GetFederationNodes(ctx context.Context, depth int
 		r.logger.Error("Failed to query federation nodes",
 			zap.Int("depth", depth),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query federation nodes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation", "nodes")
 	}
 
 	// Convert to storage types
@@ -569,7 +573,7 @@ func (r *FederationRepository) GetFederationNodesByHealth(ctx context.Context, h
 			zap.String("health", healthStatus),
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query federation nodes by health: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation", "nodes by health")
 	}
 
 	// Filter by health status after retrieval (since health is not indexed)
@@ -628,7 +632,7 @@ func (r *FederationRepository) GetFederationEdges(ctx context.Context, domains [
 					First(&edge)
 
 				if err != nil {
-					if !errors.IsNotFound(err) {
+					if !dynamormErrors.IsNotFound(err) {
 						r.logger.Debug("Failed to get edge",
 							zap.String("source", source),
 							zap.String("target", target),
@@ -670,13 +674,13 @@ func (r *FederationRepository) GetInstanceMetadata(ctx context.Context, domain s
 		First(&metadata)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
 		r.logger.Error("Failed to get instance metadata",
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get instance metadata: %w", err)
+		return nil, ErrorHandler.HandleGetError(err, "instance metadata", domain)
 	}
 
 	// Convert to storage type
@@ -709,9 +713,9 @@ func (r *FederationRepository) CalculateFederationClusters(ctx context.Context) 
 		Limit(50). // Limit to 50 clusters
 		Scan(&clusters)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormErrors.IsNotFound(err) {
 		r.logger.Error("Failed to query federation clusters", zap.Error(err))
-		return nil, fmt.Errorf("failed to query federation clusters: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation clusters", "cluster calculation")
 	}
 
 	// If no pre-calculated clusters or very few, compute them
@@ -748,7 +752,7 @@ func (r *FederationRepository) computeFederationClusters(ctx context.Context) ([
 	// Get all active federation nodes
 	nodes, err := r.GetFederationNodes(ctx, 1)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get federation nodes: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation nodes", "active nodes")
 	}
 
 	if err := common.ValidateSliceNotEmpty("nodes", nodes); err != nil {
@@ -1018,7 +1022,7 @@ func (r *FederationRepository) GetInstanceConnections(ctx context.Context, domai
 			zap.String("domain", domain),
 			zap.String("connectionType", connectionType),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query instance connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "instance connections", "connection query")
 	}
 
 	// Convert to storage types
@@ -1051,7 +1055,7 @@ func (r *FederationRepository) updateAggregatedCosts(ctx context.Context, activi
 		Where("SK", "=", sk).
 		First(&cost)
 
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !dynamormErrors.IsNotFound(err) {
 		r.logger.Error("Failed to get existing cost record",
 			zap.String("domain", activity.Domain),
 			zap.Error(err))
@@ -1059,7 +1063,7 @@ func (r *FederationRepository) updateAggregatedCosts(ctx context.Context, activi
 	}
 
 	// Initialize if not found
-	if errors.IsNotFound(err) {
+	if dynamormErrors.IsNotFound(err) {
 		cost = models.FederationCost{
 			Domain:      activity.Domain,
 			Period:      "monthly",
@@ -1122,14 +1126,14 @@ func (r *FederationRepository) AcknowledgeSeverance(ctx context.Context, userID,
 		First(&severance)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
 		r.logger.Error("Failed to get severance record",
 			zap.String("user_id", userID),
 			zap.String("domain", domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to get severance record: %w", err)
+		return ErrorHandler.HandleGetError(err, "severance record", "instance severance")
 	}
 
 	// Update acknowledged status
@@ -1143,7 +1147,7 @@ func (r *FederationRepository) AcknowledgeSeverance(ctx context.Context, userID,
 			zap.String("user_id", userID),
 			zap.String("domain", domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to acknowledge severance: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "severance acknowledgment", "instance severance")
 	}
 
 	r.logger.Info("Severance acknowledged",
@@ -1182,7 +1186,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 			zap.String("user_id", userID),
 			zap.String("domain", domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to record reconnection attempt: %w", err)
+		return ErrorHandler.HandleCreateError(err, "reconnection attempt", "instance reconnection")
 	}
 
 	// Implement comprehensive reconnection logic
@@ -1216,7 +1220,7 @@ func (r *FederationRepository) AttemptReconnection(ctx context.Context, userID, 
 
 	// Return the reconnection result
 	if reconnectErr != nil {
-		return fmt.Errorf("reconnection failed: %w", reconnectErr)
+		return ErrorHandler.HandleUpdateError(reconnectErr, "federation reconnection", "instance reconnection")
 	}
 
 	r.logger.Info("Reconnection attempt recorded",
@@ -1233,25 +1237,25 @@ func (r *FederationRepository) performReconnection(ctx context.Context, attempt 
 	// Phase 1: Basic connectivity test with exponential backoff
 	connectErr := r.performConnectivityTest(ctx, domain)
 	if connectErr != nil {
-		return fmt.Errorf("connectivity test failed: %w", connectErr)
+		return ErrorHandler.HandleQueryError(connectErr, "connectivity test", "connection verification")
 	}
 
 	// Phase 2: NodeInfo verification to confirm ActivityPub support
 	nodeInfoErr := r.verifyNodeInfo(ctx, domain)
 	if nodeInfoErr != nil {
-		return fmt.Errorf("nodeinfo verification failed: %w", nodeInfoErr)
+		return ErrorHandler.HandleQueryError(nodeInfoErr, "nodeinfo verification", "instance metadata")
 	}
 
 	// Phase 3: WebFinger resolution test
 	webfingerErr := r.testWebFingerResolution(ctx, domain)
 	if webfingerErr != nil {
-		return fmt.Errorf("webfinger resolution failed: %w", webfingerErr)
+		return ErrorHandler.HandleQueryError(webfingerErr, "webfinger resolution", "actor discovery")
 	}
 
 	// Phase 4: Update federation instance status
 	updateErr := r.updateFederationInstanceStatus(ctx, domain)
 	if updateErr != nil {
-		return fmt.Errorf("failed to update instance status: %w", updateErr)
+		return ErrorHandler.HandleUpdateError(updateErr, "instance status", "federation instance")
 	}
 
 	r.logger.Info("All reconnection phases completed successfully",
@@ -1272,7 +1276,7 @@ func (r *FederationRepository) performConnectivityTest(ctx context.Context, doma
 		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
 			// Limit redirects to prevent infinite loops
 			if len(via) >= 5 {
-				return fmt.Errorf("too many redirects")
+				return ErrorHandler.HandleQueryError(errors.New("too many redirects"), EntityConnectivityTest, "redirect limit exceeded")
 			}
 			return nil
 		},
@@ -1284,14 +1288,14 @@ func (r *FederationRepository) performConnectivityTest(ctx context.Context, doma
 
 	req, err := http.NewRequestWithContext(ctx, "HEAD", testURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return ErrorHandler.HandleQueryError(err, "connectivity test", "request creation")
 	}
 
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("connection failed: %w", err)
+		return ErrorHandler.HandleQueryError(err, "connectivity test", "network connection")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1303,7 +1307,7 @@ func (r *FederationRepository) performConnectivityTest(ctx context.Context, doma
 		zap.Duration("response_time", responseTime))
 
 	if resp.StatusCode >= 500 {
-		return fmt.Errorf("server error: HTTP %d", resp.StatusCode)
+		return ErrorHandler.HandleQueryError(errors.New("server error: HTTP "+strconv.Itoa(resp.StatusCode)), EntityConnectivityTest, "server response")
 	}
 
 	return nil
@@ -1320,7 +1324,7 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 	nodeInfoURL := fmt.Sprintf("https://%s/.well-known/nodeinfo", domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", nodeInfoURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create nodeinfo request: %w", err)
+		return ErrorHandler.HandleQueryError(err, "nodeinfo verification", "request creation")
 	}
 
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
@@ -1328,12 +1332,12 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("nodeinfo request failed: %w", err)
+		return ErrorHandler.HandleQueryError(err, "nodeinfo verification", "network request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("nodeinfo not available: HTTP %d", resp.StatusCode)
+		return ErrorHandler.HandleQueryError(errors.New("nodeinfo not available: HTTP "+strconv.Itoa(resp.StatusCode)), EntityNodeInfo, "server response")
 	}
 
 	// Parse nodeinfo links to verify ActivityPub support
@@ -1346,12 +1350,12 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to read nodeinfo response: %w", err)
+		return ErrorHandler.HandleQueryError(err, "nodeinfo verification", "response reading")
 	}
 
 	err = json.Unmarshal(body, &nodeInfo)
 	if err != nil {
-		return fmt.Errorf("failed to parse nodeinfo: %w", err)
+		return ErrorHandler.HandleQueryError(err, "nodeinfo verification", "JSON parsing")
 	}
 
 	// Look for NodeInfo 2.0 or 2.1 link
@@ -1365,7 +1369,7 @@ func (r *FederationRepository) verifyNodeInfo(ctx context.Context, domain string
 	}
 
 	if err := common.ValidateRequiredParam("nodeInfoEndpoint", nodeInfoEndpoint); err != nil {
-		return fmt.Errorf("no supported nodeinfo version found")
+		return ErrorHandler.HandleQueryError(errors.New("no supported nodeinfo version found"), EntityNodeInfo, "version compatibility")
 	}
 
 	r.logger.Debug("NodeInfo verification successful",
@@ -1387,7 +1391,7 @@ func (r *FederationRepository) testWebFingerResolution(ctx context.Context, doma
 	webfingerURL := fmt.Sprintf("https://%s/.well-known/webfinger?resource=acct:test@%s", domain, domain)
 	req, err := http.NewRequestWithContext(ctx, "GET", webfingerURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create webfinger request: %w", err)
+		return ErrorHandler.HandleQueryError(err, "webfinger resolution", "request creation")
 	}
 
 	req.Header.Set("User-Agent", "Lesser/1.0 (ActivityPub)")
@@ -1395,13 +1399,13 @@ func (r *FederationRepository) testWebFingerResolution(ctx context.Context, doma
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("webfinger request failed: %w", err)
+		return ErrorHandler.HandleQueryError(err, "webfinger resolution", "network request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// 404 is acceptable for test account, 200 indicates working WebFinger
 	if resp.StatusCode != 200 && resp.StatusCode != 404 {
-		return fmt.Errorf("webfinger endpoint error: HTTP %d", resp.StatusCode)
+		return ErrorHandler.HandleQueryError(errors.New("webfinger endpoint error: HTTP "+strconv.Itoa(resp.StatusCode)), EntityWebFinger, "server response")
 	}
 
 	r.logger.Debug("WebFinger test completed",
@@ -1422,12 +1426,12 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 		Where("SK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		First(&instance)
 
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("failed to query instance record: %w", err)
+	if err != nil && !dynamormErrors.IsNotFound(err) {
+		return ErrorHandler.HandleQueryError(err, "instance record", "instance lookup")
 	}
 
 	// Update or create instance record
-	if errors.IsNotFound(err) {
+	if dynamormErrors.IsNotFound(err) {
 		// Create new instance record
 		instance = models.FederationInstance{
 			Domain:        domain,
@@ -1449,7 +1453,7 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 	// Save the instance record
 	err = r.db.WithContext(ctx).Model(&instance).Create()
 	if err != nil {
-		return fmt.Errorf("failed to save instance record: %w", err)
+		return ErrorHandler.HandleCreateError(err, "instance record", "federation instance")
 	}
 
 	r.logger.Info("Federation instance status updated",
@@ -1462,8 +1466,8 @@ func (r *FederationRepository) updateFederationInstanceStatus(ctx context.Contex
 // GetUserSeveredRelationships returns all severed relationships for a user
 func (r *FederationRepository) GetUserSeveredRelationships(ctx context.Context, userID string) ([]*storage.SeveredRelationship, error) {
 	return QueryWithPKAndSKPrefix(
-		&QueryUtils{db: r.db, logger: r.logger},
 		ctx,
+		&QueryUtils{db: r.db, logger: r.logger},
 		func() *models.FederationSeverance { return &models.FederationSeverance{} },
 		fmt.Sprintf("USER#%s", userID),
 		"SEVERANCE#",
@@ -1501,7 +1505,7 @@ func (r *FederationRepository) GetAffectedRelationships(ctx context.Context, use
 			zap.String("user_id", userID),
 			zap.String("domain", domain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query affected relationships: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "affected relationships", "relationship impact")
 	}
 
 	// Filter for the specific domain and convert to storage type
@@ -1548,7 +1552,7 @@ func (r *FederationRepository) TrackFederationIssue(ctx context.Context, domain,
 			zap.String("domain", domain),
 			zap.String("issue_type", issueType),
 			zap.Error(err))
-		return fmt.Errorf("failed to track federation issue: %w", err)
+		return ErrorHandler.HandleCreateError(err, "federation issue", "issue tracking")
 	}
 
 	r.logger.Warn("Federation issue tracked",
@@ -1577,7 +1581,7 @@ func (r *FederationRepository) GetRecentInstanceConnections(ctx context.Context,
 			zap.String("domain", domain),
 			zap.Duration("since", since),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query recent connections: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "recent connections", "connection history")
 	}
 
 	// Filter by cutoff time and convert to storage types
@@ -1637,7 +1641,7 @@ func (r *FederationRepository) UpdateFederationNode(ctx context.Context, node *s
 		r.logger.Error("Failed to update federation node",
 			zap.String("domain", node.Domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to update federation node: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "federation node", "node statistics")
 	}
 
 	// Also create a health index item for efficient health-based queries
@@ -1680,7 +1684,7 @@ func (r *FederationRepository) UpdateFederationEdge(ctx context.Context, edge *s
 			zap.String("source", edge.SourceDomain),
 			zap.String("target", edge.TargetDomain),
 			zap.Error(err))
-		return fmt.Errorf("failed to update federation edge: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "federation edge", "connection statistics")
 	}
 
 	// Also create a volume index item for efficient volume-based queries
@@ -1726,7 +1730,7 @@ func (r *FederationRepository) UpdateInstanceMetadata(ctx context.Context, metad
 		r.logger.Error("Failed to update instance metadata",
 			zap.String("domain", metadata.Domain),
 			zap.Error(err))
-		return fmt.Errorf("failed to update instance metadata: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "instance metadata", "federation instance")
 	}
 
 	return nil
@@ -1769,7 +1773,7 @@ func (r *FederationRepository) StoreFederationTimeSeries(ctx context.Context, da
 			zap.String("domain", data.Domain),
 			zap.String("period", data.Period),
 			zap.Error(err))
-		return fmt.Errorf("failed to store time series data: %w", err)
+		return ErrorHandler.HandleCreateError(err, "time series data", "federation metrics")
 	}
 
 	return nil
@@ -1805,7 +1809,7 @@ func (r *FederationRepository) StoreInstanceCluster(ctx context.Context, cluster
 		r.logger.Error("Failed to store cluster",
 			zap.String("cluster_id", cluster.ClusterID),
 			zap.Error(err))
-		return fmt.Errorf("failed to store cluster: %w", err)
+		return ErrorHandler.HandleCreateError(err, "federation cluster", "cluster data")
 	}
 
 	return nil
@@ -1835,7 +1839,7 @@ func (r *FederationRepository) CreateSeveredRelationship(ctx context.Context, re
 			zap.String("remote", rel.RemoteInstance),
 			zap.String("reason", string(rel.Reason)),
 			zap.Error(err))
-		return fmt.Errorf("failed to create severed relationship: %w", err)
+		return ErrorHandler.HandleCreateError(err, "severed relationship", "federation severance")
 	}
 
 	// Log the severance
@@ -1867,7 +1871,7 @@ func (r *FederationRepository) GetSeveredRelationships(ctx context.Context, loca
 			zap.String("local_instance", localInstance),
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to query severed relationships: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "severed relationships", "relationship lookup")
 	}
 
 	// Convert to pointer slice
@@ -1900,11 +1904,11 @@ func (r *FederationRepository) GetSeveredRelationship(ctx context.Context, local
 			zap.String("local", localInstance),
 			zap.String("remote", remoteInstance),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query severed relationship: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "severed relationship", "relationship query")
 	}
 
 	if err := common.ValidateSliceNotEmpty("relationships", relationships); err != nil {
-		return nil, fmt.Errorf("no severed relationship found between %s and %s", localInstance, remoteInstance)
+		return nil, ErrorHandler.HandleGetError(errors.New("no severed relationship found between "+localInstance+" and "+remoteInstance), EntitySeveredRelationship, localInstance+"-"+remoteInstance)
 	}
 
 	return &relationships[0], nil
@@ -1928,7 +1932,7 @@ func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, re
 		First(&existing)
 
 	if err != nil {
-		return fmt.Errorf("failed to find relationship to update: %w", err)
+		return ErrorHandler.HandleGetError(err, "severed relationship", "relationship update target")
 	}
 
 	// Update fields
@@ -1944,7 +1948,7 @@ func (r *FederationRepository) UpdateSeveredRelationship(ctx context.Context, re
 			zap.String("pk", rel.PK),
 			zap.String("sk", rel.SK),
 			zap.Error(err))
-		return fmt.Errorf("failed to update severed relationship: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "severed relationship", "relationship status")
 	}
 
 	return nil
@@ -1966,7 +1970,7 @@ func (r *FederationRepository) RecordAffectedFollow(ctx context.Context, localIn
 	// Get the current relationship
 	rel, err := r.GetSeveredRelationship(ctx, localInstance, remoteInstance)
 	if err != nil {
-		return fmt.Errorf("failed to get severed relationship: %w", err)
+		return ErrorHandler.HandleGetError(err, "severed relationship", "acknowledgment lookup")
 	}
 
 	// Add the affected follow
@@ -1980,7 +1984,7 @@ func (r *FederationRepository) RecordAffectedFollow(ctx context.Context, localIn
 			zap.String("local", localInstance),
 			zap.String("remote", remoteInstance),
 			zap.Error(err))
-		return fmt.Errorf("failed to update severed relationship: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "severed relationship", "acknowledgment update")
 	}
 
 	return nil
@@ -1991,11 +1995,11 @@ func (r *FederationRepository) ReverseSeverance(ctx context.Context, localInstan
 	// Get the current relationship
 	rel, err := r.GetSeveredRelationship(ctx, localInstance, remoteInstance)
 	if err != nil {
-		return fmt.Errorf("failed to get severed relationship: %w", err)
+		return ErrorHandler.HandleGetError(err, "severed relationship", "reversibility check")
 	}
 
 	if !rel.Reversible {
-		return fmt.Errorf("severed relationship is not reversible")
+		return ErrorHandler.HandleUpdateError(errors.New("severed relationship is not reversible"), EntitySeveredRelationship, "reversibility constraint")
 	}
 
 	// Create a new "restored" entry
@@ -2021,7 +2025,7 @@ func (r *FederationRepository) ReverseSeverance(ctx context.Context, localInstan
 			zap.String("local", localInstance),
 			zap.String("remote", remoteInstance),
 			zap.Error(err))
-		return fmt.Errorf("failed to create restored relationship entry: %w", err)
+		return ErrorHandler.HandleCreateError(err, "restored relationship entry", "relationship restoration")
 	}
 
 	r.logger.Info("Severed relationship restored",
@@ -2045,7 +2049,7 @@ func (r *FederationRepository) GetSeveranceHistory(ctx context.Context, localIns
 			zap.String("local", localInstance),
 			zap.String("remote", remoteInstance),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query severance history: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "severance history", "historical lookup")
 	}
 
 	// Convert to pointer slice
@@ -2106,12 +2110,12 @@ func (r *FederationRepository) RecordDeliveryAttempt(ctx context.Context, activi
 		delivery = &existing
 		delivery.Attempts++
 		delivery.LastAttempt = now
-	} else if !errors.IsNotFound(err) {
+	} else if !dynamormErrors.IsNotFound(err) {
 		r.logger.Error("Failed to check existing delivery status",
 			zap.String("activity_id", activityID),
 			zap.String("target_domain", targetDomain),
 			zap.Error(err))
-		return fmt.Errorf("failed to check existing delivery status: %w", err)
+		return ErrorHandler.HandleQueryError(err, "delivery status", "status check")
 	} else {
 		// New delivery record
 		delivery.Attempts = 1
@@ -2150,7 +2154,7 @@ func (r *FederationRepository) RecordDeliveryAttempt(ctx context.Context, activi
 			zap.String("target_domain", targetDomain),
 			zap.Bool("success", success),
 			zap.Error(err))
-		return fmt.Errorf("failed to record delivery attempt: %w", err)
+		return ErrorHandler.HandleCreateError(err, "delivery attempt", "activity delivery")
 	}
 
 	r.logger.Info("Recorded delivery attempt",
@@ -2172,14 +2176,14 @@ func (r *FederationRepository) GetDeliveryStatus(ctx context.Context, activityID
 		First(&delivery)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return nil, storage.ErrNotFound
 		}
 		r.logger.Error("Failed to get delivery status",
 			zap.String("activity_id", activityID),
 			zap.String("target_domain", targetDomain),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get delivery status: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "delivery status", "status retrieval")
 	}
 
 	// Convert to storage type
@@ -2212,7 +2216,7 @@ func (r *FederationRepository) ListFailedDeliveries(ctx context.Context, limit i
 		r.logger.Error("Failed to list failed deliveries",
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to list failed deliveries: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "failed deliveries", "delivery listing")
 	}
 
 	// Convert to storage types
@@ -2244,14 +2248,14 @@ func (r *FederationRepository) RetryDelivery(ctx context.Context, activityID, ta
 		First(&delivery)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			return fmt.Errorf("delivery not found for activity %s to %s", activityID, targetDomain)
+		if dynamormErrors.IsNotFound(err) {
+			return ErrorHandler.HandleGetError(errors.New("delivery not found for activity "+activityID+" to "+targetDomain), EntityDeliveryRecord, activityID+"-"+targetDomain)
 		}
 		r.logger.Error("Failed to get delivery for retry",
 			zap.String("activity_id", activityID),
 			zap.String("target_domain", targetDomain),
 			zap.Error(err))
-		return fmt.Errorf("failed to get delivery for retry: %w", err)
+		return ErrorHandler.HandleGetError(err, "delivery record", "retry preparation")
 	}
 
 	// Update for immediate retry
@@ -2268,7 +2272,7 @@ func (r *FederationRepository) RetryDelivery(ctx context.Context, activityID, ta
 			zap.String("activity_id", activityID),
 			zap.String("target_domain", targetDomain),
 			zap.Error(err))
-		return fmt.Errorf("failed to update delivery for retry: %w", err)
+		return ErrorHandler.HandleUpdateError(err, "delivery record", "retry scheduling")
 	}
 
 	r.logger.Info("Marked delivery for retry",
@@ -2315,7 +2319,7 @@ func (r *FederationRepository) AddToInbox(ctx context.Context, actorID string, a
 			zap.String("actor_id", actorID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add activity to inbox: %w", err)
+		return ErrorHandler.HandleCreateError(err, "inbox activity", "activity ingestion")
 	}
 
 	r.logger.Info("Added activity to inbox",
@@ -2357,7 +2361,7 @@ func (r *FederationRepository) getActivitiesFromBoxItems(
 				zap.String("actor_id", actorID),
 				zap.Int("limit", limit),
 				zap.Error(err))
-			return nil, "", fmt.Errorf("failed to get inbox items: %w", err)
+			return nil, "", ErrorHandler.HandleQueryError(err, "inbox items", "inbox retrieval")
 		}
 
 		// Extract activities
@@ -2378,7 +2382,7 @@ func (r *FederationRepository) getActivitiesFromBoxItems(
 				zap.String("actor_id", actorID),
 				zap.Int("limit", limit),
 				zap.Error(err))
-			return nil, "", fmt.Errorf("failed to get public outbox items: %w", err)
+			return nil, "", ErrorHandler.HandleQueryError(err, "outbox items", "public outbox retrieval")
 		}
 
 		// Extract activities
@@ -2424,7 +2428,7 @@ func (r *FederationRepository) AddToOutbox(ctx context.Context, actorID string, 
 			zap.String("actor_id", actorID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add activity to outbox: %w", err)
+		return ErrorHandler.HandleCreateError(err, "outbox activity", "activity publishing")
 	}
 
 	r.logger.Info("Added activity to outbox",
@@ -2451,7 +2455,7 @@ func (r *FederationRepository) GetOutboxItems(ctx context.Context, actorID strin
 			zap.String("actor_id", actorID),
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, "", fmt.Errorf("failed to get outbox items: %w", err)
+		return nil, "", ErrorHandler.HandleQueryError(err, "outbox items", "outbox retrieval")
 	}
 
 	// Extract activities
@@ -2497,7 +2501,7 @@ func (r *FederationRepository) GetStrongestConnectionsByType(ctx context.Context
 		r.logger.Error("failed to get strongest connections by type",
 			zap.String("connection_type", connectionType),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get strongest connections by type: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "strongest connections", "connection analysis")
 	}
 
 	// Filter and sort by strength after retrieval (since sorting by non-indexed field is expensive in DynamoDB)
@@ -2563,7 +2567,7 @@ func (r *FederationRepository) StoreDetailedFederationMetrics(ctx context.Contex
 			zap.String("period", metrics.Period),
 			zap.Time("timestamp", metrics.Timestamp),
 			zap.Error(err))
-		return fmt.Errorf("failed to store federation time series: %w", err)
+		return ErrorHandler.HandleCreateError(err, "federation time series", "time series data")
 	}
 
 	r.logger.Debug("Stored federation time series",
@@ -2608,7 +2612,7 @@ func (r *FederationRepository) GetDetailedFederationMetrics(ctx context.Context,
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get federation time series: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation time series", "time series retrieval")
 	}
 
 	// Convert to pointer slice
@@ -2655,7 +2659,7 @@ func (r *FederationRepository) GetDetailedMetricsByPeriod(ctx context.Context, p
 			zap.Time("end_time", endTime),
 			zap.Int("limit", limit),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to get federation time series by period: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation time series", "period-based retrieval")
 	}
 
 	// Convert to pointer slice
@@ -2679,7 +2683,7 @@ func (r *FederationRepository) GetDomainHealthScore(ctx context.Context, domain 
 
 	metrics, err := r.GetDetailedFederationMetrics(ctx, domain, "5min", startTime, endTime)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get recent metrics: %w", err)
+		return 0, ErrorHandler.HandleQueryError(err, "recent metrics", "metrics count")
 	}
 
 	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
@@ -2704,7 +2708,7 @@ func (r *FederationRepository) GetUnhealthyDomains(ctx context.Context, healthTh
 
 	metrics, err := r.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "recent metrics", "metrics retrieval")
 	}
 
 	// Filter for unhealthy domains (get the most recent metric per domain)
@@ -2754,13 +2758,13 @@ func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, d
 		windowStart = targetBucket
 		windowEnd = targetBucket.AddDate(0, 1, 0)
 	default:
-		return fmt.Errorf("unsupported aggregation period: %s", toPeriod)
+		return ErrorHandler.HandleQueryError(errors.New("unsupported aggregation period: "+toPeriod), EntityFederationMetrics, "period validation")
 	}
 
 	// Get source metrics within the window
 	sourceMetrics, err := r.GetDetailedFederationMetrics(ctx, domain, fromPeriod, windowStart, windowEnd)
 	if err != nil {
-		return fmt.Errorf("failed to get source metrics: %w", err)
+		return ErrorHandler.HandleQueryError(err, "source metrics", "aggregation source")
 	}
 
 	if err := common.ValidateSliceNotEmpty("sourceMetrics", sourceMetrics); err != nil {
@@ -2777,7 +2781,7 @@ func (r *FederationRepository) AggregateFederationMetrics(ctx context.Context, d
 	// Store the aggregated metric
 	err = r.StoreDetailedFederationMetrics(ctx, aggregated)
 	if err != nil {
-		return fmt.Errorf("failed to store aggregated metrics: %w", err)
+		return ErrorHandler.HandleCreateError(err, "aggregated metrics", "metrics aggregation")
 	}
 
 	r.logger.Info("Aggregated federation metrics",
@@ -2799,7 +2803,7 @@ func (r *FederationRepository) GetFederationAlertsData(ctx context.Context) ([]m
 
 	metrics, err := r.GetDetailedMetricsByPeriod(ctx, "5min", startTime, endTime, 1000)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get recent metrics: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "recent metrics", "alert generation")
 	}
 
 	var alerts []models.FederationAlert
@@ -2838,14 +2842,14 @@ func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, us
 	}
 
 	// Get the severed relationship for this domain
-	localInstance := os.Getenv("DOMAIN_NAME")
+	localInstance := r.cfg.Domain
 	if err := common.ValidateRequiredParam("localInstance", localInstance); err != nil {
 		localInstance = DefaultDomain
 	}
 
 	rel, err := r.GetSeveredRelationship(ctx, localInstance, domain)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return 0, nil // No severance = no affected followers
 		}
 		r.logger.Error("failed to get severed relationship for affected followers count",
@@ -2871,14 +2875,14 @@ func (r *FederationRepository) GetAffectedFollowersCount(ctx context.Context, us
 // This counts how many accounts this user was following on the severed domain
 func (r *FederationRepository) GetAffectedFollowingCount(ctx context.Context, userID, domain string) (int, error) {
 	// Get the severed relationship for this domain
-	localInstance := os.Getenv("DOMAIN_NAME")
+	localInstance := r.cfg.Domain
 	if err := common.ValidateRequiredParam("localInstance", localInstance); err != nil {
 		localInstance = DefaultDomain
 	}
 
 	rel, err := r.GetSeveredRelationship(ctx, localInstance, domain)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if dynamormErrors.IsNotFound(err) {
 			return 0, nil // No severance = no affected following
 		}
 		r.logger.Error("failed to get severed relationship for affected following count",
@@ -2930,7 +2934,7 @@ func (r *FederationRepository) GetFederationCostsByUser(ctx context.Context, use
 		r.logger.Error("Failed to query federation costs by user",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, fmt.Errorf("failed to query federation costs: %w", err)
+		return nil, ErrorHandler.HandleQueryError(err, "federation costs", "cost analysis")
 	}
 
 	// Convert to pointer slice for return

@@ -46,7 +46,7 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -113,7 +113,7 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -172,7 +172,7 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -239,7 +239,7 @@ func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -335,7 +335,7 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		_, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)
@@ -411,7 +411,7 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 		}
 
 		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 		claims, err = oauthSvc.ValidateAccessToken(token)
 		if err != nil {
 			return common.RespondUnauthorized(ctx)

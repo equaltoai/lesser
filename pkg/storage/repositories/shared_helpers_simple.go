@@ -26,8 +26,8 @@ func NormalizePaginationLimit(limit int) int {
 
 // AuditLogQueryHelper is a shared helper for audit log queries with time range
 func AuditLogQueryHelper(
-	db core.DB,
 	ctx context.Context,
+	db core.DB,
 	indexName string,
 	pkValue string,
 	limit int,
@@ -55,7 +55,7 @@ func AuditLogQueryHelper(
 
 	// Execute query
 	if err := query.All(&logs); err != nil {
-		return nil, fmt.Errorf("failed to get %s audit logs: %w", entityName, err)
+		return nil, ErrorHandler.HandleQueryError(err, EntityAudit, fmt.Sprintf("%s audit logs", entityName))
 	}
 
 	return logs, nil

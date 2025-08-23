@@ -3,6 +3,7 @@ package circuit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -329,7 +330,12 @@ func (cb *ServerlessCircuitBreaker) evaluateCircuitState(_ context.Context, stat
 func (cb *ServerlessCircuitBreaker) transitionToHalfOpen(ctx context.Context, state *models.CircuitBreakerState) error {
 	_, err := cb.repo.UpdateCircuitState(ctx, state.InstanceID, func(s *models.CircuitBreakerState) error {
 		if s.Status != stateOpen {
-			return fmt.Errorf("cannot transition to half-open from %s state", s.Status)
+			cb.logger.Error("invalid state transition",
+				zap.String("instanceID", s.InstanceID),
+				zap.String("currentState", s.Status),
+				zap.String("targetState", "half-open"))
+			return errors.Join(ErrInvalidStateTransition,
+				errors.New("cannot transition to half-open from "+s.Status+" state"))
 		}
 
 		now := time.Now()

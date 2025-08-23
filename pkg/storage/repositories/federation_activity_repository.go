@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -12,68 +13,78 @@ import (
 
 // FederationActivityRepository handles federation activity persistence
 type FederationActivityRepository struct {
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	*BaseRepository[*models.FederationActivity]
 }
 
 // NewFederationActivityRepository creates a new federation activity repository
 func NewFederationActivityRepository(db core.DB, tableName string, logger *zap.Logger) *FederationActivityRepository {
 	return &FederationActivityRepository{
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		BaseRepository: NewBaseRepository[*models.FederationActivity](db, tableName, logger),
 	}
 }
 
-// Create creates a new federation activity record
-func (r *FederationActivityRepository) Create(_ context.Context, activity *models.FederationActivity) error {
-	// Call BeforeCreate to set up the model
+// NewFederationActivityRepositoryWithCostTracking creates a new federation activity repository with cost tracking
+func NewFederationActivityRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FederationActivityRepository {
+	return &FederationActivityRepository{
+		BaseRepository: NewBaseRepositoryWithCostTracking[*models.FederationActivity](db, tableName, logger, costService, "federation_activity"),
+	}
+}
+
+// RecordFederationActivity creates a new federation activity with ActivityPub protocol logging
+func (r *FederationActivityRepository) RecordFederationActivity(ctx context.Context, activity *models.FederationActivity) error {
+	// Call BeforeCreate to set up the model with federation activity logic
 	if err := activity.BeforeCreate(); err != nil {
-		return fmt.Errorf("before create validation failed: %w", err)
+		return fmt.Errorf("%w: %w", ErrFederationActivityValidationFailed, err)
 	}
 
-	// Create the activity
-	err := r.db.Model(activity).Create()
-	if err != nil {
-		return MapErrorWithContext(err, "failed to create federation activity")
-	}
-
-	r.logger.Debug("created federation activity",
+	// Log federation activity tracking for audit trail
+	r.BaseRepository.logger.Debug("recording federation activity for audit trail",
 		zap.String("id", activity.ID),
 		zap.String("domain", activity.Domain),
-		zap.String("type", activity.ActivityType))
+		zap.String("activity_type", activity.ActivityType),
+		zap.String("actor_id", activity.ActorID))
+
+	// Use BaseRepository.Create for CRUD operation
+	err := r.BaseRepository.Create(ctx, activity)
+	if err != nil {
+		return MapErrorWithContext(err, "failed to record federation activity")
+	}
 
 	return nil
 }
 
-// Get retrieves a federation activity by ID and domain
-func (r *FederationActivityRepository) Get(_ context.Context, domain, id string) (*models.FederationActivity, error) {
-	activity := &models.FederationActivity{}
+// GetFederationActivity retrieves a federation activity by ID and domain using GSI
+func (r *FederationActivityRepository) GetFederationActivity(ctx context.Context, domain, id string) (*models.FederationActivity, error) {
+	var activities []*models.FederationActivity
 
-	// We need to know the timestamp to construct the SK, so we'll query by GSI
-	err := r.db.Model(activity).
-		Index("actor-index"). // Use actor index as a workaround
+	// Query by actor-index GSI to find activity by domain and ID
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationActivity{}).
+		Index("actor-index").
 		Where("Domain", "=", domain).
 		Where("ID", "=", id).
-		First(activity)
+		All(&activities)
 
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to get federation activity")
 	}
 
-	return activity, nil
+	if len(activities) == 0 {
+		return nil, fmt.Errorf("%w: domain=%s, id=%s", ErrFederationActivityNotFound, domain, id)
+	}
+
+	return activities[0], nil
 }
 
-// ListByDomain lists federation activities for a specific domain
-func (r *FederationActivityRepository) ListByDomain(_ context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+// ListByDomain lists federation activities for a specific domain - federation analytics logic preserved
+func (r *FederationActivityRepository) ListByDomain(ctx context.Context, domain string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Construct SK range for time-based query
+	// Construct SK range for time-based query (preserve exact ActivityPub protocol key patterns)
 	startSK := fmt.Sprintf("activity#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("activity#%s", endTime.Format("20060102150405"))
 
-	query := r.db.Model(&models.FederationActivity{}).
+	// Use BaseRepository's underlying db but preserve federation-specific query logic
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Where("PK", "=", fmt.Sprintf("fed_activity#%s", domain)).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -82,22 +93,33 @@ func (r *FederationActivityRepository) ListByDomain(_ context.Context, domain st
 
 	err := query.All(&activities)
 
+	// Track cost for federation activity query
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackRead(ctx, "ListFederationByDomain", int64(len(activities)))
+	}
+
 	if err != nil {
+		r.BaseRepository.logger.Error("failed to list federation activities by domain",
+			zap.Error(err),
+			zap.String("domain", domain),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
 		return nil, MapErrorWithContext(err, "failed to list federation activities by domain")
 	}
 
 	return activities, nil
 }
 
-// ListByType lists federation activities by type
-func (r *FederationActivityRepository) ListByType(_ context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+// ListByType lists federation activities by type - ActivityPub protocol compliance queries preserved
+func (r *FederationActivityRepository) ListByType(ctx context.Context, activityType string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Use GSI1 for type-based queries
+	// Use GSI1 for type-based queries (preserve exact ActivityPub protocol indexing)
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.Model(&models.FederationActivity{}).
+	// Use BaseRepository's underlying db but preserve federation-specific GSI logic
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Index("type-index").
 		Where("GSI1PK", "=", fmt.Sprintf("FED_TYPE#%s", activityType)).
 		Where("GSI1SK", ">=", startSK).
@@ -107,22 +129,33 @@ func (r *FederationActivityRepository) ListByType(_ context.Context, activityTyp
 
 	err := query.All(&activities)
 
+	// Track cost for federation type query
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackRead(ctx, "ListFederationByType", int64(len(activities)))
+	}
+
 	if err != nil {
+		r.BaseRepository.logger.Error("failed to list federation activities by type",
+			zap.Error(err),
+			zap.String("activity_type", activityType),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
 		return nil, MapErrorWithContext(err, "failed to list federation activities by type")
 	}
 
 	return activities, nil
 }
 
-// ListByActor lists federation activities by actor
-func (r *FederationActivityRepository) ListByActor(_ context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
+// ListByActor lists federation activities by actor - ActivityPub actor tracking preserved
+func (r *FederationActivityRepository) ListByActor(ctx context.Context, actorID string, startTime, endTime time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Use GSI2 for actor-based queries
+	// Use GSI2 for actor-based queries (preserve exact ActivityPub actor indexing)
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.db.Model(&models.FederationActivity{}).
+	// Use BaseRepository's underlying db but preserve federation-specific actor query logic
+	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Index("actor-index").
 		Where("GSI2PK", "=", fmt.Sprintf("FED_ACTOR#%s", actorID)).
 		Where("GSI2SK", ">=", startSK).
@@ -132,41 +165,63 @@ func (r *FederationActivityRepository) ListByActor(_ context.Context, actorID st
 
 	err := query.All(&activities)
 
+	// Track cost for federation actor query
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackRead(ctx, "ListFederationByActor", int64(len(activities)))
+	}
+
 	if err != nil {
+		r.BaseRepository.logger.Error("failed to list federation activities by actor",
+			zap.Error(err),
+			zap.String("actor_id", actorID),
+			zap.Time("startTime", startTime),
+			zap.Time("endTime", endTime))
 		return nil, MapErrorWithContext(err, "failed to list federation activities by actor")
 	}
 
 	return activities, nil
 }
 
-// GetRecentActivities gets recent activities across all domains
-func (r *FederationActivityRepository) GetRecentActivities(_ context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
+// GetRecentActivities gets recent activities across all domains - federation monitoring preserved
+func (r *FederationActivityRepository) GetRecentActivities(ctx context.Context, since time.Time, limit int) ([]*models.FederationActivity, error) {
 	var activities []*models.FederationActivity
 
-	// Use type index to get recent activities
+	// Use type index to get recent activities (preserve federation monitoring logic)
 	startSK := since.Format(time.RFC3339)
 
-	err := r.db.Model(&models.FederationActivity{}).
+	// Use BaseRepository's underlying db but preserve federation-specific recent query logic
+	err := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationActivity{}).
 		Index("type-index").
 		Where("GSI1SK", ">=", startSK).
 		OrderBy("GSI1SK", "DESC").
 		Limit(limit).
 		All(&activities)
 
+	// Track cost for recent federation activities query
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackRead(ctx, "GetRecentFederationActivities", int64(len(activities)))
+	}
+
 	if err != nil {
+		r.BaseRepository.logger.Error("failed to get recent federation activities",
+			zap.Error(err),
+			zap.Time("since", since),
+			zap.Int("limit", limit))
 		return nil, MapErrorWithContext(err, "failed to get recent federation activities")
 	}
 
 	return activities, nil
 }
 
-// GetDomainStats gets aggregated statistics for a domain
+// GetDomainStats gets aggregated statistics for a domain - federation analytics and metrics preserved
 func (r *FederationActivityRepository) GetDomainStats(ctx context.Context, domain string, startTime, endTime time.Time) (*DomainStats, error) {
-	activities, err := r.ListByDomain(ctx, domain, startTime, endTime, 10000) // Get all activities in range
+	// Get all activities in range using our domain query method (preserves federation logic)
+	activities, err := r.ListByDomain(ctx, domain, startTime, endTime, 10000)
 	if err != nil {
 		return nil, err
 	}
 
+	// Federation analytics aggregation logic preserved
 	stats := &DomainStats{
 		Domain:         domain,
 		StartTime:      startTime,
@@ -182,6 +237,7 @@ func (r *FederationActivityRepository) GetDomainStats(ctx context.Context, domai
 
 	var totalResponseTime float64
 
+	// Aggregate federation metrics - critical for ActivityPub protocol monitoring
 	for _, activity := range activities {
 		stats.InboundVolume += activity.InboundSize
 		stats.OutboundVolume += activity.OutboundSize
@@ -203,12 +259,20 @@ func (r *FederationActivityRepository) GetDomainStats(ctx context.Context, domai
 
 	stats.UniqueActorCount = len(stats.UniqueActors)
 
+	// Log federation analytics for monitoring
+	r.BaseRepository.logger.Debug("computed domain statistics for federation monitoring",
+		zap.String("domain", domain),
+		zap.Int("total_activities", stats.TotalCount),
+		zap.Int("success_count", stats.SuccessCount),
+		zap.Int("error_count", stats.ErrorCount),
+		zap.Float64("avg_response_time", stats.AvgResponseTime))
+
 	return stats, nil
 }
 
-// UpdateInstanceInfo updates or creates instance information
-func (r *FederationActivityRepository) UpdateInstanceInfo(_ context.Context, info *models.InstanceInfo) error {
-	// Store as a separate item with instance information
+// UpdateInstanceInfo updates or creates instance information - federation instance tracking preserved
+func (r *FederationActivityRepository) UpdateInstanceInfo(ctx context.Context, info *models.InstanceInfo) error {
+	// Store as a separate item with instance information (preserve federation instance tracking)
 	item := &InstanceInfoItem{
 		PK:          fmt.Sprintf("instance#%s", info.Domain),
 		SK:          "info",
@@ -222,35 +286,59 @@ func (r *FederationActivityRepository) UpdateInstanceInfo(_ context.Context, inf
 		UpdatedAt:   time.Now(),
 	}
 
-	err := r.db.Model(item).Update()
+	// Try to update first using BaseRepository's underlying db
+	err := r.BaseRepository.db.WithContext(ctx).Model(item).Update()
 	if err != nil {
-		// If update fails, try create
+		// If update fails, try create (federation instance discovery logic)
 		item.CreatedAt = time.Now()
 		if info.FirstSeen.IsZero() {
 			item.FirstSeen = time.Now()
 		}
-		err = r.db.Model(item).Create()
+		err = r.BaseRepository.db.WithContext(ctx).Model(item).Create()
 		if err != nil {
+			r.BaseRepository.logger.Error("failed to update federation instance info",
+				zap.Error(err),
+				zap.String("domain", info.Domain))
 			return MapErrorWithContext(err, "failed to update instance info")
 		}
 	}
 
+	// Track cost for federation instance update
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackWrite(ctx, "UpdateFederationInstanceInfo", 1)
+	}
+
+	r.BaseRepository.logger.Debug("updated federation instance info",
+		zap.String("domain", info.Domain),
+		zap.String("software", info.Software),
+		zap.String("version", info.Version))
+
 	return nil
 }
 
-// GetInstanceInfo retrieves instance information
-func (r *FederationActivityRepository) GetInstanceInfo(_ context.Context, domain string) (*models.InstanceInfo, error) {
+// GetInstanceInfo retrieves instance information - federation instance discovery preserved
+func (r *FederationActivityRepository) GetInstanceInfo(ctx context.Context, domain string) (*models.InstanceInfo, error) {
 	item := &InstanceInfoItem{}
 
-	err := r.db.Model(item).
+	// Use BaseRepository's underlying db but preserve federation instance query logic
+	err := r.BaseRepository.db.WithContext(ctx).Model(item).
 		Where("PK", "=", fmt.Sprintf("instance#%s", domain)).
 		Where("SK", "=", "info").
 		First(item)
 
+	// Track cost for federation instance get
+	if r.BaseRepository.costService != nil {
+		r.BaseRepository.TrackRead(ctx, "GetFederationInstanceInfo", 1)
+	}
+
 	if err != nil {
+		r.BaseRepository.logger.Debug("federation instance info not found",
+			zap.String("domain", domain),
+			zap.Error(err))
 		return nil, MapErrorWithContext(err, "failed to get instance info")
 	}
 
+	// Convert InstanceInfoItem to models.InstanceInfo (preserve federation data conversion)
 	return &models.InstanceInfo{
 		Domain:      item.Domain,
 		Software:    item.Software,
@@ -296,7 +384,7 @@ type InstanceInfoItem struct {
 
 // TableName returns the DynamoDB table name
 func (InstanceInfoItem) TableName() string {
-	return "lesser-main"
+	return models.MainTableName
 }
 
 // BeforeCreate for InstanceInfoItem

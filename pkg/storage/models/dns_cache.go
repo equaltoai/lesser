@@ -20,11 +20,22 @@ type DNSCache struct {
 }
 
 // UpdateKeys sets the composite key values for DynamoDB
-func (d *DNSCache) UpdateKeys() {
+func (d *DNSCache) UpdateKeys() error {
 	if d.Hostname != "" {
 		d.PK = fmt.Sprintf("DNSCACHE#%s", d.Hostname)
 		d.SK = SKEntry
 	}
+	return nil
+}
+
+// GetPK returns the partition key
+func (d *DNSCache) GetPK() string {
+	return d.PK
+}
+
+// GetSK returns the sort key
+func (d *DNSCache) GetSK() string {
+	return d.SK
 }
 
 // TableName returns the DynamoDB table name for this model

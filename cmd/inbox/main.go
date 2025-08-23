@@ -6,12 +6,11 @@ import (
 	"crypto"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -67,143 +66,153 @@ type InboxHandler struct {
 	startTime                    time.Time
 }
 
-// NewInboxHandler creates a new inbox handler using standardized initialization
-func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
-	logger := lambdaCtx.Logger
-	cfg := lambdaCtx.Config
+// extractedServices holds services extracted from lambda context
+type extractedServices struct {
+	repoFactory      storageCore.RepositoryStorage
+	db               interface{}
+	signatureService *federation.SignatureService
+	deliveryService  *federation.DeliveryService
+	costCalculator   *federation.CostCalculator
+	rateLimiter      *auth.RateLimiter
+	authMiddleware   *auth.Middleware
+	emfMetrics       *observability.EMFMetrics
+	alertManager     *monitoring.AlertManager
+}
 
-	// Try to extract services from standardized initialization
-	var repoFactory storageCore.RepositoryStorage
-	var db interface{}
-	var signatureService *federation.SignatureService
-	var deliveryService *federation.DeliveryService
-	var costCalculator *federation.CostCalculator
-	var rateLimiter *auth.RateLimiter
-	var authMiddleware *auth.Middleware
-	var emfMetrics *observability.EMFMetrics
-	var alertManager *monitoring.AlertManager
-	
-	// Extract from standardized services if available
+// federationServices holds federation-related services
+type federationServices struct {
+	signatureService *federation.SignatureService
+	deliveryService  *federation.DeliveryService
+	costCalculator   *federation.CostCalculator
+	rateLimiter      *auth.RateLimiter
+	authMiddleware   *auth.Middleware
+}
+
+// observabilityServices holds observability-related services
+type observabilityServices struct {
+	emfMetrics             *observability.EMFMetrics
+	alertManager           *monitoring.AlertManager
+	centralizedCostService *costpkg.TrackingService
+}
+
+// repositoryCollection holds all repository instances
+type repositoryCollection struct {
+	actorRepo              *repositories.ActorRepository
+	activityRepo           *repositories.ActivityRepository
+	followRepo             *repositories.RelationshipRepository
+	objectRepo             *repositories.ObjectRepository
+	likeRepo               *repositories.LikeRepository
+	socialRepo             *repositories.SocialRepository
+	federationActivityRepo *repositories.FederationActivityRepository
+	federationCostRepo     *repositories.FederationCostRepository
+	domainBlockRepo        *repositories.DomainBlockRepository
+	userRepo               *repositories.UserRepository
+	publicKeyCacheRepo     *repositories.PublicKeyCacheRepository
+	notificationRepo       *repositories.NotificationRepository
+}
+
+// extractServicesFromContext extracts services from lambda context
+func extractServicesFromContext(lambdaCtx *common.LambdaContext) extractedServices {
+	var services extractedServices
+
 	if lambdaCtx.Repos != nil {
-		repoFactory = lambdaCtx.Repos.(storageCore.RepositoryStorage)
+		services.repoFactory = lambdaCtx.Repos.(storageCore.RepositoryStorage)
 	}
 	if lambdaCtx.DynamoDB != nil {
-		db = lambdaCtx.DynamoDB
+		services.db = lambdaCtx.DynamoDB
 	}
 	if lambdaCtx.SignatureService != nil {
-		signatureService = lambdaCtx.SignatureService.(*federation.SignatureService)
+		services.signatureService = lambdaCtx.SignatureService.(*federation.SignatureService)
 	}
 	if lambdaCtx.DeliveryService != nil {
-		deliveryService = lambdaCtx.DeliveryService.(*federation.DeliveryService)
+		services.deliveryService = lambdaCtx.DeliveryService.(*federation.DeliveryService)
 	}
 	if lambdaCtx.CostCalculator != nil {
-		costCalculator = lambdaCtx.CostCalculator.(*federation.CostCalculator)
+		services.costCalculator = lambdaCtx.CostCalculator.(*federation.CostCalculator)
 	}
 	if lambdaCtx.RateLimiter != nil {
-		rateLimiter = lambdaCtx.RateLimiter.(*auth.RateLimiter)
+		services.rateLimiter = lambdaCtx.RateLimiter.(*auth.RateLimiter)
 	}
 	if lambdaCtx.AuthMiddleware != nil {
-		authMiddleware = lambdaCtx.AuthMiddleware.(*auth.Middleware)
+		services.authMiddleware = lambdaCtx.AuthMiddleware.(*auth.Middleware)
 	}
 	if lambdaCtx.EMFMetrics != nil {
-		emfMetrics = lambdaCtx.EMFMetrics.(*observability.EMFMetrics)
+		services.emfMetrics = lambdaCtx.EMFMetrics.(*observability.EMFMetrics)
 	}
 	if lambdaCtx.AlertManager != nil {
-		alertManager = lambdaCtx.AlertManager.(*monitoring.AlertManager)
+		services.alertManager = lambdaCtx.AlertManager.(*monitoring.AlertManager)
 	}
 
-	// Fallback to manual initialization for missing services
-	if repoFactory == nil || db == nil {
-		logger.Info("falling back to manual storage initialization")
-		
-		// Initialize storage manually
-		manualDB, err := dynamorm.GetClient(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize DynamORM: %w", err)
-		}
-		db = manualDB
+	return services
+}
 
-		// Initialize repository factory
-		manualRepoFactory, err := factory.NewRepositoryFactory(manualDB, cfg.DynamoTableName, lambdaCtx.AWSServices.Config, logger)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize repository factory: %w", err)
+// initializeStorage initializes storage components if needed
+func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}, cfg *config.Config, lambdaCtx *common.LambdaContext, logger *zap.Logger) (storageCore.RepositoryStorage, dynamormCore.DB, error) {
+	if repoFactory != nil && db != nil {
+		coreDB, ok := db.(dynamormCore.DB)
+		if !ok {
+			return nil, nil, ErrDynamoDBInterface
 		}
-		repoFactory = manualRepoFactory
+		return repoFactory, coreDB, nil
 	}
-	
+
+	logger.Info("falling back to manual storage initialization")
+
+	// Initialize storage manually
+	manualDB, err := dynamorm.GetClient(context.Background())
+	if err != nil {
+		return nil, nil, errors.Join(ErrDynamORMInit, err)
+	}
+
+	// Initialize repository factory
+	manualRepoFactory, err := factory.NewRepositoryFactory(manualDB, cfg.DynamoTableName, logger)
+	if err != nil {
+		return nil, nil, errors.Join(ErrRepositoryFactoryInit, err)
+	}
+
+	return manualRepoFactory, manualDB, nil
+}
+
+// initializeFederationServices initializes federation-related services
+func initializeFederationServices(services extractedServices, repoFactory storageCore.RepositoryStorage, coreDB dynamormCore.DB, cfg *config.Config, logger *zap.Logger) federationServices {
+	fed := federationServices{
+		signatureService: services.signatureService,
+		deliveryService:  services.deliveryService,
+		costCalculator:   services.costCalculator,
+		rateLimiter:      services.rateLimiter,
+		authMiddleware:   services.authMiddleware,
+	}
+
 	// Initialize missing federation services
-	if signatureService == nil {
-		// Access PublicKeyCache directly from factory if not in RepositoryStorage interface yet
-		var publicKeyCacheRepo *repositories.PublicKeyCacheRepository
-		if factory, ok := repoFactory.(*factory.RepositoryFactory); ok {
-			publicKeyCacheRepo = factory.PublicKeyCache()
-		} else {
-			// Fallback: create repository directly
-			coreDB, _ := db.(dynamormCore.DB)
-			publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
-		}
-		signatureService = federation.NewSignatureService(publicKeyCacheRepo, logger)
+	if fed.signatureService == nil {
+		fed.signatureService = createSignatureService(repoFactory, coreDB, cfg, logger)
 	}
-	if costCalculator == nil {
-		costCalculator = federation.NewCostCalculator()
+	if fed.costCalculator == nil {
+		fed.costCalculator = federation.NewCostCalculator()
 	}
-	if authMiddleware == nil {
-		var err error
-		authMiddleware, err = auth.GetMiddleware()
+	if fed.authMiddleware == nil {
+		middleware, err := auth.GetMiddleware()
 		if err != nil {
-			return nil, fmt.Errorf("failed to initialize auth middleware: %w", err)
+			logger.Error("failed to initialize auth middleware", zap.Error(err))
+		} else {
+			fed.authMiddleware = middleware
 		}
 	}
-	if rateLimiter == nil {
-		rateLimiter = auth.NewRateLimiter(repoFactory)
+	if fed.rateLimiter == nil {
+		fed.rateLimiter = auth.NewRateLimiter(repoFactory)
 	}
-	if deliveryService == nil {
-		deliveryService = federation.NewDeliveryService(
+	if fed.deliveryService == nil {
+		fed.deliveryService = federation.NewDeliveryService(
 			federation.NewRepositoryStorageAdapter(repoFactory),
+			cfg,
 		)
 	}
-	
-	// Initialize missing observability services
-	if emfMetrics == nil && os.Getenv("DISABLE_METRICS") != "true" {
-		emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Federation", "inbox")
-		emfMetrics.AddDimension(observability.DimensionService, "inbox")
-		emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
-		emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
-	}
-	if alertManager == nil && os.Getenv("DISABLE_METRICS") != "true" {
-		alertManager = monitoring.NewAlertManagerWithConfig(&monitoring.AlertManagerConfig{
-			Logger:    logger,
-			Enabled:   true,
-		})
-	}
-	
-	// Initialize centralized cost tracking service
-	var centralizedCostService *costpkg.TrackingService
-	if os.Getenv("DISABLE_METRICS") != "true" {
-		// Create cost tracking service
-		if lambdaCtx.AWSServices != nil && lambdaCtx.AWSServices.CloudWatch != nil {
-			centralizedCostService = costpkg.NewCostTrackingServiceForLambda(lambdaCtx.AWSServices.CloudWatch, logger, "inbox")
-			logger.Info("initialized centralized cost tracking service for inbox")
-		}
-	}
-	
-	// Get core DB for legacy repositories and direct access
-	coreDB, ok := db.(dynamormCore.DB)
-	if !ok {
-		return nil, fmt.Errorf("DynamoDB client does not implement core.DB interface")
-	}
-	
-	// Get individual repositories
-	actorRepo := repoFactory.Actor()
-	activityRepo := repoFactory.Activity()
-	followRepo := repoFactory.Relationship()
-	objectRepo := repoFactory.Object()
-	likeRepo := repoFactory.Like()
-	domainBlockRepo := repoFactory.DomainBlock()
-	userRepo := repoFactory.User()
-	notificationRepo := repoFactory.Notification()
-	
-	// Get PublicKeyCache repository directly from factory
+
+	return fed
+}
+
+// createSignatureService creates a signature service with public key cache repository
+func createSignatureService(repoFactory storageCore.RepositoryStorage, coreDB dynamormCore.DB, cfg *config.Config, logger *zap.Logger) *federation.SignatureService {
 	var publicKeyCacheRepo *repositories.PublicKeyCacheRepository
 	if factory, ok := repoFactory.(*factory.RepositoryFactory); ok {
 		publicKeyCacheRepo = factory.PublicKeyCache()
@@ -211,40 +220,123 @@ func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
 		// Fallback: create repository directly
 		publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
 	}
-	
+	return federation.NewSignatureService(publicKeyCacheRepo, logger)
+}
+
+// initializeObservabilityServices initializes observability-related services
+func initializeObservabilityServices(services extractedServices, lambdaCtx *common.LambdaContext, cfg *config.Config, logger *zap.Logger) observabilityServices {
+	obs := observabilityServices{
+		emfMetrics:   services.emfMetrics,
+		alertManager: services.alertManager,
+	}
+
+	metricsDisabled := lambdaCtx.Config.DisableAWSModeration // Use config from lambda context
+
+	// Initialize missing observability services
+	if obs.emfMetrics == nil && !metricsDisabled {
+		obs.emfMetrics = observability.NewEMFMetrics(logger, "Lesser/Federation", "inbox")
+		obs.emfMetrics.AddDimension(observability.DimensionService, "inbox")
+		obs.emfMetrics.AddDimension(observability.DimensionEnvironment, cfg.Stage)
+		obs.emfMetrics.AddDimension(observability.DimensionRegion, cfg.Region)
+	}
+	if obs.alertManager == nil && !metricsDisabled {
+		obs.alertManager = monitoring.NewAlertManagerWithConfig(&monitoring.AlertManagerConfig{
+			Logger:  logger,
+			Enabled: true,
+		})
+	}
+
+	// Initialize centralized cost tracking service
+	if !metricsDisabled && lambdaCtx.AWSServices != nil && lambdaCtx.AWSServices.CloudWatch != nil {
+		obs.centralizedCostService = costpkg.NewCostTrackingServiceForLambda(lambdaCtx.AWSServices.CloudWatch, logger, "inbox")
+		logger.Info("initialized centralized cost tracking service for inbox")
+	}
+
+	return obs
+}
+
+// initializeRepositories initializes all repository instances
+func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dynamormCore.DB, cfg *config.Config, logger *zap.Logger) repositoryCollection {
+	repos := repositoryCollection{
+		actorRepo:        repoFactory.Actor(),
+		activityRepo:     repoFactory.Activity(),
+		followRepo:       repoFactory.Relationship(),
+		objectRepo:       repoFactory.Object(),
+		likeRepo:         repoFactory.Like(),
+		domainBlockRepo:  repoFactory.DomainBlock(),
+		userRepo:         repoFactory.User(),
+		notificationRepo: repoFactory.Notification(),
+	}
+
+	// Get PublicKeyCache repository directly from factory
+	if factory, ok := repoFactory.(*factory.RepositoryFactory); ok {
+		repos.publicKeyCacheRepo = factory.PublicKeyCache()
+	} else {
+		// Fallback: create repository directly
+		repos.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
+	}
+
 	// Initialize legacy repositories that don't use factory pattern yet
-	socialRepo := repositories.NewSocialRepository(coreDB, logger)
-	federationActivityRepo := repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger)
-	federationCostRepo := repositories.NewFederationCostRepository(coreDB, cfg.DynamoTableName, logger)
-	
+	repos.socialRepo = repositories.NewSocialRepository(coreDB, logger)
+	repos.federationActivityRepo = repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger)
+	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](coreDB, cfg.DynamoTableName, logger)
+	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](coreDB, cfg.DynamoTableName, logger)
+	repos.federationCostRepo = repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
+
+	return repos
+}
+
+// NewInboxHandler creates a new inbox handler using standardized initialization
+func NewInboxHandler(lambdaCtx *common.LambdaContext) (*InboxHandler, error) {
+	logger := lambdaCtx.Logger
+	cfg := lambdaCtx.Config
+
+	// Extract services from lambda context
+	services := extractServicesFromContext(lambdaCtx)
+
+	// Initialize storage if needed
+	repoFactory, coreDB, err := initializeStorage(services.repoFactory, services.db, cfg, lambdaCtx, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize federation services
+	federationServices := initializeFederationServices(services, repoFactory, coreDB, cfg, logger)
+
+	// Initialize observability services
+	observabilityServices := initializeObservabilityServices(services, lambdaCtx, cfg, logger)
+
+	// Initialize repositories
+	repositories := initializeRepositories(repoFactory, coreDB, cfg, logger)
+
 	logger.Info("initialized inbox handler with standardized services")
 
 	return &InboxHandler{
 		db:                           coreDB,
-		actorRepository:              actorRepo,
-		activityRepository:           activityRepo,
-		relationshipRepository:       followRepo,
-		objectRepository:             objectRepo,
-		likeRepository:               likeRepo,
-		socialRepository:             socialRepo,
-		federationActivityRepository: federationActivityRepo,
-		federationCostRepository:     federationCostRepo,
-		domainBlockRepository:        domainBlockRepo,
-		userRepository:               userRepo,
-		publicKeyCacheRepository:     publicKeyCacheRepo,
-		notificationRepository:       notificationRepo,
-		signatureService:             signatureService,
+		actorRepository:              repositories.actorRepo,
+		activityRepository:           repositories.activityRepo,
+		relationshipRepository:       repositories.followRepo,
+		objectRepository:             repositories.objectRepo,
+		likeRepository:               repositories.likeRepo,
+		socialRepository:             repositories.socialRepo,
+		federationActivityRepository: repositories.federationActivityRepo,
+		federationCostRepository:     repositories.federationCostRepo,
+		domainBlockRepository:        repositories.domainBlockRepo,
+		userRepository:               repositories.userRepo,
+		publicKeyCacheRepository:     repositories.publicKeyCacheRepo,
+		notificationRepository:       repositories.notificationRepo,
+		signatureService:             federationServices.signatureService,
 		logger:                       logger,
-		authMiddleware:               authMiddleware,
-		rateLimiter:                  rateLimiter,
-		costCalculator:               costCalculator,
-		centralizedCostService:       centralizedCostService,
-		deliveryService:              deliveryService,
+		authMiddleware:               federationServices.authMiddleware,
+		rateLimiter:                  federationServices.rateLimiter,
+		costCalculator:               federationServices.costCalculator,
+		centralizedCostService:       observabilityServices.centralizedCostService,
+		deliveryService:              federationServices.deliveryService,
 		tableName:                    cfg.DynamoTableName,
 		storageAdapter:               repoFactory,
 		baseURL:                      cfg.BaseURL(),
-		emfMetrics:                   emfMetrics,
-		alertManager:                 alertManager,
+		emfMetrics:                   observabilityServices.emfMetrics,
+		alertManager:                 observabilityServices.alertManager,
 		startTime:                    time.Now(),
 	}, nil
 }
@@ -301,17 +393,17 @@ func (ih *InboxHandler) authenticateInboxRequest(ctx *lift.Context, username str
 	// Validate JWT token
 	claims, err := ih.authMiddleware.ValidateToken(authHeader)
 	if err != nil {
-		ih.logger.Warn("JWT validation failed", 
+		ih.logger.Warn("JWT validation failed",
 			zap.Error(err),
 			zap.String("username", username),
 			zap.String("user_agent", ctx.Header("User-Agent")))
-		
+
 		if err == auth.ErrMissingAuthHeader || err == auth.ErrInvalidToken {
 			return nil, lift.NewLiftError("UNAUTHORIZED", "invalid or expired token", 401)
 		}
 		return nil, lift.NewLiftError("UNAUTHORIZED", "authentication failed", 401)
 	}
-	
+
 	// Verify user authorization
 	if claims.Username != username {
 		ih.logger.Warn("user mismatch in inbox request",
@@ -625,7 +717,51 @@ func (ih *InboxHandler) parseActivity(body []byte) (*activitypub.Activity, error
 
 // validateActivity validates required activity fields and addressing
 func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *activitypub.Actor) error {
-	// Validate ActivityPub activity using comprehensive validation
+	// Validate basic activity structure
+	if err := ih.validateBasicActivity(activity); err != nil {
+		return err
+	}
+
+	// Validate actor structure
+	if err := ih.validateBasicActor(actor); err != nil {
+		return err
+	}
+
+	// Validate addressing fields
+	if err := ih.validateActivityAddressing(activity); err != nil {
+		return err
+	}
+
+	// Validate actor username
+	if err := ih.validateActorUsername(activity.Actor); err != nil {
+		return err
+	}
+
+	// Validate actor public key if present
+	if err := ih.validateActorPublicKey(actor); err != nil {
+		return err
+	}
+
+	// Validate Create activity objects if applicable
+	if err := ih.validateCreateActivityObject(activity); err != nil {
+		return err
+	}
+
+	// Validate comprehensive addressing
+	if err := ih.validateComprehensiveAddressing(activity); err != nil {
+		return err
+	}
+
+	// Check if activity is addressed to this actor
+	if err := ih.validateActivityTargeting(activity, actor); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateBasicActivity validates the basic activity structure
+func (ih *InboxHandler) validateBasicActivity(activity *activitypub.Activity) error {
 	activityMap := map[string]interface{}{
 		"id":    activity.ID,
 		"type":  activity.Type,
@@ -636,8 +772,11 @@ func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *
 	if err := common.ValidateActivityPubActivity(activityMap); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid activity: %v", err), 400)
 	}
+	return nil
+}
 
-	// Validate actor using comprehensive validation  
+// validateBasicActor validates the basic actor structure
+func (ih *InboxHandler) validateBasicActor(actor *activitypub.Actor) error {
 	actorMap := map[string]interface{}{
 		"id":   actor.ID,
 		"type": actor.Type,
@@ -645,70 +784,125 @@ func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *
 	if err := common.ValidateActivityPubActor(actorMap); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor: %v", err), 400)
 	}
+	return nil
+}
 
-	// Validate ActivityPub addressing fields individually using specialized validators
-	if err := common.ValidateActivityPubAddressing(activity.To, "to"); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid 'to' addressing: %v", err), 400)
-	}
-	if err := common.ValidateActivityPubAddressing(activity.CC, "cc"); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid 'cc' addressing: %v", err), 400)
-	}
-	if err := common.ValidateActivityPubAddressing(activity.BTo, "bto"); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid 'bto' addressing: %v", err), 400)
-	}
-	if err := common.ValidateActivityPubAddressing(activity.BCC, "bcc"); err != nil {
-		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid 'bcc' addressing: %v", err), 400)
+// validateActivityAddressing validates all addressing fields of the activity
+func (ih *InboxHandler) validateActivityAddressing(activity *activitypub.Activity) error {
+	addressingFields := []struct {
+		field interface{}
+		name  string
+	}{
+		{activity.To, "to"},
+		{activity.CC, "cc"},
+		{activity.BTo, "bto"},
+		{activity.BCC, "bcc"},
 	}
 
-	// Validate ActivityPub username if actor contains a username
-	if err := common.ValidateActivityPubUsername(activity.Actor); err != nil {
+	for _, addr := range addressingFields {
+		if err := common.ValidateActivityPubAddressing(addr.field, addr.name); err != nil {
+			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid '%s' addressing: %v", addr.name, err), 400)
+		}
+	}
+	return nil
+}
+
+// validateActorUsername validates the actor's username format
+func (ih *InboxHandler) validateActorUsername(actorURL string) error {
+	if err := common.ValidateActivityPubUsername(actorURL); err != nil {
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid actor username: %v", err), 400)
 	}
+	return nil
+}
 
-	// Validate ActivityPub public key if actor has one
-	if actor.PublicKey != nil {
-		publicKeyMap := map[string]interface{}{
-			"id":           actor.PublicKey.ID,
-			"owner":        actor.PublicKey.Owner,
-			"publicKeyPem": actor.PublicKey.PublicKeyPem,
-		}
-		if err := common.ValidateActivityPubPublicKey(publicKeyMap); err != nil {
-			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid public key: %v", err), 400)
-		}
+// validateActorPublicKey validates the actor's public key if present
+func (ih *InboxHandler) validateActorPublicKey(actor *activitypub.Actor) error {
+	if actor.PublicKey == nil {
+		return nil
 	}
 
-	// Validate object attachments if present (for Create activities with Note objects)
-	if activity.Type == "Create" {
-		if objMap, ok := activity.Object.(map[string]interface{}); ok {
-			if attachments, exists := objMap["attachment"]; exists {
-				if err := common.ValidateActivityPubAttachments(attachments, "attachment"); err != nil {
-					return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid attachments: %v", err), 400)
-				}
-			}
+	publicKeyMap := map[string]interface{}{
+		"id":           actor.PublicKey.ID,
+		"owner":        actor.PublicKey.Owner,
+		"publicKeyPem": actor.PublicKey.PublicKeyPem,
+	}
+	if err := common.ValidateActivityPubPublicKey(publicKeyMap); err != nil {
+		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid public key: %v", err), 400)
+	}
+	return nil
+}
 
-			// Validate tags if present
-			if tags, exists := objMap["tag"]; exists {
-				if err := common.ValidateActivityPubTags(tags, "tag"); err != nil {
-					return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid tags: %v", err), 400)
-				}
-			}
-
-			// Validate note structure for Create activities
-			if objType, exists := objMap["type"]; exists && objType == "Note" {
-				if err := common.ValidateActivityPubNote(objMap); err != nil {
-					return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid note object: %v", err), 400)
-				}
-			}
-		}
+// validateCreateActivityObject validates objects within Create activities
+func (ih *InboxHandler) validateCreateActivityObject(activity *activitypub.Activity) error {
+	if activity.Type != "Create" {
+		return nil
 	}
 
-	// Validate addressing fields using comprehensive addressing validator
+	objMap, ok := activity.Object.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Validate attachments if present
+	if err := ih.validateObjectAttachments(objMap); err != nil {
+		return err
+	}
+
+	// Validate tags if present
+	if err := ih.validateObjectTags(objMap); err != nil {
+		return err
+	}
+
+	// Validate note structure for Note objects
+	if err := ih.validateNoteObject(objMap); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// validateObjectAttachments validates object attachments
+func (ih *InboxHandler) validateObjectAttachments(objMap map[string]interface{}) error {
+	if attachments, exists := objMap["attachment"]; exists {
+		if err := common.ValidateActivityPubAttachments(attachments, "attachment"); err != nil {
+			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid attachments: %v", err), 400)
+		}
+	}
+	return nil
+}
+
+// validateObjectTags validates object tags
+func (ih *InboxHandler) validateObjectTags(objMap map[string]interface{}) error {
+	if tags, exists := objMap["tag"]; exists {
+		if err := common.ValidateActivityPubTags(tags, "tag"); err != nil {
+			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid tags: %v", err), 400)
+		}
+	}
+	return nil
+}
+
+// validateNoteObject validates Note object structure
+func (ih *InboxHandler) validateNoteObject(objMap map[string]interface{}) error {
+	if objType, exists := objMap["type"]; exists && objType == "Note" {
+		if err := common.ValidateActivityPubNote(objMap); err != nil {
+			return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid note object: %v", err), 400)
+		}
+	}
+	return nil
+}
+
+// validateComprehensiveAddressing validates addressing using comprehensive validator
+func (ih *InboxHandler) validateComprehensiveAddressing(activity *activitypub.Activity) error {
 	addressingValidator := activitypub.NewAddressingValidator()
 	if err := addressingValidator.ValidateAddressing(activity); err != nil {
 		ih.logger.Warn("invalid activity addressing", zap.Error(err))
 		return lift.NewLiftError("VALIDATION_ERROR", fmt.Sprintf("invalid addressing: %v", err), 400)
 	}
+	return nil
+}
 
+// validateActivityTargeting checks if the activity is addressed to this actor
+func (ih *InboxHandler) validateActivityTargeting(activity *activitypub.Activity, actor *activitypub.Actor) error {
 	if !ih.isAddressedTo(activity, actor) {
 		ih.logger.Warn("activity not addressed to this actor",
 			zap.String("actor_id", actor.ID),
@@ -716,7 +910,6 @@ func (ih *InboxHandler) validateActivity(activity *activitypub.Activity, actor *
 			zap.Any("cc", activity.CC))
 		return lift.NewLiftError("VALIDATION_ERROR", "activity is not addressed to this actor", 400)
 	}
-
 	return nil
 }
 
@@ -922,26 +1115,26 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ *activitypub.Actor) error {
 	// Validate all addressing fields using ActivityPub validators
 	if err := common.ValidateActivityPubAddressing(activity.To, "to"); err != nil {
-		return fmt.Errorf("invalid 'to' addressing in direct message: %v", err)
+		return errors.Join(ErrDMToAddressing, err)
 	}
 	if err := common.ValidateActivityPubAddressing(activity.CC, "cc"); err != nil {
-		return fmt.Errorf("invalid 'cc' addressing in direct message: %v", err)
+		return errors.Join(ErrDMCcAddressing, err)
 	}
 	if err := common.ValidateActivityPubAddressing(activity.BTo, "bto"); err != nil {
-		return fmt.Errorf("invalid 'bto' addressing in direct message: %v", err)
+		return errors.Join(ErrDMBtoAddressing, err)
 	}
 	if err := common.ValidateActivityPubAddressing(activity.BCC, "bcc"); err != nil {
-		return fmt.Errorf("invalid 'bcc' addressing in direct message: %v", err)
+		return errors.Join(ErrDMBccAddressing, err)
 	}
 
 	// Ensure direct messages don't leak to public timelines
 	publicAddr := activitypub.PublicAddress
-	
+
 	// Check that public address is not in any addressing field
 	allAddresses := append(append(append(activity.To, activity.CC...), activity.BTo...), activity.BCC...)
 	for _, addr := range allAddresses {
 		if addr == publicAddr {
-			return fmt.Errorf("direct messages cannot include public addressing")
+			return ErrDMPublicAddress
 		}
 	}
 
@@ -950,9 +1143,9 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	for _, addr := range allAddresses {
 		// Validate each recipient URL format
 		if err := common.ValidateActivityPubURL(addr, "recipient"); err != nil {
-			return fmt.Errorf("invalid recipient URL in direct message: %v", err)
+			return errors.Join(ErrDMRecipientURL, err)
 		}
-		
+
 		// Check if it's a specific actor (not a collection)
 		if addr != publicAddr && !strings.Contains(addr, "/followers") && !strings.Contains(addr, "/following") {
 			hasSpecificRecipient = true
@@ -960,7 +1153,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	}
 
 	if !hasSpecificRecipient {
-		return fmt.Errorf("direct messages must have specific actor recipients")
+		return ErrDMNoRecipients
 	}
 
 	return nil
@@ -1201,40 +1394,7 @@ func (ih *InboxHandler) recordSuccessAndComplete(ctx *lift.Context, req *InboxRe
 		}
 
 		// Centralized cost tracking
-		if ih.centralizedCostService != nil {
-			duration := time.Since(req.StartTime)
-			memoryMB := int64(128) // Default Lambda memory
-			if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
-				if mem, parseErr := strconv.ParseInt(envMem, 10, 64); parseErr == nil {
-					memoryMB = mem
-				}
-			}
-
-			// Track Lambda execution
-			lambdaOp := costpkg.LambdaOperation{
-				FunctionName: "inbox",
-				Duration:     duration,
-				MemoryMB:     memoryMB,
-				Timestamp:    req.StartTime,
-			}
-			if err := ih.centralizedCostService.TrackLambdaInvocation(context.Background(), lambdaOp); err != nil {
-				ih.logger.Warn("failed to track Lambda cost", zap.Error(err))
-			}
-
-			// Track DynamoDB operations
-			if req.CostParams.DynamoDBReadCount > 0 || req.CostParams.DynamoDBWriteCount > 0 {
-				dynamoOp := costpkg.DynamoOperation{
-					Type:                "Federation",
-					TableName:           ih.tableName,
-					ConsumedReadUnits:   req.CostParams.DynamoDBReadCount,
-					ConsumedWriteUnits:  req.CostParams.DynamoDBWriteCount,
-					Timestamp:           req.StartTime,
-				}
-				if err := ih.centralizedCostService.TrackDynamoOperation(context.Background(), dynamoOp); err != nil {
-					ih.logger.Warn("failed to track DynamoDB cost", zap.Error(err))
-				}
-			}
-		}
+		ih.trackCentralizedCost(req, "Federation")
 	}()
 
 	// Mark rate limit success
@@ -1264,40 +1424,7 @@ func (ih *InboxHandler) recordFailureCost(req *InboxRequest, errorMsg string, re
 		}
 
 		// Centralized cost tracking for failures
-		if ih.centralizedCostService != nil {
-			duration := time.Since(req.StartTime)
-			memoryMB := int64(128) // Default Lambda memory
-			if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
-				if mem, parseErr := strconv.ParseInt(envMem, 10, 64); parseErr == nil {
-					memoryMB = mem
-				}
-			}
-
-			// Track Lambda execution for failed requests
-			lambdaOp := costpkg.LambdaOperation{
-				FunctionName: "inbox",
-				Duration:     duration,
-				MemoryMB:     memoryMB,
-				Timestamp:    req.StartTime,
-			}
-			if err := ih.centralizedCostService.TrackLambdaInvocation(context.Background(), lambdaOp); err != nil {
-				ih.logger.Warn("failed to track Lambda cost for failure", zap.Error(err))
-			}
-
-			// Track DynamoDB operations for failed requests
-			if req.CostParams.DynamoDBReadCount > 0 || req.CostParams.DynamoDBWriteCount > 0 {
-				dynamoOp := costpkg.DynamoOperation{
-					Type:                "Federation.Error",
-					TableName:           ih.tableName,
-					ConsumedReadUnits:   req.CostParams.DynamoDBReadCount,
-					ConsumedWriteUnits:  req.CostParams.DynamoDBWriteCount,
-					Timestamp:           req.StartTime,
-				}
-				if err := ih.centralizedCostService.TrackDynamoOperation(context.Background(), dynamoOp); err != nil {
-					ih.logger.Warn("failed to track DynamoDB cost for failure", zap.Error(err))
-				}
-			}
-		}
+		ih.trackCentralizedCost(req, "Federation.Error")
 	}()
 }
 
@@ -1345,7 +1472,7 @@ func (ih *InboxHandler) verifyRequest(ctx *lift.Context, publicKey crypto.Public
 	// Convert Lift request to http.Request for signature verification
 	req, err := ih.convertLiftRequest(ctx, body)
 	if err != nil {
-		return fmt.Errorf("failed to convert request: %w", err)
+		return errors.Join(ErrRequestConversion, err)
 	}
 
 	return federation.VerifyHTTPSignature(req, publicKey)
@@ -1419,7 +1546,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, errors.Join(ErrCreateRequest, err)
 	}
 
 	req.Header.Set("Accept", "application/activity+json, application/ld+json")
@@ -1428,7 +1555,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	// Make request
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch actor: %w", err)
+		return nil, errors.Join(ErrFetchActor, err)
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -1442,24 +1569,24 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 			zap.String("url", actorURL),
 			zap.Int("status", resp.StatusCode),
 			zap.String("body", string(body)))
-		return nil, fmt.Errorf("failed to fetch actor: status %d", resp.StatusCode)
+		return nil, ErrActorResponse
 	}
 
 	// Parse actor
 	var actor activitypub.Actor
 	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, fmt.Errorf("failed to parse actor: %w", err)
+		return nil, errors.Join(ErrParseActor, err)
 	}
 
 	// Extract public key
 	if actor.PublicKey == nil || common.ValidateRequiredParam("publicKeyPem", actor.PublicKey.PublicKeyPem) != nil {
-		return nil, fmt.Errorf("actor has no public key")
+		return nil, ErrNoPublicKey
 	}
 
 	// Parse PEM-encoded public key
 	publicKey, err := federation.ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
+		return nil, errors.Join(ErrParsePublicKey, err)
 	}
 
 	log.Debug("fetched actor public key",
@@ -1661,13 +1788,13 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 			zap.String("rejected_type", originalActivity.Type),
 			zap.String("rejecting_actor", activity.Actor),
 			zap.String("activity_id", activity.ID))
-		
+
 		// Record the rejection for monitoring purposes using federation activity tracking
 		if ih.federationActivityRepository != nil {
 			domain := ih.extractDomainFromURL(activity.Actor)
 			timestamp := time.Now()
 			activityID := fmt.Sprintf("reject_%d", timestamp.UnixNano())
-			
+
 			federationActivity := &models.FederationActivity{
 				// Set the composite keys manually
 				PK:     fmt.Sprintf("fed_activity#%s", domain),
@@ -1676,7 +1803,7 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 				GSI1SK: fmt.Sprintf("%d#%s#%s", timestamp.Unix(), domain, activityID),
 				GSI2PK: fmt.Sprintf("FED_ACTOR#%s", activity.Actor),
 				GSI2SK: fmt.Sprintf("%d#%s", timestamp.Unix(), activityID),
-				
+
 				// Core activity data
 				ID:           activityID,
 				Domain:       domain,
@@ -1687,14 +1814,14 @@ func (ih *InboxHandler) processRejectByActivityID(ctx context.Context, activity 
 				Success:      true, // Successfully processed the rejection
 				ErrorMessage: fmt.Sprintf("Rejected unsupported activity type: %s", originalActivity.Type),
 			}
-			
+
 			err := ih.federationActivityRepository.Create(ctx, federationActivity)
 			if err != nil {
 				log.Warn("failed to record rejection federation activity",
 					zap.Error(err))
 			}
 		}
-		
+
 		// Return success - rejecting unknown activity types is valid behavior
 		return nil
 	}
@@ -1719,12 +1846,12 @@ func (ih *InboxHandler) processRejectByEmbeddedObject(ctx context.Context, activ
 		// Convert to Follow activity
 		objJSON, err := json.Marshal(obj)
 		if err != nil {
-			return fmt.Errorf("failed to marshal embedded follow: %w", err)
+			return errors.Join(ErrMarshalFollow, err)
 		}
 
 		var followActivity activitypub.Activity
 		if err := common.ParseActivityPubObject(objJSON, &followActivity); err != nil {
-			return fmt.Errorf("failed to parse embedded follow: %w", err)
+			return errors.Join(ErrParseFollow, err)
 		}
 
 		return ih.processRejectFollow(ctx, activity, targetActor, &followActivity)
@@ -1783,12 +1910,12 @@ type rejectActivityConfig struct {
 }
 
 type simpleRejectConfig struct {
-	activityType      string
-	actorFieldName    string
-	objectFieldName   string
-	warningMessage    string
-	successMessage    string
-	includeTarget     bool // Whether to include target collection in logs
+	activityType    string
+	actorFieldName  string
+	objectFieldName string
+	warningMessage  string
+	successMessage  string
+	includeTarget   bool // Whether to include target collection in logs
 }
 
 // processRejectInteraction processes rejection of a Like or Announce activity
@@ -1910,79 +2037,79 @@ func (ih *InboxHandler) processRejectAnnounce(ctx context.Context, rejectActivit
 // processRejectCreate processes rejection of a Create activity
 func (ih *InboxHandler) processRejectCreate(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, createActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, createActivity, simpleRejectConfig{
-		activityType:      "create",
-		actorFieldName:    "creator",
-		objectFieldName:   "object",
-		warningMessage:    "create activity has no object ID to reject",
-		successMessage:    "successfully processed create rejection - object not accepted",
+		activityType:    "create",
+		actorFieldName:  "creator",
+		objectFieldName: "object",
+		warningMessage:  "create activity has no object ID to reject",
+		successMessage:  "successfully processed create rejection - object not accepted",
 	})
 }
 
 // processRejectUpdate processes rejection of an Update activity
 func (ih *InboxHandler) processRejectUpdate(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, updateActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, updateActivity, simpleRejectConfig{
-		activityType:      "update",
-		actorFieldName:    "updater",
-		objectFieldName:   "object",
-		warningMessage:    "update activity has no object ID to reject",
-		successMessage:    "successfully processed update rejection - update not applied",
+		activityType:    "update",
+		actorFieldName:  "updater",
+		objectFieldName: "object",
+		warningMessage:  "update activity has no object ID to reject",
+		successMessage:  "successfully processed update rejection - update not applied",
 	})
 }
 
 // processRejectDelete processes rejection of a Delete activity
 func (ih *InboxHandler) processRejectDelete(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, deleteActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, deleteActivity, simpleRejectConfig{
-		activityType:      "delete",
-		actorFieldName:    "deleter",
-		objectFieldName:   "object",
-		warningMessage:    "delete activity has no object ID to reject",
-		successMessage:    "successfully processed delete rejection - object preserved",
+		activityType:    "delete",
+		actorFieldName:  "deleter",
+		objectFieldName: "object",
+		warningMessage:  "delete activity has no object ID to reject",
+		successMessage:  "successfully processed delete rejection - object preserved",
 	})
 }
 
 // processRejectAccept processes rejection of an Accept activity
 func (ih *InboxHandler) processRejectAccept(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, acceptActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, acceptActivity, simpleRejectConfig{
-		activityType:      "accept",
-		actorFieldName:    "accepter",
-		objectFieldName:   "original_activity",
-		warningMessage:    "accept activity has no original activity ID to reject",
-		successMessage:    "successfully processed accept rejection",
+		activityType:    "accept",
+		actorFieldName:  "accepter",
+		objectFieldName: "original_activity",
+		warningMessage:  "accept activity has no original activity ID to reject",
+		successMessage:  "successfully processed accept rejection",
 	})
 }
 
 // processRejectAdd processes rejection of an Add activity
 func (ih *InboxHandler) processRejectAdd(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, addActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, addActivity, simpleRejectConfig{
-		activityType:      "add",
-		actorFieldName:    "adder",
-		objectFieldName:   "object",
-		warningMessage:    "add activity has no object ID to reject",
-		successMessage:    "successfully processed add rejection - object not added",
-		includeTarget:     true,
+		activityType:    "add",
+		actorFieldName:  "adder",
+		objectFieldName: "object",
+		warningMessage:  "add activity has no object ID to reject",
+		successMessage:  "successfully processed add rejection - object not added",
+		includeTarget:   true,
 	})
 }
 
 // processRejectRemove processes rejection of a Remove activity
 func (ih *InboxHandler) processRejectRemove(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, removeActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, removeActivity, simpleRejectConfig{
-		activityType:      "remove",
-		actorFieldName:    "remover",
-		objectFieldName:   "object",
-		warningMessage:    "remove activity has no object ID to reject",
-		successMessage:    "successfully processed remove rejection - object preserved in collection",
-		includeTarget:     true,
+		activityType:    "remove",
+		actorFieldName:  "remover",
+		objectFieldName: "object",
+		warningMessage:  "remove activity has no object ID to reject",
+		successMessage:  "successfully processed remove rejection - object preserved in collection",
+		includeTarget:   true,
 	})
 }
 
 // processRejectFlag processes rejection of a Flag activity
 func (ih *InboxHandler) processRejectFlag(ctx context.Context, rejectActivity *activitypub.Activity, _ *activitypub.Actor, flagActivity *activitypub.Activity) error {
 	return ih.processSimpleReject(ctx, rejectActivity, flagActivity, simpleRejectConfig{
-		activityType:      "flag",
-		actorFieldName:    "flagger",
-		objectFieldName:   "flagged_object",
-		warningMessage:    "flag activity has no object ID to reject",
-		successMessage:    "successfully processed flag rejection - report not processed",
+		activityType:    "flag",
+		actorFieldName:  "flagger",
+		objectFieldName: "flagged_object",
+		warningMessage:  "flag activity has no object ID to reject",
+		successMessage:  "successfully processed flag rejection - report not processed",
 	})
 }
 
@@ -2055,7 +2182,7 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 		// Validate ActivityPub Note object
 		if err := common.ValidateActivityPubNote(objMap); err != nil {
 			log.Warn("invalid note object in create activity", zap.Error(err))
-			return fmt.Errorf("invalid note object: %v", err)
+			return errors.Join(ErrInvalidNote, err)
 		}
 
 		// Convert to Note object
@@ -2275,13 +2402,13 @@ func (ih *InboxHandler) processLikeActivity(ctx context.Context, activity *activ
 	}
 
 	// Store the like
-	_, err = ih.likeRepository.CreateLike(ctx, activity.Actor, objectID)
+	_, err = ih.likeRepository.CreateLike(ctx, activity.Actor, objectID, targetActor.ID)
 	if err != nil {
 		log.Error("failed to create like",
 			zap.String("actor", activity.Actor),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create like: %w", err)
+		return errors.Join(ErrCreateLike, err)
 	}
 
 	// Send notification if this is a local object
@@ -2382,7 +2509,7 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 			zap.String("actor", activity.Actor),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create announce: %w", err)
+		return errors.Join(ErrCreateAnnounce, err)
 	}
 
 	// Send notification if this is a local object
@@ -2519,7 +2646,7 @@ func (ih *InboxHandler) processUndoBlock(ctx context.Context, undoActivity *acti
 		log.Warn("unauthorized undo block attempt",
 			zap.String("original_blocker", blockActivity.Actor),
 			zap.String("undo_actor", undoActivity.Actor))
-		return fmt.Errorf("unauthorized: only the original blocker can undo their block")
+		return ErrUnauthorizedBlockUndo
 	}
 
 	// Remove the block relationship
@@ -2528,7 +2655,7 @@ func (ih *InboxHandler) processUndoBlock(ctx context.Context, undoActivity *acti
 			zap.String("blocker", blockerActorID),
 			zap.String("blocked", blockedActorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to delete block: %w", err)
+		return errors.Join(ErrDeleteBlock, err)
 	}
 
 	log.Info("successfully processed undo block activity",
@@ -2572,7 +2699,7 @@ func (ih *InboxHandler) processBlockActivity(ctx context.Context, activity *acti
 			zap.String("blocker", blockerActorID),
 			zap.String("blocked", blockedActorID),
 			zap.Error(err))
-		return fmt.Errorf("failed to create block: %w", err)
+		return errors.Join(ErrCreateBlock, err)
 	}
 
 	// Remove any existing follow relationships in both directions
@@ -2659,12 +2786,12 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 	// Validate required fields
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("add activity missing target collection")
-		return fmt.Errorf("add activity must specify a target collection")
+		return ErrAddNoTarget
 	}
 
 	if activity.Object == nil {
 		log.Warn("add activity missing object")
-		return fmt.Errorf("add activity must specify an object to add")
+		return ErrAddNoObject
 	}
 
 	// Extract object ID to add
@@ -2680,7 +2807,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("add activity object has no ID")
-		return fmt.Errorf("add activity object must have an ID")
+		return ErrAddObjectNoID
 	}
 
 	// Extract collection type from target URL
@@ -2689,7 +2816,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 		log.Warn("failed to extract collection type from target",
 			zap.String("target", activity.Target),
 			zap.Error(err))
-		return fmt.Errorf("invalid collection target: %w", err)
+		return errors.Join(ErrInvalidCollectionTarget, err)
 	}
 
 	// Verify authorization - only the collection owner can add items
@@ -2698,7 +2825,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 			zap.String("actor", activity.Actor),
 			zap.String("collection", collectionType),
 			zap.Error(err))
-		return fmt.Errorf("unauthorized add to collection: %w", err)
+		return errors.Join(ErrUnauthorizedAdd, err)
 	}
 
 	// Determine object type (for metadata)
@@ -2726,7 +2853,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 			zap.String("collection", collectionType),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to add item to collection: %w", err)
+		return errors.Join(ErrAddItemFailed, err)
 	}
 
 	// Update collection counters if needed
@@ -2755,12 +2882,12 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 	// Validate required fields
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("remove activity missing target collection")
-		return fmt.Errorf("remove activity must specify a target collection")
+		return ErrRemoveNoTarget
 	}
 
 	if activity.Object == nil {
 		log.Warn("remove activity missing object")
-		return fmt.Errorf("remove activity must specify an object to remove")
+		return ErrRemoveNoObject
 	}
 
 	// Extract object ID to remove
@@ -2776,7 +2903,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("remove activity object has no ID")
-		return fmt.Errorf("remove activity object must have an ID")
+		return ErrRemoveObjectNoID
 	}
 
 	// Extract collection type from target URL
@@ -2785,7 +2912,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 		log.Warn("failed to extract collection type from target",
 			zap.String("target", activity.Target),
 			zap.Error(err))
-		return fmt.Errorf("invalid collection target: %w", err)
+		return errors.Join(ErrInvalidCollectionTarget, err)
 	}
 
 	// Verify authorization - only the collection owner can remove items
@@ -2794,7 +2921,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 			zap.String("actor", activity.Actor),
 			zap.String("collection", collectionType),
 			zap.Error(err))
-		return fmt.Errorf("unauthorized remove from collection: %w", err)
+		return errors.Join(ErrUnauthorizedRemove, err)
 	}
 
 	log.Info("removing item from collection",
@@ -2816,7 +2943,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 			zap.String("collection", collectionType),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return fmt.Errorf("failed to remove item from collection: %w", err)
+		return errors.Join(ErrRemoveItemFailed, err)
 	}
 
 	// Update collection counters if needed
@@ -2842,12 +2969,12 @@ func (ih *InboxHandler) extractCollectionType(targetURL string) (string, error) 
 	// - https://example.com/users/alice/likes -> "likes"
 
 	if err := common.ValidateRequiredParam("targetURL", targetURL); err != nil {
-		return "", fmt.Errorf("target URL is empty")
+		return "", ErrTargetURLEmpty
 	}
 
 	parts := strings.Split(targetURL, "/")
 	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid target URL format")
+		return "", ErrTargetURLFormat
 	}
 
 	// Get the last part of the URL as collection type
@@ -2887,12 +3014,12 @@ func (ih *InboxHandler) processFlagActivity(ctx context.Context, activity *activ
 	flaggedObjects, err := ih.extractFlaggedObjects(activity)
 	if err != nil {
 		log.Warn("failed to extract flagged objects", zap.Error(err))
-		return fmt.Errorf("invalid flag activity: %w", err)
+		return errors.Join(ErrInvalidFlag, err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("flaggedObjects", flaggedObjects); err != nil {
 		log.Warn("flag activity contains no flagged objects")
-		return fmt.Errorf("flag activity must specify objects to flag")
+		return ErrFlagNoObjects
 	}
 
 	// Create moderation flag record using legacy storage type
@@ -2908,7 +3035,7 @@ func (ih *InboxHandler) processFlagActivity(ctx context.Context, activity *activ
 	// Store the flag
 	if err := ih.storageAdapter.Moderation().CreateFlag(ctx, flag); err != nil {
 		log.Error("failed to store moderation flag", zap.Error(err))
-		return fmt.Errorf("failed to store moderation flag: %w", err)
+		return errors.Join(ErrStoreModerationFlag, err)
 	}
 
 	// Optionally trigger automated moderation analysis
@@ -2939,7 +3066,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Validate required fields for Move activity
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("move activity missing target")
-		return fmt.Errorf("move activity must specify a target account")
+		return ErrMoveNoTarget
 	}
 
 	// The actor field is the old account, target is the new account
@@ -2949,7 +3076,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Validate that the move is properly authorized
 	if err := ih.validateMoveAuthorization(ctx, oldAccountID, newAccountID, activity); err != nil {
 		log.Warn("move activity authorization failed", zap.Error(err))
-		return fmt.Errorf("move authorization failed: %w", err)
+		return errors.Join(ErrMoveAuthorization, err)
 	}
 
 	// Create migration record
@@ -2964,10 +3091,10 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Set TTL to expire after 30 days
 	migration.SetTTL(time.Now().Add(30 * 24 * time.Hour))
 
-	// Store the migration  
+	// Store the migration
 	if err := ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).Create(); err != nil {
 		log.Error("failed to store account migration", zap.Error(err))
-		return fmt.Errorf("failed to store account migration: %w", err)
+		return errors.Join(ErrStoreMigration, err)
 	}
 
 	// Update local followers to follow the new account
@@ -3024,7 +3151,7 @@ func (ih *InboxHandler) extractFlaggedObjects(activity *activitypub.Activity) ([
 			flaggedObjects = append(flaggedObjects, id)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported object type in flag activity: %T", obj)
+		return nil, ErrUnsupportedFlagObject
 	}
 
 	return flaggedObjects, nil
@@ -3046,25 +3173,24 @@ func (ih *InboxHandler) extractFlagReason(activity *activitypub.Activity) string
 	return "No reason provided"
 }
 
-
 func (ih *InboxHandler) shouldRunAutomatedModeration(flag *storage.Flag) bool {
 	// Run automated moderation for certain types of reports
 	reason := strings.ToLower(flag.Content)
-	return strings.Contains(reason, "spam") || 
-		   strings.Contains(reason, "bot") ||
-		   len(flag.Object) > 3
+	return strings.Contains(reason, "spam") ||
+		strings.Contains(reason, "bot") ||
+		len(flag.Object) > 3
 }
 
 func (ih *InboxHandler) triggerAutomatedModeration(ctx context.Context, flag *storage.Flag) error {
 	log := common.WithContext(ctx)
-	
+
 	// This would integrate with the AI moderation service
 	// For now, just log that automated moderation would be triggered
 	log.Info("triggering automated moderation analysis",
 		zap.String("flag_id", flag.ID),
 		zap.String("reason", flag.Content),
 		zap.Int("object_count", len(flag.Object)))
-	
+
 	return nil
 }
 
@@ -3077,18 +3203,18 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 	newUsername := ih.extractHandleFromActorID(newAccountID)
 	if err := common.ValidateRequiredParam("newUsername", newUsername); err != nil {
 		log.Error("failed to extract username from new account ID", zap.String("new_account_id", newAccountID))
-		return fmt.Errorf("cannot extract username from new account ID: %s", newAccountID)
+		return ErrExtractUsername
 	}
 
 	// Check if the new account has the old account in its alsoKnownAs field
 	// This is the proper ActivityPub way to validate account migration authorization
 	hasAlsoKnownAs, err := ih.actorRepository.CheckAlsoKnownAs(ctx, newUsername, oldAccountID)
 	if err != nil {
-		log.Error("failed to check alsoKnownAs for move authorization", 
+		log.Error("failed to check alsoKnownAs for move authorization",
 			zap.String("new_username", newUsername),
 			zap.String("old_account_id", oldAccountID),
 			zap.Error(err))
-		return fmt.Errorf("cannot verify move authorization via alsoKnownAs: %w", err)
+		return errors.Join(ErrVerifyMoveAuth, err)
 	}
 
 	if !hasAlsoKnownAs {
@@ -3096,7 +3222,7 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 			zap.String("old_account", oldAccountID),
 			zap.String("new_account", newAccountID),
 			zap.String("new_username", newUsername))
-		return fmt.Errorf("move not authorized: new account %s does not list %s in alsoKnownAs field", newAccountID, oldAccountID)
+		return ErrMoveNotAuthorized
 	}
 
 	log.Info("move authorization validated - alsoKnownAs confirmation found",
@@ -3131,12 +3257,12 @@ func (ih *InboxHandler) processMoveFollowerMigration(ctx context.Context, oldAcc
 			baseDomain := ih.extractDomainFromURL(ih.baseURL)
 			// Validate the base domain
 			if err := common.ValidateDomainName(baseDomain); err != nil {
-				ih.logger.Warn("invalid base domain", 
+				ih.logger.Warn("invalid base domain",
 					zap.String("domain", baseDomain),
 					zap.Error(err))
 				continue
 			}
-			
+
 			if !strings.HasSuffix(followerHandle, "@"+baseDomain) {
 				// Skip remote followers - they should handle the migration themselves
 				continue
@@ -3191,16 +3317,15 @@ func (ih *InboxHandler) createAccountTombstone(ctx context.Context, oldAccountID
 
 func (ih *InboxHandler) notifyFollowersOfMove(ctx context.Context, oldAccountID, newAccountID string) error {
 	log := common.WithContext(ctx)
-	
+
 	// This would create notifications for followers about the account migration
 	// For now, just log that notifications would be sent
 	log.Info("would notify followers of account move",
 		zap.String("old_account", oldAccountID),
 		zap.String("new_account", newAccountID))
-	
+
 	return nil
 }
-
 
 // verifyCollectionAuthorization verifies that the actor is authorized to modify the collection
 func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activity *activitypub.Activity, collectionType string, targetActor *activitypub.Actor) error {
@@ -3211,7 +3336,7 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	// Target format: https://domain.com/users/username/collection
 	targetParts := strings.Split(activity.Target, "/")
 	if len(targetParts) < 4 {
-		return fmt.Errorf("cannot determine collection owner from target URL")
+		return ErrDetermineCollectionOwner
 	}
 
 	var collectionOwnerUsername string
@@ -3223,7 +3348,7 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	}
 
 	if err := common.ValidateRequiredParam("collectionOwnerUsername", collectionOwnerUsername); err != nil {
-		return fmt.Errorf("cannot extract collection owner from target URL")
+		return ErrExtractCollectionOwner
 	}
 
 	// For local collections, check if the actor matches the target actor
@@ -3242,12 +3367,11 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	if collectionType == "featured" {
 		// Only the actor themselves can manage their featured posts
 		if activity.Actor != targetActor.ID {
-			return fmt.Errorf("only the actor can manage their own featured collection")
+			return ErrUnauthorizedCollection
 		}
 	}
 
-	return fmt.Errorf("actor %s is not authorized to modify %s collection for %s",
-		activity.Actor, collectionType, collectionOwnerUsername)
+	return ErrUnauthorizedCollectionModify
 }
 
 // updateCollectionCounters updates metadata counters for collections
@@ -3294,7 +3418,7 @@ func (ih *InboxHandler) checkBlockStatus(ctx context.Context, actor1, actor2 str
 		log.Info("activity blocked due to block relationship",
 			zap.String("actor1", actor1),
 			zap.String("actor2", actor2))
-		return fmt.Errorf("activity blocked: actors have blocked each other")
+		return ErrActivityBlocked
 	}
 
 	return nil
@@ -3314,13 +3438,12 @@ func (ih *InboxHandler) verifyUpdateAuthorization(_ context.Context, activity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
-		return fmt.Errorf("cannot determine object owner for authorization")
+		return ErrDetermineObjectOwner
 	}
 
 	// Only the object owner can update it
 	if activity.Actor != objectOwner {
-		return fmt.Errorf("unauthorized update: actor %s cannot update object owned by %s",
-			activity.Actor, objectOwner)
+		return ErrUnauthorizedUpdate
 	}
 
 	return nil
@@ -3336,11 +3459,11 @@ func (ih *InboxHandler) storeEditHistory(ctx context.Context, objectID string, e
 	// Serialize the existing object to JSON then deserialize to map
 	objectJSON, err := json.Marshal(existingObject)
 	if err != nil {
-		return fmt.Errorf("failed to serialize existing object: %w", err)
+		return errors.Join(ErrSerializeObject, err)
 	}
 
 	if err := json.Unmarshal(objectJSON, &previousState); err != nil {
-		return fmt.Errorf("failed to deserialize existing object: %w", err)
+		return errors.Join(ErrDeserializeObject, err)
 	}
 
 	// Get the current version number (start from version 1 for first edit)
@@ -3365,7 +3488,7 @@ func (ih *InboxHandler) storeEditHistory(ctx context.Context, objectID string, e
 
 	// Store the history
 	if err := ih.objectRepository.CreateUpdateHistory(ctx, updateHistory); err != nil {
-		return fmt.Errorf("failed to create update history: %w", err)
+		return errors.Join(ErrCreateUpdateHistory, err)
 	}
 
 	log.Debug("stored edit history",
@@ -3395,7 +3518,7 @@ func (ih *InboxHandler) extractDeleteTarget(activity *activitypub.Activity) (str
 		// Object is typed
 		objectID = obj.ID
 	default:
-		return "", nil, fmt.Errorf("unsupported object type in delete activity: %T", obj)
+		return "", nil, ErrUnsupportedDeleteObject
 	}
 
 	return objectID, originalObject, nil
@@ -3415,13 +3538,12 @@ func (ih *InboxHandler) verifyDeleteAuthorization(_ context.Context, activity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
-		return fmt.Errorf("cannot determine object owner for authorization")
+		return ErrDetermineObjectOwner
 	}
 
 	// Only the object owner can delete it
 	if activity.Actor != objectOwner {
-		return fmt.Errorf("unauthorized delete: actor %s cannot delete object owned by %s",
-			activity.Actor, objectOwner)
+		return ErrUnauthorizedDelete
 	}
 
 	return nil
@@ -3469,7 +3591,7 @@ func (ih *InboxHandler) cascadeDeleteLikes(ctx context.Context, objectID string)
 	// Get all likes for this object
 	likes, _, err := ih.likeRepository.GetObjectLikes(ctx, objectID, 1000, "")
 	if err != nil {
-		return fmt.Errorf("failed to get object likes: %w", err)
+		return errors.Join(ErrGetObjectLikes, err)
 	}
 
 	// Delete each like
@@ -3524,7 +3646,7 @@ func (ih *InboxHandler) cascadeDeleteReplies(ctx context.Context, objectID strin
 	// Get replies to this object
 	replies, _, err := ih.objectRepository.GetReplies(ctx, objectID, 1000, "")
 	if err != nil {
-		return fmt.Errorf("failed to get replies: %w", err)
+		return errors.Join(ErrGetReplies, err)
 	}
 
 	// For ActivityPub compliance, we typically don't cascade delete replies
@@ -3590,7 +3712,7 @@ func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID stri
 			zap.String("object_id", objectID),
 			zap.String("deleted_by", deleteActivity.Actor),
 			zap.Error(err))
-		return fmt.Errorf("failed to create tombstone: %w", err)
+		return errors.Join(ErrCreateTombstone, err)
 	}
 
 	// Also create ActivityPub-compliant tombstone object for federation compatibility
@@ -3646,11 +3768,10 @@ func (ih *InboxHandler) extractUsernameFromActorID(actorID string) string {
 	if len(parts) < 3 {
 		return "" // Return empty if not in expected format
 	}
-	
+
 	// Return the last part (username)
 	return parts[len(parts)-1]
 }
-
 
 // extractDomainFromURL extracts the domain from an ActivityPub actor URL
 func (ih *InboxHandler) extractDomainFromURL(actorURL string) string {
@@ -3661,15 +3782,60 @@ func (ih *InboxHandler) extractDomainFromURL(actorURL string) string {
 	return u.Host
 }
 
+// trackCentralizedCost tracks Lambda and DynamoDB costs for inbox operations
+// The operationType parameter distinguishes between "Federation" (success) and "Federation.Error" (failure)
+func (ih *InboxHandler) trackCentralizedCost(req *InboxRequest, operationType string) {
+	if ih.centralizedCostService == nil {
+		return
+	}
+
+	duration := time.Since(req.StartTime)
+	memoryMB := int64(128) // Default Lambda memory
+	// Lambda memory size is not configurable in config package, keep environment lookup for AWS-specific values
+
+	// Track Lambda execution
+	lambdaOp := costpkg.LambdaOperation{
+		FunctionName: "inbox",
+		Duration:     duration,
+		MemoryMB:     memoryMB,
+		Timestamp:    req.StartTime,
+	}
+	logMessage := "failed to track Lambda cost"
+	if operationType == "Federation.Error" {
+		logMessage = "failed to track Lambda cost for failure"
+	}
+	if err := ih.centralizedCostService.TrackLambdaInvocation(context.Background(), lambdaOp); err != nil {
+		ih.logger.Warn(logMessage, zap.Error(err))
+	}
+
+	// Track DynamoDB operations
+	if req.CostParams.DynamoDBReadCount > 0 || req.CostParams.DynamoDBWriteCount > 0 {
+		dynamoOp := costpkg.DynamoOperation{
+			Type:               operationType,
+			TableName:          ih.tableName,
+			ConsumedReadUnits:  req.CostParams.DynamoDBReadCount,
+			ConsumedWriteUnits: req.CostParams.DynamoDBWriteCount,
+			Timestamp:          req.StartTime,
+		}
+		logMessage := "failed to track DynamoDB cost"
+		if operationType == "Federation.Error" {
+			logMessage = "failed to track DynamoDB cost for failure"
+		}
+		if err := ih.centralizedCostService.TrackDynamoOperation(context.Background(), dynamoOp); err != nil {
+			ih.logger.Warn(logMessage, zap.Error(err))
+		}
+	}
+}
+
 func main() {
 	// Initialize Lambda with standardized federation configuration
 	config := common.LambdaConfig{
 		ServiceName: "inbox",
 		LambdaType:  common.LambdaTypeFederation, // Changed from API to Federation
 	}
-	
+
 	lambdaCtx := common.MustInitializeLambda(config)
-	
+
 	// Use standardized initialization with federation-specific options
 	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
 	err := lambdaCtx.InitializeWithOptions(options)
@@ -3677,7 +3843,7 @@ func main() {
 		// Fallback to manual initialization if needed
 		lambdaCtx.Logger.Warn("falling back to manual service initialization", zap.Error(err))
 	}
-	
+
 	handler, err := NewInboxHandler(lambdaCtx)
 	if err != nil {
 		panic(fmt.Sprintf("failed to initialize inbox handler: %v", err))
@@ -3737,13 +3903,13 @@ func main() {
 	// Add unified error handling middleware
 	app.Use(common.CreateFederationErrorMiddleware(handler.logger))
 
-	// Add federation metrics middleware  
+	// Add federation metrics middleware
 	if handler.emfMetrics != nil {
 		app.Use(handler.createFederationMetricsMiddleware())
 	}
 
 	// Add federation rate limiting middleware (fourth in chain)
-	if os.Getenv("DISABLE_FEDERATION_RATE_LIMITING") != "true" {
+	if !handler.getConfig().DisableAWSModeration { // Use existing moderation flag to control rate limiting
 		app.Use(ratelimit.FederationRateLimitMiddleware(handler.storageAdapter))
 		handler.logger.Info("enabled federation rate limiting middleware")
 	}
@@ -3770,7 +3936,7 @@ func main() {
 		if handler.emfMetrics != nil {
 			handler.emfMetrics.RecordLatency("federation_request", requestDuration)
 			handler.emfMetrics.RecordThroughput("federation_request", 1)
-			
+
 			if err != nil {
 				handler.emfMetrics.RecordError("federation_request", "lambda_error")
 			} else {
@@ -3800,7 +3966,7 @@ func (ih *InboxHandler) createFederationMetricsMiddleware() lift.Middleware {
 
 			// Extract federation context information
 			federationCtx := ih.extractFederationContext(ctx)
-			
+
 			// Start latency timer and record incoming message
 			timer := ih.emfMetrics.StartLatencyTimer(ctx.Context, "federation_activity")
 			ih.recordIncomingFederationMessage(federationCtx)
@@ -3839,16 +4005,16 @@ func (ih *InboxHandler) extractFederationContext(ctx *lift.Context) *federationC
 
 	// Determine remote instance from User-Agent
 	federationCtx.remoteInstance = ih.parseRemoteInstance(federationCtx.userAgent)
-	
+
 	// Extract path and method from request
 	if ctx.Request != nil && ctx.Request.Request != nil {
 		federationCtx.path = ctx.Request.Request.Path
 		federationCtx.method = ctx.Request.Request.Method
 	}
-	
+
 	// Build dimensions map
 	federationCtx.dimensions = ih.buildMetricsDimensions(federationCtx)
-	
+
 	return federationCtx
 }
 
@@ -3864,13 +4030,13 @@ func (ih *InboxHandler) parseRemoteInstance(userAgent string) string {
 			return u.Host
 		}
 	}
-	
+
 	// Simple parsing for common formats like "Mastodon/4.0.0"
 	parts := strings.Fields(userAgent)
 	if len(parts) > 0 {
 		return strings.ToLower(parts[0])
 	}
-	
+
 	return "unknown"
 }
 
@@ -3892,9 +4058,9 @@ func (ih *InboxHandler) buildMetricsDimensions(federationCtx *federationContext)
 // recordIncomingFederationMessage records metrics for incoming federation messages
 func (ih *InboxHandler) recordIncomingFederationMessage(federationCtx *federationContext) {
 	ih.emfMetrics.RecordBusinessMetric(
-		observability.MetricInboxMessages, 
-		1.0, 
-		observability.UnitCount, 
+		observability.MetricInboxMessages,
+		1.0,
+		observability.UnitCount,
 		federationCtx.dimensions,
 	)
 }
@@ -3948,7 +4114,7 @@ func (ih *InboxHandler) recordSuccessfulDelivery(timer interface{}, remoteInstan
 // recordFailedDelivery records metrics for failed federation delivery
 func (ih *InboxHandler) recordFailedDelivery(timer interface{}, remoteInstance string, statusCode int) {
 	errorType := ih.categorizeErrorType(statusCode)
-	
+
 	if t, ok := timer.(interface {
 		FinishWithError(metrics interface{}, errorType string)
 	}); ok {
@@ -3980,13 +4146,13 @@ func (ih *InboxHandler) recordSignatureVerificationMetrics(remoteInstance string
 
 	dimensions := map[string]string{
 		observability.DimensionInstance: remoteInstance,
-		"status": status,
+		"status":                        status,
 	}
 
 	ih.emfMetrics.RecordBusinessMetric(
-		observability.MetricSignatureVerification, 
-		1.0, 
-		observability.UnitCount, 
+		observability.MetricSignatureVerification,
+		1.0,
+		observability.UnitCount,
 		dimensions,
 	)
 }
@@ -4001,7 +4167,7 @@ func (ih *InboxHandler) triggerFederationHealthAlert(remoteInstance string) {
 		// Use a separate context for alerts to avoid blocking the request
 		alertCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		
+
 		// This would need to be enhanced with actual federation failure rate calculation
 		// For now, we'll trigger an alert for repeated failures from the same instance
 		ih.alertManager.CheckFederationHealth(alertCtx, remoteInstance, 100.0, 1) // 100% failure rate for this request

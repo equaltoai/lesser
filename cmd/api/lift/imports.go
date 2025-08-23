@@ -3,6 +3,7 @@ package lift
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -168,7 +169,7 @@ func (h *Handler) validateImportToken(ctx *lift.Context, token string) (string, 
 		return "", common.RespondUnauthorized(ctx)
 	}
 
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)
@@ -223,12 +224,15 @@ func (h *Handler) validateImportParams(req *ImportRequest) error {
 		"bookmarks": true,
 	}
 	if !validTypes[req.Type] {
-		return fmt.Errorf("invalid import type: %s", req.Type)
+		h.logger.Error("invalid import type provided",
+			zap.String("type", req.Type),
+			zap.Strings("valid_types", []string{"followers", "following", "blocks", "mutes", "lists", "bookmarks"}))
+		return ErrInvalidImportType
 	}
 
 	// Validate mode
 	if req.Mode != "merge" && req.Mode != "overwrite" {
-		return fmt.Errorf("mode must be 'merge' or 'overwrite'")
+		return ErrInvalidImportMode
 	}
 
 	return nil
@@ -346,10 +350,14 @@ func (h *Handler) createImportRecord(ctx *lift.Context, importID, username strin
 
 // queueImportJobSQS queues the import job using SQS
 func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string, req *ImportRequest, s3Key string) error {
-	// Create job queue service
-	jobQueue, err := services.NewJobQueueService(h.logger)
+	// Create job queue service with config
+	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
-		return fmt.Errorf("failed to create job queue service: %w", err)
+		h.logger.Error("failed to create job queue service",
+			zap.String("import_id", importID),
+			zap.String("username", username),
+			zap.Error(err))
+		return errors.Join(ErrJobQueueServiceCreationFailed, err)
 	}
 
 	// Create import job message
@@ -477,47 +485,10 @@ func (h *Handler) HandleListImportsLift(ctx *lift.Context) error {
 // HandleCancelImportLift handles DELETE /api/v1/imports/:id
 func (h *Handler) HandleCancelImportLift(ctx *lift.Context) error {
 	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token using centralized validation
-		authHeader := ctx.Header("Authorization")
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and require write scope
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		if !claims.HasScope(auth.ScopeWrite) {
-			return common.RespondInsufficientScope(ctx)
-		}
-
-		username = claims.Username
+	// Authenticate user with write scope requirement
+	username, err := h.authenticateUserWithWriteScope(ctx)
+	if err != nil {
+		return err
 	}
 
 	// Get import ID from path parameter
@@ -774,7 +745,10 @@ func (h *Handler) basicFileValidation(data []byte) error {
 	// Basic content type detection
 	contentType := h.detectContentType(data)
 	if !h.isValidImportFormat(contentType) {
-		return fmt.Errorf("unsupported file format: %s", contentType)
+		h.logger.Error("unsupported file format detected",
+			zap.String("content_type", contentType),
+			zap.Strings("supported_formats", []string{"application/json", "text/csv", "text/plain"}))
+		return ErrUnsupportedFileFormat
 	}
 	return nil
 }
@@ -798,7 +772,7 @@ func (h *Handler) authenticateImportStatusRequest(ctx *lift.Context) (string, er
 	}
 
 	// Validate token (no scope check needed for read operations)
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.repos, h.logger)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
 		return "", common.RespondUnauthorized(ctx)

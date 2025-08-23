@@ -57,6 +57,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -157,13 +158,13 @@ func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 	// Apply all options
 	for _, opt := range opts {
 		if err := opt(r); err != nil {
-			return nil, fmt.Errorf("failed to apply registry option: %w", err)
+			return nil, errors.Join(ErrApplyRegistryOption, err)
 		}
 	}
 
 	// Validate required dependencies
 	if err := r.validate(); err != nil {
-		return nil, fmt.Errorf("registry validation failed: %w", err)
+		return nil, errors.Join(ErrRegistryValidation, err)
 	}
 
 	return r, nil
@@ -173,7 +174,7 @@ func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 func WithStorage(storage core.RepositoryStorage) RegistryOption {
 	return func(r *Registry) error {
 		if storage == nil {
-			return fmt.Errorf("storage cannot be nil")
+			return ErrStorageCannotBeNil
 		}
 		r.storage = storage
 		return nil
@@ -184,7 +185,7 @@ func WithStorage(storage core.RepositoryStorage) RegistryOption {
 func WithPublisher(publisher streaming.Publisher) RegistryOption {
 	return func(r *Registry) error {
 		if publisher == nil {
-			return fmt.Errorf("publisher cannot be nil")
+			return ErrPublisherCannotBeNil
 		}
 		r.publisher = publisher
 		return nil
@@ -195,7 +196,7 @@ func WithPublisher(publisher streaming.Publisher) RegistryOption {
 func WithLogger(logger *zap.Logger) RegistryOption {
 	return func(r *Registry) error {
 		if logger == nil {
-			return fmt.Errorf("logger cannot be nil")
+			return ErrLoggerCannotBeNil
 		}
 		r.logger = logger
 		return nil
@@ -206,7 +207,7 @@ func WithLogger(logger *zap.Logger) RegistryOption {
 func WithConfig(config *ServiceConfig) RegistryOption {
 	return func(r *Registry) error {
 		if config == nil {
-			return fmt.Errorf("config cannot be nil")
+			return ErrConfigCannotBeNil
 		}
 		r.config = config
 		return nil
@@ -216,7 +217,7 @@ func WithConfig(config *ServiceConfig) RegistryOption {
 // validate ensures all required dependencies are provided and sets defaults
 func (r *Registry) validate() error {
 	if r.storage == nil {
-		return fmt.Errorf("storage is required - use WithStorage()")
+		return ErrStorageRequired
 	}
 
 	// Set defaults for optional dependencies
@@ -228,6 +229,7 @@ func (r *Registry) validate() error {
 		r.config = &ServiceConfig{
 			BaseURL:   "https://" + DefaultLocalhost,
 			JWTSecret: "default-secret-change-in-production",
+			Config:    nil, // Will remain nil for default config
 		}
 	}
 
@@ -302,7 +304,7 @@ func (r *Registry) Authentication() AuthenticationService {
 	defer r.mu.Unlock()
 
 	if r.authentication == nil {
-		r.authentication = NewAuthenticationService(r.config.JWTSecret, r.storage)
+		r.authentication = NewAuthenticationService(r.config.JWTSecret, r.config.Config, r.storage)
 		r.initialized["Authentication"] = true
 	}
 
@@ -506,7 +508,7 @@ func (r *Registry) Notes() *notes.Service {
 				userRepo,
 				pollRepo, // Add poll repository
 				r.publisher,
-				r.Analytics(), // Analytics service
+				r.Analytics(),                    // Analytics service
 				r.createNotesFederationAdapter(), // Federation service adapter
 				r.logger,
 				domainName,
@@ -585,7 +587,7 @@ func (r *Registry) Conversations() *conversations.Service {
 		conversationRepo := r.storage.Conversation()
 		noteRepo := r.storage.Status()
 		accountRepo := r.storage.Account()
-		
+
 		// Check if required repositories are available
 		if conversationRepo != nil && noteRepo != nil && accountRepo != nil {
 			domainName := DefaultLocalhost
@@ -597,10 +599,10 @@ func (r *Registry) Conversations() *conversations.Service {
 					domainName = strings.TrimPrefix(r.config.BaseURL, "http://")
 				}
 			}
-			
+
 			// Create a simple federation service adapter for conversations
 			federationService := &simpleFederationService{logger: r.logger}
-			
+
 			r.conversationsService = conversations.NewService(
 				conversationRepo,
 				noteRepo,
@@ -636,7 +638,7 @@ func (r *Registry) Media() *media.Service {
 			// Create a simple job queue service if not available
 			// In production, this would be a proper SQS-based implementation
 			jobQueue := &simpleJobQueue{logger: r.logger}
-			
+
 			// Create an adapter for the media service's job queue interface
 			mediaJobQueue := &mediaJobQueueAdapter{jobQueue: jobQueue}
 
@@ -901,14 +903,14 @@ func (r *Registry) initializeImportExportService() bool {
 	ctx := context.Background()
 	queueService, queueErr := NewAWSQueueService(ctx, r.logger)
 	storageClient, storageErr := NewAWSS3StorageClient(ctx, r.logger)
-	
+
 	// Log errors but don't fail initialization - services can work without AWS integration
 	if queueErr != nil {
-		r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing", 
+		r.logger.Warn("failed to initialize AWS queue service, import/export will work without async processing",
 			zap.Error(queueErr))
 	}
 	if storageErr != nil {
-		r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support", 
+		r.logger.Warn("failed to initialize AWS storage client, import/export will work with limited file support",
 			zap.Error(storageErr))
 	}
 
@@ -980,7 +982,6 @@ func (r *Registry) extractDomainName() string {
 
 	return DefaultLocalhost
 }
-
 
 // Bulk returns the Bulk service, initializing it if necessary
 func (r *Registry) Bulk() *bulk.Service {
@@ -1114,7 +1115,7 @@ type graphqlEventBusAdapter struct {
 // Subscribe creates a subscription to events matching the stream name
 func (a *graphqlEventBusAdapter) Subscribe(ctx context.Context, streamName string) (<-chan interface{}, error) {
 	if a.internalEventBus == nil {
-		return nil, fmt.Errorf("internal event bus not initialized")
+		return nil, ErrEventBusNotInitialized
 	}
 
 	// Create a filter for the specific stream
@@ -1125,7 +1126,7 @@ func (a *graphqlEventBusAdapter) Subscribe(ctx context.Context, streamName strin
 	// Subscribe to the internal event bus
 	subscriber, err := a.internalEventBus.Subscribe(streamName, filter, 100) // 100 buffer size
 	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to internal event bus: %w", err)
+		return nil, errors.Join(ErrEventBusSubscription, err)
 	}
 
 	// Create a channel for GraphQL events
@@ -1246,29 +1247,29 @@ func (a *federationServiceAdapter) QueueActivity(ctx context.Context, activity *
 // determineRecipients extracts recipients from the activity
 func (a *federationServiceAdapter) determineRecipients(_ context.Context, activity *activitypub.Activity) ([]string, error) {
 	var recipients []string
-	
+
 	// Add 'to' recipients
 	recipients = append(recipients, activity.To...)
-	
+
 	// Add 'cc' recipients
 	recipients = append(recipients, activity.CC...)
-	
+
 	// Filter out public addresses and collections, keep only specific actors
 	var filteredRecipients []string
 	for _, recipient := range recipients {
-		if recipient != activitypub.PublicAddress && 
-		   !strings.Contains(recipient, "/followers") && 
-		   !strings.Contains(recipient, "/following") {
+		if recipient != activitypub.PublicAddress &&
+			!strings.Contains(recipient, "/followers") &&
+			!strings.Contains(recipient, "/following") {
 			filteredRecipients = append(filteredRecipients, recipient)
 		}
 	}
-	
+
 	// If no specific recipients but has followers collection, use federation service
 	if len(filteredRecipients) == 0 && a.federation != nil {
 		// This would need to get followers, but for now return empty to use fallback
 		return []string{}, nil
 	}
-	
+
 	return filteredRecipients, nil
 }
 
@@ -1416,7 +1417,7 @@ func (a *queueFederationAdapter) QueueActivity(ctx context.Context, activity *ac
 				}
 			}
 		}
-		
+
 		// Fall back to minimal actor representation if storage fetch failed
 		if actor == nil {
 			actor = &activitypub.Actor{
@@ -1438,23 +1439,23 @@ func (a *queueFederationAdapter) extractUsernameFromActorURI(actorURI string) st
 	// - https://domain.com/users/username
 	// - https://domain.com/@username
 	// - https://domain.com/actor/username
-	
+
 	parts := strings.Split(actorURI, "/")
 	if len(parts) < 2 {
 		return ""
 	}
-	
+
 	// Get the last part which should be the username
 	username := parts[len(parts)-1]
-	
+
 	// Remove @ prefix if present
 	username = strings.TrimPrefix(username, "@")
-	
+
 	// Basic validation - username should not be empty and should be reasonable length
 	if username == "" || len(username) > 100 {
 		return ""
 	}
-	
+
 	return username
 }
 
@@ -1463,22 +1464,22 @@ func (a *queueFederationAdapter) convertStorageActorToActivityPub(_ interface{})
 	// The actual conversion would depend on the storage actor type
 	// For now, we'll create a basic ActivityPub actor with the common fields
 	// Enhanced based on the actual storage model
-	
+
 	// Try to extract common fields if the storage actor has them
 	actor := &activitypub.Actor{
 		BaseObject: activitypub.BaseObject{
 			Type: "Person", // Default type
 		},
 	}
-	
+
 	// This would need to be implemented based on the actual storage.Actor interface
 	// For now, we return a basic actor - this is better than the previous minimal version
 	// but would need full implementation based on the storage model structure
-	
+
 	if a.logger != nil {
 		a.logger.Debug("converted storage actor to ActivityPub (basic conversion)")
 	}
-	
+
 	return actor
 }
 
@@ -1502,8 +1503,10 @@ func (s *simpleFederationService) QueueActivity(_ context.Context, activity *act
 // getJobQueue returns the job queue service, creating it if necessary
 func (r *Registry) getJobQueue() JobQueueServiceInterface {
 	// Try to create a real SQS-based job queue service
-	if jobQueue, err := NewJobQueueService(r.logger); err == nil {
-		return jobQueue
+	if r.config != nil && r.config.Config != nil {
+		if jobQueue, err := NewJobQueueService(r.config.Config, r.logger); err == nil {
+			return jobQueue
+		}
 	}
 
 	// Fall back to simple job queue if SQS is not available
