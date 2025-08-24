@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // User represents a user account stored in DynamoDB using DynamORM
@@ -29,7 +29,6 @@ type User struct {
 	GSI4PK string `dynamorm:"index:status-index,pk" json:"gsi4_pk"` // Format: "STATUS#{status}"
 	GSI4SK string `dynamorm:"index:status-index,sk" json:"gsi4_sk"` // Format: "{username}"
 
-
 	// Core user data
 	Username     string    `json:"username"`
 	Email        string    `json:"email,omitempty"`         // Optional - not required for email-free auth
@@ -47,7 +46,7 @@ type User struct {
 	RecoveryMethods []string `json:"recovery_methods,omitempty"` // ["passkey", "wallet", "social", "recovery_code"]
 
 	// NSFW Content Preferences
-	AllowNSFW         bool `json:"allow_nsfw"`          // Whether user allows viewing NSFW content
+	AllowNSFW          bool `json:"allow_nsfw"`           // Whether user allows viewing NSFW content
 	RequireNSFWWarning bool `json:"require_nsfw_warning"` // Whether user wants warnings before showing NSFW content
 
 	// Version for optimistic locking

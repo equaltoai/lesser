@@ -45,8 +45,8 @@ func ExampleUsage() {
 		},
 		logger,
 	).WithCache(
-		time.Minute,     // Cache for 1 minute
-		100,             // Max 100 entries
+		time.Minute,                        // Cache for 1 minute
+		100,                                // Max 100 entries
 		func(s string) string { return s }, // Use input as cache key
 	)
 
@@ -135,7 +135,7 @@ func ExampleUsage() {
 
 	// Example 7: Metrics tracking
 	metrics := NewTransformationMetrics()
-	
+
 	// Simulate some transformations with metrics
 	for i := 0; i < 10; i++ {
 		start := time.Now()
@@ -145,7 +145,7 @@ func ExampleUsage() {
 	}
 
 	count, errors, avgDuration, errorRate := metrics.GetStats()
-	fmt.Printf("Metrics - Count: %d, Errors: %d, Avg Duration: %v, Error Rate: %.2f%%\n", 
+	fmt.Printf("Metrics - Count: %d, Errors: %d, Avg Duration: %v, Error Rate: %.2f%%\n",
 		count, errors, avgDuration, errorRate*100)
 
 	// Example 8: Transformation context
@@ -153,7 +153,7 @@ func ExampleUsage() {
 	transformCtx.WithMetadata("source", "api_endpoint")
 	transformCtx.WithMetadata("version", "v1.0")
 
-	fmt.Printf("Context - User: %s, Request: %s, Duration: %v\n", 
+	fmt.Printf("Context - User: %s, Request: %s, Duration: %v\n",
 		transformCtx.UserID, transformCtx.RequestID, transformCtx.Duration())
 }
 

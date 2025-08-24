@@ -16,17 +16,17 @@ import (
 
 // MastodonAPIConfig configures Mastodon API behavior
 type MastodonAPIConfig struct {
-	InstanceName       string
-	Domain             string
-	MaxStatusLength    int
-	MaxBioLength       int
-	MaxDisplayName     int
-	MaxPollOptions     int
-	MaxPollExpiry      time.Duration
-	MediaUploadLimit   int64
-	VideoUploadLimit   int64
-	DefaultPagination  int
-	MaxPagination      int
+	InstanceName      string
+	Domain            string
+	MaxStatusLength   int
+	MaxBioLength      int
+	MaxDisplayName    int
+	MaxPollOptions    int
+	MaxPollExpiry     time.Duration
+	MediaUploadLimit  int64
+	VideoUploadLimit  int64
+	DefaultPagination int
+	MaxPagination     int
 }
 
 // DefaultMastodonConfig returns sensible defaults for Mastodon API
@@ -101,12 +101,12 @@ func (m *MastodonBusinessLogic) ValidateMastodonPaginationParams(params Mastodon
 
 // StatusValidationRules defines validation rules for status content
 type StatusValidationRules struct {
-	MaxLength       int
-	AllowMarkdown   bool
-	AllowHTML       bool
-	RequireContent  bool
-	MaxMediaItems   int
-	MaxPollOptions  int
+	MaxLength      int
+	AllowMarkdown  bool
+	AllowHTML      bool
+	RequireContent bool
+	MaxMediaItems  int
+	MaxPollOptions int
 }
 
 // ValidateStatusContent validates status content according to Mastodon rules
@@ -242,11 +242,11 @@ type FilterContext string
 
 // Mastodon filter contexts define where content filters should be applied
 const (
-	FilterContextHome         FilterContext = "home"
+	FilterContextHome          FilterContext = "home"
 	FilterContextNotifications FilterContext = "notifications"
-	FilterContextPublic       FilterContext = "public"
-	FilterContextThread      FilterContext = "thread"
-	FilterContextAccount     FilterContext = "account"
+	FilterContextPublic        FilterContext = "public"
+	FilterContextThread        FilterContext = "thread"
+	FilterContextAccount       FilterContext = "account"
 )
 
 // FilterAction represents what action to take when filter matches
@@ -321,16 +321,16 @@ type NotificationType string
 
 // Mastodon notification types as defined in the Mastodon API specification
 const (
-	NotificationMention      NotificationType = "mention"
-	NotificationStatus       NotificationType = "status"
-	NotificationReblog       NotificationType = "reblog"
-	NotificationFollow       NotificationType = "follow"
+	NotificationMention       NotificationType = "mention"
+	NotificationStatus        NotificationType = "status"
+	NotificationReblog        NotificationType = "reblog"
+	NotificationFollow        NotificationType = "follow"
 	NotificationFollowRequest NotificationType = "follow_request"
-	NotificationFavourite    NotificationType = "favourite"
-	NotificationPoll         NotificationType = "poll"
-	NotificationUpdate       NotificationType = "update"
-	NotificationAdminSignUp  NotificationType = "admin.sign_up"
-	NotificationAdminReport  NotificationType = "admin.report"
+	NotificationFavourite     NotificationType = "favourite"
+	NotificationPoll          NotificationType = "poll"
+	NotificationUpdate        NotificationType = "update"
+	NotificationAdminSignUp   NotificationType = "admin.sign_up"
+	NotificationAdminReport   NotificationType = "admin.report"
 )
 
 // ValidateNotificationType validates notification type
@@ -356,12 +356,12 @@ func ValidateNotificationType(notificationType string) error {
 
 // Additional OAuth scopes beyond the existing ones
 const (
-	ScopeFollow       = "write:follows"
-	ScopeReadAccounts = "read:accounts"
-	ScopeWriteMedia   = "write:media"
-	ScopeReadStatuses = "read:statuses"
+	ScopeFollow        = "write:follows"
+	ScopeReadAccounts  = "read:accounts"
+	ScopeWriteMedia    = "write:media"
+	ScopeReadStatuses  = "read:statuses"
 	ScopeWriteStatuses = "write:statuses"
-	ScopePush         = "push"
+	ScopePush          = "push"
 )
 
 // ValidateMastodonOAuthScopes validates OAuth scope strings for Mastodon API
@@ -374,14 +374,14 @@ func ValidateMastodonOAuthScopes(scopes string) ([]string, error) {
 	validScopes := make([]string, 0, len(scopeList))
 
 	validScopeMap := map[string]bool{
-		"read":          true,
-		"write":         true,
-		ScopeFollow:     true,
-		ScopeReadAccounts: true,
-		ScopeWriteMedia:   true,
-		ScopeReadStatuses: true,
+		"read":             true,
+		"write":            true,
+		ScopeFollow:        true,
+		ScopeReadAccounts:  true,
+		ScopeWriteMedia:    true,
+		ScopeReadStatuses:  true,
 		ScopeWriteStatuses: true,
-		ScopePush:         true,
+		ScopePush:          true,
 	}
 
 	for _, scope := range scopeList {
@@ -417,7 +417,7 @@ type Snowflake struct {
 func GenerateSnowflakeID() string {
 	// Simple snowflake: timestamp (42 bits) + sequence (22 bits)
 	timestamp := time.Now().UnixMilli()
-	
+
 	// Ensure timestamp is non-negative to prevent integer overflow
 	// when converting to uint64 (addresses gosec G115)
 	var id uint64
@@ -428,7 +428,7 @@ func GenerateSnowflakeID() string {
 		// Safe conversion: timestamp is guaranteed to be non-negative
 		id = uint64(timestamp) << 22
 	}
-	
+
 	return strconv.FormatUint(id, 10)
 }
 
@@ -451,21 +451,21 @@ func ValidateMastodonID(id string) error {
 
 // RateLimitConfig configures rate limiting for different endpoints
 type RateLimitConfig struct {
-	PostsPerHour     int
-	FollowsPerHour   int
-	ReportsPerHour   int
-	UploadsPerHour   int
-	SearchesPerHour  int
+	PostsPerHour    int
+	FollowsPerHour  int
+	ReportsPerHour  int
+	UploadsPerHour  int
+	SearchesPerHour int
 }
 
 // DefaultRateLimits returns Mastodon-compatible rate limits
 func DefaultRateLimits() RateLimitConfig {
 	return RateLimitConfig{
-		PostsPerHour:     300,  // Mastodon default
-		FollowsPerHour:   400,  
-		ReportsPerHour:   10,   
-		UploadsPerHour:   30,   
-		SearchesPerHour:  300,  
+		PostsPerHour:    300, // Mastodon default
+		FollowsPerHour:  400,
+		ReportsPerHour:  10,
+		UploadsPerHour:  30,
+		SearchesPerHour: 300,
 	}
 }
 
@@ -554,14 +554,14 @@ func SanitizeHTML(content string) string {
 func ExtractHashtags(content string) []string {
 	hashtagRegex := regexp.MustCompile(`#([a-zA-Z0-9_]+)`)
 	matches := hashtagRegex.FindAllStringSubmatch(content, -1)
-	
+
 	hashtags := make([]string, 0, len(matches))
 	for _, match := range matches {
 		if len(match) > 1 {
 			hashtags = append(hashtags, match[1])
 		}
 	}
-	
+
 	return hashtags
 }
 
@@ -569,14 +569,14 @@ func ExtractHashtags(content string) []string {
 func ExtractMentions(content string) []string {
 	mentionRegex := regexp.MustCompile(`@([a-zA-Z0-9_]+)`)
 	matches := mentionRegex.FindAllStringSubmatch(content, -1)
-	
+
 	mentions := make([]string, 0, len(matches))
 	for _, match := range matches {
 		if len(match) > 1 {
 			mentions = append(mentions, match[1])
 		}
 	}
-	
+
 	return mentions
 }
 
@@ -605,9 +605,9 @@ func NewMastodonAPIError(errorType, description string, statusCode int) Mastodon
 
 // Common Mastodon API errors
 var (
-	ErrMastodonInvalidToken     = NewMastodonAPIError("invalid_token", "The access token is invalid", 401)
+	ErrMastodonInvalidToken      = NewMastodonAPIError("invalid_token", "The access token is invalid", 401)
 	ErrMastodonInsufficientScope = NewMastodonAPIError("insufficient_scope", "The request requires higher privileges than provided", 403)
-	ErrMastodonRateLimited      = NewMastodonAPIError("rate_limited", "Rate limit exceeded", 429)
-	ErrMastodonValidation       = NewMastodonAPIError("validation_failed", "Validation failed", 422)
-	ErrMastodonNotFound         = NewMastodonAPIError("record_not_found", "Record not found", 404)
+	ErrMastodonRateLimited       = NewMastodonAPIError("rate_limited", "Rate limit exceeded", 429)
+	ErrMastodonValidation        = NewMastodonAPIError("validation_failed", "Validation failed", 422)
+	ErrMastodonNotFound          = NewMastodonAPIError("record_not_found", "Record not found", 404)
 )

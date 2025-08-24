@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // FederationAnalyticsTimeSeries represents time series federation metrics with 5-minute primary aggregation

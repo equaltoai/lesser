@@ -7,19 +7,19 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // repositoryAdapter implements the Storage interface using DynamORM directly
 type repositoryAdapter struct {
-	db               core.DB
-	logger           *zap.Logger
-	costTracker      *cost.Tracker
-	unifiedTracker   *cost.UnifiedTracker
-	tableName        string
+	db             core.DB
+	logger         *zap.Logger
+	costTracker    *cost.Tracker
+	unifiedTracker *cost.UnifiedTracker
+	tableName      string
 }
 
 // NewRepositoryAdapter creates a new repository adapter
@@ -29,16 +29,16 @@ func NewRepositoryAdapter(db core.DB, logger *zap.Logger, costTracker *cost.Trac
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	
+
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "FederationCostRepository", "", "")
-	
+
 	return &repositoryAdapter{
-		db:               db,
-		logger:           logger,
-		costTracker:      costTracker,
-		unifiedTracker:   unifiedTracker,
-		tableName:        tableName,
+		db:             db,
+		logger:         logger,
+		costTracker:    costTracker,
+		unifiedTracker: unifiedTracker,
+		tableName:      tableName,
 	}
 }
 
@@ -55,7 +55,10 @@ func (r *repositoryAdapter) RecordCost(ctx context.Context, cost *FederationCost
 		LastUpdated:    cost.LastUpdated,
 		BillingPeriod:  cost.BillingPeriod,
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update federation cost keys", zap.Error(err))
+		return err
+	}
 
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {

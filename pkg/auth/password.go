@@ -13,7 +13,6 @@ import (
 // DefaultBcryptCost is the default cost factor for bcrypt hashing
 const DefaultBcryptCost = 12
 
-
 // PasswordPolicy defines password requirements
 type PasswordPolicy struct {
 	MinLength              int

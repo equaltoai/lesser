@@ -437,7 +437,7 @@ func generateSecureToken() string {
 		// Fallback to timestamp-based token if crypto/rand fails (should never happen in production)
 		return fmt.Sprintf("fallback_token_%d", time.Now().UnixNano())
 	}
-	
+
 	// Return hex-encoded secure random token
 	return hex.EncodeToString(randomBytes)
 }
@@ -1006,7 +1006,9 @@ func (r *AccountRepository) StoreRecoveryToken(ctx context.Context, key string, 
 	}
 
 	// Update keys to set SK and TTL
-	recoveryToken.UpdateKeys()
+	if err := recoveryToken.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Store in DynamoDB
 	err := r.db.WithContext(ctx).Model(recoveryToken).Create()

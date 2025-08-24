@@ -72,7 +72,7 @@ type IDGenerator struct {
 func NewIDGenerator(logger *zap.Logger) *IDGenerator {
 	// Use cryptographically secure random source
 	entropy := ulid.Monotonic(rand.Reader, 0)
-	
+
 	return &IDGenerator{
 		entropy: entropy,
 		logger:  logger,
@@ -93,12 +93,12 @@ func (g *IDGenerator) GenerateULID() string {
 // GenerateActivityPubID generates an ActivityPub-compatible ID with domain context
 func (g *IDGenerator) GenerateActivityPubID(domain, objectType string) string {
 	id := g.GenerateULID()
-	
+
 	// Ensure domain has proper protocol
 	if !strings.HasPrefix(domain, "http") {
 		domain = "https://" + domain
 	}
-	
+
 	return fmt.Sprintf("%s/%s/%s", domain, objectType, id)
 }
 
@@ -113,7 +113,7 @@ func (g *IDGenerator) GenerateActorID(domain, username string) string {
 	if !strings.HasPrefix(domain, "http") {
 		domain = "https://" + domain
 	}
-	
+
 	return fmt.Sprintf("%s/users/%s", domain, username)
 }
 
@@ -222,7 +222,7 @@ func (g *IDGenerator) ExtractTimestamp(id string) (time.Time, error) {
 	if err != nil {
 		return time.Time{}, fmt.Errorf("invalid ULID: %w", err)
 	}
-	
+
 	return ulid.Time(parsed.Time()), nil
 }
 
@@ -230,12 +230,12 @@ func (g *IDGenerator) ExtractTimestamp(id string) (time.Time, error) {
 func (g *IDGenerator) IsOlderThan(id string, duration time.Duration) bool {
 	timestamp, err := g.ExtractTimestamp(id)
 	if err != nil {
-		g.logger.Warn("failed to extract timestamp from ID", 
+		g.logger.Warn("failed to extract timestamp from ID",
 			zap.String("id", id),
 			zap.Error(err))
 		return false
 	}
-	
+
 	return time.Since(timestamp) > duration
 }
 

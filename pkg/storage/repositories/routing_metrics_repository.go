@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // RoutingMetricsRepository handles routing metrics data persistence using BaseRepository pattern
@@ -25,13 +25,13 @@ type RoutingMetricsRepository struct {
 func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *RoutingMetricsRepository {
 	routeRepo := NewBaseRepository[*models.RouteMetricsWindow](db, tableName, logger)
 	routeRepo.SetRepoName("route_metrics")
-	
+
 	globalRepo := NewBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger)
 	globalRepo.SetRepoName("global_metrics")
-	
+
 	instanceRepo := NewBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger)
 	instanceRepo.SetRepoName("instance_metrics")
-	
+
 	return &RoutingMetricsRepository{
 		routeMetricsRepo:    routeRepo,
 		globalMetricsRepo:   globalRepo,
@@ -45,7 +45,7 @@ func NewRoutingMetricsRepositoryWithCostTracking(db core.DB, tableName string, l
 	routeRepo := NewBaseRepositoryWithCostTracking[*models.RouteMetricsWindow](db, tableName, logger, costService, "route_metrics")
 	globalRepo := NewBaseRepositoryWithCostTracking[*models.GlobalMetricsWindow](db, tableName, logger, costService, "global_metrics")
 	instanceRepo := NewBaseRepositoryWithCostTracking[*models.InstanceMetricsWindow](db, tableName, logger, costService, "instance_metrics")
-	
+
 	return &RoutingMetricsRepository{
 		routeMetricsRepo:    routeRepo,
 		globalMetricsRepo:   globalRepo,
@@ -190,7 +190,7 @@ func (r *RoutingMetricsRepository) BatchStoreMetrics(ctx context.Context,
 	routeWindows []*models.RouteMetricsWindow,
 	instanceWindows []*models.InstanceMetricsWindow,
 	globalWindow *models.GlobalMetricsWindow) error {
-	
+
 	// Use BaseRepository batch create operations if available, or fall back to individual creates
 	if len(routeWindows) > 0 {
 		err := r.routeMetricsRepo.BatchCreate(ctx, routeWindows)

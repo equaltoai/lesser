@@ -12,9 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SubscriptionManager manages WebSocket subscriptions
@@ -634,7 +634,9 @@ func (h *WebSocketHandler) parseModerationFilter(filter any) ModerationFilter {
 	if filterMap, ok := filter.(map[string]any); ok {
 		var modFilter ModerationFilter
 		if data, err := json.Marshal(filterMap); err == nil {
-			_ = json.Unmarshal(data, &modFilter)
+			if err := json.Unmarshal(data, &modFilter); err != nil {
+				h.logger.Warn("failed to unmarshal moderation filter", zap.Error(err))
+			}
 		}
 		return modFilter
 	}

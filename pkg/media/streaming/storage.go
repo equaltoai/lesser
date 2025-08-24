@@ -268,7 +268,10 @@ func (s *S3MediaStorage) UpdateMediaMetadata(mediaID string, metadata *MediaMeta
 	}
 
 	// Set the keys
-	metadataModel.UpdateKeys()
+	if err := metadataModel.UpdateKeys(); err != nil {
+		common.Logger().Error("failed to update media metadata keys", zap.Error(err))
+		return err
+	}
 
 	// Try to update first, if not found then create
 	err := s.db.WithContext(ctx).Model(metadataModel).

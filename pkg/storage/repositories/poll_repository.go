@@ -112,8 +112,8 @@ func (r *PollRepository) GetPoll(ctx context.Context, pollID string) (*storage.P
 
 	var model models.Poll
 	pk := fmt.Sprintf("POLL#%s", pollID)
-	sk := "METADATA"
-	
+	sk := models.SKMetadata
+
 	// Use BaseRepository Get method
 	err := r.Get(ctx, pk, sk, &model)
 	if err != nil {
@@ -239,7 +239,7 @@ func (r *PollRepository) VoteOnPoll(ctx context.Context, pollID string, voterID 
 	var existingVote models.PollVote
 	pk := fmt.Sprintf("POLL#%s", pollID)
 	sk := fmt.Sprintf("VOTE#%s", voterID)
-	
+
 	err = r.voteRepo.Get(ctx, pk, sk, &existingVote)
 	if err == nil {
 		// Vote already exists
@@ -320,7 +320,7 @@ func (r *PollRepository) HasUserVoted(ctx context.Context, pollID string, userID
 	var voteModel models.PollVote
 	pk := fmt.Sprintf("POLL#%s", pollID)
 	sk := fmt.Sprintf("VOTE#%s", userID)
-	
+
 	err := r.voteRepo.Get(ctx, pk, sk, &voteModel)
 	if err != nil {
 		if errors.IsNotFound(err) {

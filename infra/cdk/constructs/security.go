@@ -22,13 +22,13 @@ type SecurityProps struct {
 }
 
 type SecurityConstructs struct {
-	LambdaRole         awsiam.Role
-	DynamoDBPolicy     awsiam.Policy
-	S3Policy           awsiam.Policy
-	SQSPolicy          awsiam.Policy
-	BedrockPolicy      awsiam.Policy
-	KMSPolicy          awsiam.Policy
-	KMSKey             awskms.IKey
+	LambdaRole     awsiam.Role
+	DynamoDBPolicy awsiam.Policy
+	S3Policy       awsiam.Policy
+	SQSPolicy      awsiam.Policy
+	BedrockPolicy  awsiam.Policy
+	KMSPolicy      awsiam.Policy
+	KMSKey         awskms.IKey
 }
 
 func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *SecurityConstructs {

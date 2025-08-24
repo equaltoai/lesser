@@ -66,7 +66,7 @@ func (r *AICostRepository) CreateAICost(ctx context.Context, aiCost *models.AICo
 func (r *AICostRepository) GetAICost(ctx context.Context, operationID string) (*models.AICost, error) {
 	aiCost := &models.AICost{}
 	pk := fmt.Sprintf("AI_COST#%s", operationID)
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	err := r.Get(ctx, pk, sk, aiCost)
 	if err != nil {
@@ -338,13 +338,13 @@ func (r *AICostRepository) GetAICostTrends(ctx context.Context, startTime, endTi
 		bucketCosts := buckets[bucketKey]
 
 		dataPoint := AICostDataPoint{
-			Timestamp:     bucketTime,
-			TotalCost:     0,
-			Operations:    int64(len(bucketCosts)),
-			InputTokens:   0,
-			OutputTokens:  0,
-			AvgLatencyMs:  0,
-			SuccessRate:   0,
+			Timestamp:    bucketTime,
+			TotalCost:    0,
+			Operations:   int64(len(bucketCosts)),
+			InputTokens:  0,
+			OutputTokens: 0,
+			AvgLatencyMs: 0,
+			SuccessRate:  0,
 		}
 
 		if err := common.ValidateSliceNotEmpty("bucket_costs", bucketCosts); err == nil {
@@ -402,7 +402,7 @@ func (r *AICostRepository) analyzeAICostTrends(dataPoints []AICostDataPoint) *AI
 
 	// Linear regression slope (trend direction)
 	slope := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
-	
+
 	if slope > 0.01 { // Threshold for "increasing"
 		analysis.TrendDirection = "increasing"
 	} else if slope < -0.01 { // Threshold for "decreasing"
@@ -423,7 +423,7 @@ func (r *AICostRepository) analyzeAICostTrends(dataPoints []AICostDataPoint) *AI
 	// Find peak and low points
 	var maxCost, minCost float64
 	var maxTime, minTime time.Time
-	
+
 	for i, point := range dataPoints {
 		if i == 0 || point.TotalCost > maxCost {
 			maxCost = point.TotalCost
@@ -460,14 +460,14 @@ func (r *AICostRepository) analyzeAICostTrends(dataPoints []AICostDataPoint) *AI
 		// Simple confidence based on R-squared
 		var totalSumSquares, residualSumSquares float64
 		avgY := sumY / n
-		
+
 		for i, point := range dataPoints {
 			x := float64(i)
 			predicted := slope*x + (sumY-slope*sumX)/n
 			totalSumSquares += (point.TotalCost - avgY) * (point.TotalCost - avgY)
 			residualSumSquares += (point.TotalCost - predicted) * (point.TotalCost - predicted)
 		}
-		
+
 		if totalSumSquares > 0 {
 			rSquared := 1 - (residualSumSquares / totalSumSquares)
 			analysis.Confidence = rSquared * 100 // Convert to percentage
@@ -490,15 +490,15 @@ func (r *AICostRepository) detectSeasonalPatterns(dataPoints []AICostDataPoint) 
 	}
 
 	patterns := []string{}
-	
+
 	// Detect weekly patterns
 	weeklyPatterns := r.detectWeeklyPatterns(dataPoints)
 	patterns = append(patterns, weeklyPatterns...)
-	
+
 	// Detect hourly patterns
 	hourlyPatterns := r.detectHourlyPatterns(dataPoints)
 	patterns = append(patterns, hourlyPatterns...)
-	
+
 	return patterns
 }
 
@@ -512,11 +512,11 @@ func (r *AICostRepository) detectWeeklyPatterns(dataPoints []AICostDataPoint) []
 // detectHourlyPatterns detects patterns based on hour of day
 func (r *AICostRepository) detectHourlyPatterns(dataPoints []AICostDataPoint) []string {
 	costsByHour := r.groupCostsByHour(dataPoints)
-	
+
 	if len(costsByHour) <= 12 {
 		return []string{} // Not enough hourly data
 	}
-	
+
 	patternData := r.calculateHourAverages(costsByHour)
 	overallAvg := r.calculateOverallAverage(dataPoints)
 	return r.identifyHourPatterns(patternData, overallAvg)
@@ -547,23 +547,23 @@ func (r *AICostRepository) calculateDayAverages(costsByDay map[time.Weekday][]fl
 	dayAverages := make(map[interface{}]float64)
 	var totalSum float64
 	var totalPoints int
-	
+
 	for dow, costs := range costsByDay {
 		if err := common.ValidateSliceNotEmpty("costs", costs); err != nil {
 			continue
 		}
-		
+
 		sum := r.sumCosts(costs)
 		dayAverages[dow] = sum / float64(len(costs))
 		totalSum += sum
 		totalPoints += len(costs)
 	}
-	
+
 	overallAvg := float64(0)
 	if totalPoints > 0 {
 		overallAvg = totalSum / float64(totalPoints)
 	}
-	
+
 	return &timePatternData{
 		averages:   dayAverages,
 		overallAvg: overallAvg,
@@ -587,19 +587,19 @@ func (r *AICostRepository) calculateOverallAverage(dataPoints []AICostDataPoint)
 	if err := common.ValidateSliceNotEmpty("data_points", dataPoints); err != nil {
 		return 0
 	}
-	
+
 	var totalSum float64
 	for _, point := range dataPoints {
 		totalSum += point.TotalCost
 	}
-	
+
 	return totalSum / float64(len(dataPoints))
 }
 
 // identifyDayPatterns identifies high/low day patterns
 func (r *AICostRepository) identifyDayPatterns(patternData *timePatternData) []string {
 	patterns := []string{}
-	
+
 	for day, avg := range patternData.averages {
 		dow := day.(time.Weekday)
 		if avg > patternData.overallAvg*1.2 {
@@ -608,7 +608,7 @@ func (r *AICostRepository) identifyDayPatterns(patternData *timePatternData) []s
 			patterns = append(patterns, fmt.Sprintf("low_%s", dow.String()))
 		}
 	}
-	
+
 	return patterns
 }
 
@@ -616,17 +616,17 @@ func (r *AICostRepository) identifyDayPatterns(patternData *timePatternData) []s
 func (r *AICostRepository) identifyHourPatterns(hourAverages map[interface{}]float64, overallAvg float64) []string {
 	peakHour, peakAvg := r.findPeakHour(hourAverages)
 	lowHour, lowAvg := r.findLowHour(hourAverages)
-	
+
 	patterns := []string{}
-	
+
 	if peakAvg > overallAvg*1.3 {
 		patterns = append(patterns, fmt.Sprintf("peak_hour_%02d", peakHour))
 	}
-	
+
 	if lowAvg < overallAvg*0.7 {
 		patterns = append(patterns, fmt.Sprintf("low_hour_%02d", lowHour))
 	}
-	
+
 	return patterns
 }
 
@@ -634,7 +634,7 @@ func (r *AICostRepository) identifyHourPatterns(hourAverages map[interface{}]flo
 func (r *AICostRepository) findPeakHour(hourAverages map[interface{}]float64) (int, float64) {
 	var peakHour int
 	var peakAvg float64
-	
+
 	for hour, avg := range hourAverages {
 		h := hour.(int)
 		if h == 0 || avg > peakAvg {
@@ -642,7 +642,7 @@ func (r *AICostRepository) findPeakHour(hourAverages map[interface{}]float64) (i
 			peakHour = h
 		}
 	}
-	
+
 	return peakHour, peakAvg
 }
 
@@ -650,7 +650,7 @@ func (r *AICostRepository) findPeakHour(hourAverages map[interface{}]float64) (i
 func (r *AICostRepository) findLowHour(hourAverages map[interface{}]float64) (int, float64) {
 	var lowHour int
 	var lowAvg float64
-	
+
 	for hour, avg := range hourAverages {
 		h := hour.(int)
 		if h == 0 || avg < lowAvg {
@@ -658,7 +658,7 @@ func (r *AICostRepository) findLowHour(hourAverages map[interface{}]float64) (in
 			lowHour = h
 		}
 	}
-	
+
 	return lowHour, lowAvg
 }
 
@@ -740,56 +740,56 @@ func (r *AICostRepository) GetAggregatedCosts(ctx context.Context, period string
 
 // AICostSummary represents aggregated AI cost metrics
 type AICostSummary struct {
-	StartTime             time.Time         `json:"start_time"`
-	EndTime               time.Time         `json:"end_time"`
-	OperationType         string            `json:"operation_type"`
-	TotalOperations       int64             `json:"total_operations"`
-	SuccessfulOperations  int64             `json:"successful_operations"`
-	SuccessRate           float64           `json:"success_rate"`
-	TotalCostMicroCents   int64             `json:"total_cost_micro_cents"`
-	TotalCostDollars      float64           `json:"total_cost_dollars"`
-	AvgCostMicroCents     int64             `json:"avg_cost_micro_cents"`
-	TotalInputTokens      int64             `json:"total_input_tokens"`
-	TotalOutputTokens     int64             `json:"total_output_tokens"`
-	CostPerInputToken     float64           `json:"cost_per_input_token"`
-	CostPerOutputToken    float64           `json:"cost_per_output_token"`
-	AvgLatencyMs          float64           `json:"avg_latency_ms"`
-	AvgComplexityScore    float64           `json:"avg_complexity_score"`
-	ModelBreakdown        map[string]int    `json:"model_breakdown"`
-	OperationBreakdown    map[string]int    `json:"operation_breakdown"`
+	StartTime            time.Time      `json:"start_time"`
+	EndTime              time.Time      `json:"end_time"`
+	OperationType        string         `json:"operation_type"`
+	TotalOperations      int64          `json:"total_operations"`
+	SuccessfulOperations int64          `json:"successful_operations"`
+	SuccessRate          float64        `json:"success_rate"`
+	TotalCostMicroCents  int64          `json:"total_cost_micro_cents"`
+	TotalCostDollars     float64        `json:"total_cost_dollars"`
+	AvgCostMicroCents    int64          `json:"avg_cost_micro_cents"`
+	TotalInputTokens     int64          `json:"total_input_tokens"`
+	TotalOutputTokens    int64          `json:"total_output_tokens"`
+	CostPerInputToken    float64        `json:"cost_per_input_token"`
+	CostPerOutputToken   float64        `json:"cost_per_output_token"`
+	AvgLatencyMs         float64        `json:"avg_latency_ms"`
+	AvgComplexityScore   float64        `json:"avg_complexity_score"`
+	ModelBreakdown       map[string]int `json:"model_breakdown"`
+	OperationBreakdown   map[string]int `json:"operation_breakdown"`
 }
 
 // AICostTrends represents cost trends over time
 type AICostTrends struct {
-	Period     string                `json:"period"`
-	StartTime  time.Time             `json:"start_time"`
-	EndTime    time.Time             `json:"end_time"`
-	DataPoints []AICostDataPoint     `json:"data_points"`
-	Analysis   *AICostTrendAnalysis  `json:"analysis"`
+	Period     string               `json:"period"`
+	StartTime  time.Time            `json:"start_time"`
+	EndTime    time.Time            `json:"end_time"`
+	DataPoints []AICostDataPoint    `json:"data_points"`
+	Analysis   *AICostTrendAnalysis `json:"analysis"`
 }
 
 // AICostDataPoint represents a single data point in cost trends
 type AICostDataPoint struct {
-	Timestamp     time.Time `json:"timestamp"`
-	TotalCost     float64   `json:"total_cost"`
-	Operations    int64     `json:"operations"`
-	InputTokens   int64     `json:"input_tokens"`
-	OutputTokens  int64     `json:"output_tokens"`
-	AvgLatencyMs  float64   `json:"avg_latency_ms"`
-	SuccessRate   float64   `json:"success_rate"`
+	Timestamp    time.Time `json:"timestamp"`
+	TotalCost    float64   `json:"total_cost"`
+	Operations   int64     `json:"operations"`
+	InputTokens  int64     `json:"input_tokens"`
+	OutputTokens int64     `json:"output_tokens"`
+	AvgLatencyMs float64   `json:"avg_latency_ms"`
+	SuccessRate  float64   `json:"success_rate"`
 }
 
 // AICostTrendAnalysis represents sophisticated trend analysis
 type AICostTrendAnalysis struct {
-	TrendDirection   string      `json:"trend_direction"` // increasing, decreasing, stable
-	GrowthRate       float64     `json:"growth_rate"`     // Percentage growth rate
-	PeakTime         time.Time   `json:"peak_time"`
-	LowTime          time.Time   `json:"low_time"`
-	PeakCost         float64     `json:"peak_cost"`
-	LowCost          float64     `json:"low_cost"`
-	Volatility       float64     `json:"volatility"`       // Cost volatility measure
-	Confidence       float64     `json:"confidence"`       // Statistical confidence in trend
-	SeasonalFactors  []string    `json:"seasonal_factors"` // Detected seasonal patterns
-	PredictedCost    float64     `json:"predicted_cost"`   // Predicted next period cost
-	Anomalies        []time.Time `json:"anomalies"`        // Detected anomalous periods
+	TrendDirection  string      `json:"trend_direction"` // increasing, decreasing, stable
+	GrowthRate      float64     `json:"growth_rate"`     // Percentage growth rate
+	PeakTime        time.Time   `json:"peak_time"`
+	LowTime         time.Time   `json:"low_time"`
+	PeakCost        float64     `json:"peak_cost"`
+	LowCost         float64     `json:"low_cost"`
+	Volatility      float64     `json:"volatility"`       // Cost volatility measure
+	Confidence      float64     `json:"confidence"`       // Statistical confidence in trend
+	SeasonalFactors []string    `json:"seasonal_factors"` // Detected seasonal patterns
+	PredictedCost   float64     `json:"predicted_cost"`   // Predicted next period cost
+	Anomalies       []time.Time `json:"anomalies"`        // Detected anomalous periods
 }

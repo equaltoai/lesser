@@ -18,36 +18,36 @@ type LambdaType string
 
 const (
 	// LambdaTypeAPI represents the API Lambda function type
-	LambdaTypeAPI         LambdaType = "api"
+	LambdaTypeAPI LambdaType = "api"
 	// LambdaTypeProcessor represents the processor Lambda function type
-	LambdaTypeProcessor   LambdaType = "processor"
+	LambdaTypeProcessor LambdaType = "processor"
 	// LambdaTypeMedia represents the media Lambda function type
-	LambdaTypeMedia       LambdaType = "media"
+	LambdaTypeMedia LambdaType = "media"
 	// LambdaTypeFederation represents the federation Lambda function type
-	LambdaTypeFederation  LambdaType = "federation"
+	LambdaTypeFederation LambdaType = "federation"
 	// LambdaTypeAI represents the AI Lambda function type
-	LambdaTypeAI          LambdaType = "ai"
+	LambdaTypeAI LambdaType = "ai"
 	// LambdaTypeBasic represents the basic Lambda function type
-	LambdaTypeBasic       LambdaType = "basic"
+	LambdaTypeBasic LambdaType = "basic"
 )
 
 // LambdaConfig defines Lambda initialization configuration
 type LambdaConfig struct {
 	// Basic configuration
-	ServiceName      string
-	LambdaType       LambdaType
-	Version          string
-	
+	ServiceName string
+	LambdaType  LambdaType
+	Version     string
+
 	// Feature flags
-	EnableMetrics    bool
-	EnableTracing    bool
-	EnableHealthCheck bool
+	EnableMetrics      bool
+	EnableTracing      bool
+	EnableHealthCheck  bool
 	EnableCostTracking bool
-	
+
 	// Timeout and retry settings
 	RequestTimeout   time.Duration
 	RetryMaxAttempts int
-	
+
 	// Custom AWS service requirements (overrides defaults)
 	CustomServiceConfig *awsInit.ServiceConfig
 }
@@ -55,48 +55,48 @@ type LambdaConfig struct {
 // LambdaContext contains initialized Lambda dependencies
 type LambdaContext struct {
 	// Configuration
-	Config      *config.Config
-	Logger      *zap.Logger
-	StartTime   time.Time
-	
+	Config    *config.Config
+	Logger    *zap.Logger
+	StartTime time.Time
+
 	// AWS Services
 	AWSServices *awsInit.AWSServices
-	
+
 	// Storage (interfaces to avoid import cycles)
-	DynamoDB    interface{} // *dynamorm.Client
-	Repos       interface{} // core.RepositoryStorage
-	
+	DynamoDB interface{} // *dynamorm.Client
+	Repos    interface{} // core.RepositoryStorage
+
 	// Observability (interfaces to avoid import cycles)
-	EMFMetrics    interface{} // *observability.EMFMetrics
-	HealthChecker interface{} // *observability.HealthChecker
-	TracingManager interface{} // *observability.TracingManager
-	MetricsCollector interface{} // *observability.MetricsCollector
+	EMFMetrics        interface{} // *observability.EMFMetrics
+	HealthChecker     interface{} // *observability.HealthChecker
+	TracingManager    interface{} // *observability.TracingManager
+	MetricsCollector  interface{} // *observability.MetricsCollector
 	LatencyAggregator interface{} // *observability.LatencyAggregator
-	LatencyAlerter interface{} // *observability.LatencyAlerter
-	AlertManager interface{} // *monitoring.AlertManager
-	
+	LatencyAlerter    interface{} // *observability.LatencyAlerter
+	AlertManager      interface{} // *monitoring.AlertManager
+
 	// Service specific
 	ServiceName string
 	LambdaType  LambdaType
-	
+
 	// Service utilities (interfaces to avoid import cycles)
-	AuthService interface{} // *auth.AuthService
-	AuthMiddleware interface{} // *auth.Middleware
-	StreamQueue interface{} // *streaming.StreamQueue
+	AuthService      interface{} // *auth.AuthService
+	AuthMiddleware   interface{} // *auth.Middleware
+	StreamQueue      interface{} // *streaming.StreamQueue
 	SignatureService interface{} // *federation.SignatureService
-	DeliveryService interface{} // *federation.DeliveryService
-	CostCalculator interface{} // *federation.CostCalculator
-	RateLimiter interface{} // *auth.RateLimiter
+	DeliveryService  interface{} // *federation.DeliveryService
+	CostCalculator   interface{} // *federation.CostCalculator
+	RateLimiter      interface{} // *auth.RateLimiter
 }
 
 // InitializeLambda initializes a Lambda function with standard dependencies
 func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 	startTime := time.Now()
-	
+
 	// Initialize basic dependencies
 	cfg := config.Get()
 	logger := Logger()
-	
+
 	// Set defaults with environment variable overrides
 	if lambdaConfig.ServiceName == "" {
 		lambdaConfig.ServiceName = os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
@@ -104,33 +104,33 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 			lambdaConfig.ServiceName = "unknown"
 		}
 	}
-	
+
 	if string(lambdaConfig.LambdaType) == "" {
 		lambdaConfig.LambdaType = detectLambdaType(lambdaConfig.ServiceName)
 	}
-	
+
 	// Apply environment-based defaults
 	if lambdaConfig.RequestTimeout == 0 {
 		lambdaConfig.RequestTimeout = getTimeoutForLambdaType(lambdaConfig.LambdaType)
 	}
-	
+
 	if lambdaConfig.RetryMaxAttempts == 0 {
 		lambdaConfig.RetryMaxAttempts = 3
 	}
-	
+
 	// Apply feature flag defaults
 	if !lambdaConfig.EnableMetrics {
 		lambdaConfig.EnableMetrics = !cfg.DisableMetrics
 	}
-	
+
 	if !lambdaConfig.EnableTracing {
 		lambdaConfig.EnableTracing = cfg.XRayTracingEnabled
 	}
-	
+
 	if !lambdaConfig.EnableHealthCheck {
 		lambdaConfig.EnableHealthCheck = shouldEnableHealthCheck(lambdaConfig.LambdaType)
 	}
-	
+
 	if !lambdaConfig.EnableCostTracking {
 		lambdaConfig.EnableCostTracking = !cfg.DisableCostTracking
 	}
@@ -153,7 +153,7 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 	} else {
 		serviceConfig = getDefaultServiceConfig(lambdaConfig.LambdaType)
 	}
-	
+
 	// Override with Lambda config settings
 	serviceConfig.ServiceName = lambdaConfig.ServiceName
 	serviceConfig.RequestTimeout = lambdaConfig.RequestTimeout
@@ -225,7 +225,7 @@ func (lambdaCtx *LambdaContext) FlushObservability() {
 func (lambdaCtx *LambdaContext) CreateLambdaHandler(handler func(ctx context.Context, event interface{}) (interface{}, error)) func(ctx context.Context, event interface{}) (interface{}, error) {
 	return func(ctx context.Context, event interface{}) (interface{}, error) {
 		requestStart := time.Now()
-		
+
 		// Log cold start if this is a cold start
 		if time.Since(lambdaCtx.StartTime) < 30*time.Second {
 			coldStartDuration := time.Since(lambdaCtx.StartTime)
@@ -236,7 +236,7 @@ func (lambdaCtx *LambdaContext) CreateLambdaHandler(handler func(ctx context.Con
 
 		// Process the request
 		result, err := handler(ctx, event)
-		
+
 		// Log request completion
 		requestDuration := time.Since(requestStart)
 		lambdaCtx.Logger.Info("request completed",
@@ -292,7 +292,7 @@ func TitleCase(s string) string {
 	if len(s) == 0 {
 		return s
 	}
-	
+
 	// Handle ASCII uppercase conversion
 	first := s[0]
 	if first >= 'a' && first <= 'z' {

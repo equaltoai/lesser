@@ -572,7 +572,7 @@ func (r *repositoryStorageAdapter) GetInfrastructureHealth(ctx context.Context) 
 func (r *repositoryStorageAdapter) GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error) {
 	// Get current month's cost data from cost tracking repository
 	now := time.Now()
-	
+
 	// Get monthly aggregate cost data
 	costRepo := r.repos.Cost()
 	monthlyAggregate, err := costRepo.GetMonthlyAggregate(ctx, now.Year(), int(now.Month()))
@@ -603,7 +603,7 @@ func (r *repositoryStorageAdapter) GetInstanceBudgets(ctx context.Context, excee
 	monthlyBudget := 100.0 // Default budget - in production this would come from configuration
 	currentSpend := monthlyAggregate.TotalCostDollars
 	remainingBudget := monthlyBudget - currentSpend
-	
+
 	// Calculate projected overspend if we have projection data
 	var projectedOverspend *float64
 	if costProjections != nil && costProjections.ProjectedCost > monthlyBudget {
@@ -635,31 +635,31 @@ func (r *repositoryStorageAdapter) GetInstanceBudgets(ctx context.Context, excee
 
 func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error) {
 	now := time.Now()
-	
+
 	// Get analytics repository for instance metrics
 	analyticsRepo := r.repos.Analytics()
-	
+
 	// Query various health metrics
 	var responseTime, errorRate, federationDelay, costEfficiency float64
 	var queueDepth int
 	var issues []*model.HealthIssue
 	var recommendations []string
-	
+
 	// Get total user count and recent activity to assess health
 	totalUsers, err := analyticsRepo.GetTotalUserCount(ctx)
 	if err != nil {
 		// Not critical, continue with default values
 		totalUsers = 0
 	}
-	
+
 	activeUsers, err := analyticsRepo.GetActiveUserCount(ctx, 1) // Last 1 day
 	if err != nil {
 		activeUsers = 0
 	}
-	
+
 	// Get federation health if domain is not localhost
 	var federationHealth *models.FederationInstanceHealthTracking
-	
+
 	if domain != "localhost" {
 		// Query federation health tracking
 		err = r.repos.GetDB().WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
@@ -668,8 +668,8 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 			First(&federationHealth)
 		if err != nil {
 			// If no federation health data, create a basic assessment
-			responseTime = 1000.0 // Default 1s response time
-			errorRate = 0.05      // 5% error rate assumption
+			responseTime = 1000.0   // Default 1s response time
+			errorRate = 0.05        // 5% error rate assumption
 			federationDelay = 500.0 // 500ms federation delay
 		} else {
 			responseTime = float64(federationHealth.AverageResponseTime)
@@ -678,11 +678,11 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		}
 	} else {
 		// For localhost, get actual performance metrics
-		responseTime = 150.0 // Local responses are fast
-		errorRate = 0.01     // 1% error rate for local instance
+		responseTime = 150.0  // Local responses are fast
+		errorRate = 0.01      // 1% error rate for local instance
 		federationDelay = 0.0 // No federation delay for local
 	}
-	
+
 	// Calculate cost efficiency based on recent cost data
 	costRepo := r.repos.Cost()
 	monthlyAggregate, err := costRepo.GetMonthlyAggregate(ctx, now.Year(), int(now.Month()))
@@ -701,16 +701,16 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 	} else {
 		costEfficiency = 0.8 // Default good efficiency
 	}
-	
+
 	// Assess queue depth (simplified - would normally query actual queue systems)
 	queueDepth = 0
 	if federationHealth != nil && federationHealth.ConsecutiveFails > 2 {
 		queueDepth = federationHealth.ConsecutiveFails * 100 // Estimate backlog
 	}
-	
+
 	// Determine overall health status
 	healthStatus := model.InstanceHealthStatusHealthy
-	
+
 	// Check for performance issues
 	if responseTime > 2000 {
 		healthStatus = model.InstanceHealthStatusWarning
@@ -723,7 +723,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		})
 		recommendations = append(recommendations, "Consider scaling up compute resources or optimizing database queries")
 	}
-	
+
 	if errorRate > 0.05 {
 		healthStatus = model.InstanceHealthStatusWarning
 		issues = append(issues, &model.HealthIssue{
@@ -735,7 +735,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		})
 		recommendations = append(recommendations, "Investigate error logs and implement retry logic")
 	}
-	
+
 	if federationDelay > 5000 {
 		issues = append(issues, &model.HealthIssue{
 			Type:        "federation",
@@ -746,7 +746,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		})
 		recommendations = append(recommendations, "Check network connectivity and federation endpoint health")
 	}
-	
+
 	if queueDepth > 1000 {
 		healthStatus = model.InstanceHealthStatusCritical
 		issues = append(issues, &model.HealthIssue{
@@ -758,7 +758,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		})
 		recommendations = append(recommendations, "Scale up processing capacity or investigate bottlenecks")
 	}
-	
+
 	if costEfficiency < 0.5 {
 		issues = append(issues, &model.HealthIssue{
 			Type:        "cost",
@@ -769,7 +769,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 		})
 		recommendations = append(recommendations, "Review resource allocation and optimize expensive operations")
 	}
-	
+
 	// Add some general recommendations if none exist
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, "Instance is operating normally")
@@ -777,7 +777,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 			recommendations = append(recommendations, "Consider implementing caching to improve performance")
 		}
 	}
-	
+
 	return &model.InstanceHealthReport{
 		Domain: domain,
 		Status: healthStatus,
@@ -797,7 +797,7 @@ func (r *repositoryStorageAdapter) GetInstanceHealthReport(ctx context.Context, 
 // Federation relationship operations implementations
 func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context, domain string) (*model.InstanceRelations, error) {
 	now := time.Now()
-	
+
 	// Calculate federation score using real data from federation metrics
 	federationScore, err := r.calculateFederationScore(ctx, domain)
 	if err != nil {
@@ -805,14 +805,14 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 		// This ensures we don't break GraphQL queries when federation data is unavailable
 		federationScore = 0.0
 	}
-	
+
 	// Query direct connections - instances we actively federate with
 	var directConnections []*model.InstanceConnection
 	var indirectConnections []*model.InstanceConnection
 	var blockedBy []string
 	var blocking []string
 	var recommendations []*model.FederationRecommendation
-	
+
 	// Query federation instances - for now use a simplified approach
 	// In production this would query the FederationInstanceRepository
 	// For now, create sample direct connections based on known domains
@@ -831,14 +831,14 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 			directConnections = append(directConnections, connection)
 		}
 	}
-	
+
 	// Get instance health data to identify indirect connections and issues
 	var federationHealth *models.FederationInstanceHealthTracking
 	err = r.repos.GetDB().WithContext(ctx).Model(&models.FederationInstanceHealthTracking{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", domain)).
 		Where("SK", "=", "HEALTH").
 		First(&federationHealth)
-	
+
 	if err == nil && federationHealth != nil {
 		// Use health data to determine blocking status and recommendations
 		if !federationHealth.IsHealthy {
@@ -851,7 +851,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 				Action:          "Investigate health metrics and resolve connectivity issues",
 			})
 		}
-		
+
 		if federationHealth.ConsecutiveFails > 5 {
 			recommendations = append(recommendations, &model.FederationRecommendation{
 				Type:            model.RecommendationTypeSecurity,
@@ -862,7 +862,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 				Action:          "Consider temporarily blocking or implementing circuit breaker",
 			})
 		}
-		
+
 		if federationHealth.ResponseTimeP95 > 10000 { // 10 seconds
 			recommendations = append(recommendations, &model.FederationRecommendation{
 				Type:            model.RecommendationTypePerformance,
@@ -874,7 +874,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 			})
 		}
 	}
-	
+
 	// Query domain blocks to populate blocked/blocking lists
 	domainBlockRepo := r.repos.DomainBlock()
 	if domainBlockRepo != nil {
@@ -890,7 +890,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 			})
 		}
 	}
-	
+
 	// Add general federation recommendations based on score
 	if federationScore < 0.3 {
 		recommendations = append(recommendations, &model.FederationRecommendation{
@@ -917,7 +917,7 @@ func (r *repositoryStorageAdapter) GetInstanceRelationships(ctx context.Context,
 			Action:          "Consider expanding federation relationships",
 		})
 	}
-	
+
 	// If no recommendations were generated, add a default one
 	if err := common.ValidateSliceNotEmpty("recommendations", recommendations); err != nil {
 		recommendations = append(recommendations, &model.FederationRecommendation{

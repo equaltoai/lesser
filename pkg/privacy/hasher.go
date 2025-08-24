@@ -57,25 +57,25 @@ type HashingConfig struct {
 	PIILevel      Level
 	GenericLevel  Level
 	// Key rotation settings
-	KeyRotationEnabled bool
+	KeyRotationEnabled  bool
 	KeyRotationInterval time.Duration
 	// Performance settings
-	Argon2Memory   uint32 // Memory usage in KB
-	Argon2Time     uint32 // Number of iterations
-	Argon2Threads  uint8  // Number of threads
-	Argon2KeyLen   uint32 // Length of derived key
+	Argon2Memory  uint32 // Memory usage in KB
+	Argon2Time    uint32 // Number of iterations
+	Argon2Threads uint8  // Number of threads
+	Argon2KeyLen  uint32 // Length of derived key
 }
 
 // DefaultConfig returns a secure default configuration
 func DefaultConfig() *HashingConfig {
 	return &HashingConfig{
-		IPLevel:       LevelPartial,
-		EmailLevel:    LevelPartial,
-		UsernameLevel: LevelFull,
-		PIILevel:      LevelFull,
-		GenericLevel:  LevelFull,
-		KeyRotationEnabled:   false, // Disabled by default for consistency
-		KeyRotationInterval:  24 * time.Hour,
+		IPLevel:             LevelPartial,
+		EmailLevel:          LevelPartial,
+		UsernameLevel:       LevelFull,
+		PIILevel:            LevelFull,
+		GenericLevel:        LevelFull,
+		KeyRotationEnabled:  false, // Disabled by default for consistency
+		KeyRotationInterval: 24 * time.Hour,
 		// Argon2id parameters (moderate security/performance balance)
 		Argon2Memory:  64 * 1024, // 64 MB
 		Argon2Time:    3,         // 3 iterations
@@ -269,7 +269,7 @@ func (ph *Hasher) getLevel(dataType DataType) Level {
 func (ph *Hasher) hashFull(data string, dataType DataType) (string, error) {
 	// Create HMAC with context-specific key derivation
 	contextKey := ph.deriveContextKey(dataType)
-	
+
 	h := hmac.New(sha256.New, contextKey)
 	h.Write([]byte(data))
 	hash := h.Sum(nil)
@@ -307,31 +307,31 @@ func (ph *Hasher) hashIPPartial(ipAddress string) (string, error) {
 		// IPv4: preserve first two octets, hash last two
 		network := fmt.Sprintf("%d.%d", ipv4[0], ipv4[1])
 		hostPortion := fmt.Sprintf("%d.%d", ipv4[2], ipv4[3])
-		
+
 		hashedHost, err := ph.hashFull(hostPortion, DataTypeIP)
 		if err != nil {
 			return "", err
 		}
-		
+
 		// Return format: network.hashedHost
 		return fmt.Sprintf("%s.%s", network, hashedHost[:8]), nil
 	}
-	
+
 	// IPv6: preserve first 4 groups, hash the rest
 	ipv6 := ip.To16()
 	if ipv6 == nil {
 		return ph.hashFull(ipAddress, DataTypeIP)
 	}
-	
+
 	// Extract first 64 bits (8 bytes) as network portion
 	networkBytes := ipv6[:8]
 	hostBytes := ipv6[8:]
-	
+
 	hashedHost, err := ph.hashFull(hex.EncodeToString(hostBytes), DataTypeIP)
 	if err != nil {
 		return "", err
 	}
-	
+
 	return fmt.Sprintf("%s::%s", hex.EncodeToString(networkBytes), hashedHost[:16]), nil
 }
 
@@ -342,15 +342,15 @@ func (ph *Hasher) hashEmailPartial(email string) (string, error) {
 		// Invalid email format, hash the entire string
 		return ph.hashFull(email, DataTypeEmail)
 	}
-	
+
 	localPart := parts[0]
 	domain := parts[1]
-	
+
 	hashedLocal, err := ph.hashFull(localPart, DataTypeEmail)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Return format: hashedLocal@domain
 	return fmt.Sprintf("%s@%s", hashedLocal[:16], domain), nil
 }
@@ -361,18 +361,18 @@ func (ph *Hasher) hashUsernamePartial(username string) (string, error) {
 		// For very short usernames, use full hashing for security
 		return ph.hashFull(username, DataTypeUsername)
 	}
-	
+
 	// Preserve first and last character, hash the middle
 	firstChar := string(username[0])
 	lastChar := string(username[len(username)-1])
 	middlePart := username[1 : len(username)-1]
-	
+
 	// Hash the middle portion
 	hashedMiddle, err := ph.hashFull(middlePart, DataTypeUsername)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Calculate how many characters to show from the hash to preserve original length
 	// Use minimum of available hash length and required middle length
 	middleLen := len(middlePart)
@@ -386,7 +386,7 @@ func (ph *Hasher) hashUsernamePartial(username string) (string, error) {
 		// Use only the needed portion of the hash
 		hashedMiddle = hashedMiddle[:middleLen]
 	}
-	
+
 	// Return format: firstChar + hashedMiddle + lastChar
 	return fmt.Sprintf("%s%s%s", firstChar, hashedMiddle, lastChar), nil
 }
@@ -396,26 +396,26 @@ func (ph *Hasher) hashUsernamePartial(username string) (string, error) {
 func (ph *Hasher) hashPIIPartial(pii string) (string, error) {
 	// For PII data, partial hashing is risky as it may expose sensitive information
 	// We preserve only basic structural information that's safe for analytics
-	
+
 	// Check if it looks like a phone number (digits, spaces, dashes, parentheses)
 	if ph.looksLikePhoneNumber(pii) {
 		// For phone numbers, preserve length and format structure
 		return ph.hashPhoneNumberPartial(pii)
 	}
-	
+
 	// Check if it looks like a social security number or similar ID
 	if ph.looksLikeSSN(pii) {
 		// For SSN-like data, use full hashing for maximum security
 		return ph.hashFull(pii, DataTypePII)
 	}
-	
+
 	// For other PII types, preserve only length information
 	length := len(pii)
 	hashedData, err := ph.hashFull(pii, DataTypePII)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Return format indicating original length for analytics
 	return fmt.Sprintf("pii_len%d_%s", length, hashedData[:16]), nil
 }
@@ -459,7 +459,7 @@ func (ph *Hasher) hashPhoneNumberPartial(phoneNumber string) (string, error) {
 	// Extract digits only
 	var digits strings.Builder
 	var structure strings.Builder
-	
+
 	for _, r := range phoneNumber {
 		if r >= '0' && r <= '9' {
 			digits.WriteRune(r)
@@ -468,18 +468,18 @@ func (ph *Hasher) hashPhoneNumberPartial(phoneNumber string) (string, error) {
 			structure.WriteRune(r) // Preserve formatting characters
 		}
 	}
-	
+
 	// Hash the digits
 	hashedDigits, err := ph.hashFull(digits.String(), DataTypePII)
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Replace X's in structure with hashed digits (cycling through hash if needed)
 	structureStr := structure.String()
 	hashIndex := 0
 	result := strings.Builder{}
-	
+
 	for _, r := range structureStr {
 		if r == 'X' {
 			// Use character from hash (cycling if necessary)
@@ -496,17 +496,17 @@ func (ph *Hasher) hashPhoneNumberPartial(phoneNumber string) (string, error) {
 			result.WriteRune(r)
 		}
 	}
-	
+
 	return result.String(), nil
 }
 
 // deriveContextKey derives a context-specific key for different data types
 func (ph *Hasher) deriveContextKey(dataType DataType) []byte {
 	context := fmt.Sprintf("privacy_hash_%s", dataType)
-	
+
 	// Use Argon2id for key derivation with the context as salt
 	salt := sha256.Sum256([]byte(context))
-	
+
 	derivedKey := argon2.IDKey(
 		ph.config.MasterKey,
 		salt[:],
@@ -515,7 +515,7 @@ func (ph *Hasher) deriveContextKey(dataType DataType) []byte {
 		ph.config.Argon2Threads,
 		ph.config.Argon2KeyLen,
 	)
-	
+
 	return derivedKey
 }
 
@@ -526,7 +526,7 @@ func (ph *Hasher) VerifyHash(originalData, hash string, dataType DataType) (bool
 	if err != nil {
 		return false, err
 	}
-	
+
 	// Use constant-time comparison to prevent timing attacks
 	return subtle.ConstantTimeCompare([]byte(hash), []byte(expectedHash)) == 1, nil
 }
@@ -534,18 +534,18 @@ func (ph *Hasher) VerifyHash(originalData, hash string, dataType DataType) (bool
 // GetConfig returns a copy of the current configuration (without the master key for security)
 func (ph *Hasher) GetConfig() *HashingConfig {
 	return &HashingConfig{
-		MasterKey:            nil, // Don't expose the master key
-		IPLevel:       ph.config.IPLevel,
-		EmailLevel:    ph.config.EmailLevel,
-		UsernameLevel: ph.config.UsernameLevel,
-		PIILevel:      ph.config.PIILevel,
-		GenericLevel:  ph.config.GenericLevel,
-		KeyRotationEnabled:   ph.config.KeyRotationEnabled,
-		KeyRotationInterval:  ph.config.KeyRotationInterval,
-		Argon2Memory:         ph.config.Argon2Memory,
-		Argon2Time:           ph.config.Argon2Time,
-		Argon2Threads:        ph.config.Argon2Threads,
-		Argon2KeyLen:         ph.config.Argon2KeyLen,
+		MasterKey:           nil, // Don't expose the master key
+		IPLevel:             ph.config.IPLevel,
+		EmailLevel:          ph.config.EmailLevel,
+		UsernameLevel:       ph.config.UsernameLevel,
+		PIILevel:            ph.config.PIILevel,
+		GenericLevel:        ph.config.GenericLevel,
+		KeyRotationEnabled:  ph.config.KeyRotationEnabled,
+		KeyRotationInterval: ph.config.KeyRotationInterval,
+		Argon2Memory:        ph.config.Argon2Memory,
+		Argon2Time:          ph.config.Argon2Time,
+		Argon2Threads:       ph.config.Argon2Threads,
+		Argon2KeyLen:        ph.config.Argon2KeyLen,
 	}
 }
 
@@ -554,12 +554,12 @@ func (ph *Hasher) UpdateConfig(config *HashingConfig) error {
 	if config == nil {
 		return fmt.Errorf("config cannot be nil")
 	}
-	
+
 	// Validate the new configuration
 	if len(config.MasterKey) < 32 {
 		return fmt.Errorf("master key must be at least 32 bytes")
 	}
-	
+
 	ph.config = config
 	return nil
 }

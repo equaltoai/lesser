@@ -89,14 +89,18 @@ func (p *PushSubscription) BeforeCreate() error {
 	p.CreatedAt = now
 	p.UpdatedAt = now
 
-	p.UpdateKeys()
+	if err := p.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	return p.Validate()
 }
 
 // BeforeUpdate is called before updating a push subscription
 func (p *PushSubscription) BeforeUpdate() error {
 	p.UpdatedAt = time.Now()
-	p.UpdateKeys()
+	if err := p.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	return p.Validate()
 }
 

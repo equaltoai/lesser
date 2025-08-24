@@ -26,7 +26,7 @@ type TargetData struct {
 
 func TestBaseTransformer(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	// Create a simple transformer
 	transformer := NewBaseTransformer(
 		"test_transformer",
@@ -65,7 +65,7 @@ func TestBaseTransformer(t *testing.T) {
 
 func TestBatchTransformer(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	transformer := NewBatchTransformer(
 		"batch_transformer",
 		func(ctx context.Context, source SourceData) (TargetData, error) {
@@ -99,7 +99,7 @@ func TestBatchTransformer(t *testing.T) {
 	for i, result := range results {
 		expected := sources[i]
 		if result.Identifier != expected.ID {
-			t.Errorf("result %d: expected identifier '%s', got '%s'", 
+			t.Errorf("result %d: expected identifier '%s', got '%s'",
 				i, expected.ID, result.Identifier)
 		}
 		if !result.Processed {
@@ -110,7 +110,7 @@ func TestBatchTransformer(t *testing.T) {
 
 func TestTransformationCache(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	// Create a transformer with caching
 	callCount := 0
 	transformer := NewBaseTransformer(
@@ -139,7 +139,7 @@ func TestTransformationCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first transformation failed: %v", err)
 	}
-	
+
 	if callCount != 1 {
 		t.Errorf("expected 1 function call, got %d", callCount)
 	}
@@ -149,7 +149,7 @@ func TestTransformationCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second transformation failed: %v", err)
 	}
-	
+
 	if callCount != 1 {
 		t.Errorf("expected 1 function call after caching, got %d", callCount)
 	}
@@ -162,7 +162,7 @@ func TestTransformationCache(t *testing.T) {
 
 func TestConditionalTransformer(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	transformer := NewConditionalTransformer(
 		"conditional_transformer",
 		func(ctx context.Context, source SourceData) (TargetData, error) {
@@ -201,7 +201,7 @@ func TestConditionalTransformer(t *testing.T) {
 
 func TestValidatingTransformer(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	baseTransformer := NewBaseTransformer(
 		"base_transformer",
 		func(ctx context.Context, source SourceData) (TargetData, error) {
@@ -322,12 +322,12 @@ func TestTransformationMetrics(t *testing.T) {
 	if errors != 1 {
 		t.Errorf("expected 1 error, got %d", errors)
 	}
-	
+
 	expectedAvg := time.Millisecond * 150 // (100 + 200 + 150) / 3
 	if avgDuration != expectedAvg {
 		t.Errorf("expected average duration %v, got %v", expectedAvg, avgDuration)
 	}
-	
+
 	expectedErrorRate := 1.0 / 3.0
 	if errorRate != expectedErrorRate {
 		t.Errorf("expected error rate %f, got %f", expectedErrorRate, errorRate)
@@ -365,14 +365,14 @@ func TestTransformationContext(t *testing.T) {
 func TestIdentityTransformer(t *testing.T) {
 	ctx := context.Background()
 	input := "test_string"
-	
+
 	result, err := IdentityTransformer(ctx, input)
 	if err != nil {
 		t.Fatalf("identity transformer should not fail: %v", err)
 	}
-	
+
 	if result != input {
-		t.Errorf("identity transformer should return input unchanged: expected '%s', got '%s'", 
+		t.Errorf("identity transformer should return input unchanged: expected '%s', got '%s'",
 			input, result)
 	}
 }
@@ -431,7 +431,7 @@ func BenchmarkBaseTransformer(b *testing.B) {
 	)
 
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := transformer.Transform(ctx, i)
@@ -457,7 +457,7 @@ func BenchmarkCachedTransformer(b *testing.B) {
 	)
 
 	ctx := context.Background()
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Use modulo to create cache hits

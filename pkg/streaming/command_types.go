@@ -89,7 +89,7 @@ const (
 	CmdBulkDeleteStatuses = "bulk_delete_statuses"
 	CmdBulkListMembers    = "bulk_list_members"
 	CmdGetBulkOperation   = "get_bulk_operation"
-	
+
 	// Bulk Content Management Commands
 	CmdBulkDelete  = "bulk_delete"
 	CmdBulkArchive = "bulk_archive"

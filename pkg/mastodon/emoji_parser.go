@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EmojiRegex matches emoji shortcodes in text

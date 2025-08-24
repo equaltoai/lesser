@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MetricsCollector collects and aggregates streaming connection metrics
@@ -19,39 +19,39 @@ type MetricsCollector struct {
 	logger   *zap.Logger
 
 	// Aggregated metrics
-	mu                    sync.RWMutex
-	totalConnections      int64
-	activeConnections     int64
-	totalMessages         int64
-	totalBytes            int64
-	averageLatency        time.Duration
-	connectionsByState    map[models.ConnectionState]int64
-	errorsByType          map[string]int64
-	connectionDurations   []time.Duration
-	messageRates          []float64
-	qualityScores         []float64
+	mu                  sync.RWMutex
+	totalConnections    int64
+	activeConnections   int64
+	totalMessages       int64
+	totalBytes          int64
+	averageLatency      time.Duration
+	connectionsByState  map[models.ConnectionState]int64
+	errorsByType        map[string]int64
+	connectionDurations []time.Duration
+	messageRates        []float64
+	qualityScores       []float64
 
 	// Collection settings
-	collectionInterval    time.Duration
-	retentionPeriod      time.Duration
-	isCollecting         bool
-	stopChan             chan struct{}
+	collectionInterval time.Duration
+	retentionPeriod    time.Duration
+	isCollecting       bool
+	stopChan           chan struct{}
 }
 
 // ConnectionMetrics represents metrics for a specific time period
 type ConnectionMetrics struct {
-	Timestamp             time.Time                         `json:"timestamp"`
-	TotalConnections      int64                             `json:"total_connections"`
-	ActiveConnections     int64                             `json:"active_connections"`
-	ConnectionsByState    map[string]int64                  `json:"connections_by_state"`
-	TotalMessages         int64                             `json:"total_messages"`
-	TotalBytes            int64                             `json:"total_bytes"`
-	AverageLatency        time.Duration                     `json:"average_latency"`
-	ErrorsByType          map[string]int64                  `json:"errors_by_type"`
-	AverageQualityScore   float64                           `json:"average_quality_score"`
-	MessageRate           float64                           `json:"message_rate"` // messages per second
-	ByteRate              float64                           `json:"byte_rate"`    // bytes per second
-	ConnectionUtilization float64                           `json:"connection_utilization"` // percentage of max connections used
+	Timestamp             time.Time        `json:"timestamp"`
+	TotalConnections      int64            `json:"total_connections"`
+	ActiveConnections     int64            `json:"active_connections"`
+	ConnectionsByState    map[string]int64 `json:"connections_by_state"`
+	TotalMessages         int64            `json:"total_messages"`
+	TotalBytes            int64            `json:"total_bytes"`
+	AverageLatency        time.Duration    `json:"average_latency"`
+	ErrorsByType          map[string]int64 `json:"errors_by_type"`
+	AverageQualityScore   float64          `json:"average_quality_score"`
+	MessageRate           float64          `json:"message_rate"`           // messages per second
+	ByteRate              float64          `json:"byte_rate"`              // bytes per second
+	ConnectionUtilization float64          `json:"connection_utilization"` // percentage of max connections used
 }
 
 // PerformanceMetrics represents performance-specific metrics
@@ -60,29 +60,29 @@ type PerformanceMetrics struct {
 	MedianConnectionDuration  time.Duration `json:"median_connection_duration"`
 	P95ConnectionDuration     time.Duration `json:"p95_connection_duration"`
 	P99ConnectionDuration     time.Duration `json:"p99_connection_duration"`
-	
-	AverageMessageRate        float64       `json:"average_message_rate"`
-	PeakMessageRate          float64       `json:"peak_message_rate"`
-	
-	ConnectionSuccessRate    float64       `json:"connection_success_rate"`
-	MessageDeliveryRate      float64       `json:"message_delivery_rate"`
-	
-	HealthyConnections       int64         `json:"healthy_connections"`
-	UnhealthyConnections     int64         `json:"unhealthy_connections"`
-	AverageQualityScore      float64       `json:"average_quality_score"`
+
+	AverageMessageRate float64 `json:"average_message_rate"`
+	PeakMessageRate    float64 `json:"peak_message_rate"`
+
+	ConnectionSuccessRate float64 `json:"connection_success_rate"`
+	MessageDeliveryRate   float64 `json:"message_delivery_rate"`
+
+	HealthyConnections   int64   `json:"healthy_connections"`
+	UnhealthyConnections int64   `json:"unhealthy_connections"`
+	AverageQualityScore  float64 `json:"average_quality_score"`
 }
 
 // MetricsCollectorConfig contains configuration for metrics collection
 type MetricsCollectorConfig struct {
 	CollectionInterval time.Duration // How often to collect metrics
-	RetentionPeriod   time.Duration // How long to retain metrics
+	RetentionPeriod    time.Duration // How long to retain metrics
 }
 
 // DefaultMetricsCollectorConfig returns default configuration
 func DefaultMetricsCollectorConfig() *MetricsCollectorConfig {
 	return &MetricsCollectorConfig{
-		CollectionInterval: time.Minute * 1,  // Collect every minute
-		RetentionPeriod:   time.Hour * 24,   // Retain for 24 hours
+		CollectionInterval: time.Minute * 1, // Collect every minute
+		RetentionPeriod:    time.Hour * 24,  // Retain for 24 hours
 	}
 }
 
@@ -101,16 +101,16 @@ func NewMetricsCollector(
 	}
 
 	return &MetricsCollector{
-		connRepo:           connRepo,
-		logger:             logger.With(zap.String("component", "metrics_collector")),
-		connectionsByState: make(map[models.ConnectionState]int64),
-		errorsByType:       make(map[string]int64),
+		connRepo:            connRepo,
+		logger:              logger.With(zap.String("component", "metrics_collector")),
+		connectionsByState:  make(map[models.ConnectionState]int64),
+		errorsByType:        make(map[string]int64),
 		connectionDurations: make([]time.Duration, 0),
-		messageRates:       make([]float64, 0),
-		qualityScores:      make([]float64, 0),
-		collectionInterval: config.CollectionInterval,
-		retentionPeriod:   config.RetentionPeriod,
-		stopChan:          make(chan struct{}),
+		messageRates:        make([]float64, 0),
+		qualityScores:       make([]float64, 0),
+		collectionInterval:  config.CollectionInterval,
+		retentionPeriod:     config.RetentionPeriod,
+		stopChan:            make(chan struct{}),
 	}
 }
 
@@ -124,7 +124,7 @@ func (mc *MetricsCollector) Start(ctx context.Context) error {
 	}
 
 	mc.isCollecting = true
-	
+
 	// Start collection routine
 	go mc.collectionRoutine(ctx)
 
@@ -212,7 +212,7 @@ func (mc *MetricsCollector) collectMetrics(ctx context.Context) error {
 				zap.Error(err))
 			continue
 		}
-		
+
 		allConnections = append(allConnections, conns...)
 		stateCount[state] = int64(len(conns))
 	}
@@ -353,12 +353,12 @@ func (mc *MetricsCollector) GetCurrentMetrics() ConnectionMetrics {
 		ActiveConnections:     mc.activeConnections,
 		ConnectionsByState:    statesByString,
 		TotalMessages:         mc.totalMessages,
-		TotalBytes:           mc.totalBytes,
-		AverageLatency:       mc.averageLatency,
-		ErrorsByType:         mc.errorsByType,
-		AverageQualityScore:  avgQuality,
-		MessageRate:          messageRate,
-		ByteRate:            byteRate,
+		TotalBytes:            mc.totalBytes,
+		AverageLatency:        mc.averageLatency,
+		ErrorsByType:          mc.errorsByType,
+		AverageQualityScore:   avgQuality,
+		MessageRate:           messageRate,
+		ByteRate:              byteRate,
 		ConnectionUtilization: utilization,
 	}
 }
@@ -370,7 +370,7 @@ func (mc *MetricsCollector) GetPerformanceMetrics() PerformanceMetrics {
 
 	// Calculate connection duration statistics
 	avgDuration, medianDuration, p95Duration, p99Duration := mc.calculateDurationStats()
-	
+
 	// Calculate message rate statistics
 	avgMessageRate, peakMessageRate := mc.calculateMessageRateStats()
 
@@ -396,13 +396,13 @@ func (mc *MetricsCollector) GetPerformanceMetrics() PerformanceMetrics {
 		MedianConnectionDuration:  medianDuration,
 		P95ConnectionDuration:     p95Duration,
 		P99ConnectionDuration:     p99Duration,
-		AverageMessageRate:       avgMessageRate,
-		PeakMessageRate:         peakMessageRate,
-		ConnectionSuccessRate:   connectionSuccessRate,
-		MessageDeliveryRate:     messageDeliveryRate,
-		HealthyConnections:      healthy,
-		UnhealthyConnections:    unhealthy,
-		AverageQualityScore:     avgQuality,
+		AverageMessageRate:        avgMessageRate,
+		PeakMessageRate:           peakMessageRate,
+		ConnectionSuccessRate:     connectionSuccessRate,
+		MessageDeliveryRate:       messageDeliveryRate,
+		HealthyConnections:        healthy,
+		UnhealthyConnections:      unhealthy,
+		AverageQualityScore:       avgQuality,
 	}
 }
 
@@ -415,7 +415,7 @@ func (mc *MetricsCollector) calculateDurationStats() (avg, median, p95, p99 time
 	// Sort durations for percentile calculations (simple bubble sort for small datasets)
 	sorted := make([]time.Duration, len(mc.connectionDurations))
 	copy(sorted, mc.connectionDurations)
-	
+
 	for i := 0; i < len(sorted)-1; i++ {
 		for j := 0; j < len(sorted)-i-1; j++ {
 			if sorted[j] > sorted[j+1] {
@@ -478,9 +478,9 @@ func (mc *MetricsCollector) calculateMessageRateStats() (avg, peak float64) {
 
 // calculateConnectionSuccessRate calculates the connection success rate
 func (mc *MetricsCollector) calculateConnectionSuccessRate() float64 {
-	successfulStates := mc.connectionsByState[models.ConnectionStateConnected] + 
+	successfulStates := mc.connectionsByState[models.ConnectionStateConnected] +
 		mc.connectionsByState[models.ConnectionStateIdle]
-	
+
 	if mc.totalConnections == 0 {
 		return 1.0
 	}
@@ -510,10 +510,10 @@ func (mc *MetricsCollector) calculateMessageDeliveryRate() float64 {
 
 // calculateHealthStats calculates healthy vs unhealthy connection counts
 func (mc *MetricsCollector) calculateHealthStats() (healthy, unhealthy int64) {
-	healthyStates := mc.connectionsByState[models.ConnectionStateConnected] + 
+	healthyStates := mc.connectionsByState[models.ConnectionStateConnected] +
 		mc.connectionsByState[models.ConnectionStateIdle]
-	
-	unhealthyStates := mc.connectionsByState[models.ConnectionStateError] + 
+
+	unhealthyStates := mc.connectionsByState[models.ConnectionStateError] +
 		mc.connectionsByState[models.ConnectionStateClosing]
 
 	return healthyStates, unhealthyStates
@@ -525,12 +525,12 @@ func (mc *MetricsCollector) GetMetricsSummary() map[string]interface{} {
 	performance := mc.GetPerformanceMetrics()
 
 	return map[string]interface{}{
-		"current": current,
+		"current":     current,
 		"performance": performance,
 		"collection": map[string]interface{}{
-			"is_collecting":        mc.IsCollecting(),
-			"collection_interval":  mc.collectionInterval.String(),
-			"retention_period":     mc.retentionPeriod.String(),
+			"is_collecting":       mc.IsCollecting(),
+			"collection_interval": mc.collectionInterval.String(),
+			"retention_period":    mc.retentionPeriod.String(),
 		},
 	}
 }

@@ -60,7 +60,7 @@ func (n *CommunityNote) UpdateKeys() error {
 	// GSI3: Query by author, sorted by creation time
 	n.GSI3PK = fmt.Sprintf("AUTHOR#%s#NOTES", n.AuthorID)
 	n.GSI3SK = fmt.Sprintf("%s#%s", n.CreatedAt.Format(time.RFC3339), n.ID)
-	
+
 	return nil
 }
 

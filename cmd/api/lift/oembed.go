@@ -142,12 +142,12 @@ func (h *Handler) getOEmbedMaxWidth(ctx *lift.Context) int {
 	if err := common.ValidateRequiredParam("mw", mw); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		mw = ctx.Request.Request.QueryParams["maxwidth"]
 	}
-	
+
 	// Use validation function with reasonable bounds for embed width
 	if maxWidth, err := common.ParseAndValidateIntWithBounds("maxwidth", mw, 0, 2000, 650); err == nil {
 		return maxWidth
 	}
-	
+
 	// Return default on any validation error
 	return 650
 }

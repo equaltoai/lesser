@@ -15,37 +15,37 @@ import (
 
 // StateSynchronizer manages connection state synchronization across multiple instances
 type StateSynchronizer struct {
-	connRepo    *repositories.StreamingConnectionRepository
-	logger      *zap.Logger
-	instanceID  string
-	
+	connRepo   *repositories.StreamingConnectionRepository
+	logger     *zap.Logger
+	instanceID string
+
 	// Synchronization state
 	syncInterval     time.Duration
 	staleThreshold   time.Duration
 	conflictResolver ConflictResolver
-	
+
 	// Background processing
-	syncTicker       *time.Ticker
-	isRunning        bool
-	stopChan         chan struct{}
-	wg               sync.WaitGroup
-	mu               sync.RWMutex
+	syncTicker *time.Ticker
+	isRunning  bool
+	stopChan   chan struct{}
+	wg         sync.WaitGroup
+	mu         sync.RWMutex
 
 	// State tracking
-	lastSyncTime     time.Time
-	syncStats        SyncStats
+	lastSyncTime time.Time
+	syncStats    SyncStats
 }
 
 // SyncStats tracks synchronization statistics
 type SyncStats struct {
-	TotalSyncs          int64     `json:"total_syncs"`
-	SuccessfulSyncs     int64     `json:"successful_syncs"`
-	FailedSyncs         int64     `json:"failed_syncs"`
-	ConflictsResolved   int64     `json:"conflicts_resolved"`
-	StaleConnectionsFound int64   `json:"stale_connections_found"`
-	LastSyncTime        time.Time `json:"last_sync_time"`
-	LastSyncDuration    time.Duration `json:"last_sync_duration"`
-	AverageSyncDuration time.Duration `json:"average_sync_duration"`
+	TotalSyncs            int64         `json:"total_syncs"`
+	SuccessfulSyncs       int64         `json:"successful_syncs"`
+	FailedSyncs           int64         `json:"failed_syncs"`
+	ConflictsResolved     int64         `json:"conflicts_resolved"`
+	StaleConnectionsFound int64         `json:"stale_connections_found"`
+	LastSyncTime          time.Time     `json:"last_sync_time"`
+	LastSyncDuration      time.Duration `json:"last_sync_duration"`
+	AverageSyncDuration   time.Duration `json:"average_sync_duration"`
 }
 
 // ConflictResolver defines strategies for resolving state conflicts
@@ -55,10 +55,10 @@ type ConflictResolver interface {
 
 // StateSynchronizerConfig contains configuration for state synchronization
 type StateSynchronizerConfig struct {
-	InstanceID       string                // Unique instance identifier
-	SyncInterval     time.Duration         // How often to sync state
-	StaleThreshold   time.Duration         // When to consider connections stale
-	ConflictResolver ConflictResolver      // Strategy for resolving conflicts
+	InstanceID       string           // Unique instance identifier
+	SyncInterval     time.Duration    // How often to sync state
+	StaleThreshold   time.Duration    // When to consider connections stale
+	ConflictResolver ConflictResolver // Strategy for resolving conflicts
 }
 
 // DefaultStateSynchronizerConfig returns default configuration
@@ -75,17 +75,17 @@ func DefaultStateSynchronizerConfig() *StateSynchronizerConfig {
 func generateInstanceID() string {
 	// For AWS Lambda, create instance ID from execution environment
 	// Using a combination of request ID and startup time for uniqueness
-	
+
 	// Try to get AWS Lambda request context if available
 	requestID := getAWSRequestID()
 	if requestID != "" {
 		return fmt.Sprintf("lambda-%s", requestID)
 	}
-	
+
 	// Fallback: use hostname and startup time
 	hostname := getHostname()
 	timestamp := time.Now().UnixNano()
-	
+
 	return fmt.Sprintf("instance-%s-%d", hostname, timestamp)
 }
 
@@ -147,7 +147,7 @@ func (ss *StateSynchronizer) Stop() error {
 	}
 
 	close(ss.stopChan)
-	
+
 	if ss.syncTicker != nil {
 		ss.syncTicker.Stop()
 	}
@@ -260,29 +260,29 @@ func (ss *StateSynchronizer) identifyStaleConnections(ctx context.Context) ([]mo
 
 	// Filter stale connections
 	staleConnections := make([]models.WebSocketConnection, 0)
-	
+
 	for _, conn := range allConnections {
 		// Consider connection stale if:
 		// 1. Last activity is before threshold
 		// 2. Connection has been in connecting state too long
 		// 3. Connection has been in error state without recovery attempts
-		
+
 		isStale := false
-		
+
 		if conn.LastActivity.Before(staleThreshold) {
 			isStale = true
 		}
-		
+
 		if conn.State == models.ConnectionStateConnecting && conn.StateChangedAt.Before(staleThreshold) {
 			isStale = true
 		}
-		
-		if conn.State == models.ConnectionStateError && 
-		   conn.RetryCount >= conn.MaxRetries && 
-		   conn.StateChangedAt.Before(staleThreshold) {
+
+		if conn.State == models.ConnectionStateError &&
+			conn.RetryCount >= conn.MaxRetries &&
+			conn.StateChangedAt.Before(staleThreshold) {
 			isStale = true
 		}
-		
+
 		if isStale {
 			staleConnections = append(staleConnections, conn)
 		}
@@ -519,7 +519,7 @@ func getHostname() string {
 	if podName := getEnvVar("POD_NAME"); podName != "" {
 		return podName
 	}
-	
+
 	// Fallback to a generic identifier
 	return "streaming-instance"
 }

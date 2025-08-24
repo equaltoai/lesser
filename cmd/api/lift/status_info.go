@@ -251,7 +251,7 @@ func (h *Handler) prepareEditAccount(actor *activitypub.Actor) models.Account {
 		Name:              "unknown",
 		URL:               "",
 	}
-	
+
 	return transformations.ActorToAccountBase(unknownActor, h.cfg.BaseURL())
 }
 

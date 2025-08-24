@@ -589,7 +589,7 @@ func (r *SearchRepository) filterStatusesByPrivacy(ctx context.Context, results 
 func (r *SearchRepository) isStatusPrivate(_ *storage.StatusSearchResult) bool {
 	// Currently implements a conservative approach allowing all public/unlisted content in search results.
 	// Direct messages and private posts are excluded through other filtering mechanisms.
-	// 
+	//
 	// Future enhancement: Include visibility field in search index to enable more granular filtering
 	// without requiring additional database queries for each result.
 
@@ -697,7 +697,7 @@ func (r *SearchRepository) searchByHashtags(ctx context.Context, hashtags []stri
 				Visibility:     status.Visibility,
 				Language:       status.Language,
 			}
-			
+
 			// Add to result map with thread safety
 			result.mu.Lock()
 			result.resultMap[status.StatusID] = searchResult
@@ -1618,7 +1618,7 @@ func (r *SearchRepository) RecordSearch(ctx context.Context, event *models.Searc
 	r.privacyFilterAnalyticsEvent(event)
 
 	// Update keys
-	event.UpdateKeys()
+	event.UpdateKeys() // Internal model operation
 
 	// Create the analytics record
 	err := r.db.WithContext(ctx).Model(event).Create()
@@ -1803,7 +1803,7 @@ func (r *SearchRepository) GetPopularSearches(ctx context.Context, limit int, ti
 			LastQueried: lastQueried[query],
 			QueryType:   "search_suggestion",
 		}
-		stat.UpdateKeys()
+		_ = stat.UpdateKeys() // Ignore error as this is internal model operation
 		stats = append(stats, stat)
 	}
 

@@ -63,8 +63,8 @@ type lruList struct {
 
 // BatchQueryCoordinator aggregates queries into efficient batches
 type BatchQueryCoordinator struct {
-	mu       sync.RWMutex
-	logger   *zap.Logger
+	mu        sync.RWMutex
+	logger    *zap.Logger
 	cacheRepo *repositories.QueryCacheRepository
 
 	// Query queues by type
@@ -73,27 +73,27 @@ type BatchQueryCoordinator struct {
 	metricsQueries  map[string]*batchQuery
 
 	// Configuration
-	batchSize       int
-	batchWindow     time.Duration
-	maxWaitTime     time.Duration
-	deduplication   bool
+	batchSize     int
+	batchWindow   time.Duration
+	maxWaitTime   time.Duration
+	deduplication bool
 
 	// Background processing
-	stopChan        chan struct{}
-	wg              sync.WaitGroup
+	stopChan chan struct{}
+	wg       sync.WaitGroup
 }
 
 // batchQuery represents a batched query request
 type batchQuery struct {
-	mu           sync.RWMutex
-	queryType    string
-	keys         []string
+	mu               sync.RWMutex
+	queryType        string
+	keys             []string
 	deduplicatedKeys map[string]bool
-	resultChan   chan batchResult
-	responders   []chan batchResult
-	createdAt    time.Time
-	lastUpdated  time.Time
-	priority     int
+	resultChan       chan batchResult
+	responders       []chan batchResult
+	createdAt        time.Time
+	lastUpdated      time.Time
+	priority         int
 }
 
 // batchResult holds the result of a batch operation
@@ -104,12 +104,12 @@ type batchResult struct {
 
 // QueryRequest represents a query that can be batched
 type QueryRequest struct {
-	Type      string
-	Key       string
-	Priority  int
-	Deadline  time.Time
-	Context   context.Context
-	Callback  chan interface{}
+	Type     string
+	Key      string
+	Priority int
+	Deadline time.Time
+	Context  context.Context
+	Callback chan interface{}
 }
 
 // NewQueryOptimizer creates a new query optimizer
@@ -171,7 +171,7 @@ func (qo *QueryOptimizer) OptimizedGetInstance(ctx context.Context, instanceID s
 
 	fetchedInstance, ok := result.(*fedTypes.Instance)
 	if !ok {
-		qo.logger.Error("invalid result type from batch query", 
+		qo.logger.Error("invalid result type from batch query",
 			zap.String("instanceID", instanceID),
 			zap.String("resultType", fmt.Sprintf("%T", result)))
 		return nil, ErrInvalidResultType
@@ -522,7 +522,7 @@ func NewBatchQueryCoordinator(cacheRepo *repositories.QueryCacheRepository, logg
 		instanceQueries: make(map[string]*batchQuery),
 		statusQueries:   make(map[string]*batchQuery),
 		metricsQueries:  make(map[string]*batchQuery),
-		batchSize:       50,  // Max items per batch
+		batchSize:       50,                     // Max items per batch
 		batchWindow:     100 * time.Millisecond, // Time window for collecting queries
 		maxWaitTime:     500 * time.Millisecond, // Maximum wait before forcing execution
 		deduplication:   true,

@@ -196,7 +196,7 @@ func NewTrackingDB(db core.DB, tracker *Tracker, logger *zap.Logger) *TrackingDB
 func (ctdb *TrackingDB) Model(model any) core.Query {
 	// Initialize enhanced tracking
 	enhancedTracker := NewEnhancedOperationTracker(ctdb.logger)
-	
+
 	// Initialize operation metadata
 	metadata := &OperationMetadata{
 		OperationType:     "unknown", // Will be set when operation executes
@@ -206,7 +206,7 @@ func (ctdb *TrackingDB) Model(model any) core.Query {
 		ProjectionFields:  make([]string, 0),
 		Conditions:        make([]QueryCondition, 0),
 	}
-	
+
 	// Return enhanced cost tracking query wrapper
 	return &TrackingQuery{
 		query:             ctdb.DB.Model(model),
@@ -220,12 +220,12 @@ func (ctdb *TrackingDB) Model(model any) core.Query {
 // Transaction wraps the Transaction method with enhanced operation estimation
 func (ctdb *TrackingDB) Transaction(fn func(*core.Tx) error) error {
 	err := ctdb.DB.Transaction(fn)
-	
+
 	// For transactions, we'll use a conservative estimate since precise counting
 	// would require implementing the full core.Tx interface wrapper
 	// Most transactions contain 2-5 operations on average
 	estimatedOperations := 3 // Conservative baseline
-	
+
 	if err == nil && ctdb.tracker != nil {
 		// Track estimated transaction cost
 		// Transactions typically have both read and write operations
@@ -308,7 +308,7 @@ type TrackingQuery struct {
 // Where wraps the Where method with condition tracking
 func (ctq *TrackingQuery) Where(field string, op string, value any) core.Query {
 	ctq.query = ctq.query.Where(field, op, value)
-	
+
 	// Track query conditions for cost analysis
 	if ctq.operationMetadata != nil {
 		condition := QueryCondition{
@@ -318,32 +318,32 @@ func (ctq *TrackingQuery) Where(field string, op string, value any) core.Query {
 		}
 		ctq.operationMetadata.Conditions = append(ctq.operationMetadata.Conditions, condition)
 	}
-	
+
 	return ctq
 }
 
 // Index wraps the Index method with GSI tracking
 func (ctq *TrackingQuery) Index(indexName string) core.Query {
 	ctq.query = ctq.query.Index(indexName)
-	
+
 	// Track GSI usage for cost analysis
 	if ctq.operationMetadata != nil {
 		ctq.operationMetadata.IndexName = indexName
 	}
-	
+
 	return ctq
 }
 
 // Filter wraps the Filter method with filter expression tracking
 func (ctq *TrackingQuery) Filter(field string, op string, value any) core.Query {
 	ctq.query = ctq.query.Filter(field, op, value)
-	
+
 	// Track filter expressions for cost impact analysis
 	if ctq.operationMetadata != nil {
 		filterExpr := fmt.Sprintf("%s %s %v", field, op, value)
 		ctq.operationMetadata.FilterExpressions = append(ctq.operationMetadata.FilterExpressions, filterExpr)
 	}
-	
+
 	return ctq
 }
 
@@ -386,24 +386,24 @@ func (ctq *TrackingQuery) Offset(offset int) core.Query {
 // Select wraps the Select method with projection tracking
 func (ctq *TrackingQuery) Select(fields ...string) core.Query {
 	ctq.query = ctq.query.Select(fields...)
-	
+
 	// Track projection fields for cost optimization analysis
 	if ctq.operationMetadata != nil {
 		ctq.operationMetadata.ProjectionFields = append(ctq.operationMetadata.ProjectionFields, fields...)
 	}
-	
+
 	return ctq
 }
 
 // ConsistentRead wraps the ConsistentRead method with read type tracking
 func (ctq *TrackingQuery) ConsistentRead() core.Query {
 	ctq.query = ctq.query.ConsistentRead()
-	
+
 	// Track consistent read usage (affects cost - 2x read capacity units)
 	if ctq.operationMetadata != nil {
 		ctq.operationMetadata.ConsistentRead = true
 	}
-	
+
 	return ctq
 }
 
@@ -421,32 +421,32 @@ func (ctq *TrackingQuery) First(dest any) error {
 	if ctq.operationMetadata != nil {
 		ctq.operationMetadata.OperationType = "GetItem"
 	}
-	
+
 	err := ctq.query.First(dest)
-	
+
 	readUnits := 1 // Base cost for First operation
 	itemCount := 0
-	
+
 	if err == nil {
 		itemCount = 1 // First always returns at most 1 item
-		
+
 		// Adjust read units based on operation details
 		if ctq.operationMetadata != nil {
 			// Consistent read costs 2x
 			if ctq.operationMetadata.ConsistentRead {
 				readUnits = 2
 			}
-			
+
 			// Update metadata
 			ctq.operationMetadata.ItemCount = itemCount
-			
+
 			// Track the operation with enhanced metadata
 			if ctq.enhancedTracker != nil {
 				operationID := fmt.Sprintf("first_%d", time.Now().UnixNano())
 				ctq.enhancedTracker.TrackOperation(operationID, ctq.operationMetadata)
 			}
 		}
-		
+
 		if ctq.tracker != nil {
 			_ = ctq.tracker.TrackDynamoRead(readUnits)
 		}
@@ -458,7 +458,7 @@ func (ctq *TrackingQuery) First(dest any) error {
 			zap.Int("item_count", itemCount),
 			zap.Error(err),
 		}
-		
+
 		if ctq.operationMetadata != nil {
 			logFields = append(logFields,
 				zap.String("table_name", ctq.operationMetadata.TableName),
@@ -469,7 +469,7 @@ func (ctq *TrackingQuery) First(dest any) error {
 				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
 			)
 		}
-		
+
 		ctq.logger.Debug("dynamodb_first_tracked", logFields...)
 	}
 
@@ -486,45 +486,45 @@ func (ctq *TrackingQuery) All(dest any) error {
 			ctq.operationMetadata.OperationType = OperationTypeScan // Table scan
 		}
 	}
-	
+
 	err := ctq.query.All(dest)
-	
+
 	readUnits := 1 // Default minimum
 	itemCount := 0
-	
+
 	if err == nil {
 		// Count actual items returned using reflection
 		itemCount = countResultItems(dest)
-		
+
 		// Calculate more accurate read units based on item count and operation details
 		if itemCount > 0 {
 			readUnits = itemCount
 		}
-		
+
 		// Adjust for operation specifics
 		if ctq.operationMetadata != nil {
 			// Consistent read costs 2x
 			if ctq.operationMetadata.ConsistentRead {
 				readUnits *= 2
 			}
-			
+
 			// Scan operations are typically more expensive than query
 			if ctq.operationMetadata.OperationType == OperationTypeScan && len(ctq.operationMetadata.FilterExpressions) > 0 {
 				// Filter expressions can cause scanning of more items than returned
 				// Estimate higher cost for filtered scans
 				readUnits = int(float64(readUnits) * 1.5)
 			}
-			
+
 			// Update metadata
 			ctq.operationMetadata.ItemCount = itemCount
-			
+
 			// Track the operation with enhanced metadata
 			if ctq.enhancedTracker != nil {
 				operationID := fmt.Sprintf("all_%d", time.Now().UnixNano())
 				ctq.enhancedTracker.TrackOperation(operationID, ctq.operationMetadata)
 			}
 		}
-		
+
 		if ctq.tracker != nil {
 			_ = ctq.tracker.TrackDynamoRead(readUnits)
 		}
@@ -536,7 +536,7 @@ func (ctq *TrackingQuery) All(dest any) error {
 			zap.Int("item_count", itemCount),
 			zap.Error(err),
 		}
-		
+
 		if ctq.operationMetadata != nil {
 			logFields = append(logFields,
 				zap.String("operation_type", ctq.operationMetadata.OperationType),
@@ -548,7 +548,7 @@ func (ctq *TrackingQuery) All(dest any) error {
 				zap.Int("projection_count", len(ctq.operationMetadata.ProjectionFields)),
 			)
 		}
-		
+
 		ctq.logger.Debug("dynamodb_all_tracked", logFields...)
 	}
 
@@ -789,9 +789,9 @@ func NewEnhancedOperationTracker(logger *zap.Logger) *EnhancedOperationTracker {
 func (eot *EnhancedOperationTracker) TrackOperation(operationID string, metadata *OperationMetadata) {
 	eot.mu.Lock()
 	defer eot.mu.Unlock()
-	
+
 	eot.operations[operationID] = metadata
-	
+
 	if eot.logger != nil {
 		eot.logger.Debug("enhanced_operation_tracked",
 			zap.String("operation_id", operationID),
@@ -810,7 +810,7 @@ func (eot *EnhancedOperationTracker) TrackOperation(operationID string, metadata
 func (eot *EnhancedOperationTracker) GetOperationMetadata(operationID string) (*OperationMetadata, bool) {
 	eot.mu.RLock()
 	defer eot.mu.RUnlock()
-	
+
 	metadata, exists := eot.operations[operationID]
 	return metadata, exists
 }
@@ -819,7 +819,7 @@ func (eot *EnhancedOperationTracker) GetOperationMetadata(operationID string) (*
 func (eot *EnhancedOperationTracker) GetAllOperations() map[string]*OperationMetadata {
 	eot.mu.RLock()
 	defer eot.mu.RUnlock()
-	
+
 	// Return a copy to avoid race conditions
 	result := make(map[string]*OperationMetadata)
 	for id, metadata := range eot.operations {
@@ -843,7 +843,7 @@ func countBatchItems(items any) int {
 
 	// Handle various input types
 	value := reflect.ValueOf(items)
-	
+
 	// Handle pointers
 	if value.Kind() == reflect.Ptr {
 		if value.IsNil() {
@@ -1012,16 +1012,16 @@ func (ctq *TrackingQuery) BatchGet(keys []any, dest any) error {
 func (ctq *TrackingQuery) BatchCreate(items any) error {
 	// Count items for precise cost tracking
 	itemCount := countBatchItems(items)
-	
+
 	// Calculate write units more accurately
 	// DynamoDB batch operations consume WCUs based on item size
 	// For now, use item count as baseline (1 WCU per item for baseline)
 	writeUnits := itemCount
-	
+
 	// Large batches may be split by DynamoDB - account for this
 	// DynamoDB supports max 25 items per batch write
 	batchCount := (itemCount + 24) / 25 // Round up division
-	
+
 	err := ctq.query.BatchCreate(items)
 	if err == nil && ctq.tracker != nil {
 		_ = ctq.tracker.TrackDynamoWrite(writeUnits)
@@ -1042,11 +1042,11 @@ func (ctq *TrackingQuery) BatchCreate(items any) error {
 // BatchDelete wraps the BatchDelete method with enhanced batch tracking
 func (ctq *TrackingQuery) BatchDelete(keys []any) error {
 	keyCount := len(keys)
-	
+
 	// Calculate write units and batch count for deletes
-	writeUnits := keyCount // 1 WCU per delete operation
+	writeUnits := keyCount             // 1 WCU per delete operation
 	batchCount := (keyCount + 24) / 25 // Max 25 items per batch
-	
+
 	err := ctq.query.BatchDelete(keys)
 	if err == nil && ctq.tracker != nil {
 		_ = ctq.tracker.TrackDynamoWrite(writeUnits)
@@ -1069,10 +1069,10 @@ func (ctq *TrackingQuery) BatchWrite(putItems []any, deleteKeys []any) error {
 	putCount := len(putItems)
 	deleteCount := len(deleteKeys)
 	totalWrites := putCount + deleteCount
-	
+
 	// Calculate batch count for combined operations
 	batchCount := (totalWrites + 24) / 25 // Max 25 items per batch
-	
+
 	err := ctq.query.BatchWrite(putItems, deleteKeys)
 	if err == nil && ctq.tracker != nil {
 		_ = ctq.tracker.TrackDynamoWrite(totalWrites)

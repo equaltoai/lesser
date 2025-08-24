@@ -497,7 +497,7 @@ func (s *Status) GetPK() string {
 	return s.PK
 }
 
-// GetSK returns the sort key for BaseRepository interface  
+// GetSK returns the sort key for BaseRepository interface
 func (s *Status) GetSK() string {
 	return s.SK
 }
@@ -605,14 +605,14 @@ func (s *Status) SanitizeForActor(viewerID string) *Status {
 type StatusHashtagIndex struct {
 	PK string `dynamorm:"pk" json:"pk"` // Format: "HASHTAG_INDEX#{hashtag}"
 	SK string `dynamorm:"sk" json:"sk"` // Format: "{published_timestamp}#{status_id}"
-	
+
 	// Reference back to the original status
 	StatusID    string    `json:"status_id"`
 	AuthorID    string    `json:"author_id"`
 	Hashtag     string    `json:"hashtag"`
 	PublishedAt time.Time `json:"published_at"`
 	Visibility  string    `json:"visibility"`
-	
+
 	// TTL for cleanup (optional - could be set to expire old hashtag indices)
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
 }
@@ -622,7 +622,7 @@ func (shi *StatusHashtagIndex) UpdateKeys() {
 	timestampStr := shi.PublishedAt.Format("2006-01-02T15:04:05.000Z")
 	shi.PK = fmt.Sprintf("HASHTAG_INDEX#%s", shi.Hashtag)
 	shi.SK = fmt.Sprintf("%s#%s", timestampStr, shi.StatusID)
-	
+
 	// Set TTL to 1 year for hashtag indices (can be adjusted based on retention policy)
 	shi.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
 }
@@ -633,16 +633,16 @@ func (s *Status) CreateHashtagIndexRecords() []*StatusHashtagIndex {
 		// No additional records needed - primary record handles single hashtag
 		return nil
 	}
-	
+
 	// Create index records for hashtags 2 and beyond (first hashtag is handled by primary record)
 	records := make([]*StatusHashtagIndex, 0, len(s.Hashtags)-1)
-	
+
 	for i := 1; i < len(s.Hashtags); i++ {
 		hashtag := s.Hashtags[i]
 		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
-		
+
 		record := &StatusHashtagIndex{
 			StatusID:    s.StatusID,
 			AuthorID:    s.AuthorID,
@@ -653,7 +653,7 @@ func (s *Status) CreateHashtagIndexRecords() []*StatusHashtagIndex {
 		record.UpdateKeys()
 		records = append(records, record)
 	}
-	
+
 	return records
 }
 
@@ -663,14 +663,14 @@ func (s *Status) GetAllHashtagIndexRecords() []*StatusHashtagIndex {
 	if err := common.ValidateSliceNotEmpty("s.Hashtags", s.Hashtags); err != nil {
 		return nil
 	}
-	
+
 	records := make([]*StatusHashtagIndex, 0, len(s.Hashtags))
-	
+
 	for _, hashtag := range s.Hashtags {
 		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
-		
+
 		record := &StatusHashtagIndex{
 			StatusID:    s.StatusID,
 			AuthorID:    s.AuthorID,
@@ -681,7 +681,7 @@ func (s *Status) GetAllHashtagIndexRecords() []*StatusHashtagIndex {
 		record.UpdateKeys()
 		records = append(records, record)
 	}
-	
+
 	return records
 }
 
@@ -690,21 +690,21 @@ func (s *Status) DeleteHashtagIndexRecords() []map[string]interface{} {
 	if err := common.ValidateSliceNotEmpty("s.Hashtags", s.Hashtags); err != nil {
 		return nil
 	}
-	
+
 	deleteOps := make([]map[string]interface{}, 0, len(s.Hashtags))
 	timestampStr := s.PublishedAt.Format("2006-01-02T15:04:05.000Z")
-	
+
 	for _, hashtag := range s.Hashtags {
 		if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 			continue
 		}
-		
+
 		deleteOp := map[string]interface{}{
 			"PK": fmt.Sprintf("HASHTAG_INDEX#%s", hashtag),
 			"SK": fmt.Sprintf("%s#%s", timestampStr, s.StatusID),
 		}
 		deleteOps = append(deleteOps, deleteOp)
 	}
-	
+
 	return deleteOps
 }

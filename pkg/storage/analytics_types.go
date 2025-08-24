@@ -146,16 +146,16 @@ type DailyReportCount struct {
 
 // StreamingAnalyticsData represents comprehensive streaming analytics for a media item
 type StreamingAnalyticsData struct {
-	MediaID               string                    `json:"media_id"`
-	TotalViews            int                       `json:"total_views"`
-	UniqueViewers         int                       `json:"unique_viewers"`
-	AverageWatchTime      float64                   `json:"average_watch_time"`     // in seconds
-	QualityDistribution   map[string]*QualityStats  `json:"quality_distribution"`
-	BufferingEvents       int                       `json:"buffering_events"`
-	CompletionRate        float64                   `json:"completion_rate"`        // percentage 0-1
-	StreamingSessions     int                       `json:"streaming_sessions"`     // current active sessions
-	TotalBandwidthBytes   int64                     `json:"total_bandwidth_bytes"`
-	RecentMetrics         map[string]interface{}    `json:"recent_metrics"`         // additional real-time metrics
+	MediaID             string                   `json:"media_id"`
+	TotalViews          int                      `json:"total_views"`
+	UniqueViewers       int                      `json:"unique_viewers"`
+	AverageWatchTime    float64                  `json:"average_watch_time"` // in seconds
+	QualityDistribution map[string]*QualityStats `json:"quality_distribution"`
+	BufferingEvents     int                      `json:"buffering_events"`
+	CompletionRate      float64                  `json:"completion_rate"`    // percentage 0-1
+	StreamingSessions   int                      `json:"streaming_sessions"` // current active sessions
+	TotalBandwidthBytes int64                    `json:"total_bandwidth_bytes"`
+	RecentMetrics       map[string]interface{}   `json:"recent_metrics"` // additional real-time metrics
 }
 
 // QualityStats represents statistics for a specific streaming quality

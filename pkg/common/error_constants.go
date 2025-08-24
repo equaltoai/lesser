@@ -49,28 +49,28 @@ const (
 	ErrorFailedToStoreSubscription = "failed to store subscription: %w"
 
 	// Follow request related
-	ErrorFollowRequestNotFound = "follow request not found"
+	ErrorFollowRequestNotFound    = "follow request not found"
 	ErrorFailedToGetFollowerActor = "failed to get follower actor"
 	ErrorFailedToGetFollowedActor = "failed to get followed actor"
 
 	// Search related
-	ErrorSearchFailed               = "search failed: %w"
-	ErrorPrivacyAwareSearchFailed   = "privacy-aware search failed: %w"
-	ErrorStatusSearchFailed         = "status search failed: %w"
+	ErrorSearchFailed                   = "search failed: %w"
+	ErrorPrivacyAwareSearchFailed       = "privacy-aware search failed: %w"
+	ErrorStatusSearchFailed             = "status search failed: %w"
 	ErrorPrivacyAwareStatusSearchFailed = "privacy-aware status search failed: %w"
 
 	// Deployment/initialization related
-	ErrorFailedToGeneratePrivateKey       = "failed to generate private key: %w"
-	ErrorFailedToMarshalPrivateKey        = "failed to marshal private key: %w"
-	ErrorFailedToConvertToECDHKey         = "failed to convert to ECDH key: %w"
-	ErrorFailedToCreateOrUpdateSecret     = "failed to create or update secret: %w"
+	ErrorFailedToGeneratePrivateKey   = "failed to generate private key: %w"
+	ErrorFailedToMarshalPrivateKey    = "failed to marshal private key: %w"
+	ErrorFailedToConvertToECDHKey     = "failed to convert to ECDH key: %w"
+	ErrorFailedToCreateOrUpdateSecret = "failed to create or update secret: %w"
 
 	// Middleware RBAC related
-	ErrorUnauthorizedNoValidClaims    = "unauthorized: no valid claims found"
-	ErrorForbiddenAdminRequired       = "forbidden: admin access required"
-	ErrorForbiddenModeratorRequired   = "forbidden: moderator access required"
-	ErrorForbiddenViewerRequired      = "forbidden: viewer access required"
-	ErrorForbiddenUnknownPermission   = "forbidden: unknown permission level"
+	ErrorUnauthorizedNoValidClaims  = "unauthorized: no valid claims found"
+	ErrorForbiddenAdminRequired     = "forbidden: admin access required"
+	ErrorForbiddenModeratorRequired = "forbidden: moderator access required"
+	ErrorForbiddenViewerRequired    = "forbidden: viewer access required"
+	ErrorForbiddenUnknownPermission = "forbidden: unknown permission level"
 
 	// Translation related
 	ErrorInvalidSourceLanguageCode = "invalid source language code: %w"

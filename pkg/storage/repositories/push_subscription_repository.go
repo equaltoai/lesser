@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/google/uuid"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	ddbErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // PushSubscriptionRepository handles push subscription operations
@@ -78,7 +78,7 @@ func (r *PushSubscriptionRepository) GetPushSubscription(ctx context.Context, us
 	var record models.PushSubscription
 	pk := fmt.Sprintf("PUSH#%s", username)
 	sk := fmt.Sprintf("SUB#%s", subscriptionID)
-	
+
 	err := r.Get(ctx, pk, sk, &record)
 	if err != nil {
 		if ddbErrors.IsNotFound(err) {
@@ -94,7 +94,7 @@ func (r *PushSubscriptionRepository) GetPushSubscription(ctx context.Context, us
 // GetUserPushSubscriptions retrieves all push subscriptions for a user
 func (r *PushSubscriptionRepository) GetUserPushSubscriptions(ctx context.Context, username string) ([]*storage.PushSubscription, error) {
 	pk := fmt.Sprintf("PUSH#%s", username)
-	
+
 	// Use BaseRepository QueryWithSKPrefix method
 	records, err := r.QueryWithSKPrefix(ctx, pk, "SUB#", 100)
 	if err != nil {
@@ -115,7 +115,7 @@ func (r *PushSubscriptionRepository) UpdatePushSubscription(ctx context.Context,
 	var record models.PushSubscription
 	pk := fmt.Sprintf("PUSH#%s", username)
 	sk := fmt.Sprintf("SUB#%s", subscriptionID)
-	
+
 	err := r.Get(ctx, pk, sk, &record)
 	if err != nil {
 		return ErrorHandler.HandleGetError(err, "push subscription", subscriptionID)
@@ -133,7 +133,7 @@ func (r *PushSubscriptionRepository) UpdatePushSubscription(ctx context.Context,
 func (r *PushSubscriptionRepository) DeletePushSubscription(ctx context.Context, username, subscriptionID string) error {
 	pk := fmt.Sprintf("PUSH#%s", username)
 	sk := fmt.Sprintf("SUB#%s", subscriptionID)
-	
+
 	err := r.Delete(ctx, pk, sk)
 	if err != nil && !ddbErrors.IsNotFound(err) {
 		return ErrorHandler.HandleDeleteError(err, "push subscription", subscriptionID)
@@ -169,7 +169,7 @@ func (r *PushSubscriptionRepository) GetVAPIDKeys(ctx context.Context) (*storage
 	var record models.VAPIDKeyRecord
 	pk := "INSTANCE#CONFIG"
 	sk := "VAPID_KEYS"
-	
+
 	err := r.vapidRepo.Get(ctx, pk, sk, &record)
 	if err != nil {
 		if ddbErrors.IsNotFound(err) {
@@ -264,4 +264,3 @@ func (r *PushSubscriptionRepository) convertModelToStorage(record *models.PushSu
 		UpdatedAt: record.UpdatedAt,
 	}
 }
-

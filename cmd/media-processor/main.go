@@ -52,7 +52,7 @@ const (
 // Processing timeout constants
 const (
 	ImageProcessingTimeout = 30 * time.Second // Images: 30 seconds
-	GifProcessingTimeout   = 60 * time.Second // GIFs: 60 seconds  
+	GifProcessingTimeout   = 60 * time.Second // GIFs: 60 seconds
 	SmallVideoTimeout      = 2 * time.Minute  // Videos < 10MB: 2 minutes
 	LargeVideoTimeout      = 5 * time.Minute  // Videos >= 10MB: 5 minutes
 	AbandonedJobThreshold  = 1 * time.Hour    // Jobs abandoned after 1 hour
@@ -89,7 +89,7 @@ type MediaProcessor struct {
 	mediaMetadataRepo    *repositories.MediaMetadataRepository
 	s3Client             *s3.Client
 	mediaConvertClient   *mediaconvert.Client
-	unifiedTracker      *cost.UnifiedTracker
+	unifiedTracker       *cost.UnifiedTracker
 	tableName            string
 	bucketName           string
 	cdnDomain            string
@@ -104,19 +104,19 @@ type MediaProcessor struct {
 
 // MediaJobCostTracker handles detailed cost tracking for media jobs
 type MediaJobCostTracker struct {
-	JobID              string            `json:"job_id"`
-	UserID             string            `json:"user_id"`
-	StartTime          time.Time         `json:"start_time"`
-	EndTime            *time.Time        `json:"end_time,omitempty"`
-	LambdaExecutionMs  int64             `json:"lambda_execution_ms"`
-	S3Operations       int               `json:"s3_operations"`
-	S3StorageBytes     int64             `json:"s3_storage_bytes"`
-	TranscodingSeconds float64           `json:"transcoding_seconds,omitempty"`
-	CostBreakdown      map[string]int64  `json:"cost_breakdown"`   // Cost in micros by category
-	TotalCostMicros    int64             `json:"total_cost_micros"` // Total cost in micros
-	BudgetMicros       int64             `json:"budget_micros"`     // Budget limit in micros
-	WarningThresholds  []float64         `json:"warning_thresholds"` // Warning at 50%, 75%, 90% of budget
-	WarningsSent       []bool            `json:"warnings_sent"`     // Track which warnings have been sent
+	JobID              string           `json:"job_id"`
+	UserID             string           `json:"user_id"`
+	StartTime          time.Time        `json:"start_time"`
+	EndTime            *time.Time       `json:"end_time,omitempty"`
+	LambdaExecutionMs  int64            `json:"lambda_execution_ms"`
+	S3Operations       int              `json:"s3_operations"`
+	S3StorageBytes     int64            `json:"s3_storage_bytes"`
+	TranscodingSeconds float64          `json:"transcoding_seconds,omitempty"`
+	CostBreakdown      map[string]int64 `json:"cost_breakdown"`     // Cost in micros by category
+	TotalCostMicros    int64            `json:"total_cost_micros"`  // Total cost in micros
+	BudgetMicros       int64            `json:"budget_micros"`      // Budget limit in micros
+	WarningThresholds  []float64        `json:"warning_thresholds"` // Warning at 50%, 75%, 90% of budget
+	WarningsSent       []bool           `json:"warnings_sent"`      // Track which warnings have been sent
 	mediaRepo          *repositories.MediaRepository
 	logger             *zap.Logger
 }
@@ -244,15 +244,15 @@ const (
 func init() {
 	// Initialize default budget limits by MIME type (in micros)
 	DefaultBudgetLimits = map[string]int64{
-		"image/jpeg": 50000,   // $0.05 per image
-		"image/png":  50000,   // $0.05 per image
-		"image/gif":  100000,  // $0.10 per GIF (more processing)
-		"image/webp": 50000,   // $0.05 per image
-		"video/mp4":  500000,  // $0.50 per video
-		"video/webm": 500000,  // $0.50 per video
-		"audio/mpeg": 100000,  // $0.10 per audio
-		"audio/wav":  100000,  // $0.10 per audio
-		"audio/ogg":  100000,  // $0.10 per audio
+		"image/jpeg": 50000,  // $0.05 per image
+		"image/png":  50000,  // $0.05 per image
+		"image/gif":  100000, // $0.10 per GIF (more processing)
+		"image/webp": 50000,  // $0.05 per image
+		"video/mp4":  500000, // $0.50 per video
+		"video/webm": 500000, // $0.50 per video
+		"audio/mpeg": 100000, // $0.10 per audio
+		"audio/wav":  100000, // $0.10 per audio
+		"audio/ogg":  100000, // $0.10 per audio
 	}
 }
 
@@ -270,18 +270,18 @@ func init() {
 		ServiceName: "media-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Initialize processor with media-specific configuration
 	processor = NewMediaProcessor(lambdaCtx)
 }
@@ -304,7 +304,6 @@ func main() {
 	lambda.Start(lambdaHandler)
 }
 
-
 // liftApp interface defines the methods we need from the Lift app
 type liftApp interface {
 	Use(middleware lift.Middleware) *lift.App
@@ -312,22 +311,18 @@ type liftApp interface {
 	HandleRequest(ctx context.Context, event interface{}) (interface{}, error)
 }
 
-
-
-
-
 // setupLiftApp configures the Lift application with middleware and handlers
 func setupLiftApp() liftApp {
 	app := lift.New()
-	
+
 	// Add all middleware
 	addRequestIDMiddleware(app)
 	addLoggingMetricsMiddleware(app)
 	addErrorHandlingMiddleware(app)
-	
+
 	// Set SQS handler for media processing
 	addSQSHandler(app)
-	
+
 	return app
 }
 
@@ -360,7 +355,7 @@ func addLoggingMetricsMiddleware(app liftApp) {
 
 			err := next.Handle(ctx)
 			duration := time.Since(start)
-			
+
 			recordProcessingMetrics(err, duration)
 			logProcessingResult(requestID, err, duration)
 
@@ -374,17 +369,17 @@ func recordProcessingMetrics(err error, duration time.Duration) {
 	if processor.emfMetrics == nil {
 		return
 	}
-	
+
 	processor.emfMetrics.RecordLatency("sqs_batch_processing", duration)
-	
+
 	if err != nil {
 		processor.emfMetrics.RecordError("sqs_batch_processing", observability.ErrorTypeInternal)
 	} else {
 		processor.emfMetrics.RecordSuccess("sqs_batch_processing")
 	}
-	
+
 	// Record processing time metric
-	processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime, 
+	processor.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime,
 		float64(duration.Milliseconds()), observability.UnitMilliseconds, nil)
 }
 
@@ -453,7 +448,7 @@ func extractSQSEvent(ctx *lift.Context) (events.SQSEvent, error) {
 			return events.SQSEvent{}, lift.NewLiftError("EVENT_PARSE_ERROR", "failed to parse SQS event", 500).WithCause(err)
 		}
 	}
-	
+
 	return event, nil
 }
 
@@ -492,11 +487,11 @@ func recordLambdaMetrics(requestStart time.Time, err error) {
 	if processor.emfMetrics == nil {
 		return
 	}
-	
+
 	requestDuration := time.Since(requestStart)
 	processor.emfMetrics.RecordLatency("media_lambda_request", requestDuration)
 	processor.emfMetrics.RecordThroughput("media_lambda_request", 1)
-	
+
 	if err != nil {
 		processor.emfMetrics.RecordError("media_lambda_request", "lambda_error")
 	} else {
@@ -538,7 +533,7 @@ func (mp *MediaProcessor) HandleSQS(ctx *lift.Context, event events.SQSEvent) er
 				zap.String("job_id", processingEvent.JobID),
 				zap.String("media_id", processingEvent.MediaID),
 				zap.Error(err))
-					// Handle job failure with retry logic  
+			// Handle job failure with retry logic
 			// First get the job to update it
 			if job, getErr := mp.mediaRepo.GetMediaJob(ctx.Request.Context(), processingEvent.JobID); getErr == nil {
 				if retryErr := mp.handleJobFailure(ctx.Request.Context(), job, err); retryErr != nil {
@@ -582,7 +577,7 @@ func (mp *MediaProcessor) initializeAWSClients(ctx context.Context) error {
 //nolint:gocognit // Media processing requires handling many edge cases
 func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProcessingEvent) error {
 	processingStart := time.Now()
-	
+
 	mp.logger.Info("processing media job",
 		zap.String("job_id", event.JobID),
 		zap.String("media_id", event.MediaID),
@@ -591,8 +586,8 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Record media job start metrics
 	if mp.emfMetrics != nil {
 		dimensions := map[string]string{
-			"job_id":  event.JobID,
-			"user":    event.Username,
+			"job_id": event.JobID,
+			"user":   event.Username,
 		}
 		mp.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessing, 1.0, observability.UnitCount, dimensions)
 	}
@@ -601,8 +596,8 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	defer func() {
 		processingDuration := time.Since(processingStart)
 		if mp.emfMetrics != nil {
-			mp.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime, 
-				float64(processingDuration.Milliseconds()), observability.UnitMilliseconds, 
+			mp.emfMetrics.RecordBusinessMetric(observability.MetricMediaProcessingTime,
+				float64(processingDuration.Milliseconds()), observability.UnitMilliseconds,
 				map[string]string{
 					"job_id": event.JobID,
 					"user":   event.Username,
@@ -642,7 +637,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Update job status to processing with processing lock
 	job.SetProcessing()
 	if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
-		mp.logger.Error("failed to update job status, another instance may be processing", 
+		mp.logger.Error("failed to update job status, another instance may be processing",
 			zap.Error(err))
 		return nil // Don't fail - optimistic concurrency control
 	}
@@ -731,13 +726,13 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	switch mediaType {
 	case mediaTypeImage, mediaTypeGifv:
 		result, processingErr = mp.processImage(timeoutCtx, originalData, event, job.ProcessingTasks, job.MimeType)
-		
+
 	case mediaTypeVideo:
 		result, processingErr = mp.processVideo(timeoutCtx, originalData, event, job.ProcessingTasks)
-		
+
 	case mediaTypeAudio:
 		result, processingErr = mp.processAudio(timeoutCtx, originalData, event, job.ProcessingTasks)
-		
+
 	default:
 		mp.logger.Error("unsupported media type for processing",
 			zap.String("media_type", mediaType),
@@ -785,15 +780,15 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 			"user":                           event.Username,
 			"status":                         "completed",
 		}
-		
+
 		mp.emfMetrics.RecordBusinessMetric("MediaProcessingCompleted", 1.0, observability.UnitCount, dimensions)
 		mp.emfMetrics.RecordSuccess("media_processing_job")
-		
+
 		// Record file size metrics for different media types
 		if job.FileSize > 0 {
 			mp.emfMetrics.RecordBusinessMetric("MediaFileSizeProcessed", float64(job.FileSize), observability.UnitBytes, dimensions)
 		}
-		
+
 		// Record dimensions if available
 		if result.Width > 0 && result.Height > 0 {
 			mp.emfMetrics.RecordBusinessMetric("MediaWidthProcessed", float64(result.Width), observability.UnitNone, dimensions)
@@ -1122,7 +1117,6 @@ func (mp *MediaProcessor) uploadToS3(ctx context.Context, key string, data []byt
 	return err
 }
 
-
 func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string, result ProcessingResult) error {
 	// Get the existing media record
 	media, err := mp.mediaRepo.GetMedia(ctx, mediaID)
@@ -1174,7 +1168,7 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 		Width:    result.Width,
 		Height:   result.Height,
 		Duration: result.Duration, // Duration is in milliseconds from result
-		FileSize: 0,              // Would need file size calculation
+		FileSize: 0,               // Would need file size calculation
 		Blurhash: result.Blurhash,
 		Sizes:    make(map[string]repositories.SizeInfo),
 	}
@@ -1341,7 +1335,6 @@ func (mp *MediaProcessor) getUserRemainingBudget(ctx context.Context, username s
 
 	return remaining
 }
-
 
 func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, event MediaProcessingEvent, mimeType string) (ProcessingResult, error) {
 	result := ProcessingResult{
@@ -1672,12 +1665,12 @@ func sanitizeS3Key(username, mediaID, filename string) (string, error) {
 func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, config *MediaConfig, username string, mediaID string) error {
 	// Check file size first
 	fileSize := int64(len(data))
-	
+
 	// First do basic file type validation
 	if err := validateFileType(data, mimeType); err != nil {
 		return err
 	}
-	
+
 	// Use common validation for basic checks first
 	if err := common.ValidateMediaEntity(mediaID, "media_file", fileSize); err != nil {
 		// If common validation fails with size limit, continue with user-specific limits
@@ -1686,7 +1679,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 			return err // Other errors (mediaID, filename validation)
 		}
 	}
-	
+
 	var userMaxSize int64
 
 	switch {
@@ -1870,11 +1863,11 @@ func (mp *MediaProcessor) NewMediaJobCostTracker(jobID, userID string, mimeType 
 			models.MediaCostAnalysis:   0,
 			models.MediaCostDelivery:   0,
 		},
-		BudgetMicros:     budgetMicros,
+		BudgetMicros:      budgetMicros,
 		WarningThresholds: []float64{0.5, 0.75, 0.9}, // 50%, 75%, 90%
-		WarningsSent:     []bool{false, false, false},
-		mediaRepo:        mp.mediaRepo,
-		logger:           mp.logger,
+		WarningsSent:      []bool{false, false, false},
+		mediaRepo:         mp.mediaRepo,
+		logger:            mp.logger,
 	}
 }
 
@@ -2011,7 +2004,7 @@ func (mp *MediaProcessor) handleJobFailure(ctx context.Context, job *models.Medi
 			retryCount = 10
 		}
 		job.ScheduleRetry(time.Second * time.Duration(1<<uint(retryCount))) //nolint:gosec // Bounded to 0-10, safe conversion
-		job.Status = models.MediaStatusPending // Will be retried
+		job.Status = models.MediaStatusPending                              // Will be retried
 		mp.logger.Info("Scheduling job retry",
 			zap.String("job_id", job.JobID),
 			zap.Timep("retry_at", job.RetryScheduledAt),
@@ -2036,7 +2029,6 @@ func (mp *MediaProcessor) isJobAbandoned(job *models.MediaJob) bool {
 	return timeSinceLastUpdate > time.Hour
 }
 
-
 // handleProcessingError handles errors during processing
 func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models.MediaJob, err error) {
 	mp.logger.Error("Processing error",
@@ -2045,7 +2037,7 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 
 	// Determine if error is permanent
 	isPermanent := mp.isPermanentError(err)
-	
+
 	if isPermanent {
 		job.Status = models.MediaStatusFailed
 		job.LastError = fmt.Sprintf("Permanent error: %v", err)
@@ -2080,14 +2072,14 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 	if mp.emfMetrics != nil {
 		mediaType := getMediaTypeFromMime(job.MimeType)
 		errorType := observability.ErrorTypeInternal
-		
+
 		// Classify error type
 		if isPermanent {
 			errorType = observability.ErrorTypeValidation
 		} else if job.RetryCount >= job.MaxRetries {
 			errorType = observability.ErrorTypeTimeout
 		}
-		
+
 		dimensions := map[string]string{
 			observability.DimensionMediaType: mediaType,
 			observability.DimensionErrorType: errorType,
@@ -2095,17 +2087,17 @@ func (mp *MediaProcessor) handleProcessingError(ctx context.Context, job *models
 			"retry_count":                    fmt.Sprintf("%d", job.RetryCount),
 			"is_permanent":                   fmt.Sprintf("%t", isPermanent),
 		}
-		
+
 		mp.emfMetrics.RecordError("media_processing_job", errorType)
 		mp.emfMetrics.RecordBusinessMetric("MediaProcessingErrors", 1.0, observability.UnitCount, dimensions)
-		
+
 		// Record specific failure reasons
 		if job.Status == models.MediaStatusFailed {
 			mp.emfMetrics.RecordBusinessMetric("MediaProcessingFailed", 1.0, observability.UnitCount, dimensions)
 		} else {
 			mp.emfMetrics.RecordBusinessMetric("MediaProcessingRetry", 1.0, observability.UnitCount, dimensions)
 		}
-		
+
 		// Trigger alerts for high error rates if needed
 		if mp.alertManager != nil && isPermanent {
 			go func() {

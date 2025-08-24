@@ -5,10 +5,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/comprehend"
 	"github.com/aws/aws-sdk-go-v2/service/rekognition"
-	"github.com/pay-theory/dynamorm/pkg/core"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // ModerationMode defines the operation mode for the moderation engine

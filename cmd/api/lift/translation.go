@@ -210,7 +210,7 @@ func (h *Handler) getTargetLanguage(ctx *lift.Context, username string) string {
 	if err == nil && result != nil && result.Preferences != nil {
 		if lang, ok := result.Preferences["language"].(string); ok && lang != "" {
 			if err := common.ValidateLanguageCode(lang); err != nil {
-				h.logger.Warn("invalid language code in user preferences", 
+				h.logger.Warn("invalid language code in user preferences",
 					zap.String("username", username),
 					zap.String("lang", lang),
 					zap.Error(err))

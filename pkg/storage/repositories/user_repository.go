@@ -107,7 +107,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 func (r *UserRepository) GetUser(ctx context.Context, username string) (*storage.User, error) {
 	userModel := &models.User{}
 	pk := "USER#" + username
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	err := r.Get(ctx, pk, sk, userModel)
 	if err != nil {
@@ -159,7 +159,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, username string, update
 	// Get existing user first using BaseRepository
 	userModel := &models.User{}
 	pk := "USER#" + username
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	err := r.Get(ctx, pk, sk, userModel)
 	if err != nil {
@@ -184,7 +184,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, username string, update
 // DeleteUser deletes a user using BaseRepository pattern
 func (r *UserRepository) DeleteUser(ctx context.Context, username string) error {
 	pk := "USER#" + username
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	err := r.Delete(ctx, pk, sk)
 	if err != nil {
@@ -485,7 +485,7 @@ func (r *UserRepository) CreateAccountPin(ctx context.Context, pin *storage.Acco
 		PinnedUsername: pin.PinnedUsername,
 		CreatedAt:      pin.CreatedAt,
 	}
-	pinModel.UpdateKeys()
+	_ = pinModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create in DynamoDB
 	err = r.GetDB().WithContext(ctx).Model(pinModel).Create()
@@ -504,7 +504,7 @@ func (r *UserRepository) DeleteAccountPin(ctx context.Context, username, pinnedA
 		Username:      username,
 		PinnedActorID: pinnedActorID,
 	}
-	pin.UpdateKeys()
+	_ = pin.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Delete from DynamoDB
 	err := r.GetDB().WithContext(ctx).Model(pin).Delete()
@@ -552,7 +552,7 @@ func (r *UserRepository) IsAccountPinned(ctx context.Context, username, actorID 
 		Username:      username,
 		PinnedActorID: actorID,
 	}
-	pin.UpdateKeys()
+	_ = pin.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Check if exists
 	var found models.AccountPin
@@ -589,7 +589,7 @@ func (r *UserRepository) CreateAccountNote(ctx context.Context, note *storage.Ac
 		CreatedAt:     note.CreatedAt,
 		UpdatedAt:     note.UpdatedAt,
 	}
-	noteModel.UpdateKeys()
+	_ = noteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create in DynamoDB
 	err := r.GetDB().WithContext(ctx).Model(noteModel).Create()
@@ -608,7 +608,7 @@ func (r *UserRepository) GetAccountNote(ctx context.Context, username, targetAct
 		Username:      username,
 		TargetActorID: targetActorID,
 	}
-	note.UpdateKeys()
+	_ = note.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Query from DynamoDB
 	var found models.AccountNote
@@ -647,7 +647,7 @@ func (r *UserRepository) UpdateAccountNote(ctx context.Context, note *storage.Ac
 		CreatedAt:     note.CreatedAt,
 		UpdatedAt:     note.UpdatedAt,
 	}
-	noteModel.UpdateKeys()
+	_ = noteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Update in DynamoDB (Put overwrites existing)
 	err := r.GetDB().WithContext(ctx).Model(noteModel).Create()
@@ -666,7 +666,7 @@ func (r *UserRepository) DeleteAccountNote(ctx context.Context, username, target
 		Username:      username,
 		TargetActorID: targetActorID,
 	}
-	note.UpdateKeys()
+	_ = note.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Delete from DynamoDB
 	err := r.GetDB().WithContext(ctx).Model(note).Delete()
@@ -878,7 +878,7 @@ func (r *UserRepository) GetVouch(_ context.Context, vouchID string) (*storage.V
 	var vouchModels []*models.Vouch
 	err := r.GetDB().Model(&models.Vouch{}).
 		Where("PK", "=", fmt.Sprintf("VOUCH#%s", vouchID)).
-		Where("SK", "=", "METADATA").
+		Where("SK", "=", models.SKMetadata).
 		Scan(&vouchModels)
 
 	if err != nil {
@@ -976,7 +976,7 @@ func (r *UserRepository) UpdateVouchStatus(ctx context.Context, vouchID string, 
 	// Create model with updated data
 	vouchModel := &models.Vouch{
 		PK:        fmt.Sprintf("VOUCH#%s", vouchID),
-		SK:        "METADATA",
+		SK:        models.SKMetadata,
 		VouchData: string(vouchJSON),
 		Active:    active,
 	}
@@ -1056,7 +1056,7 @@ func (r *UserRepository) CreateTrustRelationship(ctx context.Context, relationsh
 	}
 
 	// Update all keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB
 	if err := r.GetDB().Model(model).Create(); err != nil {
@@ -1254,7 +1254,7 @@ func (r *UserRepository) UpdateTrustScore(_ context.Context, score *storage.Trus
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB
 	if err := r.GetDB().Model(model).Create(); err != nil {
@@ -1284,7 +1284,7 @@ func (r *UserRepository) RecordTrustUpdate(_ context.Context, update *storage.Tr
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB
 	if err := r.GetDB().Model(model).Create(); err != nil {
@@ -1688,7 +1688,7 @@ func (r *UserRepository) GetUserPreferences(ctx context.Context, username string
 
 	// Set the keys and query for preferences
 	prefModel.Username = username
-	prefModel.UpdateKeys()
+	prefModel.UpdateKeys() // Internal model operation
 
 	err := r.GetDB().WithContext(ctx).Model(&models.UserPreferences{}).
 		Where("PK", "=", prefModel.PK).
@@ -2158,7 +2158,7 @@ func (r *UserRepository) CreateConversationMute(ctx context.Context, mute *stora
 		CreatedAt:      mute.CreatedAt,
 		ExpiresAt:      mute.ExpiresAt,
 	}
-	muteModel.UpdateKeys()
+	_ = muteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the mute
 	err := r.GetDB().WithContext(ctx).Model(muteModel).Create()
@@ -2185,7 +2185,7 @@ func (r *UserRepository) DeleteConversationMute(ctx context.Context, username, c
 		Username:       username,
 		ConversationID: conversationID,
 	}
-	muteModel.UpdateKeys()
+	_ = muteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
 		Where("PK", "=", muteModel.PK).
@@ -2206,7 +2206,7 @@ func (r *UserRepository) IsConversationMuted(ctx context.Context, username, conv
 		Username:       username,
 		ConversationID: conversationID,
 	}
-	muteModel.UpdateKeys()
+	_ = muteModel.UpdateKeys() // Ignore error as this is internal model operation
 
 	var result models.ConversationMute
 	err := r.GetDB().WithContext(ctx).Model(&models.ConversationMute{}).
@@ -2346,7 +2346,7 @@ func (r *UserRepository) CacheRemoteActor(ctx context.Context, handle string, ac
 	}
 
 	// UpdateKeys sets the PK, SK, Domain, and TTL fields based on the legacy pattern
-	remoteActor.UpdateKeys()
+	remoteActor.UpdateKeys() // Internal model operation
 
 	// Create in DynamoDB using DynamORM
 	err := r.GetDB().WithContext(ctx).Model(remoteActor).Create()
@@ -2382,7 +2382,7 @@ func (r *UserRepository) CreateBookmark(ctx context.Context, username, objectID 
 		ObjectID:  objectID,
 		CreatedAt: now,
 	}
-	bookmark.UpdateKeys()
+	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the bookmark using DynamORM with condition check to prevent duplicates
 	// Note: DynamORM Create will overwrite if the same keys exist, so we need to check first

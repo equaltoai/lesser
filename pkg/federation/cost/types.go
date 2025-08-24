@@ -103,7 +103,6 @@ type Storage interface {
 	ListInstanceConfigs(ctx context.Context) ([]*InstanceConfig, error)
 }
 
-
 // Controller interface for cost-aware federation decisions
 type Controller interface {
 	// Decision making

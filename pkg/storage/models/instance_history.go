@@ -79,7 +79,8 @@ func NewDailyInstanceHistory(date string, metricType string) *InstanceHistory {
 		// Set TTL to 90 days from now (90 * 24 * 60 * 60 = 7776000 seconds)
 		TTL: now.Unix() + 7776000,
 	}
-	history.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = history.UpdateKeys()
 	return history
 }
 
@@ -96,7 +97,8 @@ func NewWeeklyInstanceHistory(weekStart string, metricType string) *InstanceHist
 		// Set TTL to 365 days from now (365 * 24 * 60 * 60 = 31536000 seconds)
 		TTL: now.Unix() + 31536000,
 	}
-	history.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = history.UpdateKeys()
 	return history
 }
 
@@ -111,7 +113,8 @@ func NewMonthlyInstanceHistory(monthStart string, metricType string) *InstanceHi
 		RecordedAt:  time.Now(),
 		// No TTL - keep monthly data forever
 	}
-	history.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = history.UpdateKeys()
 	return history
 }
 

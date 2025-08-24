@@ -8,16 +8,16 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Additional context key types for HTTP tracking
 const (
 	federationTargetKey contextKey = "federation_target"
 	operationTypeKey    contextKey = "operation_type"
-	unknownValue        = "unknown"
+	unknownValue                   = "unknown"
 )
 
 // HTTPTracker wraps HTTP client operations with comprehensive latency tracking
@@ -30,19 +30,19 @@ type HTTPTracker struct {
 
 // HTTPMetrics represents detailed HTTP call metrics
 type HTTPMetrics struct {
-	URL            string
-	Method         string
-	StatusCode     int
-	RequestSize    int64
-	ResponseSize   int64
-	DNSTime        time.Duration
-	TCPTime        time.Duration
-	TLSTime        time.Duration
-	FirstByteTime  time.Duration
-	TotalTime      time.Duration
-	Success        bool
-	ErrorType      string
-	RetryAttempts  int
+	URL           string
+	Method        string
+	StatusCode    int
+	RequestSize   int64
+	ResponseSize  int64
+	DNSTime       time.Duration
+	TCPTime       time.Duration
+	TLSTime       time.Duration
+	FirstByteTime time.Duration
+	TotalTime     time.Duration
+	Success       bool
+	ErrorType     string
+	RetryAttempts int
 }
 
 // NewHTTPTracker creates a new HTTP client with latency tracking
@@ -62,13 +62,13 @@ func NewHTTPTracker(client *http.Client, logger *zap.Logger, recorder MetricsRec
 // Do executes an HTTP request with comprehensive tracking
 func (ht *HTTPTracker) Do(ctx context.Context, req *http.Request) (*http.Response, *HTTPMetrics, error) {
 	startTime := time.Now()
-	
+
 	// Extract URL components
 	host := req.URL.Host
 	if err := common.ValidateRequiredParam("host", host); err != nil {
 		host = unknownValue
 	}
-	
+
 	// Prepare metrics
 	metrics := &HTTPMetrics{
 		URL:         req.URL.String(),
@@ -85,7 +85,7 @@ func (ht *HTTPTracker) Do(ctx context.Context, req *http.Request) (*http.Respons
 	// Execute request
 	resp, err := ht.client.Do(req.WithContext(ctx))
 	totalDuration := time.Since(startTime)
-	
+
 	metrics.TotalTime = totalDuration
 	metrics.Success = err == nil && (resp != nil && resp.StatusCode < 400)
 
@@ -111,11 +111,11 @@ func (ht *HTTPTracker) Do(ctx context.Context, req *http.Request) (*http.Respons
 
 	// Prepare dimensions
 	dimensions := map[string]string{
-		"method":        req.Method,
-		"host":          host,
-		"status_code":   fmt.Sprintf("%d", metrics.StatusCode),
-		"operation":     operationType,
-		"request_id":    requestID,
+		"method":      req.Method,
+		"host":        host,
+		"status_code": fmt.Sprintf("%d", metrics.StatusCode),
+		"operation":   operationType,
+		"request_id":  requestID,
 	}
 
 	if metrics.ErrorType != "" {
@@ -168,8 +168,8 @@ func (ht *HTTPTracker) DoFederation(ctx context.Context, req *http.Request, targ
 		federationDimensions := map[string]string{
 			"target_instance": targetInstance,
 			"federation_type": getFederationType(req.URL.Path),
-			"method":         req.Method,
-			"success":        fmt.Sprintf("%t", metrics.Success),
+			"method":          req.Method,
+			"success":         fmt.Sprintf("%t", metrics.Success),
 		}
 
 		// Record federation latency
@@ -222,27 +222,27 @@ func categorizeHTTPError(err error) string {
 	}
 
 	errStr := err.Error()
-	
+
 	// Timeout errors
 	if isTimeoutError(err) {
 		return ErrorTypeTimeout
 	}
-	
+
 	// DNS errors
 	if isDNSError(errStr) {
 		return "dns_error"
 	}
-	
+
 	// Connection errors
 	if isConnectionError(errStr) {
 		return "connection_error"
 	}
-	
+
 	// TLS/SSL errors
 	if isTLSError(errStr) {
 		return "tls_error"
 	}
-	
+
 	// Context cancellation
 	if isContextError(err) {
 		return "context_canceled"
@@ -314,9 +314,9 @@ func containsAny(s string, substrings []string) bool {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		 findSubstringHTTP(s, substr))))
+	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			findSubstringHTTP(s, substr))))
 }
 
 func findSubstringHTTP(s, substr string) bool {
@@ -333,12 +333,12 @@ func isFederationRequest(url *url.URL) bool {
 	if url == nil {
 		return false
 	}
-	
+
 	path := url.Path
 	// Common ActivityPub and federation endpoints
 	federationPaths := []string{
 		"/inbox",
-		"/outbox", 
+		"/outbox",
 		"/.well-known/webfinger",
 		"/.well-known/nodeinfo",
 		"/users/",
@@ -346,13 +346,13 @@ func isFederationRequest(url *url.URL) bool {
 		"/activities/",
 		"/objects/",
 	}
-	
+
 	for _, fedPath := range federationPaths {
 		if path == fedPath || (len(path) > len(fedPath) && path[:len(fedPath)] == fedPath) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

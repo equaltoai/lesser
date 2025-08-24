@@ -321,7 +321,7 @@ func (m *MockFederationInstanceRepository) BatchUpdateInstancesHealth(_ context.
 	return nil
 }
 
-// BatchUpdateInstancesUsage updates usage counters for multiple instances (mock implementation)  
+// BatchUpdateInstancesUsage updates usage counters for multiple instances (mock implementation)
 func (m *MockFederationInstanceRepository) BatchUpdateInstancesUsage(_ context.Context, _ map[string]int64) error {
 	return nil
 }

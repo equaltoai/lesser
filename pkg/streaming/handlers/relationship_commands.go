@@ -65,7 +65,7 @@ func (rch *RelationshipCommandHandler) HandleCommand(ctx context.Context, conn *
 	case streaming.CmdRemoveFollower:
 		return rch.handleRemoveFollower(ctx, conn, cmd)
 	default:
-		return rch.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND", 
+		return rch.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND",
 			"Unsupported relationship command", fmt.Sprintf("Command %s not supported by relationship handler", cmd.Type)), nil
 	}
 }
@@ -102,7 +102,7 @@ func (rch *RelationshipCommandHandler) genericRelationshipHandler(
 	// Convert result to JSON for response
 	data, err := rch.ConvertToJSON(result)
 	if err != nil {
-		return rch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return rch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 
@@ -172,6 +172,7 @@ func (rch *RelationshipCommandHandler) handleRemoveFollower(ctx context.Context,
 		"Failed to remove follower",
 	)
 }
+
 // handleFollowUser handles following a user
 func (rch *RelationshipCommandHandler) handleFollowUser(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	return rch.genericRelationshipHandler(
@@ -180,7 +181,7 @@ func (rch *RelationshipCommandHandler) handleFollowUser(ctx context.Context, con
 		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
 			reblogs := rch.GetBool(payload, "reblogs", true)
 			notify := rch.GetBool(payload, "notify", false)
-			
+
 			followCmd := &relationships.FollowCommand{
 				FollowerID:  userID,
 				FollowingID: targetID,
@@ -268,14 +269,14 @@ func (rch *RelationshipCommandHandler) handleMuteUser(ctx context.Context, conn 
 		[]string{"id"},
 		func(ctx context.Context, userID, targetID string, payload map[string]interface{}) (interface{}, error) {
 			durationSeconds := rch.GetInt(payload, "duration", 0)
-			
+
 			// Convert duration to time.Duration pointer (nil means indefinite)
 			var duration *time.Duration
 			if durationSeconds > 0 {
 				d := time.Duration(durationSeconds) * time.Second
 				duration = &d
 			}
-			
+
 			muteCmd := &relationships.MuteCommand{
 				MuterID:  userID,
 				MutedID:  targetID,

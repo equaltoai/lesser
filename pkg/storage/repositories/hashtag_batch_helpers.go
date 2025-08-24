@@ -14,11 +14,11 @@ import (
 
 // BatchDeleteConfig holds configuration for batch deletion operations
 type BatchDeleteConfig struct {
-	ModelType     string // "hashtag_trend", "trending_hashtag", "hashtag_usage"
-	ErrorPrefix   string // Error message prefix
-	BatchSize     int    // Batch size for deletion
-	QueryLimit    int    // Limit for initial query
-	FilterField   string // Field to filter on (e.g., "UpdatedAt", "UsedAt")
+	ModelType   string // "hashtag_trend", "trending_hashtag", "hashtag_usage"
+	ErrorPrefix string // Error message prefix
+	BatchSize   int    // Batch size for deletion
+	QueryLimit  int    // Limit for initial query
+	FilterField string // Field to filter on (e.g., "UpdatedAt", "UsedAt")
 }
 
 // deleteOldRecordsBatch is a generic helper for batch deletion of old records
@@ -67,7 +67,7 @@ func deleteOldHashtagTrendRecordsBatch(
 	config BatchDeleteConfig,
 ) (int, error) {
 	var trends []*models.HashtagTrend
-	
+
 	// Query old trend records using Filter and Scan
 	err := db.WithContext(ctx).Model(&models.HashtagTrend{}).
 		Filter(config.FilterField, "<", before.Format(time.RFC3339)).

@@ -3,9 +3,9 @@ package streaming
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Event type constants following Mastodon streaming API conventions

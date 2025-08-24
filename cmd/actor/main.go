@@ -46,12 +46,12 @@ func init() {
 		ServiceName: "actor",
 		LambdaType:  common.LambdaTypeAPI,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with default options for API Lambda type
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
@@ -69,16 +69,16 @@ type Handler struct {
 func NewHandler() *Handler {
 	// Initialize actor repository
 	actorRepo := repositories.NewActorRepository(
-		repos.GetDB(), 
-		repos.GetTableName(), 
+		repos.GetDB(),
+		repos.GetTableName(),
 		logger)
 
 	// Initialize authorized fetch service
 	authorizedFetchService := federation.NewAuthorizedFetchService(
-		repos, 
-		cfg.Domain, 
+		repos,
+		cfg.Domain,
 		logger)
-	
+
 	return &Handler{
 		actorRepo:              actorRepo,
 		authorizedFetchService: authorizedFetchService,

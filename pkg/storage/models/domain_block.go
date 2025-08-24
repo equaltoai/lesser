@@ -108,6 +108,11 @@ func (d *EmailDomainBlock) GetSK() string {
 	return d.SK
 }
 
+// GetDomain returns the domain of the email domain block
+func (d *EmailDomainBlock) GetDomain() string {
+	return d.Domain
+}
+
 // DomainAllow represents a domain in the allowlist
 type DomainAllow struct {
 	PK        string    `dynamorm:"pk"`
@@ -142,6 +147,11 @@ func (d *DomainAllow) GetPK() string {
 // GetSK returns the sort key of the domain allow
 func (d *DomainAllow) GetSK() string {
 	return d.SK
+}
+
+// GetDomain returns the domain of the domain allow
+func (d *DomainAllow) GetDomain() string {
+	return d.Domain
 }
 
 // Domain block severity constants

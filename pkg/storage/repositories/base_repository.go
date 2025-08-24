@@ -9,9 +9,15 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
+)
+
+// Sort order constants
+const (
+	SortOrderAsc  = "ASC"
+	SortOrderDesc = "DESC"
 )
 
 // BaseModel interface that all DynamoDB models must implement
@@ -68,7 +74,7 @@ func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_create_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB create operation cost",
@@ -105,7 +111,7 @@ func (r *BaseRepository[T]) Get(ctx context.Context, pk, sk string, result T) er
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_get_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB get operation cost",
@@ -151,7 +157,7 @@ func (r *BaseRepository[T]) Update(ctx context.Context, item T) error {
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_update_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB update operation cost",
@@ -189,7 +195,7 @@ func (r *BaseRepository[T]) Delete(ctx context.Context, pk, sk string) error {
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_delete_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB delete operation cost",
@@ -234,7 +240,7 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 
 	// Execute query
 	err := query.All(&results)
-	
+
 	// Track cost if cost service is available
 	if r.costService != nil {
 		itemCount := int64(len(results))
@@ -242,7 +248,7 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 		if estimatedRU == 0 {
 			estimatedRU = 1 // Minimum for the query operation itself
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -252,7 +258,7 @@ func (r *BaseRepository[T]) Query(ctx context.Context, pk string, limit int) ([]
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_query_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track DynamoDB query operation cost",
 				zap.String("repository", r.repoName),
@@ -407,7 +413,7 @@ func (r *BaseRepository[T]) TrackRead(ctx context.Context, operationType string,
 	if r.costService == nil {
 		return nil // Silently skip if no cost service
 	}
-	
+
 	operation := cost.DynamoOperation{
 		Type:               operationType,
 		TableName:          r.tableName,
@@ -417,7 +423,7 @@ func (r *BaseRepository[T]) TrackRead(ctx context.Context, operationType string,
 		Timestamp:          time.Now(),
 		OperationID:        fmt.Sprintf("%s_%s_%d", r.repoName, operationType, time.Now().UnixNano()),
 	}
-	
+
 	return r.costService.TrackDynamoOperation(ctx, operation)
 }
 
@@ -426,7 +432,7 @@ func (r *BaseRepository[T]) TrackWrite(ctx context.Context, operationType string
 	if r.costService == nil {
 		return nil // Silently skip if no cost service
 	}
-	
+
 	operation := cost.DynamoOperation{
 		Type:               operationType,
 		TableName:          r.tableName,
@@ -436,7 +442,7 @@ func (r *BaseRepository[T]) TrackWrite(ctx context.Context, operationType string
 		Timestamp:          time.Now(),
 		OperationID:        fmt.Sprintf("%s_%s_%d", r.repoName, operationType, time.Now().UnixNano()),
 	}
-	
+
 	return r.costService.TrackDynamoOperation(ctx, operation)
 }
 
@@ -445,7 +451,7 @@ func (r *BaseRepository[T]) TrackCustomOperation(ctx context.Context, operation 
 	if r.costService == nil {
 		return nil // Silently skip if no cost service
 	}
-	
+
 	// Fill in default values if not provided
 	if err := common.ValidateRequiredParam("operation.TableName", operation.TableName); err != nil {
 		operation.TableName = r.tableName
@@ -456,7 +462,7 @@ func (r *BaseRepository[T]) TrackCustomOperation(ctx context.Context, operation 
 	if err := common.ValidateRequiredParam("operation.OperationID", operation.OperationID); err != nil {
 		operation.OperationID = fmt.Sprintf("%s_%s_%d", r.repoName, operation.Type, time.Now().UnixNano())
 	}
-	
+
 	return r.costService.TrackDynamoOperation(ctx, operation)
 }
 
@@ -486,22 +492,22 @@ func (r *BaseRepository[T]) GetDB() core.DB {
 
 // CollectionQueryConfig configures behavior for collection query operations
 type CollectionQueryConfig struct {
-	PKKey        string // What to use as PK value prefix (e.g., "object", "USER", "ACTOR")
-	SKKey        string // What to use as SK value prefix (e.g., "likes", "PROFILE", "BLOCKED")
-	IndexName    string // GSI index name if using GSI (empty for main table)
-	GSIConfig    *GSIQueryConfig
-	LogName      string // Name for logging (e.g., "likes", "blocks")
-	ErrorPrefix  string // Error message prefix (e.g., "get likes", "query blocks")
+	PKKey       string // What to use as PK value prefix (e.g., "object", "USER", "ACTOR")
+	SKKey       string // What to use as SK value prefix (e.g., "likes", "PROFILE", "BLOCKED")
+	IndexName   string // GSI index name if using GSI (empty for main table)
+	GSIConfig   *GSIQueryConfig
+	LogName     string // Name for logging (e.g., "likes", "blocks")
+	ErrorPrefix string // Error message prefix (e.g., "get likes", "query blocks")
 }
 
 // GSIQueryConfig configures GSI-specific query behavior
 type GSIQueryConfig struct {
-	PKField    string // GSI PK field name (e.g., "GSI1PK", "GSI2PK")
-	SKField    string // GSI SK field name (e.g., "GSI1SK", "GSI2SK")
-	PKValue    string // PK value for the GSI
-	SKPattern  string // SK pattern (for BEGINS_WITH, range queries, etc.)
-	UseCursor  bool   // Whether to support cursor-based pagination
-	OrderBy    string // Sort order ("ASC" or "DESC")
+	PKField   string // GSI PK field name (e.g., "GSI1PK", "GSI2PK")
+	SKField   string // GSI SK field name (e.g., "GSI1SK", "GSI2SK")
+	PKValue   string // PK value for the GSI
+	SKPattern string // SK pattern (for BEGINS_WITH, range queries, etc.)
+	UseCursor bool   // Whether to support cursor-based pagination
+	OrderBy   string // Sort order (SortOrderAsc or SortOrderDesc)
 }
 
 // QueryCollectionWithConversion performs paginated collection queries with type conversion
@@ -523,42 +529,42 @@ func QueryCollectionWithConversion[M BaseModel, R any](
 		// GSI query
 		gsi := config.GSIConfig
 		pkValue := fmt.Sprintf(gsi.PKValue, entityID)
-		
+
 		query := r.db.WithContext(ctx).Model(new(M)).
 			Index(config.IndexName).
 			Where(gsi.PKField, "=", pkValue).
 			Limit(limit)
-			
+
 		if gsi.SKPattern != "" {
 			query = query.Filter(gsi.SKField, "BEGINS_WITH", gsi.SKPattern)
 		}
-		
+
 		if gsi.UseCursor && cursor != "" {
-			if gsi.OrderBy == "DESC" {
+			if gsi.OrderBy == SortOrderDesc {
 				query = query.Where(gsi.SKField, "<", cursor)
 			} else {
 				query = query.Where(gsi.SKField, ">", cursor)
 			}
 		}
-		
+
 		if gsi.OrderBy != "" {
 			query = query.OrderBy(gsi.SKField, gsi.OrderBy)
 		}
-		
+
 		err = query.All(&models)
 	} else {
 		// Main table query
 		pkValue := fmt.Sprintf("%s#%s", config.PKKey, entityID)
 		skPattern := config.SKKey
-		
+
 		query := r.db.WithContext(ctx).Model(new(M)).
 			Where("PK", "=", pkValue).
 			Limit(limit)
-			
+
 		if skPattern != "" {
 			query = query.Filter("SK", "BEGINS_WITH", skPattern)
 		}
-		
+
 		err = query.All(&models)
 	}
 	if err != nil {
@@ -597,12 +603,12 @@ func DeleteEntityWithLogging[M BaseModel](
 	identifiers map[string]string, // key-value pairs for logging (e.g., "actor": actorID, "object": objectID)
 ) error {
 	model := new(M)
-	
+
 	err := r.db.WithContext(ctx).Model(model).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		Delete()
-		
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			logFields := []zap.Field{zap.String("entity_type", entityType)}
@@ -612,7 +618,7 @@ func DeleteEntityWithLogging[M BaseModel](
 			r.logger.Debug(fmt.Sprintf("%s not found", entityType), logFields...)
 			return nil
 		}
-		
+
 		logFields := []zap.Field{zap.Error(err), zap.String("entity_type", entityType)}
 		for key, value := range identifiers {
 			logFields = append(logFields, zap.String(key, value))
@@ -626,19 +632,19 @@ func DeleteEntityWithLogging[M BaseModel](
 		logFields = append(logFields, zap.String(key, value))
 	}
 	r.logger.Info(fmt.Sprintf("deleted %s", entityType), logFields...)
-	
+
 	return nil
 }
 
 // HistoryQueryConfig configures behavior for history/metrics query operations
 type HistoryQueryConfig struct {
-	MetricType   string // The metric type (e.g., "storage_bytes", "user_count")
-	IndexName    string // GSI index name
-	PKField      string // GSI PK field name
-	SKField      string // GSI SK field name
-	LogName      string // Name for logging
-	ErrorPrefix  string // Error message prefix
-	Converter    func(interface{}) map[string]interface{} // Custom field converter
+	MetricType  string                                   // The metric type (e.g., "storage_bytes", "user_count")
+	IndexName   string                                   // GSI index name
+	PKField     string                                   // GSI PK field name
+	SKField     string                                   // GSI SK field name
+	LogName     string                                   // Name for logging
+	ErrorPrefix string                                   // Error message prefix
+	Converter   func(interface{}) map[string]interface{} // Custom field converter
 }
 
 // QueryHistoryWithDateRange performs time-range queries for metrics/history data
@@ -668,8 +674,8 @@ func QueryHistoryWithDateRange[M BaseModel](
 		All(&models)
 
 	if err != nil {
-		r.logger.Error(fmt.Sprintf("Failed to get %s", config.LogName), 
-			zap.Error(err), 
+		r.logger.Error(fmt.Sprintf("Failed to get %s", config.LogName),
+			zap.Error(err),
 			zap.Int("days", days))
 		return nil, ErrorHandler.HandleQueryError(err, "history entity", config.LogName)
 	}
@@ -685,17 +691,17 @@ func QueryHistoryWithDateRange[M BaseModel](
 		}
 	}
 
-	r.logger.Info(fmt.Sprintf("Retrieved %s", config.LogName), 
-		zap.Int("days", days), 
+	r.logger.Info(fmt.Sprintf("Retrieved %s", config.LogName),
+		zap.Int("days", days),
 		zap.Int("records", len(result)))
-	
+
 	return result, nil
 }
 
 // MetricsQueryConfig configures behavior for metrics query operations
 type MetricsQueryConfig struct {
 	IndexName   string // GSI index name
-	PKField     string // GSI PK field name  
+	PKField     string // GSI PK field name
 	SKField     string // GSI SK field name
 	PKPattern   string // PK value pattern (e.g., "SERVICE#%s", "METRIC_TYPE#%s")
 	LogName     string // Name for logging
@@ -722,7 +728,7 @@ func QueryMetricsByTimeRange[M BaseModel](
 		Where(config.PKField, "=", pkValue).
 		Where(config.SKField, ">=", startSK).
 		Where(config.SKField, "<=", endSK).
-		OrderBy(config.SKField, "DESC").
+		OrderBy(config.SKField, SortOrderDesc).
 		All(&records)
 
 	if err != nil {
@@ -813,13 +819,55 @@ func getGSISK(_ BaseModel, _ string) string {
 	return ""
 }
 
+// === AGGREGATED DATA QUERY HELPER ===
+
+// AggregatedQueryConfig configures behavior for aggregated period queries
+type AggregatedQueryConfig struct {
+	PKPrefix    string // PK prefix (e.g., "cost_agg", "metrics_agg")
+	LogContext  string // Context for logging (e.g., "cost tracking", "metrics")
+	ErrorPrefix string // Error message prefix (e.g., "failed to list aggregated cost tracking")
+}
+
+// ListAggregatedByPeriod performs time-range queries for aggregated data
+// This eliminates duplication between cost tracking and metrics repositories
+func ListAggregatedByPeriod[T BaseModel](
+	ctx context.Context,
+	db core.DB,
+	config AggregatedQueryConfig,
+	period, entityType string,
+	startTime, endTime time.Time,
+	limit int,
+) ([]T, error) {
+	var aggregatedList []T
+
+	// Build consistent key patterns
+	pk := fmt.Sprintf("%s#%s#%s", config.PKPrefix, period, entityType)
+	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
+	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
+
+	// Execute query with time range filtering
+	query := db.WithContext(ctx).Model(new(T)).
+		Where("PK", "=", pk).
+		Where("SK", ">=", startSK).
+		Where("SK", "<=", endSK).
+		OrderBy("SK", SortOrderDesc).
+		Limit(limit)
+
+	err := query.All(&aggregatedList)
+	if err != nil {
+		return nil, MapErrorWithContext(err, config.ErrorPrefix)
+	}
+
+	return aggregatedList, nil
+}
+
 // === ENHANCED CRUD OPERATIONS FOR TASK 1.2.1 ===
 
 // BasePaginationOptions configures pagination behavior for BaseRepository
 type BasePaginationOptions struct {
 	Limit  int    // Maximum number of items to return
 	Cursor string // Pagination cursor for next page
-	Order  string // Sort order: "ASC" or "DESC"
+	Order  string // Sort order: SortOrderAsc or SortOrderDesc
 }
 
 // BasePaginatedResult contains paginated query results from BaseRepository
@@ -844,7 +892,7 @@ func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error
 		if estimatedRU == 0 {
 			estimatedRU = 1 // Minimum for the query operation itself
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -854,7 +902,7 @@ func (r *BaseRepository[T]) FindByPK(ctx context.Context, pk string) ([]T, error
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_findByPK_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track DynamoDB findByPK operation cost",
 				zap.String("repository", r.repoName),
@@ -890,7 +938,7 @@ func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName str
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -900,7 +948,7 @@ func (r *BaseRepository[T]) FindBySK(ctx context.Context, sk string, gsiName str
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_findBySK_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track DynamoDB findBySK operation cost",
 				zap.String("repository", r.repoName),
@@ -930,20 +978,20 @@ func (r *BaseRepository[T]) FindWithPagination(ctx context.Context, pk string, o
 		opts.Limit = 100 // Maximum limit to prevent abuse
 	}
 	if opts.Order == "" {
-		opts.Order = "ASC"
+		opts.Order = SortOrderAsc
 	}
 
 	var results []T
-	
+
 	// Build query
 	query := r.db.WithContext(ctx).Model(new(T)).
 		Where("PK", "=", pk).
-		Limit(opts.Limit + 1). // Get one extra to check if there are more
+		Limit(opts.Limit+1). // Get one extra to check if there are more
 		OrderBy("SK", opts.Order)
 
 	// Apply cursor if provided
 	if opts.Cursor != "" {
-		if opts.Order == "DESC" {
+		if opts.Order == SortOrderDesc {
 			query = query.Where("SK", "<", opts.Cursor)
 		} else {
 			query = query.Where("SK", ">", opts.Cursor)
@@ -979,7 +1027,7 @@ func (r *BaseRepository[T]) FindWithPagination(ctx context.Context, pk string, o
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -989,7 +1037,7 @@ func (r *BaseRepository[T]) FindWithPagination(ctx context.Context, pk string, o
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_paginated_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track paginated query cost",
 				zap.String("repository", r.repoName),
@@ -1027,7 +1075,7 @@ func (r *BaseRepository[T]) BatchCreate(ctx context.Context, items []T) error {
 		}
 
 		batch := items[i:end]
-		
+
 		// Create batch write request
 		// Note: This is a simplified implementation - would need proper batch write implementation
 		for _, item := range batch {
@@ -1052,7 +1100,7 @@ func (r *BaseRepository[T]) BatchCreate(ctx context.Context, items []T) error {
 				Timestamp:          time.Now(),
 				OperationID:        fmt.Sprintf("%s_batchCreate_%d", r.repoName, time.Now().UnixNano()),
 			}
-			
+
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track batch create cost",
 					zap.String("repository", r.repoName),
@@ -1065,7 +1113,7 @@ func (r *BaseRepository[T]) BatchCreate(ctx context.Context, items []T) error {
 	return nil
 }
 
-// BatchDelete removes multiple items efficiently using DynamoDB batch operations  
+// BatchDelete removes multiple items efficiently using DynamoDB batch operations
 func (r *BaseRepository[T]) BatchDelete(ctx context.Context, keys []struct{ PK, SK string }) error {
 	if err := common.ValidateSliceNotEmpty("keys", keys); err != nil {
 		return nil // Silently return if no keys to delete
@@ -1080,7 +1128,7 @@ func (r *BaseRepository[T]) BatchDelete(ctx context.Context, keys []struct{ PK, 
 		}
 
 		batch := keys[i:end]
-		
+
 		// Create batch delete request
 		// Note: This is a simplified implementation - would need proper batch delete implementation
 		for _, key := range batch {
@@ -1105,7 +1153,7 @@ func (r *BaseRepository[T]) BatchDelete(ctx context.Context, keys []struct{ PK, 
 				Timestamp:          time.Now(),
 				OperationID:        fmt.Sprintf("%s_batchDelete_%d", r.repoName, time.Now().UnixNano()),
 			}
-			
+
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track batch delete cost",
 					zap.String("repository", r.repoName),
@@ -1162,7 +1210,7 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -1172,7 +1220,7 @@ func (r *BaseRepository[T]) QueryWithFilter(ctx context.Context, pk string, filt
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_queryFilter_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track filtered query cost",
 				zap.String("repository", r.repoName),
@@ -1214,7 +1262,7 @@ func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.tableName,
@@ -1224,7 +1272,7 @@ func (r *BaseRepository[T]) QueryBetween(ctx context.Context, pk, startSK, endSK
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("%s_queryBetween_%d", r.repoName, time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 			r.logger.Warn("failed to track range query cost",
 				zap.String("repository", r.repoName),

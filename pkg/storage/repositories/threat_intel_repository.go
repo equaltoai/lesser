@@ -61,7 +61,7 @@ func (r *ThreatIntelRepository) ShareThreat(ctx context.Context, threat *ThreatI
 		SourceDomain: threat.SourceDomain,
 		TTL:          time.Now().Add(threat.TTL).Unix(),
 	}
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Store the threat
 	if err := r.Create(ctx, model); err != nil {
@@ -71,11 +71,18 @@ func (r *ThreatIntelRepository) ShareThreat(ctx context.Context, threat *ThreatI
 	// Store indicators for fast lookup using BaseRepository for ThreatIndicator
 	for _, indicator := range threat.Indicators {
 		indicatorModel := &models.ThreatIndicator{}
-		indicatorModel.UpdateKeys(indicator, threat.ID)
+		if err := indicatorModel.UpdateKeys(indicator, threat.ID); err != nil {
+			r.logger.Warn("failed to update indicator keys", zap.Error(err))
+			continue
+		}
 
 		// Use GetDB() for ThreatIndicator since BaseRepository is typed for ThreatIntel
 		if err := r.GetDB().WithContext(ctx).Model(indicatorModel).Create(); err != nil {
 			// Continue with other indicators on error
+			// Log the error but don't fail the entire operation
+			r.logger.Warn("failed to create threat indicator",
+				zap.String("threat_id", indicatorModel.ThreatID),
+				zap.Error(err))
 		}
 	}
 
@@ -107,7 +114,7 @@ func (r *ThreatIntelRepository) GetSharedThreats(ctx context.Context, since time
 		Limit:     100,
 		IndexName: "gsi2",
 	})
-	
+
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "shared threats")
 	}
@@ -121,7 +128,7 @@ func (r *ThreatIntelRepository) GetThreatsByType(ctx context.Context, threatType
 	result, err := r.queryUtils.QueryByGSI(ctx, "gsi1", fmt.Sprintf("TYPE#%s", threatType), "", &QueryOptions{
 		Limit: limit,
 	})
-	
+
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityThreatIntel, "threats by type")
 	}
@@ -134,7 +141,7 @@ func (r *ThreatIntelRepository) updateThreat(ctx context.Context, threatID strin
 	// Get the existing threat first
 	var model models.ThreatIntel
 	err := r.queryUtils.GetItemByPK(ctx, fmt.Sprintf("THREAT#%s", threatID), "METADATA", &model)
-	
+
 	if err != nil {
 		if errors.IsNotFound(err) {
 			if ignoreMissing {
@@ -150,7 +157,7 @@ func (r *ThreatIntelRepository) updateThreat(ctx context.Context, threatID strin
 	// Apply the update function
 	updateFunc(&model)
 	model.LastSeen = time.Now()
-	model.UpdateKeys() // Refresh GSI keys
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation // Refresh GSI keys
 
 	// Update the threat using generic update
 	if err := r.queryUtils.UpdateItem(ctx, &model); err != nil {
@@ -279,7 +286,7 @@ func (r *ThreatIntelRepository) GetIndicatorThreat(ctx context.Context, indicato
 // mapItemToThreatIntel converts a map[string]interface{} to ThreatIntel
 func (r *ThreatIntelRepository) mapItemToThreatIntel(item map[string]interface{}) *ThreatIntel {
 	threat := &ThreatIntel{}
-	
+
 	// Map fields from the item
 	if id, ok := item["ID"].(string); ok {
 		threat.ID = id
@@ -311,11 +318,11 @@ func (r *ThreatIntelRepository) mapItemToThreatIntel(item map[string]interface{}
 	if sourceDomain, ok := item["SourceDomain"].(string); ok {
 		threat.SourceDomain = sourceDomain
 	}
-	
+
 	// Calculate TTL duration from Unix timestamp
 	if ttl, ok := item["TTL"].(int64); ok && ttl > 0 {
 		threat.TTL = time.Until(time.Unix(ttl, 0))
 	}
-	
+
 	return threat
 }

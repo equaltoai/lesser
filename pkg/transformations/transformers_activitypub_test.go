@@ -61,7 +61,7 @@ func TestStorageActorToActivityPub(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create storage actor: %v", err)
 	}
-	
+
 	storageActor.Actor = actor
 	storageActor.CreatedAt = now
 
@@ -127,7 +127,7 @@ func TestTransformationRegistry(t *testing.T) {
 	transformers := ActivityPubRegistry.List()
 	expectedTransformers := []string{
 		"actor_to_storage",
-		"storage_to_actor", 
+		"storage_to_actor",
 		"actor_to_mastodon",
 		"object_to_storage",
 		"storage_to_object",
@@ -193,7 +193,7 @@ func TestValidationErrors(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for nil actor")
 	}
-	
+
 	validationErr, ok := err.(common.ValidationError)
 	if !ok {
 		t.Error("Expected ValidationError")

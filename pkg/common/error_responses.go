@@ -424,42 +424,42 @@ func RespondLegacyError(ctx *lift.Context, statusCode int, message string) error
 // Common error status/message combinations found in the codebase
 var (
 	// 400 Bad Request variants
-	ErrorMissingAccountID   = "missing account id"
-	ErrorMissingStatusID    = "missing status id"
-	ErrorMissingParameter   = "missing required parameter"
-	ErrorInvalidParameter   = "invalid parameter"
-	ErrorInvalidRequest     = "invalid request"
-	ErrorInvalidFormat      = "invalid format"
+	ErrorMissingAccountID = "missing account id"
+	ErrorMissingStatusID  = "missing status id"
+	ErrorMissingParameter = "missing required parameter"
+	ErrorInvalidParameter = "invalid parameter"
+	ErrorInvalidRequest   = "invalid request"
+	ErrorInvalidFormat    = "invalid format"
 
 	// 401 Unauthorized variants
-	ErrorUnauthorized       = "Unauthorized"
-	ErrorInvalidToken       = "invalid token"
-	ErrorMissingAuth        = "authentication required"
-	ErrorExpiredToken       = "token expired"
+	ErrorUnauthorized = "Unauthorized"
+	ErrorInvalidToken = "invalid token"
+	ErrorMissingAuth  = "authentication required"
+	ErrorExpiredToken = "token expired"
 
 	// 403 Forbidden variants
-	ErrorInsufficientScope  = "insufficient scope"
-	ErrorNotAuthorized      = "not authorized"
-	ErrorAccessDenied       = "access denied"
+	ErrorInsufficientScope = "insufficient scope"
+	ErrorNotAuthorized     = "not authorized"
+	ErrorAccessDenied      = "access denied"
 
 	// 404 Not Found variants
-	ErrorNotFound           = "not found"
-	ErrorAccountNotFound    = "account not found"
-	ErrorStatusNotFound     = "status not found"
-	ErrorUserNotFound       = "user not found"
-	ErrorActorNotFound      = "actor not found"
+	ErrorNotFound        = "not found"
+	ErrorAccountNotFound = "account not found"
+	ErrorStatusNotFound  = "status not found"
+	ErrorUserNotFound    = "user not found"
+	ErrorActorNotFound   = "actor not found"
 
 	// 422 Unprocessable Entity variants
-	ErrorStatusTooLong      = "status text too long"
-	ErrorInvalidContent     = "invalid content"
+	ErrorStatusTooLong  = "status text too long"
+	ErrorInvalidContent = "invalid content"
 
 	// 500 Internal Server Error variants
-	ErrorInternalServer     = "internal server error"
-	ErrorDatabaseError      = "database error"
-	ErrorFailedToCreate     = "failed to create"
-	ErrorFailedToUpdate     = "failed to update"
-	ErrorFailedToDelete     = "failed to delete"
-	ErrorFailedToGet        = "failed to get"
+	ErrorInternalServer = "internal server error"
+	ErrorDatabaseError  = "database error"
+	ErrorFailedToCreate = "failed to create"
+	ErrorFailedToUpdate = "failed to update"
+	ErrorFailedToDelete = "failed to delete"
+	ErrorFailedToGet    = "failed to get"
 )
 
 // RespondSuccess handles successful responses with data

@@ -146,7 +146,7 @@ func TestEngineVideoAnalysis(t *testing.T) {
 	config := &ModerationConfig{
 		EnableVideoAnalysis: true,
 		EnableTextAnalysis:  true,
-		S3Bucket:           "test-bucket",
+		S3Bucket:            "test-bucket",
 	}
 
 	// Test basic video analyzer creation directly to avoid DynamoDB issues

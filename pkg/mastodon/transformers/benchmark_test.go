@@ -14,7 +14,7 @@ import (
 
 func BenchmarkStorageStatusToMastodon(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	now := time.Now()
 	status := &storageModels.Status{
 		StatusID:       "test-status-123",
@@ -39,7 +39,7 @@ func BenchmarkStorageStatusToMastodon(b *testing.B) {
 
 func BenchmarkStorageAccountToMastodon(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	now := time.Now()
 	account := &storage.Account{
 		User: &storage.User{
@@ -68,7 +68,7 @@ func BenchmarkStorageAccountToMastodon(b *testing.B) {
 
 func BenchmarkMastodonStatusParamsToStorage(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	params := &models.CreateStatusRequest{
 		Status:      "Hello, world! This is a test status creation request.",
 		Visibility:  "public",
@@ -89,7 +89,7 @@ func BenchmarkMastodonStatusParamsToStorage(b *testing.B) {
 
 func BenchmarkBatchProcessStatusBatch(b *testing.B) {
 	processor := NewBatchProcessor("https://example.com")
-	
+
 	// Create a batch of test statuses
 	now := time.Now()
 	statuses := make([]*storageModels.Status, 100)
@@ -117,7 +117,7 @@ func BenchmarkBatchProcessStatusBatch(b *testing.B) {
 
 func BenchmarkTransformHashtags(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	hashtags := []string{"test", "benchmark", "performance", "golang", "mastodon", "api", "transformation", "optimization"}
 
 	b.ResetTimer()
@@ -128,7 +128,7 @@ func BenchmarkTransformHashtags(b *testing.B) {
 
 func BenchmarkTransformMentions(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	mentions := []string{"user1", "user2", "user3", "user4", "user5", "user6", "user7", "user8"}
 
 	b.ResetTimer()
@@ -139,7 +139,7 @@ func BenchmarkTransformMentions(b *testing.B) {
 
 func BenchmarkFormatMastodonError(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	testErr := fmt.Errorf("test error message for benchmarking")
 
 	b.ResetTimer()
@@ -150,7 +150,7 @@ func BenchmarkFormatMastodonError(b *testing.B) {
 
 func BenchmarkBuildLinkHeader(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
-	
+
 	pagination := &PaginationInfo{
 		NextCursor: "next-123456",
 		MinID:      "min-789012",
@@ -169,7 +169,7 @@ func BenchmarkBuildLinkHeader(b *testing.B) {
 func BenchmarkTransformationFrameworkBridge(b *testing.B) {
 	transformer := NewMastodonTransformer("https://example.com")
 	bridge := transformer.WithTransformationFramework()
-	
+
 	now := time.Now()
 	account := &storage.Account{
 		User: &storage.User{

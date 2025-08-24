@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // GroupedNotificationsService provides advanced notification grouping functionality
@@ -26,17 +26,17 @@ func NewGroupedNotificationsService(logger *zap.Logger) *GroupedNotificationsSer
 
 // GroupedNotification represents a group of similar notifications
 type GroupedNotification struct {
-	ID               string                  `json:"id"`
-	Type             string                  `json:"type"`
-	GroupKey         string                  `json:"group_key"`
-	Count            int                     `json:"count"`
-	LatestCreatedAt  time.Time               `json:"latest_created_at"`
+	ID                string                 `json:"id"`
+	Type              string                 `json:"type"`
+	GroupKey          string                 `json:"group_key"`
+	Count             int                    `json:"count"`
+	LatestCreatedAt   time.Time              `json:"latest_created_at"`
 	EarliestCreatedAt time.Time              `json:"earliest_created_at"`
-	IsRead           bool                    `json:"is_read"`
-	SampleAccounts   []NotificationAccount   `json:"sample_accounts"`
-	TargetStatus     *NotificationStatus     `json:"status,omitempty"`
-	MostRecentNotif  *models.Notification    `json:"most_recent_notification"`
-	AllNotifications []*models.Notification  `json:"all_notifications,omitempty"`
+	IsRead            bool                   `json:"is_read"`
+	SampleAccounts    []NotificationAccount  `json:"sample_accounts"`
+	TargetStatus      *NotificationStatus    `json:"status,omitempty"`
+	MostRecentNotif   *models.Notification   `json:"most_recent_notification"`
+	AllNotifications  []*models.Notification `json:"all_notifications,omitempty"`
 }
 
 // NotificationAccount represents an account in grouped notifications
@@ -97,7 +97,7 @@ func (gns *GroupedNotificationsService) GroupNotifications(
 
 	// Group notifications by their grouping criteria
 	groups := make(map[string][]*models.Notification)
-	
+
 	for _, notif := range notifications {
 		groupKey := gns.generateGroupKey(notif, strategy)
 		groups[groupKey] = append(groups[groupKey], notif)
@@ -105,7 +105,7 @@ func (gns *GroupedNotificationsService) GroupNotifications(
 
 	// Convert groups to GroupedNotification objects
 	var groupedNotifications []*GroupedNotification
-	
+
 	for groupKey, groupNotifs := range groups {
 		if len(groupNotifs) < strategy.MinGroupSize {
 			// If group is too small, add individual notifications
@@ -200,7 +200,7 @@ func (gns *GroupedNotificationsService) createGroupedNotification(
 	for _, account := range accountMap {
 		sampleAccounts = append(sampleAccounts, *account)
 	}
-	
+
 	sort.Slice(sampleAccounts, func(i, j int) bool {
 		return sampleAccounts[i].CreatedAt.After(sampleAccounts[j].CreatedAt)
 	})
@@ -291,9 +291,9 @@ func (gns *GroupedNotificationsService) GenerateGroupSummary(
 			}
 			return fmt.Sprintf("%s favourited your post", strings.Join(names, ", "))
 		}
-		return fmt.Sprintf("%s and %d others favourited your post", 
+		return fmt.Sprintf("%s and %d others favourited your post",
 			group.SampleAccounts[0].DisplayName, group.Count-1)
-			
+
 	case "reblog":
 		if group.Count == 1 {
 			return fmt.Sprintf("%s boosted your post", group.SampleAccounts[0].DisplayName)
@@ -305,9 +305,9 @@ func (gns *GroupedNotificationsService) GenerateGroupSummary(
 			}
 			return fmt.Sprintf("%s boosted your post", strings.Join(names, ", "))
 		}
-		return fmt.Sprintf("%s and %d others boosted your post", 
+		return fmt.Sprintf("%s and %d others boosted your post",
 			group.SampleAccounts[0].DisplayName, group.Count-1)
-			
+
 	case "follow":
 		if group.Count == 1 {
 			return fmt.Sprintf("%s followed you", group.SampleAccounts[0].DisplayName)
@@ -319,13 +319,13 @@ func (gns *GroupedNotificationsService) GenerateGroupSummary(
 			}
 			return fmt.Sprintf("%s followed you", strings.Join(names, ", "))
 		}
-		return fmt.Sprintf("%s and %d others followed you", 
+		return fmt.Sprintf("%s and %d others followed you",
 			group.SampleAccounts[0].DisplayName, group.Count-1)
-			
+
 	case "mention":
 		// Mentions typically aren't grouped, but just in case
 		return fmt.Sprintf("%s mentioned you", group.SampleAccounts[0].DisplayName)
-		
+
 	default:
 		if group.Count == 1 {
 			return fmt.Sprintf("Notification from %s", group.SampleAccounts[0].DisplayName)
@@ -350,7 +350,7 @@ func (gns *GroupedNotificationsService) MarkGroupAsRead(
 			}
 		}
 	}
-	
+
 	group.IsRead = true
 	return nil
 }

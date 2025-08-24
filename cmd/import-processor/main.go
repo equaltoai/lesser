@@ -1039,7 +1039,9 @@ func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusUR
 	}
 
 	// Prepare the bookmark for creation
-	bookmark.UpdateKeys()
+	if err := bookmark.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update bookmark keys: %w", err)
+	}
 
 	// Create the bookmark in storage
 	if err := p.repos.Object().CreateObject(ctx, bookmark); err != nil {

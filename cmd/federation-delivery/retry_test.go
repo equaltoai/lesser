@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap/zaptest"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"go.uber.org/zap/zaptest"
 )
 
 // Test retry backoff calculation edge cases

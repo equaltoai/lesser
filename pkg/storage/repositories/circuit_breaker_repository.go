@@ -75,11 +75,11 @@ func (r *CircuitBreakerRepository) SaveCircuitState(ctx context.Context, state *
 			if keyErr := existing.UpdateKeys(); keyErr != nil {
 				return ErrorHandler.HandleUpdateError(keyErr, EntityCircuitBreaker, state.InstanceID)
 			}
-			
+
 			if getErr := r.Get(ctx, existing.PK, existing.SK, existing); getErr != nil {
 				return ErrorHandler.HandleGetError(getErr, EntityCircuitBreaker, state.InstanceID)
 			}
-			
+
 			// Preserve atomic state transition by copying all fields
 			*existing = *state
 			err = r.Update(ctx, existing)
@@ -162,7 +162,7 @@ func (r *CircuitBreakerRepository) RecordMetric(ctx context.Context, instanceID 
 // GetRecentEvents retrieves recent events for an instance (for debugging)
 func (r *CircuitBreakerRepository) GetRecentEvents(ctx context.Context, instanceID string, limit int) ([]*models.CircuitBreakerEvent, error) {
 	pk := fmt.Sprintf("CIRCUIT#%s", instanceID)
-	
+
 	// Use BaseRepository query with SK prefix for events
 	events, err := r.eventRepo.QueryWithSKPrefix(ctx, pk, "EVENT#", limit)
 	if err != nil {
@@ -171,9 +171,7 @@ func (r *CircuitBreakerRepository) GetRecentEvents(ctx context.Context, instance
 
 	// Convert slice of values to slice of pointers
 	result := make([]*models.CircuitBreakerEvent, len(events))
-	for i := range events {
-		result[i] = events[i]
-	}
+	copy(result, events)
 	return result, nil
 }
 
@@ -196,12 +194,12 @@ func (r *CircuitBreakerRepository) GetAllCircuitStates(ctx context.Context) ([]*
 	// This requires a scan operation since we need all circuit states across different PKs
 	// Using the underlying DB connection for this specialized query
 	var states []*models.CircuitBreakerState
-	
+
 	err := r.GetDB().WithContext(ctx).Model(&models.CircuitBreakerState{}).
 		Where("PK", "begins_with", "CIRCUIT#").
 		Where("SK", "=", models.SKState).
 		Scan(&states)
-		
+
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityCircuitBreaker, "monitoring")
 	}

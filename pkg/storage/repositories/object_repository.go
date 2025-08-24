@@ -562,7 +562,7 @@ func (r *ObjectRepository) CreateUpdateHistory(ctx context.Context, history *sto
 	}
 
 	// Update the key fields
-	updateHistory.UpdateKeys()
+	updateHistory.UpdateKeys() // Internal model operation
 
 	// Create the update history record
 	err := r.db.WithContext(ctx).Model(updateHistory).Create()
@@ -643,7 +643,7 @@ func (r *ObjectRepository) AddToCollection(ctx context.Context, collection strin
 func (r *ObjectRepository) RemoveFromCollection(ctx context.Context, collection, itemID string) error {
 	pk := fmt.Sprintf("COLLECTION#%s", collection)
 	sk := fmt.Sprintf("ITEM#%s", itemID)
-	
+
 	collectionItem := &models.CollectionItem{
 		PK: pk,
 		SK: sk,
@@ -771,14 +771,14 @@ func (r *ObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID stri
 	err := r.db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Where("SK", "=", fmt.Sprintf("QUOTED#%s", noteID)).
 		All(&quotes)
-	
+
 	if err != nil {
 		r.logger.Error("failed to get quotes for withdrawn count",
 			zap.String("note_id", noteID),
 			zap.Error(err))
 		return 0, ErrorHandler.HandleQueryError(err, EntityObject, "withdrawn_quotes")
 	}
-	
+
 	// Count only withdrawn quotes
 	withdrawnCount := 0
 	for _, quote := range quotes {
@@ -786,12 +786,12 @@ func (r *ObjectRepository) CountWithdrawnQuotes(ctx context.Context, noteID stri
 			withdrawnCount++
 		}
 	}
-	
+
 	r.logger.Debug("counted withdrawn quotes for note",
 		zap.String("note_id", noteID),
 		zap.Int("withdrawn_count", withdrawnCount),
 		zap.Int("total_quotes", len(quotes)))
-	
+
 	return withdrawnCount, nil
 }
 
@@ -845,7 +845,7 @@ func (r *ObjectRepository) CreateQuoteRelationship(ctx context.Context, quote *s
 	}
 
 	// Update composite keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the quote relationship
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -946,7 +946,7 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 
 	// Mark as completed
 	syncRecord.MarkCompleted()
-	syncRecord.UpdateKeys()
+	syncRecord.UpdateKeys() // Internal model operation
 
 	// Update or create the record - use Create with conditional to implement upsert
 	if err := r.db.WithContext(ctx).Model(syncRecord).Create(); err != nil {
@@ -1195,7 +1195,7 @@ func (r *ObjectRepository) SyncMissingRepliesFromRemote(ctx context.Context, sta
 		SyncAttempt: time.Now(),
 		SyncResult:  "partial", // Mark as partial sync
 	}
-	syncRecord.UpdateKeys()
+	syncRecord.UpdateKeys() // Internal model operation
 
 	// Store sync attempt record
 	if err := syncRecord.BeforeCreate(); err == nil {
@@ -1647,7 +1647,7 @@ func (r *ObjectRepository) GetQuotesOfStatus(ctx context.Context, statusID strin
 func (r *ObjectRepository) getStatusMetadata(ctx context.Context, statusID string) (*models.StatusMetadata, error) {
 	var metadata models.StatusMetadata
 	metadata.StatusID = statusID
-	metadata.UpdateKeys()
+	metadata.UpdateKeys() // Internal model operation
 
 	err := r.db.WithContext(ctx).Model(&models.StatusMetadata{}).
 		Where("PK", "=", metadata.PK).
@@ -1809,7 +1809,7 @@ func (r *ObjectRepository) triggerBackgroundFetch(ctx context.Context, statusID 
 	}
 
 	// Update the keys
-	fetchJob.UpdateKeys()
+	fetchJob.UpdateKeys() // Internal model operation
 
 	// Store the fetch job for background processing
 	if err := r.db.WithContext(ctx).Model(fetchJob).Create(); err != nil {
@@ -2009,7 +2009,7 @@ func (r *ObjectRepository) updateThreadContext(ctx context.Context, statusID, ac
 		threadCtx.IncrementReplyCount()
 	}
 
-	threadCtx.UpdateKeys()
+	threadCtx.UpdateKeys() // Internal model operation
 	return r.db.WithContext(ctx).Model(&threadCtx).Update()
 }
 
@@ -2050,7 +2050,7 @@ func (r *ObjectRepository) createThreadContext(ctx context.Context, statusID, ac
 		threadCtx.IncrementReplyCount()
 	}
 
-	threadCtx.UpdateKeys()
+	threadCtx.UpdateKeys() // Internal model operation
 	return r.db.WithContext(ctx).Model(threadCtx).Create()
 }
 
@@ -2097,7 +2097,7 @@ func (r *ObjectRepository) updateSearchIndexForWithdrawal(ctx context.Context, s
 	// Update search cache to reflect withdrawal
 	searchCache := models.NewSearchCache(fmt.Sprintf("quotes:%s", statusID))
 	searchCache.InvalidateCache("quote_withdrawal")
-	searchCache.UpdateKeys()
+	searchCache.UpdateKeys() // Internal model operation
 
 	// Create invalidation record
 	if err := r.db.WithContext(ctx).Model(searchCache).Create(); err != nil {
@@ -2266,13 +2266,13 @@ func (r *ObjectRepository) getTombstonesByGSI(ctx context.Context, gsiIndex, pkF
 
 // GetTombstonesByActor retrieves all tombstones created by a specific actor
 func (r *ObjectRepository) GetTombstonesByActor(ctx context.Context, actorID string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	return r.getTombstonesByGSI(ctx, "GSI1", "GSI1PK", gsi1SKField, 
+	return r.getTombstonesByGSI(ctx, "GSI1", "GSI1PK", gsi1SKField,
 		fmt.Sprintf("ACTOR#%s#TOMBSTONES", actorID), "actor_id", actorID, limit, cursor)
 }
 
 // GetTombstonesByType retrieves tombstones by their former type
 func (r *ObjectRepository) GetTombstonesByType(ctx context.Context, formerType string, limit int, cursor string) ([]*models.Tombstone, string, error) {
-	return r.getTombstonesByGSI(ctx, "GSI2", "GSI2PK", "GSI2SK", 
+	return r.getTombstonesByGSI(ctx, "GSI2", "GSI2PK", "GSI2SK",
 		fmt.Sprintf("TOMBSTONE#%s", formerType), "former_type", formerType, limit, cursor)
 }
 
@@ -2317,7 +2317,7 @@ func (r *ObjectRepository) GetObjectHistory(ctx context.Context, objectID string
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityObject, "object_history")
 	}
-	
+
 	return histories, nil
 }
 

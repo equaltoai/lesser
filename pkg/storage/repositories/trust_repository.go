@@ -55,7 +55,6 @@ func convertFromModelEvidence(evidence []models.TrustEvidence) []storage.TrustEv
 	return evidence
 }
 
-
 // CreateTrustRelationship creates or updates a trust relationship
 func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relationship *storage.TrustRelationship) error {
 	if relationship == nil {
@@ -81,7 +80,7 @@ func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relations
 	}
 
 	// Use BaseRepository Create method
-	if err := r.BaseRepository.Create(ctx, model); err != nil {
+	if err := r.Create(ctx, model); err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err),
 			zap.String("truster", relationship.TrusterID),
 			zap.String("trustee", relationship.TrusteeID),
@@ -103,7 +102,7 @@ func (r *TrustRepository) GetTrustRelationship(ctx context.Context, trusterID, t
 	sk := fmt.Sprintf("TRUSTEE#%s", trusteeID)
 
 	// Use BaseRepository Get method
-	err := r.BaseRepository.Get(ctx, pk, sk, model)
+	err := r.Get(ctx, pk, sk, model)
 	if err != nil {
 		if err.Error() == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
 			return nil, storage.ErrNotFound
@@ -127,7 +126,7 @@ func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID
 	sk := fmt.Sprintf("TRUSTEE#%s", trusteeID)
 
 	// Use BaseRepository Delete method
-	if err := r.BaseRepository.Delete(ctx, pk, sk); err != nil {
+	if err := r.Delete(ctx, pk, sk); err != nil {
 		r.logger.Error("failed to delete trust relationship", zap.Error(err),
 			zap.String("truster", trusterID),
 			zap.String("trustee", trusteeID),
@@ -145,7 +144,7 @@ func (r *TrustRepository) DeleteTrustRelationship(ctx context.Context, trusterID
 func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Use BaseRepository to get underlying DB for complex queries
 	var trustModels []*models.TrustRelationship
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("PK", "begins_with", fmt.Sprintf("TRUST#%s#", trusterID))
 
 	if cursor != "" {
@@ -179,7 +178,7 @@ func (r *TrustRepository) GetTrustRelationships(ctx context.Context, trusterID s
 func (r *TrustRepository) GetTrustedByRelationships(ctx context.Context, trusteeID string, limit int, cursor string) ([]*storage.TrustRelationship, string, error) {
 	// Query using GSI1 for reverse lookup
 	var trustModels []*models.TrustRelationship
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Index("gsi1-index").
 		Where("GSI1PK", "begins_with", fmt.Sprintf("TRUSTED#%s#", trusteeID))
 
@@ -283,7 +282,7 @@ func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage
 func (r *TrustRepository) GetAllTrustRelationships(ctx context.Context, limit int) ([]*storage.TrustRelationship, error) {
 	// Scan for all trust relationships
 	var trustModels []*models.TrustRelationship
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.TrustRelationship{}).
 		Where("Type", "=", "RELATIONSHIP").
 		Limit(limit).
 		Scan(&trustModels)

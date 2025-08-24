@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Canonicalizer implements JSON-LD canonicalization following URDNA2015 algorithm
@@ -50,7 +50,7 @@ func (i *IdentifierIssuer) GetID(blankNode string) string {
 	if id, exists := i.existing[blankNode]; exists {
 		return id
 	}
-	
+
 	id := fmt.Sprintf("%s%d", i.prefix, i.counter)
 	i.counter++
 	i.existing[blankNode] = id
@@ -80,7 +80,7 @@ func NewCanonicalizer(options CanonicalizeOptions) *Canonicalizer {
 			"proofs", "Proofs",
 		}
 	}
-	
+
 	return &Canonicalizer{
 		blankNodeIdentifierMap: make(map[string]string),
 		canonicalIssuer:        NewIdentifierIssuer("_:c14n"),
@@ -95,27 +95,27 @@ func (c *Canonicalizer) Canonicalize(input interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNormalizeInput, err)
 	}
-	
+
 	// Step 2: Remove signature fields if requested
 	if c.options.RemoveSignatureFields {
 		normalized = c.removeSignatureFields(normalized)
 	}
-	
+
 	// Step 3: Convert to N-Quads representation
 	nquads, err := c.toNQuads(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrConvertToNQuads, err)
 	}
-	
+
 	// Step 4: Sort N-Quads lexicographically
 	sort.Strings(nquads)
-	
+
 	// Step 5: Join with newlines for canonical form
 	canonical := strings.Join(nquads, "\n")
 	if len(nquads) > 0 {
 		canonical += "\n"
 	}
-	
+
 	return []byte(canonical), nil
 }
 
@@ -126,18 +126,18 @@ func (c *Canonicalizer) CanonicalizeToJSON(input interface{}) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrNormalizeInput, err)
 	}
-	
+
 	// Step 2: Remove signature fields if requested
 	if c.options.RemoveSignatureFields {
 		normalized = c.removeSignatureFields(normalized)
 	}
-	
+
 	// Step 3: Canonicalize JSON structure
 	canonical, err := c.canonicalizeJSONStructure(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrCanonicalizeJSONStructure, err)
 	}
-	
+
 	// Step 4: Marshal with deterministic ordering
 	return c.marshalCanonical(canonical)
 }
@@ -163,12 +163,12 @@ func (c *Canonicalizer) normalizeInput(input interface{}) (interface{}, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrMarshalInput, err)
 		}
-		
+
 		var parsed interface{}
 		if err := json.Unmarshal(data, &parsed); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrUnmarshalNormalized, err)
 		}
-		
+
 		return c.normalizeValue(parsed), nil
 	}
 }
@@ -219,7 +219,7 @@ func (c *Canonicalizer) removeSignatureFields(input interface{}) interface{} {
 					break
 				}
 			}
-			
+
 			if !skip {
 				result[key] = c.removeSignatureFields(value)
 			}
@@ -251,14 +251,14 @@ func (c *Canonicalizer) canonicalizeValue(value interface{}) interface{} {
 			keys = append(keys, key)
 		}
 		sort.Strings(keys)
-		
+
 		// Build ordered map
 		result := make(map[string]interface{})
 		for _, key := range keys {
 			result[key] = c.canonicalizeValue(v[key])
 		}
 		return result
-		
+
 	case []interface{}:
 		// For arrays, maintain order but canonicalize contents
 		result := make([]interface{}, len(v))
@@ -266,7 +266,7 @@ func (c *Canonicalizer) canonicalizeValue(value interface{}) interface{} {
 			result[i] = c.canonicalizeValue(item)
 		}
 		return result
-		
+
 	default:
 		return value
 	}
@@ -280,7 +280,7 @@ func (c *Canonicalizer) marshalCanonical(value interface{}) ([]byte, error) {
 // toNQuads converts normalized JSON-LD to N-Quads format
 func (c *Canonicalizer) toNQuads(input interface{}) ([]string, error) {
 	var nquads []string
-	
+
 	switch v := input.(type) {
 	case map[string]interface{}:
 		quads, err := c.objectToNQuads(v, "")
@@ -288,7 +288,7 @@ func (c *Canonicalizer) toNQuads(input interface{}) ([]string, error) {
 			return nil, err
 		}
 		nquads = append(nquads, quads...)
-		
+
 	case []interface{}:
 		for _, item := range v {
 			quads, err := c.toNQuads(item)
@@ -298,14 +298,14 @@ func (c *Canonicalizer) toNQuads(input interface{}) ([]string, error) {
 			nquads = append(nquads, quads...)
 		}
 	}
-	
+
 	return nquads, nil
 }
 
 // objectToNQuads converts a JSON object to N-Quads
 func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject string) ([]string, error) {
 	var nquads []string
-	
+
 	// If no subject provided, generate one
 	if err := common.ValidateRequiredParam("subject", subject); err != nil {
 		if id, hasID := obj["@id"]; hasID {
@@ -317,7 +317,7 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 			subject = c.canonicalIssuer.GetID("_:b")
 		}
 	}
-	
+
 	// Sort keys for deterministic output
 	keys := make([]string, 0, len(obj))
 	for key := range obj {
@@ -326,12 +326,12 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 		}
 	}
 	sort.Strings(keys)
-	
+
 	// Convert each property to N-Quads
 	for _, key := range keys {
 		value := obj[key]
 		predicate := c.escapeNQuadsValue(key)
-		
+
 		switch v := value.(type) {
 		case map[string]interface{}:
 			// Object value
@@ -340,12 +340,12 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 				return nil, err
 			}
 			nquads = append(nquads, objectQuads...)
-			
+
 			// Link to the object
 			objectSubject := c.getObjectSubject(v)
 			quad := fmt.Sprintf("%s %s %s .", subject, predicate, objectSubject)
 			nquads = append(nquads, quad)
-			
+
 		case []interface{}:
 			// Array of values
 			for _, item := range v {
@@ -355,7 +355,7 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 				}
 				nquads = append(nquads, itemQuads...)
 			}
-			
+
 		default:
 			// Literal value
 			itemQuads, err := c.valueToNQuads(subject, predicate, v)
@@ -365,7 +365,7 @@ func (c *Canonicalizer) objectToNQuads(obj map[string]interface{}, subject strin
 			nquads = append(nquads, itemQuads...)
 		}
 	}
-	
+
 	return nquads, nil
 }
 
@@ -378,12 +378,12 @@ func (c *Canonicalizer) valueToNQuads(subject, predicate string, value interface
 		if err != nil {
 			return nil, err
 		}
-		
+
 		objectSubject := c.getObjectSubject(v)
 		quad := fmt.Sprintf("%s %s %s .", subject, predicate, objectSubject)
-		
+
 		return append(objectQuads, quad), nil
-		
+
 	default:
 		// Literal value
 		literal := c.valueToLiteral(v)
@@ -399,7 +399,7 @@ func (c *Canonicalizer) getObjectSubject(obj map[string]interface{}) string {
 			return c.escapeNQuadsValue(idStr)
 		}
 	}
-	
+
 	// Generate blank node
 	return c.canonicalIssuer.GetID("_:b")
 }
@@ -466,7 +466,7 @@ func CanonicalizeBytesToJSON(input []byte, removeSignatures bool) ([]byte, error
 		SkipExpansion:         true,
 		RemoveSignatureFields: removeSignatures,
 	}
-	
+
 	canonicalizer := NewCanonicalizer(options)
 	return canonicalizer.CanonicalizeToJSON(input)
 }
@@ -477,7 +477,7 @@ func CanonicalizeStructToJSON(input interface{}, removeSignatures bool) ([]byte,
 		SkipExpansion:         true,
 		RemoveSignatureFields: removeSignatures,
 	}
-	
+
 	canonicalizer := NewCanonicalizer(options)
 	return canonicalizer.CanonicalizeToJSON(input)
 }
@@ -489,11 +489,11 @@ func CanonicalizeActivityPubObject(input interface{}) ([]byte, error) {
 		RemoveSignatureFields: true,
 		SignatureFields: []string{
 			"signature", "Signature",
-			"proof", "Proof", 
+			"proof", "Proof",
 			"proofs", "Proofs",
 		},
 	}
-	
+
 	canonicalizer := NewCanonicalizer(options)
 	return canonicalizer.CanonicalizeToJSON(input)
 }
@@ -516,14 +516,14 @@ func NormalizeUnicode(s string) string {
 		// If not valid UTF-8, return as-is
 		return s
 	}
-	
+
 	// Remove leading/trailing whitespace and normalize internal whitespace
 	s = strings.TrimSpace(s)
-	
+
 	// Normalize multiple whitespace to single space
 	var result strings.Builder
 	var prevSpace bool
-	
+
 	for _, r := range s {
 		if unicode.IsSpace(r) {
 			if !prevSpace {
@@ -535,6 +535,6 @@ func NormalizeUnicode(s string) string {
 			prevSpace = false
 		}
 	}
-	
+
 	return result.String()
 }

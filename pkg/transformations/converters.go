@@ -28,7 +28,7 @@ func ActorToAccountWithCounts(actor *activitypub.Actor, baseURL string, follower
 	account.FollowersCount = followersCount
 	account.FollowingCount = followingCount
 	account.StatusesCount = statusesCount
-	
+
 	return account
 }
 
@@ -131,13 +131,13 @@ func getAvatarURL(icon interface{}, baseURL string) string {
 	if icon == nil {
 		return baseURL + "/avatars/original/missing.png"
 	}
-	
+
 	if iconMap, ok := icon.(map[string]interface{}); ok {
 		if url, ok := iconMap["url"].(string); ok {
 			return url
 		}
 	}
-	
+
 	return baseURL + "/avatars/original/missing.png"
 }
 
@@ -145,13 +145,13 @@ func getHeaderURL(image interface{}, baseURL string) string {
 	if image == nil {
 		return baseURL + "/headers/original/missing.png"
 	}
-	
+
 	if imageMap, ok := image.(map[string]interface{}); ok {
 		if url, ok := imageMap["url"].(string); ok {
 			return url
 		}
 	}
-	
+
 	return baseURL + "/headers/original/missing.png"
 }
 
@@ -234,16 +234,16 @@ func generateNumericID(input string) string {
 	for _, char := range input {
 		hash = hash*31 + int64(char)
 	}
-	
+
 	// Ensure positive and within reasonable range
 	if hash < 0 {
 		hash = -hash
 	}
-	
+
 	// Add some randomization to make IDs more realistic
 	randomness, _ := rand.Int(rand.Reader, big.NewInt(1000))
 	hash += randomness.Int64()
-	
+
 	// Convert to string and ensure it's a valid numeric ID
 	return fmt.Sprintf("%d", hash)
 }
@@ -257,7 +257,7 @@ func ActorToAccountWithContext(ctx context.Context, actor *activitypub.Actor) (m
 	if url, ok := ctx.Value("baseURL").(string); ok {
 		baseURL = url
 	}
-	
+
 	account := ActorToAccountBase(actor, baseURL)
 	return account, nil
 }
@@ -269,12 +269,12 @@ func ObjectToStatusWithContext(ctx context.Context, obj map[string]interface{}) 
 	if url, ok := ctx.Value("baseURL").(string); ok {
 		baseURL = url
 	}
-	
+
 	var actor *activitypub.Actor
 	if a, ok := ctx.Value("actor").(*activitypub.Actor); ok {
 		actor = a
 	}
-	
+
 	status := ObjectToStatusBase(obj, actor, baseURL)
 	return status, nil
 }
@@ -288,14 +288,14 @@ func ObjectToStatusWithContextAndCounts(_ context.Context, obj any, actor *activ
 	// Convert object to map for unified processing
 	objMap := convertObjectToMap(obj)
 	status := ObjectToStatusBase(objMap, actor, baseURL)
-	
+
 	// Apply the counts and user state
 	status.FavouritesCount = likeCount
 	status.ReblogsCount = reblogCount
 	status.Favourited = favorited
 	status.Reblogged = reblogged
 	status.Bookmarked = bookmarked
-	
+
 	return status
 }
 
@@ -307,7 +307,7 @@ func NotesToStatusAny(note any, baseURL string) models.Status {
 
 	// Convert note to map for unified processing
 	noteMap := convertNoteToMap(note)
-	
+
 	// Extract actor info from the note if available
 	var actor *activitypub.Actor
 	if authorID, ok := noteMap["authorID"].(string); ok && authorID != "" {
@@ -319,7 +319,7 @@ func NotesToStatusAny(note any, baseURL string) models.Status {
 			PreferredUsername: ExtractUsernameFromActorID(authorID),
 		}
 	}
-	
+
 	return ObjectToStatusBase(noteMap, actor, baseURL)
 }
 
@@ -328,7 +328,7 @@ func ExtractUsernameFromActorID(actorID string) string {
 	if err := common.ValidateRequiredParam("actorID", actorID); err != nil {
 		return ""
 	}
-	
+
 	parts := strings.Split(actorID, "/")
 	if len(parts) > 0 {
 		return parts[len(parts)-1]
@@ -343,7 +343,7 @@ func convertNoteToMap(note any) map[string]interface{} {
 	case map[string]interface{}:
 		// Already in the right format
 		return n
-		
+
 	default:
 		// For other types, try JSON marshaling/unmarshaling
 		if bytes, err := json.Marshal(note); err == nil {
@@ -352,7 +352,7 @@ func convertNoteToMap(note any) map[string]interface{} {
 				return result
 			}
 		}
-		
+
 		// Return minimal map as fallback
 		return map[string]interface{}{
 			"id":      "unknown",
@@ -394,7 +394,7 @@ func convertObjectToMap(obj any) map[string]interface{} {
 				return result
 			}
 		}
-		
+
 		// Return minimal map as fallback
 		return map[string]interface{}{
 			"id":      "unknown",

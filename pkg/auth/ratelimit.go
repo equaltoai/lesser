@@ -54,7 +54,7 @@ func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress s
 		return errors.Join(ErrIPRateLimitCheck, err)
 	}
 	if ipLimited {
-		zap.L().Error("IP rate limited", 
+		zap.L().Error("IP rate limited",
 			zap.String("ip_address", ipAddress),
 			zap.String("unlock_time", ipUnlockTime.Format(time.RFC3339)))
 		return ErrIPRateLimited
@@ -67,7 +67,7 @@ func (rl *RateLimiter) CheckRateLimit(ctx context.Context, username, ipAddress s
 			return errors.Join(ErrAccountRateLimitCheck, err)
 		}
 		if accountLimited {
-			zap.L().Error("Account rate limited", 
+			zap.L().Error("Account rate limited",
 				zap.String("username", username),
 				zap.String("unlock_time", accountUnlockTime.Format(time.RFC3339)))
 			return ErrAccountLocked
@@ -138,7 +138,7 @@ func (rl *RateLimiter) enforceRateLimits(ctx context.Context, username, ipAddres
 		// Return remaining attempts info
 		remainingAttempts := MaxLoginAttempts - accountAttempts
 		if remainingAttempts <= 2 {
-			zap.L().Warn("Low remaining login attempts", 
+			zap.L().Warn("Low remaining login attempts",
 				zap.String("username", username),
 				zap.Int("remaining_attempts", remainingAttempts))
 			return ErrInvalidCredentials

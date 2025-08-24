@@ -95,10 +95,10 @@ func (h *NotificationQueryHelper) executePaginatedNotificationQuery(query core.Q
 func (h *NotificationQueryHelper) GetPaginatedNotifications(ctx context.Context, userID string, opts interfaces.PaginationOptions, additionalFilters map[string]interface{}) (*interfaces.PaginatedResult[*models.Notification], error) {
 	pk := "USER#" + userID
 	query := h.buildPaginatedNotificationQuery(ctx, pk, opts, additionalFilters)
-	
+
 	result, err := h.executePaginatedNotificationQuery(query, opts)
 	if err != nil {
-			return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "paginated query")
+		return nil, ErrorHandler.HandleQueryError(err, EntityNotification, "paginated query")
 	}
 
 	return result, nil

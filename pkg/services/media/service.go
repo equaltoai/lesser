@@ -572,7 +572,7 @@ func (s *Service) emitMediaFailedEvents(ctx context.Context, media *models.Media
 func (s *Service) queueMediaProcessing(ctx context.Context, media *models.Media) error {
 	// Generate a unique job ID for tracking
 	jobID := uuid.New().String()
-	
+
 	// Create media job message
 	msg := JobMessage{
 		JobID:     jobID,

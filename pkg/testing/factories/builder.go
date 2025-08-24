@@ -48,19 +48,19 @@ func (b *BaseBuilder) GenerateTimestamp() time.Time {
 // WithDefaults applies default values to a map of options
 func WithDefaults(values map[string]interface{}, defaults map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
-	
+
 	// Copy defaults first
 	for k, v := range defaults {
 		result[k] = v
 	}
-	
+
 	// Override with provided values
 	for k, v := range values {
 		if v != nil && v != "" {
 			result[k] = v
 		}
 	}
-	
+
 	return result
 }
 

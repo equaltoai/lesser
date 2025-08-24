@@ -40,11 +40,11 @@ type ModerationMetricsRepository interface {
 type moderationMetricsRepository struct {
 	// Embed BaseRepository for different model types - we'll use ModerationMetricsEntry as the primary type
 	*BaseRepository[*models.ModerationMetricsEntry]
-	
+
 	// Additional repositories for other model types
-	falsePositiveRepo   *BaseRepository[*models.ModerationFalsePositive]
-	decisionSampleRepo  *BaseRepository[*models.ModerationDecisionSample]
-	patternStatsRepo    *BaseRepository[*models.ModerationPatternStats]
+	falsePositiveRepo  *BaseRepository[*models.ModerationFalsePositive]
+	decisionSampleRepo *BaseRepository[*models.ModerationDecisionSample]
+	patternStatsRepo   *BaseRepository[*models.ModerationPatternStats]
 }
 
 // NewModerationMetricsRepository creates a new moderation metrics repository with optional cost tracking
@@ -76,18 +76,17 @@ func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsReposi
 	// Create repositories with or without cost tracking
 	if costService != nil {
 		return &moderationMetricsRepository{
-			BaseRepository:      NewBaseRepositoryWithCostTracking[*models.ModerationMetricsEntry](db, tableName, logger, costService, "moderation_metrics"),
-			falsePositiveRepo:   NewBaseRepositoryWithCostTracking[*models.ModerationFalsePositive](db, tableName, logger, costService, "false_positive"),
-			decisionSampleRepo:  NewBaseRepositoryWithCostTracking[*models.ModerationDecisionSample](db, tableName, logger, costService, "decision_sample"),
-			patternStatsRepo:    NewBaseRepositoryWithCostTracking[*models.ModerationPatternStats](db, tableName, logger, costService, "pattern_stats"),
+			BaseRepository:     NewBaseRepositoryWithCostTracking[*models.ModerationMetricsEntry](db, tableName, logger, costService, "moderation_metrics"),
+			falsePositiveRepo:  NewBaseRepositoryWithCostTracking[*models.ModerationFalsePositive](db, tableName, logger, costService, "false_positive"),
+			decisionSampleRepo: NewBaseRepositoryWithCostTracking[*models.ModerationDecisionSample](db, tableName, logger, costService, "decision_sample"),
+			patternStatsRepo:   NewBaseRepositoryWithCostTracking[*models.ModerationPatternStats](db, tableName, logger, costService, "pattern_stats"),
 		}
-	} else {
-		return &moderationMetricsRepository{
-			BaseRepository:      NewBaseRepository[*models.ModerationMetricsEntry](db, tableName, logger),
-			falsePositiveRepo:   NewBaseRepository[*models.ModerationFalsePositive](db, tableName, logger),
-			decisionSampleRepo:  NewBaseRepository[*models.ModerationDecisionSample](db, tableName, logger),
-			patternStatsRepo:    NewBaseRepository[*models.ModerationPatternStats](db, tableName, logger),
-		}
+	}
+	return &moderationMetricsRepository{
+		BaseRepository:     NewBaseRepository[*models.ModerationMetricsEntry](db, tableName, logger),
+		falsePositiveRepo:  NewBaseRepository[*models.ModerationFalsePositive](db, tableName, logger),
+		decisionSampleRepo: NewBaseRepository[*models.ModerationDecisionSample](db, tableName, logger),
+		patternStatsRepo:   NewBaseRepository[*models.ModerationPatternStats](db, tableName, logger),
 	}
 }
 
@@ -228,14 +227,13 @@ func (r *moderationMetricsRepository) IncrementPatternHit(ctx context.Context, p
 		}
 
 		return r.patternStatsRepo.Create(ctx, stats)
-	} else {
-		// Update existing record using BaseRepository
-		existing.HitCount++
-		existing.LastHit = time.Now()
-		existing.UpdatedAt = time.Now()
-
-		return r.patternStatsRepo.Update(ctx, &existing)
 	}
+	// Update existing record using BaseRepository
+	existing.HitCount++
+	existing.LastHit = time.Now()
+	existing.UpdatedAt = time.Now()
+
+	return r.patternStatsRepo.Update(ctx, &existing)
 }
 
 // GetMetricsEntries retrieves metrics entries within a time range - preserved complex business logic

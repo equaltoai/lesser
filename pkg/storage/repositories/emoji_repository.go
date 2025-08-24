@@ -66,12 +66,12 @@ func (r *EmojiRepository) CreateCustomEmoji(ctx context.Context, emoji *storage.
 	if emoji.Domain != "" {
 		pk = fmt.Sprintf("EMOJI#%s@%s", emoji.Shortcode, emoji.Domain)
 	}
-	
+
 	exists, err := r.Exists(ctx, pk, "EMOJI")
 	if err != nil {
 		return err
 	}
-	
+
 	if exists {
 		return storage.ErrAlreadyExists
 	}
@@ -84,7 +84,7 @@ func (r *EmojiRepository) CreateCustomEmoji(ctx context.Context, emoji *storage.
 func (r *EmojiRepository) GetCustomEmoji(ctx context.Context, shortcode string) (*storage.CustomEmoji, error) {
 	var model models.EmojiModel
 	pk := fmt.Sprintf("EMOJI#%s", shortcode)
-	
+
 	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -153,12 +153,12 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 	if emoji.Domain != "" {
 		pk = fmt.Sprintf("EMOJI#%s@%s", emoji.Shortcode, emoji.Domain)
 	}
-	
+
 	exists, err := r.Exists(ctx, pk, "EMOJI")
 	if err != nil {
 		return err
 	}
-	
+
 	if !exists {
 		return storage.ErrNotFound
 	}
@@ -171,7 +171,7 @@ func (r *EmojiRepository) UpdateCustomEmoji(ctx context.Context, emoji *storage.
 func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain string) (*storage.CustomEmoji, error) {
 	var model models.EmojiModel
 	pk := fmt.Sprintf("EMOJI#%s@%s", shortcode, domain)
-	
+
 	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -187,13 +187,13 @@ func (r *EmojiRepository) GetRemoteEmoji(ctx context.Context, shortcode, domain 
 // DeleteCustomEmoji deletes a custom emoji
 func (r *EmojiRepository) DeleteCustomEmoji(ctx context.Context, shortcode string) error {
 	pk := fmt.Sprintf("EMOJI#%s", shortcode)
-	
+
 	// Check if emoji exists first
 	exists, err := r.Exists(ctx, pk, "EMOJI")
 	if err != nil {
 		return err
 	}
-	
+
 	if !exists {
 		return storage.ErrNotFound
 	}
@@ -232,10 +232,10 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 
 	// Normalize query for search
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
-	
+
 	// Try different search strategies
 	var allModels []*models.EmojiModel
-	
+
 	// Strategy 1: Prefix search using GSI3
 	if len(normalizedQuery) >= 3 {
 		prefix := normalizedQuery[:3]
@@ -244,17 +244,17 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 			allModels = append(allModels, prefixModels...)
 		}
 	}
-	
+
 	// Strategy 2: Get all emojis and perform in-memory search for broader matching
 	allEmojis, err := r.queryEmojiGSI(ctx, "gsi1", "GSI1PK", "ALL_EMOJIS", 0)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Combine and deduplicate results
 	seen := make(map[string]bool)
 	uniqueModels := make([]*models.EmojiModel, 0)
-	
+
 	// Add prefix matches first (higher priority)
 	for _, model := range allModels {
 		key := model.PK + "#" + model.SK
@@ -263,7 +263,7 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 			uniqueModels = append(uniqueModels, model)
 		}
 	}
-	
+
 	// Add broader matches
 	for _, model := range allEmojis {
 		key := model.PK + "#" + model.SK
@@ -272,21 +272,21 @@ func (r *EmojiRepository) SearchEmojis(ctx context.Context, query string, limit 
 			uniqueModels = append(uniqueModels, model)
 		}
 	}
-	
+
 	// Score and sort results
 	scored := r.scoreSearchResults(uniqueModels, normalizedQuery)
-	
+
 	// Limit results
 	if len(scored) > limit {
 		scored = scored[:limit]
 	}
-	
+
 	// Convert to storage type
 	results := make([]*storage.CustomEmoji, len(scored))
 	for i, model := range scored {
 		results[i] = r.convertModelToStorage(model)
 	}
-	
+
 	return results, nil
 }
 
@@ -295,19 +295,19 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 	if limit <= 0 {
 		limit = 20
 	}
-	
+
 	// Determine domain key
 	domainKey := domain
 	if err := common.ValidateRequiredParam("domain", domainKey); err != nil {
 		domainKey = "local"
 	}
-	
+
 	// Query using GSI4 for usage statistics, which sorts by usage count
 	emojiModels, err := r.queryEmojiGSI(ctx, "gsi4", "GSI4PK", fmt.Sprintf("USAGE#%s", domainKey), limit*2)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Filter out disabled emojis and apply limit
 	emojis := make([]*storage.CustomEmoji, 0, limit)
 	for _, model := range emojiModels {
@@ -315,14 +315,14 @@ func (r *EmojiRepository) GetPopularEmojis(ctx context.Context, domain string, l
 		if model.Disabled && (common.ValidateRequiredParam("domain", model.Domain) != nil) {
 			continue
 		}
-		
+
 		if len(emojis) >= limit {
 			break
 		}
-		
+
 		emojis = append(emojis, r.convertModelToStorage(model))
 	}
-	
+
 	return emojis, nil
 }
 
@@ -331,7 +331,7 @@ func (r *EmojiRepository) IncrementEmojiUsage(ctx context.Context, shortcode str
 	// Get current emoji
 	var model models.EmojiModel
 	pk := fmt.Sprintf("EMOJI#%s", shortcode)
-	
+
 	err := r.Get(ctx, pk, "EMOJI", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -339,10 +339,10 @@ func (r *EmojiRepository) IncrementEmojiUsage(ctx context.Context, shortcode str
 		}
 		return err
 	}
-	
+
 	// Increment usage and update keys
 	model.IncrementUsage()
-	
+
 	// Update the emoji in database using BaseRepository
 	return r.Update(ctx, &model)
 }
@@ -382,24 +382,24 @@ func (r *EmojiRepository) matchesSearchQuery(model *models.EmojiModel, query str
 	if strings.Contains(strings.ToLower(model.Shortcode), query) {
 		return true
 	}
-	
+
 	// Check category
 	if common.ValidateRequiredParam("category", model.Category) == nil && strings.Contains(strings.ToLower(model.Category), query) {
 		return true
 	}
-	
+
 	// Check search keywords
 	for _, keyword := range model.SearchKeywords {
 		if strings.Contains(strings.ToLower(keyword), query) {
 			return true
 		}
 	}
-	
+
 	// Check alt text
 	if model.AltText != "" && strings.Contains(strings.ToLower(model.AltText), query) {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -409,14 +409,14 @@ func (r *EmojiRepository) scoreSearchResults(emojiModels []*models.EmojiModel, q
 		model *models.EmojiModel
 		score float64
 	}
-	
+
 	scored := make([]scoredModel, 0, len(emojiModels))
-	
+
 	for _, model := range emojiModels {
 		score := r.calculateSearchScore(model, query)
 		scored = append(scored, scoredModel{model: model, score: score})
 	}
-	
+
 	// Sort by score (highest first)
 	for i := 0; i < len(scored); i++ {
 		for j := i + 1; j < len(scored); j++ {
@@ -425,13 +425,13 @@ func (r *EmojiRepository) scoreSearchResults(emojiModels []*models.EmojiModel, q
 			}
 		}
 	}
-	
+
 	// Extract models
 	result := make([]*models.EmojiModel, len(scored))
 	for i, s := range scored {
 		result[i] = s.model
 	}
-	
+
 	return result
 }
 
@@ -439,7 +439,7 @@ func (r *EmojiRepository) scoreSearchResults(emojiModels []*models.EmojiModel, q
 func (r *EmojiRepository) calculateSearchScore(model *models.EmojiModel, query string) float64 {
 	score := 0.0
 	shortcode := strings.ToLower(model.Shortcode)
-	
+
 	// Exact match gets highest score
 	if shortcode == query {
 		score += 100.0
@@ -450,27 +450,27 @@ func (r *EmojiRepository) calculateSearchScore(model *models.EmojiModel, query s
 		// Contains match gets medium score
 		score += 50.0
 	}
-	
+
 	// Category match
 	if model.Category != "" && strings.Contains(strings.ToLower(model.Category), query) {
 		score += 20.0
 	}
-	
+
 	// Search keywords match
 	for _, keyword := range model.SearchKeywords {
 		if strings.Contains(strings.ToLower(keyword), query) {
 			score += 15.0
 		}
 	}
-	
+
 	// Alt text match
 	if model.AltText != "" && strings.Contains(strings.ToLower(model.AltText), query) {
 		score += 10.0
 	}
-	
+
 	// Popularity boost
 	score += model.PopularityScore * 5.0
-	
+
 	// Recent usage boost
 	if !model.LastUsedAt.IsZero() {
 		daysSinceLastUse := time.Since(model.LastUsedAt).Hours() / 24
@@ -478,7 +478,7 @@ func (r *EmojiRepository) calculateSearchScore(model *models.EmojiModel, query s
 			score += (7 - daysSinceLastUse) * 2.0
 		}
 	}
-	
+
 	return score
 }
 
@@ -514,7 +514,7 @@ func (r *EmojiRepository) queryEmojiGSI(ctx context.Context, indexName, pkField,
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		if trackErr := r.TrackRead(ctx, "QueryGSI", estimatedRU); trackErr != nil {
 			r.logger.Warn("failed to track GSI query cost",
 				zap.String("index", indexName),

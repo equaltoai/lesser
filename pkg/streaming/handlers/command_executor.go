@@ -13,16 +13,16 @@ import (
 type CommandExecutor interface {
 	// RequiresAuth returns true if the command requires authentication
 	RequiresAuth() bool
-	
+
 	// RequiredFields returns the list of required fields for validation
 	RequiredFields() []string
-	
+
 	// BuildCommand builds the service command from the WebSocket command payload
 	BuildCommand(conn *streaming.ConnectionInfo, payload map[string]interface{}) interface{}
-	
+
 	// Execute executes the service command and returns the result
 	Execute(ctx context.Context, serviceCmd interface{}) (interface{}, error)
-	
+
 	// FormatResponse formats the service result for WebSocket response
 	FormatResponse(result interface{}) (map[string]interface{}, error)
 }
@@ -82,14 +82,14 @@ func (e *SimpleStatusExecutor) FormatResponse(result interface{}) (map[string]in
 		}
 		return nil, fmt.Errorf("invalid response format")
 	}
-	
+
 	// Otherwise, extract the specified field from the result
 	if resultMap, ok := result.(map[string]interface{}); ok {
 		if data, exists := resultMap[e.responseKey]; exists {
 			return data.(map[string]interface{}), nil
 		}
 	}
-	
+
 	// If we can't extract, just return the whole result
 	return map[string]interface{}{"result": result}, nil
 }
@@ -109,7 +109,7 @@ func ExecuteGenericCommand(
 			return authErr, nil
 		}
 	}
-	
+
 	// Validate required fields
 	requiredFields := executor.RequiredFields()
 	if len(requiredFields) > 0 {
@@ -117,23 +117,23 @@ func ExecuteGenericCommand(
 			return validationErr, nil
 		}
 	}
-	
+
 	// Build the service command
 	serviceCmd := executor.BuildCommand(conn, cmd.Payload)
-	
+
 	// Execute the service command
 	result, err := executor.Execute(ctx, serviceCmd)
 	if err != nil {
 		return handler.CreateErrorResponse(cmd.ID, errorCode,
 			fmt.Sprintf("Failed to execute %s", cmd.Type), err.Error()), nil
 	}
-	
+
 	// Format the response
 	data, err := executor.FormatResponse(result)
 	if err != nil {
 		return handler.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
-	
+
 	return handler.CreateSuccessResponse(cmd.ID, data), nil
 }

@@ -12,16 +12,16 @@ import (
 
 // UnifiedTracker implements the UnifiedCostTracker interface using the centralized tracking service
 type UnifiedTracker struct {
-	service      *TrackingService
-	logger       *zap.Logger
-	userID       string
-	requestID    string
-	
+	service   *TrackingService
+	logger    *zap.Logger
+	userID    string
+	requestID string
+
 	// Accumulated costs
-	mu               sync.RWMutex
+	mu                  sync.RWMutex
 	totalCostMicroCents int64
-	serviceCosts     map[string]int64
-	operationCounts  map[string]int64
+	serviceCosts        map[string]int64
+	operationCounts     map[string]int64
 }
 
 // NewUnifiedTracker creates a new unified cost tracker
@@ -62,10 +62,10 @@ func (ut *UnifiedTracker) TrackDynamoRead(ctx context.Context, tableName string,
 		UserID:             ut.userID,
 		Timestamp:          time.Now(),
 	}
-	
+
 	cost := CalculateDynamoDBCost(float64(units), 0)
 	ut.updateCosts("DynamoDB", "Read", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackDynamoOperation(ctx, operation)
 }
 
@@ -81,10 +81,10 @@ func (ut *UnifiedTracker) TrackDynamoWrite(ctx context.Context, tableName string
 		UserID:             ut.userID,
 		Timestamp:          time.Now(),
 	}
-	
+
 	cost := CalculateDynamoDBCost(0, float64(units))
 	ut.updateCosts("DynamoDB", "Write", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackDynamoOperation(ctx, operation)
 }
 
@@ -100,10 +100,10 @@ func (ut *UnifiedTracker) TrackDynamoQuery(ctx context.Context, tableName string
 		UserID:             ut.userID,
 		Timestamp:          time.Now(),
 	}
-	
+
 	cost := CalculateDynamoDBCost(float64(units), 0)
 	ut.updateCosts("DynamoDB", "Query", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackDynamoOperation(ctx, operation)
 }
 
@@ -119,10 +119,10 @@ func (ut *UnifiedTracker) TrackDynamoScan(ctx context.Context, tableName string,
 		UserID:             ut.userID,
 		Timestamp:          time.Now(),
 	}
-	
+
 	cost := CalculateDynamoDBCost(float64(units), 0)
 	ut.updateCosts("DynamoDB", "Scan", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackDynamoOperation(ctx, operation)
 }
 
@@ -140,10 +140,10 @@ func (ut *UnifiedTracker) TrackS3Get(ctx context.Context, bucketName string, byt
 		UserID:           ut.userID,
 		Timestamp:        time.Now(),
 	}
-	
+
 	cost := CalculateS3Cost(1, float64(bytes))
 	ut.updateCosts("S3", "Get", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackS3Operation(ctx, operation)
 }
 
@@ -159,10 +159,10 @@ func (ut *UnifiedTracker) TrackS3Put(ctx context.Context, bucketName string, byt
 		UserID:           ut.userID,
 		Timestamp:        time.Now(),
 	}
-	
+
 	cost := CalculateS3Cost(1, float64(bytes))
 	ut.updateCosts("S3", "Put", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackS3Operation(ctx, operation)
 }
 
@@ -178,10 +178,10 @@ func (ut *UnifiedTracker) TrackS3Delete(ctx context.Context, bucketName string) 
 		UserID:           ut.userID,
 		Timestamp:        time.Now(),
 	}
-	
+
 	cost := CalculateS3Cost(1, 0)
 	ut.updateCosts("S3", "Delete", cost.TotalMicroCents)
-	
+
 	return ut.service.TrackS3Operation(ctx, operation)
 }
 
@@ -198,10 +198,10 @@ func (ut *UnifiedTracker) TrackLambdaInvocation(ctx context.Context, functionNam
 		UserID:       ut.userID,
 		Timestamp:    time.Now(),
 	}
-	
+
 	cost := CalculateLambdaCost(duration, memoryMB)
 	ut.updateCosts("Lambda", functionName, cost.TotalMicroCents)
-	
+
 	return ut.service.TrackLambdaInvocation(ctx, operation)
 }
 
@@ -218,7 +218,7 @@ func (ut *UnifiedTracker) GetCurrentCostMicroCents() int64 {
 func (ut *UnifiedTracker) GetCostBreakdown() map[string]int64 {
 	ut.mu.RLock()
 	defer ut.mu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	breakdown := make(map[string]int64)
 	for service, cost := range ut.serviceCosts {
@@ -231,7 +231,7 @@ func (ut *UnifiedTracker) GetCostBreakdown() map[string]int64 {
 func (ut *UnifiedTracker) Reset() {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
-	
+
 	ut.totalCostMicroCents = 0
 	ut.serviceCosts = make(map[string]int64)
 	ut.operationCounts = make(map[string]int64)
@@ -241,7 +241,7 @@ func (ut *UnifiedTracker) Reset() {
 func (ut *UnifiedTracker) GetOperationCounts() map[string]int64 {
 	ut.mu.RLock()
 	defer ut.mu.RUnlock()
-	
+
 	// Return a copy to prevent external modification
 	counts := make(map[string]int64)
 	for operation, count := range ut.operationCounts {
@@ -268,7 +268,7 @@ func (ut *UnifiedTracker) Close(ctx context.Context) error {
 func (ut *UnifiedTracker) updateCosts(service, operation string, costMicroCents int64) {
 	ut.mu.Lock()
 	defer ut.mu.Unlock()
-	
+
 	ut.totalCostMicroCents += costMicroCents
 	ut.serviceCosts[service] += costMicroCents
 	ut.operationCounts[operation]++
@@ -293,7 +293,7 @@ func NewRequestTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger, endpoi
 	config := DefaultTrackingServiceConfig()
 	config.CloudWatchNamespace = fmt.Sprintf("Lesser/API/%s", endpoint)
 	config.MetricsFlushInterval = 5 * time.Second // Quick flushing for API requests
-	
+
 	service := NewTrackingService(cloudWatch, logger, config)
 	return NewUnifiedTrackerWithService(service, logger, userID, requestID)
 }
@@ -302,9 +302,9 @@ func NewRequestTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger, endpoi
 func NewBatchTracker(cloudWatch *cloudwatch.Client, logger *zap.Logger, batchJobName, userID, requestID string) *UnifiedTracker {
 	config := DefaultTrackingServiceConfig()
 	config.CloudWatchNamespace = fmt.Sprintf("Lesser/Batch/%s", batchJobName)
-	config.MetricsBatchSize = 50 // Larger batch size for batch operations
+	config.MetricsBatchSize = 50                   // Larger batch size for batch operations
 	config.MetricsFlushInterval = 60 * time.Second // Less frequent flushing for batch jobs
-	
+
 	service := NewTrackingService(cloudWatch, logger, config)
 	return NewUnifiedTrackerWithService(service, logger, userID, requestID)
 }
@@ -323,18 +323,18 @@ func (ut *UnifiedTracker) TrackDynamoOperationWithConsumedCapacity(ctx context.C
 		UserID:             ut.userID,
 		Timestamp:          time.Now(),
 	}
-	
+
 	cost := CalculateDynamoDBCost(consumedCapacity.ReadCapacityUnits, consumedCapacity.WriteCapacityUnits)
 	ut.updateCosts("DynamoDB", operationType, cost.TotalMicroCents)
-	
+
 	return ut.service.TrackDynamoOperation(ctx, operation)
 }
 
 // ConsumedCapacity represents DynamoDB consumed capacity information
 type ConsumedCapacity struct {
-	TableName           string  // Table that consumed the capacity
-	ReadCapacityUnits   float64 // Read capacity units consumed
-	WriteCapacityUnits  float64 // Write capacity units consumed
+	TableName              string                      // Table that consumed the capacity
+	ReadCapacityUnits      float64                     // Read capacity units consumed
+	WriteCapacityUnits     float64                     // Write capacity units consumed
 	GlobalSecondaryIndexes map[string]ConsumedCapacity // GSI capacity consumption
 	LocalSecondaryIndexes  map[string]ConsumedCapacity // LSI capacity consumption
 }

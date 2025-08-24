@@ -180,8 +180,8 @@ func (b *bandwidthAnalytics) ProcessLogFiles(ctx context.Context, bucket, prefix
 	// Process each log file
 	for _, obj := range result.Contents {
 		if err := b.processLogFile(ctx, bucket, *obj.Key); err != nil {
-			zap.L().Error("failed to process log file", 
-				zap.String("key", *obj.Key), 
+			zap.L().Error("failed to process log file",
+				zap.String("key", *obj.Key),
 				zap.Error(err))
 			continue
 		}

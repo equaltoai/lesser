@@ -30,7 +30,9 @@ func (s *StatusPin) BeforeCreate() error {
 	}
 
 	// Update keys
-	s.UpdateKeys()
+	if err := s.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return nil
 }

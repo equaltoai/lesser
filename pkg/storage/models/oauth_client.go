@@ -1,16 +1,17 @@
 package models
 
 import (
+	"fmt"
 	"time"
 )
 
 // OAuthClient represents an OAuth 2.0 client application
 type OAuthClient struct {
 	// DynamoDB keys - MUST match legacy exactly
-	PK     string `dynamorm:"pk" json:"-"`      // CLIENT#clientID  
-	SK     string `dynamorm:"sk" json:"-"`      // METADATA
-	GSI1PK string `dynamorm:"gsi1pk" json:"-"`  // OWNER#ownerID (for owner index)
-	GSI1SK string `dynamorm:"gsi1sk" json:"-"`  // CLIENT#clientID
+	PK     string `dynamorm:"pk" json:"-"`     // CLIENT#clientID
+	SK     string `dynamorm:"sk" json:"-"`     // METADATA
+	GSI1PK string `dynamorm:"gsi1pk" json:"-"` // OWNER#ownerID (for owner index)
+	GSI1SK string `dynamorm:"gsi1sk" json:"-"` // CLIENT#clientID
 
 	// Core fields from legacy storage.OAuthClient
 	ID           string    `json:"id,omitempty"`
@@ -33,10 +34,11 @@ func (OAuthClient) TableName() string {
 	return MainTableName
 }
 
-
 // BeforeCreate sets up the keys before creating
 func (o *OAuthClient) BeforeCreate() error {
-	o.UpdateKeys()
+	if err := o.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	if o.CreatedAt.IsZero() {
 		o.CreatedAt = time.Now()
 	}
@@ -48,7 +50,9 @@ func (o *OAuthClient) BeforeCreate() error {
 
 // BeforeUpdate sets the updated timestamp
 func (o *OAuthClient) BeforeUpdate() error {
-	o.UpdateKeys()
+	if err := o.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	o.UpdatedAt = time.Now()
 	return nil
 }

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -133,30 +133,30 @@ func (r *MuteRepository) IsMuted(ctx context.Context, muterActor, mutedActor str
 // GetMutedUsers returns a list of users muted by the given actor
 func (r *MuteRepository) GetMutedUsers(ctx context.Context, muterActor string, limit int, cursor string) ([]string, string, error) {
 	muterUsername := extractUsernameFromActor(muterActor)
-	
+
 	config := RelationshipPaginationConfig{
-		IndexName:   "",               // Use main table
-		PKFormat:    "MUTE#%s",       // PK format
-		SKField:     "SK",            // Sort key field
-		ActorField:  "Object",        // Extract muted users (Object field)
-		ErrorPrefix: "muted users",   // Error message prefix
+		IndexName:   "",            // Use main table
+		PKFormat:    "MUTE#%s",     // PK format
+		SKField:     "SK",          // Sort key field
+		ActorField:  "Object",      // Extract muted users (Object field)
+		ErrorPrefix: "muted users", // Error message prefix
 	}
-	
+
 	return getPaginatedMuteList(ctx, r.db, r.logger, muterUsername, limit, cursor, config)
 }
 
 // GetUsersWhoMuted returns a list of users who have muted the given actor
 func (r *MuteRepository) GetUsersWhoMuted(ctx context.Context, mutedActor string, limit int, cursor string) ([]string, string, error) {
 	mutedUsername := extractUsernameFromActor(mutedActor)
-	
+
 	config := RelationshipPaginationConfig{
-		IndexName:   "GSI1",                    // Use GSI1 for reverse lookup
-		PKFormat:    "MUTED#%s",                // GSI1PK format
-		SKField:     "GSI1SK",                  // Sort key field for GSI1
-		ActorField:  "Actor",                   // Extract muter users (Actor field)
-		ErrorPrefix: "users who muted actor",  // Error message prefix
+		IndexName:   "GSI1",                  // Use GSI1 for reverse lookup
+		PKFormat:    "MUTED#%s",              // GSI1PK format
+		SKField:     "GSI1SK",                // Sort key field for GSI1
+		ActorField:  "Actor",                 // Extract muter users (Actor field)
+		ErrorPrefix: "users who muted actor", // Error message prefix
 	}
-	
+
 	return getPaginatedMuteList(ctx, r.db, r.logger, mutedUsername, limit, cursor, config)
 }
 
@@ -225,4 +225,3 @@ func (r *MuteRepository) CountUsersWhoMuted(ctx context.Context, mutedActor stri
 
 	return len(mutes), nil
 }
-

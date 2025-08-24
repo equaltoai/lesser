@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
@@ -54,7 +54,7 @@ func (r *WebSocketCostRepository) CreateRecord(ctx context.Context, record *mode
 	}
 
 	// Create using BaseRepository
-	err := r.BaseRepository.Create(ctx, record)
+	err := r.Create(ctx, record)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create WebSocket cost tracking")
 	}
@@ -81,7 +81,7 @@ func (r *WebSocketCostRepository) BatchCreate(ctx context.Context, records []*mo
 	}
 
 	// Use BaseRepository BatchCreate
-	return r.BaseRepository.BatchCreate(ctx, records)
+	return r.BatchCreate(ctx, records)
 }
 
 // GetRecord retrieves a WebSocket cost tracking record by operation type, timestamp and ID using BaseRepository
@@ -114,7 +114,7 @@ func (r *WebSocketCostRepository) ListByOperationType(ctx context.Context, opera
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
 	// Use BaseRepository QueryBetween method
-	records, err := r.BaseRepository.QueryBetween(ctx, pk, startSK, endSK, limit)
+	records, err := r.QueryBetween(ctx, pk, startSK, endSK, limit)
 	if err != nil {
 		return nil, MapErrorWithContext(err, "failed to list WebSocket cost tracking by operation type")
 	}
@@ -124,15 +124,15 @@ func (r *WebSocketCostRepository) ListByOperationType(ctx context.Context, opera
 
 // ListByConnection lists WebSocket cost tracking records by connection ID within a time range using GSI
 func (r *WebSocketCostRepository) ListByConnection(ctx context.Context, connectionID string, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error) {
-	return r.queryByGSIWithTimeRange(ctx, "connection-index", "GSI1PK", "GSI1SK", 
-		fmt.Sprintf("WS_CONN#%s", connectionID), startTime, endTime, limit, 
+	return r.queryByGSIWithTimeRange(ctx, "connection-index", "GSI1PK", "GSI1SK",
+		fmt.Sprintf("WS_CONN#%s", connectionID), startTime, endTime, limit,
 		"failed to list WebSocket cost tracking by connection")
 }
 
 // ListByUser lists WebSocket cost tracking records by user ID within a time range using GSI
 func (r *WebSocketCostRepository) ListByUser(ctx context.Context, userID string, startTime, endTime time.Time, limit int) ([]*models.WebSocketCostRecord, error) {
-	return r.queryByGSIWithTimeRange(ctx, "user-index", "GSI2PK", "GSI2SK", 
-		fmt.Sprintf("WS_USER#%s", userID), startTime, endTime, limit, 
+	return r.queryByGSIWithTimeRange(ctx, "user-index", "GSI2PK", "GSI2SK",
+		fmt.Sprintf("WS_USER#%s", userID), startTime, endTime, limit,
 		"failed to list WebSocket cost tracking by user")
 }
 
@@ -145,8 +145,8 @@ func (r *WebSocketCostRepository) queryByGSIWithTimeRange(ctx context.Context, i
 	endSK := endTime.Format(time.RFC3339)
 
 	// Get direct access to BaseRepository's db field
-	db := r.BaseRepository.db
-	
+	db := r.db
+
 	// Build query
 	query := db.WithContext(ctx).Model(&models.WebSocketCostRecord{}).
 		Index(indexName).
@@ -162,25 +162,25 @@ func (r *WebSocketCostRepository) queryByGSIWithTimeRange(ctx context.Context, i
 	}
 
 	// Track cost using BaseRepository's tracking capabilities
-	if costService := r.BaseRepository.GetCostService(); costService != nil {
+	if costService := r.GetCostService(); costService != nil {
 		itemCount := int64(len(records))
 		estimatedRU := itemCount
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
-			TableName:          r.BaseRepository.tableName,
+			TableName:          r.tableName,
 			ConsumedReadUnits:  estimatedRU,
 			ConsumedWriteUnits: 0,
 			ItemCount:          itemCount,
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("websocket_cost_gsiQuery_%d", time.Now().UnixNano()),
 		}
-		
-		if trackErr := r.BaseRepository.TrackCustomOperation(ctx, operation); trackErr != nil {
-			r.BaseRepository.logger.Warn("failed to track GSI query cost",
+
+		if trackErr := r.TrackCustomOperation(ctx, operation); trackErr != nil {
+			r.logger.Warn("failed to track GSI query cost",
 				zap.String("repository", "websocket_cost"),
 				zap.String("index", indexName),
 				zap.Error(trackErr))
@@ -196,7 +196,7 @@ func (r *WebSocketCostRepository) queryBudgetsByGSI(ctx context.Context, indexNa
 
 	// Get direct access to budgetRepo's db field
 	db := r.budgetRepo.db
-	
+
 	// Build query
 	query := db.WithContext(ctx).Model(&models.WebSocketCostBudget{}).
 		Index(indexName).
@@ -219,7 +219,7 @@ func (r *WebSocketCostRepository) queryBudgetsByGSI(ctx context.Context, indexNa
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.budgetRepo.tableName,
@@ -229,7 +229,7 @@ func (r *WebSocketCostRepository) queryBudgetsByGSI(ctx context.Context, indexNa
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("websocket_budget_gsiQuery_%d", time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.budgetRepo.TrackCustomOperation(ctx, operation); trackErr != nil {
 			r.budgetRepo.logger.Warn("failed to track budget GSI query cost",
 				zap.String("repository", "websocket_budget"),
@@ -247,7 +247,7 @@ func (r *WebSocketCostRepository) queryAggregationsByGSI(ctx context.Context, in
 
 	// Get direct access to aggregationRepo's db field
 	db := r.aggregationRepo.db
-	
+
 	// Build query
 	query := db.WithContext(ctx).Model(&models.WebSocketCostAggregation{}).
 		Index(indexName).
@@ -273,7 +273,7 @@ func (r *WebSocketCostRepository) queryAggregationsByGSI(ctx context.Context, in
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		
+
 		operation := cost.DynamoOperation{
 			Type:               "Query",
 			TableName:          r.aggregationRepo.tableName,
@@ -283,7 +283,7 @@ func (r *WebSocketCostRepository) queryAggregationsByGSI(ctx context.Context, in
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("websocket_aggregation_gsiQuery_%d", time.Now().UnixNano()),
 		}
-		
+
 		if trackErr := r.aggregationRepo.TrackCustomOperation(ctx, operation); trackErr != nil {
 			r.aggregationRepo.logger.Warn("failed to track aggregation GSI query cost",
 				zap.String("repository", "websocket_aggregation"),
@@ -568,7 +568,7 @@ func (r *WebSocketCostRepository) GetBudget(ctx context.Context, userID, period 
 
 // GetUserBudgets retrieves all budgets for a user using BaseRepository GSI query
 func (r *WebSocketCostRepository) GetUserBudgets(ctx context.Context, userID string) ([]*models.WebSocketCostBudget, error) {
-	return r.queryBudgetsByGSI(ctx, "user-budget-index", "GSI1PK", 
+	return r.queryBudgetsByGSI(ctx, "user-budget-index", "GSI1PK",
 		fmt.Sprintf("WS_USER_BUDGET#%s", userID), 0, "failed to get user WebSocket budgets")
 }
 

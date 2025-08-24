@@ -88,7 +88,7 @@ func (r *ActivityRepository) GetActivity(ctx context.Context, id string) (*activ
 	// This is inefficient but matches the legacy behavior
 	// In a real implementation, we'd want a GSI on activity ID
 	var activities []*models.Activity
-	
+
 	// Unfortunately, BaseRepository doesn't have a scan method, so we'll use a custom approach
 	// We'll need to implement this as a scan operation
 	err := r.db.WithContext(ctx).Model(&models.Activity{}).
@@ -159,7 +159,9 @@ func (r *ActivityRepository) GetInboxActivities(ctx context.Context, username st
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		r.TrackRead(ctx, "GSI1_Query", estimatedRU)
+		if err := r.TrackRead(ctx, "GSI1_Query", estimatedRU); err != nil {
+			r.logger.Warn("failed to track read operation", zap.Error(err))
+		}
 	}
 
 	// Convert to ActivityPub activities
@@ -225,9 +227,7 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 			err = query.All(&activities)
 		}
 	} else {
-		// Use BaseRepository method directly
-		activities, err = r.QueryWithSKPrefix(ctx, pk, skPrefix, limit)
-		// For proper DESC ordering with BaseRepository, we need custom query
+		// For proper DESC ordering, we need custom query
 		query := r.db.WithContext(ctx).Model(&models.Activity{}).
 			Where("PK", "=", pk).
 			Where("SK", "BEGINS_WITH", skPrefix).
@@ -250,7 +250,9 @@ func (r *ActivityRepository) GetOutboxActivities(ctx context.Context, username s
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		r.TrackRead(ctx, "Query", estimatedRU)
+		if err := r.TrackRead(ctx, "Query", estimatedRU); err != nil {
+			r.logger.Warn("failed to track read operation", zap.Error(err))
+		}
 	}
 
 	// Convert to ActivityPub activities
@@ -404,7 +406,9 @@ func (r *ActivityRepository) GetWeeklyActivity(ctx context.Context, weekTimestam
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		r.TrackRead(ctx, "Scan", estimatedRU)
+		if err := r.TrackRead(ctx, "Scan", estimatedRU); err != nil {
+			r.logger.Warn("failed to track read operation", zap.Error(err))
+		}
 	}
 
 	// Count different types of activities
@@ -460,7 +464,9 @@ func (r *ActivityRepository) RecordActivity(ctx context.Context, activityType st
 
 	// Track cost manually since we're not using BaseRepository
 	if r.costService != nil {
-		r.TrackWrite(ctx, "PutItem", 1)
+		if err := r.TrackWrite(ctx, "PutItem", 1); err != nil {
+			r.logger.Warn("failed to track write operation", zap.Error(err))
+		}
 	}
 
 	return nil
@@ -488,7 +494,9 @@ func (r *ActivityRepository) GetHashtagActivity(ctx context.Context, hashtag str
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
-		r.TrackRead(ctx, "Scan", estimatedRU)
+		if err := r.TrackRead(ctx, "Scan", estimatedRU); err != nil {
+			r.logger.Warn("failed to track read operation", zap.Error(err))
+		}
 	}
 
 	// Filter activities that contain the hashtag
@@ -547,7 +555,9 @@ func (r *ActivityRepository) RecordFederationActivity(ctx context.Context, activ
 
 	// Track cost manually since we're not using BaseRepository
 	if r.costService != nil {
-		r.TrackWrite(ctx, "PutItem", 1)
+		if err := r.TrackWrite(ctx, "PutItem", 1); err != nil {
+			r.logger.Warn("failed to track write operation", zap.Error(err))
+		}
 	}
 
 	r.logger.Debug("recorded federation activity",

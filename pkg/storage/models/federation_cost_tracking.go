@@ -260,12 +260,12 @@ func (f *FederationCostTracking) AddRouteDeliveryAttempt(routeID string, bytes i
 
 	// Track total attempts and calculate success rate
 	f.RouteAttempts[routeID]++
-	
+
 	// Calculate success rate: (total attempts - errors) / total attempts
 	totalAttempts := f.RouteAttempts[routeID]
 	errorCount := f.RouteErrors[routeID]
 	successCount := totalAttempts - errorCount
-	
+
 	if totalAttempts > 0 {
 		f.RouteSuccessRates[routeID] = float64(successCount) / float64(totalAttempts)
 	} else {

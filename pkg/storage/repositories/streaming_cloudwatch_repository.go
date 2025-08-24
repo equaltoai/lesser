@@ -32,7 +32,7 @@ func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(ctx context.Contex
 	// Create metrics entry
 	metrics := &models.StreamingCloudWatchMetrics{}
 	metrics.SetQualityBreakdown(mediaID, qualityMetrics)
-	
+
 	return r.Create(ctx, metrics)
 }
 

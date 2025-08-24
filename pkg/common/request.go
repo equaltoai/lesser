@@ -61,10 +61,11 @@ func ReadRequestBodyString(body io.Reader, maxSize int64) (string, error) {
 
 // ParseRequestWithFallback attempts to parse request using ctx.ParseRequest with fallback strategies
 // This consolidates the common pattern of:
-//   if err := ctx.ParseRequest(&req); err != nil {
-//     // Fallback logic for test environments
-//     ...
-//   }
+//
+//	if err := ctx.ParseRequest(&req); err != nil {
+//	  // Fallback logic for test environments
+//	  ...
+//	}
 func ParseRequestWithFallback(ctx *lift.Context, target interface{}) error {
 	// First try the standard ParseRequest
 	if err := ctx.ParseRequest(target); err == nil {
@@ -118,27 +119,27 @@ func ParseRequestBodyWithValidation(ctx *lift.Context, target interface{}, field
 
 // PaginationParams extracts common pagination parameters
 type PaginationParams struct {
-	Limit  int    `json:"limit"`
-	Offset int    `json:"offset"`
-	MaxID  string `json:"max_id"`
-	MinID  string `json:"min_id"`
+	Limit   int    `json:"limit"`
+	Offset  int    `json:"offset"`
+	MaxID   string `json:"max_id"`
+	MinID   string `json:"min_id"`
 	SinceID string `json:"since_id"`
 }
 
 // TimelineParams extracts timeline-specific parameters
 type TimelineParams struct {
 	PaginationParams
-	Local      bool `json:"local"`
-	OnlyMedia  bool `json:"only_media"`
+	Local     bool `json:"local"`
+	OnlyMedia bool `json:"only_media"`
 }
 
 // FilterParams extracts filter-specific parameters
 type FilterParams struct {
-	Phrase      string   `json:"phrase"`
-	Context     []string `json:"context"`
-	ExpiresIn   int      `json:"expires_in"`
-	Irreversible bool    `json:"irreversible"`
-	WholeWord   bool     `json:"whole_word"`
+	Phrase       string   `json:"phrase"`
+	Context      []string `json:"context"`
+	ExpiresIn    int      `json:"expires_in"`
+	Irreversible bool     `json:"irreversible"`
+	WholeWord    bool     `json:"whole_word"`
 }
 
 // Helper functions for the common fallback patterns
@@ -153,11 +154,11 @@ func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) erro
 	// Second attempt: fallback with ValidateSliceNotEmpty pattern
 	if ctx.Request != nil {
 		bodyBytes := ctx.Request.Body
-		if err := ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil && 
-		   ctx.Request.Request != nil {
+		if err := ValidateSliceNotEmpty("bodyBytes", bodyBytes); err != nil &&
+			ctx.Request.Request != nil {
 			bodyBytes = ctx.Request.Request.Body
 		}
-		
+
 		if err := ParseRequestBody(bodyBytes, target); err == nil {
 			return nil
 		}
@@ -165,4 +166,3 @@ func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) erro
 
 	return ErrFailedToParseWithComplexFallback
 }
-

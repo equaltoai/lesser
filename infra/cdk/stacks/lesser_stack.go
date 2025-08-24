@@ -20,26 +20,26 @@ type LesserStackProps struct {
 	awscdk.StackProps
 	Environment string
 	Domain      string
-	JWTSecret   *string // JWT secret for auth
+	JWTSecret   *string                // JWT secret for auth
 	Config      map[string]interface{} // Environment-specific configuration
 }
 
 type LesserStack struct {
 	awscdk.Stack
-	MainTable           awsdynamodb.Table
-	MediaBucket         awss3.Bucket
-	MediaDistribution   awscloudfront.Distribution
-	FederationQueue     awssqs.Queue
-	FederationDLQ       awssqs.Queue
-	PushQueue           awssqs.Queue
-	ImportExportQueue   awssqs.Queue
-	ImportExportDLQ     awssqs.Queue
-	PrivateKey          awssecretsmanager.ISecret
-	Certificate         awscertificatemanager.Certificate
-	Functions           *localconstructs.LambdaFunctions
-	API                 *localconstructs.APIGateway
-	Environment         string
-	Configuration       map[string]interface{}
+	MainTable         awsdynamodb.Table
+	MediaBucket       awss3.Bucket
+	MediaDistribution awscloudfront.Distribution
+	FederationQueue   awssqs.Queue
+	FederationDLQ     awssqs.Queue
+	PushQueue         awssqs.Queue
+	ImportExportQueue awssqs.Queue
+	ImportExportDLQ   awssqs.Queue
+	PrivateKey        awssecretsmanager.ISecret
+	Certificate       awscertificatemanager.Certificate
+	Functions         *localconstructs.LambdaFunctions
+	API               *localconstructs.APIGateway
+	Environment       string
+	Configuration     map[string]interface{}
 }
 
 func NewLesserStack(scope constructs.Construct, id string, props *LesserStackProps) *LesserStack {
@@ -56,35 +56,35 @@ func NewLesserStack(scope constructs.Construct, id string, props *LesserStackPro
 
 	// Create shared resources
 	lesserStack.createSharedResources()
-	
+
 	// Create S3 and CloudFront (Phase 6.6)
 	lesserStack.createMediaInfrastructure(props.Domain)
-	
+
 	// Create SQS queues (Phase 6.6)
 	lesserStack.createSQSQueues()
-	
+
 	// Create Lambda functions
 	lesserStack.createLambdaFunctions()
-	
+
 	// Create API Gateway
 	lesserStack.createAPIGateway(props.Domain)
-	
+
 	// Create stream processors
 	lesserStack.createStreamProcessors()
-	
+
 	// Setup monitoring
 	if features, ok := lesserStack.Configuration["features"].(map[string]interface{}); ok {
 		if enableMonitoring, ok := features["enableMonitoring"].(bool); ok && enableMonitoring {
 			lesserStack.setupMonitoring()
 		}
 	}
-	
+
 	// Setup security
 	lesserStack.setupSecurity()
-	
+
 	// Create outputs
 	lesserStack.createOutputs()
-	
+
 	return lesserStack
 }
 
@@ -102,7 +102,7 @@ func (s *LesserStack) createCertificate(domain string) {
 
 func (s *LesserStack) createSharedResources() {
 	isProd := s.Environment == "production"
-	
+
 	// Create main DynamoDB table with streams
 	s.MainTable = awsdynamodb.NewTable(s.Stack, jsii.String("LesserTable"), &awsdynamodb.TableProps{
 		TableName: jsii.String(fmt.Sprintf("lesser-%s", s.Environment)),
@@ -114,14 +114,14 @@ func (s *LesserStack) createSharedResources() {
 			Name: jsii.String("SK"),
 			Type: awsdynamodb.AttributeType_STRING,
 		},
-		BillingMode:          awsdynamodb.BillingMode_PAY_PER_REQUEST,
-		Stream:               awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
-		TimeToLiveAttribute:  jsii.String("TTL"),
-		PointInTimeRecovery:  jsii.Bool(isProd),
-		DeletionProtection:   jsii.Bool(isProd),
-		RemovalPolicy:        getRemovalPolicy(isProd),
+		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
+		Stream:              awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
+		TimeToLiveAttribute: jsii.String("TTL"),
+		PointInTimeRecovery: jsii.Bool(isProd),
+		DeletionProtection:  jsii.Bool(isProd),
+		RemovalPolicy:       getRemovalPolicy(isProd),
 	})
-	
+
 	// Add GSIs
 	for i := 1; i <= 8; i++ {
 		s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
@@ -136,7 +136,7 @@ func (s *LesserStack) createSharedResources() {
 			},
 		})
 	}
-	
+
 	// Basic S3 bucket setup - CloudFront integration moved to createMediaInfrastructure
 	s.MediaBucket = awss3.NewBucket(s.Stack, jsii.String("MediaBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(fmt.Sprintf("lesser-media-%s", s.Environment)),
@@ -181,12 +181,12 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 	// Create CloudFront distribution for media.{domain}
 	mediaDomain := fmt.Sprintf("media.%s", domain)
 	s.MediaDistribution = awscloudfront.NewDistribution(s.Stack, jsii.String("MediaDistribution"), &awscloudfront.DistributionProps{
-		Enabled:           jsii.Bool(true),
-		HttpVersion:       awscloudfront.HttpVersion_HTTP2,
-		Comment:           jsii.String("Lesser Media CDN"),
-		DefaultRootObject: jsii.String("index.html"),
-		DomainNames:       &[]*string{jsii.String(mediaDomain)},
-		Certificate:       s.Certificate,
+		Enabled:                jsii.Bool(true),
+		HttpVersion:            awscloudfront.HttpVersion_HTTP2,
+		Comment:                jsii.String("Lesser Media CDN"),
+		DefaultRootObject:      jsii.String("index.html"),
+		DomainNames:            &[]*string{jsii.String(mediaDomain)},
+		Certificate:            s.Certificate,
 		MinimumProtocolVersion: awscloudfront.SecurityPolicyProtocol_TLS_V1_2_2021,
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
 			Origin: awscloudfrontorigins.NewS3Origin(s.MediaBucket, &awscloudfrontorigins.S3OriginProps{
@@ -214,8 +214,8 @@ func (s *LesserStack) createSQSQueues() {
 	// Create federation queue with DLQ redrive policy
 	s.FederationQueue = awssqs.NewQueue(s.Stack, jsii.String("FederationQueue"), &awssqs.QueueProps{
 		QueueName:              jsii.String(fmt.Sprintf("lesser-federation-queue-%s", s.Environment)),
-		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(5)), // 5 minutes
-		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(4)),    // 4 days
+		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(5)),  // 5 minutes
+		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(4)),     // 4 days
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
 		DeadLetterQueue: &awssqs.DeadLetterQueue{
 			MaxReceiveCount: jsii.Number(5), // After 5 failed attempts, send to DLQ
@@ -226,8 +226,8 @@ func (s *LesserStack) createSQSQueues() {
 	// Create push notification queue
 	s.PushQueue = awssqs.NewQueue(s.Stack, jsii.String("PushNotificationQueue"), &awssqs.QueueProps{
 		QueueName:              jsii.String(fmt.Sprintf("lesser-push-notification-queue-%s", s.Environment)),
-		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(1)), // 1 minute
-		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(1)),    // 1 day
+		VisibilityTimeout:      awscdk.Duration_Minutes(jsii.Number(1)),  // 1 minute
+		RetentionPeriod:        awscdk.Duration_Days(jsii.Number(1)),     // 1 day
 		ReceiveMessageWaitTime: awscdk.Duration_Seconds(jsii.Number(20)), // Long polling
 	})
 
@@ -254,7 +254,7 @@ func (s *LesserStack) createSQSQueues() {
 func (s *LesserStack) createLambdaFunctions() {
 	// Load private key secret from shared stack
 	s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
-	
+
 	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
 		Environment:     s.Environment,
 		Table:           s.MainTable,
@@ -274,13 +274,13 @@ func (s *LesserStack) createAPIGateway(domain string) {
 		Certificate: s.Certificate,
 		Functions:   s.Functions,
 	})
-	
+
 	// Output API URLs
 	awscdk.NewCfnOutput(s.Stack, jsii.String("HttpApiUrl"), &awscdk.CfnOutputProps{
 		Value:       s.API.HttpApi.Url(),
 		Description: jsii.String("HTTP API Gateway URL"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("WebSocketApiUrl"), &awscdk.CfnOutputProps{
 		Value:       s.API.WebSocketApi.ApiEndpoint(),
 		Description: jsii.String("WebSocket API Gateway URL"),
@@ -315,17 +315,17 @@ func (s *LesserStack) createOutputs() {
 		Value:       s.MainTable.TableName(),
 		Description: jsii.String("DynamoDB table name"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaBucketName"), &awscdk.CfnOutputProps{
 		Value:       s.MediaBucket.BucketName(),
 		Description: jsii.String("S3 media bucket name"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaDistributionDomain"), &awscdk.CfnOutputProps{
 		Value:       s.MediaDistribution.DistributionDomainName(),
 		Description: jsii.String("CloudFront distribution domain name for media"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationQueueUrl"), &awscdk.CfnOutputProps{
 		Value:       s.FederationQueue.QueueUrl(),
 		Description: jsii.String("Federation queue URL"),
@@ -335,17 +335,17 @@ func (s *LesserStack) createOutputs() {
 		Value:       s.ImportExportQueue.QueueUrl(),
 		Description: jsii.String("Import/Export queue URL"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("FederationDLQUrl"), &awscdk.CfnOutputProps{
 		Value:       s.FederationDLQ.QueueUrl(),
 		Description: jsii.String("Federation dead letter queue URL"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("PushNotificationQueueUrl"), &awscdk.CfnOutputProps{
 		Value:       s.PushQueue.QueueUrl(),
 		Description: jsii.String("Push notification queue URL"),
 	})
-	
+
 	awscdk.NewCfnOutput(s.Stack, jsii.String("Environment"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(s.Environment),
 		Description: jsii.String("Deployment environment"),
@@ -357,13 +357,13 @@ func loadEnvironmentConfig(environment string) map[string]interface{} {
 	// These will be overridden by CDK context or environment variables
 	config := map[string]interface{}{
 		"logLevel":   "INFO",
-		"memorySize": 3008.0,  // ARM64 Lambda optimized (from Pulumi line 650)
+		"memorySize": 3008.0, // ARM64 Lambda optimized (from Pulumi line 650)
 		"timeout":    30.0,
 		"features": map[string]interface{}{
 			"enableMonitoring": true,
 		},
 	}
-	
+
 	// Environment-specific overrides (matching Pulumi behavior)
 	switch environment {
 	case "development":
@@ -372,9 +372,9 @@ func loadEnvironmentConfig(environment string) map[string]interface{} {
 	case "staging":
 		config["memorySize"] = 1024.0
 	case "production":
-		config["memorySize"] = 3008.0  // Max memory for production
+		config["memorySize"] = 3008.0 // Max memory for production
 	}
-	
+
 	return config
 }
 

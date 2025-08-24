@@ -28,10 +28,10 @@ type APIGateway struct {
 
 func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGateway {
 	gateway := &APIGateway{}
-	
+
 	// Create HTTP API
 	gateway.HttpApi = awsapigatewayv2.NewHttpApi(scope, jsii.String("HttpApi"), &awsapigatewayv2.HttpApiProps{
-		ApiName: jsii.String(fmt.Sprintf("lesser-%s-api", props.Environment)),
+		ApiName:     jsii.String(fmt.Sprintf("lesser-%s-api", props.Environment)),
 		Description: jsii.String(fmt.Sprintf("Lesser %s HTTP API", props.Environment)),
 		CorsPreflight: &awsapigatewayv2.CorsPreflightOptions{
 			AllowOrigins: &[]*string{jsii.String("*")},
@@ -56,37 +56,37 @@ func CreateAPIGateway(scope constructs.Construct, props *APIGatewayProps) *APIGa
 		},
 		DisableExecuteApiEndpoint: jsii.Bool(false),
 	})
-	
+
 	// Add custom domain if certificate is provided
 	if props.Certificate != nil && props.Domain != "" {
 		domainName := awsapigatewayv2.NewDomainName(scope, jsii.String("DomainName"), &awsapigatewayv2.DomainNameProps{
 			DomainName:  jsii.String(props.Domain),
 			Certificate: props.Certificate,
 		})
-		
+
 		awsapigatewayv2.NewApiMapping(scope, jsii.String("ApiMapping"), &awsapigatewayv2.ApiMappingProps{
 			Api:        gateway.HttpApi,
 			DomainName: domainName,
 		})
 	}
-	
+
 	// Create access log group
 	logGroup := awslogs.NewLogGroup(scope, jsii.String("ApiLogGroup"), &awslogs.LogGroupProps{
-		LogGroupName: jsii.String(fmt.Sprintf("/aws/apigateway/lesser-%s", props.Environment)),
-		Retention:    awslogs.RetentionDays_ONE_WEEK,
+		LogGroupName:  jsii.String(fmt.Sprintf("/aws/apigateway/lesser-%s", props.Environment)),
+		Retention:     awslogs.RetentionDays_ONE_WEEK,
 		RemovalPolicy: awscdk.RemovalPolicy_DESTROY,
 	})
-	
+
 	// Add default stage with logging
 	stage := gateway.HttpApi.DefaultStage()
 	stage.Node().AddDependency(logGroup)
-	
+
 	// Add routes
 	addHttpRoutes(gateway.HttpApi, props.Functions)
-	
+
 	// Create WebSocket API
 	gateway.WebSocketApi = createWebSocketApi(scope, props)
-	
+
 	return gateway
 }
 
@@ -97,31 +97,31 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "PUT /api/v1/{proxy+}", functions.APIFunction)
 	addRoute(api, "DELETE /api/v1/{proxy+}", functions.APIFunction)
 	addRoute(api, "PATCH /api/v1/{proxy+}", functions.APIFunction)
-	
+
 	addRoute(api, "GET /api/v2/{proxy+}", functions.APIFunction)
 	addRoute(api, "POST /api/v2/{proxy+}", functions.APIFunction)
-	
+
 	// GraphQL routes
 	addRoute(api, "GET /api/graphql", functions.GraphQLFunction)
 	addRoute(api, "POST /api/graphql", functions.GraphQLFunction)
-	
+
 	// OAuth routes (handled by native Lift implementation in API)
 	addRoute(api, "GET /oauth/{proxy+}", functions.APIFunction)
 	addRoute(api, "POST /oauth/{proxy+}", functions.APIFunction)
-	
+
 	// Auth routes (handled by native Lift implementation in API)
 	addRoute(api, "GET /auth/{proxy+}", functions.APIFunction)
 	addRoute(api, "POST /auth/{proxy+}", functions.APIFunction)
-	
+
 	// ActivityPub routes
 	addRoute(api, "GET /.well-known/webfinger", functions.WebfingerFunction)
 	addRoute(api, "GET /.well-known/nodeinfo", functions.APIFunction)
 	addRoute(api, "GET /nodeinfo/{proxy+}", functions.APIFunction)
-	
+
 	// Instance-level ActivityPub endpoints
 	addRoute(api, "GET /inbox", functions.InboxFunction)
 	addRoute(api, "POST /inbox", functions.InboxFunction)
-	
+
 	addRoute(api, "GET /users/{username}", functions.APIFunction)
 	addRoute(api, "GET /users/{username}/inbox", functions.InboxFunction)
 	addRoute(api, "POST /users/{username}/inbox", functions.InboxFunction)
@@ -129,15 +129,15 @@ func addHttpRoutes(api awsapigatewayv2.HttpApi, functions *LambdaFunctions) {
 	addRoute(api, "POST /users/{username}/outbox", functions.OutboxFunction)
 	addRoute(api, "GET /users/{username}/followers", functions.APIFunction)
 	addRoute(api, "GET /users/{username}/following", functions.APIFunction)
-	
+
 	// Object routes
 	addRoute(api, "GET /objects/{id}", functions.APIFunction)
 	addRoute(api, "GET /activities/{id}", functions.APIFunction)
-	
+
 	// Instance routes
 	addRoute(api, "GET /api/v1/instance", functions.APIFunction)
 	addRoute(api, "GET /api/v2/instance", functions.APIFunction)
-	
+
 	// Health check
 	addRoute(api, "GET /health", functions.HealthFunction)
 }
@@ -152,11 +152,11 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 			PayloadFormatVersion: awsapigatewayv2.PayloadFormatVersion_VERSION_2_0(),
 		},
 	)
-	
+
 	// Parse method and path
 	var method awsapigatewayv2.HttpMethod
 	var routePath string
-	
+
 	switch {
 	case len(path) > 4 && path[:4] == "GET ":
 		method = awsapigatewayv2.HttpMethod_GET
@@ -176,7 +176,7 @@ func addRoute(api awsapigatewayv2.HttpApi, path string, handler awslambda.Functi
 	default:
 		return
 	}
-	
+
 	api.AddRoutes(&awsapigatewayv2.AddRoutesOptions{
 		Path:        jsii.String(routePath),
 		Methods:     &[]awsapigatewayv2.HttpMethod{method},
@@ -211,14 +211,14 @@ func createWebSocketApi(scope constructs.Construct, props *APIGatewayProps) awsa
 			),
 		},
 	})
-	
+
 	// Create stage
 	awsapigatewayv2.NewWebSocketStage(scope, jsii.String("WebSocketStage"), &awsapigatewayv2.WebSocketStageProps{
 		WebSocketApi: wsApi,
 		StageName:    jsii.String(props.Environment),
 		AutoDeploy:   jsii.Bool(true),
 	})
-	
+
 	return wsApi
 }
 

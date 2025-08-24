@@ -18,12 +18,12 @@ import (
 
 // followRequestConfig holds configuration for follow request actions
 type followRequestConfig struct {
-	actionType        string
-	serviceMethod     interface{} // Will be either AcceptFollowRequest or RejectFollowRequest
-	activitySender    func(ctx context.Context, accountID, username string) error
-	logMessage        string
-	errorLogMessage   string
-	activityLogError  string
+	actionType       string
+	serviceMethod    interface{} // Will be either AcceptFollowRequest or RejectFollowRequest
+	activitySender   func(ctx context.Context, accountID, username string) error
+	logMessage       string
+	errorLogMessage  string
+	activityLogError string
 }
 
 // handleFollowRequestOperation consolidates common follow request operation logic
@@ -36,7 +36,7 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 	// Call the appropriate service method
 	var result *relationships.RelationshipResult
 	var err error
-	
+
 	switch config.actionType {
 	case "accept":
 		if acceptMethod, ok := config.serviceMethod.(func(context.Context, *relationships.AcceptFollowRequestCommand) (*relationships.RelationshipResult, error)); ok {
@@ -192,12 +192,12 @@ func (h *Handler) HandleAuthorizeFollowRequestLift(ctx *lift.Context) error {
 // handleAuthorizeFollowRequestLogic contains the main authorize logic, separated for testing
 func (h *Handler) handleAuthorizeFollowRequestLogic(ctx *lift.Context, actor *activitypub.Actor, username, accountID string) error {
 	return h.handleFollowRequestOperation(ctx, actor, username, accountID, followRequestConfig{
-		actionType:        "accept",
-		serviceMethod:     h.registry.Relationships().AcceptFollowRequest,
-		activitySender:    h.sendAcceptActivityLift,
-		logMessage:        "follow request authorized",
-		errorLogMessage:   "failed to accept follow request",
-		activityLogError:  "failed to send accept activity",
+		actionType:       "accept",
+		serviceMethod:    h.registry.Relationships().AcceptFollowRequest,
+		activitySender:   h.sendAcceptActivityLift,
+		logMessage:       "follow request authorized",
+		errorLogMessage:  "failed to accept follow request",
+		activityLogError: "failed to send accept activity",
 	})
 }
 
@@ -279,12 +279,12 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHa
 // handleRejectFollowRequestLogic contains the main reject logic, separated for testing
 func (h *Handler) handleRejectFollowRequestLogic(ctx *lift.Context, actor *activitypub.Actor, username, accountID string) error {
 	return h.handleFollowRequestOperation(ctx, actor, username, accountID, followRequestConfig{
-		actionType:        "reject",
-		serviceMethod:     h.registry.Relationships().RejectFollowRequest,
-		activitySender:    h.sendRejectActivityLift,
-		logMessage:        "follow request rejected",
-		errorLogMessage:   "failed to reject follow request",
-		activityLogError:  "failed to send reject activity",
+		actionType:       "reject",
+		serviceMethod:    h.registry.Relationships().RejectFollowRequest,
+		activitySender:   h.sendRejectActivityLift,
+		logMessage:       "follow request rejected",
+		errorLogMessage:  "failed to reject follow request",
+		activityLogError: "failed to send reject activity",
 	})
 }
 

@@ -776,7 +776,6 @@ func (h *Handler) getActorForObject(ctx context.Context, obj interface{}) *activ
 	return account.Actor
 }
 
-
 // getStatusDescendants retrieves the descendants (replies) of a status
 func (h *Handler) getStatusDescendants(ctx context.Context, objectID string) []models.Status {
 	descendants := []models.Status{}
@@ -990,7 +989,7 @@ func (h *Handler) objectHasHashtags(obj any, taggedParam string) bool {
 
 	requiredTags := h.parseRequiredTags(taggedParam)
 	objectTags := h.extractHashtagsFromObject(obj)
-	
+
 	return h.containsAllRequiredTags(objectTags, requiredTags)
 }
 
@@ -1050,11 +1049,11 @@ func (h *Handler) extractFromGenericMap(objMap map[string]any) []string {
 	if hashtags, ok := objMap["hashtags"].([]string); ok {
 		return h.normalizeHashtags(hashtags)
 	}
-	
+
 	if tags, ok := objMap["tag"].([]any); ok {
 		return h.extractFromTagArray(tags)
 	}
-	
+
 	return []string{}
 }
 

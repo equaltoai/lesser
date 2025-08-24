@@ -8,8 +8,8 @@ import (
 	"sort"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // Signal type constants

@@ -37,7 +37,7 @@ func NewAWSS3StorageClient(ctx context.Context, logger *zap.Logger) (*AWSS3Stora
 
 	// Get configuration from centralized config
 	appCfg := appconfig.Get()
-	
+
 	// Check for bucket name first - if not set, we can't function
 	bucketName := appCfg.S3MediaBucket
 	if bucketName == "" {
@@ -76,7 +76,7 @@ func NewAWSS3StorageClient(ctx context.Context, logger *zap.Logger) (*AWSS3Stora
 		u.PartSize = 10 * 1024 * 1024 // 10MB parts for better performance
 		u.Concurrency = 3             // Upload up to 3 parts concurrently
 	})
-	
+
 	downloader := manager.NewDownloader(client, func(d *manager.Downloader) {
 		d.PartSize = 10 * 1024 * 1024 // 10MB parts
 		d.Concurrency = 3             // Download up to 3 parts concurrently
@@ -149,9 +149,9 @@ func (s *AWSS3StorageClient) UploadFile(ctx context.Context, key string, data []
 		ServerSideEncryption: types.ServerSideEncryptionAes256,
 		// Add metadata for import/export files
 		Metadata: map[string]string{
-			"upload-source":    "import-export-service",
-			"upload-time":      time.Now().UTC().Format(time.RFC3339),
-			"content-length":   fmt.Sprintf("%d", len(data)),
+			"upload-source":     "import-export-service",
+			"upload-time":       time.Now().UTC().Format(time.RFC3339),
+			"content-length":    fmt.Sprintf("%d", len(data)),
 			"original-filename": key,
 		},
 		// Set storage class for cost optimization

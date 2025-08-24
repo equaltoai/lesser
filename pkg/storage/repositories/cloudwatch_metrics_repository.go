@@ -22,10 +22,10 @@ import (
 // NOTE: This repository primarily uses CloudWatch AWS SDK for metrics collection.
 // BaseRepository integration demonstrates how DynamoDB caching could be added for performance optimization.
 type CloudWatchMetricsRepository struct {
-	*BaseRepository[*models.CloudWatchMetrics] // Optional caching layer
-	client      *cloudwatch.Client             // PRESERVE: CloudWatch AWS SDK for metrics collection
-	namespace   string                         // PRESERVE: CloudWatch namespace
-	environment string                         // PRESERVE: Environment for metrics filtering
+	*BaseRepository[*models.CloudWatchMetrics]                    // Optional caching layer
+	client                                     *cloudwatch.Client // PRESERVE: CloudWatch AWS SDK for metrics collection
+	namespace                                  string             // PRESERVE: CloudWatch namespace
+	environment                                string             // PRESERVE: Environment for metrics filtering
 }
 
 // CloudWatchMetrics represents metrics data from CloudWatch (PRESERVED - AWS monitoring integration)
@@ -80,10 +80,10 @@ func NewCloudWatchMetricsRepository(namespace, environment string, logger *zap.L
 
 // NewCloudWatchMetricsRepositoryWithCaching creates repository with DynamoDB caching enabled
 // This demonstrates how BaseRepository integration would work for performance optimization
-func NewCloudWatchMetricsRepositoryWithCaching(awsConfig aws.Config, namespace, environment, tableName string, logger *zap.Logger, costService *cost.TrackingService, db interface{}) *CloudWatchMetricsRepository {
+func NewCloudWatchMetricsRepositoryWithCaching(awsConfig aws.Config, namespace, environment, _ string, _ *zap.Logger, _ *cost.TrackingService, _ interface{}) *CloudWatchMetricsRepository {
 	// This would enable DynamoDB caching of CloudWatch metrics for improved performance
 	// baseRepo := NewBaseRepositoryWithCostTracking[*models.CloudWatchMetrics](db, tableName, logger, costService, "cloudwatch_metrics")
-	
+
 	return &CloudWatchMetricsRepository{
 		BaseRepository: nil, // Would set baseRepo here if caching was fully implemented
 		client:         cloudwatch.NewFromConfig(awsConfig),
@@ -387,20 +387,20 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 
 	// DynamoDB costs (more accurate pricing for on-demand billing)
 	// Using current us-east-1 pricing (adjust for other regions as needed)
-	dynamoReadCost := (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25  // $0.25 per million read request units
+	dynamoReadCost := (float64(metrics.DynamoDBReads) / 1000000.0) * 0.25   // $0.25 per million read request units
 	dynamoWriteCost := (float64(metrics.DynamoDBWrites) / 1000000.0) * 1.25 // $1.25 per million write request units
 	cost += dynamoReadCost + dynamoWriteCost
 
 	// Lambda costs (accurate pricing with ARM64 and x86 considerations)
 	invocationCost := (float64(metrics.LambdaInvocations) / 1000000.0) * 0.20 // $0.20 per million requests
-	
+
 	// Compute cost estimate (assuming 512MB memory, ARM64, average 250ms duration)
 	// ARM64 pricing: $0.0000133334 per GB-second
-	memoryGB := 0.512 // 512MB
+	memoryGB := 0.512          // 512MB
 	avgDurationSeconds := 0.25 // 250ms average
 	computeGBSeconds := float64(metrics.LambdaInvocations) * memoryGB * avgDurationSeconds
 	computeCost := computeGBSeconds * 0.0000133334
-	
+
 	lambdaTotalCost := invocationCost + computeCost
 	cost += lambdaTotalCost
 
@@ -412,15 +412,15 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 	// Storage cost (assuming Standard class, $0.023 per GB per month)
 	// Note: This is estimated based on data transfer as proxy for storage
 	estimatedStorageGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024) / 30 // Rough estimate
-	s3StorageCost := estimatedStorageGB * 0.023 / 30 // Daily storage cost
-	
+	s3StorageCost := estimatedStorageGB * 0.023 / 30                                     // Daily storage cost
+
 	// Request costs
 	s3RequestCost := (float64(metrics.S3Requests) / 1000.0) * 0.0004 // $0.0004 per 1,000 PUT/COPY/POST/LIST
-	
+
 	// Data transfer costs (detailed tiers)
 	dataTransferGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024)
 	var dataTransferCost float64
-	
+
 	if dataTransferGB <= 10 { // First 10 GB free per month
 		dataTransferCost = 0
 	} else if dataTransferGB <= 40 { // Next 40 GB at $0.09/GB
@@ -430,7 +430,7 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 	} else { // Over 150 GB at $0.07/GB
 		dataTransferCost = 30*0.09 + 50*0.085 + (dataTransferGB-100)*0.07
 	}
-	
+
 	s3TotalCost := s3StorageCost + s3RequestCost + dataTransferCost
 	cost += s3TotalCost
 
@@ -439,11 +439,11 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 	// Assume 10% of Lambda invocations generate 1KB logs each
 	logDataGB := float64(metrics.LambdaInvocations) * 0.1 * 0.001 / (1024 * 1024) // 1KB per 10% of invocations
 	logCost := logDataGB * 0.50
-	
+
 	// Custom metrics: $0.30 per metric per month
 	// Assume 50 custom metrics for the application
 	customMetricsCost := 50 * 0.30 / 30 // Daily cost
-	
+
 	cloudWatchTotalCost := logCost + customMetricsCost
 	cost += cloudWatchTotalCost
 
@@ -451,7 +451,7 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 	// CloudFront (CDN) - assuming some usage for media delivery
 	cloudFrontCost := dataTransferGB * 0.085 * 0.1 // 10% of data transfer through CloudFront
 	cost += cloudFrontCost
-	
+
 	// SQS costs (for async processing)
 	// Assume 1 SQS message per 10 Lambda invocations
 	sqsRequests := float64(metrics.LambdaInvocations) / 10
@@ -463,7 +463,7 @@ func (r *CloudWatchMetricsRepository) calculateEstimatedCost(metrics *ServiceMet
 
 	r.getLogger().Debug("detailed cost calculation breakdown",
 		zap.Float64("dynamo_read_cost", dynamoReadCost),
-		zap.Float64("dynamo_write_cost", dynamoWriteCost), 
+		zap.Float64("dynamo_write_cost", dynamoWriteCost),
 		zap.Float64("lambda_invocation_cost", invocationCost),
 		zap.Float64("lambda_compute_cost", computeCost),
 		zap.Float64("api_gateway_cost", apiGatewayCost),
@@ -514,7 +514,7 @@ func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, peri
 	estimatedStorageGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024) / 30
 	s3StorageCost := estimatedStorageGB * 0.023 / 30
 	s3RequestCost := (float64(metrics.S3Requests) / 1000.0) * 0.0004
-	
+
 	// Data transfer with tiers
 	dataTransferGB := float64(metrics.DataTransferBytes) / (1024 * 1024 * 1024)
 	var dataTransferCost float64
@@ -527,7 +527,7 @@ func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, peri
 	} else {
 		dataTransferCost = 30*0.09 + 50*0.085 + (dataTransferGB-100)*0.07
 	}
-	
+
 	s3Cost := s3StorageCost + s3RequestCost
 
 	// Additional service costs
@@ -535,7 +535,7 @@ func (r *CloudWatchMetricsRepository) GetCostBreakdown(ctx context.Context, peri
 	logCost := logDataGB * 0.50
 	customMetricsCost := 50 * 0.30 / 30
 	cloudWatchCost := logCost + customMetricsCost
-	
+
 	cloudFrontCost := dataTransferGB * 0.085 * 0.1
 	sqsRequests := float64(metrics.LambdaInvocations) / 10
 	sqsCost := (sqsRequests / 1000000.0) * 0.40
@@ -604,7 +604,9 @@ type CostItem struct {
 func (r *CloudWatchMetricsRepository) getLogger() *zap.Logger {
 	if r.BaseRepository != nil {
 		// Would access BaseRepository's logger if available
-		// return r.BaseRepository.logger
+		// return r.logger
+		// Placeholder for future implementation
+		_ = r.BaseRepository // avoid unused variable warning
 	}
 	// Return a no-op logger for now - in real implementation this would be properly initialized
 	return zap.NewNop()
@@ -635,9 +637,9 @@ func (r *CloudWatchMetricsRepository) CacheMetrics(ctx context.Context, serviceN
 	}
 
 	cacheModel.SetCacheExpiry()
-	
+
 	// Use BaseRepository for DynamoDB caching
-	return r.BaseRepository.Create(ctx, cacheModel)
+	return r.Create(ctx, cacheModel)
 }
 
 // GetCachedMetrics retrieves cached metrics from DynamoDB (OPTIONAL enhancement)
@@ -649,7 +651,7 @@ func (r *CloudWatchMetricsRepository) GetCachedMetrics(ctx context.Context, serv
 
 	// Query for recent cached metrics
 	pk := fmt.Sprintf("SERVICE#%s", serviceName)
-	results, err := r.BaseRepository.Query(ctx, pk, 1) // Get most recent cache entry
+	results, err := r.Query(ctx, pk, 1) // Get most recent cache entry
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityCloudWatchMetrics, "cached metrics")
 	}
@@ -659,7 +661,7 @@ func (r *CloudWatchMetricsRepository) GetCachedMetrics(ctx context.Context, serv
 	}
 
 	cached := results[0]
-	
+
 	// Check if cache has expired
 	if cached.IsExpired() {
 		return nil, ErrorHandler.HandleGetError(storage.ErrNotFound, EntityCloudWatchMetrics, "cached metrics")

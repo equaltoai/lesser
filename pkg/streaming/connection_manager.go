@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConnectionManager manages WebSocket connection lifecycle, health checks, and resource management
@@ -120,17 +120,17 @@ func (cm *ConnectionManager) Stop() error {
 	}
 
 	close(cm.stopChan)
-	
+
 	if cm.healthCheckTicker != nil {
 		cm.healthCheckTicker.Stop()
 	}
-	
+
 	if cm.cleanupTicker != nil {
 		cm.cleanupTicker.Stop()
 	}
 
 	cm.isRunning = false
-	
+
 	// Wait for routines to finish
 	cm.wg.Wait()
 
@@ -206,7 +206,7 @@ func (cm *ConnectionManager) runHealthCheck(ctx context.Context) error {
 	}
 
 	allConns := append(connectedConns, idleConns...)
-	
+
 	if err := common.ValidateSliceNotEmpty("allConns", allConns); err != nil {
 		cm.logger.Debug("no active connections to health check")
 		return nil
@@ -234,7 +234,7 @@ func (cm *ConnectionManager) runHealthCheck(ctx context.Context) error {
 		// Check connection health
 		if conn.IsHealthy() {
 			healthyCount++
-			
+
 			// Send ping to connected connections to check responsiveness
 			if conn.State == models.ConnectionStateConnected {
 				if err := cm.sendPing(ctx, &conn); err != nil {

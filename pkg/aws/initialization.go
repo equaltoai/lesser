@@ -26,36 +26,36 @@ import (
 // ServiceConfig defines which AWS services to initialize
 type ServiceConfig struct {
 	// Service flags - only initialize what's needed
-	RequiresDynamoDB     bool
-	RequiresS3           bool
-	RequiresSQS          bool
-	RequiresCloudWatch   bool
+	RequiresDynamoDB       bool
+	RequiresS3             bool
+	RequiresSQS            bool
+	RequiresCloudWatch     bool
 	RequiresSecretsManager bool
-	RequiresComprehend   bool
-	RequiresMediaConvert bool
-	RequiresSNS          bool
-	RequiresLambda       bool
-	
+	RequiresComprehend     bool
+	RequiresMediaConvert   bool
+	RequiresSNS            bool
+	RequiresLambda         bool
+
 	// Configuration
-	Region          string
-	ServiceName     string
-	RequestTimeout  time.Duration
+	Region           string
+	ServiceName      string
+	RequestTimeout   time.Duration
 	RetryMaxAttempts int
 }
 
 // AWSServices contains initialized AWS service clients
 type AWSServices struct {
-	Config           aws.Config
-	DynamoDB         *dynamodb.Client
-	S3               *s3.Client
-	SQS              *sqs.Client
-	CloudWatch       *cloudwatch.Client
-	SecretsManager   *secretsmanager.Client
-	Comprehend       *comprehend.Client
-	MediaConvert     *mediaconvert.Client
-	SNS              *sns.Client
-	Lambda           *awslambda.Client
-	Logger           *zap.Logger
+	Config         aws.Config
+	DynamoDB       *dynamodb.Client
+	S3             *s3.Client
+	SQS            *sqs.Client
+	CloudWatch     *cloudwatch.Client
+	SecretsManager *secretsmanager.Client
+	Comprehend     *comprehend.Client
+	MediaConvert   *mediaconvert.Client
+	SNS            *sns.Client
+	Lambda         *awslambda.Client
+	Logger         *zap.Logger
 }
 
 // InitializeServices creates AWS service clients based on configuration
@@ -72,11 +72,11 @@ func InitializeServices(ctx context.Context, serviceConfig ServiceConfig, logger
 			serviceConfig.Region = "us-east-1"
 		}
 	}
-	
+
 	if serviceConfig.RequestTimeout == 0 {
 		serviceConfig.RequestTimeout = 30 * time.Second
 	}
-	
+
 	if serviceConfig.RetryMaxAttempts == 0 {
 		serviceConfig.RetryMaxAttempts = 3
 	}
@@ -221,108 +221,108 @@ func InitializeWithConfig(awsConfig aws.Config, serviceConfig ServiceConfig, log
 // APIServiceConfig returns config for API Lambda functions
 func APIServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           true,
-		RequiresCloudWatch:   true,
+		RequiresDynamoDB:       true,
+		RequiresS3:             true,
+		RequiresCloudWatch:     true,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   false,
-		RequiresMediaConvert: false,
-		RequiresSQS:          false,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "api",
-		RequestTimeout:       30 * time.Second,
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     false,
+		RequiresMediaConvert:   false,
+		RequiresSQS:            false,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "api",
+		RequestTimeout:         30 * time.Second,
+		RetryMaxAttempts:       3,
 	}
 }
 
 // ProcessorServiceConfig returns config for processor Lambda functions
 func ProcessorServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           false,
-		RequiresCloudWatch:   true,
+		RequiresDynamoDB:       true,
+		RequiresS3:             false,
+		RequiresCloudWatch:     true,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   false,
-		RequiresMediaConvert: false,
-		RequiresSQS:          true,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "processor",
-		RequestTimeout:       30 * time.Second,
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     false,
+		RequiresMediaConvert:   false,
+		RequiresSQS:            true,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "processor",
+		RequestTimeout:         30 * time.Second,
+		RetryMaxAttempts:       3,
 	}
 }
 
 // MediaServiceConfig returns config for media processing Lambda functions
 func MediaServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           true,
-		RequiresCloudWatch:   true,
+		RequiresDynamoDB:       true,
+		RequiresS3:             true,
+		RequiresCloudWatch:     true,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   false,
-		RequiresMediaConvert: true,
-		RequiresSQS:          true,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "media",
-		RequestTimeout:       5 * time.Minute, // Media processing takes longer
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     false,
+		RequiresMediaConvert:   true,
+		RequiresSQS:            true,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "media",
+		RequestTimeout:         5 * time.Minute, // Media processing takes longer
+		RetryMaxAttempts:       3,
 	}
 }
 
 // FederationServiceConfig returns config for federation Lambda functions
 func FederationServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           false,
-		RequiresCloudWatch:   true,
+		RequiresDynamoDB:       true,
+		RequiresS3:             false,
+		RequiresCloudWatch:     true,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   false,
-		RequiresMediaConvert: false,
-		RequiresSQS:          true,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "federation",
-		RequestTimeout:       30 * time.Second,
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     false,
+		RequiresMediaConvert:   false,
+		RequiresSQS:            true,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "federation",
+		RequestTimeout:         30 * time.Second,
+		RetryMaxAttempts:       3,
 	}
 }
 
 // AIServiceConfig returns config for AI processing Lambda functions
 func AIServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           true,
-		RequiresCloudWatch:   true,
+		RequiresDynamoDB:       true,
+		RequiresS3:             true,
+		RequiresCloudWatch:     true,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   true,
-		RequiresMediaConvert: false,
-		RequiresSQS:          true,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "ai",
-		RequestTimeout:       2 * time.Minute, // AI processing takes longer
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     true,
+		RequiresMediaConvert:   false,
+		RequiresSQS:            true,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "ai",
+		RequestTimeout:         2 * time.Minute, // AI processing takes longer
+		RetryMaxAttempts:       3,
 	}
 }
 
 // BasicServiceConfig returns a minimal config for simple Lambda functions
 func BasicServiceConfig() ServiceConfig {
 	return ServiceConfig{
-		RequiresDynamoDB:     true,
-		RequiresS3:           false,
-		RequiresCloudWatch:   false,
+		RequiresDynamoDB:       true,
+		RequiresS3:             false,
+		RequiresCloudWatch:     false,
 		RequiresSecretsManager: false,
-		RequiresComprehend:   false,
-		RequiresMediaConvert: false,
-		RequiresSQS:          false,
-		RequiresSNS:          false,
-		RequiresLambda:       false,
-		ServiceName:          "basic",
-		RequestTimeout:       30 * time.Second,
-		RetryMaxAttempts:     3,
+		RequiresComprehend:     false,
+		RequiresMediaConvert:   false,
+		RequiresSQS:            false,
+		RequiresSNS:            false,
+		RequiresLambda:         false,
+		ServiceName:            "basic",
+		RequestTimeout:         30 * time.Second,
+		RetryMaxAttempts:       3,
 	}
 }
 

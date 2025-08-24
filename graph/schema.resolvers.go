@@ -7793,7 +7793,7 @@ func (r *trustEdgeResolver) From(ctx context.Context, edge *trust.TrustEdge) (*a
 	// Fetch the actor from storage
 	actor, err := actorRepo.GetActor(ctx, edge.From)
 	if err != nil {
-		return nil, errors.Join(errors.New(fmt.Sprintf("failed to get actor %s", edge.From)), err)
+		return nil, errors.Join(fmt.Errorf("failed to get actor %s", edge.From), err)
 	}
 
 	return actor, nil
@@ -7814,7 +7814,7 @@ func (r *trustEdgeResolver) To(ctx context.Context, edge *trust.TrustEdge) (*act
 	// Fetch the actor from storage
 	actor, err := actorRepo.GetActor(ctx, edge.To)
 	if err != nil {
-		return nil, errors.Join(errors.New(fmt.Sprintf("failed to get actor %s", edge.To)), err)
+		return nil, errors.Join(fmt.Errorf("failed to get actor %s", edge.To), err)
 	}
 
 	return actor, nil

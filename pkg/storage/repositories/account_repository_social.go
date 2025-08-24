@@ -446,7 +446,7 @@ func (r *AccountRepository) AddBookmark(ctx context.Context, username, objectID 
 	}
 
 	// Update keys using the model's UpdateKeys method
-	bookmark.UpdateKeys()
+	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.db.WithContext(ctx).Model(bookmark).Create()
 	if err != nil {

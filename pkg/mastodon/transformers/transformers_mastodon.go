@@ -147,11 +147,11 @@ func (t *MastodonTransformer) StorageNotificationToMastodon(notif *storageModels
 		Type:      notif.Type,
 		CreatedAt: notif.CreatedAt,
 	}
-	
+
 	if account != nil {
 		apiNotif.Account = *account
 	}
-	
+
 	if status != nil {
 		apiNotif.Status = status
 	}
@@ -265,9 +265,9 @@ func (t *MastodonTransformer) FormatMastodonError(err error) map[string]interfac
 	}
 
 	return map[string]interface{}{
-		"error":       err.Error(),
-		"error_type":  fmt.Sprintf("%T", err),
-		"timestamp":   time.Now().Format(time.RFC3339),
+		"error":      err.Error(),
+		"error_type": fmt.Sprintf("%T", err),
+		"timestamp":  time.Now().Format(time.RFC3339),
 	}
 }
 
@@ -404,11 +404,11 @@ func (t *MastodonTransformer) TransformStorageEmojiToMastodon(emojis []interface
 func (t *MastodonTransformer) transformSingleEmoji(emoji interface{}) map[string]interface{} {
 	if emojiMap, ok := emoji.(map[string]interface{}); ok {
 		return map[string]interface{}{
-			"shortcode":       t.getEmojiShortcode(emojiMap),
-			"url":            t.getEmojiURL(emojiMap),
-			"static_url":     t.getEmojiStaticURL(emojiMap),
+			"shortcode":         t.getEmojiShortcode(emojiMap),
+			"url":               t.getEmojiURL(emojiMap),
+			"static_url":        t.getEmojiStaticURL(emojiMap),
 			"visible_in_picker": true,
-			"category":       nil,
+			"category":          nil,
 		}
 	}
 	return nil
@@ -521,7 +521,7 @@ func (ct *CachedTransformer) ClearCache() {
 func (t *MastodonTransformer) enrichAccountWithActor(account *models.Account, actor *activitypub.Actor) *models.Account {
 	// Use existing transformation framework
 	enrichedAccount := transformations.ActorToAccountBase(actor, t.baseURL)
-	
+
 	// Merge with existing account data, preserving storage-specific fields
 	enrichedAccount.ID = account.ID
 	if account.DisplayName != "" {

@@ -30,7 +30,7 @@ func (c *InstanceConfig) GetPK() string {
 	return c.PK
 }
 
-// GetSK returns the sort key  
+// GetSK returns the sort key
 func (c *InstanceConfig) GetSK() string {
 	return c.SK
 }

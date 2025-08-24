@@ -21,7 +21,7 @@ import (
 const (
 	// EventInsert represents a DynamoDB stream insert event
 	EventInsert = "INSERT"
-	// EventModify represents a DynamoDB stream modify event  
+	// EventModify represents a DynamoDB stream modify event
 	EventModify = "MODIFY"
 	// EventRemove represents a DynamoDB stream remove event
 	EventRemove = "REMOVE"
@@ -67,10 +67,10 @@ func NewRealtimeAggregationService(
 
 // AggregationCache provides in-memory caching for real-time aggregations
 type AggregationCache struct {
-	costSummaries    map[string]*SummaryCache
-	alertThresholds  map[string]*AlertThreshold
-	lastAggregation  map[string]time.Time
-	mu               sync.RWMutex
+	costSummaries   map[string]*SummaryCache
+	alertThresholds map[string]*AlertThreshold
+	lastAggregation map[string]time.Time
+	mu              sync.RWMutex
 }
 
 // SummaryCache represents cached cost summary data
@@ -113,40 +113,40 @@ type StreamMetrics struct {
 
 // RealTimeMetrics represents live cost metrics
 type RealTimeMetrics struct {
-	Timestamp           time.Time                  `json:"timestamp"`
-	TotalCostLast1Min   float64                    `json:"total_cost_last_1min"`
-	TotalCostLast5Min   float64                    `json:"total_cost_last_5min"`
-	TotalCostLast15Min  float64                    `json:"total_cost_last_15min"`
-	TotalCostLastHour   float64                    `json:"total_cost_last_hour"`
-	CostVelocity        float64                    `json:"cost_velocity"`        // Cost per minute
-	CostAcceleration    float64                    `json:"cost_acceleration"`    // Change in velocity
-	TopCostOperations   []OperationCost           `json:"top_cost_operations"`
-	AnomalyScore        float64                    `json:"anomaly_score"`        // 0-1, higher = more anomalous
-	AlertsTriggered     []RealTimeAlert           `json:"alerts_triggered"`
-	PredictedDailyCost  float64                    `json:"predicted_daily_cost"` // Extrapolated from current rate
-	BudgetStatus        map[string]BudgetStatus   `json:"budget_status"`
-	PerformanceMetrics  map[string]float64        `json:"performance_metrics"`
+	Timestamp          time.Time               `json:"timestamp"`
+	TotalCostLast1Min  float64                 `json:"total_cost_last_1min"`
+	TotalCostLast5Min  float64                 `json:"total_cost_last_5min"`
+	TotalCostLast15Min float64                 `json:"total_cost_last_15min"`
+	TotalCostLastHour  float64                 `json:"total_cost_last_hour"`
+	CostVelocity       float64                 `json:"cost_velocity"`     // Cost per minute
+	CostAcceleration   float64                 `json:"cost_acceleration"` // Change in velocity
+	TopCostOperations  []OperationCost         `json:"top_cost_operations"`
+	AnomalyScore       float64                 `json:"anomaly_score"` // 0-1, higher = more anomalous
+	AlertsTriggered    []RealTimeAlert         `json:"alerts_triggered"`
+	PredictedDailyCost float64                 `json:"predicted_daily_cost"` // Extrapolated from current rate
+	BudgetStatus       map[string]BudgetStatus `json:"budget_status"`
+	PerformanceMetrics map[string]float64      `json:"performance_metrics"`
 }
 
 // OperationCost represents cost for a specific operation type
 type OperationCost struct {
-	OperationType string  `json:"operation_type"`
-	CostDollars   float64 `json:"cost_dollars"`
-	OperationCount int64  `json:"operation_count"`
-	AvgCostPer    float64 `json:"avg_cost_per"`
-	TrendDirection string `json:"trend_direction"`
+	OperationType  string  `json:"operation_type"`
+	CostDollars    float64 `json:"cost_dollars"`
+	OperationCount int64   `json:"operation_count"`
+	AvgCostPer     float64 `json:"avg_cost_per"`
+	TrendDirection string  `json:"trend_direction"`
 }
 
 // RealTimeAlert represents a triggered real-time alert
 type RealTimeAlert struct {
-	AlertID     string    `json:"alert_id"`
-	MetricName  string    `json:"metric_name"`
-	CurrentValue float64  `json:"current_value"`
-	Threshold   float64   `json:"threshold"`
-	Severity    string    `json:"severity"`
-	Message     string    `json:"message"`
-	TriggeredAt time.Time `json:"triggered_at"`
-	Duration    string    `json:"duration"`
+	AlertID      string    `json:"alert_id"`
+	MetricName   string    `json:"metric_name"`
+	CurrentValue float64   `json:"current_value"`
+	Threshold    float64   `json:"threshold"`
+	Severity     string    `json:"severity"`
+	Message      string    `json:"message"`
+	TriggeredAt  time.Time `json:"triggered_at"`
+	Duration     string    `json:"duration"`
 }
 
 // BudgetStatus represents current budget utilization
@@ -154,10 +154,10 @@ type BudgetStatus struct {
 	BudgetName    string  `json:"budget_name"`
 	BudgetAmount  float64 `json:"budget_amount"`
 	CurrentSpend  float64 `json:"current_spend"`
-	Utilization   float64 `json:"utilization"`   // Percentage used
-	BurnRate      float64 `json:"burn_rate"`     // Daily burn rate
+	Utilization   float64 `json:"utilization"`    // Percentage used
+	BurnRate      float64 `json:"burn_rate"`      // Daily burn rate
 	DaysRemaining float64 `json:"days_remaining"` // Days until budget exhausted
-	Status        string  `json:"status"`        // ok, warning, critical, exceeded
+	Status        string  `json:"status"`         // ok, warning, critical, exceeded
 }
 
 // NewAggregationCache creates a new aggregation cache
@@ -184,7 +184,7 @@ func NewStreamProcessor(processorType string, handler func(ctx context.Context, 
 // ProcessDynamoDBStreamEvent processes DynamoDB stream events for real-time aggregation
 func (s *RealtimeAggregationService) ProcessDynamoDBStreamEvent(ctx context.Context, event events.DynamoDBEvent) error {
 	startTime := time.Now()
-	
+
 	s.logger.Info("Processing DynamoDB stream event for real-time aggregation",
 		zap.Int("record_count", len(event.Records)),
 		zap.String("event_source", "dynamodb"))
@@ -252,7 +252,7 @@ func (s *RealtimeAggregationService) determineRecordType(record events.DynamoDBE
 	// Check primary key to determine record type
 	if pk, exists := record.Change.Keys["PK"]; exists && pk.String() != "" {
 		pkValue := pk.String()
-		
+
 		if len(pkValue) > 8 && pkValue[:8] == "AI_COST#" {
 			return "ai_cost"
 		}
@@ -420,7 +420,7 @@ func (s *RealtimeAggregationService) processFederationCostRecord(_ context.Conte
 // unmarshalDynamoDBRecord unmarshals a DynamoDB stream record into a struct
 func (s *RealtimeAggregationService) unmarshalDynamoDBRecord(record events.DynamoDBEventRecord, target interface{}) error {
 	var recordData map[string]events.DynamoDBAttributeValue
-	
+
 	switch record.EventName {
 	case "INSERT", "MODIFY":
 		recordData = record.Change.NewImage
@@ -485,7 +485,7 @@ func (s *RealtimeAggregationService) updateSummaryCache(cacheKey string, costDol
 	defer s.aggregationCache.mu.Unlock()
 
 	now := time.Now()
-	
+
 	// Get or create cache entry
 	summary, exists := s.aggregationCache.costSummaries[cacheKey]
 	if !exists {
@@ -583,7 +583,7 @@ func (s *RealtimeAggregationService) shouldCreateDailyAggregation(timestamp time
 
 	dateKey := timestamp.Format("2006-01-02")
 	lastAgg, exists := s.aggregationCache.lastAggregation[dateKey]
-	
+
 	if !exists {
 		s.aggregationCache.lastAggregation[dateKey] = timestamp
 		return true
@@ -599,7 +599,7 @@ func (s *RealtimeAggregationService) updateAggregationCache(_ context.Context) e
 	defer s.aggregationCache.mu.Unlock()
 
 	now := time.Now()
-	
+
 	// Clean up expired cache entries
 	for key, summary := range s.aggregationCache.costSummaries {
 		if now.After(summary.ExpiresAt) {
@@ -622,7 +622,7 @@ func (s *RealtimeAggregationService) checkAlertConditions(_ context.Context) err
 
 		// Get current metric value
 		currentValue := s.getCurrentMetricValue(threshold.MetricName)
-		
+
 		// Check threshold condition
 		if s.evaluateThreshold(currentValue, threshold.Threshold, threshold.ComparisonOp) {
 			alert := RealTimeAlert{
@@ -699,10 +699,10 @@ func (s *RealtimeAggregationService) GetRealTimeMetrics(_ context.Context) (*Rea
 
 	now := time.Now()
 	metrics := &RealTimeMetrics{
-		Timestamp:         now,
-		TopCostOperations: []OperationCost{},
-		AlertsTriggered:   []RealTimeAlert{},
-		BudgetStatus:      make(map[string]BudgetStatus),
+		Timestamp:          now,
+		TopCostOperations:  []OperationCost{},
+		AlertsTriggered:    []RealTimeAlert{},
+		BudgetStatus:       make(map[string]BudgetStatus),
 		PerformanceMetrics: make(map[string]float64),
 	}
 
@@ -803,19 +803,19 @@ func (s *RealtimeAggregationService) evaluateThreshold(current, threshold float6
 
 func (s *RealtimeAggregationService) calculateCostForWindow(start, end time.Time) float64 {
 	totalCost := 0.0
-	
+
 	for _, summary := range s.aggregationCache.costSummaries {
 		if summary.LastUpdated.After(start) && summary.LastUpdated.Before(end) {
 			totalCost += summary.TotalCost
 		}
 	}
-	
+
 	return totalCost
 }
 
 func (s *RealtimeAggregationService) getTopCostOperations(limit int) []OperationCost {
 	operationCosts := make(map[string]OperationCost)
-	
+
 	// Aggregate costs by operation type
 	for _, summary := range s.aggregationCache.costSummaries {
 		for opType, count := range summary.OperationCounts {
@@ -833,7 +833,7 @@ func (s *RealtimeAggregationService) getTopCostOperations(limit int) []Operation
 			}
 		}
 	}
-	
+
 	// Calculate average cost per operation
 	for opType, cost := range operationCosts {
 		if cost.OperationCount > 0 {
@@ -841,48 +841,48 @@ func (s *RealtimeAggregationService) getTopCostOperations(limit int) []Operation
 			operationCosts[opType] = cost
 		}
 	}
-	
+
 	// Convert to slice and sort by cost
 	var costs []OperationCost
 	for _, cost := range operationCosts {
 		costs = append(costs, cost)
 	}
-	
+
 	sort.Slice(costs, func(i, j int) bool {
 		return costs[i].CostDollars > costs[j].CostDollars
 	})
-	
+
 	// Limit results
 	if len(costs) > limit {
 		costs = costs[:limit]
 	}
-	
+
 	return costs
 }
 
 func (s *RealtimeAggregationService) calculateAnomalyScore(metrics *RealTimeMetrics) float64 {
 	score := 0.0
-	
+
 	// High cost velocity increases anomaly score
 	if metrics.CostVelocity > 1.0 { // $1/minute threshold
 		score += 0.3
 	}
-	
+
 	// High cost acceleration increases anomaly score
 	if metrics.CostAcceleration > 0.5 {
 		score += 0.4
 	}
-	
+
 	// Rapid cost increase from last period
 	if metrics.TotalCostLast1Min > metrics.TotalCostLast5Min/5.0*2.0 {
 		score += 0.3
 	}
-	
+
 	// Cap at 1.0
 	if score > 1.0 {
 		score = 1.0
 	}
-	
+
 	return score
 }
 
@@ -894,7 +894,7 @@ func (s *RealtimeAggregationService) calculateCacheHitRate() float64 {
 func (s *RealtimeAggregationService) getAverageProcessingLatency() float64 {
 	totalLatency := int64(0)
 	count := 0
-	
+
 	s.mu.RLock()
 	for _, processor := range s.streamProcessors {
 		if processor.metrics.ProcessingTimeMs > 0 {
@@ -903,11 +903,11 @@ func (s *RealtimeAggregationService) getAverageProcessingLatency() float64 {
 		}
 	}
 	s.mu.RUnlock()
-	
+
 	if count > 0 {
 		return float64(totalLatency) / float64(count)
 	}
-	
+
 	return 0
 }
 
@@ -915,7 +915,7 @@ func (s *RealtimeAggregationService) getAverageProcessingLatency() float64 {
 func (s *RealtimeAggregationService) SetAlertThreshold(threshold *AlertThreshold) {
 	s.aggregationCache.mu.Lock()
 	defer s.aggregationCache.mu.Unlock()
-	
+
 	s.aggregationCache.alertThresholds[threshold.MetricName] = threshold
 }
 
@@ -923,11 +923,11 @@ func (s *RealtimeAggregationService) SetAlertThreshold(threshold *AlertThreshold
 func (s *RealtimeAggregationService) GetStreamMetrics() map[string]*StreamMetrics {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	
+
 	metrics := make(map[string]*StreamMetrics)
 	for name, processor := range s.streamProcessors {
 		metrics[name] = processor.metrics
 	}
-	
+
 	return metrics
 }

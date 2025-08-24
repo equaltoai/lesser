@@ -2723,7 +2723,15 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 		}
 
 		// Update keys
-		timelineEntry.UpdateKeys()
+		if err := timelineEntry.UpdateKeys(); err != nil {
+			h.Logger.Warn("failed to update timeline entry keys",
+				zap.String("timeline_type", timelineEntry.TimelineType),
+				zap.String("timeline_id", timelineEntry.TimelineID),
+				zap.Error(err),
+			)
+			// Continue processing other entries
+			continue
+		}
 		timelineEntries = append(timelineEntries, timelineEntry)
 	}
 

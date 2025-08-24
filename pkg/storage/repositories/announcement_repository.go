@@ -26,7 +26,7 @@ type AnnouncementRepository struct {
 func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger) *AnnouncementRepository {
 	// Use cost tracking version of BaseRepository
 	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, nil, "AnnouncementRepository")
-	
+
 	return &AnnouncementRepository{
 		BaseRepository: baseRepo,
 		db:             db,
@@ -38,7 +38,7 @@ func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger)
 // NewAnnouncementRepositoryWithCostTracking creates a new announcement repository with cost tracking
 func NewAnnouncementRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AnnouncementRepository {
 	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, costService, "AnnouncementRepository")
-	
+
 	return &AnnouncementRepository{
 		BaseRepository: baseRepo,
 		db:             db,
@@ -191,7 +191,7 @@ func (r *AnnouncementRepository) GetAnnouncement(ctx context.Context, id string)
 	var modelAnnouncement models.Announcement
 	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
 	sk := "ANNOUNCEMENT"
-	
+
 	// Use BaseRepository Get method for cost tracking
 	err := r.Get(ctx, pk, sk, &modelAnnouncement)
 	if err != nil {
@@ -429,7 +429,7 @@ func (r *AnnouncementRepository) DeleteAnnouncement(ctx context.Context, id stri
 	// Delete the announcement using BaseRepository
 	pk := fmt.Sprintf("ANNOUNCEMENT#%s", id)
 	sk := "ANNOUNCEMENT"
-	
+
 	// Use BaseRepository Delete method for cost tracking
 	err := r.Delete(ctx, pk, sk)
 	if err != nil {

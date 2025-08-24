@@ -258,7 +258,7 @@ func TestURLValidation(t *testing.T) {
 			hasError := err != nil
 
 			if hasError != tt.shouldError {
-				t.Errorf("Expected error=%v, got error=%v for %s. Error: %v", 
+				t.Errorf("Expected error=%v, got error=%v for %s. Error: %v",
 					tt.shouldError, hasError, tt.description, err)
 			}
 		})
@@ -337,7 +337,7 @@ func TestIPValidation(t *testing.T) {
 			hasError := err != nil
 
 			if hasError != tt.shouldError {
-				t.Errorf("Expected error=%v, got error=%v for %s. Error: %v", 
+				t.Errorf("Expected error=%v, got error=%v for %s. Error: %v",
 					tt.shouldError, hasError, tt.description, err)
 			}
 		})
@@ -400,34 +400,34 @@ func TestURLNormalization(t *testing.T) {
 
 func TestSecurityValidation(t *testing.T) {
 	tests := []struct {
-		name           string
-		pattern        string
-		shouldBeSafe   bool
-		description    string
+		name         string
+		pattern      string
+		shouldBeSafe bool
+		description  string
 	}{
 		{
-			name:        "safe_pattern",
-			pattern:     "example.com",
+			name:         "safe_pattern",
+			pattern:      "example.com",
 			shouldBeSafe: true,
-			description: "Simple domain pattern should be safe",
+			description:  "Simple domain pattern should be safe",
 		},
 		{
-			name:        "redos_vulnerable",
-			pattern:     "(.*)+",
+			name:         "redos_vulnerable",
+			pattern:      "(.*)+",
 			shouldBeSafe: false,
-			description: "ReDoS vulnerable pattern should be detected",
+			description:  "ReDoS vulnerable pattern should be detected",
 		},
 		{
-			name:        "nested_quantifiers",
-			pattern:     "(.*){2,}",
+			name:         "nested_quantifiers",
+			pattern:      "(.*){2,}",
 			shouldBeSafe: false,
-			description: "Nested quantifiers should be detected",
+			description:  "Nested quantifiers should be detected",
 		},
 		{
-			name:        "multiple_greedy_quantifiers",
-			pattern:     ".*.*.*.*",
+			name:         "multiple_greedy_quantifiers",
+			pattern:      ".*.*.*.*",
 			shouldBeSafe: false,
-			description: "Multiple greedy quantifiers should be detected",
+			description:  "Multiple greedy quantifiers should be detected",
 		},
 	}
 
@@ -437,7 +437,7 @@ func TestSecurityValidation(t *testing.T) {
 			isSafe := err == nil
 
 			if isSafe != tt.shouldBeSafe {
-				t.Errorf("Expected safe=%v, got safe=%v for %s. Error: %v", 
+				t.Errorf("Expected safe=%v, got safe=%v for %s. Error: %v",
 					tt.shouldBeSafe, isSafe, tt.description, err)
 			}
 		})
@@ -446,7 +446,7 @@ func TestSecurityValidation(t *testing.T) {
 
 func BenchmarkURLMatching(b *testing.B) {
 	matcher := NewEnhancedURLMatcher()
-	
+
 	// Compile some test patterns
 	patterns := []string{
 		"example.com",
@@ -454,21 +454,21 @@ func BenchmarkURLMatching(b *testing.B) {
 		"/api/*",
 		"https://exact.match.com",
 	}
-	
+
 	patternTypes := []URLPatternType{
 		URLPatternDomain,
 		URLPatternSubdomain,
 		URLPatternPath,
 		URLPatternExact,
 	}
-	
+
 	for i, pattern := range patterns {
 		err := matcher.CompileURLPattern(pattern, patternTypes[i])
 		if err != nil {
 			b.Fatalf("Failed to compile pattern: %v", err)
 		}
 	}
-	
+
 	testURLs := []string{
 		"https://example.com/test",
 		"https://sub.malicious.com/bad",
@@ -486,7 +486,7 @@ func BenchmarkURLMatching(b *testing.B) {
 
 func BenchmarkIPMatching(b *testing.B) {
 	matcher := NewEnhancedIPMatcher()
-	
+
 	// Compile some test patterns
 	patterns := []string{
 		"192.168.1.1",
@@ -494,21 +494,21 @@ func BenchmarkIPMatching(b *testing.B) {
 		"172.16.0.1-172.16.0.100",
 		"2001:db8::/32",
 	}
-	
+
 	patternTypes := []IPPatternType{
 		IPPatternSingle,
 		IPPatternCIDR,
 		IPPatternRange,
 		IPPatternCIDR,
 	}
-	
+
 	for i, pattern := range patterns {
 		err := matcher.CompileIPPattern(pattern, patternTypes[i])
 		if err != nil {
 			b.Fatalf("Failed to compile pattern: %v", err)
 		}
 	}
-	
+
 	testIPs := []string{
 		"192.168.1.1",
 		"10.0.0.50",

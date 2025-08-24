@@ -47,17 +47,17 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move to IA after 30 days
-				StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+				StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 			},
 			{
 				// Move to Glacier Instant Retrieval after 90 days
-				StorageClass: awss3.StorageClass_GLACIER_INSTANT_RETRIEVAL(),
+				StorageClass:    awss3.StorageClass_GLACIER_INSTANT_RETRIEVAL(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(90)),
 			},
 			{
 				// Move to Glacier Flexible Retrieval after 180 days
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(180)),
 			},
 		},
@@ -65,25 +65,25 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 
 	// Delete old temporary files in temp/ prefix
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("delete-temp-files"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("temp/"),
+		Id:         jsii.String("delete-temp-files"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("temp/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(1)), // Delete temp files after 1 day
 	})
 
 	// Delete old thumbnails (they can be regenerated if needed)
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("delete-old-thumbnails"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("thumbnails/"),
+		Id:         jsii.String("delete-old-thumbnails"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("thumbnails/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(365)), // Delete thumbnails after 1 year
 	})
 
 	// Handle orphaned uploads (uploads that weren't properly associated)
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("delete-orphaned-uploads"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("uploads/orphaned/"),
+		Id:         jsii.String("delete-orphaned-uploads"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("uploads/orphaned/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(30)), // Delete orphaned uploads after 30 days
 	})
 
@@ -91,9 +91,9 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 	if config.Environment == "development" || config.Environment == "staging" {
 		// More aggressive cleanup in non-production environments
 		config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-			Id:      jsii.String("dev-cleanup"),
-			Enabled: jsii.Bool(true),
-			Prefix:  jsii.String("test/"),
+			Id:         jsii.String("dev-cleanup"),
+			Enabled:    jsii.Bool(true),
+			Prefix:     jsii.String("test/"),
 			Expiration: awscdk.Duration_Days(jsii.Number(7)), // Delete test files after 7 days
 		})
 	}
@@ -106,7 +106,7 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move deleted content to Glacier after 7 days
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(7)),
 			},
 		},
@@ -122,7 +122,7 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move to IA after 60 days (avatars rarely change)
-				StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+				StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(60)),
 			},
 		},
@@ -130,19 +130,19 @@ func applyMediaBucketPolicies(config *S3LifecycleConfig) {
 
 	// Handle media from deleted accounts
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("cleanup-deleted-accounts"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("accounts/deleted/"),
+		Id:         jsii.String("cleanup-deleted-accounts"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("accounts/deleted/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(30)), // Delete after 30 days per GDPR
 	})
 
 	// Expire old versions (if versioning is enabled)
 	if config.Environment == "production" {
 		config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-			Id:      jsii.String("expire-old-versions"),
-			Enabled: jsii.Bool(true),
+			Id:                          jsii.String("expire-old-versions"),
+			Enabled:                     jsii.Bool(true),
 			NoncurrentVersionExpiration: awscdk.Duration_Days(jsii.Number(30)), // Delete old versions after 30 days
-			ExpiredObjectDeleteMarker: jsii.Bool(true), // Clean up delete markers
+			ExpiredObjectDeleteMarker:   jsii.Bool(true),                       // Clean up delete markers
 		})
 	}
 }
@@ -156,12 +156,12 @@ func applyLogBucketPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move to IA after 30 days
-				StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+				StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 			},
 			{
 				// Move to Glacier after 60 days
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(60)),
 			},
 		},
@@ -179,8 +179,8 @@ func applyLogBucketPolicies(config *S3LifecycleConfig) {
 	}
 
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("delete-old-logs"),
-		Enabled: jsii.Bool(true),
+		Id:         jsii.String("delete-old-logs"),
+		Enabled:    jsii.Bool(true),
 		Expiration: awscdk.Duration_Days(jsii.Number(retentionDays)),
 	})
 
@@ -201,17 +201,17 @@ func applyBackupBucketPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move to IA after 7 days
-				StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+				StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(7)),
 			},
 			{
 				// Move to Glacier after 30 days
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 			},
 			{
 				// Move to Deep Archive after 90 days
-				StorageClass: awss3.StorageClass_DEEP_ARCHIVE(),
+				StorageClass:    awss3.StorageClass_DEEP_ARCHIVE(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(90)),
 			},
 		},
@@ -219,31 +219,31 @@ func applyBackupBucketPolicies(config *S3LifecycleConfig) {
 
 	// Retention policy based on backup type
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("daily-backup-retention"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("daily/"),
+		Id:         jsii.String("daily-backup-retention"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("daily/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(30)), // Keep daily backups for 30 days
 	})
 
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("weekly-backup-retention"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("weekly/"),
+		Id:         jsii.String("weekly-backup-retention"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("weekly/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(90)), // Keep weekly backups for 90 days
 	})
 
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("monthly-backup-retention"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("monthly/"),
+		Id:         jsii.String("monthly-backup-retention"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("monthly/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(365)), // Keep monthly backups for 1 year
 	})
 
 	// Clean up failed backups
 	config.Bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("cleanup-failed-backups"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("failed/"),
+		Id:         jsii.String("cleanup-failed-backups"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("failed/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(7)), // Delete failed backups after 7 days
 	})
 }
@@ -258,12 +258,12 @@ func applyCloudFrontLogPolicies(config *S3LifecycleConfig) {
 		Transitions: &[]*awss3.Transition{
 			{
 				// Move to IA after 7 days
-				StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+				StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(7)),
 			},
 			{
 				// Move to Glacier after 30 days
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 			},
 		},
@@ -295,7 +295,7 @@ func applyDefaultPolicies(config *S3LifecycleConfig) {
 			Enabled: jsii.Bool(true),
 			Transitions: &[]*awss3.Transition{
 				{
-					StorageClass: awss3.StorageClass_INFREQUENT_ACCESS(),
+					StorageClass:    awss3.StorageClass_INFREQUENT_ACCESS(),
 					TransitionAfter: awscdk.Duration_Days(jsii.Number(90)),
 				},
 			},
@@ -306,7 +306,7 @@ func applyDefaultPolicies(config *S3LifecycleConfig) {
 // CreateExportBucketWithLifecycle creates an S3 bucket for data exports with lifecycle policies
 func CreateExportBucketWithLifecycle(scope awscdk.Stack, environment string) awss3.Bucket {
 	isProd := environment == "production"
-	
+
 	bucket := awss3.NewBucket(scope, jsii.String("ExportBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(fmt.Sprintf("lesser-exports-%s", environment)),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
@@ -319,9 +319,9 @@ func CreateExportBucketWithLifecycle(scope awscdk.Stack, environment string) aws
 	// Apply export-specific lifecycle policies
 	// User exports are temporary and should be cleaned up
 	bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("delete-old-exports"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("exports/"),
+		Id:         jsii.String("delete-old-exports"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("exports/"),
 		Expiration: awscdk.Duration_Days(jsii.Number(30)), // Delete exports after 30 days
 	})
 
@@ -339,7 +339,7 @@ func CreateExportBucketWithLifecycle(scope awscdk.Stack, environment string) aws
 		Prefix:  jsii.String("exports/completed/"),
 		Transitions: &[]*awss3.Transition{
 			{
-				StorageClass: awss3.StorageClass_GLACIER(),
+				StorageClass:    awss3.StorageClass_GLACIER(),
 				TransitionAfter: awscdk.Duration_Days(jsii.Number(7)), // Archive after 7 days
 			},
 		},
@@ -352,7 +352,7 @@ func CreateExportBucketWithLifecycle(scope awscdk.Stack, environment string) aws
 // CreateCacheBucketWithLifecycle creates an S3 bucket for caching with aggressive cleanup
 func CreateCacheBucketWithLifecycle(scope awscdk.Stack, environment string) awss3.Bucket {
 	isProd := environment == "production"
-	
+
 	bucket := awss3.NewBucket(scope, jsii.String("CacheBucket"), &awss3.BucketProps{
 		BucketName:        jsii.String(fmt.Sprintf("lesser-cache-%s", environment)),
 		Encryption:        awss3.BucketEncryption_S3_MANAGED,
@@ -363,16 +363,16 @@ func CreateCacheBucketWithLifecycle(scope awscdk.Stack, environment string) awss
 
 	// Aggressive cache cleanup
 	bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("expire-cache"),
-		Enabled: jsii.Bool(true),
+		Id:         jsii.String("expire-cache"),
+		Enabled:    jsii.Bool(true),
 		Expiration: awscdk.Duration_Days(jsii.Number(1)), // Expire all cache after 1 day
 	})
 
 	// Even more aggressive for specific cache types
 	bucket.AddLifecycleRule(&awss3.LifecycleRule{
-		Id:      jsii.String("expire-temp-cache"),
-		Enabled: jsii.Bool(true),
-		Prefix:  jsii.String("temp/"),
+		Id:         jsii.String("expire-temp-cache"),
+		Enabled:    jsii.Bool(true),
+		Prefix:     jsii.String("temp/"),
 		Expiration: awscdk.Duration_Hours(jsii.Number(1)), // Expire temp cache after 1 hour
 	})
 
@@ -400,11 +400,11 @@ type S3LifecycleMetrics struct {
 func CalculateLifecycleSavings(bucket awss3.Bucket, environment string) *S3LifecycleMetrics {
 	// This would integrate with CloudWatch metrics to calculate actual savings
 	// For now, return estimated values based on typical patterns
-	
+
 	metrics := &S3LifecycleMetrics{
 		BucketName: *bucket.BucketName(),
 	}
-	
+
 	// Estimate based on environment and typical usage patterns
 	switch environment {
 	case "production":
@@ -414,6 +414,6 @@ func CalculateLifecycleSavings(bucket awss3.Bucket, environment string) *S3Lifec
 	default:
 		metrics.EstimatedMonthlySave = 5.00
 	}
-	
+
 	return metrics
 }

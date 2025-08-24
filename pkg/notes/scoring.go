@@ -2,10 +2,10 @@
 package notes
 
 import (
+	"github.com/equaltoai/lesser/pkg/common"
 	"math"
 	"sort"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CalculateNoteScore computes visibility score based on multiple factors

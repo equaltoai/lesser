@@ -105,7 +105,7 @@ func (r *WebSocketSubscriptionManagerRepository) DeleteSubscription(ctx context.
 		ConnectionID:     connectionID,
 		SubscriptionType: subscriptionType,
 	}
-	subscription.UpdateKeys()
+	_ = subscription.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.GetDB().WithContext(ctx).Model(subscription).Delete()
 	if err != nil {
@@ -214,7 +214,7 @@ func (r *WebSocketSubscriptionManagerRepository) GetAllConnections(ctx context.C
 			TTL:          conn.TTL,
 		}
 		// Update GSI keys for the event connection
-		eventConn.UpdateKeys()
+		_ = eventConn.UpdateKeys() // Ignore error as this is internal model operation
 		eventConnections = append(eventConnections, eventConn)
 	}
 

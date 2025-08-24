@@ -409,7 +409,7 @@ func (abo *AdvancedBatchOperations) processBatchWithConflictResolution(ctx conte
 	maxRetries := 3
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		result, err := abo.batchWriter.WriteItems(ctx, batch)
-		
+
 		if err == nil {
 			// Success - no conflicts
 			return nil
@@ -462,24 +462,24 @@ func isConflictError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errorStr := strings.ToLower(err.Error())
 	conflictPatterns := []string{
 		"conditionalcheckfailedexception",
 		"conditional check failed",
-		"transactionconflictexception", 
+		"transactionconflictexception",
 		"conflict",
 		"optimistic locking",
 		"version mismatch",
 		"concurrent modification",
 	}
-	
+
 	for _, pattern := range conflictPatterns {
 		if strings.Contains(errorStr, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -495,7 +495,7 @@ func (abo *AdvancedBatchOperations) resolveConflicts(ctx context.Context, origin
 		// Extract key information from item to read existing version
 		// This is a simplified approach - in practice you'd need to extract
 		// the primary key based on the item type/structure
-		
+
 		// Try to read the existing item
 		existingItem, err := abo.readExistingItem(ctx, item)
 		if err != nil {
@@ -531,7 +531,7 @@ func (abo *AdvancedBatchOperations) resolveConflicts(ctx context.Context, origin
 func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item any) (any, error) {
 	// Extract the primary key and sort key from the item using reflection and interface checking
 	var pk, sk string
-	
+
 	// Check if item implements a KeyProvider interface
 	if keyProvider, ok := item.(interface {
 		GetPK() string
@@ -553,25 +553,25 @@ func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item a
 		pk = pkField
 		sk = skField
 	}
-	
+
 	if err := common.ValidateRequiredParam("pk", pk); err != nil {
 		return nil, fmt.Errorf("could not extract primary key from item")
 	}
-	
+
 	// Note: tableName not needed for current implementation
-	
+
 	// Create a new instance of the same type for reading
 	existingItem := createSameTypeInstance(item)
 	if existingItem == nil {
 		return nil, fmt.Errorf("could not create instance for reading existing item")
 	}
-	
+
 	// We need to get the database connection from the parent repository
 	// Since AdvancedBatchOperations doesn't have direct DB access, we need to use the batch reader
 	if abo.batchReader == nil {
 		return nil, fmt.Errorf("batch reader not available for conflict resolution")
 	}
-	
+
 	// Use batch reader to read the single item
 	keys := []any{
 		map[string]any{
@@ -579,7 +579,7 @@ func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item a
 			"SK": sk,
 		},
 	}
-	
+
 	// Create a slice to hold the results
 	var resultItems []any
 	_, err := abo.batchReader.ReadItems(ctx, keys, &resultItems)
@@ -589,11 +589,11 @@ func (abo *AdvancedBatchOperations) readExistingItem(ctx context.Context, item a
 		}
 		return nil, fmt.Errorf("failed to read existing item: %w", err)
 	}
-	
+
 	if err := common.ValidateSliceNotEmpty("result_items", resultItems); err != nil {
 		return nil, fmt.Errorf("item not found")
 	}
-	
+
 	return resultItems[0], nil
 }
 
@@ -602,38 +602,38 @@ func extractKeysFromStruct(item any) (pk, sk string) {
 	if item == nil {
 		return "", ""
 	}
-	
+
 	val := reflect.ValueOf(item)
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
-	
+
 	if val.Kind() != reflect.Struct {
 		return "", ""
 	}
-	
+
 	typ := val.Type()
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
-		
+
 		// Check field name or DynamoDB tag
 		fieldName := fieldType.Name
 		tag := fieldType.Tag.Get("dynamodbav")
-		
+
 		if fieldName == "PK" || tag == "PK" || strings.Contains(tag, "PK") {
 			if field.CanInterface() && field.Kind() == reflect.String {
 				pk = field.String()
 			}
 		}
-		
+
 		if fieldName == "SK" || tag == "SK" || strings.Contains(tag, "SK") {
 			if field.CanInterface() && field.Kind() == reflect.String {
 				sk = field.String()
 			}
 		}
 	}
-	
+
 	return pk, sk
 }
 
@@ -642,9 +642,9 @@ func createSameTypeInstance(item any) any {
 	if item == nil {
 		return nil
 	}
-	
+
 	typ := reflect.TypeOf(item)
-	
+
 	// Handle pointer types
 	if typ.Kind() == reflect.Ptr {
 		// Create new instance of the element type, then get its address
@@ -652,19 +652,19 @@ func createSameTypeInstance(item any) any {
 		newElem := reflect.New(elemType)
 		return newElem.Interface()
 	}
-	
+
 	// Handle value types
 	if typ.Kind() == reflect.Struct {
 		newVal := reflect.New(typ)
 		return newVal.Interface()
 	}
-	
+
 	// Handle map types
 	if typ.Kind() == reflect.Map {
 		newMap := reflect.MakeMap(typ)
 		return newMap.Interface()
 	}
-	
+
 	// For other types, try to create a zero value
 	newVal := reflect.New(typ)
 	return newVal.Interface()
@@ -675,11 +675,11 @@ func isDynamoDBNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errorStr := strings.ToLower(err.Error())
 	notFoundPatterns := []string{
 		"not found",
-		"does not exist", 
+		"does not exist",
 		"item not found",
 		"record not found",
 		"resourcenotfoundexception",
@@ -687,13 +687,13 @@ func isDynamoDBNotFoundError(err error) bool {
 		"no items found",
 		"empty result",
 	}
-	
+
 	for _, pattern := range notFoundPatterns {
 		if strings.Contains(errorStr, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -702,7 +702,7 @@ func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	errorStr := strings.ToLower(err.Error())
 	notFoundPatterns := []string{
 		"not found",
@@ -711,13 +711,13 @@ func isNotFoundError(err error) bool {
 		"record not found",
 		"resourcenotfoundexception",
 	}
-	
+
 	for _, pattern := range notFoundPatterns {
 		if strings.Contains(errorStr, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

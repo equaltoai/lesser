@@ -59,7 +59,7 @@ func NewWeeklyActivity(week time.Time) *WeeklyActivity {
 		Logins:        0,
 		Registrations: 0,
 	}
-	activity.UpdateKeys()
+	_ = activity.UpdateKeys() // Ignore error as this is internal model operation
 	return activity
 }
 
@@ -67,7 +67,7 @@ func NewWeeklyActivity(week time.Time) *WeeklyActivity {
 func NewUserWeeklyActivity(userID string, week time.Time) *WeeklyActivity {
 	activity := NewWeeklyActivity(week)
 	activity.UserID = userID
-	activity.UpdateKeys()
+	_ = activity.UpdateKeys() // Ignore error as this is internal model operation
 	return activity
 }
 

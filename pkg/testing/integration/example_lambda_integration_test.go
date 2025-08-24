@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/stretchr/testify/assert"
 	"github.com/equaltoai/lesser/pkg/testing/integration"
+	"github.com/stretchr/testify/assert"
 )
 
 // Example Lambda handler for testing
@@ -42,9 +42,9 @@ func ExampleLambdaIntegrationTestSuite() {
 			Name:        "Basic_API_Request",
 			Description: "Test basic API Gateway request processing",
 			Event: integration.BuildAPIGatewayEvent(
-				"GET", 
-				"/health", 
-				nil, 
+				"GET",
+				"/health",
+				nil,
 				map[string]string{"Content-Type": "application/json"},
 			),
 			Timeout: 10 * time.Second,
@@ -57,18 +57,18 @@ func ExampleLambdaIntegrationTestSuite() {
 			},
 		},
 		{
-			Name:        "Authenticated_Request",
-			Description: "Test authenticated API request",
-			RequiredAuth: true,
+			Name:           "Authenticated_Request",
+			Description:    "Test authenticated API request",
+			RequiredAuth:   true,
 			RequiredScopes: []string{"read", "write"},
 			DataRequirements: &integration.TestDataRequirements{
 				Users:  1,
 				Actors: 1,
 			},
 			Event: integration.BuildAPIGatewayEvent(
-				"GET", 
-				"/api/v1/accounts/verify_credentials", 
-				nil, 
+				"GET",
+				"/api/v1/accounts/verify_credentials",
+				nil,
 				nil,
 			),
 			Timeout: 15 * time.Second,
@@ -111,7 +111,7 @@ func TestAPILambdaIntegration(t *testing.T) {
 
 	// Use pre-built API test scenarios
 	apiTestCases := suite.APILambdaTestScenarios()
-	
+
 	// Run API-specific tests
 	suite.RunIntegrationTests(apiTestCases)
 }
@@ -153,7 +153,7 @@ func TestPerformanceBenchmarking(t *testing.T) {
 	performanceTest := integration.LambdaIntegrationTestCase{
 		Name:        "Performance_Benchmark",
 		Description: "Comprehensive performance benchmarking of Lambda function",
-		Event: integration.BuildAPIGatewayEvent("GET", "/api/v1/statuses", nil, nil),
+		Event:       integration.BuildAPIGatewayEvent("GET", "/api/v1/statuses", nil, nil),
 		DataRequirements: &integration.TestDataRequirements{
 			Users:    10,
 			Actors:   10,

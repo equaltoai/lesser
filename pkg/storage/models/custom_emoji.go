@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Domain constants
@@ -53,11 +53,11 @@ type EmojiModel struct {
 	ImageUpdatedAt      time.Time `json:"image_updated_at"`
 
 	// Enhanced fields for sophisticated queries
-	UsageCount          int64     `json:"usage_count"`          // How many times this emoji has been used
-	LastUsedAt          time.Time `json:"last_used_at"`         // When this emoji was last used
-	PopularityScore     float64   `json:"popularity_score"`     // Calculated popularity score
-	SearchKeywords      []string  `json:"search_keywords"`      // Additional search terms
-	AltText             string    `json:"alt_text,omitempty"`   // Alternative text for accessibility
+	UsageCount      int64     `json:"usage_count"`        // How many times this emoji has been used
+	LastUsedAt      time.Time `json:"last_used_at"`       // When this emoji was last used
+	PopularityScore float64   `json:"popularity_score"`   // Calculated popularity score
+	SearchKeywords  []string  `json:"search_keywords"`    // Additional search terms
+	AltText         string    `json:"alt_text,omitempty"` // Alternative text for accessibility
 }
 
 // GetPK returns the partition key
@@ -112,7 +112,7 @@ func (e *EmojiModel) UpdateKeys() error {
 	e.GSI4PK = fmt.Sprintf("USAGE#%s", domainKey)
 	// Sort by usage count (padded for lexicographic sorting) + shortcode
 	e.GSI4SK = fmt.Sprintf("SCORE#%010d#%s", e.UsageCount, e.Shortcode)
-	
+
 	return nil
 }
 

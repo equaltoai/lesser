@@ -17,9 +17,9 @@ import (
 
 // Constants for repeated strings
 const (
-	periodDay        = "day"
-	trendIncreasing  = "increasing"
-	trendDecreasing  = "decreasing"
+	periodDay       = "day"
+	trendIncreasing = "increasing"
+	trendDecreasing = "decreasing"
 )
 
 // WebSocketCostAnalyticsRequest represents requests for WebSocket cost analytics
@@ -358,13 +358,13 @@ func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCos
 	current := startTime
 	for current.Before(endTime) {
 		buckets[current] = &webSocketCostBucket{
-			Timestamp:   current,
-			CostSum:     0.0,
-			UserSet:     make(map[string]bool),
+			Timestamp:     current,
+			CostSum:       0.0,
+			UserSet:       make(map[string]bool),
 			ConnectionSet: make(map[string]bool),
-			MessageCount: 0,
-			LatencySum:  0.0,
-			LatencyCount: 0,
+			MessageCount:  0,
+			LatencySum:    0.0,
+			LatencyCount:  0,
 		}
 		current = current.Add(interval)
 	}
@@ -375,18 +375,18 @@ func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCos
 		bucketTime := h.findBucketTime(cost.Timestamp, startTime, interval)
 		if bucket, exists := buckets[bucketTime]; exists {
 			bucket.CostSum += cost.EstimatedCostDollars
-			
+
 			if err := common.ValidateRequiredParam("user_id", cost.UserID); err == nil {
 				bucket.UserSet[cost.UserID] = true
 			}
-			
+
 			bucket.ConnectionSet[cost.ConnectionID] = true
-			
+
 			// Count messages (operations that involve data transfer)
 			if cost.OperationType == "message" || cost.OperationType == "broadcast" {
 				bucket.MessageCount++
 			}
-			
+
 			// Track latency if available
 			if cost.ResponseLatencyMs > 0 {
 				bucket.LatencySum += float64(cost.ResponseLatencyMs)
@@ -407,12 +407,12 @@ func (h *Handler) aggregateWebSocketCostData(costRepo *repositories.WebSocketCos
 				Messages:    bucket.MessageCount,
 				UniqueUsers: int64(len(bucket.UserSet)),
 			}
-			
+
 			// Calculate average latency
 			if bucket.LatencyCount > 0 {
 				dataPoint.AverageLatencyMs = bucket.LatencySum / float64(bucket.LatencyCount)
 			}
-			
+
 			dataPoints = append(dataPoints, dataPoint)
 		}
 		current = current.Add(interval)
@@ -465,7 +465,6 @@ func (h *Handler) analyzeWebSocketTrends(dataPoints []WebSocketCostDataPoint) *W
 	return analysis
 }
 
-
 // enhancedLocalTrendAnalysis provides sophisticated local trend analysis
 func (h *Handler) enhancedLocalTrendAnalysis(dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
 	analysis := &WebSocketTrendAnalysis{
@@ -473,15 +472,15 @@ func (h *Handler) enhancedLocalTrendAnalysis(dataPoints []WebSocketCostDataPoint
 	}
 
 	// Multi-period moving average analysis
-	shortMA := h.calculateMovingAverage(dataPoints, 3)  // Short-term trend
-	longMA := h.calculateMovingAverage(dataPoints, 7)   // Long-term trend
+	shortMA := h.calculateMovingAverage(dataPoints, 3) // Short-term trend
+	longMA := h.calculateMovingAverage(dataPoints, 7)  // Long-term trend
 
 	if err := common.ValidateSliceNotEmpty("shortMA", shortMA); err == nil {
 		if err := common.ValidateSliceNotEmpty("longMA", longMA); err == nil {
 			// Moving average crossover analysis
 			recentShort := shortMA[len(shortMA)-1]
 			recentLong := longMA[len(longMA)-1]
-			
+
 			if recentShort > recentLong*1.02 { // 2% threshold for significance
 				analysis.TrendDirection = "increasing"
 			} else if recentShort < recentLong*0.98 {
@@ -546,9 +545,6 @@ func (h *Handler) calculateExponentialSmoothingGrowthRate(dataPoints []WebSocket
 	return 0
 }
 
-
-
-
 // addStatisticalSignificance adds statistical significance metrics to trend analysis
 func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, dataPoints []WebSocketCostDataPoint) *WebSocketTrendAnalysis {
 	if len(dataPoints) < 5 {
@@ -587,7 +583,6 @@ func (h *Handler) addStatisticalSignificance(analysis *WebSocketTrendAnalysis, d
 
 	return analysis
 }
-
 
 // GetUserWebSocketBudget retrieves budget information for a user
 func (h *Handler) GetUserWebSocketBudget(ctx *lift.Context) (interface{}, error) {

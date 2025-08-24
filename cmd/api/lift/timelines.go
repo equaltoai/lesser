@@ -28,7 +28,6 @@ import (
 
 // authenticateHomeTimeline authenticates the user for home timeline access
 
-
 // extractAuthorizationHeader extracts authorization header from request
 
 // getUserActorForTimeline gets the user's actor for timeline operations
@@ -302,7 +301,6 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 
 // Helper functions for HandleGetListTimelineLift
 
-
 // parseTimelineParams parses limit and cursor from query parameters
 func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
 	// Build parameter map for centralized validation
@@ -426,7 +424,6 @@ func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) 
 
 	return claims.Username, nil
 }
-
 
 // extractDirectTimelineAuthHeader extracts authorization header from request
 func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {

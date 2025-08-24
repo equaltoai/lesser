@@ -11,11 +11,11 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // FeaturedTagRepository implements featured tag operations using BaseRepository

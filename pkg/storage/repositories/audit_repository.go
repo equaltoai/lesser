@@ -36,7 +36,7 @@ func NewAuditRepositoryWithCostTracking(db core.DB, logger *zap.Logger, costServ
 func (r *AuditRepository) StoreAuditLog(ctx context.Context, log *models.AuthAuditLog) error {
 	// Security validation - ensure critical fields are present
 	if log.ID == "" || log.EventType == "" {
-		r.BaseRepository.logger.Error("audit log missing critical security fields",
+		r.logger.Error("audit log missing critical security fields",
 			zap.String("event_id", log.ID),
 			zap.String("event_type", log.EventType))
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityAudit, log.ID)
@@ -72,14 +72,14 @@ func (r *AuditRepository) GetAuditLogByID(ctx context.Context, id string, date t
 	return logs[0], nil
 }
 
-// GetUserAuditLogs retrieves audit logs for a specific user - SECURITY CRITICAL  
+// GetUserAuditLogs retrieves audit logs for a specific user - SECURITY CRITICAL
 func (r *AuditRepository) GetUserAuditLogs(ctx context.Context, username string, limit int, startTime, endTime time.Time) ([]*models.AuthAuditLog, error) {
 	// Security validation
 	if username == "" {
 		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "user logs")
 	}
-	
-	return AuditLogQueryHelper(ctx, r.BaseRepository.db, "GSI1", fmt.Sprintf("USER#%s", username), limit, startTime, endTime, "user")
+
+	return AuditLogQueryHelper(ctx, r.db, "GSI1", fmt.Sprintf("USER#%s", username), limit, startTime, endTime, "user")
 }
 
 // GetIPAuditLogs retrieves audit logs for a specific IP address - SECURITY CRITICAL
@@ -88,8 +88,8 @@ func (r *AuditRepository) GetIPAuditLogs(ctx context.Context, ipAddress string, 
 	if ipAddress == "" {
 		return nil, ErrorHandler.HandleQueryError(storage.ErrInvalidInput, EntityAudit, "IP logs")
 	}
-	
-	return AuditLogQueryHelper(ctx, r.BaseRepository.db, "GSI2", fmt.Sprintf("IP#%s", ipAddress), limit, startTime, endTime, "IP")
+
+	return AuditLogQueryHelper(ctx, r.db, "GSI2", fmt.Sprintf("IP#%s", ipAddress), limit, startTime, endTime, "IP")
 }
 
 // GetSessionAuditLogs retrieves audit logs for a specific session - SECURITY CRITICAL
@@ -107,9 +107,7 @@ func (r *AuditRepository) GetSessionAuditLogs(ctx context.Context, sessionID str
 
 	// Convert to pointer slice for compatibility
 	result := make([]*models.AuthAuditLog, len(logs))
-	for i := range logs {
-		result[i] = logs[i]
-	}
+	copy(result, logs)
 
 	return result, nil
 }
@@ -128,7 +126,7 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 
 	var logs []models.AuthAuditLog
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
+	query := r.db.WithContext(ctx).Model(&models.AuthAuditLog{}).
 		Index("GSI4").
 		Where("GSI4PK", "=", fmt.Sprintf("SEVERITY#%s", severity))
 
@@ -150,7 +148,7 @@ func (r *AuditRepository) GetSecurityEvents(ctx context.Context, severity string
 
 	// Execute query with enhanced error handling
 	if err := query.All(&logs); err != nil {
-		r.BaseRepository.logger.Error("failed to get security events - SECURITY ALERT",
+		r.logger.Error("failed to get security events - SECURITY ALERT",
 			zap.String("severity", severity),
 			zap.Time("start_time", startTime),
 			zap.Time("end_time", endTime),
@@ -221,7 +219,7 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 	}
 
 	// Compliance logging
-	r.BaseRepository.logger.Warn("manual audit log cleanup initiated - COMPLIANCE ACTION",
+	r.logger.Warn("manual audit log cleanup initiated - COMPLIANCE ACTION",
 		zap.Int("retention_days", retentionDays))
 
 	cutoffDate := time.Now().AddDate(0, 0, -retentionDays)
@@ -234,7 +232,7 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 		// Use BaseRepository to find logs for this date
 		logs, err := r.Query(ctx, pk, 0)
 		if err != nil {
-			r.BaseRepository.logger.Warn("failed to query logs for cleanup",
+			r.logger.Warn("failed to query logs for cleanup",
 				zap.String("date", date.Format("2006-01-02")),
 				zap.Error(err))
 			continue
@@ -249,13 +247,13 @@ func (r *AuditRepository) CleanupOldLogs(ctx context.Context, retentionDays int)
 		// Use BaseRepository batch delete for efficiency
 		if len(keys) > 0 {
 			if err := r.BatchDelete(ctx, keys); err != nil {
-				r.BaseRepository.logger.Error("failed to batch delete old audit logs - COMPLIANCE ISSUE",
+				r.logger.Error("failed to batch delete old audit logs - COMPLIANCE ISSUE",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)),
 					zap.Error(err))
 				// Continue with next date rather than fail completely
 			} else {
-				r.BaseRepository.logger.Info("deleted old audit logs for compliance",
+				r.logger.Info("deleted old audit logs for compliance",
 					zap.String("date", date.Format("2006-01-02")),
 					zap.Int("count", len(keys)))
 			}
@@ -272,7 +270,7 @@ func (r *AuditRepository) StoreAuditEvent(ctx context.Context, eventType, severi
 	if metadata != nil {
 		data, err := json.Marshal(metadata)
 		if err != nil {
-			r.BaseRepository.logger.Warn("failed to marshal audit metadata", zap.Error(err))
+			r.logger.Warn("failed to marshal audit metadata", zap.Error(err))
 		} else {
 			metadataStr = string(data)
 		}

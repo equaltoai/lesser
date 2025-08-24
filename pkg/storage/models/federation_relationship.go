@@ -65,11 +65,11 @@ type FederationRelationship struct {
 	HistoricalBaseline float64    `json:"historical_baseline"` // Pre-dormancy success rate
 
 	// Storage optimization
-	ArchiveLocation        string    `json:"archive_location,omitempty"`        // S3 key if archived
-	CompressedMetrics      string    `json:"compressed_metrics,omitempty"`      // Compressed historical data
-	LastCompressedAttempts int64     `json:"last_compressed_attempts"`          // Baseline for delta compression
-	LastCompressionTime    time.Time `json:"last_compression_time"`             // When metrics were last compressed
-	IsCompressed           bool      `json:"is_compressed"`                     // Flag indicating compressed state
+	ArchiveLocation        string    `json:"archive_location,omitempty"`   // S3 key if archived
+	CompressedMetrics      string    `json:"compressed_metrics,omitempty"` // Compressed historical data
+	LastCompressedAttempts int64     `json:"last_compressed_attempts"`     // Baseline for delta compression
+	LastCompressionTime    time.Time `json:"last_compression_time"`        // When metrics were last compressed
+	IsCompressed           bool      `json:"is_compressed"`                // Flag indicating compressed state
 
 	// Metadata
 	CreatedAt time.Time `json:"created_at"`
@@ -270,45 +270,45 @@ func (fr *FederationRelationship) compressMetrics() {
 	// 1. Delta encoding for timestamps and counts
 	// 2. Run-length encoding for repeated values
 	// 3. Quantization for response times
-	
+
 	compressed := &MetricsCompression{
 		Version:      2,
 		CompressedAt: time.Now(),
-		
+
 		// Core metrics (delta encoded)
 		TotalAttemptsDelta: fr.TotalAttempts - fr.LastCompressedAttempts,
 		SuccessCountDelta:  fr.SuccessCount15m,
 		FailureCountDelta:  fr.FailureCount15m,
-		
+
 		// Success rate (quantized to save space)
 		QuantizedSuccessRate: quantizeSuccessRate(fr.SuccessRate),
-		
+
 		// Response time statistics (compressed using percentiles)
-		ResponseTimeP50:  quantizeResponseTime(fr.AvgResponseTime * 0.8),  // Estimate P50
-		ResponseTimeP95:  quantizeResponseTime(fr.AvgResponseTime * 1.3),  // Estimate P95
-		ResponseTimeP99:  quantizeResponseTime(fr.AvgResponseTime * 1.8),  // Estimate P99
-		
+		ResponseTimeP50: quantizeResponseTime(fr.AvgResponseTime * 0.8), // Estimate P50
+		ResponseTimeP95: quantizeResponseTime(fr.AvgResponseTime * 1.3), // Estimate P95
+		ResponseTimeP99: quantizeResponseTime(fr.AvgResponseTime * 1.8), // Estimate P99
+
 		// State transitions (run-length encoded)
 		StateTransitions: compressStateHistory(fr.State, fr.StateChangedAt),
-		
+
 		// Activity patterns (bitmap compression)
 		ActivityPattern: compressActivityPattern(fr.LastActivity, fr.FirstSeen),
 	}
-	
+
 	// Serialize to compact binary format
 	compressedData := compressed.ToBinary()
-	
+
 	// Store as base64 for JSON compatibility
 	fr.CompressedMetrics = encodeCompressedData(compressedData)
-	
+
 	// Update compression tracking
 	fr.LastCompressedAttempts = fr.TotalAttempts
 	fr.LastCompressionTime = time.Now()
-	
+
 	// Clear detailed metrics to save space (keep only summary)
 	fr.SuccessCount15m = 0
 	fr.FailureCount15m = 0
-	
+
 	// Mark as compressed for lifecycle management
 	fr.IsCompressed = true
 }
@@ -410,23 +410,23 @@ func (fri *FederationRelationshipIndex) UpdateKeys() {
 type MetricsCompression struct {
 	Version      uint8     `json:"v"`
 	CompressedAt time.Time `json:"ca"`
-	
+
 	// Delta-encoded counters (saves space for large numbers)
 	TotalAttemptsDelta int64 `json:"tad"`
 	SuccessCountDelta  int64 `json:"scd"`
 	FailureCountDelta  int64 `json:"fcd"`
-	
+
 	// Quantized success rate (0-255 for 0-100% with 0.4% precision)
 	QuantizedSuccessRate uint8 `json:"qsr"`
-	
+
 	// Quantized response times in milliseconds (log scale)
 	ResponseTimeP50 uint16 `json:"rtp50"`
 	ResponseTimeP95 uint16 `json:"rtp95"`
 	ResponseTimeP99 uint16 `json:"rtp99"`
-	
+
 	// Compressed state history (run-length encoded)
 	StateTransitions []byte `json:"st"`
-	
+
 	// Activity pattern bitmap (daily activity over 30 days)
 	ActivityPattern uint32 `json:"ap"`
 }
@@ -436,39 +436,39 @@ func (mc *MetricsCompression) ToBinary() []byte {
 	// Create a compact binary representation
 	// This would use a more sophisticated binary encoding in practice
 	data := make([]byte, 0, 64)
-	
+
 	// Version (1 byte)
 	data = append(data, mc.Version)
-	
+
 	// Timestamp (8 bytes - Unix timestamp)
 	timestamp := mc.CompressedAt.Unix()
 	for i := 0; i < 8; i++ {
 		data = append(data, byte(timestamp>>(i*8)))
 	}
-	
+
 	// Delta values (8 bytes each)
 	for _, val := range []int64{mc.TotalAttemptsDelta, mc.SuccessCountDelta, mc.FailureCountDelta} {
 		for i := 0; i < 8; i++ {
 			data = append(data, byte(val>>(i*8)))
 		}
 	}
-	
+
 	// Quantized values
 	data = append(data, mc.QuantizedSuccessRate)
-	
+
 	// Response times (2 bytes each)
 	for _, val := range []uint16{mc.ResponseTimeP50, mc.ResponseTimeP95, mc.ResponseTimeP99} {
 		data = append(data, byte(val&0xFF), byte(val>>8))
 	}
-	
+
 	// Activity pattern (4 bytes)
 	ap := mc.ActivityPattern
 	data = append(data, byte(ap&0xFF), byte((ap>>8)&0xFF), byte((ap>>16)&0xFF), byte((ap>>24)&0xFF))
-	
+
 	// State transitions (variable length)
 	data = append(data, byte(len(mc.StateTransitions)))
 	data = append(data, mc.StateTransitions...)
-	
+
 	return data
 }
 
@@ -499,7 +499,7 @@ func compressStateHistory(currentState RelationshipState, stateChangedAt time.Ti
 	// For now, just store current state and timestamp
 	// In a full implementation, this would use run-length encoding for state history
 	data := make([]byte, 0, 16)
-	
+
 	// State (1 byte enum)
 	switch currentState {
 	case StateActive:
@@ -515,13 +515,13 @@ func compressStateHistory(currentState RelationshipState, stateChangedAt time.Ti
 	default:
 		data = append(data, 0)
 	}
-	
+
 	// Timestamp (8 bytes)
 	timestamp := stateChangedAt.Unix()
 	for i := 0; i < 8; i++ {
 		data = append(data, byte(timestamp>>(i*8)))
 	}
-	
+
 	return data
 }
 
@@ -529,21 +529,21 @@ func compressStateHistory(currentState RelationshipState, stateChangedAt time.Ti
 func compressActivityPattern(lastActivity, firstSeen time.Time) uint32 {
 	// Create a 30-day activity bitmap (1 bit per day)
 	var pattern uint32
-	
+
 	now := time.Now()
 	daysDiff := int(now.Sub(lastActivity).Hours() / 24)
-	
+
 	// Set bit for recent activity (within 30 days)
 	if daysDiff >= 0 && daysDiff < 30 {
 		pattern |= 1 << uint(daysDiff)
 	}
-	
+
 	// Add some pattern based on relationship age
 	ageDays := int(now.Sub(firstSeen).Hours() / 24)
 	if ageDays > 7 {
 		pattern |= 1 << 31 // Mark as established relationship
 	}
-	
+
 	return pattern
 }
 
@@ -551,7 +551,7 @@ func compressActivityPattern(lastActivity, firstSeen time.Time) uint32 {
 func encodeCompressedData(data []byte) string {
 	// Use base64 encoding for JSON compatibility
 	const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-	
+
 	var result []byte
 	for i := 0; i < len(data); i += 3 {
 		// Take 3 bytes and convert to 4 base64 chars
@@ -560,11 +560,11 @@ func encodeCompressedData(data []byte) string {
 		if groupSize > 3 {
 			groupSize = 3
 		}
-		
+
 		for j := 0; j < groupSize; j++ {
 			group |= uint32(data[i+j]) << (16 - j*8)
 		}
-		
+
 		for j := 0; j < 4; j++ {
 			if j*6 < groupSize*8 {
 				result = append(result, chars[(group>>(18-j*6))&0x3F])
@@ -573,6 +573,6 @@ func encodeCompressedData(data []byte) string {
 			}
 		}
 	}
-	
+
 	return string(result)
 }

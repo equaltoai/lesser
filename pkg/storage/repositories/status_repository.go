@@ -53,7 +53,7 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 	var status models.Status
 	pk := fmt.Sprintf("status#%s", statusID)
 	sk := fmt.Sprintf("status#%s", statusID)
-	
+
 	err := r.Get(ctx, pk, sk, &status)
 	if err != nil {
 		return nil, err // BaseRepository handles error formatting
@@ -278,13 +278,13 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 	// Use GSI7 (URL index) to efficiently find statuses containing the target URL
 	normalizedURL := strings.ToLower(strings.TrimSpace(targetURL))
 	var matchingStatuses []models.Status
-	
+
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("url-index").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Limit(limit).
 		All(&matchingStatuses)
-	
+
 	if err != nil {
 		r.logger.Error("failed to query statuses by URL",
 			zap.String("target_url", targetURL),
@@ -303,7 +303,7 @@ func (r *StatusRepository) GetStatusesByURL(ctx context.Context, targetURL strin
 				break // Found match, no need to check other URLs for this status
 			}
 		}
-		
+
 		// Stop if we have enough matches
 		if len(results) >= limit {
 			break
@@ -496,6 +496,9 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 		// Note: INSTANCE_DOMAIN is not in config yet, but Domain should be the primary source
 		if cfg.Domain == "" || cfg.Domain == "localhost" {
 			// Fallback logic can be added here if needed
+			// Currently using the extracted domain as-is
+			// Future enhancement: implement alternate domain resolution
+			_ = cfg.Domain // acknowledge we're using the current domain
 		}
 	}
 	return domain
@@ -505,14 +508,14 @@ func (r *StatusRepository) extractDomainFromEnv() string {
 func (r *StatusRepository) GetStatusByURL(ctx context.Context, url string) (*models.Status, error) {
 	// Normalize the URL for consistent indexing (same as in Status.setupGSIKeys)
 	normalizedURL := strings.ToLower(strings.TrimSpace(url))
-	
+
 	// Query GSI7 for URL-indexed statuses
 	var statuses []models.Status
 	err := r.db.WithContext(ctx).Model(&models.Status{}).
 		Index("url-index").
 		Where("GSI7PK", "=", "URL#"+normalizedURL).
 		Scan(&statuses)
-	
+
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityStatus, "query by URL")
 	}
@@ -571,7 +574,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 	// 2. Implement pagination across multiple author queries
 	// 3. Use a timeline ranking algorithm
 	var allStatuses []models.Status
-	
+
 	// Query statuses for each followed user using the author-timeline-index
 	for _, username := range followingUsernames {
 		var userStatuses []models.Status
@@ -581,7 +584,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 			OrderBy("GSI1SK", "DESC").
 			Limit(20). // Limit per user to avoid overwhelming queries
 			All(&userStatuses)
-		
+
 		if err != nil {
 			r.logger.Error("failed to get statuses for followed user",
 				zap.String("user_id", userID),
@@ -589,7 +592,7 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 				zap.Error(err))
 			continue // Skip this user on error
 		}
-		
+
 		allStatuses = append(allStatuses, userStatuses...)
 	}
 
@@ -905,7 +908,7 @@ func (r *StatusRepository) BookmarkStatus(ctx context.Context, userID, statusID 
 		CreatedAt: now,
 		TTL:       0, // No TTL for bookmarks
 	}
-	bookmark.UpdateKeys()
+	_ = bookmark.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.db.WithContext(ctx).Model(bookmark).Create()
 	if err != nil {

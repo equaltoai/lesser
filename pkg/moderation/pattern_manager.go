@@ -39,12 +39,12 @@ type EnhancedPatternRepository interface {
 
 // PatternManager manages moderation patterns and their effectiveness
 type PatternManager struct {
-	storage           PatternStorage
-	enhancedRepo      EnhancedPatternRepository
-	cacheManager      *PatternCacheManager
-	patternValidator  *PatternValidator
-	enhancedEnabled   bool
-	logger            *zap.Logger
+	storage          PatternStorage
+	enhancedRepo     EnhancedPatternRepository
+	cacheManager     *PatternCacheManager
+	patternValidator *PatternValidator
+	enhancedEnabled  bool
+	logger           *zap.Logger
 }
 
 // NewPatternManager creates a new pattern manager
@@ -58,7 +58,7 @@ func NewPatternManager() *PatternManager {
 func NewEnhancedPatternManager(storage PatternStorage, enhancedRepo EnhancedPatternRepository, logger *zap.Logger) *PatternManager {
 	cacheManager := NewPatternCacheManager(enhancedRepo, DefaultCacheConfig(), logger)
 	patternValidator := NewPatternValidator(logger)
-	
+
 	return &PatternManager{
 		storage:          storage,
 		enhancedRepo:     enhancedRepo,
@@ -371,7 +371,7 @@ func (pm *PatternManager) matchDomain(domain, text string) (bool, string) {
 	if pm.enhancedEnabled && pm.cacheManager != nil {
 		return pm.matchEnhancedURL(domain, text, "url_domain")
 	}
-	
+
 	// Fallback to simple domain matching
 	if strings.Contains(text, domain) {
 		return true, domain
@@ -384,7 +384,7 @@ func (pm *PatternManager) matchIP(ipPattern, text string) (bool, string) {
 	if pm.enhancedEnabled && pm.cacheManager != nil {
 		return pm.matchEnhancedIP(ipPattern, text, "ip_single")
 	}
-	
+
 	// Fallback to simple IP matching
 	if strings.Contains(text, ipPattern) {
 		return true, ipPattern
@@ -771,17 +771,17 @@ func (pm *PatternManager) extractAndMatchURLs(ctx context.Context, text string, 
 
 		if matched && pattern != nil {
 			matches = append(matches, &EnhancedPatternMatch{
-				PatternID:    pattern.PatternID,
-				PatternName:  pattern.Name,
-				PatternType:  pattern.PatternType,
-				Category:     pattern.Category,
-				Severity:     pattern.Severity,
-				Action:       pattern.Action,
-				Priority:     pattern.Priority,
-				Confidence:   pattern.ConfidenceScore,
-				MatchedText:  url,
-				MatchTime:    matchTime,
-				MatchedAt:    time.Now(),
+				PatternID:     pattern.PatternID,
+				PatternName:   pattern.Name,
+				PatternType:   pattern.PatternType,
+				Category:      pattern.Category,
+				Severity:      pattern.Severity,
+				Action:        pattern.Action,
+				Priority:      pattern.Priority,
+				Confidence:    pattern.ConfidenceScore,
+				MatchedText:   url,
+				MatchTime:     matchTime,
+				MatchedAt:     time.Now(),
 				Effectiveness: pattern.Effectiveness,
 			})
 		}
@@ -818,17 +818,17 @@ func (pm *PatternManager) extractAndMatchIPs(ctx context.Context, text string, p
 
 		if matched && pattern != nil {
 			matches = append(matches, &EnhancedPatternMatch{
-				PatternID:    pattern.PatternID,
-				PatternName:  pattern.Name,
-				PatternType:  pattern.PatternType,
-				Category:     pattern.Category,
-				Severity:     pattern.Severity,
-				Action:       pattern.Action,
-				Priority:     pattern.Priority,
-				Confidence:   pattern.ConfidenceScore,
-				MatchedText:  ip,
-				MatchTime:    matchTime,
-				MatchedAt:    time.Now(),
+				PatternID:     pattern.PatternID,
+				PatternName:   pattern.Name,
+				PatternType:   pattern.PatternType,
+				Category:      pattern.Category,
+				Severity:      pattern.Severity,
+				Action:        pattern.Action,
+				Priority:      pattern.Priority,
+				Confidence:    pattern.ConfidenceScore,
+				MatchedText:   ip,
+				MatchTime:     matchTime,
+				MatchedAt:     time.Now(),
 				Effectiveness: pattern.Effectiveness,
 			})
 		}
@@ -880,7 +880,7 @@ type EnhancedPatternMatch struct {
 	Priority      int       `json:"priority"`
 	Confidence    float64   `json:"confidence"`
 	MatchedText   string    `json:"matched_text"`
-	MatchTime     float64   `json:"match_time"`     // Time taken to match in milliseconds
+	MatchTime     float64   `json:"match_time"` // Time taken to match in milliseconds
 	MatchedAt     time.Time `json:"matched_at"`
 	Effectiveness float64   `json:"effectiveness"` // Pattern effectiveness score
 }

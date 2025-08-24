@@ -36,7 +36,6 @@ type CreatePostInput struct {
 	Language    string
 }
 
-
 // CreatePostResult contains the result of post creation
 type CreatePostResult struct {
 	Activity     *activitypub.Activity
@@ -238,4 +237,3 @@ type AnalyticsService interface {
 	GetInstanceBudgets(ctx context.Context, exceeded *bool) ([]*model.InstanceBudget, error)
 	GetInstanceHealthReport(ctx context.Context, domain string) (*model.InstanceHealthReport, error)
 }
-

@@ -207,14 +207,14 @@ func (hcp *HealthCheckPattern) checkAWSServices(_ context.Context) map[string]in
 // createRuntimeHealthCheck creates a runtime health check
 func (hcp *HealthCheckPattern) createRuntimeHealthCheck() map[string]interface{} {
 	return map[string]interface{}{
-		"name":         "runtime",
-		"status":       observability.HealthStatusHealthy,
-		"message":      "Service runtime is healthy",
-		"uptime_ms":    time.Since(hcp.startTime).Milliseconds(),
-		"service":      "lambda-service",
-		"version":      hcp.lambdaCtx.Config.Version,
-		"go_version":   "go1.21", // Could be determined dynamically
-		"lambda_type":  string("lambda"),
+		"name":        "runtime",
+		"status":      observability.HealthStatusHealthy,
+		"message":     "Service runtime is healthy",
+		"uptime_ms":   time.Since(hcp.startTime).Milliseconds(),
+		"service":     "lambda-service",
+		"version":     hcp.lambdaCtx.Config.Version,
+		"go_version":  "go1.21", // Could be determined dynamically
+		"lambda_type": string("lambda"),
 	}
 }
 
@@ -227,7 +227,7 @@ func (hcp *HealthCheckPattern) checkPerformanceMetrics() map[string]interface{} 
 
 	// Basic performance metrics
 	uptime := time.Since(hcp.startTime)
-	
+
 	check["uptime_ms"] = uptime.Milliseconds()
 	check["uptime_human"] = uptime.String()
 
@@ -246,7 +246,7 @@ func (hcp *HealthCheckPattern) checkPerformanceMetrics() map[string]interface{} 
 // updateSummary updates the health check summary based on individual check results
 func (hcp *HealthCheckPattern) updateSummary(summary map[string]interface{}, check map[string]interface{}) {
 	status := check["status"].(string)
-	
+
 	switch status {
 	case observability.HealthStatusHealthy:
 		summary["healthy_checks"] = summary["healthy_checks"].(int) + 1
@@ -301,8 +301,8 @@ func isHealthCheckPath(path string) bool {
 
 // HealthCheckConfig provides configuration for health check behavior
 type HealthCheckConfig struct {
-	EnableDetailedChecks bool
-	DBTimeoutSeconds     int
+	EnableDetailedChecks          bool
+	DBTimeoutSeconds              int
 	PerformanceWarningThresholdMs int
 }
 

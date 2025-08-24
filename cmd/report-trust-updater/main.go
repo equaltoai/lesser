@@ -90,7 +90,14 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	}
 
 	// Update the DynamoDB keys
-	trustRel.UpdateKeys()
+	if err := trustRel.UpdateKeys(); err != nil {
+		r.logger.Error("failed to update trust relationship keys",
+			zap.String("trusterID", trustRel.TrusterID),
+			zap.String("trusteeID", trustRel.TrusteeID),
+			zap.Error(err),
+		)
+		return err
+	}
 
 	// Adjust score based on report validity
 	if reportValid {

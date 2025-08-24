@@ -44,10 +44,10 @@ func NewBandwidthTracker(storage core.RepositoryStorage, logger *zap.Logger, cos
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	
+
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(cloudWatch, logger, "BandwidthTracker", "", "")
-	
+
 	return &BandwidthTracker{
 		storage:        storage,
 		logger:         logger,

@@ -41,7 +41,7 @@ func NewAWSQueueService(ctx context.Context, logger *zap.Logger) (*AWSQueueServi
 
 	// Get configuration from centralized config
 	globalCfg := appconfig.Get()
-	
+
 	// Check for queue URL first - if not set, we can't function
 	queueURL := globalCfg.ImportExportQueueURL
 	if queueURL == "" {

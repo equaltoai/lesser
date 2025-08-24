@@ -24,17 +24,17 @@ type MediaSessionRepository struct {
 }
 
 // NewMediaSessionRepository creates a new MediaSessionRepository
-func NewMediaSessionRepository(db core.DB, logger *zap.Logger, costTracker interface{}) *MediaSessionRepository {
+func NewMediaSessionRepository(db core.DB, logger *zap.Logger, _ interface{}) *MediaSessionRepository {
 	cfg := config.Get()
 	tableName := cfg.DynamoTableName
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	
+
 	// Create cost service from legacy cost tracker if provided
 	var costService *cost.TrackingService
 	// Note: For now, pass nil cost service; can be enhanced later with proper cost tracking
-	
+
 	return &MediaSessionRepository{
 		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository"),
 		qualityChangeRepo: NewBaseRepositoryWithCostTracking[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository"),
@@ -71,7 +71,7 @@ func (r *MediaSessionRepository) StartStreamingSession(ctx context.Context, user
 
 	// Generate unique session ID
 	sessionID := fmt.Sprintf("%s_%s_%d", userID, mediaID, time.Now().UnixNano())
-	
+
 	// Initialize streaming session with proper defaults
 	session := &types.StreamingSession{
 		SessionID:        sessionID,
@@ -269,7 +269,7 @@ func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *typ
 // GetSession retrieves a streaming session (legacy compatibility)
 func (r *MediaSessionRepository) GetSession(ctx context.Context, sessionID string) (*types.StreamingSession, error) {
 	var model models.MediaSession
-	
+
 	err := r.Get(ctx, fmt.Sprintf("SESSION#%s", sessionID), "METADATA", &model)
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
@@ -469,7 +469,7 @@ func (r *MediaSessionRepository) trackQualityChange(ctx context.Context, session
 		Quality:   string(session.CurrentQuality),
 		Timestamp: time.Now(),
 	}
-	
+
 	if err := qualityChange.UpdateKeys(); err != nil {
 		r.logger.Warn("failed to update quality change keys",
 			zap.String("sessionID", session.SessionID),

@@ -16,13 +16,13 @@ type RelationshipType string
 // Relationship type constants
 const (
 	// RelationshipTypeLike represents a like/favorite relationship
-	RelationshipTypeLike     RelationshipType = "like"
+	RelationshipTypeLike RelationshipType = "like"
 	// RelationshipTypeBlock represents a block relationship
-	RelationshipTypeBlock    RelationshipType = "block"
+	RelationshipTypeBlock RelationshipType = "block"
 	// RelationshipTypeMute represents a mute relationship
-	RelationshipTypeMute     RelationshipType = "mute"
+	RelationshipTypeMute RelationshipType = "mute"
 	// RelationshipTypeFollow represents a follow relationship
-	RelationshipTypeFollow   RelationshipType = "follow"
+	RelationshipTypeFollow RelationshipType = "follow"
 	// RelationshipTypeBookmark represents a bookmark relationship
 	RelationshipTypeBookmark RelationshipType = "bookmark"
 	// RelationshipTypeFavorite represents a favorite relationship
@@ -67,7 +67,7 @@ type RelationshipModel struct {
 // CreateRelationship creates a new relationship with idempotency
 func (r *RelationshipBase) CreateRelationship(ctx context.Context, actor, object, id string) error {
 	pk, sk := r.generateKeys(actor, object)
-	
+
 	model := &RelationshipModel{
 		PK:        pk,
 		SK:        sk,
@@ -144,7 +144,7 @@ func (r *RelationshipBase) DeleteRelationship(ctx context.Context, actor, object
 // GetRelationship retrieves a specific relationship
 func (r *RelationshipBase) GetRelationship(ctx context.Context, actor, object string) (*RelationshipModel, error) {
 	pk, sk := r.generateKeys(actor, object)
-	
+
 	var model RelationshipModel
 	err := r.queryUtils.GetItemByPK(ctx, pk, sk, &model)
 	if err != nil {
@@ -196,7 +196,7 @@ func (r *RelationshipBase) GetRelationshipsByActor(ctx context.Context, actor st
 // GetRelationshipsByObject retrieves all relationships for an object with pagination
 func (r *RelationshipBase) GetRelationshipsByObject(ctx context.Context, object string, limit int, cursor string) ([]*RelationshipModel, string, error) {
 	pk := r.generateObjectPK(object)
-	
+
 	result, err := r.queryUtils.QueryWithPrefix(ctx, pk, "", &QueryOptions{
 		Limit:  limit,
 		Cursor: cursor,
@@ -290,7 +290,6 @@ func (r *RelationshipBase) generateObjectPK(object string) string {
 	}
 }
 
-
 // getEntityType maps RelationshipType to appropriate entity constants
 func (r *RelationshipBase) getEntityType() string {
 	switch r.relType {
@@ -308,7 +307,6 @@ func (r *RelationshipBase) getEntityType() string {
 		return string(r.relType)
 	}
 }
-
 
 // mapToStruct converts a map to a struct - simplified version
 func mapToStruct(m map[string]interface{}, target interface{}) error {

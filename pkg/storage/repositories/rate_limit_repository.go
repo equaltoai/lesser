@@ -365,7 +365,7 @@ func (r *RateLimitRepository) getRateLimitInfo(ctx context.Context, key string, 
 func (r *RateLimitRepository) GetAPIRateLimitInfo(ctx context.Context, userID, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
 	key := fmt.Sprintf("%s:%s", userID, endpoint)
 	logContext := map[string]interface{}{
-		"user_id": userID,
+		"user_id":  userID,
 		"endpoint": endpoint,
 	}
 	return r.getRateLimitInfo(ctx, key, limit, window, logContext)
@@ -488,7 +488,7 @@ func (r *RateLimitRepository) CheckFederationRateLimit(ctx context.Context, doma
 func (r *RateLimitRepository) GetFederationRateLimitInfo(ctx context.Context, domain, endpoint string, limit int, window time.Duration) (remaining int, resetTime time.Time, err error) {
 	key := fmt.Sprintf("DOMAIN#%s:%s", domain, endpoint)
 	logContext := map[string]interface{}{
-		"domain": domain,
+		"domain":   domain,
 		"endpoint": endpoint,
 	}
 	return r.getRateLimitInfo(ctx, key, limit, window, logContext)

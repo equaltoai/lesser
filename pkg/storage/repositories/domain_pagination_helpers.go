@@ -72,7 +72,7 @@ func getPaginatedInstanceDomainBlocks(
 	if actualLimit <= 0 || actualLimit > 100 {
 		actualLimit = 20
 	}
-	
+
 	nextCursor := generateNextCursor(len(modelBlocks), actualLimit, func() string {
 		if len(modelBlocks) > actualLimit {
 			return modelBlocks[actualLimit-1].GSI1SK
@@ -171,7 +171,7 @@ func getPaginatedDomainItems[M any, S any](
 	if actualLimit <= 0 || actualLimit > 100 {
 		actualLimit = 20
 	}
-	
+
 	nextCursor := generateNextCursor(len(models), actualLimit, func() string {
 		if len(models) > actualLimit {
 			return converter.GetGSI1SK(models[actualLimit-1])

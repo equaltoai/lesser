@@ -68,8 +68,8 @@ var (
 	repos               core.RepositoryStorage
 	logger              *zap.Logger
 	graphQLHandler      *handler.Server
-	emfMetricsService   interface{} // *observability.EMFMetricsService interface
-	costTracker         *cost.Tracker // Legacy tracker for resolver compatibility
+	emfMetricsService   interface{}           // *observability.EMFMetricsService interface
+	costTracker         *cost.Tracker         // Legacy tracker for resolver compatibility
 	costTrackingService *cost.TrackingService // Centralized service
 	initTime            time.Time
 )
@@ -79,8 +79,8 @@ func init() {
 
 	// Standardized Lambda initialization with automatic service detection
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "graphql",
-		LambdaType:  common.LambdaTypeAPI,
+		ServiceName:    "graphql",
+		LambdaType:     common.LambdaTypeAPI,
 		RequestTimeout: 30 * time.Second,
 	})
 
@@ -186,7 +186,7 @@ func initializeGraphQLSpecificServices() {
 	// Initialize GraphQL resolver with service registry
 	resolver := &graph.Resolver{
 		Registry:       registry,
-		Storage:        repos,      // Keep for legacy resolvers
+		Storage:        repos, // Keep for legacy resolvers
 		CostTracker:    costTracker,
 		UnifiedTracker: unifiedTracker,
 		TableName:      cfg.DynamoTableName,
@@ -379,7 +379,7 @@ func createCostTrackingMiddleware() lift.Middleware {
 
 			// Track costs with centralized service
 			duration := time.Since(start)
-			
+
 			// Track with centralized cost tracking service
 			if costTrackingService != nil {
 				go func() {
@@ -424,7 +424,7 @@ func createAuthMiddleware() lift.Middleware {
 	if err != nil {
 		logger.Fatal("Failed to create auth service for GraphQL middleware", zap.Error(err))
 	}
-	
+
 	// Use the unified GraphQL auth middleware
 	return auth.CreateGraphQLAuthMiddlewareFromAuthService(authService, logger)
 }
@@ -521,7 +521,7 @@ func main() {
 		// Add GraphQL-specific limits
 		graphqlConfig.EndpointLimits["POST:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute} // 100 queries per 5 minutes
 		graphqlConfig.EndpointLimits["GET:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute}  // 100 queries per 5 minutes (GET for introspection)
-		
+
 		app.Use(ratelimit.Middleware(repos, graphqlConfig))
 		logger.Info("enabled rate limiting middleware for GraphQL service")
 	}

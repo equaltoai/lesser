@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MediaMetadata represents metadata about media files stored in S3
@@ -71,7 +71,7 @@ func (m *MediaMetadata) UpdateKeys() error {
 	// Set GSI1 keys for status-based queries
 	m.GSI1PK = fmt.Sprintf(KeyPatternStatus, m.Status)
 	m.GSI1SK = fmt.Sprintf("PROCESSED#%s", m.ProcessedAt.Format(time.RFC3339))
-	
+
 	return nil
 }
 
@@ -189,20 +189,20 @@ func (m *MediaMetadata) IsPending() bool {
 // SetProcessing marks the media as being processed
 func (m *MediaMetadata) SetProcessing() {
 	m.Status = StatusProcessing
-	m.UpdateKeys()
+	_ = m.UpdateKeys() // Safe to ignore error for simple setter
 }
 
 // SetComplete marks the media as processing complete
 func (m *MediaMetadata) SetComplete() {
 	m.Status = "complete"
 	m.ProcessedAt = time.Now()
-	m.UpdateKeys() // Ignore error for these simple setters
+	_ = m.UpdateKeys() // Ignore error for these simple setters
 }
 
 // SetFailed marks the media as processing failed
 func (m *MediaMetadata) SetFailed() {
 	m.Status = StatusFailed
-	m.UpdateKeys() // Ignore error for these simple setters
+	_ = m.UpdateKeys() // Ignore error for these simple setters
 	// Set TTL for failed media to be cleaned up after 7 days
 	m.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 }

@@ -90,8 +90,8 @@ func (f *AuthorizedFetchService) FetchObject(ctx context.Context, objectURL stri
 
 	// Check response status
 	if resp.StatusCode != http.StatusOK {
-		f.logger.Error("object fetch failed with non-2xx status", 
-			zap.String("url", objectURL), 
+		f.logger.Error("object fetch failed with non-2xx status",
+			zap.String("url", objectURL),
 			zap.Int("status_code", resp.StatusCode))
 		return nil, ErrFetchObjectHTTPFailed
 	}
@@ -271,8 +271,8 @@ func (f *AuthorizedFetchService) fetchActorWithoutAuth(ctx context.Context, acto
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		f.logger.Error("actor fetch failed with non-2xx status", 
-			zap.String("url", actorURL), 
+		f.logger.Error("actor fetch failed with non-2xx status",
+			zap.String("url", actorURL),
 			zap.Int("status_code", resp.StatusCode))
 		return nil, ErrFetchActorHTTPFailed
 	}

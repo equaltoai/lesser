@@ -56,7 +56,7 @@ func (a *AuthRefreshToken) UpdateKeys() error {
 	if a.TTL == 0 && a.ExpiresAt > 0 {
 		a.TTL = a.ExpiresAt
 	}
-	
+
 	return nil
 }
 

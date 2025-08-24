@@ -8,7 +8,6 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 )
 
-
 // dynamoStorage implements the Storage interface using DynamoDB via repository pattern
 type dynamoStorage struct {
 	repo        Storage

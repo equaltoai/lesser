@@ -71,7 +71,7 @@ func (r *ScheduledStatusRepository) storageToModel(scheduled *storage.ScheduledS
 		PublishedAt:   scheduled.PublishedAt,
 		ApplicationID: scheduled.ApplicationID,
 	}
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 	return model
 }
 
@@ -123,7 +123,7 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 	scheduledModel := r.storageToModel(scheduled)
 
 	// Create the scheduled status using BaseRepository
-	err := r.BaseRepository.Create(ctx, scheduledModel)
+	err := r.Create(ctx, scheduledModel)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityScheduledStatus, scheduled.ID)
 	}
@@ -216,7 +216,7 @@ func (r *ScheduledStatusRepository) UpdateScheduledStatus(ctx context.Context, s
 	scheduledModel := r.storageToModel(scheduled)
 
 	// Use BaseRepository update
-	err = r.BaseRepository.Update(ctx, scheduledModel)
+	err = r.Update(ctx, scheduledModel)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityScheduledStatus, scheduled.ID)
 	}
@@ -236,7 +236,7 @@ func (r *ScheduledStatusRepository) DeleteScheduledStatus(ctx context.Context, i
 	pk := fmt.Sprintf("USER#%s#SCHEDULED", status.Username)
 	sk := fmt.Sprintf("ID#%s", id)
 
-	err = r.BaseRepository.Delete(ctx, pk, sk)
+	err = r.Delete(ctx, pk, sk)
 	if err != nil {
 		return ErrorHandler.HandleDeleteError(err, EntityScheduledStatus, id)
 	}
@@ -289,7 +289,7 @@ func (r *ScheduledStatusRepository) MarkScheduledStatusPublished(ctx context.Con
 	// Create model for update
 	scheduledModel := r.storageToModel(status)
 
-	err = r.BaseRepository.Update(ctx, scheduledModel)
+	err = r.Update(ctx, scheduledModel)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntityScheduledStatus, id)
 	}

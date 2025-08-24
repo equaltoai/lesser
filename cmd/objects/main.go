@@ -36,12 +36,12 @@ func init() {
 		ServiceName: "objects",
 		LambdaType:  common.LambdaTypeAPI,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with default options for API Lambda type
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
@@ -59,15 +59,15 @@ type Handler struct {
 func NewHandler() *Handler {
 	// Initialize object repository
 	objectRepo := repositories.NewObjectRepository(
-		repos.GetDB(), 
-		repos.GetTableName(), 
-		cfg.Domain, 
+		repos.GetDB(),
+		repos.GetTableName(),
+		cfg.Domain,
 		logger)
 
 	// Initialize authorized fetch service
 	authorizedFetchService := federation.NewAuthorizedFetchService(
-		repos, 
-		cfg.Domain, 
+		repos,
+		cfg.Domain,
 		logger)
 
 	return &Handler{

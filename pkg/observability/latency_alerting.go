@@ -32,66 +32,67 @@ type LatencyAlerter struct {
 
 // AlertRule defines the conditions for triggering an alert
 type AlertRule struct {
-	Name              string        `json:"name"`
-	Operation         string        `json:"operation"`
-	Service           string        `json:"service"`
-	Threshold         float64       `json:"threshold_ms"`
-	P95Threshold      float64       `json:"p95_threshold_ms"`
-	P99Threshold      float64       `json:"p99_threshold_ms"`
-	WindowSize        time.Duration `json:"window_size"`
-	MinDataPoints     int           `json:"min_data_points"`
-	AlertCooldown     time.Duration `json:"alert_cooldown"`
-	Severity          AlertSeverity `json:"severity"`
-	Enabled           bool          `json:"enabled"`
-	Conditions        []Condition   `json:"conditions"`
-	Actions           []AlertAction `json:"actions"`
+	Name          string        `json:"name"`
+	Operation     string        `json:"operation"`
+	Service       string        `json:"service"`
+	Threshold     float64       `json:"threshold_ms"`
+	P95Threshold  float64       `json:"p95_threshold_ms"`
+	P99Threshold  float64       `json:"p99_threshold_ms"`
+	WindowSize    time.Duration `json:"window_size"`
+	MinDataPoints int           `json:"min_data_points"`
+	AlertCooldown time.Duration `json:"alert_cooldown"`
+	Severity      AlertSeverity `json:"severity"`
+	Enabled       bool          `json:"enabled"`
+	Conditions    []Condition   `json:"conditions"`
+	Actions       []AlertAction `json:"actions"`
 }
 
 // Condition represents a condition that must be met for an alert
 type Condition struct {
-	Type      ConditionType `json:"type"`      // "latency", "error_rate", "throughput"
-	Operator  string        `json:"operator"`  // ">", "<", ">=", "<=", "=="
-	Value     float64       `json:"value"`     // Threshold value
-	Percentile string       `json:"percentile,omitempty"` // "p50", "p95", "p99"
+	Type       ConditionType `json:"type"`                 // "latency", "error_rate", "throughput"
+	Operator   string        `json:"operator"`             // ">", "<", ">=", "<=", "=="
+	Value      float64       `json:"value"`                // Threshold value
+	Percentile string        `json:"percentile,omitempty"` // "p50", "p95", "p99"
 }
 
 // AlertAction defines what to do when an alert is triggered
 type AlertAction struct {
-	Type     ActionType            `json:"type"`
-	Config   map[string]interface{} `json:"config"`
-	Enabled  bool                  `json:"enabled"`
+	Type    ActionType             `json:"type"`
+	Config  map[string]interface{} `json:"config"`
+	Enabled bool                   `json:"enabled"`
 }
 
 // AlertHistory tracks alert firing history
 type AlertHistory struct {
-	RuleName        string    `json:"rule_name"`
-	LastFired       time.Time `json:"last_fired"`
-	LastResolved    time.Time `json:"last_resolved"`
-	FireCount       int       `json:"fire_count"`
-	CurrentState    AlertState `json:"current_state"`
-	LastLatency     float64   `json:"last_latency_ms"`
-	LastP95         float64   `json:"last_p95_ms"`
-	LastP99         float64   `json:"last_p99_ms"`
-	ConsecutiveFires int      `json:"consecutive_fires"`
+	RuleName         string     `json:"rule_name"`
+	LastFired        time.Time  `json:"last_fired"`
+	LastResolved     time.Time  `json:"last_resolved"`
+	FireCount        int        `json:"fire_count"`
+	CurrentState     AlertState `json:"current_state"`
+	LastLatency      float64    `json:"last_latency_ms"`
+	LastP95          float64    `json:"last_p95_ms"`
+	LastP99          float64    `json:"last_p99_ms"`
+	ConsecutiveFires int        `json:"consecutive_fires"`
 }
 
 // Alert represents a triggered alert
 type Alert struct {
-	RuleName    string                 `json:"rule_name"`
-	Service     string                 `json:"service"`
-	Operation   string                 `json:"operation"`
-	Severity    AlertSeverity          `json:"severity"`
-	State       AlertState             `json:"state"`
-	Message     string                 `json:"message"`
-	Timestamp   time.Time              `json:"timestamp"`
-	Values      map[string]float64     `json:"values"`
-	Dimensions  map[string]string      `json:"dimensions"`
-	Actions     []AlertAction          `json:"actions"`
-	Context     map[string]interface{} `json:"context"`
+	RuleName   string                 `json:"rule_name"`
+	Service    string                 `json:"service"`
+	Operation  string                 `json:"operation"`
+	Severity   AlertSeverity          `json:"severity"`
+	State      AlertState             `json:"state"`
+	Message    string                 `json:"message"`
+	Timestamp  time.Time              `json:"timestamp"`
+	Values     map[string]float64     `json:"values"`
+	Dimensions map[string]string      `json:"dimensions"`
+	Actions    []AlertAction          `json:"actions"`
+	Context    map[string]interface{} `json:"context"`
 }
 
 // AlertSeverity represents the severity level of alerts
 type AlertSeverity int
+
 const (
 	// SeverityInfo represents informational alerts
 	SeverityInfo AlertSeverity = iota
@@ -120,6 +121,7 @@ func (s AlertSeverity) String() string {
 
 // AlertState represents the current state of an alert
 type AlertState int
+
 const (
 	// StateNormal represents the normal (not firing) state
 	StateNormal AlertState = iota
@@ -144,6 +146,7 @@ func (s AlertState) String() string {
 
 // ConditionType represents the type of alert condition
 type ConditionType int
+
 const (
 	// ConditionLatency represents latency-based alerting
 	ConditionLatency ConditionType = iota
@@ -168,6 +171,7 @@ func (c ConditionType) String() string {
 
 // ActionType represents the type of action to take when an alert fires
 type ActionType int
+
 const (
 	// ActionLog represents logging the alert
 	ActionLog ActionType = iota
@@ -210,7 +214,7 @@ func NewLatencyAlerter(logger *zap.Logger, recorder MetricsRecorder) *LatencyAle
 
 	// Add default alert rules
 	alerter.addDefaultRules()
-	
+
 	return alerter
 }
 
@@ -322,15 +326,15 @@ func (la *LatencyAlerter) addDefaultRules() {
 func (la *LatencyAlerter) AddRule(rule *AlertRule) {
 	la.mu.Lock()
 	defer la.mu.Unlock()
-	
+
 	la.alertRules[rule.Name] = rule
-	
+
 	// Initialize alert history
 	la.alertHistory[rule.Name] = &AlertHistory{
 		RuleName:     rule.Name,
 		CurrentState: StateNormal,
 	}
-	
+
 	la.logger.Info("added latency alert rule",
 		zap.String("rule_name", rule.Name),
 		zap.String("operation", rule.Operation),
@@ -342,10 +346,10 @@ func (la *LatencyAlerter) AddRule(rule *AlertRule) {
 func (la *LatencyAlerter) RemoveRule(ruleName string) {
 	la.mu.Lock()
 	defer la.mu.Unlock()
-	
+
 	delete(la.alertRules, ruleName)
 	delete(la.alertHistory, ruleName)
-	
+
 	la.logger.Info("removed latency alert rule", zap.String("rule_name", ruleName))
 }
 
@@ -379,16 +383,16 @@ func (la *LatencyAlerter) CheckLatency(ctx context.Context, operation, service s
 // evaluateRule evaluates a specific alert rule
 func (la *LatencyAlerter) evaluateRule(ctx context.Context, rule *AlertRule, operation, service string, latencyMs, p95Ms, p99Ms float64) {
 	history := la.alertHistory[rule.Name]
-	
+
 	// Check if we're in cooldown period
-	if history.CurrentState == StateFiring && 
-	   time.Since(history.LastFired) < rule.AlertCooldown {
+	if history.CurrentState == StateFiring &&
+		time.Since(history.LastFired) < rule.AlertCooldown {
 		return
 	}
 
 	// Evaluate conditions
 	shouldFire := la.shouldFireAlert(rule, latencyMs, p95Ms, p99Ms)
-	
+
 	// Update history
 	history.LastLatency = latencyMs
 	history.LastP95 = p95Ms
@@ -397,16 +401,16 @@ func (la *LatencyAlerter) evaluateRule(ctx context.Context, rule *AlertRule, ope
 	if shouldFire && history.CurrentState != StateFiring {
 		// Fire alert
 		la.fireAlert(ctx, rule, operation, service, latencyMs, p95Ms, p99Ms)
-		
+
 		history.CurrentState = StateFiring
 		history.LastFired = time.Now()
 		history.FireCount++
 		history.ConsecutiveFires++
-		
+
 	} else if !shouldFire && history.CurrentState == StateFiring {
 		// Resolve alert
 		la.resolveAlert(ctx, rule, operation, service)
-		
+
 		history.CurrentState = StateResolved
 		history.LastResolved = time.Now()
 		history.ConsecutiveFires = 0
@@ -419,11 +423,11 @@ func (la *LatencyAlerter) shouldFireAlert(rule *AlertRule, latencyMs, p95Ms, p99
 	if latencyMs > rule.Threshold {
 		return true
 	}
-	
+
 	if p95Ms > rule.P95Threshold && rule.P95Threshold > 0 {
 		return true
 	}
-	
+
 	if p99Ms > rule.P99Threshold && rule.P99Threshold > 0 {
 		return true
 	}
@@ -441,7 +445,7 @@ func (la *LatencyAlerter) shouldFireAlert(rule *AlertRule, latencyMs, p95Ms, p99
 // evaluateCondition evaluates a single condition
 func (la *LatencyAlerter) evaluateCondition(condition Condition, latencyMs, p95Ms, p99Ms float64) bool {
 	var value float64
-	
+
 	switch condition.Type {
 	case ConditionLatency:
 		switch condition.Percentile {
@@ -495,7 +499,7 @@ func (la *LatencyAlerter) fireAlert(ctx context.Context, rule *AlertRule, operat
 		},
 		Actions: rule.Actions,
 		Context: map[string]interface{}{
-			"rule_name": rule.Name,
+			"rule_name":   rule.Name,
 			"window_size": rule.WindowSize.String(),
 		},
 	}
@@ -668,14 +672,14 @@ func (la *LatencyAlerter) formatAlertMessage(rule *AlertRule, latencyMs, p95Ms, 
 func (la *LatencyAlerter) GetAlertRules() map[string]*AlertRule {
 	la.mu.RLock()
 	defer la.mu.RUnlock()
-	
+
 	rules := make(map[string]*AlertRule)
 	for name, rule := range la.alertRules {
 		// Deep copy to prevent modification
 		ruleCopy := *rule
 		rules[name] = &ruleCopy
 	}
-	
+
 	return rules
 }
 
@@ -683,14 +687,14 @@ func (la *LatencyAlerter) GetAlertRules() map[string]*AlertRule {
 func (la *LatencyAlerter) GetAlertHistory() map[string]*AlertHistory {
 	la.mu.RLock()
 	defer la.mu.RUnlock()
-	
+
 	history := make(map[string]*AlertHistory)
 	for name, hist := range la.alertHistory {
 		// Deep copy to prevent modification
 		histCopy := *hist
 		history[name] = &histCopy
 	}
-	
+
 	return history
 }
 
@@ -698,9 +702,9 @@ func (la *LatencyAlerter) GetAlertHistory() map[string]*AlertHistory {
 func (la *LatencyAlerter) SetEnabled(enabled bool) {
 	la.mu.Lock()
 	defer la.mu.Unlock()
-	
+
 	la.enabled = enabled
-	
+
 	la.logger.Info("latency alerter enabled state changed",
 		zap.Bool("enabled", enabled))
 }

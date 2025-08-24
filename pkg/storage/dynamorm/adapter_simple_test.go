@@ -18,23 +18,23 @@ func TestSimpleAdapter(t *testing.T) {
 	t.Run("adapter creation without database connection", func(t *testing.T) {
 		// Create a minimal repository storage mock using nil DB
 		// This tests adapter creation and interface compliance
-		
+
 		logger := zaptest.NewLogger(t)
-		
+
 		// Create simple repository storage that satisfies the interface
 		repoStorage := &SimpleRepositoryStorage{
 			db:        nil, // No real DB needed for interface test
 			tableName: "test-table",
 			logger:    logger,
 		}
-		
+
 		// Create adapter
 		adapter := NewStorageAdapter(repoStorage)
 		require.NotNil(t, adapter)
-		
+
 		// Verify it implements the storage interface
 		var _ interfaces.Storage = adapter
-		
+
 		// Test basic accessor methods
 		assert.Equal(t, "test-table", adapter.GetTableName())
 		assert.Equal(t, logger, adapter.GetLogger())
@@ -48,13 +48,13 @@ type SimpleRepositoryStorage struct {
 	logger    *zap.Logger
 }
 
-func (s *SimpleRepositoryStorage) GetDB() dynamormCore.DB     { return s.db }
-func (s *SimpleRepositoryStorage) GetTableName() string      { return s.tableName }
-func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger    { return s.logger }
+func (s *SimpleRepositoryStorage) GetDB() dynamormCore.DB { return s.db }
+func (s *SimpleRepositoryStorage) GetTableName() string   { return s.tableName }
+func (s *SimpleRepositoryStorage) GetLogger() *zap.Logger { return s.logger }
 
 // Repository access methods - return nil repositories for testing
 // This is sufficient to test interface compliance and basic adapter functionality
-func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository              { return nil }
+func (s *SimpleRepositoryStorage) Account() *repositories.AccountRepository             { return nil }
 func (s *SimpleRepositoryStorage) Actor() *repositories.ActorRepository                 { return nil }
 func (s *SimpleRepositoryStorage) Object() *repositories.ObjectRepository               { return nil }
 func (s *SimpleRepositoryStorage) Activity() *repositories.ActivityRepository           { return nil }
@@ -66,9 +66,13 @@ func (s *SimpleRepositoryStorage) List() *repositories.ListRepository           
 func (s *SimpleRepositoryStorage) Media() *repositories.MediaRepository                 { return nil }
 func (s *SimpleRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
 func (s *SimpleRepositoryStorage) Poll() *repositories.PollRepository                   { return nil }
-func (s *SimpleRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository { return nil }
-func (s *SimpleRepositoryStorage) Hashtag() *repositories.HashtagRepository             { return nil }
-func (s *SimpleRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository { return nil }
+func (s *SimpleRepositoryStorage) PushSubscription() *repositories.PushSubscriptionRepository {
+	return nil
+}
+func (s *SimpleRepositoryStorage) Hashtag() *repositories.HashtagRepository { return nil }
+func (s *SimpleRepositoryStorage) ScheduledStatus() *repositories.ScheduledStatusRepository {
+	return nil
+}
 func (s *SimpleRepositoryStorage) Announcement() *repositories.AnnouncementRepository   { return nil }
 func (s *SimpleRepositoryStorage) DomainBlock() *repositories.DomainBlockRepository     { return nil }
 func (s *SimpleRepositoryStorage) Relationship() *repositories.RelationshipRepository   { return nil }
@@ -95,9 +99,13 @@ func (s *SimpleRepositoryStorage) Export() *repositories.ExportRepository       
 func (s *SimpleRepositoryStorage) Import() *repositories.ImportRepository               { return nil }
 func (s *SimpleRepositoryStorage) DLQ() *repositories.DLQRepository                     { return nil }
 func (s *SimpleRepositoryStorage) MetricRecord() *repositories.MetricRecordRepository   { return nil }
-func (s *SimpleRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository { return nil }
-func (s *SimpleRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
-func (s *SimpleRepositoryStorage) Audit() *repositories.AuditRepository                 { return nil }
-func (s *SimpleRepositoryStorage) OAuth() *repositories.OAuthRepository                 { return nil }
-func (s *SimpleRepositoryStorage) DNSCache() *repositories.DNSCacheRepository           { return nil }
-func (s *SimpleRepositoryStorage) Filter() *repositories.FilterRepository               { return nil }
+func (s *SimpleRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
+	return nil
+}
+func (s *SimpleRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	return nil
+}
+func (s *SimpleRepositoryStorage) Audit() *repositories.AuditRepository       { return nil }
+func (s *SimpleRepositoryStorage) OAuth() *repositories.OAuthRepository       { return nil }
+func (s *SimpleRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return nil }
+func (s *SimpleRepositoryStorage) Filter() *repositories.FilterRepository     { return nil }

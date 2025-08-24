@@ -54,7 +54,7 @@ func (r *RelayRepository) convertModelToRelayInfo(model *models.Relay) *storage.
 
 // StoreRelayInfo stores relay information
 func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.RelayInfo) error {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "StoreRelayInfo"), zap.String("relay_url", relay.URL))
+	logger := r.logger.With(zap.String("operation", "StoreRelayInfo"), zap.String("relay_url", relay.URL))
 
 	// Extract domain from URL for indexing
 	domain := relayExtractDomainFromURL(relay.URL)
@@ -81,7 +81,7 @@ func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.Rel
 	}
 
 	// Use BaseRepository Create method
-	err := r.BaseRepository.Create(ctx, model)
+	err := r.Create(ctx, model)
 	if err != nil {
 		logger.Error("failed to store relay info", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "relay", relay.URL)
@@ -93,10 +93,10 @@ func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.Rel
 
 // GetRelayInfo retrieves relay information
 func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*storage.RelayInfo, error) {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "GetRelayInfo"), zap.String("relay_url", relayURL))
+	logger := r.logger.With(zap.String("operation", "GetRelayInfo"), zap.String("relay_url", relayURL))
 
 	var model models.Relay
-	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
+	err := r.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -115,9 +115,9 @@ func (r *RelayRepository) GetRelayInfo(ctx context.Context, relayURL string) (*s
 
 // RemoveRelayInfo removes relay information
 func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) error {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "RemoveRelayInfo"), zap.String("relay_url", relayURL))
+	logger := r.logger.With(zap.String("operation", "RemoveRelayInfo"), zap.String("relay_url", relayURL))
 
-	err := r.BaseRepository.Delete(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO")
+	err := r.Delete(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO")
 
 	if err != nil {
 		logger.Error("failed to remove relay info", zap.Error(err))
@@ -130,11 +130,11 @@ func (r *RelayRepository) RemoveRelayInfo(ctx context.Context, relayURL string) 
 
 // GetActiveRelays retrieves all active relays
 func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.RelayInfo, error) {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "GetActiveRelays"))
+	logger := r.logger.With(zap.String("operation", "GetActiveRelays"))
 
 	// Use BaseRepository QueryGSI method to query active relays
 	var relayModels []models.Relay
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.Relay{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.Relay{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", "ACTIVE_RELAYS").
 		Limit(1000).
@@ -160,11 +160,11 @@ func (r *RelayRepository) GetActiveRelays(ctx context.Context) ([]*storage.Relay
 
 // GetAllRelays retrieves all relays with pagination
 func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor string) ([]*storage.RelayInfo, string, error) {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "GetAllRelays"))
+	logger := r.logger.With(zap.String("operation", "GetAllRelays"))
 
 	// Build the query - we need to scan for items where PK starts with "RELAY#"
 	// Since we can't use BEGINS_WITH on PK in main table, we'll use a Filter approach
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.Relay{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.Relay{}).
 		Filter("PK", "BEGINS_WITH", "RELAY#").
 		OrderBy("PK", "ASC")
 
@@ -218,12 +218,12 @@ func (r *RelayRepository) GetAllRelays(ctx context.Context, limit int, cursor st
 
 // UpdateRelayStatus updates the active status of a relay
 func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string, active bool) error {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "UpdateRelayStatus"),
+	logger := r.logger.With(zap.String("operation", "UpdateRelayStatus"),
 		zap.String("relay_url", relayURL), zap.Bool("active", active))
 
 	// First get the existing relay to update it properly
 	var model models.Relay
-	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
+	err := r.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -238,7 +238,7 @@ func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.BaseRepository.Create(ctx, &model)
+	err = r.Create(ctx, &model)
 
 	if err != nil {
 		logger.Error("failed to update relay status", zap.Error(err))
@@ -266,12 +266,12 @@ func (r *RelayRepository) GetRelay(ctx context.Context, relayURL string) (*stora
 
 // UpdateRelayState updates multiple relay fields beyond just active status
 func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string, state storage.RelayState) error {
-	logger := r.BaseRepository.logger.With(zap.String("operation", "UpdateRelayState"),
+	logger := r.logger.With(zap.String("operation", "UpdateRelayState"),
 		zap.String("relay_url", relayURL))
 
 	// First get the existing relay
 	var model models.Relay
-	err := r.BaseRepository.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
+	err := r.Get(ctx, fmt.Sprintf("RELAY#%s", relayURL), "INFO", &model)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -288,7 +288,7 @@ func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string,
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.BaseRepository.Create(ctx, &model)
+	err = r.Create(ctx, &model)
 	if err != nil {
 		logger.Error("failed to update relay state", zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "relay", relayURL)
@@ -353,4 +353,3 @@ func decodeCursor(cursor string) (map[string]interface{}, error) {
 
 	return key, nil
 }
-

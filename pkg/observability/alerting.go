@@ -20,34 +20,34 @@ import (
 
 // AlertingSystem provides comprehensive alerting with webhook delivery and SNS integration
 type AlertingSystem struct {
-	logger              *zap.Logger
-	snsClient           *sns.Client
-	snsTopicArn         string
-	webhookDelivery     *WebhookDeliveryService
-	alertRepo           *StandaloneAlertRepository
-	latencyAlerter      *LatencyAlerter
-	enabled             bool
-	
+	logger          *zap.Logger
+	snsClient       *sns.Client
+	snsTopicArn     string
+	webhookDelivery *WebhookDeliveryService
+	alertRepo       *StandaloneAlertRepository
+	latencyAlerter  *LatencyAlerter
+	enabled         bool
+
 	// Configuration
-	environment         string
-	region              string
-	serviceName         string
+	environment string
+	region      string
+	serviceName string
 }
 
 // AlertingConfig contains configuration for the alerting system
 type AlertingConfig struct {
-	Logger              *zap.Logger
-	DB                  core.DB
-	TableName           string
-	CostService         *cost.TrackingService
-	SNSClient           *sns.Client
-	SNSTopicArn         string
-	WebhookURL          string
-	WebhookHeaders      map[string]string
-	Environment         string
-	Region              string
-	ServiceName         string
-	Enabled             bool
+	Logger         *zap.Logger
+	DB             core.DB
+	TableName      string
+	CostService    *cost.TrackingService
+	SNSClient      *sns.Client
+	SNSTopicArn    string
+	WebhookURL     string
+	WebhookHeaders map[string]string
+	Environment    string
+	Region         string
+	ServiceName    string
+	Enabled        bool
 }
 
 // NewAlertingSystem creates a new comprehensive alerting system
@@ -112,7 +112,7 @@ func NewAlertingSystem(config *AlertingConfig) (*AlertingSystem, error) {
 	// Create a simple metric storage function for the alerting system
 	createMetricFn := func(_ context.Context, metric *models.MetricRecord) error {
 		// For alerting purposes, we just log the metric
-		config.Logger.Debug("storing alert metric", 
+		config.Logger.Debug("storing alert metric",
 			zap.String("metric_type", metric.MetricType),
 			zap.String("service_name", metric.ServiceName))
 		return nil
@@ -420,12 +420,12 @@ func (a *AlertingSystem) GetActiveAlerts(ctx context.Context, limit int) ([]*mod
 
 // AlertStats represents alert statistics
 type AlertStats struct {
-	TotalAlerts       int64
-	ActiveAlerts      int64
-	ResolvedAlerts    int64
-	CriticalAlerts    int64
-	WarningAlerts     int64
-	InfoAlerts        int64
+	TotalAlerts         int64
+	ActiveAlerts        int64
+	ResolvedAlerts      int64
+	CriticalAlerts      int64
+	WarningAlerts       int64
+	InfoAlerts          int64
 	DeliverySuccessRate float64
 	AverageResponseTime time.Duration
 }

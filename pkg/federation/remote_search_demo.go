@@ -24,7 +24,7 @@ func (d *DemoInstanceRegistry) ListHealthyInstances(_ context.Context) ([]*types
 // DemonstrateDynamicInstanceDiscovery shows how the enhanced remote search works
 func DemonstrateDynamicInstanceDiscovery() {
 	log.Println("=== Remote Search Dynamic Instance Discovery Demo ===")
-	
+
 	// Create a demo instance registry with some known instances
 	registry := &DemoInstanceRegistry{
 		instances: []*types.Instance{
@@ -33,7 +33,7 @@ func DemonstrateDynamicInstanceDiscovery() {
 				Status: types.InstanceStatusActive,
 			},
 			{
-				Domain: "fosstodon.org", 
+				Domain: "fosstodon.org",
 				Status: types.InstanceStatusActive,
 			},
 			{
@@ -56,7 +56,7 @@ func DemonstrateDynamicInstanceDiscovery() {
 	defer cancel()
 
 	log.Println("Testing dynamic instance discovery...")
-	
+
 	// Test the registry-based discovery
 	log.Println("Step 1: Getting instances from registry...")
 	registryInstances, err := service.getInstancesFromRegistry(ctx)
@@ -81,12 +81,12 @@ func DemonstrateDynamicInstanceDiscovery() {
 	// Test health filtering (this will make actual HTTP requests)
 	log.Println("Step 4: Testing health filtering...")
 	log.Printf("Testing health of first 3 unique instances (making real HTTP requests)...")
-	
+
 	testInstances := uniqueInstances
 	if len(testInstances) > 3 {
 		testInstances = testInstances[:3]
 	}
-	
+
 	healthyInstances := service.filterHealthyInstances(ctx, testInstances)
 	log.Printf("Healthy instances: %v", healthyInstances)
 
@@ -99,7 +99,7 @@ func DemonstrateDynamicInstanceDiscovery() {
 	log.Println("")
 	log.Println("Key improvements implemented:")
 	log.Println("1. Dynamic instance discovery from federation registry")
-	log.Println("2. NodeInfo-based peer discovery") 
+	log.Println("2. NodeInfo-based peer discovery")
 	log.Println("3. Health checking and filtering")
 	log.Println("4. Intelligent fallback to verified instances")
 	log.Println("5. No more hardcoded static lists!")

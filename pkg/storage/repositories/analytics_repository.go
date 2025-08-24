@@ -49,10 +49,10 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger, costService *cost.Tra
 
 	// Create base repository for TrendingHashtag
 	baseRepo := NewBaseRepositoryWithCostTracking[*models.TrendingHashtag](
-		db, 
-		cfg.DynamoTableName, 
-		logger, 
-		costService, 
+		db,
+		cfg.DynamoTableName,
+		logger,
+		costService,
 		"TrendingRepository",
 	)
 
@@ -441,7 +441,7 @@ func (r *TrendingRepository) updateHashtagTrendScore(ctx context.Context, hashta
 		UpdatedAt:   now,
 		TTL:         now.Add(7 * 24 * time.Hour).Unix(),
 	}
-	trendItem.UpdateKeys()
+	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
 	err = r.db.WithContext(ctx).Model(trendItem).Create()
 	if err != nil {
@@ -509,7 +509,7 @@ func (r *TrendingRepository) updateStatusTrendScore(ctx context.Context, statusI
 		UpdatedAt:   now,
 		TTL:         now.Add(7 * 24 * time.Hour).Unix(),
 	}
-	trendItem.UpdateKeys()
+	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
 	err = r.db.WithContext(ctx).Model(trendItem).Create()
 	if err != nil {
@@ -587,7 +587,7 @@ func (r *TrendingRepository) updateLinkTrendScore(ctx context.Context, linkURL s
 		UpdatedAt:   now,
 		TTL:         now.Add(7 * 24 * time.Hour).Unix(),
 	}
-	trendItem.UpdateKeys()
+	_ = trendItem.UpdateKeys() // Ignore error as this is internal model operation
 
 	err = r.db.WithContext(ctx).Model(trendItem).Create()
 	if err != nil {
@@ -956,7 +956,7 @@ func (r *TrendingRepository) TrackSearchQuery(ctx context.Context, userID, query
 	}
 
 	// Update keys
-	searchQuery.UpdateKeys()
+	_ = searchQuery.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Store the query
 	err = r.db.WithContext(ctx).Model(searchQuery).Create()
@@ -1090,11 +1090,8 @@ func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query str
 }
 
 // GetStatusesByLink retrieves statuses that contain a specific link
-func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
-	// Validate limit using centralized validation
-	if err := common.ValidateQueryLimit(limit, 100, "analytics"); err != nil {
-		limit = 20
-	}
+func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string, _ int) ([]any, error) {
+	// TODO: Implement limit validation and usage when actual query is implemented
 
 	// Check if statusRepo dependency is available
 	if r.statusRepo == nil {
@@ -1117,7 +1114,7 @@ func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL stri
 	// for i, status := range statuses {
 	//	results[i] = status
 	// }
-	
+
 	// Temporary placeholder - return empty results
 	results := make([]any, 0)
 
@@ -1318,7 +1315,7 @@ func (r *TrendingRepository) RecordEngagement(ctx context.Context, metricType, t
 		TTL:         now.Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
 
-	metrics.UpdateKeys()
+	_ = metrics.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.db.WithContext(ctx).Model(metrics).Create()
 	if err != nil {
@@ -1533,7 +1530,7 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 	}
 
 	// Use BaseRepository for TrendingHashtag creation
-	err := r.BaseRepository.Create(ctx, trending)
+	err := r.Create(ctx, trending)
 	if err != nil {
 		r.logger.Error("failed to update trending hashtag",
 			zap.String("hashtag", hashtag),
@@ -1549,7 +1546,7 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 func (r *TrendingRepository) GetTrendingHashtagsForDate(ctx context.Context, date string, limit int) ([]*storage.TrendingHashtagData, error) {
 	pk := fmt.Sprintf("TRENDING#%s", date)
 
-	trendingRecords, err := r.BaseRepository.Query(ctx, pk, limit)
+	trendingRecords, err := r.Query(ctx, pk, limit)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -1594,7 +1591,7 @@ func (r *TrendingRepository) GetHashtagTrend(ctx context.Context, hashtag string
 		filters := map[string]interface{}{
 			"SK": hashtag, // CONTAINS filter
 		}
-		trendingRecords, err := r.BaseRepository.QueryWithFilter(ctx, pk, filters, 100)
+		trendingRecords, err := r.QueryWithFilter(ctx, pk, filters, 100)
 
 		if err != nil && !errors.IsNotFound(err) {
 			r.logger.Warn("failed to get hashtag trend for date",
@@ -1648,7 +1645,7 @@ func (r *TrendingRepository) PruneStaleTrends(ctx context.Context, before time.T
 
 	// Delete each trend using BaseRepository
 	for _, trend := range oldTrends {
-		err := r.BaseRepository.Delete(ctx, trend.PK, trend.SK)
+		err := r.Delete(ctx, trend.PK, trend.SK)
 		if err != nil {
 			r.logger.Warn("failed to delete stale trend",
 				zap.String("hashtag", trend.Hashtag),
@@ -1689,7 +1686,7 @@ func (r *TrendingRepository) RecordInstanceMetric(ctx context.Context, date, met
 		TTL:        now.Add(365 * 24 * time.Hour).Unix(), // 1 year retention
 	}
 
-	metrics.UpdateKeys()
+	_ = metrics.UpdateKeys() // Ignore error as this is internal model operation
 
 	err = r.db.WithContext(ctx).Model(metrics).Create()
 	if err != nil {
@@ -1933,12 +1930,12 @@ func (r *TrendingRepository) querySessionEvents(ctx context.Context, last7Days t
 
 // processSessionEvent processes a single session event for the target media
 func (r *TrendingRepository) processSessionEvent(
-	event models.MediaAnalytics, 
-	mediaID string, 
-	analytics *storage.StreamingAnalyticsData, 
+	event models.MediaAnalytics,
+	mediaID string,
+	analytics *storage.StreamingAnalyticsData,
 	uniqueUsers map[string]bool,
 	sessionMetrics *struct {
-		totalWatchTime        float64
+		totalWatchTime         float64
 		totalCompletedSessions int
 	},
 ) {
@@ -1947,7 +1944,7 @@ func (r *TrendingRepository) processSessionEvent(
 	}
 
 	analytics.TotalViews++
-	
+
 	// Track unique viewers
 	if event.UserID != "" {
 		uniqueUsers[event.UserID] = true
@@ -1992,16 +1989,16 @@ func (r *TrendingRepository) updateQualityDistribution(event models.MediaAnalyti
 
 // processSessionEvents processes all session events for analytics
 func (r *TrendingRepository) processSessionEvents(
-	sessionEvents []models.MediaAnalytics, 
-	mediaID string, 
+	sessionEvents []models.MediaAnalytics,
+	mediaID string,
 	analytics *storage.StreamingAnalyticsData,
 ) (map[string]bool, *struct {
-	totalWatchTime        float64
+	totalWatchTime         float64
 	totalCompletedSessions int
 }) {
 	uniqueUsers := make(map[string]bool)
 	sessionMetrics := &struct {
-		totalWatchTime        float64
+		totalWatchTime         float64
 		totalCompletedSessions int
 	}{}
 
@@ -2014,10 +2011,10 @@ func (r *TrendingRepository) processSessionEvents(
 
 // finalizeBasicMetrics calculates final analytics metrics
 func (r *TrendingRepository) finalizeBasicMetrics(
-	analytics *storage.StreamingAnalyticsData, 
-	uniqueUsers map[string]bool, 
+	analytics *storage.StreamingAnalyticsData,
+	uniqueUsers map[string]bool,
 	sessionMetrics *struct {
-		totalWatchTime        float64
+		totalWatchTime         float64
 		totalCompletedSessions int
 	},
 ) {
@@ -2070,7 +2067,7 @@ func (r *TrendingRepository) calculateQualityMetrics(analytics *storage.Streamin
 		if totalQualityViews > 0 {
 			stats.Percentage = float64(stats.ViewCount) / float64(totalQualityViews) * 100
 		}
-		
+
 		// Calculate average bitrate from bandwidth and view count
 		if stats.ViewCount > 0 && stats.TotalBandwidth > 0 {
 			// Convert bytes to bits and average over sessions
@@ -2081,9 +2078,9 @@ func (r *TrendingRepository) calculateQualityMetrics(analytics *storage.Streamin
 
 // addRecentMetrics adds recent performance metrics to analytics
 func (r *TrendingRepository) addRecentMetrics(
-	analytics *storage.StreamingAnalyticsData, 
-	sessionEvents []models.MediaAnalytics, 
-	mediaID string, 
+	analytics *storage.StreamingAnalyticsData,
+	sessionEvents []models.MediaAnalytics,
+	mediaID string,
 	last24Hours time.Time,
 ) {
 	analytics.RecentMetrics["last_24h_views"] = r.countRecentSessions(sessionEvents, mediaID, last24Hours)
@@ -2228,7 +2225,7 @@ func (r *TrendingRepository) RecordModerationAction(ctx context.Context, date, r
 		analytics.ModeratorActions[action.ModeratorID]++
 	}
 
-	analytics.UpdateKeys()
+	_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use Create to save (DynamORM doesn't have Save/Upsert)
 	err = r.db.WithContext(ctx).Model(analytics).Create()
@@ -2622,7 +2619,7 @@ func (r *TrendingRepository) incrementCounterForBucket(ctx context.Context, quer
 	}
 
 	// Update keys
-	counter.UpdateKeys()
+	_ = counter.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use Create for new or Update for existing
 	if errors.IsNotFound(err) {

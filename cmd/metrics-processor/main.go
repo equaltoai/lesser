@@ -939,13 +939,13 @@ func (h *DLQHandler) HandleStreamFailure(ctx context.Context, record *events.Dyn
 // generateValidatedUUID creates a UUID and validates it using common validation
 func generateValidatedUUID() string {
 	requestID := uuid.New().String()
-	
+
 	// Validate the generated UUID
 	if err := common.ValidateUUID("uuid", requestID); err != nil {
 		// Fall back to a simple timestamp-based ID if validation fails
 		return fmt.Sprintf("id_%d", time.Now().UnixNano())
 	}
-	
+
 	return requestID
 }
 
@@ -961,21 +961,21 @@ var (
 func init() {
 	// Standardized Lambda initialization for metrics-processor function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "metrics-processor", // metrics-processor
+		ServiceName: "metrics-processor",        // metrics-processor
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Function-specific initialization only
 	// Initialize metrics stream processor
 	processor := NewMetricsStreamProcessor(repos, logger)

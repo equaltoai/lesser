@@ -95,7 +95,7 @@ func (h *Handler) getOrCreateOAuthSession(ctx context.Context, authState *storag
 	}
 
 	// Create new OAuth session
-	clientIP := "" // Extract from Lambda event context if available
+	clientIP := ""  // Extract from Lambda event context if available
 	userAgent := "" // Extract from Lambda event headers if available
 
 	oauthSession := &models.OAuthAuthSession{
@@ -294,7 +294,7 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 	// Create OAuth session for tracking the flow
 	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
 
-	clientIP := "" // Extract from Lambda event context
+	clientIP := ""  // Extract from Lambda event context
 	userAgent := "" // Extract from Lambda event headers
 
 	oauthSession := &models.OAuthAuthSession{

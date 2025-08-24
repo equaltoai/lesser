@@ -896,7 +896,7 @@ func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 	// Initialize S3 client for frame uploads
 	s3Client := s3.NewFromConfig(aws.Config{})
 	uploader := manager.NewUploader(s3Client)
-	
+
 	// Get bucket name from centralized config
 	globalCfg := appconfig.Get()
 	bucketName := globalCfg.MediaBucketName
@@ -906,7 +906,7 @@ func NewVideoAnalyzer(client *rekognition.Client, logger *zap.Logger, config *Mo
 	if bucketName == "" {
 		bucketName = "lesser-media" // final fallback
 	}
-	
+
 	return &VideoAnalyzer{
 		client:        client,
 		logger:        logger,
@@ -928,7 +928,7 @@ func (va *VideoAnalyzer) extractFrameAtTimestamp(ctx context.Context, video *rek
 
 	bucket := aws.ToString(video.S3Object.Bucket)
 	key := aws.ToString(video.S3Object.Name)
-	
+
 	va.logger.Debug("extracting frame from video",
 		zap.String("bucket", bucket),
 		zap.String("key", key),
@@ -1005,12 +1005,12 @@ func (va *VideoAnalyzer) extractFrameWithFFmpeg(videoPath string, timestamp time
 	// Run FFmpeg command to extract frame
 	// #nosec G204 - ffmpeg command with validated input paths for video processing
 	cmd := exec.Command("ffmpeg",
-		"-i", videoPath,                    // Input video file
-		"-ss", timestampStr,                // Seek to timestamp
-		"-vframes", "1",                    // Extract only 1 frame
-		"-q:v", "2",                        // High quality
-		"-y",                               // Overwrite output file
-		frameFile.Name(),                   // Output frame file
+		"-i", videoPath, // Input video file
+		"-ss", timestampStr, // Seek to timestamp
+		"-vframes", "1", // Extract only 1 frame
+		"-q:v", "2", // High quality
+		"-y",             // Overwrite output file
+		frameFile.Name(), // Output frame file
 	)
 
 	// Capture FFmpeg output for debugging
@@ -1075,7 +1075,7 @@ func (va *VideoAnalyzer) uploadFrameToS3(ctx context.Context, framePath string) 
 
 	// Construct S3 URL
 	frameURL := fmt.Sprintf("s3://%s/%s", va.bucketName, frameKey)
-	
+
 	va.logger.Debug("uploaded frame to S3",
 		zap.String("s3_key", frameKey),
 		zap.String("s3_url", frameURL))
@@ -1101,7 +1101,7 @@ func (va *VideoAnalyzer) cleanupTemporaryFrame(ctx context.Context, frameURL str
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		va.logger.Warn("failed to cleanup temporary frame", 
+		va.logger.Warn("failed to cleanup temporary frame",
 			zap.String("s3_url", frameURL),
 			zap.Error(err))
 	} else {
@@ -1118,10 +1118,10 @@ func (va *VideoAnalyzer) createTempFile(prefix, suffix string) (*os.File, error)
 	if _, err := rand.Read(randomBytes); err != nil {
 		return nil, fmt.Errorf("failed to generate random bytes: %w", err)
 	}
-	
+
 	fileName := fmt.Sprintf("%s%s%s", prefix, hex.EncodeToString(randomBytes), suffix)
 	filePath := filepath.Join(tempDir, fileName)
-	
+
 	// #nosec G304 - filePath is controlled by createTempFile method
 	return os.Create(filePath)
 }
@@ -1141,10 +1141,10 @@ func (va *VideoAnalyzer) generateFrameS3Key() (string, error) {
 	if _, err := rand.Read(randomBytes); err != nil {
 		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
-	
+
 	timestamp := time.Now().Format("2006/01/02")
 	frameID := hex.EncodeToString(randomBytes)
-	
+
 	return fmt.Sprintf("moderation/frames/%s/%s.jpg", timestamp, frameID), nil
 }
 
@@ -1153,19 +1153,18 @@ func parseS3URL(s3URL string) (bucket, key string, err error) {
 	if !strings.HasPrefix(s3URL, "s3://") {
 		return "", "", fmt.Errorf("invalid S3 URL format: %s", s3URL)
 	}
-	
+
 	// Remove s3:// prefix
 	path := s3URL[5:]
-	
+
 	// Split into bucket and key
 	parts := strings.SplitN(path, "/", 2)
 	if len(parts) != 2 {
 		return "", "", fmt.Errorf("invalid S3 URL format: %s", s3URL)
 	}
-	
+
 	return parts[0], parts[1], nil
 }
-
 
 // AnalyzeVideo performs comprehensive video analysis with frame sampling and audio processing
 func (va *VideoAnalyzer) AnalyzeVideo(ctx context.Context, videoURL string, _ ContentMetadata) (*VideoAnalysis, error) {
@@ -1552,7 +1551,7 @@ func (va *VideoAnalyzer) analyzeKeyFrames(ctx context.Context, video *rekognitio
 		// Extract frame at timestamp using FFmpeg
 		frameImageURL, err := va.extractFrameAtTimestamp(ctx, video, timestamp)
 		if err != nil {
-			va.logger.Warn("frame extraction failed", 
+			va.logger.Warn("frame extraction failed",
 				zap.Int("frame_index", i),
 				zap.Duration("timestamp", timestamp),
 				zap.Error(err))
@@ -1564,10 +1563,10 @@ func (va *VideoAnalyzer) analyzeKeyFrames(ctx context.Context, video *rekognitio
 				Context:     "video_frame",
 				Timestamp:   time.Now(),
 			}
-			
+
 			imageAnalysis, err := va.imageAnalyzer.AnalyzeImage(ctx, frameImageURL, metadata)
 			if err != nil {
-				va.logger.Warn("frame analysis failed", 
+				va.logger.Warn("frame analysis failed",
 					zap.String("frame_url", frameImageURL),
 					zap.Int("frame_index", i),
 					zap.Duration("timestamp", timestamp),
@@ -1576,7 +1575,7 @@ func (va *VideoAnalyzer) analyzeKeyFrames(ctx context.Context, video *rekognitio
 			} else {
 				// Use the actual analysis results
 				frameAnalysis.ImageAnalysis = *imageAnalysis
-				
+
 				va.logger.Debug("completed frame analysis",
 					zap.String("frame_url", frameImageURL),
 					zap.Int("frame_index", i),
@@ -1587,7 +1586,7 @@ func (va *VideoAnalyzer) analyzeKeyFrames(ctx context.Context, video *rekognitio
 					zap.Int("faces_detected", len(imageAnalysis.Faces)),
 					zap.Int("text_detected", len(imageAnalysis.Text)))
 			}
-			
+
 			// Clean up temporary frame from S3
 			va.cleanupTemporaryFrame(ctx, frameImageURL)
 		}
@@ -1608,10 +1607,10 @@ func (va *VideoAnalyzer) countSuccessfulFrames(frames []FrameAnalysis) int {
 	for _, frame := range frames {
 		// Consider a frame successful if it has any analysis data
 		if frame.ImageAnalysis.Explicit.Confidence > 0 ||
-		   frame.ImageAnalysis.Violence.Confidence > 0 ||
-		   len(frame.ImageAnalysis.Objects) > 0 ||
-		   len(frame.ImageAnalysis.Faces) > 0 ||
-		   len(frame.ImageAnalysis.Text) > 0 {
+			frame.ImageAnalysis.Violence.Confidence > 0 ||
+			len(frame.ImageAnalysis.Objects) > 0 ||
+			len(frame.ImageAnalysis.Faces) > 0 ||
+			len(frame.ImageAnalysis.Text) > 0 {
 			count++
 		}
 	}
@@ -1748,11 +1747,11 @@ func (va *VideoAnalyzer) waitForModerationJob(ctx context.Context, jobID string,
 
 // rekognitionJobConfig holds configuration for creating job handlers
 type rekognitionJobConfig struct {
-	jobType       string
-	operationType string
-	getResult     func(ctx context.Context, jobID string, nextToken *string) (interface{}, error)
-	getJobStatus  func(result interface{}) rekognitionTypes.VideoJobStatus
-	getNextToken  func(result interface{}) *string
+	jobType          string
+	operationType    string
+	getResult        func(ctx context.Context, jobID string, nextToken *string) (interface{}, error)
+	getJobStatus     func(result interface{}) rekognitionTypes.VideoJobStatus
+	getNextToken     func(result interface{}) *string
 	getStatusMessage func(result interface{}) *string
 }
 
@@ -2377,4 +2376,3 @@ func (c *configChecker) GetDisableComprehend() bool {
 func (c *configChecker) GetDisableRekognition() bool {
 	return c.disableRekognition
 }
-

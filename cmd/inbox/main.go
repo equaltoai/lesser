@@ -147,7 +147,7 @@ func extractServicesFromContext(lambdaCtx *common.LambdaContext) extractedServic
 }
 
 // initializeStorage initializes storage components if needed
-func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}, cfg *config.Config, lambdaCtx *common.LambdaContext, logger *zap.Logger) (storageCore.RepositoryStorage, dynamormCore.DB, error) {
+func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}, cfg *config.Config, _ *common.LambdaContext, logger *zap.Logger) (storageCore.RepositoryStorage, dynamormCore.DB, error) {
 	if repoFactory != nil && db != nil {
 		coreDB, ok := db.(dynamormCore.DB)
 		if !ok {

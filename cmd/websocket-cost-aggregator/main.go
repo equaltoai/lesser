@@ -389,7 +389,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 
 	// Return error if all alert methods failed
 	if err := common.ValidateSliceNotEmpty("alertErrors", alertErrors); err == nil && len(alertErrors) == countConfiguredAlertMethods(h) {
-		return errors.Join(ErrAllAlertMethodsFailed, errors.New(fmt.Sprintf("alert errors: %v", alertErrors)))
+		return errors.Join(ErrAllAlertMethodsFailed, fmt.Errorf("alert errors: %v", alertErrors))
 	}
 
 	return nil
@@ -430,7 +430,7 @@ func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, a
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.Join(ErrWebhookNon2xxStatus, errors.New(fmt.Sprintf("status code: %d", resp.StatusCode)))
+		return errors.Join(ErrWebhookNon2xxStatus, fmt.Errorf("status code: %d", resp.StatusCode))
 	}
 
 	return nil

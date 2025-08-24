@@ -160,18 +160,18 @@ func init() {
 		ServiceName: "dlq-processor",
 		LambdaType:  common.LambdaTypeProcessor, // Background processing
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// DLQ processor-specific initialization
 	db := lambdaCtx.DynamoDB.(core.DB)
 	processor := dlq.NewProcessor(db, cfg.DynamoTableName, logger)

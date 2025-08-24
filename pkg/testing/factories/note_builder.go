@@ -151,31 +151,31 @@ func (b *NoteBuilder) Build() *activitypub.Note {
 	if err := common.ValidateRequiredParam("ID", b.note.ID); err != nil {
 		b.note.ID = b.GenerateID("statuses")
 	}
-	
+
 	if err := common.ValidateRequiredParam("AttributedTo", b.note.AttributedTo); err != nil {
 		b.note.AttributedTo = fmt.Sprintf("https://%s/users/testuser", b.domain)
 	}
-	
+
 	if b.note.Published == nil {
 		timestamp := b.GenerateTimestamp()
 		b.note.Published = &timestamp
 	}
-	
+
 	if len(b.note.To) == 0 {
 		// Default to public
 		b.note.To = []string{"https://www.w3.org/ns/activitystreams#Public"}
 	}
-	
+
 	if err := common.ValidateRequiredParam("Content", b.note.Content); err != nil {
 		b.note.Content = fmt.Sprintf("Test note %d", b.sequence)
 	}
-	
+
 	// Create a copy to return
 	result := *b.note
-	
+
 	// Reset for next build
 	b.Reset()
-	
+
 	return &result
 }
 

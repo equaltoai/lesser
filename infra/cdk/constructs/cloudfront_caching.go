@@ -26,23 +26,23 @@ type CloudFrontConfig struct {
 func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFrontConfig) awscloudfront.Distribution {
 	// Get caching configuration
 	cacheConfig := GetCachingConfig(config.Environment)
-	
+
 	// Create cache policies
 	defaultCachePolicy := createDefaultCachePolicy(scope, config.Environment)
 	noCachePolicy := createNoCachePolicy(scope, config.Environment)
 	staticCachePolicy := createStaticCachePolicy(scope, config.Environment)
-	
+
 	// Create origin request policy
 	originRequestPolicy := createOriginRequestPolicy(scope, config.Environment)
-	
+
 	// Create response headers policy
 	responseHeadersPolicy := createResponseHeadersPolicy(scope, config.Environment)
-	
+
 	// Get API Gateway domain
-	apiDomain := fmt.Sprintf("%s.execute-api.%s.amazonaws.com", 
-		*config.HttpApi.ApiId(), 
+	apiDomain := fmt.Sprintf("%s.execute-api.%s.amazonaws.com",
+		*config.HttpApi.ApiId(),
 		*awscdk.Stack_Of(scope).Region())
-	
+
 	// Create API origin
 	apiOrigin := awscloudfrontorigins.NewHttpOrigin(
 		jsii.String(apiDomain),
@@ -56,7 +56,7 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 			},
 		},
 	)
-	
+
 	// Create S3 origin for media
 	s3Origin := awscloudfrontorigins.NewS3Origin(
 		config.S3Bucket,
@@ -66,7 +66,7 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 			}),
 		},
 	)
-	
+
 	// Define cache behaviors (not used directly but shows what could be configured)
 	_ = createCacheBehaviors(
 		apiOrigin,
@@ -77,10 +77,10 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 		responseHeadersPolicy,
 		cacheConfig.CachingEnabled,
 	)
-	
+
 	// Create distribution
 	distribution := awscloudfront.NewDistribution(scope, jsii.String("CloudFrontDistribution"), &awscloudfront.DistributionProps{
-		Comment:     jsii.String(fmt.Sprintf("Lesser %s CloudFront Distribution", config.Environment)),
+		Comment:           jsii.String(fmt.Sprintf("Lesser %s CloudFront Distribution", config.Environment)),
 		DefaultRootObject: jsii.String("index.html"),
 		DomainNames: func() *[]*string {
 			if config.Domain != "" && config.Certificate != nil {
@@ -91,49 +91,49 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 		Certificate: config.Certificate,
 		HttpVersion: awscloudfront.HttpVersion_HTTP2_AND_3,
 		PriceClass:  awscloudfront.PriceClass_PRICE_CLASS_100, // Use only North America and Europe
-		
+
 		// Default behavior for API routes
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			Origin:               apiOrigin,
-			AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
-			CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
-			CachePolicy:          defaultCachePolicy,
-			OriginRequestPolicy:  originRequestPolicy,
+			Origin:                apiOrigin,
+			AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+			CachedMethods:         awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
+			CachePolicy:           defaultCachePolicy,
+			OriginRequestPolicy:   originRequestPolicy,
 			ResponseHeadersPolicy: responseHeadersPolicy,
-			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-			Compress:            jsii.Bool(true),
+			ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+			Compress:              jsii.Bool(true),
 		},
-		
+
 		// Additional behaviors for specific paths
 		AdditionalBehaviors: &map[string]*awscloudfront.BehaviorOptions{
 			// Media files from S3
 			"/media/*": {
-				Origin:               s3Origin,
-				AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
-				CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
-				CachePolicy:          staticCachePolicy,
+				Origin:                s3Origin,
+				AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
+				CachedMethods:         awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
+				CachePolicy:           staticCachePolicy,
 				ResponseHeadersPolicy: responseHeadersPolicy,
-				ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-				Compress:            jsii.Bool(true),
+				ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+				Compress:              jsii.Bool(true),
 			},
 			// Instance information - long cache
-			"/api/v1/instance": createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			"/api/v2/instance": createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
+			"/api/v1/instance":      createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
+			"/api/v2/instance":      createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
 			"/.well-known/nodeinfo": createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			"/nodeinfo/*": createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			
+			"/nodeinfo/*":           createCacheBehavior(apiOrigin, staticCachePolicy, originRequestPolicy, responseHeadersPolicy),
+
 			// Public timelines - short cache
 			"/api/v1/timelines/public": createCacheBehavior(apiOrigin, defaultCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			"/api/v1/timelines/tag/*": createCacheBehavior(apiOrigin, defaultCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			
+			"/api/v1/timelines/tag/*":  createCacheBehavior(apiOrigin, defaultCachePolicy, originRequestPolicy, responseHeadersPolicy),
+
 			// No cache for auth and user-specific endpoints
-			"/oauth/*": createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			"/auth/*": createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
+			"/oauth/*":               createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
+			"/auth/*":                createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
 			"/api/v1/timelines/home": createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
 			"/api/v1/notifications*": createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
-			"/api/v1/streaming/*": createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
+			"/api/v1/streaming/*":    createNoCacheBehavior(apiOrigin, noCachePolicy, originRequestPolicy, responseHeadersPolicy),
 		},
-		
+
 		// Error pages
 		ErrorResponses: &[]*awscloudfront.ErrorResponse{
 			{
@@ -161,33 +161,33 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 				Ttl:                awscdk.Duration_Seconds(jsii.Number(10)),
 			},
 		},
-		
+
 		// Logging
 		EnableLogging: jsii.Bool(config.Environment == "production"),
 		LogBucket: func() awss3.IBucket {
 			if config.Environment == "production" {
 				logBucket := awss3.NewBucket(scope, jsii.String("CloudFrontLogBucket"), &awss3.BucketProps{
-					BucketName: jsii.String(fmt.Sprintf("lesser-%s-cloudfront-logs", config.Environment)),
-					Encryption: awss3.BucketEncryption_S3_MANAGED,
+					BucketName:    jsii.String(fmt.Sprintf("lesser-%s-cloudfront-logs", config.Environment)),
+					Encryption:    awss3.BucketEncryption_S3_MANAGED,
 					RemovalPolicy: awscdk.RemovalPolicy_RETAIN,
 				})
-				
+
 				// Apply comprehensive CloudFront log lifecycle policies
 				ApplyS3LifecyclePolicies(&S3LifecycleConfig{
 					Environment: config.Environment,
 					Bucket:      logBucket,
 					BucketType:  "cloudfront-logs",
 				})
-				
+
 				return logBucket
 			}
 			return nil
 		}(),
 		LogFilePrefix: jsii.String("cloudfront/"),
-		
+
 		// Enable IPv6
 		EnableIpv6: jsii.Bool(true),
-		
+
 		// WAF Web ACL (if needed)
 		WebAclId: func() *string {
 			if config.Environment == "production" {
@@ -197,31 +197,31 @@ func CreateCloudFrontDistribution(scope constructs.Construct, config *CloudFront
 			return nil
 		}(),
 	})
-	
+
 	// Add outputs
 	awscdk.NewCfnOutput(scope, jsii.String("CloudFrontURL"), &awscdk.CfnOutputProps{
 		Value:       distribution.DistributionDomainName(),
 		Description: jsii.String("CloudFront distribution URL"),
 	})
-	
+
 	awscdk.NewCfnOutput(scope, jsii.String("CloudFrontDistributionId"), &awscdk.CfnOutputProps{
 		Value:       distribution.DistributionId(),
 		Description: jsii.String("CloudFront distribution ID"),
 	})
-	
+
 	return distribution
 }
 
 // createDefaultCachePolicy creates the default cache policy
 func createDefaultCachePolicy(scope constructs.Construct, environment string) awscloudfront.CachePolicy {
 	config := GetCachingConfig(environment)
-	
+
 	return awscloudfront.NewCachePolicy(scope, jsii.String("DefaultCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName: jsii.String(fmt.Sprintf("lesser-%s-default-cache", environment)),
-		Comment:        jsii.String("Default cache policy with short TTL"),
-		DefaultTtl:     awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds)),
-		MaxTtl:         awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds * 2)),
-		MinTtl:         awscdk.Duration_Seconds(jsii.Number(0)),
+		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-default-cache", environment)),
+		Comment:                    jsii.String("Default cache policy with short TTL"),
+		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds)),
+		MaxTtl:                     awscdk.Duration_Seconds(jsii.Number(config.CacheTTLSeconds * 2)),
+		MinTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
 		EnableAcceptEncodingGzip:   jsii.Bool(true),
 		EnableAcceptEncodingBrotli: jsii.Bool(true),
 		QueryStringBehavior: awscloudfront.CacheQueryStringBehavior_AllowList(
@@ -245,32 +245,32 @@ func createDefaultCachePolicy(scope constructs.Construct, environment string) aw
 // createNoCachePolicy creates a no-cache policy for dynamic content
 func createNoCachePolicy(scope constructs.Construct, environment string) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(scope, jsii.String("NoCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName: jsii.String(fmt.Sprintf("lesser-%s-no-cache", environment)),
-		Comment:        jsii.String("No cache policy for dynamic content"),
-		DefaultTtl:     awscdk.Duration_Seconds(jsii.Number(0)),
-		MaxTtl:         awscdk.Duration_Seconds(jsii.Number(0)),
-		MinTtl:         awscdk.Duration_Seconds(jsii.Number(0)),
+		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-no-cache", environment)),
+		Comment:                    jsii.String("No cache policy for dynamic content"),
+		DefaultTtl:                 awscdk.Duration_Seconds(jsii.Number(0)),
+		MaxTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
+		MinTtl:                     awscdk.Duration_Seconds(jsii.Number(0)),
 		EnableAcceptEncodingGzip:   jsii.Bool(true),
 		EnableAcceptEncodingBrotli: jsii.Bool(true),
-		QueryStringBehavior: awscloudfront.CacheQueryStringBehavior_All(),
-		HeaderBehavior:      awscloudfront.CacheHeaderBehavior_None(),
-		CookieBehavior:      awscloudfront.CacheCookieBehavior_All(),
+		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_All(),
+		HeaderBehavior:             awscloudfront.CacheHeaderBehavior_None(),
+		CookieBehavior:             awscloudfront.CacheCookieBehavior_All(),
 	})
 }
 
 // createStaticCachePolicy creates a cache policy for static content
 func createStaticCachePolicy(scope constructs.Construct, environment string) awscloudfront.CachePolicy {
 	return awscloudfront.NewCachePolicy(scope, jsii.String("StaticCachePolicy"), &awscloudfront.CachePolicyProps{
-		CachePolicyName: jsii.String(fmt.Sprintf("lesser-%s-static-cache", environment)),
-		Comment:        jsii.String("Cache policy for static content"),
-		DefaultTtl:     awscdk.Duration_Hours(jsii.Number(1)),
-		MaxTtl:         awscdk.Duration_Days(jsii.Number(1)),
-		MinTtl:         awscdk.Duration_Minutes(jsii.Number(1)),
+		CachePolicyName:            jsii.String(fmt.Sprintf("lesser-%s-static-cache", environment)),
+		Comment:                    jsii.String("Cache policy for static content"),
+		DefaultTtl:                 awscdk.Duration_Hours(jsii.Number(1)),
+		MaxTtl:                     awscdk.Duration_Days(jsii.Number(1)),
+		MinTtl:                     awscdk.Duration_Minutes(jsii.Number(1)),
 		EnableAcceptEncodingGzip:   jsii.Bool(true),
 		EnableAcceptEncodingBrotli: jsii.Bool(true),
-		QueryStringBehavior: awscloudfront.CacheQueryStringBehavior_None(),
-		HeaderBehavior:      awscloudfront.CacheHeaderBehavior_None(),
-		CookieBehavior:      awscloudfront.CacheCookieBehavior_None(),
+		QueryStringBehavior:        awscloudfront.CacheQueryStringBehavior_None(),
+		HeaderBehavior:             awscloudfront.CacheHeaderBehavior_None(),
+		CookieBehavior:             awscloudfront.CacheCookieBehavior_None(),
 	})
 }
 
@@ -278,8 +278,8 @@ func createStaticCachePolicy(scope constructs.Construct, environment string) aws
 func createOriginRequestPolicy(scope constructs.Construct, environment string) awscloudfront.OriginRequestPolicy {
 	return awscloudfront.NewOriginRequestPolicy(scope, jsii.String("OriginRequestPolicy"), &awscloudfront.OriginRequestPolicyProps{
 		OriginRequestPolicyName: jsii.String(fmt.Sprintf("lesser-%s-origin-request", environment)),
-		Comment:                jsii.String("Origin request policy for API Gateway"),
-		QueryStringBehavior:    awscloudfront.OriginRequestQueryStringBehavior_All(),
+		Comment:                 jsii.String("Origin request policy for API Gateway"),
+		QueryStringBehavior:     awscloudfront.OriginRequestQueryStringBehavior_All(),
 		HeaderBehavior: awscloudfront.OriginRequestHeaderBehavior_AllowList(
 			jsii.String("Accept"),
 			jsii.String("Accept-Language"),
@@ -301,8 +301,8 @@ func createOriginRequestPolicy(scope constructs.Construct, environment string) a
 func createResponseHeadersPolicy(scope constructs.Construct, environment string) awscloudfront.ResponseHeadersPolicy {
 	return awscloudfront.NewResponseHeadersPolicy(scope, jsii.String("ResponseHeadersPolicy"), &awscloudfront.ResponseHeadersPolicyProps{
 		ResponseHeadersPolicyName: jsii.String(fmt.Sprintf("lesser-%s-response-headers", environment)),
-		Comment:                  jsii.String("Response headers policy for security and caching"),
-		
+		Comment:                   jsii.String("Response headers policy for security and caching"),
+
 		SecurityHeadersBehavior: &awscloudfront.ResponseSecurityHeadersBehavior{
 			ContentTypeOptions: &awscloudfront.ResponseHeadersContentTypeOptions{
 				Override: jsii.Bool(true),
@@ -327,10 +327,10 @@ func createResponseHeadersPolicy(scope constructs.Construct, environment string)
 			},
 			ContentSecurityPolicy: &awscloudfront.ResponseHeadersContentSecurityPolicy{
 				ContentSecurityPolicy: jsii.String("default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' wss: https:"),
-				Override:             jsii.Bool(true),
+				Override:              jsii.Bool(true),
 			},
 		},
-		
+
 		CorsBehavior: &awscloudfront.ResponseHeadersCorsBehavior{
 			AccessControlAllowCredentials: jsii.Bool(false),
 			AccessControlAllowHeaders: &[]*string{
@@ -353,7 +353,7 @@ func createResponseHeadersPolicy(scope constructs.Construct, environment string)
 			AccessControlMaxAge: awscdk.Duration_Hours(jsii.Number(24)),
 			OriginOverride:      jsii.Bool(false),
 		},
-		
+
 		CustomHeadersBehavior: &awscloudfront.ResponseCustomHeadersBehavior{
 			CustomHeaders: &[]*awscloudfront.ResponseCustomHeader{
 				{
@@ -379,14 +379,14 @@ func createCacheBehavior(
 	responseHeadersPolicy awscloudfront.IResponseHeadersPolicy,
 ) *awscloudfront.BehaviorOptions {
 	return &awscloudfront.BehaviorOptions{
-		Origin:               origin,
-		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
-		CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
-		CachePolicy:          cachePolicy,
-		OriginRequestPolicy:  originRequestPolicy,
+		Origin:                origin,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_GET_HEAD_OPTIONS(),
+		CachedMethods:         awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
+		CachePolicy:           cachePolicy,
+		OriginRequestPolicy:   originRequestPolicy,
 		ResponseHeadersPolicy: responseHeadersPolicy,
-		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-		Compress:            jsii.Bool(true),
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		Compress:              jsii.Bool(true),
 	}
 }
 
@@ -397,14 +397,14 @@ func createNoCacheBehavior(
 	responseHeadersPolicy awscloudfront.IResponseHeadersPolicy,
 ) *awscloudfront.BehaviorOptions {
 	return &awscloudfront.BehaviorOptions{
-		Origin:               origin,
-		AllowedMethods:       awscloudfront.AllowedMethods_ALLOW_ALL(),
-		CachedMethods:        awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
-		CachePolicy:          cachePolicy,
-		OriginRequestPolicy:  originRequestPolicy,
+		Origin:                origin,
+		AllowedMethods:        awscloudfront.AllowedMethods_ALLOW_ALL(),
+		CachedMethods:         awscloudfront.CachedMethods_CACHE_GET_HEAD_OPTIONS(),
+		CachePolicy:           cachePolicy,
+		OriginRequestPolicy:   originRequestPolicy,
 		ResponseHeadersPolicy: responseHeadersPolicy,
-		ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
-		Compress:            jsii.Bool(true),
+		ViewerProtocolPolicy:  awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,
+		Compress:              jsii.Bool(true),
 	}
 }
 
@@ -418,12 +418,12 @@ func createCacheBehaviors(
 	cachingEnabled bool,
 ) map[string]*awscloudfront.BehaviorOptions {
 	behaviors := make(map[string]*awscloudfront.BehaviorOptions)
-	
+
 	if !cachingEnabled {
 		// If caching is disabled, use no-cache policy for everything
 		return behaviors
 	}
-	
+
 	// Add cache behaviors for cacheable routes
 	for _, route := range GetCacheableRoutes() {
 		behaviors[route.Path] = createCacheBehavior(
@@ -433,7 +433,7 @@ func createCacheBehaviors(
 			responseHeadersPolicy,
 		)
 	}
-	
+
 	// Add no-cache behaviors for non-cacheable routes
 	for _, path := range GetNonCacheableRoutes() {
 		behaviors[path] = createNoCacheBehavior(
@@ -443,6 +443,6 @@ func createCacheBehaviors(
 			responseHeadersPolicy,
 		)
 	}
-	
+
 	return behaviors
 }

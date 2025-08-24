@@ -104,7 +104,6 @@ func convertStreamImageToItem(image map[string]events.DynamoDBAttributeValue) (m
 	return item, nil
 }
 
-
 // Helper function to convert a single DynamoDB attribute value to a Go type
 func convertAttributeValue(attr events.DynamoDBAttributeValue) (any, error) {
 	switch attr.DataType() {
@@ -147,26 +146,26 @@ func convertAttributeValue(attr events.DynamoDBAttributeValue) (any, error) {
 
 // ProcessingConfig holds the configuration for stream processing
 type ProcessingConfig struct {
-	EnableMetrics          bool
-	EnableErrorRecovery    bool
-	MaxRetryAttempts      int
-	RetryBackoffInitial   time.Duration
-	RetryBackoffMax       time.Duration
-	EnableDLQ             bool
-	ParallelProcessing    bool
-	MaxConcurrentRecords  int
+	EnableMetrics        bool
+	EnableErrorRecovery  bool
+	MaxRetryAttempts     int
+	RetryBackoffInitial  time.Duration
+	RetryBackoffMax      time.Duration
+	EnableDLQ            bool
+	ParallelProcessing   bool
+	MaxConcurrentRecords int
 }
 
 // DefaultProcessingConfig returns production-ready default configuration
 func DefaultProcessingConfig() *ProcessingConfig {
 	return &ProcessingConfig{
-		EnableMetrics:         true,
-		EnableErrorRecovery:   true,
+		EnableMetrics:        true,
+		EnableErrorRecovery:  true,
 		MaxRetryAttempts:     3,
 		RetryBackoffInitial:  time.Millisecond * 100,
 		RetryBackoffMax:      time.Second * 5,
-		EnableDLQ:           true,
-		ParallelProcessing:  true,
+		EnableDLQ:            true,
+		ParallelProcessing:   true,
 		MaxConcurrentRecords: 10,
 	}
 }
@@ -194,8 +193,8 @@ func NewProcessor(config *ProcessingConfig, logger *zap.Logger) *Processor {
 
 // ProcessStreamRecordsWithRetry processes DynamoDB stream records with production features
 func (sp *Processor) ProcessStreamRecordsWithRetry(
-	ctx context.Context, 
-	records []events.DynamoDBEventRecord, 
+	ctx context.Context,
+	records []events.DynamoDBEventRecord,
 	handler func(ctx context.Context, record events.DynamoDBEventRecord) error,
 ) error {
 	// Metrics tracking
@@ -233,10 +232,10 @@ func (sp *Processor) processRecordsParallel(
 ) error {
 	semaphore := make(chan struct{}, sp.config.MaxConcurrentRecords)
 	errChan := make(chan error, len(records))
-	
+
 	for _, record := range records {
 		go func(r events.DynamoDBEventRecord) {
-			semaphore <- struct{}{} // Acquire
+			semaphore <- struct{}{}        // Acquire
 			defer func() { <-semaphore }() // Release
 
 			if err := sp.processRecordWithRetry(ctx, r, handler); err != nil {
@@ -380,7 +379,7 @@ func (sp *Processor) applyBackoff(attempt int) {
 	// Add jitter (up to 25% of backoff time)
 	// #nosec G404 - Using math/rand for jitter is acceptable for backoff timing
 	jitter := time.Duration(float64(backoff) * 0.25 * (rand.Float64() - 0.5)) // Add random jitter
-	
+
 	sp.logger.Debug("applying_backoff",
 		zap.Duration("backoff_duration", backoff+jitter),
 		zap.Int("attempt", attempt),
@@ -410,7 +409,7 @@ func unmarshalWithDynamORMCompat(item map[string]any, out any) error {
 
 		// Get field name from DynamORM tag or JSON tag or field name
 		fieldName := getFieldName(field)
-		
+
 		// Check if the field exists in the item map
 		if val, ok := item[fieldName]; ok {
 			if err := setFieldValueEnhanced(fieldVal, val, field); err != nil {

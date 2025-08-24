@@ -497,7 +497,7 @@ func (te *TrendingEngine) calculateWindowMetrics(ctx context.Context, hashtag st
 		contentQuality := te.analyzeContentQuality(statusContent)
 		qualityMetrics.MediaRatio += contentQuality.MediaPresence
 		qualityMetrics.LinkRatio += contentQuality.LinkPresence
-		
+
 		// Track language diversity for quality assessment
 		if contentQuality.LanguageCode != "" {
 			languageSet[contentQuality.LanguageCode] = true
@@ -653,7 +653,7 @@ func (te *TrendingEngine) calculateDerivedScores(metrics *EnhancedHashtagMetrics
 	} else if spamIndicators == 1 {
 		spamScore = 0.2 // Low spam score
 	} else if spamIndicators == 2 {
-		spamScore = 0.4 // Medium spam score  
+		spamScore = 0.4 // Medium spam score
 	} else if spamIndicators >= 3 {
 		spamScore = 0.7 + (float64(spamIndicators-3) * 0.1) // High spam score
 		if spamScore > 0.9 {
@@ -960,7 +960,7 @@ func (te *TrendingEngine) analyzeContentQuality(content string) ContentQuality {
 
 	// Calculate ratios
 	quality.HashtagDensity = float64(hashtagCount) / float64(totalWords)
-	quality.LinkPresence = math.Min(float64(linkCount)/float64(totalWords)*5.0, 1.0) // Scale up link presence
+	quality.LinkPresence = math.Min(float64(linkCount)/float64(totalWords)*5.0, 1.0)         // Scale up link presence
 	quality.MediaPresence = math.Min(float64(mediaIndicators)/float64(totalWords)*10.0, 1.0) // Scale up media presence
 
 	// Simple language detection (very basic heuristic)
@@ -973,7 +973,7 @@ func (te *TrendingEngine) analyzeContentQuality(content string) ContentQuality {
 // detectLanguage performs basic language detection
 func (te *TrendingEngine) detectLanguage(content string) string {
 	content = strings.ToLower(content)
-	
+
 	// Simple heuristics for common languages
 	// English indicators
 	englishWords := []string{"the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one", "our", "out", "day", "get", "use", "man", "new", "now", "old", "see", "him", "two", "how", "its", "who", "did", "yes", "his", "been", "long", "down", "well", "were"}
@@ -1013,12 +1013,12 @@ func (te *TrendingEngine) getStatusContentForAnalysis(statusID string) string {
 	// Query the status directly using DynamORM
 	var status models.Status
 	pk := fmt.Sprintf("STATUS#%s", statusID)
-	
+
 	err := te.db.Model(&models.Status{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", "METADATA").
 		First(&status)
-	
+
 	if err != nil {
 		// If we can't fetch the status, log and continue with empty content
 		// This is not a critical error for hashtag trending

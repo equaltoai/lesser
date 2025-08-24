@@ -555,7 +555,7 @@ func (s *businessLogicService) processContentAndEmojis(ctx context.Context, note
 	for _, match := range matches {
 		if err := common.ValidateSliceLength("match", match, 100); err == nil && len(match) > 1 {
 			shortcode := match[1]
-			
+
 			// Try to get the custom emoji from storage
 			customEmoji, err := emojiRepo.GetCustomEmoji(ctx, shortcode)
 			if err != nil {
@@ -577,7 +577,6 @@ func (s *businessLogicService) processContentAndEmojis(ctx context.Context, note
 
 	return nil, nil
 }
-
 
 func (s *businessLogicService) createActivity(actor *activitypub.Actor, note *activitypub.Note, now time.Time) *activitypub.Activity {
 	return &activitypub.Activity{
@@ -1034,7 +1033,7 @@ func (s *businessLogicService) cascadeDeleteLikes(ctx context.Context, objectID 
 	// 1. Querying all likes for the object
 	// 2. Deleting each like record
 	// 3. Updating like counts if necessary
-	
+
 	// Access the like repository through the storage adapter
 	// We need to get the repository directly since StorageAdapter doesn't expose CascadeDeleteLikes
 	if repos, ok := s.storage.GetDB().(interface {
@@ -1203,7 +1202,7 @@ func extractMediaIDs(mediaIDsInterface interface{}) []string {
 	if mediaIDsInterface == nil {
 		return nil
 	}
-	
+
 	switch mediaIDs := mediaIDsInterface.(type) {
 	case []string:
 		return mediaIDs

@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon/transformers"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 )
 
@@ -23,31 +23,31 @@ const (
 
 // converterImpl implements the Converter interface with caching support
 type converterImpl struct {
-	baseURL              string
-	emojiRepo           *repositories.EmojiRepository
-	transformer         *transformers.MastodonTransformer
-	cachedTransformer   *transformers.CachedTransformer
-	batchProcessor      *transformers.BatchProcessor
+	baseURL           string
+	emojiRepo         *repositories.EmojiRepository
+	transformer       *transformers.MastodonTransformer
+	cachedTransformer *transformers.CachedTransformer
+	batchProcessor    *transformers.BatchProcessor
 }
 
 // NewConverter creates a new converter instance with optimizations
 func NewConverter(baseURL string) Converter {
 	return &converterImpl{
-		baseURL:            baseURL,
-		transformer:        transformers.NewMastodonTransformer(baseURL),
-		cachedTransformer:  transformers.NewCachedTransformer(baseURL),
-		batchProcessor:     transformers.NewBatchProcessor(baseURL),
+		baseURL:           baseURL,
+		transformer:       transformers.NewMastodonTransformer(baseURL),
+		cachedTransformer: transformers.NewCachedTransformer(baseURL),
+		batchProcessor:    transformers.NewBatchProcessor(baseURL),
 	}
 }
 
 // NewConverterWithEmojis creates a new converter instance with emoji repository access and optimizations
 func NewConverterWithEmojis(baseURL string, emojiRepo *repositories.EmojiRepository) Converter {
 	return &converterImpl{
-		baseURL:            baseURL,
-		emojiRepo:          emojiRepo,
-		transformer:        transformers.NewMastodonTransformer(baseURL),
-		cachedTransformer:  transformers.NewCachedTransformer(baseURL),
-		batchProcessor:     transformers.NewBatchProcessor(baseURL),
+		baseURL:           baseURL,
+		emojiRepo:         emojiRepo,
+		transformer:       transformers.NewMastodonTransformer(baseURL),
+		cachedTransformer: transformers.NewCachedTransformer(baseURL),
+		batchProcessor:    transformers.NewBatchProcessor(baseURL),
 	}
 }
 
@@ -60,15 +60,15 @@ func (c *converterImpl) ActorToAccount(actor *activitypub.Actor) models.Account 
 func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, followers, following, statuses int) models.Account {
 	// Use centralized transformation framework with counts - ELIMINATES 40+ LINES OF DUPLICATE CODE
 	account := transformations.ActorToAccountWithCounts(actor, c.baseURL, followers, following, statuses)
-	
+
 	// Add implementation-specific fields that aren't in the base transformation
 	if actor != nil {
 		account.Group = actor.Type == "Group"
 	}
-	
+
 	// Set default last status timestamp
 	account.LastStatusAt = "" // Will be populated if metadata available
-	
+
 	return account
 }
 
@@ -76,16 +76,16 @@ func (c *converterImpl) ActorToAccountWithCounts(actor *activitypub.Actor, follo
 func (c *converterImpl) ActorToAccountWithMetadata(actor *activitypub.Actor, metadata *storage.ActorMetadata, followers, following, statuses int) models.Account {
 	// Use centralized transformation framework with counts - ELIMINATES 50+ LINES OF DUPLICATE CODE
 	account := transformations.ActorToAccountWithCounts(actor, c.baseURL, followers, following, statuses)
-	
+
 	// Add metadata-specific fields
 	if actor != nil {
 		account.Group = actor.Type == "Group"
 	}
-	
+
 	if metadata != nil {
 		// Override creation time with actual metadata
 		account.CreatedAt = metadata.CreatedAt.Format(time.RFC3339)
-		
+
 		// Set last status time if available
 		if metadata.LastStatusAt != nil {
 			account.LastStatusAt = metadata.LastStatusAt.Format(common.DateFormat) // Mastodon uses date only
@@ -121,12 +121,12 @@ func (c *converterImpl) ObjectToStatus(obj any, actor *activitypub.Actor) models
 func (c *converterImpl) ObjectToStatusWithContext(ctx context.Context, obj any, actor *activitypub.Actor, likeCount, reblogCount int, favorited, reblogged, bookmarked bool) models.Status {
 	// Use centralized transformation framework with counts and user state - ELIMINATES 40+ LINES OF DUPLICATE CODE
 	status := transformations.ObjectToStatusWithContextAndCounts(ctx, obj, actor, likeCount, reblogCount, favorited, reblogged, bookmarked, c.baseURL)
-	
+
 	// Set additional fields not handled by centralized transformation
 	status.RepliesCount = 0
 	status.Muted = false
 	status.Pinned = false
-	
+
 	// Apply visibility determination if not already set by transformation
 	if status.Visibility == VisibilityPublic {
 		// Let the centralized transformation handle visibility unless we need custom logic
@@ -240,7 +240,6 @@ func (c *converterImpl) convertObjectToMap(obj any) map[string]interface{} {
 
 // Helper methods (streamlined to use centralized transformations)
 
-
 // getAttachmentType is now handled by centralized transformer
 
 func (c *converterImpl) determineVisibility(to, cc []string) string {
@@ -253,7 +252,6 @@ func (c *converterImpl) determineVisibility(to, cc []string) string {
 	}
 	return "direct"
 }
-
 
 func (c *converterImpl) contains(slice []string, item string) bool {
 	for _, s := range slice {
@@ -268,11 +266,11 @@ func (c *converterImpl) contains(slice []string, item string) bool {
 func (c *converterImpl) NotesToStatus(note any) models.Status {
 	// Use centralized transformation framework for notes - ELIMINATES 60+ LINES OF DUPLICATE CODE
 	status := transformations.NotesToStatusAny(note, c.baseURL)
-	
+
 	// Apply implementation-specific overrides if needed
 	status.Visibility = VisibilityPublic // Community notes are always public
-	status.Language = "en"      // Default to English
-	
+	status.Language = "en"               // Default to English
+
 	return status
 }
 
@@ -331,10 +329,10 @@ func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []a
 	if c.emojiRepo == nil {
 		return []any{} // No emoji repository available
 	}
-	
+
 	emojis := make([]any, 0)
 	emojiMap := make(map[string]bool) // To avoid duplicates
-	
+
 	for _, option := range options {
 		// Look for custom emoji patterns like :custom_emoji:
 		if emojiCodes := c.findEmojiCodes(option); len(emojiCodes) > 0 {
@@ -350,7 +348,7 @@ func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []a
 							"visible_in_picker": emoji.VisibleInPicker,
 							"category":          emoji.Category,
 						}
-						
+
 						// Use cached emoji transformer for consistency and performance
 						emojiList := c.cachedTransformer.TransformStorageEmojiToMastodon([]interface{}{emojiInterface})
 						if len(emojiList) > 0 {
@@ -362,7 +360,7 @@ func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []a
 			}
 		}
 	}
-	
+
 	return emojis
 }
 
@@ -370,27 +368,27 @@ func (c *converterImpl) extractCustomEmojisFromPollOptions(options []string) []a
 func (c *converterImpl) findEmojiCodes(text string) []string {
 	codes := make([]string, 0)
 	start := 0
-	
+
 	for {
 		startIdx := strings.Index(text[start:], ":")
 		if startIdx == -1 {
 			break
 		}
 		startIdx += start
-		
+
 		endIdx := strings.Index(text[startIdx+1:], ":")
 		if endIdx == -1 {
 			break
 		}
 		endIdx += startIdx + 1
-		
+
 		code := text[startIdx+1 : endIdx]
 		if err := common.ValidateRequiredParam("emoji code", code); err == nil && c.isValidEmojiCode(code) {
 			codes = append(codes, code)
 		}
 		start = endIdx + 1
 	}
-	
+
 	return codes
 }
 

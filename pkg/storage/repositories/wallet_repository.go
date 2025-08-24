@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // WalletRepository implements wallet authentication storage operations using BaseRepository pattern
@@ -28,9 +28,9 @@ type WalletRepository struct {
 func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger) *WalletRepository {
 	return &WalletRepository{
 		BaseRepository: NewBaseRepository[*models.WalletChallenge](db, tableName, logger),
-		db:            db,
-		tableName:     tableName,
-		logger:        logger,
+		db:             db,
+		tableName:      tableName,
+		logger:         logger,
 	}
 }
 
@@ -38,9 +38,9 @@ func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger) *Wall
 func NewWalletRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WalletRepository {
 	return &WalletRepository{
 		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WalletChallenge](db, tableName, logger, costService, "wallet"),
-		db:            db,
-		tableName:     tableName,
-		logger:        logger,
+		db:             db,
+		tableName:      tableName,
+		logger:         logger,
 	}
 }
 
@@ -61,7 +61,7 @@ func (r *WalletRepository) StoreWalletChallenge(ctx context.Context, challenge *
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the challenge
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -78,12 +78,12 @@ func (r *WalletRepository) StoreWalletChallenge(ctx context.Context, challenge *
 // GetWalletChallenge retrieves a wallet challenge by ID using BaseRepository
 func (r *WalletRepository) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
 	model := &models.WalletChallenge{}
-	
+
 	// Use BaseRepository Get method with proper key pattern
 	pk := fmt.Sprintf("WALLET_CHALLENGE#%s", challengeID)
 	sk := "CHALLENGE"
-	
-	err := r.BaseRepository.Get(ctx, pk, sk, model)
+
+	err := r.Get(ctx, pk, sk, model)
 	if err != nil {
 		// Legacy implementation returns specific error for not found
 		return nil, ErrorHandler.HandleGetError(err, "wallet challenge", challengeID)
@@ -123,7 +123,7 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the wallet credential
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -136,8 +136,8 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 	}
 
 	// Track cost for wallet credential creation
-	if r.BaseRepository.GetCostService() != nil {
-		if trackErr := r.BaseRepository.TrackWrite(ctx, "PutItem", 1); trackErr != nil {
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackWrite(ctx, "PutItem", 1); trackErr != nil {
 			r.logger.Warn("failed to track write cost for wallet credential", zap.Error(trackErr))
 		}
 	}
@@ -161,8 +161,8 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 				zap.Error(cleanupErr))
 		} else {
 			// Track cleanup cost
-			if r.BaseRepository.GetCostService() != nil {
-				if trackErr := r.BaseRepository.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
+			if r.GetCostService() != nil {
+				if trackErr := r.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
 					r.logger.Warn("failed to track cleanup cost", zap.Error(trackErr))
 				}
 			}
@@ -176,8 +176,8 @@ func (r *WalletRepository) StoreWalletCredential(ctx context.Context, credential
 	}
 
 	// Track cost for index creation
-	if r.BaseRepository.GetCostService() != nil {
-		if trackErr := r.BaseRepository.TrackWrite(ctx, "PutItem", 1); trackErr != nil {
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackWrite(ctx, "PutItem", 1); trackErr != nil {
 			r.logger.Warn("failed to track write cost for wallet index", zap.Error(trackErr))
 		}
 	}
@@ -207,12 +207,12 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 	}
 
 	// Track cost for index query
-	if r.BaseRepository.GetCostService() != nil {
+	if r.GetCostService() != nil {
 		readUnits := int64(len(indexes))
 		if readUnits == 0 {
 			readUnits = 1 // Minimum for the query operation itself
 		}
-		if trackErr := r.BaseRepository.TrackRead(ctx, "Query", readUnits); trackErr != nil {
+		if trackErr := r.TrackRead(ctx, "Query", readUnits); trackErr != nil {
 			r.logger.Warn("failed to track read cost for wallet index query", zap.Error(trackErr))
 		}
 	}
@@ -248,8 +248,8 @@ func (r *WalletRepository) GetWalletCredential(ctx context.Context, walletType, 
 	}
 
 	// Track cost for wallet credential get
-	if r.BaseRepository.GetCostService() != nil {
-		if trackErr := r.BaseRepository.TrackRead(ctx, "GetItem", 1); trackErr != nil {
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackRead(ctx, "GetItem", 1); trackErr != nil {
 			r.logger.Warn("failed to track read cost for wallet credential", zap.Error(trackErr))
 		}
 	}
@@ -273,8 +273,8 @@ func (r *WalletRepository) DeleteWalletChallenge(ctx context.Context, challengeI
 	// Use BaseRepository Delete method with proper key pattern
 	pk := fmt.Sprintf("WALLET_CHALLENGE#%s", challengeID)
 	sk := "CHALLENGE"
-	
-	return r.BaseRepository.Delete(ctx, pk, sk)
+
+	return r.Delete(ctx, pk, sk)
 }
 
 // GetUserWalletCredentials retrieves all wallet credentials for a user
@@ -295,9 +295,9 @@ func (r *WalletRepository) GetUserWalletCredentials(ctx context.Context, usernam
 	}
 
 	// Track cost using BaseRepository cost tracking
-	if r.BaseRepository.GetCostService() != nil {
+	if r.GetCostService() != nil {
 		itemCount := int64(len(walletModels))
-		if err := r.BaseRepository.TrackRead(ctx, "Query", itemCount); err != nil {
+		if err := r.TrackRead(ctx, "Query", itemCount); err != nil {
 			r.logger.Warn("failed to track cost for GetUserWalletCredentials", zap.Error(err))
 		}
 	}
@@ -336,8 +336,8 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 	if err == nil {
 		walletType = model.Type
 		// Track read cost
-		if r.BaseRepository.GetCostService() != nil {
-			if trackErr := r.BaseRepository.TrackRead(ctx, "GetItem", 1); trackErr != nil {
+		if r.GetCostService() != nil {
+			if trackErr := r.TrackRead(ctx, "GetItem", 1); trackErr != nil {
 				r.logger.Warn("failed to track read cost for DeleteWalletCredential", zap.Error(trackErr))
 			}
 		}
@@ -358,8 +358,8 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 	}
 
 	// Track delete cost for wallet credential
-	if r.BaseRepository.GetCostService() != nil {
-		if trackErr := r.BaseRepository.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
+	if r.GetCostService() != nil {
+		if trackErr := r.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
 			r.logger.Warn("failed to track delete cost for wallet credential", zap.Error(trackErr))
 		}
 	}
@@ -379,8 +379,8 @@ func (r *WalletRepository) DeleteWalletCredential(ctx context.Context, username,
 			zap.Error(err))
 	} else {
 		// Track delete cost for index
-		if r.BaseRepository.GetCostService() != nil {
-			if trackErr := r.BaseRepository.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
+		if r.GetCostService() != nil {
+			if trackErr := r.TrackWrite(ctx, "DeleteItem", 1); trackErr != nil {
 				r.logger.Warn("failed to track delete cost for wallet index", zap.Error(trackErr))
 			}
 		}
@@ -413,8 +413,8 @@ func (r *WalletRepository) UpdateWalletLastUsed(ctx context.Context, username, a
 	}
 
 	// Track read cost
-	if r.BaseRepository.GetCostService() != nil {
-		if err := r.BaseRepository.TrackRead(ctx, "GetItem", 1); err != nil {
+	if r.GetCostService() != nil {
+		if err := r.TrackRead(ctx, "GetItem", 1); err != nil {
 			r.logger.Warn("failed to track read cost for UpdateWalletLastUsed", zap.Error(err))
 		}
 	}
@@ -433,8 +433,8 @@ func (r *WalletRepository) UpdateWalletLastUsed(ctx context.Context, username, a
 	}
 
 	// Track write cost
-	if r.BaseRepository.GetCostService() != nil {
-		if err := r.BaseRepository.TrackWrite(ctx, "UpdateItem", 1); err != nil {
+	if r.GetCostService() != nil {
+		if err := r.TrackWrite(ctx, "UpdateItem", 1); err != nil {
 			r.logger.Warn("failed to track write cost for UpdateWalletLastUsed", zap.Error(err))
 		}
 	}

@@ -21,18 +21,18 @@ import (
 
 // WebhookConfig contains webhook endpoint configuration
 type WebhookConfig struct {
-	ID              string            `json:"id"`
-	URL             string            `json:"url"`
-	Headers         map[string]string `json:"headers"`
-	Timeout         time.Duration     `json:"timeout"`
-	MaxAttempts     int               `json:"max_attempts"`
-	RetryInterval   time.Duration     `json:"retry_interval"`
-	SecretToken     string            `json:"secret_token,omitempty"`
-	VerifySSL       bool              `json:"verify_ssl"`
-	Enabled         bool              `json:"enabled"`
-	AlertTypes      []string          `json:"alert_types,omitempty"`     // Filter by alert types
-	SeverityLevels  []string          `json:"severity_levels,omitempty"` // Filter by severity
-	Services        []string          `json:"services,omitempty"`        // Filter by services
+	ID             string            `json:"id"`
+	URL            string            `json:"url"`
+	Headers        map[string]string `json:"headers"`
+	Timeout        time.Duration     `json:"timeout"`
+	MaxAttempts    int               `json:"max_attempts"`
+	RetryInterval  time.Duration     `json:"retry_interval"`
+	SecretToken    string            `json:"secret_token,omitempty"`
+	VerifySSL      bool              `json:"verify_ssl"`
+	Enabled        bool              `json:"enabled"`
+	AlertTypes     []string          `json:"alert_types,omitempty"`     // Filter by alert types
+	SeverityLevels []string          `json:"severity_levels,omitempty"` // Filter by severity
+	Services       []string          `json:"services,omitempty"`        // Filter by services
 }
 
 // WebhookDeliveryService handles webhook delivery with retry logic and dead letter handling
@@ -43,10 +43,10 @@ type WebhookDeliveryService struct {
 	alertRepo      *StandaloneAlertRepository
 	deadLetterRepo *StandaloneDeadLetterRepository
 	enabled        bool
-	
+
 	// Configuration
-	defaultTimeout    time.Duration
-	defaultMaxAttempts int
+	defaultTimeout       time.Duration
+	defaultMaxAttempts   int
 	defaultRetryInterval time.Duration
 }
 
@@ -125,14 +125,14 @@ func (w *WebhookDeliveryService) DeliverAlert(ctx context.Context, alert *models
 	// Create delivery tasks for each webhook
 	var lastErr error
 	successCount := 0
-	
+
 	for _, webhook := range webhooks {
 		if !webhook.Enabled {
 			continue
 		}
 
 		delivery := w.createDelivery(alert, webhook)
-		
+
 		// Attempt immediate delivery
 		err := w.deliverWebhook(ctx, delivery, alert)
 		if err != nil {
@@ -142,7 +142,7 @@ func (w *WebhookDeliveryService) DeliverAlert(ctx context.Context, alert *models
 				zap.String("url", webhook.URL),
 				zap.Error(err))
 			lastErr = err
-			
+
 			// Store failed delivery for retry
 			if storeErr := w.webhookRepo.CreateDelivery(ctx, delivery); storeErr != nil {
 				w.logger.Error("failed to store delivery record",
@@ -251,40 +251,40 @@ func (w *WebhookDeliveryService) getMatchingWebhooks(_ context.Context, alert *m
 	// This would normally query from a configuration store
 	// For now, return a default configuration from environment or config
 	webhooks := []*WebhookConfig{}
-	
+
 	// Add default webhook from environment if configured
 	if webhookURL := w.getWebhookURLFromEnv(); webhookURL != "" {
 		webhook := &WebhookConfig{
-			ID:               "default",
-			URL:              webhookURL,
-			Headers:          map[string]string{"Content-Type": "application/json"},
-			Timeout:          w.defaultTimeout,
-			MaxAttempts:      w.defaultMaxAttempts,
-			RetryInterval:    w.defaultRetryInterval,
-			VerifySSL:        true,
-			Enabled:          true,
-			AlertTypes:       []string{}, // Accept all types
-			SeverityLevels:   []string{}, // Accept all severities
-			Services:         []string{}, // Accept all services
+			ID:             "default",
+			URL:            webhookURL,
+			Headers:        map[string]string{"Content-Type": "application/json"},
+			Timeout:        w.defaultTimeout,
+			MaxAttempts:    w.defaultMaxAttempts,
+			RetryInterval:  w.defaultRetryInterval,
+			VerifySSL:      true,
+			Enabled:        true,
+			AlertTypes:     []string{}, // Accept all types
+			SeverityLevels: []string{}, // Accept all severities
+			Services:       []string{}, // Accept all services
 		}
-		
+
 		if w.matchesWebhookFilters(alert, webhook) {
 			webhooks = append(webhooks, webhook)
 		}
 	}
-	
+
 	return webhooks, nil
 }
 
 // getWebhookURLFromEnv gets webhook URL from centralized configuration
 func (w *WebhookDeliveryService) getWebhookURLFromEnv() string {
 	cfg := config.Get()
-	
+
 	// Check primary webhook URL from config
 	if cfg.AlertWebhookURL != "" {
 		return cfg.AlertWebhookURL
 	}
-	
+
 	// For backward compatibility, we might need to add other webhook URL fields to config
 	// For now, return empty if no webhook URL is configured
 	return ""
@@ -298,44 +298,44 @@ func (w *WebhookDeliveryService) matchesWebhookFilters(alert *models.Alert, webh
 			return false
 		}
 	}
-	
+
 	// Check severity filter
 	if len(webhook.SeverityLevels) > 0 {
 		if !stringContains(webhook.SeverityLevels, alert.Severity) {
 			return false
 		}
 	}
-	
+
 	// Check service filter
 	if len(webhook.Services) > 0 {
 		if !stringContains(webhook.Services, alert.Service) {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 // createDelivery creates a new webhook delivery record
 func (w *WebhookDeliveryService) createDelivery(alert *models.Alert, webhook *WebhookConfig) *models.WebhookDelivery {
 	now := time.Now()
-	
+
 	delivery := &models.WebhookDelivery{
-		DeliveryID:      uuid.New().String(),
-		AlertID:         alert.AlertID,
-		WebhookID:       webhook.ID,
-		URL:             webhook.URL,
-		Headers:         webhook.Headers,
-		Timeout:         int(webhook.Timeout.Seconds()),
-		Status:          "pending",
-		AttemptNumber:   1,
-		MaxAttempts:     webhook.MaxAttempts,
-		ScheduledAt:     now,
-		RetryInterval:   int(webhook.RetryInterval.Seconds()),
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		DeliveryID:    uuid.New().String(),
+		AlertID:       alert.AlertID,
+		WebhookID:     webhook.ID,
+		URL:           webhook.URL,
+		Headers:       webhook.Headers,
+		Timeout:       int(webhook.Timeout.Seconds()),
+		Status:        "pending",
+		AttemptNumber: 1,
+		MaxAttempts:   webhook.MaxAttempts,
+		ScheduledAt:   now,
+		RetryInterval: int(webhook.RetryInterval.Seconds()),
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
-	
+
 	return delivery
 }
 
@@ -343,7 +343,7 @@ func (w *WebhookDeliveryService) createDelivery(alert *models.Alert, webhook *We
 func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *models.WebhookDelivery, alert *models.Alert) error {
 	startTime := time.Now()
 	delivery.MarkStarted()
-	
+
 	// Prepare webhook payload
 	payload, err := w.prepareWebhookPayload(alert)
 	if err != nil {
@@ -351,9 +351,9 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		delivery.MarkFailed(err.Error(), "payload_preparation", 0, "", duration)
 		return fmt.Errorf("failed to prepare webhook payload: %w", err)
 	}
-	
+
 	delivery.RequestBody = string(payload)
-	
+
 	// Create HTTP request
 	req, err := http.NewRequestWithContext(ctx, "POST", delivery.URL, bytes.NewReader(payload))
 	if err != nil {
@@ -361,18 +361,18 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		delivery.MarkFailed(err.Error(), "request_creation", 0, "", duration)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	
+
 	// Set headers
 	for key, value := range delivery.Headers {
 		req.Header.Set(key, value)
 	}
-	
+
 	// Add signature if secret token provided
 	if delivery.WebhookID != "default" {
 		// TODO: Add HMAC signature generation for webhook security
 		_ = delivery.WebhookID // Prevent unused variable warning
 	}
-	
+
 	// Send request
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
@@ -384,7 +384,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	defer func() {
 		_ = resp.Body.Close()
 	}()
-	
+
 	// Read response
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -392,9 +392,9 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		delivery.MarkFailed(err.Error(), "response_read", resp.StatusCode, "", duration)
 		return fmt.Errorf("failed to read response: %w", err)
 	}
-	
+
 	duration := time.Since(startTime)
-	
+
 	// Check response status
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		errorType := w.categorizeHTTPError(resp.StatusCode)
@@ -407,7 +407,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 		)
 		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
 	}
-	
+
 	// Success
 	responseHeaders := make(map[string]string)
 	for key, values := range resp.Header {
@@ -415,7 +415,7 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 			responseHeaders[key] = values[0]
 		}
 	}
-	
+
 	delivery.MarkSuccess(resp.StatusCode, string(responseBody), responseHeaders, duration)
 	return nil
 }
@@ -442,18 +442,18 @@ func (w *WebhookDeliveryService) prepareWebhookPayload(alert *models.Alert) ([]b
 		"values":      alert.Values,
 		"thresholds":  alert.Thresholds,
 	}
-	
+
 	if alert.ResolvedAt != nil {
 		payload["resolved_at"] = alert.ResolvedAt.Format(time.RFC3339)
 	}
-	
+
 	return json.Marshal(payload)
 }
 
 // categorizeError categorizes network errors for better retry logic
 func (w *WebhookDeliveryService) categorizeError(err error) string {
 	errStr := err.Error()
-	
+
 	if strings.Contains(errStr, "timeout") {
 		return ErrorTypeTimeout
 	}
@@ -471,7 +471,7 @@ func (w *WebhookDeliveryService) categorizeError(err error) string {
 			return "timeout"
 		}
 	}
-	
+
 	return "network_error"
 }
 
@@ -503,7 +503,7 @@ func (w *WebhookDeliveryService) sendToDeadLetterQueue(ctx context.Context, deli
 			zap.String("delivery_id", delivery.DeliveryID))
 		return nil
 	}
-	
+
 	deadLetter := &models.DeadLetterMessage{
 		MessageID:     uuid.New().String(),
 		OriginalType:  "webhook_delivery",
@@ -518,7 +518,7 @@ func (w *WebhookDeliveryService) sendToDeadLetterQueue(ctx context.Context, deli
 		},
 		CreatedAt: time.Now(),
 	}
-	
+
 	return w.deadLetterRepo.Create(ctx, deadLetter)
 }
 
@@ -527,20 +527,20 @@ func ValidateWebhookURL(webhookURL string) error {
 	if webhookURL == "" {
 		return fmt.Errorf("webhook URL cannot be empty")
 	}
-	
+
 	parsedURL, err := url.Parse(webhookURL)
 	if err != nil {
 		return fmt.Errorf("invalid webhook URL: %w", err)
 	}
-	
+
 	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
 		return fmt.Errorf("webhook URL must use http or https scheme")
 	}
-	
+
 	if parsedURL.Host == "" {
 		return fmt.Errorf("webhook URL must have a host")
 	}
-	
+
 	return nil
 }
 
@@ -554,4 +554,3 @@ func stringContains(slice []string, item string) bool {
 	}
 	return false
 }
-

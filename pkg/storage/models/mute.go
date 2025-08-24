@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // Mute represents a mute relationship between actors
@@ -84,4 +84,3 @@ func (m *Mute) GetPK() string {
 func (m *Mute) GetSK() string {
 	return m.SK
 }
-

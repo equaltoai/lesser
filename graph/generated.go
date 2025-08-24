@@ -11996,7 +11996,7 @@ func (ec *executionContext) fieldContext_AIAnalysis_textAnalysis(_ context.Conte
 			case "keyPhrases":
 				return ec.fieldContext_TextAnalysis_keyPhrases(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TextAnalysis", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TextAnalysis", field.Name)
 		},
 	}
 	return fc, nil
@@ -12057,7 +12057,7 @@ func (ec *executionContext) fieldContext_AIAnalysis_imageAnalysis(_ context.Cont
 			case "deepfakeScore":
 				return ec.fieldContext_ImageAnalysis_deepfakeScore(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ImageAnalysis", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ImageAnalysis", field.Name)
 		},
 	}
 	return fc, nil
@@ -12112,7 +12112,7 @@ func (ec *executionContext) fieldContext_AIAnalysis_aiDetection(_ context.Contex
 			case "suspiciousPatterns":
 				return ec.fieldContext_AIDetection_suspiciousPatterns(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIDetection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIDetection", field.Name)
 		},
 	}
 	return fc, nil
@@ -12171,7 +12171,7 @@ func (ec *executionContext) fieldContext_AIAnalysis_spamAnalysis(_ context.Conte
 			case "accountAgeDays":
 				return ec.fieldContext_SpamAnalysis_accountAgeDays(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SpamAnalysis", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SpamAnalysis", field.Name)
 		},
 	}
 	return fc, nil
@@ -12537,7 +12537,7 @@ func (ec *executionContext) fieldContext_AICapabilities_textAnalysis(_ context.C
 			case "languageDetection":
 				return ec.fieldContext_TextAnalysisCapabilities_languageDetection(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TextAnalysisCapabilities", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TextAnalysisCapabilities", field.Name)
 		},
 	}
 	return fc, nil
@@ -12593,7 +12593,7 @@ func (ec *executionContext) fieldContext_AICapabilities_imageAnalysis(_ context.
 			case "deepfakeDetection":
 				return ec.fieldContext_ImageAnalysisCapabilities_deepfakeDetection(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ImageAnalysisCapabilities", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ImageAnalysisCapabilities", field.Name)
 		},
 	}
 	return fc, nil
@@ -12645,7 +12645,7 @@ func (ec *executionContext) fieldContext_AICapabilities_aiDetection(_ context.Co
 			case "styleConsistency":
 				return ec.fieldContext_AIDetectionCapabilities_styleConsistency(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIDetectionCapabilities", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIDetectionCapabilities", field.Name)
 		},
 	}
 	return fc, nil
@@ -12749,7 +12749,7 @@ func (ec *executionContext) fieldContext_AICapabilities_costPerAnalysis(_ contex
 			case "breakdown":
 				return ec.fieldContext_CostBreakdown_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostBreakdown", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostBreakdown", field.Name)
 		},
 	}
 	return fc, nil
@@ -13684,7 +13684,7 @@ func (ec *executionContext) fieldContext_AIStats_moderationActions(_ context.Con
 			case "review":
 				return ec.fieldContext_ModerationActionCounts_review(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationActionCounts", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationActionCounts", field.Name)
 		},
 	}
 	return fc, nil
@@ -13898,7 +13898,7 @@ func (ec *executionContext) fieldContext_AccountSuggestion_account(_ context.Con
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -14091,7 +14091,7 @@ func (ec *executionContext) fieldContext_AcknowledgePayload_severedRelationship(
 			case "details":
 				return ec.fieldContext_SeveredRelationship_details(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveredRelationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveredRelationship", field.Name)
 		},
 	}
 	return fc, nil
@@ -14305,7 +14305,7 @@ func (ec *executionContext) fieldContext_Activity_actor(_ context.Context, field
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -14400,7 +14400,7 @@ func (ec *executionContext) fieldContext_Activity_object(_ context.Context, fiel
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -14495,7 +14495,7 @@ func (ec *executionContext) fieldContext_Activity_target(_ context.Context, fiel
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -15236,7 +15236,7 @@ func (ec *executionContext) fieldContext_Actor_fields(_ context.Context, field g
 			case "verifiedAt":
 				return ec.fieldContext_Field_verifiedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Field", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Field", field.Name)
 		},
 	}
 	return fc, nil
@@ -15345,7 +15345,7 @@ func (ec *executionContext) fieldContext_Actor_reputation(_ context.Context, fie
 			case "signature":
 				return ec.fieldContext_Reputation_signature(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Reputation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Reputation", field.Name)
 		},
 	}
 	return fc, nil
@@ -15413,7 +15413,7 @@ func (ec *executionContext) fieldContext_Actor_vouches(_ context.Context, field 
 			case "revokedAt":
 				return ec.fieldContext_Vouch_revokedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Vouch", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Vouch", field.Name)
 		},
 	}
 	return fc, nil
@@ -15495,7 +15495,7 @@ func (ec *executionContext) fieldContext_AffectedRelationship_actor(_ context.Co
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -15674,7 +15674,7 @@ func (ec *executionContext) fieldContext_AffectedRelationshipConnection_edges(_ 
 			case "cursor":
 				return ec.fieldContext_AffectedRelationshipEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AffectedRelationshipEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AffectedRelationshipEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -15728,7 +15728,7 @@ func (ec *executionContext) fieldContext_AffectedRelationshipConnection_pageInfo
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -15826,7 +15826,7 @@ func (ec *executionContext) fieldContext_AffectedRelationshipEdge_node(_ context
 			case "lastInteraction":
 				return ec.fieldContext_AffectedRelationship_lastInteraction(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AffectedRelationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AffectedRelationship", field.Name)
 		},
 	}
 	return fc, nil
@@ -16476,7 +16476,7 @@ func (ec *executionContext) fieldContext_BandwidthReport_byQuality(_ context.Con
 			case "percentage":
 				return ec.fieldContext_QualityBandwidth_percentage(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QualityBandwidth", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QualityBandwidth", field.Name)
 		},
 	}
 	return fc, nil
@@ -16528,7 +16528,7 @@ func (ec *executionContext) fieldContext_BandwidthReport_byHour(_ context.Contex
 			case "peakMbps":
 				return ec.fieldContext_HourlyBandwidth_peakMbps(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HourlyBandwidth", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HourlyBandwidth", field.Name)
 		},
 	}
 	return fc, nil
@@ -17531,7 +17531,7 @@ func (ec *executionContext) fieldContext_CommunityNote_author(_ context.Context,
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -17765,7 +17765,7 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_note(_ context.Con
 			case "createdAt":
 				return ec.fieldContext_CommunityNote_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CommunityNote", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNote", field.Name)
 		},
 	}
 	return fc, nil
@@ -17863,7 +17863,7 @@ func (ec *executionContext) fieldContext_CommunityNotePayload_object(_ context.C
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -18090,7 +18090,7 @@ func (ec *executionContext) fieldContext_Conversation_lastStatus(_ context.Conte
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -18216,7 +18216,7 @@ func (ec *executionContext) fieldContext_Conversation_accounts(_ context.Context
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -19013,7 +19013,7 @@ func (ec *executionContext) fieldContext_CostBreakdown_breakdown(_ context.Conte
 			case "cost":
 				return ec.fieldContext_CostItem_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostItem", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostItem", field.Name)
 		},
 	}
 	return fc, nil
@@ -19504,7 +19504,7 @@ func (ec *executionContext) fieldContext_CostOptimizationResult_actions(_ contex
 			case "impact":
 				return ec.fieldContext_OptimizationAction_impact(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type OptimizationAction", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type OptimizationAction", field.Name)
 		},
 	}
 	return fc, nil
@@ -19736,7 +19736,7 @@ func (ec *executionContext) fieldContext_CostProjection_topDrivers(_ context.Con
 			case "trend":
 				return ec.fieldContext_Driver_trend(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Driver", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Driver", field.Name)
 		},
 	}
 	return fc, nil
@@ -20010,7 +20010,7 @@ func (ec *executionContext) fieldContext_CreateNotePayload_object(_ context.Cont
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -20070,7 +20070,7 @@ func (ec *executionContext) fieldContext_CreateNotePayload_activity(_ context.Co
 			case "cost":
 				return ec.fieldContext_Activity_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Activity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
 		},
 	}
 	return fc, nil
@@ -20122,7 +20122,7 @@ func (ec *executionContext) fieldContext_CreateNotePayload_cost(_ context.Contex
 			case "monthlyProjection":
 				return ec.fieldContext_CostUpdate_monthlyProjection(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostUpdate", field.Name)
 		},
 	}
 	return fc, nil
@@ -21361,7 +21361,7 @@ func (ec *executionContext) fieldContext_FederationCost_breakdown(_ context.Cont
 			case "breakdown":
 				return ec.fieldContext_CostBreakdown_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostBreakdown", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostBreakdown", field.Name)
 		},
 	}
 	return fc, nil
@@ -21411,7 +21411,7 @@ func (ec *executionContext) fieldContext_FederationCostConnection_edges(_ contex
 			case "cursor":
 				return ec.fieldContext_FederationCostEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationCostEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationCostEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -21465,7 +21465,7 @@ func (ec *executionContext) fieldContext_FederationCostConnection_pageInfo(_ con
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -21575,7 +21575,7 @@ func (ec *executionContext) fieldContext_FederationCostEdge_node(_ context.Conte
 			case "breakdown":
 				return ec.fieldContext_FederationCost_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationCost", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationCost", field.Name)
 		},
 	}
 	return fc, nil
@@ -22027,7 +22027,7 @@ func (ec *executionContext) fieldContext_FederationFlow_topSources(_ context.Con
 			case "avgMessageSize":
 				return ec.fieldContext_FlowNode_avgMessageSize(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FlowNode", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FlowNode", field.Name)
 		},
 	}
 	return fc, nil
@@ -22083,7 +22083,7 @@ func (ec *executionContext) fieldContext_FederationFlow_topDestinations(_ contex
 			case "avgMessageSize":
 				return ec.fieldContext_FlowNode_avgMessageSize(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FlowNode", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FlowNode", field.Name)
 		},
 	}
 	return fc, nil
@@ -22139,7 +22139,7 @@ func (ec *executionContext) fieldContext_FederationFlow_volumeByHour(_ context.C
 			case "avgLatency":
 				return ec.fieldContext_HourlyVolume_avgLatency(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HourlyVolume", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HourlyVolume", field.Name)
 		},
 	}
 	return fc, nil
@@ -22193,7 +22193,7 @@ func (ec *executionContext) fieldContext_FederationFlow_costByInstance(_ context
 			case "breakdown":
 				return ec.fieldContext_InstanceCost_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceCost", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceCost", field.Name)
 		},
 	}
 	return fc, nil
@@ -22259,7 +22259,7 @@ func (ec *executionContext) fieldContext_FederationGraph_nodes(_ context.Context
 			case "metadata":
 				return ec.fieldContext_InstanceNode_metadata(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceNode", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceNode", field.Name)
 		},
 	}
 	return fc, nil
@@ -22321,7 +22321,7 @@ func (ec *executionContext) fieldContext_FederationGraph_edges(_ context.Context
 			case "healthScore":
 				return ec.fieldContext_FederationEdge_healthScore(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -22381,7 +22381,7 @@ func (ec *executionContext) fieldContext_FederationGraph_clusters(_ context.Cont
 			case "description":
 				return ec.fieldContext_InstanceCluster_description(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceCluster", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceCluster", field.Name)
 		},
 	}
 	return fc, nil
@@ -22613,7 +22613,7 @@ func (ec *executionContext) fieldContext_FederationHealthUpdate_issues(_ context
 			case "impact":
 				return ec.fieldContext_HealthIssue_impact(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HealthIssue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HealthIssue", field.Name)
 		},
 	}
 	return fc, nil
@@ -23235,7 +23235,7 @@ func (ec *executionContext) fieldContext_FederationManagementStatus_limits(_ con
 			case "updatedAt":
 				return ec.fieldContext_FederationLimit_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationLimit", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationLimit", field.Name)
 		},
 	}
 	return fc, nil
@@ -23291,7 +23291,7 @@ func (ec *executionContext) fieldContext_FederationManagementStatus_metrics(_ co
 			case "errorRate":
 				return ec.fieldContext_FederationMetrics_errorRate(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationMetrics", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationMetrics", field.Name)
 		},
 	}
 	return fc, nil
@@ -24902,7 +24902,7 @@ func (ec *executionContext) fieldContext_Hashtag_notificationSettings(_ context.
 			case "filters":
 				return ec.fieldContext_HashtagNotificationSettings_filters(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagNotificationSettings", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagNotificationSettings", field.Name)
 		},
 	}
 	return fc, nil
@@ -24954,7 +24954,7 @@ func (ec *executionContext) fieldContext_Hashtag_posts(ctx context.Context, fiel
 			case "totalCount":
 				return ec.fieldContext_PostConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PostConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PostConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -25035,7 +25035,7 @@ func (ec *executionContext) fieldContext_Hashtag_relatedHashtags(_ context.Conte
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -25091,7 +25091,7 @@ func (ec *executionContext) fieldContext_Hashtag_analytics(_ context.Context, fi
 			case "engagement":
 				return ec.fieldContext_HashtagAnalytics_engagement(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagAnalytics", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagAnalytics", field.Name)
 		},
 	}
 	return fc, nil
@@ -25233,7 +25233,7 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_post(_ context.Co
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -25315,7 +25315,7 @@ func (ec *executionContext) fieldContext_HashtagActivityUpdate_author(_ context.
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -25529,7 +25529,7 @@ func (ec *executionContext) fieldContext_HashtagAnalytics_topPosters(_ context.C
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -25667,7 +25667,7 @@ func (ec *executionContext) fieldContext_HashtagConnection_edges(_ context.Conte
 			case "cursor":
 				return ec.fieldContext_HashtagEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -25721,7 +25721,7 @@ func (ec *executionContext) fieldContext_HashtagConnection_pageInfo(_ context.Co
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -25835,7 +25835,7 @@ func (ec *executionContext) fieldContext_HashtagEdge_node(_ context.Context, fie
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -25993,7 +25993,7 @@ func (ec *executionContext) fieldContext_HashtagFollowPayload_hashtag(_ context.
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -26172,7 +26172,7 @@ func (ec *executionContext) fieldContext_HashtagNotificationSettings_filters(_ c
 			case "value":
 				return ec.fieldContext_NotificationFilter_value(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type NotificationFilter", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type NotificationFilter", field.Name)
 		},
 	}
 	return fc, nil
@@ -26242,7 +26242,7 @@ func (ec *executionContext) fieldContext_HashtagSuggestion_hashtag(_ context.Con
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -26954,7 +26954,7 @@ func (ec *executionContext) fieldContext_ImageAnalysis_moderationLabels(_ contex
 			case "parentName":
 				return ec.fieldContext_ModerationLabel_parentName(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationLabel", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationLabel", field.Name)
 		},
 	}
 	return fc, nil
@@ -27270,7 +27270,7 @@ func (ec *executionContext) fieldContext_ImageAnalysis_celebrityFaces(_ context.
 			case "urls":
 				return ec.fieldContext_Celebrity_urls(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Celebrity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Celebrity", field.Name)
 		},
 	}
 	return fc, nil
@@ -28164,7 +28164,7 @@ func (ec *executionContext) fieldContext_InfrastructureStatus_services(_ context
 			case "errorRate":
 				return ec.fieldContext_ServiceStatus_errorRate(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ServiceStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ServiceStatus", field.Name)
 		},
 	}
 	return fc, nil
@@ -28222,7 +28222,7 @@ func (ec *executionContext) fieldContext_InfrastructureStatus_databases(_ contex
 			case "throughput":
 				return ec.fieldContext_DatabaseStatus_throughput(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type DatabaseStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type DatabaseStatus", field.Name)
 		},
 	}
 	return fc, nil
@@ -28278,7 +28278,7 @@ func (ec *executionContext) fieldContext_InfrastructureStatus_queues(_ context.C
 			case "dlqCount":
 				return ec.fieldContext_QueueStatus_dlqCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QueueStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QueueStatus", field.Name)
 		},
 	}
 	return fc, nil
@@ -28336,7 +28336,7 @@ func (ec *executionContext) fieldContext_InfrastructureStatus_alerts(_ context.C
 			case "resolved":
 				return ec.fieldContext_InfrastructureAlert_resolved(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InfrastructureAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InfrastructureAlert", field.Name)
 		},
 	}
 	return fc, nil
@@ -29493,7 +29493,7 @@ func (ec *executionContext) fieldContext_InstanceCost_breakdown(_ context.Contex
 			case "breakdown":
 				return ec.fieldContext_CostBreakdown_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostBreakdown", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostBreakdown", field.Name)
 		},
 	}
 	return fc, nil
@@ -29857,7 +29857,7 @@ func (ec *executionContext) fieldContext_InstanceHealthReport_metrics(_ context.
 			case "costEfficiency":
 				return ec.fieldContext_InstanceHealthMetrics_costEfficiency(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceHealthMetrics", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceHealthMetrics", field.Name)
 		},
 	}
 	return fc, nil
@@ -29913,7 +29913,7 @@ func (ec *executionContext) fieldContext_InstanceHealthReport_issues(_ context.C
 			case "impact":
 				return ec.fieldContext_HealthIssue_impact(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HealthIssue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HealthIssue", field.Name)
 		},
 	}
 	return fc, nil
@@ -30972,7 +30972,7 @@ func (ec *executionContext) fieldContext_InstanceNode_coordinates(_ context.Cont
 			case "y":
 				return ec.fieldContext_Coordinates_y(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Coordinates", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Coordinates", field.Name)
 		},
 	}
 	return fc, nil
@@ -31032,7 +31032,7 @@ func (ec *executionContext) fieldContext_InstanceNode_metadata(_ context.Context
 			case "description":
 				return ec.fieldContext_InstanceMetadata_description(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceMetadata", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceMetadata", field.Name)
 		},
 	}
 	return fc, nil
@@ -31136,7 +31136,7 @@ func (ec *executionContext) fieldContext_InstanceRelations_directConnections(_ c
 			case "lastActivity":
 				return ec.fieldContext_InstanceConnection_lastActivity(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceConnection", field.Name)
 		},
 	}
 	return fc, nil
@@ -31196,7 +31196,7 @@ func (ec *executionContext) fieldContext_InstanceRelations_indirectConnections(_
 			case "lastActivity":
 				return ec.fieldContext_InstanceConnection_lastActivity(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceConnection", field.Name)
 		},
 	}
 	return fc, nil
@@ -31386,7 +31386,7 @@ func (ec *executionContext) fieldContext_InstanceRelations_recommendations(_ con
 			case "action":
 				return ec.fieldContext_FederationRecommendation_action(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationRecommendation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationRecommendation", field.Name)
 		},
 	}
 	return fc, nil
@@ -31688,7 +31688,7 @@ func (ec *executionContext) fieldContext_List_accounts(_ context.Context, field 
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -31882,7 +31882,7 @@ func (ec *executionContext) fieldContext_ListUpdate_list(_ context.Context, fiel
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	return fc, nil
@@ -31961,7 +31961,7 @@ func (ec *executionContext) fieldContext_ListUpdate_account(_ context.Context, f
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -32553,7 +32553,7 @@ func (ec *executionContext) fieldContext_Media_uploadedBy(_ context.Context, fie
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -32911,7 +32911,7 @@ func (ec *executionContext) fieldContext_MediaStream_bitrates(_ context.Context,
 			case "codec":
 				return ec.fieldContext_Bitrate_codec(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Bitrate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Bitrate", field.Name)
 		},
 	}
 	return fc, nil
@@ -33996,7 +33996,7 @@ func (ec *executionContext) fieldContext_MetricsUpdate_dimensions(_ context.Cont
 			case "value":
 				return ec.fieldContext_MetricsDimension_value(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MetricsDimension", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MetricsDimension", field.Name)
 		},
 	}
 	return fc, nil
@@ -34534,7 +34534,7 @@ func (ec *executionContext) fieldContext_ModerationAlert_pattern(_ context.Conte
 			case "active":
 				return ec.fieldContext_ModerationPattern_active(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationPattern", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationPattern", field.Name)
 		},
 	}
 	return fc, nil
@@ -34632,7 +34632,7 @@ func (ec *executionContext) fieldContext_ModerationAlert_content(_ context.Conte
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -34956,7 +34956,7 @@ func (ec *executionContext) fieldContext_ModerationDashboard_recentDecisions(_ c
 			case "timestamp":
 				return ec.fieldContext_ModerationDecision_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationDecision", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationDecision", field.Name)
 		},
 	}
 	return fc, nil
@@ -35012,7 +35012,7 @@ func (ec *executionContext) fieldContext_ModerationDashboard_topPatterns(_ conte
 			case "trend":
 				return ec.fieldContext_PatternStats_trend(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PatternStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PatternStats", field.Name)
 		},
 	}
 	return fc, nil
@@ -35156,7 +35156,7 @@ func (ec *executionContext) fieldContext_ModerationDashboard_threatTrends(_ cont
 			case "instances":
 				return ec.fieldContext_ThreatTrend_instances(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ThreatTrend", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ThreatTrend", field.Name)
 		},
 	}
 	return fc, nil
@@ -35298,7 +35298,7 @@ func (ec *executionContext) fieldContext_ModerationDecision_object(_ context.Con
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -35512,7 +35512,7 @@ func (ec *executionContext) fieldContext_ModerationDecision_reviewers(_ context.
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -36050,7 +36050,7 @@ func (ec *executionContext) fieldContext_ModerationItem_content(_ context.Contex
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -36261,7 +36261,7 @@ func (ec *executionContext) fieldContext_ModerationItem_assignedTo(_ context.Con
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -36868,7 +36868,7 @@ func (ec *executionContext) fieldContext_ModerationPattern_createdBy(_ context.C
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -37228,7 +37228,7 @@ func (ec *executionContext) fieldContext_ModeratorStats_categories(_ context.Con
 			case "accuracy":
 				return ec.fieldContext_CategoryStats_accuracy(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CategoryStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CategoryStats", field.Name)
 		},
 	}
 	return fc, nil
@@ -37280,7 +37280,7 @@ func (ec *executionContext) fieldContext_Mutation_createNote(ctx context.Context
 			case "cost":
 				return ec.fieldContext_CreateNotePayload_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CreateNotePayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CreateNotePayload", field.Name)
 		},
 	}
 	defer func() {
@@ -37406,7 +37406,7 @@ func (ec *executionContext) fieldContext_Mutation_likeObject(ctx context.Context
 			case "cost":
 				return ec.fieldContext_Activity_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Activity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
 		},
 	}
 	defer func() {
@@ -37532,7 +37532,7 @@ func (ec *executionContext) fieldContext_Mutation_shareObject(ctx context.Contex
 			case "cost":
 				return ec.fieldContext_Activity_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Activity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
 		},
 	}
 	defer func() {
@@ -37696,7 +37696,7 @@ func (ec *executionContext) fieldContext_Mutation_bookmarkObject(ctx context.Con
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -37860,7 +37860,7 @@ func (ec *executionContext) fieldContext_Mutation_pinObject(ctx context.Context,
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -37986,7 +37986,7 @@ func (ec *executionContext) fieldContext_Mutation_followActor(ctx context.Contex
 			case "cost":
 				return ec.fieldContext_Activity_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Activity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
 		},
 	}
 	defer func() {
@@ -38124,7 +38124,7 @@ func (ec *executionContext) fieldContext_Mutation_blockActor(ctx context.Context
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	defer func() {
@@ -38262,7 +38262,7 @@ func (ec *executionContext) fieldContext_Mutation_muteActor(ctx context.Context,
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	defer func() {
@@ -38400,7 +38400,7 @@ func (ec *executionContext) fieldContext_Mutation_updateRelationship(ctx context
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	defer func() {
@@ -38473,7 +38473,7 @@ func (ec *executionContext) fieldContext_Mutation_createList(ctx context.Context
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	defer func() {
@@ -38546,7 +38546,7 @@ func (ec *executionContext) fieldContext_Mutation_updateList(ctx context.Context
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	defer func() {
@@ -38674,7 +38674,7 @@ func (ec *executionContext) fieldContext_Mutation_addAccountsToList(ctx context.
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	defer func() {
@@ -38747,7 +38747,7 @@ func (ec *executionContext) fieldContext_Mutation_removeAccountsFromList(ctx con
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	defer func() {
@@ -38816,7 +38816,7 @@ func (ec *executionContext) fieldContext_Mutation_markConversationAsRead(ctx con
 			case "updatedAt":
 				return ec.fieldContext_Conversation_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Conversation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
 		},
 	}
 	defer func() {
@@ -38954,7 +38954,7 @@ func (ec *executionContext) fieldContext_Mutation_updateMedia(ctx context.Contex
 			case "createdAt":
 				return ec.fieldContext_Media_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Media", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
 		},
 	}
 	defer func() {
@@ -39120,7 +39120,7 @@ func (ec *executionContext) fieldContext_Mutation_scheduleStatus(ctx context.Con
 			case "createdAt":
 				return ec.fieldContext_ScheduledStatus_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ScheduledStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ScheduledStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -39187,7 +39187,7 @@ func (ec *executionContext) fieldContext_Mutation_updateScheduledStatus(ctx cont
 			case "createdAt":
 				return ec.fieldContext_ScheduledStatus_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ScheduledStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ScheduledStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -39317,7 +39317,7 @@ func (ec *executionContext) fieldContext_Mutation_createEmoji(ctx context.Contex
 			case "updatedAt":
 				return ec.fieldContext_CustomEmoji_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CustomEmoji", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CustomEmoji", field.Name)
 		},
 	}
 	defer func() {
@@ -39392,7 +39392,7 @@ func (ec *executionContext) fieldContext_Mutation_updateEmoji(ctx context.Contex
 			case "updatedAt":
 				return ec.fieldContext_CustomEmoji_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CustomEmoji", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CustomEmoji", field.Name)
 		},
 	}
 	defer func() {
@@ -39514,7 +39514,7 @@ func (ec *executionContext) fieldContext_Mutation_updateTrust(ctx context.Contex
 			case "updatedAt":
 				return ec.fieldContext_TrustEdge_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TrustEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TrustEdge", field.Name)
 		},
 	}
 	defer func() {
@@ -39575,7 +39575,7 @@ func (ec *executionContext) fieldContext_Mutation_flagObject(ctx context.Context
 			case "queued":
 				return ec.fieldContext_FlagPayload_queued(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FlagPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FlagPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -39636,7 +39636,7 @@ func (ec *executionContext) fieldContext_Mutation_addCommunityNote(ctx context.C
 			case "object":
 				return ec.fieldContext_CommunityNotePayload_object(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CommunityNotePayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNotePayload", field.Name)
 		},
 	}
 	defer func() {
@@ -39705,7 +39705,7 @@ func (ec *executionContext) fieldContext_Mutation_voteCommunityNote(ctx context.
 			case "createdAt":
 				return ec.fieldContext_CommunityNote_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CommunityNote", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNote", field.Name)
 		},
 	}
 	defer func() {
@@ -39768,7 +39768,7 @@ func (ec *executionContext) fieldContext_Mutation_requestAIAnalysis(ctx context.
 			case "estimatedTime":
 				return ec.fieldContext_AIAnalysisRequest_estimatedTime(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIAnalysisRequest", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIAnalysisRequest", field.Name)
 		},
 	}
 	defer func() {
@@ -39831,7 +39831,7 @@ func (ec *executionContext) fieldContext_Mutation_createQuoteNote(ctx context.Co
 			case "cost":
 				return ec.fieldContext_CreateNotePayload_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CreateNotePayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CreateNotePayload", field.Name)
 		},
 	}
 	defer func() {
@@ -39894,7 +39894,7 @@ func (ec *executionContext) fieldContext_Mutation_withdrawFromQuotes(ctx context
 			case "withdrawnCount":
 				return ec.fieldContext_WithdrawQuotePayload_withdrawnCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type WithdrawQuotePayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type WithdrawQuotePayload", field.Name)
 		},
 	}
 	defer func() {
@@ -39957,7 +39957,7 @@ func (ec *executionContext) fieldContext_Mutation_updateQuotePermissions(ctx con
 			case "affectedQuotes":
 				return ec.fieldContext_UpdateQuotePermissionsPayload_affectedQuotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type UpdateQuotePermissionsPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type UpdateQuotePermissionsPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40018,7 +40018,7 @@ func (ec *executionContext) fieldContext_Mutation_followHashtag(ctx context.Cont
 			case "hashtag":
 				return ec.fieldContext_HashtagFollowPayload_hashtag(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagFollowPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagFollowPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40079,7 +40079,7 @@ func (ec *executionContext) fieldContext_Mutation_unfollowHashtag(ctx context.Co
 			case "hashtag":
 				return ec.fieldContext_UnfollowHashtagPayload_hashtag(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type UnfollowHashtagPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type UnfollowHashtagPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40142,7 +40142,7 @@ func (ec *executionContext) fieldContext_Mutation_updateHashtagNotifications(ctx
 			case "settings":
 				return ec.fieldContext_UpdateHashtagNotificationsPayload_settings(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type UpdateHashtagNotificationsPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type UpdateHashtagNotificationsPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40205,7 +40205,7 @@ func (ec *executionContext) fieldContext_Mutation_muteHashtag(ctx context.Contex
 			case "mutedUntil":
 				return ec.fieldContext_MuteHashtagPayload_mutedUntil(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MuteHashtagPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MuteHashtagPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40270,7 +40270,7 @@ func (ec *executionContext) fieldContext_Mutation_syncThread(ctx context.Context
 			case "errors":
 				return ec.fieldContext_SyncThreadPayload_errors(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SyncThreadPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SyncThreadPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40333,7 +40333,7 @@ func (ec *executionContext) fieldContext_Mutation_syncMissingReplies(ctx context
 			case "thread":
 				return ec.fieldContext_SyncRepliesPayload_thread(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SyncRepliesPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SyncRepliesPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40396,7 +40396,7 @@ func (ec *executionContext) fieldContext_Mutation_acknowledgeSeverance(ctx conte
 			case "acknowledged":
 				return ec.fieldContext_AcknowledgePayload_acknowledged(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AcknowledgePayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AcknowledgePayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40463,7 +40463,7 @@ func (ec *executionContext) fieldContext_Mutation_attemptReconnection(ctx contex
 			case "errors":
 				return ec.fieldContext_ReconnectionPayload_errors(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ReconnectionPayload", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ReconnectionPayload", field.Name)
 		},
 	}
 	defer func() {
@@ -40536,7 +40536,7 @@ func (ec *executionContext) fieldContext_Mutation_requestStreamingUrl(ctx contex
 			case "expiresAt":
 				return ec.fieldContext_MediaStream_expiresAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MediaStream", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MediaStream", field.Name)
 		},
 	}
 	defer func() {
@@ -40609,7 +40609,7 @@ func (ec *executionContext) fieldContext_Mutation_preloadMedia(ctx context.Conte
 			case "expiresAt":
 				return ec.fieldContext_MediaStream_expiresAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MediaStream", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MediaStream", field.Name)
 		},
 	}
 	defer func() {
@@ -40686,7 +40686,7 @@ func (ec *executionContext) fieldContext_Mutation_createModerationPattern(ctx co
 			case "active":
 				return ec.fieldContext_ModerationPattern_active(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationPattern", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationPattern", field.Name)
 		},
 	}
 	defer func() {
@@ -40763,7 +40763,7 @@ func (ec *executionContext) fieldContext_Mutation_updateModerationPattern(ctx co
 			case "active":
 				return ec.fieldContext_ModerationPattern_active(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationPattern", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationPattern", field.Name)
 		},
 	}
 	defer func() {
@@ -40891,7 +40891,7 @@ func (ec *executionContext) fieldContext_Mutation_trainModerationModel(ctx conte
 			case "improvements":
 				return ec.fieldContext_TrainingResult_improvements(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TrainingResult", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TrainingResult", field.Name)
 		},
 	}
 	defer func() {
@@ -40964,7 +40964,7 @@ func (ec *executionContext) fieldContext_Mutation_setFederationLimit(ctx context
 			case "updatedAt":
 				return ec.fieldContext_FederationLimit_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationLimit", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationLimit", field.Name)
 		},
 	}
 	defer func() {
@@ -41033,7 +41033,7 @@ func (ec *executionContext) fieldContext_Mutation_pauseFederation(ctx context.Co
 			case "metrics":
 				return ec.fieldContext_FederationManagementStatus_metrics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationManagementStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationManagementStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -41102,7 +41102,7 @@ func (ec *executionContext) fieldContext_Mutation_resumeFederation(ctx context.C
 			case "metrics":
 				return ec.fieldContext_FederationManagementStatus_metrics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationManagementStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationManagementStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -41175,7 +41175,7 @@ func (ec *executionContext) fieldContext_Mutation_setInstanceBudget(ctx context.
 			case "period":
 				return ec.fieldContext_InstanceBudget_period(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceBudget", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceBudget", field.Name)
 		},
 	}
 	defer func() {
@@ -41238,7 +41238,7 @@ func (ec *executionContext) fieldContext_Mutation_optimizeFederationCosts(ctx co
 			case "actions":
 				return ec.fieldContext_CostOptimizationResult_actions(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostOptimizationResult", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostOptimizationResult", field.Name)
 		},
 	}
 	defer func() {
@@ -41303,7 +41303,7 @@ func (ec *executionContext) fieldContext_Mutation_reportStreamingQuality(ctx con
 			case "reportId":
 				return ec.fieldContext_StreamingQualityReport_reportId(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StreamingQualityReport", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StreamingQualityReport", field.Name)
 		},
 	}
 	defer func() {
@@ -41368,7 +41368,7 @@ func (ec *executionContext) fieldContext_Mutation_updateStreamingPreferences(ctx
 			case "privacy":
 				return ec.fieldContext_UserPreferences_privacy(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type UserPreferences", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type UserPreferences", field.Name)
 		},
 	}
 	defer func() {
@@ -41493,7 +41493,7 @@ func (ec *executionContext) fieldContext_MuteHashtagPayload_hashtag(_ context.Co
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -41704,7 +41704,7 @@ func (ec *executionContext) fieldContext_Notification_account(_ context.Context,
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -41799,7 +41799,7 @@ func (ec *executionContext) fieldContext_Notification_status(_ context.Context, 
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -41937,7 +41937,7 @@ func (ec *executionContext) fieldContext_NotificationConnection_edges(_ context.
 			case "cursor":
 				return ec.fieldContext_NotificationEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type NotificationEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type NotificationEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -41991,7 +41991,7 @@ func (ec *executionContext) fieldContext_NotificationConnection_pageInfo(_ conte
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -42093,7 +42093,7 @@ func (ec *executionContext) fieldContext_NotificationEdge_node(_ context.Context
 			case "createdAt":
 				return ec.fieldContext_Notification_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Notification", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Notification", field.Name)
 		},
 	}
 	return fc, nil
@@ -42571,7 +42571,7 @@ func (ec *executionContext) fieldContext_Object_actor(_ context.Context, field g
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -42665,7 +42665,7 @@ func (ec *executionContext) fieldContext_Object_contentMap(_ context.Context, fi
 			case "content":
 				return ec.fieldContext_ContentMap_content(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ContentMap", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ContentMap", field.Name)
 		},
 	}
 	return fc, nil
@@ -42760,7 +42760,7 @@ func (ec *executionContext) fieldContext_Object_inReplyTo(_ context.Context, fie
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -42953,7 +42953,7 @@ func (ec *executionContext) fieldContext_Object_attachments(_ context.Context, f
 			case "duration":
 				return ec.fieldContext_Attachment_duration(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Attachment", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Attachment", field.Name)
 		},
 	}
 	return fc, nil
@@ -43003,7 +43003,7 @@ func (ec *executionContext) fieldContext_Object_tags(_ context.Context, field gr
 			case "url":
 				return ec.fieldContext_Tag_url(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Tag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Tag", field.Name)
 		},
 	}
 	return fc, nil
@@ -43057,7 +43057,7 @@ func (ec *executionContext) fieldContext_Object_mentions(_ context.Context, fiel
 			case "url":
 				return ec.fieldContext_Mention_url(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Mention", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Mention", field.Name)
 		},
 	}
 	return fc, nil
@@ -43420,7 +43420,7 @@ func (ec *executionContext) fieldContext_Object_communityNotes(_ context.Context
 			case "createdAt":
 				return ec.fieldContext_CommunityNote_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CommunityNote", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CommunityNote", field.Name)
 		},
 	}
 	return fc, nil
@@ -43602,7 +43602,7 @@ func (ec *executionContext) fieldContext_Object_quoteContext(_ context.Context, 
 			case "withdrawn":
 				return ec.fieldContext_QuoteContext_withdrawn(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QuoteContext", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QuoteContext", field.Name)
 		},
 	}
 	return fc, nil
@@ -43698,7 +43698,7 @@ func (ec *executionContext) fieldContext_Object_quotes(ctx context.Context, fiel
 			case "totalCount":
 				return ec.fieldContext_QuoteConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QuoteConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QuoteConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -43759,7 +43759,7 @@ func (ec *executionContext) fieldContext_ObjectConnection_edges(_ context.Contex
 			case "cursor":
 				return ec.fieldContext_ObjectEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ObjectEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ObjectEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -43813,7 +43813,7 @@ func (ec *executionContext) fieldContext_ObjectConnection_pageInfo(_ context.Con
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -43955,7 +43955,7 @@ func (ec *executionContext) fieldContext_ObjectEdge_node(_ context.Context, fiel
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -44097,7 +44097,7 @@ func (ec *executionContext) fieldContext_ObjectExplanation_object(_ context.Cont
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -44281,7 +44281,7 @@ func (ec *executionContext) fieldContext_ObjectExplanation_accessPattern(_ conte
 			case "cost":
 				return ec.fieldContext_AccessLog_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AccessLog", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AccessLog", field.Name)
 		},
 	}
 	return fc, nil
@@ -44693,7 +44693,7 @@ func (ec *executionContext) fieldContext_PatternStats_pattern(_ context.Context,
 			case "active":
 				return ec.fieldContext_ModerationPattern_active(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationPattern", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationPattern", field.Name)
 		},
 	}
 	return fc, nil
@@ -45899,7 +45899,7 @@ func (ec *executionContext) fieldContext_PortableReputation_reputation(_ context
 			case "signature":
 				return ec.fieldContext_Reputation_signature(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Reputation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Reputation", field.Name)
 		},
 	}
 	return fc, nil
@@ -45967,7 +45967,7 @@ func (ec *executionContext) fieldContext_PortableReputation_vouches(_ context.Co
 			case "revokedAt":
 				return ec.fieldContext_Vouch_revokedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Vouch", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Vouch", field.Name)
 		},
 	}
 	return fc, nil
@@ -46193,7 +46193,7 @@ func (ec *executionContext) fieldContext_PostConnection_edges(_ context.Context,
 			case "cursor":
 				return ec.fieldContext_PostEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PostEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PostEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -46247,7 +46247,7 @@ func (ec *executionContext) fieldContext_PostConnection_pageInfo(_ context.Conte
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -46389,7 +46389,7 @@ func (ec *executionContext) fieldContext_PostEdge_node(_ context.Context, field 
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -46647,7 +46647,7 @@ func (ec *executionContext) fieldContext_ProfileDirectory_accounts(_ context.Con
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -47078,7 +47078,7 @@ func (ec *executionContext) fieldContext_Query_actor(ctx context.Context, field 
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	defer func() {
@@ -47184,7 +47184,7 @@ func (ec *executionContext) fieldContext_Query_object(ctx context.Context, field
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -47247,7 +47247,7 @@ func (ec *executionContext) fieldContext_Query_timeline(ctx context.Context, fie
 			case "totalCount":
 				return ec.fieldContext_ObjectConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ObjectConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ObjectConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -47310,7 +47310,7 @@ func (ec *executionContext) fieldContext_Query_search(ctx context.Context, field
 			case "hashtags":
 				return ec.fieldContext_SearchResult_hashtags(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SearchResult", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SearchResult", field.Name)
 		},
 	}
 	defer func() {
@@ -47373,7 +47373,7 @@ func (ec *executionContext) fieldContext_Query_notifications(ctx context.Context
 			case "totalCount":
 				return ec.fieldContext_NotificationConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type NotificationConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type NotificationConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -47442,7 +47442,7 @@ func (ec *executionContext) fieldContext_Query_conversations(ctx context.Context
 			case "updatedAt":
 				return ec.fieldContext_Conversation_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Conversation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
 		},
 	}
 	defer func() {
@@ -47508,7 +47508,7 @@ func (ec *executionContext) fieldContext_Query_conversation(ctx context.Context,
 			case "updatedAt":
 				return ec.fieldContext_Conversation_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Conversation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
 		},
 	}
 	defer func() {
@@ -47581,7 +47581,7 @@ func (ec *executionContext) fieldContext_Query_lists(_ context.Context, field gr
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	return fc, nil
@@ -47640,7 +47640,7 @@ func (ec *executionContext) fieldContext_Query_list(ctx context.Context, field g
 			case "updatedAt":
 				return ec.fieldContext_List_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type List", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type List", field.Name)
 		},
 	}
 	defer func() {
@@ -47733,7 +47733,7 @@ func (ec *executionContext) fieldContext_Query_listAccounts(ctx context.Context,
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	defer func() {
@@ -47813,7 +47813,7 @@ func (ec *executionContext) fieldContext_Query_media(ctx context.Context, field 
 			case "createdAt":
 				return ec.fieldContext_Media_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Media", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
 		},
 	}
 	defer func() {
@@ -47888,7 +47888,7 @@ func (ec *executionContext) fieldContext_Query_customEmojis(_ context.Context, f
 			case "updatedAt":
 				return ec.fieldContext_CustomEmoji_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CustomEmoji", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CustomEmoji", field.Name)
 		},
 	}
 	return fc, nil
@@ -47944,7 +47944,7 @@ func (ec *executionContext) fieldContext_Query_scheduledStatuses(ctx context.Con
 			case "createdAt":
 				return ec.fieldContext_ScheduledStatus_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ScheduledStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ScheduledStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -48008,7 +48008,7 @@ func (ec *executionContext) fieldContext_Query_scheduledStatus(ctx context.Conte
 			case "createdAt":
 				return ec.fieldContext_ScheduledStatus_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ScheduledStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ScheduledStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -48088,7 +48088,7 @@ func (ec *executionContext) fieldContext_Query_relationship(ctx context.Context,
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	defer func() {
@@ -48171,7 +48171,7 @@ func (ec *executionContext) fieldContext_Query_relationships(ctx context.Context
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	defer func() {
@@ -48232,7 +48232,7 @@ func (ec *executionContext) fieldContext_Query_profileDirectory(ctx context.Cont
 			case "totalCount":
 				return ec.fieldContext_ProfileDirectory_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ProfileDirectory", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ProfileDirectory", field.Name)
 		},
 	}
 	defer func() {
@@ -48295,7 +48295,7 @@ func (ec *executionContext) fieldContext_Query_suggestions(ctx context.Context, 
 			case "reason":
 				return ec.fieldContext_AccountSuggestion_reason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AccountSuggestion", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AccountSuggestion", field.Name)
 		},
 	}
 	defer func() {
@@ -48419,7 +48419,7 @@ func (ec *executionContext) fieldContext_Query_instanceMetrics(_ context.Context
 			case "lastUpdated":
 				return ec.fieldContext_InstanceMetrics_lastUpdated(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceMetrics", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceMetrics", field.Name)
 		},
 	}
 	return fc, nil
@@ -48479,7 +48479,7 @@ func (ec *executionContext) fieldContext_Query_costBreakdown(ctx context.Context
 			case "breakdown":
 				return ec.fieldContext_CostBreakdown_breakdown(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostBreakdown", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostBreakdown", field.Name)
 		},
 	}
 	defer func() {
@@ -48546,7 +48546,7 @@ func (ec *executionContext) fieldContext_Query_trustGraph(ctx context.Context, f
 			case "updatedAt":
 				return ec.fieldContext_TrustEdge_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TrustEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TrustEdge", field.Name)
 		},
 	}
 	defer func() {
@@ -48617,7 +48617,7 @@ func (ec *executionContext) fieldContext_Query_moderationQueue(ctx context.Conte
 			case "timestamp":
 				return ec.fieldContext_ModerationDecision_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationDecision", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationDecision", field.Name)
 		},
 	}
 	defer func() {
@@ -48684,7 +48684,7 @@ func (ec *executionContext) fieldContext_Query_explainObject(ctx context.Context
 			case "accessPattern":
 				return ec.fieldContext_ObjectExplanation_accessPattern(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ObjectExplanation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ObjectExplanation", field.Name)
 		},
 	}
 	defer func() {
@@ -48755,7 +48755,7 @@ func (ec *executionContext) fieldContext_Query_federationStatus(ctx context.Cont
 			case "version":
 				return ec.fieldContext_FederationStatus_version(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -48831,7 +48831,7 @@ func (ec *executionContext) fieldContext_Query_aiAnalysis(ctx context.Context, f
 			case "analyzedAt":
 				return ec.fieldContext_AIAnalysis_analyzedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIAnalysis", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIAnalysis", field.Name)
 		},
 	}
 	defer func() {
@@ -48912,7 +48912,7 @@ func (ec *executionContext) fieldContext_Query_aiStats(ctx context.Context, fiel
 			case "moderationActions":
 				return ec.fieldContext_AIStats_moderationActions(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIStats", field.Name)
 		},
 	}
 	defer func() {
@@ -48979,7 +48979,7 @@ func (ec *executionContext) fieldContext_Query_aiCapabilities(_ context.Context,
 			case "costPerAnalysis":
 				return ec.fieldContext_AICapabilities_costPerAnalysis(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AICapabilities", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AICapabilities", field.Name)
 		},
 	}
 	return fc, nil
@@ -49046,7 +49046,7 @@ func (ec *executionContext) fieldContext_Query_hashtag(ctx context.Context, fiel
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	defer func() {
@@ -49109,7 +49109,7 @@ func (ec *executionContext) fieldContext_Query_followedHashtags(ctx context.Cont
 			case "totalCount":
 				return ec.fieldContext_HashtagConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49172,7 +49172,7 @@ func (ec *executionContext) fieldContext_Query_hashtagTimeline(ctx context.Conte
 			case "totalCount":
 				return ec.fieldContext_PostConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PostConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PostConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49235,7 +49235,7 @@ func (ec *executionContext) fieldContext_Query_multiHashtagTimeline(ctx context.
 			case "totalCount":
 				return ec.fieldContext_PostConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PostConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PostConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49298,7 +49298,7 @@ func (ec *executionContext) fieldContext_Query_suggestedHashtags(ctx context.Con
 			case "score":
 				return ec.fieldContext_HashtagSuggestion_score(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagSuggestion", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagSuggestion", field.Name)
 		},
 	}
 	defer func() {
@@ -49364,7 +49364,7 @@ func (ec *executionContext) fieldContext_Query_threadContext(ctx context.Context
 			case "syncStatus":
 				return ec.fieldContext_ThreadContext_syncStatus(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ThreadContext", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ThreadContext", field.Name)
 		},
 	}
 	defer func() {
@@ -49427,7 +49427,7 @@ func (ec *executionContext) fieldContext_Query_severedRelationships(ctx context.
 			case "totalCount":
 				return ec.fieldContext_SeveredRelationshipConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveredRelationshipConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveredRelationshipConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49490,7 +49490,7 @@ func (ec *executionContext) fieldContext_Query_affectedRelationships(ctx context
 			case "totalCount":
 				return ec.fieldContext_AffectedRelationshipConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AffectedRelationshipConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AffectedRelationshipConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49553,7 +49553,7 @@ func (ec *executionContext) fieldContext_Query_federationCosts(ctx context.Conte
 			case "totalCount":
 				return ec.fieldContext_FederationCostConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationCostConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationCostConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -49622,7 +49622,7 @@ func (ec *executionContext) fieldContext_Query_instanceHealthReport(ctx context.
 			case "lastChecked":
 				return ec.fieldContext_InstanceHealthReport_lastChecked(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceHealthReport", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceHealthReport", field.Name)
 		},
 	}
 	defer func() {
@@ -49691,7 +49691,7 @@ func (ec *executionContext) fieldContext_Query_costProjections(ctx context.Conte
 			case "recommendations":
 				return ec.fieldContext_CostProjection_recommendations(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostProjection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostProjection", field.Name)
 		},
 	}
 	defer func() {
@@ -49764,7 +49764,7 @@ func (ec *executionContext) fieldContext_Query_mediaStreamUrl(ctx context.Contex
 			case "expiresAt":
 				return ec.fieldContext_MediaStream_expiresAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MediaStream", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MediaStream", field.Name)
 		},
 	}
 	defer func() {
@@ -49831,7 +49831,7 @@ func (ec *executionContext) fieldContext_Query_supportedBitrates(ctx context.Con
 			case "codec":
 				return ec.fieldContext_Bitrate_codec(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Bitrate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Bitrate", field.Name)
 		},
 	}
 	defer func() {
@@ -49908,7 +49908,7 @@ func (ec *executionContext) fieldContext_Query_moderationPatterns(ctx context.Co
 			case "active":
 				return ec.fieldContext_ModerationPattern_active(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationPattern", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationPattern", field.Name)
 		},
 	}
 	defer func() {
@@ -49981,7 +49981,7 @@ func (ec *executionContext) fieldContext_Query_moderationEffectiveness(ctx conte
 			case "f1Score":
 				return ec.fieldContext_ModerationEffectiveness_f1Score(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationEffectiveness", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationEffectiveness", field.Name)
 		},
 	}
 	defer func() {
@@ -50054,7 +50054,7 @@ func (ec *executionContext) fieldContext_Query_federationLimits(ctx context.Cont
 			case "updatedAt":
 				return ec.fieldContext_FederationLimit_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationLimit", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationLimit", field.Name)
 		},
 	}
 	defer func() {
@@ -50127,7 +50127,7 @@ func (ec *executionContext) fieldContext_Query_instanceBudgets(ctx context.Conte
 			case "period":
 				return ec.fieldContext_InstanceBudget_period(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceBudget", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceBudget", field.Name)
 		},
 	}
 	defer func() {
@@ -50196,7 +50196,7 @@ func (ec *executionContext) fieldContext_Query_federationHealth(ctx context.Cont
 			case "metrics":
 				return ec.fieldContext_FederationManagementStatus_metrics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationManagementStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationManagementStatus", field.Name)
 		},
 	}
 	defer func() {
@@ -50261,7 +50261,7 @@ func (ec *executionContext) fieldContext_Query_federationMap(ctx context.Context
 			case "healthScore":
 				return ec.fieldContext_FederationGraph_healthScore(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationGraph", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationGraph", field.Name)
 		},
 	}
 	defer func() {
@@ -50332,7 +50332,7 @@ func (ec *executionContext) fieldContext_Query_instanceRelationships(ctx context
 			case "recommendations":
 				return ec.fieldContext_InstanceRelations_recommendations(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InstanceRelations", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InstanceRelations", field.Name)
 		},
 	}
 	defer func() {
@@ -50397,7 +50397,7 @@ func (ec *executionContext) fieldContext_Query_federationFlow(ctx context.Contex
 			case "costByInstance":
 				return ec.fieldContext_FederationFlow_costByInstance(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationFlow", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationFlow", field.Name)
 		},
 	}
 	defer func() {
@@ -50466,7 +50466,7 @@ func (ec *executionContext) fieldContext_Query_streamingAnalytics(ctx context.Co
 			case "completionRate":
 				return ec.fieldContext_StreamingAnalytics_completionRate(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StreamingAnalytics", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StreamingAnalytics", field.Name)
 		},
 	}
 	defer func() {
@@ -50529,7 +50529,7 @@ func (ec *executionContext) fieldContext_Query_popularStreams(ctx context.Contex
 			case "totalCount":
 				return ec.fieldContext_StreamConnection_totalCount(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StreamConnection", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StreamConnection", field.Name)
 		},
 	}
 	defer func() {
@@ -50600,7 +50600,7 @@ func (ec *executionContext) fieldContext_Query_bandwidthUsage(ctx context.Contex
 			case "cost":
 				return ec.fieldContext_BandwidthReport_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type BandwidthReport", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type BandwidthReport", field.Name)
 		},
 	}
 	defer func() {
@@ -50669,7 +50669,7 @@ func (ec *executionContext) fieldContext_Query_moderationDashboard(ctx context.C
 			case "threatTrends":
 				return ec.fieldContext_ModerationDashboard_threatTrends(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationDashboard", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationDashboard", field.Name)
 		},
 	}
 	defer func() {
@@ -50736,7 +50736,7 @@ func (ec *executionContext) fieldContext_Query_patternEffectiveness(ctx context.
 			case "trend":
 				return ec.fieldContext_PatternStats_trend(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PatternStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PatternStats", field.Name)
 		},
 	}
 	defer func() {
@@ -50807,7 +50807,7 @@ func (ec *executionContext) fieldContext_Query_moderatorActivity(ctx context.Con
 			case "categories":
 				return ec.fieldContext_ModeratorStats_categories(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModeratorStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModeratorStats", field.Name)
 		},
 	}
 	defer func() {
@@ -50880,7 +50880,7 @@ func (ec *executionContext) fieldContext_Query_performanceMetrics(ctx context.Co
 			case "period":
 				return ec.fieldContext_PerformanceReport_period(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PerformanceReport", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PerformanceReport", field.Name)
 		},
 	}
 	defer func() {
@@ -50949,7 +50949,7 @@ func (ec *executionContext) fieldContext_Query_slowQueries(ctx context.Context, 
 			case "lastSeen":
 				return ec.fieldContext_QueryPerformance_lastSeen(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QueryPerformance", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QueryPerformance", field.Name)
 		},
 	}
 	defer func() {
@@ -51016,7 +51016,7 @@ func (ec *executionContext) fieldContext_Query_infrastructureHealth(_ context.Co
 			case "alerts":
 				return ec.fieldContext_InfrastructureStatus_alerts(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InfrastructureStatus", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InfrastructureStatus", field.Name)
 		},
 	}
 	return fc, nil
@@ -51081,7 +51081,7 @@ func (ec *executionContext) fieldContext_Query___type(ctx context.Context, field
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	defer func() {
@@ -51147,7 +51147,7 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 			case "directives":
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Schema", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
 		},
 	}
 	return fc, nil
@@ -51767,7 +51767,7 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quote(_ context.Con
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -51846,7 +51846,7 @@ func (ec *executionContext) fieldContext_QuoteActivityUpdate_quoter(_ context.Co
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -51940,7 +51940,7 @@ func (ec *executionContext) fieldContext_QuoteConnection_edges(_ context.Context
 			case "cursor":
 				return ec.fieldContext_QuoteEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QuoteEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QuoteEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -51994,7 +51994,7 @@ func (ec *executionContext) fieldContext_QuoteConnection_pageInfo(_ context.Cont
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -52120,7 +52120,7 @@ func (ec *executionContext) fieldContext_QuoteContext_originalAuthor(_ context.C
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -52215,7 +52215,7 @@ func (ec *executionContext) fieldContext_QuoteContext_originalNote(_ context.Con
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -52445,7 +52445,7 @@ func (ec *executionContext) fieldContext_QuoteEdge_node(_ context.Context, field
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -52597,7 +52597,7 @@ func (ec *executionContext) fieldContext_ReconnectionPayload_severedRelationship
 			case "details":
 				return ec.fieldContext_SeveredRelationship_details(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveredRelationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveredRelationship", field.Name)
 		},
 	}
 	return fc, nil
@@ -53408,7 +53408,7 @@ func (ec *executionContext) fieldContext_RelationshipUpdate_relationship(_ conte
 			case "note":
 				return ec.fieldContext_Relationship_note(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Relationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Relationship", field.Name)
 		},
 	}
 	return fc, nil
@@ -53490,7 +53490,7 @@ func (ec *executionContext) fieldContext_RelationshipUpdate_actor(_ context.Cont
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -53988,7 +53988,7 @@ func (ec *executionContext) fieldContext_Reputation_evidence(_ context.Context, 
 			case "averageTrustScore":
 				return ec.fieldContext_ReputationEvidence_averageTrustScore(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ReputationEvidence", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ReputationEvidence", field.Name)
 		},
 	}
 	return fc, nil
@@ -55136,7 +55136,7 @@ func (ec *executionContext) fieldContext_ScheduledStatus_params(_ context.Contex
 			case "poll":
 				return ec.fieldContext_StatusParams_poll(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StatusParams", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StatusParams", field.Name)
 		},
 	}
 	return fc, nil
@@ -55208,7 +55208,7 @@ func (ec *executionContext) fieldContext_ScheduledStatus_mediaAttachments(_ cont
 			case "createdAt":
 				return ec.fieldContext_Media_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Media", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Media", field.Name)
 		},
 	}
 	return fc, nil
@@ -55334,7 +55334,7 @@ func (ec *executionContext) fieldContext_SearchResult_accounts(_ context.Context
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -55432,7 +55432,7 @@ func (ec *executionContext) fieldContext_SearchResult_statuses(_ context.Context
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -55482,7 +55482,7 @@ func (ec *executionContext) fieldContext_SearchResult_hashtags(_ context.Context
 			case "url":
 				return ec.fieldContext_Tag_url(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Tag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Tag", field.Name)
 		},
 	}
 	return fc, nil
@@ -56495,7 +56495,7 @@ func (ec *executionContext) fieldContext_SeveredRelationship_details(_ context.C
 			case "autoDetected":
 				return ec.fieldContext_SeveranceDetails_autoDetected(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveranceDetails", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveranceDetails", field.Name)
 		},
 	}
 	return fc, nil
@@ -56545,7 +56545,7 @@ func (ec *executionContext) fieldContext_SeveredRelationshipConnection_edges(_ c
 			case "cursor":
 				return ec.fieldContext_SeveredRelationshipEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveredRelationshipEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveredRelationshipEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -56599,7 +56599,7 @@ func (ec *executionContext) fieldContext_SeveredRelationshipConnection_pageInfo(
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -56707,7 +56707,7 @@ func (ec *executionContext) fieldContext_SeveredRelationshipEdge_node(_ context.
 			case "details":
 				return ec.fieldContext_SeveredRelationship_details(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SeveredRelationship", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SeveredRelationship", field.Name)
 		},
 	}
 	return fc, nil
@@ -56847,7 +56847,7 @@ func (ec *executionContext) fieldContext_SpamAnalysis_spamIndicators(_ context.C
 			case "severity":
 				return ec.fieldContext_SpamIndicator_severity(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SpamIndicator", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SpamIndicator", field.Name)
 		},
 	}
 	return fc, nil
@@ -57549,7 +57549,7 @@ func (ec *executionContext) fieldContext_StatusParams_poll(_ context.Context, fi
 			case "hideTotals":
 				return ec.fieldContext_PollParams_hideTotals(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PollParams", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PollParams", field.Name)
 		},
 	}
 	return fc, nil
@@ -57995,7 +57995,7 @@ func (ec *executionContext) fieldContext_StreamConnection_edges(_ context.Contex
 			case "cursor":
 				return ec.fieldContext_StreamEdge_cursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StreamEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StreamEdge", field.Name)
 		},
 	}
 	return fc, nil
@@ -58049,7 +58049,7 @@ func (ec *executionContext) fieldContext_StreamConnection_pageInfo(_ context.Con
 			case "endCursor":
 				return ec.fieldContext_PageInfo_endCursor(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PageInfo", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PageInfo", field.Name)
 		},
 	}
 	return fc, nil
@@ -58157,7 +58157,7 @@ func (ec *executionContext) fieldContext_StreamEdge_node(_ context.Context, fiel
 			case "createdAt":
 				return ec.fieldContext_Stream_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Stream", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Stream", field.Name)
 		},
 	}
 	return fc, nil
@@ -58387,7 +58387,7 @@ func (ec *executionContext) fieldContext_StreamingAnalytics_qualityDistribution(
 			case "avgBandwidth":
 				return ec.fieldContext_QualityStats_avgBandwidth(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QualityStats", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QualityStats", field.Name)
 		},
 	}
 	return fc, nil
@@ -58901,7 +58901,7 @@ func (ec *executionContext) fieldContext_Subscription_activityStream(ctx context
 			case "cost":
 				return ec.fieldContext_Activity_cost(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Activity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Activity", field.Name)
 		},
 	}
 	defer func() {
@@ -59024,7 +59024,7 @@ func (ec *executionContext) fieldContext_Subscription_timelineUpdates(ctx contex
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	defer func() {
@@ -59107,7 +59107,7 @@ func (ec *executionContext) fieldContext_Subscription_notificationStream(ctx con
 			case "createdAt":
 				return ec.fieldContext_Notification_createdAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Notification", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Notification", field.Name)
 		},
 	}
 	defer func() {
@@ -59190,7 +59190,7 @@ func (ec *executionContext) fieldContext_Subscription_conversationUpdates(_ cont
 			case "updatedAt":
 				return ec.fieldContext_Conversation_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Conversation", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Conversation", field.Name)
 		},
 	}
 	return fc, nil
@@ -59258,7 +59258,7 @@ func (ec *executionContext) fieldContext_Subscription_listUpdates(ctx context.Co
 			case "timestamp":
 				return ec.fieldContext_ListUpdate_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ListUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ListUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -59337,7 +59337,7 @@ func (ec *executionContext) fieldContext_Subscription_relationshipUpdates(ctx co
 			case "timestamp":
 				return ec.fieldContext_RelationshipUpdate_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type RelationshipUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type RelationshipUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -59414,7 +59414,7 @@ func (ec *executionContext) fieldContext_Subscription_costUpdates(ctx context.Co
 			case "monthlyProjection":
 				return ec.fieldContext_CostUpdate_monthlyProjection(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -59499,7 +59499,7 @@ func (ec *executionContext) fieldContext_Subscription_moderationEvents(ctx conte
 			case "timestamp":
 				return ec.fieldContext_ModerationDecision_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationDecision", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationDecision", field.Name)
 		},
 	}
 	defer func() {
@@ -59580,7 +59580,7 @@ func (ec *executionContext) fieldContext_Subscription_trustUpdates(ctx context.C
 			case "updatedAt":
 				return ec.fieldContext_TrustEdge_updatedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type TrustEdge", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type TrustEdge", field.Name)
 		},
 	}
 	defer func() {
@@ -59673,7 +59673,7 @@ func (ec *executionContext) fieldContext_Subscription_aiAnalysisUpdates(ctx cont
 			case "analyzedAt":
 				return ec.fieldContext_AIAnalysis_analyzedAt(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type AIAnalysis", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type AIAnalysis", field.Name)
 		},
 	}
 	defer func() {
@@ -59752,7 +59752,7 @@ func (ec *executionContext) fieldContext_Subscription_quoteActivity(ctx context.
 			case "timestamp":
 				return ec.fieldContext_QuoteActivityUpdate_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type QuoteActivityUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type QuoteActivityUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -59831,7 +59831,7 @@ func (ec *executionContext) fieldContext_Subscription_hashtagActivity(ctx contex
 			case "timestamp":
 				return ec.fieldContext_HashtagActivityUpdate_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagActivityUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagActivityUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -59944,7 +59944,7 @@ func (ec *executionContext) fieldContext_Subscription_metricsUpdates(ctx context
 			case "instanceDomain":
 				return ec.fieldContext_MetricsUpdate_instanceDomain(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type MetricsUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type MetricsUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -60033,7 +60033,7 @@ func (ec *executionContext) fieldContext_Subscription_moderationAlerts(ctx conte
 			case "handled":
 				return ec.fieldContext_ModerationAlert_handled(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationAlert", field.Name)
 		},
 	}
 	defer func() {
@@ -60118,7 +60118,7 @@ func (ec *executionContext) fieldContext_Subscription_costAlerts(ctx context.Con
 			case "timestamp":
 				return ec.fieldContext_CostAlert_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type CostAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type CostAlert", field.Name)
 		},
 	}
 	defer func() {
@@ -60205,7 +60205,7 @@ func (ec *executionContext) fieldContext_Subscription_budgetAlerts(ctx context.C
 			case "timestamp":
 				return ec.fieldContext_BudgetAlert_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type BudgetAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type BudgetAlert", field.Name)
 		},
 	}
 	defer func() {
@@ -60286,7 +60286,7 @@ func (ec *executionContext) fieldContext_Subscription_federationHealthUpdates(ct
 			case "timestamp":
 				return ec.fieldContext_FederationHealthUpdate_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type FederationHealthUpdate", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type FederationHealthUpdate", field.Name)
 		},
 	}
 	defer func() {
@@ -60371,7 +60371,7 @@ func (ec *executionContext) fieldContext_Subscription_moderationQueueUpdate(ctx 
 			case "deadline":
 				return ec.fieldContext_ModerationItem_deadline(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ModerationItem", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ModerationItem", field.Name)
 		},
 	}
 	defer func() {
@@ -60458,7 +60458,7 @@ func (ec *executionContext) fieldContext_Subscription_threatIntelligence(_ conte
 			case "timestamp":
 				return ec.fieldContext_ThreatAlert_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ThreatAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ThreatAlert", field.Name)
 		},
 	}
 	return fc, nil
@@ -60532,7 +60532,7 @@ func (ec *executionContext) fieldContext_Subscription_performanceAlert(ctx conte
 			case "timestamp":
 				return ec.fieldContext_PerformanceAlert_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PerformanceAlert", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PerformanceAlert", field.Name)
 		},
 	}
 	defer func() {
@@ -60615,7 +60615,7 @@ func (ec *executionContext) fieldContext_Subscription_infrastructureEvent(_ cont
 			case "timestamp":
 				return ec.fieldContext_InfrastructureEvent_timestamp(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type InfrastructureEvent", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type InfrastructureEvent", field.Name)
 		},
 	}
 	return fc, nil
@@ -60761,7 +60761,7 @@ func (ec *executionContext) fieldContext_SyncRepliesPayload_thread(_ context.Con
 			case "syncStatus":
 				return ec.fieldContext_ThreadContext_syncStatus(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ThreadContext", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ThreadContext", field.Name)
 		},
 	}
 	return fc, nil
@@ -60863,7 +60863,7 @@ func (ec *executionContext) fieldContext_SyncThreadPayload_thread(_ context.Cont
 			case "syncStatus":
 				return ec.fieldContext_ThreadContext_syncStatus(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type ThreadContext", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type ThreadContext", field.Name)
 		},
 	}
 	return fc, nil
@@ -61134,7 +61134,7 @@ func (ec *executionContext) fieldContext_TextAnalysis_sentimentScores(_ context.
 			case "mixed":
 				return ec.fieldContext_SentimentScores_mixed(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type SentimentScores", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type SentimentScores", field.Name)
 		},
 	}
 	return fc, nil
@@ -61362,7 +61362,7 @@ func (ec *executionContext) fieldContext_TextAnalysis_entities(_ context.Context
 			case "score":
 				return ec.fieldContext_Entity_score(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Entity", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Entity", field.Name)
 		},
 	}
 	return fc, nil
@@ -61768,7 +61768,7 @@ func (ec *executionContext) fieldContext_ThreadContext_rootNote(_ context.Contex
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -62994,7 +62994,7 @@ func (ec *executionContext) fieldContext_TrustEdge_from(_ context.Context, field
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -63076,7 +63076,7 @@ func (ec *executionContext) fieldContext_TrustEdge_to(_ context.Context, field g
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -63322,7 +63322,7 @@ func (ec *executionContext) fieldContext_UnfollowHashtagPayload_hashtag(_ contex
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -63436,7 +63436,7 @@ func (ec *executionContext) fieldContext_UpdateHashtagNotificationsPayload_hasht
 			case "analytics":
 				return ec.fieldContext_Hashtag_analytics(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Hashtag", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Hashtag", field.Name)
 		},
 	}
 	return fc, nil
@@ -63490,7 +63490,7 @@ func (ec *executionContext) fieldContext_UpdateHashtagNotificationsPayload_setti
 			case "filters":
 				return ec.fieldContext_HashtagNotificationSettings_filters(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type HashtagNotificationSettings", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type HashtagNotificationSettings", field.Name)
 		},
 	}
 	return fc, nil
@@ -63632,7 +63632,7 @@ func (ec *executionContext) fieldContext_UpdateQuotePermissionsPayload_note(_ co
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -63774,7 +63774,7 @@ func (ec *executionContext) fieldContext_UserPreferences_streaming(_ context.Con
 			case "dataSaver":
 				return ec.fieldContext_StreamingPreferences_dataSaver(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type StreamingPreferences", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type StreamingPreferences", field.Name)
 		},
 	}
 	return fc, nil
@@ -63828,7 +63828,7 @@ func (ec *executionContext) fieldContext_UserPreferences_notifications(_ context
 			case "digest":
 				return ec.fieldContext_NotificationPreferences_digest(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type NotificationPreferences", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type NotificationPreferences", field.Name)
 		},
 	}
 	return fc, nil
@@ -63880,7 +63880,7 @@ func (ec *executionContext) fieldContext_UserPreferences_privacy(_ context.Conte
 			case "showOnlineStatus":
 				return ec.fieldContext_PrivacyPreferences_showOnlineStatus(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type PrivacyPreferences", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type PrivacyPreferences", field.Name)
 		},
 	}
 	return fc, nil
@@ -64006,7 +64006,7 @@ func (ec *executionContext) fieldContext_Vouch_from(_ context.Context, field gra
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -64088,7 +64088,7 @@ func (ec *executionContext) fieldContext_Vouch_to(_ context.Context, field graph
 			case "vouches":
 				return ec.fieldContext_Actor_vouches(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Actor", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Actor", field.Name)
 		},
 	}
 	return fc, nil
@@ -64579,7 +64579,7 @@ func (ec *executionContext) fieldContext_WithdrawQuotePayload_note(_ context.Con
 			case "quotes":
 				return ec.fieldContext_Object_quotes(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type Object", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type Object", field.Name)
 		},
 	}
 	return fc, nil
@@ -64854,7 +64854,7 @@ func (ec *executionContext) fieldContext___Directive_args(ctx context.Context, f
 			case "deprecationReason":
 				return ec.fieldContext___InputValue_deprecationReason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __InputValue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __InputValue", field.Name)
 		},
 	}
 	defer func() {
@@ -65178,7 +65178,7 @@ func (ec *executionContext) fieldContext___Field_args(ctx context.Context, field
 			case "deprecationReason":
 				return ec.fieldContext___InputValue_deprecationReason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __InputValue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __InputValue", field.Name)
 		},
 	}
 	defer func() {
@@ -65257,7 +65257,7 @@ func (ec *executionContext) fieldContext___Field_type(_ context.Context, field g
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65495,7 +65495,7 @@ func (ec *executionContext) fieldContext___InputValue_type(_ context.Context, fi
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65730,7 +65730,7 @@ func (ec *executionContext) fieldContext___Schema_types(_ context.Context, field
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65798,7 +65798,7 @@ func (ec *executionContext) fieldContext___Schema_queryType(_ context.Context, f
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65863,7 +65863,7 @@ func (ec *executionContext) fieldContext___Schema_mutationType(_ context.Context
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65928,7 +65928,7 @@ func (ec *executionContext) fieldContext___Schema_subscriptionType(_ context.Con
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -65984,7 +65984,7 @@ func (ec *executionContext) fieldContext___Schema_directives(_ context.Context, 
 			case "args":
 				return ec.fieldContext___Directive_args(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Directive", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Directive", field.Name)
 		},
 	}
 	return fc, nil
@@ -66206,7 +66206,7 @@ func (ec *executionContext) fieldContext___Type_fields(ctx context.Context, fiel
 			case "deprecationReason":
 				return ec.fieldContext___Field_deprecationReason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Field", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Field", field.Name)
 		},
 	}
 	defer func() {
@@ -66282,7 +66282,7 @@ func (ec *executionContext) fieldContext___Type_interfaces(_ context.Context, fi
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -66347,7 +66347,7 @@ func (ec *executionContext) fieldContext___Type_possibleTypes(_ context.Context,
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil
@@ -66398,7 +66398,7 @@ func (ec *executionContext) fieldContext___Type_enumValues(ctx context.Context, 
 			case "deprecationReason":
 				return ec.fieldContext___EnumValue_deprecationReason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __EnumValue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __EnumValue", field.Name)
 		},
 	}
 	defer func() {
@@ -66464,7 +66464,7 @@ func (ec *executionContext) fieldContext___Type_inputFields(_ context.Context, f
 			case "deprecationReason":
 				return ec.fieldContext___InputValue_deprecationReason(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __InputValue", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __InputValue", field.Name)
 		},
 	}
 	return fc, nil
@@ -66529,7 +66529,7 @@ func (ec *executionContext) fieldContext___Type_ofType(_ context.Context, field 
 			case "isOneOf":
 				return ec.fieldContext___Type_isOneOf(ctx, field)
 			}
-			return nil, errors.New(fmt.Sprintf("no field named %q was found under type __Type", field.Name))
+			return nil, fmt.Errorf("no field named %q was found under type __Type", field.Name)
 		},
 	}
 	return fc, nil

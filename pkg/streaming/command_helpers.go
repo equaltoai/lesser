@@ -213,16 +213,16 @@ func (puh *ProgressUpdateHelper) SendFinalUpdate(
 		Type:   "operation.completed",
 		Stream: fmt.Sprintf("user:%s", conn.UserID),
 		Payload: map[string]interface{}{
-			"operation_id":   operationID,
-			"status":         "completed",
-			"processed":      tracker.Processed,
-			"total":          tracker.Total,
-			"message":        finalMessage,
-			"successful":     tracker.Successful,
-			"failed":         tracker.Failed,
-			"errors":         tracker.Errors,
-			"progress":       100.0,
-			"completed_at":   time.Now().Format(time.RFC3339),
+			"operation_id": operationID,
+			"status":       "completed",
+			"processed":    tracker.Processed,
+			"total":        tracker.Total,
+			"message":      finalMessage,
+			"successful":   tracker.Successful,
+			"failed":       tracker.Failed,
+			"errors":       tracker.Errors,
+			"progress":     100.0,
+			"completed_at": time.Now().Format(time.RFC3339),
 		},
 		Timestamp: time.Now(),
 	}
@@ -348,12 +348,12 @@ func (pch *PublishConnectionHelper) PublishToConnections(
 
 // CommandHandlerConfig holds configuration for generic command handling
 type CommandHandlerConfig struct {
-	RequiredFields   []string                                                                                                      // Fields required in payload validation
-	ParameterName    string                                                                                                        // Name of the parameter to extract (e.g., "operation_id", "id")
-	ErrorCodePrefix  string                                                                                                        // Prefix for error codes (e.g., "GET_OPERATION", "MARK_READ")
-	OperationName    string                                                                                                        // Name for error messages (e.g., "get bulk operation", "mark notification as read")
-	ResultExtractor  func(result interface{}) interface{}                                                                          // Function to extract data from service result
-	ServiceCall      func(ctx context.Context, conn *ConnectionInfo, extractedParam string) (interface{}, error)                 // Function to call the service
+	RequiredFields  []string                                                                                    // Fields required in payload validation
+	ParameterName   string                                                                                      // Name of the parameter to extract (e.g., "operation_id", "id")
+	ErrorCodePrefix string                                                                                      // Prefix for error codes (e.g., "GET_OPERATION", "MARK_READ")
+	OperationName   string                                                                                      // Name for error messages (e.g., "get bulk operation", "mark notification as read")
+	ResultExtractor func(result interface{}) interface{}                                                        // Function to extract data from service result
+	ServiceCall     func(ctx context.Context, conn *ConnectionInfo, extractedParam string) (interface{}, error) // Function to call the service
 }
 
 // ExecuteStandardCommandFlow handles the common command flow pattern: auth → validate → extract → service call → error handling → convert → return

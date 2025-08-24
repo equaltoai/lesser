@@ -76,50 +76,23 @@ type DebugObjectExplanation struct {
 func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 	startTime := time.Now()
 
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	var token string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug federation trace request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token = h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateDebugRequest(ctx, "federation_trace")
+	if err != nil {
+		return err
 	}
+	_ = claims // claims may be nil in test mode
 
 	activityID := ctx.Param("activity_id")
-	if err := common.ValidateRequiredParam("activity_id", activityID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "activity id required"})
+	if err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); err != nil {
+		return err
 	}
 
 	// Get the activity
 	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
 	if err != nil {
 		h.logger.Info("activity not found", zap.String("activity_id", activityID), zap.Error(err))
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{"error": "activity not found"})
+		return h.respondNotFound(ctx, "activity")
 	}
 
 	// Build the trace response
@@ -194,49 +167,22 @@ func (h *Handler) HandleDebugFederationTraceLift(ctx *lift.Context) error {
 
 // HandleDebugObjectLift provides detailed information about a stored object
 func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	var token string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug object request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token = h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateDebugRequest(ctx, "object")
+	if err != nil {
+		return err
 	}
+	_ = claims // claims may be nil in test mode
 
 	objectID := ctx.Param("object_id")
-	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "object id required"})
+	if err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); err != nil {
+		return err
 	}
 
 	// Get the object
 	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{"error": "object not found"})
+		return h.respondNotFound(ctx, "object")
 	}
 
 	// Build response
@@ -293,49 +239,22 @@ func (h *Handler) HandleDebugObjectLift(ctx *lift.Context) error {
 
 // HandleDebugReplayLift replays an activity for testing
 func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	var token string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug replay request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token = h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateDebugRequest(ctx, "replay")
+	if err != nil {
+		return err
 	}
+	_ = claims // claims may be nil in test mode
 
 	activityID := ctx.Param("activity_id")
-	if err := common.ValidateRequiredParam("activity_id", activityID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "activity id required"})
+	if err := h.validateRequiredParam(ctx, "activity_id", activityID, "activity id required"); err != nil {
+		return err
 	}
 
 	// Get the activity
 	activity, err := h.repos.Activity().GetActivity(ctx.Context, activityID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{"error": "activity not found"})
+		return h.respondNotFound(ctx, "activity")
 	}
 
 	// Check if it's a local activity
@@ -377,42 +296,16 @@ func (h *Handler) HandleDebugReplayLift(ctx *lift.Context) error {
 
 // HandleDebugFederationDomainLift provides debug info for a specific federated domain
 func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	var token string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug federation domain request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token = h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateDebugRequest(ctx, "federation_domain")
+	if err != nil {
+		return err
 	}
+	_ = claims // claims may be nil in test mode
 
 	domain := ctx.Param("domain")
-	if err := common.ValidateRequiredParam("domain", domain); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "domain required"})
+	if err := h.validateRequiredParam(ctx, "domain", domain, "domain required"); err != nil {
+		return err
 	}
 
 	// Build response with domain info
@@ -450,49 +343,22 @@ func (h *Handler) HandleDebugFederationDomainLift(ctx *lift.Context) error {
 
 // HandleDebugObjectExplainLift provides detailed explanation of object storage and cost
 func (h *Handler) HandleDebugObjectExplainLift(ctx *lift.Context) error {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	var token string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug object explain request in test mode", zap.String("test_username", testUsername))
-	} else {
-		// Extract and validate JWT token
-		token = h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{"error": "unauthorized"})
-		}
-
-		// Check admin scope
-		if !claims.HasScope("admin") && !claims.HasScope("debug") {
-			ctx.Status(http.StatusForbidden)
-			return ctx.JSON(map[string]string{"error": "admin or debug scope required"})
-		}
+	// Authenticate request
+	claims, err := h.authenticateDebugRequest(ctx, "object_explain")
+	if err != nil {
+		return err
 	}
+	_ = claims // claims may be nil in test mode
 
 	objectID := ctx.Param("object_id")
-	if err := common.ValidateRequiredParam("object_id", objectID); err != nil {
-		ctx.Status(http.StatusBadRequest)
-		return ctx.JSON(map[string]string{"error": "object id required"})
+	if err := h.validateRequiredParam(ctx, "object_id", objectID, "object id required"); err != nil {
+		return err
 	}
 
 	// Get the object
 	obj, err := h.repos.Object().GetObject(ctx.Context, objectID)
 	if err != nil {
-		ctx.Status(http.StatusNotFound)
-		return ctx.JSON(map[string]string{"error": "object not found"})
+		return h.respondNotFound(ctx, "object")
 	}
 
 	// Build detailed explanation
@@ -569,5 +435,50 @@ func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) i
 
 // Note: HandleDebugQueueLift removed - was an unused placeholder
 
-// Note: HandleDebugMetricsLift removed - was an unused placeholder
-// Note: HandleDebugHealthLift removed - was an unused placeholder
+// authenticateDebugRequest handles common authentication logic for debug endpoints
+func (h *Handler) authenticateDebugRequest(ctx *lift.Context, operation string) (*auth.Claims, error) {
+	// Check for test mode first
+	testUsername := ctx.Header("X-Test-Username")
+	if testUsername != "" {
+		// Test mode - skip JWT validation
+		h.logger.Info("debug request in test mode",
+			zap.String("operation", operation),
+			zap.String("test_username", testUsername))
+		return nil, nil
+	}
+
+	// Extract and validate JWT token
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		_ = ctx.JSON(map[string]string{"error": "unauthorized"})
+		return nil, fmt.Errorf("missing token")
+	}
+
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		_ = ctx.JSON(map[string]string{"error": "unauthorized"})
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	// Check admin scope
+	if !claims.HasScope("admin") && !claims.HasScope("debug") {
+		ctx.Status(http.StatusForbidden)
+		_ = ctx.JSON(map[string]string{"error": "admin or debug scope required"})
+		return nil, fmt.Errorf("insufficient permissions")
+	}
+
+	return claims, nil
+}
+
+// validateRequiredParam validates a required parameter and returns a 400 error response if missing/empty
+func (h *Handler) validateRequiredParam(ctx *lift.Context, paramName, paramValue, errorMessage string) error {
+	if err := common.ValidateRequiredParam(paramName, paramValue); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		return ctx.JSON(map[string]string{"error": errorMessage})
+	}
+	return nil
+}

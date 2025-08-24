@@ -99,119 +99,119 @@ func (e *ErrorUtils) IsNotFound(err error) bool {
 
 // Common entity type constants for consistent error messages
 const (
-	EntityUser               = "user"
-	EntityActor              = "actor"
-	EntityAlert              = "alert"
-	EntityObject             = "object"
-	EntityFollow             = "follow"
-	EntityBlock              = "block"
-	EntityMute               = "mute"
-	EntityList               = "list"
-	EntityHashtag            = "hashtag"
-	EntityFeaturedTag        = "featured tag"
-	EntityMedia              = "media"
-	EntityOAuthState         = "OAuth state"
-	EntityAuthCode           = "authorization code"
-	EntityRefreshToken       = "refresh token"
-	EntityOAuthClient        = "OAuth client"
-	EntityOAuthConsent       = "OAuth consent"
-	EntityWebAuthnCredential = "WebAuthn credential" //nolint:gosec // This is just an entity name string, not a credential
-	EntityWebAuthnChallenge  = "WebAuthn challenge"
-	EntityWalletCredential   = "wallet credential" //nolint:gosec // This is just an entity name string, not a credential
-	EntityWalletChallenge    = "wallet challenge"
-	EntitySession            = "session"
-	EntityPasswordReset      = "password reset"
-	EntityTimelineEntry      = "timeline entry"
-	EntityConversation       = "conversation"
-	EntityBookmark           = "bookmark"
-	EntityFilter             = "filter"
-	EntityFilterKeyword      = "filter keyword"
-	EntityFilterStatus       = "filter status"
-	EntityReport             = "report"
-	EntityFlag               = "flag"
-	EntityModerationEvent    = "moderation event"
-	EntityModerationDecision = "moderation decision"
-	EntityModerationPattern  = "moderation pattern"
-	EntityAnnounce           = "announce"
-	EntityAccountPin         = "account pin"
-	EntityAccountNote        = "account note"
-	EntityStatusPin          = "status pin"
-	EntityCircuitBreaker     = "circuit breaker"
-	EntityCircuitState       = "circuit state"
-	EntityCircuitEvent            = "circuit breaker event"
-	EntityActivity                = "activity"
-	EntityFeature                 = "feature"
-	EntityThreatIntel             = "threat intel"
-	EntityThreatIndicator         = "threat indicator"
-	EntityWebSocketCost           = "websocket cost"
-	EntityWebSocketCostBudget     = "websocket cost budget"
+	EntityUser                     = "user"
+	EntityActor                    = "actor"
+	EntityAlert                    = "alert"
+	EntityObject                   = "object"
+	EntityFollow                   = "follow"
+	EntityBlock                    = "block"
+	EntityMute                     = "mute"
+	EntityList                     = "list"
+	EntityHashtag                  = "hashtag"
+	EntityFeaturedTag              = "featured tag"
+	EntityMedia                    = "media"
+	EntityOAuthState               = "OAuth state"
+	EntityAuthCode                 = "authorization code"
+	EntityRefreshToken             = "refresh token"
+	EntityOAuthClient              = "OAuth client"
+	EntityOAuthConsent             = "OAuth consent"
+	EntityWebAuthnCredential       = "WebAuthn credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWebAuthnChallenge        = "WebAuthn challenge"
+	EntityWalletCredential         = "wallet credential" //nolint:gosec // This is just an entity name string, not a credential
+	EntityWalletChallenge          = "wallet challenge"
+	EntitySession                  = "session"
+	EntityPasswordReset            = "password reset"
+	EntityTimelineEntry            = "timeline entry"
+	EntityConversation             = "conversation"
+	EntityBookmark                 = "bookmark"
+	EntityFilter                   = "filter"
+	EntityFilterKeyword            = "filter keyword"
+	EntityFilterStatus             = "filter status"
+	EntityReport                   = "report"
+	EntityFlag                     = "flag"
+	EntityModerationEvent          = "moderation event"
+	EntityModerationDecision       = "moderation decision"
+	EntityModerationPattern        = "moderation pattern"
+	EntityAnnounce                 = "announce"
+	EntityAccountPin               = "account pin"
+	EntityAccountNote              = "account note"
+	EntityStatusPin                = "status pin"
+	EntityCircuitBreaker           = "circuit breaker"
+	EntityCircuitState             = "circuit state"
+	EntityCircuitEvent             = "circuit breaker event"
+	EntityActivity                 = "activity"
+	EntityFeature                  = "feature"
+	EntityThreatIntel              = "threat intel"
+	EntityThreatIndicator          = "threat indicator"
+	EntityWebSocketCost            = "websocket cost"
+	EntityWebSocketCostBudget      = "websocket cost budget"
 	EntityWebSocketCostAggregation = "websocket cost aggregation"
-	EntityAudit                   = "audit log"
-	EntityAI                      = "ai analysis"
-	EntityQueryCache              = "query cache"
-	EntityCloudWatchMetrics       = "cloudwatch metrics"
-	EntityRateLimit               = "rate limit"
-	EntityMarker                  = "marker"
-	EntityTrust                   = "trust"
-	EntityTrustRelationship       = "trust relationship"
-	EntityTrustScore              = "trust score"
-	EntityTrustUpdate             = "trust update"
-	EntityPublicKeyCache          = "public key cache"
-	EntityRoutingMetrics          = "routing metrics"
-	EntityNotification            = "notification"
-	EntityCSRFToken               = "csrf token"
-	EntityStatus                  = "status"
-	EntityScheduledStatus         = "scheduled status"
-	EntityInstanceDomainBlock     = "instance domain block"
-	EntityEmailDomainBlock        = "email domain block"
-	EntityDomainAllow             = "domain allow"
-	EntityExport                  = "export"
-	EntityExportCostTracking      = "export cost tracking"
-	EntityImport                  = "import"
-	EntityImportCostTracking      = "import cost tracking"
-	EntityRecovery                = "recovery"
-	EntityRecoveryCode            = "recovery code"
-	EntityRecoveryToken           = "recovery token"
-	EntityTrustee                 = "trustee"
-	EntityRecoveryRequest         = "recovery request"
-	EntityInstanceHealth          = "instance health"
-	EntityHealthSummary           = "health summary"
-	EntityConnectivityTest        = "connectivity test"
-	EntityNodeInfo                = "nodeinfo verification"
-	EntityWebFinger               = "webfinger resolution"
-	EntitySeveredRelationship     = "severed relationship"
-	EntityDeliveryRecord          = "delivery record"
-	EntityFederationMetrics       = "federation metrics"
-	EntitySearchCost              = "search cost"
-	EntitySearchBudget            = "search budget"
-	EntitySearchMetric            = "search metric"
-	EntitySearchEmbedding         = "search embedding"
-	EntitySearchSuggestion        = "search suggestion"
-	EntitySearchAnalytics         = "search analytics"
-	EntityEmoji                   = "emoji"
-	EntityRelay                   = "relay"
-	EntityFederationCost          = "federation cost"
-	EntityFederationBudget        = "federation budget"
-	EntityFederationInstance      = "federation instance"
-	EntityMediaMetadata           = "media metadata"
-	EntityDLQMessage              = "dlq message"
-	EntityDNSCache                = "dns cache"
-	EntityFederationActivity      = "federation activity"
-	EntityQuoteRelationship       = "quote relationship"
-	EntityQuotePermissions        = "quote permissions"
+	EntityAudit                    = "audit log"
+	EntityAI                       = "ai analysis"
+	EntityQueryCache               = "query cache"
+	EntityCloudWatchMetrics        = "cloudwatch metrics"
+	EntityRateLimit                = "rate limit"
+	EntityMarker                   = "marker"
+	EntityTrust                    = "trust"
+	EntityTrustRelationship        = "trust relationship"
+	EntityTrustScore               = "trust score"
+	EntityTrustUpdate              = "trust update"
+	EntityPublicKeyCache           = "public key cache"
+	EntityRoutingMetrics           = "routing metrics"
+	EntityNotification             = "notification"
+	EntityCSRFToken                = "csrf token"
+	EntityStatus                   = "status"
+	EntityScheduledStatus          = "scheduled status"
+	EntityInstanceDomainBlock      = "instance domain block"
+	EntityEmailDomainBlock         = "email domain block"
+	EntityDomainAllow              = "domain allow"
+	EntityExport                   = "export"
+	EntityExportCostTracking       = "export cost tracking"
+	EntityImport                   = "import"
+	EntityImportCostTracking       = "import cost tracking"
+	EntityRecovery                 = "recovery"
+	EntityRecoveryCode             = "recovery code"
+	EntityRecoveryToken            = "recovery token"
+	EntityTrustee                  = "trustee"
+	EntityRecoveryRequest          = "recovery request"
+	EntityInstanceHealth           = "instance health"
+	EntityHealthSummary            = "health summary"
+	EntityConnectivityTest         = "connectivity test"
+	EntityNodeInfo                 = "nodeinfo verification"
+	EntityWebFinger                = "webfinger resolution"
+	EntitySeveredRelationship      = "severed relationship"
+	EntityDeliveryRecord           = "delivery record"
+	EntityFederationMetrics        = "federation metrics"
+	EntitySearchCost               = "search cost"
+	EntitySearchBudget             = "search budget"
+	EntitySearchMetric             = "search metric"
+	EntitySearchEmbedding          = "search embedding"
+	EntitySearchSuggestion         = "search suggestion"
+	EntitySearchAnalytics          = "search analytics"
+	EntityEmoji                    = "emoji"
+	EntityRelay                    = "relay"
+	EntityFederationCost           = "federation cost"
+	EntityFederationBudget         = "federation budget"
+	EntityFederationInstance       = "federation instance"
+	EntityMediaMetadata            = "media metadata"
+	EntityDLQMessage               = "dlq message"
+	EntityDNSCache                 = "dns cache"
+	EntityFederationActivity       = "federation activity"
+	EntityQuoteRelationship        = "quote relationship"
+	EntityQuotePermissions         = "quote permissions"
 )
 
 // Account authentication-specific error constants
 var (
 	// Validation errors
-	ErrAccountValidationFailed   = errors.New("account validation failed")
-	ErrDeviceValidationFailed    = errors.New("device validation failed")
-	ErrSessionValidationFailed   = errors.New("session validation failed")
-	ErrWebAuthnValidationFailed  = errors.New("WebAuthn validation failed")
-	ErrWalletValidationFailed    = errors.New("wallet validation failed")
-	
+	ErrAccountValidationFailed  = errors.New("account validation failed")
+	ErrDeviceValidationFailed   = errors.New("device validation failed")
+	ErrSessionValidationFailed  = errors.New("session validation failed")
+	ErrWebAuthnValidationFailed = errors.New("WebAuthn validation failed")
+	ErrWalletValidationFailed   = errors.New("wallet validation failed")
+
 	// Not found errors
-	ErrDeviceNotFound            = errors.New("device not found")
+	ErrDeviceNotFound             = errors.New("device not found")
 	ErrWebAuthnCredentialNotFound = errors.New("WebAuthn credential not found")
 )
 
@@ -224,34 +224,34 @@ var (
 // OAuth-specific error constants
 var (
 	// Validation errors
-	ErrOAuthClientNameRequired     = errors.New("client name is required")
-	ErrOAuthRedirectURIsRequired   = errors.New("redirect_uris are required")
-	ErrOAuthNoUpdatesProvided      = errors.New("no updates provided")
-	ErrOAuthClientAlreadyExists    = errors.New("client already exists")
-	ErrOAuthStateExpired           = errors.New("OAuth state expired")
+	ErrOAuthClientNameRequired   = errors.New("client name is required")
+	ErrOAuthRedirectURIsRequired = errors.New("redirect_uris are required")
+	ErrOAuthNoUpdatesProvided    = errors.New("no updates provided")
+	ErrOAuthClientAlreadyExists  = errors.New("client already exists")
+	ErrOAuthStateExpired         = errors.New("OAuth state expired")
 )
 
 // Repository operation base error constants
 var (
 	// Generic operation errors for formatting
-	ErrEntityNotFound      = errors.New("entity not found")
-	ErrEntityAlreadyExists = errors.New("entity already exists")
+	ErrEntityNotFound          = errors.New("entity not found")
+	ErrEntityAlreadyExists     = errors.New("entity already exists")
 	ErrEntityNotFoundForUpdate = errors.New("entity not found for update")
-	ErrFailedToGet         = errors.New("failed to get entity")
-	ErrFailedToCreate      = errors.New("failed to create entity")
-	ErrFailedToUpdate      = errors.New("failed to update entity")
-	ErrFailedToDelete      = errors.New("failed to delete entity")
-	ErrFailedToQuery       = errors.New("failed to query entity")
-	ErrDatabaseOperation   = errors.New("database error")
+	ErrFailedToGet             = errors.New("failed to get entity")
+	ErrFailedToCreate          = errors.New("failed to create entity")
+	ErrFailedToUpdate          = errors.New("failed to update entity")
+	ErrFailedToDelete          = errors.New("failed to delete entity")
+	ErrFailedToQuery           = errors.New("failed to query entity")
+	ErrDatabaseOperation       = errors.New("database error")
 )
 
 // Query utility-specific error constants
 var (
 	// Query operation errors
-	ErrQueryOperationFailed      = errors.New("query operation failed")
-	ErrQueryCollectionAddFailed  = errors.New("failed to add to collection")
-	ErrQueryExecutionFailed      = errors.New("query execution failed")
-	ErrQueryValidationFailed     = errors.New("query validation failed")
+	ErrQueryOperationFailed     = errors.New("query operation failed")
+	ErrQueryCollectionAddFailed = errors.New("failed to add to collection")
+	ErrQueryExecutionFailed     = errors.New("query execution failed")
+	ErrQueryValidationFailed    = errors.New("query validation failed")
 )
 
 // Analytics-specific error constants
@@ -271,22 +271,22 @@ var (
 	ErrInvalidQueryParameters = errors.New("invalid parameters: query cannot be empty and count must be positive")
 
 	// Operation errors
-	ErrFailedIndexByEngagement    = errors.New("failed to index by engagement")
-	ErrFailedRecordEngagement     = errors.New("failed to record engagement")
-	ErrFailedGetEngagementMetrics = errors.New("failed to get engagement metrics")
-	ErrFailedGetEngagementByDate  = errors.New("failed to get engagement by date range")
-	ErrFailedGetTopContent        = errors.New("failed to get top engaged content")
-	ErrFailedUpdateTrendingTag    = errors.New("failed to update trending hashtag")
-	ErrFailedGetTrendingTags      = errors.New("failed to get trending hashtags")
-	ErrFailedQueryStaleTrends     = errors.New("failed to query stale trends")
-	ErrFailedRecordInstanceMetric = errors.New("failed to record instance metric")
-	ErrFailedGetInstanceMetrics   = errors.New("failed to get instance metrics")
-	ErrFailedGetStartMetric       = errors.New("failed to get start metric")
-	ErrFailedGetEndMetric         = errors.New("failed to get end metric")
-	ErrFailedRecordManifest       = errors.New("failed to record manifest generation")
-	ErrFailedRecordQualityChange  = errors.New("failed to record quality change")
-	ErrFailedRecordMediaEvent     = errors.New("failed to record media event")
-	ErrFailedQuerySessionEvents   = errors.New("failed to query session events")
+	ErrFailedIndexByEngagement      = errors.New("failed to index by engagement")
+	ErrFailedRecordEngagement       = errors.New("failed to record engagement")
+	ErrFailedGetEngagementMetrics   = errors.New("failed to get engagement metrics")
+	ErrFailedGetEngagementByDate    = errors.New("failed to get engagement by date range")
+	ErrFailedGetTopContent          = errors.New("failed to get top engaged content")
+	ErrFailedUpdateTrendingTag      = errors.New("failed to update trending hashtag")
+	ErrFailedGetTrendingTags        = errors.New("failed to get trending hashtags")
+	ErrFailedQueryStaleTrends       = errors.New("failed to query stale trends")
+	ErrFailedRecordInstanceMetric   = errors.New("failed to record instance metric")
+	ErrFailedGetInstanceMetrics     = errors.New("failed to get instance metrics")
+	ErrFailedGetStartMetric         = errors.New("failed to get start metric")
+	ErrFailedGetEndMetric           = errors.New("failed to get end metric")
+	ErrFailedRecordManifest         = errors.New("failed to record manifest generation")
+	ErrFailedRecordQualityChange    = errors.New("failed to record quality change")
+	ErrFailedRecordMediaEvent       = errors.New("failed to record media event")
+	ErrFailedQuerySessionEvents     = errors.New("failed to query session events")
 	ErrFailedGetModerationAnalytics = errors.New("failed to get existing moderation analytics")
 	ErrFailedRecordModerationAction = errors.New("failed to record moderation action")
 	ErrFailedGetModerationData      = errors.New("failed to get moderation analytics")
@@ -302,64 +302,64 @@ var (
 // Federation cost-specific error constants
 var (
 	// Operation errors
-	ErrFederationCostRecordFailed  = errors.New("failed to record federation cost")
-	ErrFederationCostQueryFailed   = errors.New("failed to get federation costs")
+	ErrFederationCostRecordFailed        = errors.New("failed to record federation cost")
+	ErrFederationCostQueryFailed         = errors.New("failed to get federation costs")
 	ErrFederationCostActivityQueryFailed = errors.New("failed to get federation costs by activity type")
-	ErrFederationBudgetCreateFailed = errors.New("failed to create/update federation budget")
-	ErrFederationBudgetNotFound    = errors.New("federation budget not found")
-	ErrFederationBudgetQueryFailed = errors.New("failed to get federation budget")
-	ErrActiveBudgetsQueryFailed    = errors.New("failed to get active budgets")
+	ErrFederationBudgetCreateFailed      = errors.New("failed to create/update federation budget")
+	ErrFederationBudgetNotFound          = errors.New("federation budget not found")
+	ErrFederationBudgetQueryFailed       = errors.New("failed to get federation budget")
+	ErrActiveBudgetsQueryFailed          = errors.New("failed to get active budgets")
 )
 
 // Federation instance-specific error constants
 var (
 	// Operation errors
-	ErrFederationInstanceSearchFailed       = errors.New("failed to search federation instances")
-	ErrFederationInstanceHealthStoreFailed  = errors.New("failed to store health history")
-	ErrFederationInstanceHealthQueryFailed  = errors.New("failed to get health history")
-	ErrFederationInstanceBatchGetFailed     = errors.New("failed in batch get chunk")
-	ErrFederationInstanceBatchCreateFailed  = errors.New("failed to batch create instances")
-	ErrFederationInstanceBatchCreateChunkFailed = errors.New("failed in batch create chunk")
-	ErrFederationInstanceBatchUpdateHealthFailed = errors.New("failed to batch update instances health")
+	ErrFederationInstanceSearchFailed                 = errors.New("failed to search federation instances")
+	ErrFederationInstanceHealthStoreFailed            = errors.New("failed to store health history")
+	ErrFederationInstanceHealthQueryFailed            = errors.New("failed to get health history")
+	ErrFederationInstanceBatchGetFailed               = errors.New("failed in batch get chunk")
+	ErrFederationInstanceBatchCreateFailed            = errors.New("failed to batch create instances")
+	ErrFederationInstanceBatchCreateChunkFailed       = errors.New("failed in batch create chunk")
+	ErrFederationInstanceBatchUpdateHealthFailed      = errors.New("failed to batch update instances health")
 	ErrFederationInstanceBatchUpdateHealthChunkFailed = errors.New("failed in batch update health chunk")
-	ErrFederationInstanceUsageUpdateFailed  = errors.New("failed to get current instances for usage update")
-	ErrFederationInstanceBatchUpdateUsageFailed = errors.New("failed to batch update instances usage")
-	ErrFederationInstanceBatchUpdateUsageChunkFailed = errors.New("failed in batch update usage chunk")
-	ErrFederationInstanceListFailed         = errors.New("failed to list all instances")
-	
+	ErrFederationInstanceUsageUpdateFailed            = errors.New("failed to get current instances for usage update")
+	ErrFederationInstanceBatchUpdateUsageFailed       = errors.New("failed to batch update instances usage")
+	ErrFederationInstanceBatchUpdateUsageChunkFailed  = errors.New("failed in batch update usage chunk")
+	ErrFederationInstanceListFailed                   = errors.New("failed to list all instances")
+
 	// Validation errors
-	ErrFederationInstanceCursorTooLong      = errors.New("cursor too long: maximum 1024 characters")
-	ErrFederationInstanceCursorInvalid      = errors.New("invalid cursor format")
-	ErrFederationInstanceLimitNegative      = errors.New("limit cannot be negative")
-	ErrFederationInstanceLimitTooLarge      = errors.New("limit too large: maximum 1000 items per page")
+	ErrFederationInstanceCursorTooLong = errors.New("cursor too long: maximum 1024 characters")
+	ErrFederationInstanceCursorInvalid = errors.New("invalid cursor format")
+	ErrFederationInstanceLimitNegative = errors.New("limit cannot be negative")
+	ErrFederationInstanceLimitTooLarge = errors.New("limit too large: maximum 1000 items per page")
 )
 
 // CSRF-specific error constants
 var (
 	// Validation errors
-	ErrCSRFTokenInvalid         = errors.New("invalid CSRF token")
-	ErrCSRFTokenExpired         = errors.New("expired CSRF token")
-	ErrCSRFTokenAlreadyExists   = errors.New("token already exists")
-	ErrCSRFTooManyTokens        = errors.New("too many active CSRF tokens for user")
+	ErrCSRFTokenInvalid       = errors.New("invalid CSRF token")
+	ErrCSRFTokenExpired       = errors.New("expired CSRF token")
+	ErrCSRFTokenAlreadyExists = errors.New("token already exists")
+	ErrCSRFTooManyTokens      = errors.New("too many active CSRF tokens for user")
 )
 
 // Media metadata-specific error constants
 var (
 	// Operation errors
-	ErrMediaMetadataPrepareFailed   = errors.New("failed to prepare media metadata")
-	ErrMediaMetadataNotFound       = errors.New("media metadata not found")
-	ErrMediaMetadataQueryFailed    = errors.New("failed to get media metadata")
-	ErrMediaMetadataStatusQueryFailed = errors.New("failed to get media metadata by status")
+	ErrMediaMetadataPrepareFailed      = errors.New("failed to prepare media metadata")
+	ErrMediaMetadataNotFound           = errors.New("media metadata not found")
+	ErrMediaMetadataQueryFailed        = errors.New("failed to get media metadata")
+	ErrMediaMetadataStatusQueryFailed  = errors.New("failed to get media metadata by status")
 	ErrExpiredMediaMetadataQueryFailed = errors.New("failed to find expired media metadata")
 )
 
 // DLQ-specific error constants
 var (
 	// Validation errors
-	ErrDLQServiceRequired       = errors.New("service is required for DLQ search")
-	ErrDLQMessageNotFound       = errors.New("DLQ message not found")
+	ErrDLQServiceRequired         = errors.New("service is required for DLQ search")
+	ErrDLQMessageNotFound         = errors.New("DLQ message not found")
 	ErrDLQMessageNotReprocessable = errors.New("message cannot be reprocessed")
-	ErrDLQBatchUpdateFailed     = errors.New("batch update failed")
+	ErrDLQBatchUpdateFailed       = errors.New("batch update failed")
 )
 
 // Notification-specific error constants
@@ -372,18 +372,18 @@ var (
 var (
 	// Validation errors
 	ErrDNSCacheEntryRequired = errors.New("DNS cache entry cannot be nil")
-	
+
 	// Operation errors
-	ErrDNSCacheGetFailed         = errors.New("failed to get DNS cache entry")
-	ErrDNSCacheSetFailed         = errors.New("failed to set DNS cache entry")
-	ErrDNSCacheInvalidateFailed  = errors.New("failed to invalidate DNS cache entry")
+	ErrDNSCacheGetFailed        = errors.New("failed to get DNS cache entry")
+	ErrDNSCacheSetFailed        = errors.New("failed to set DNS cache entry")
+	ErrDNSCacheInvalidateFailed = errors.New("failed to invalidate DNS cache entry")
 )
 
 // Federation activity-specific error constants
 var (
 	// Validation errors
 	ErrFederationActivityValidationFailed = errors.New("federation activity validation failed")
-	
+
 	// Not found errors
 	ErrFederationActivityNotFound = errors.New("federation activity not found")
 )
@@ -421,7 +421,7 @@ var (
 // Moderation metrics-specific error constants
 var (
 	// Query operation errors
-	ErrModerationMetricsFalsePositivesQueryFailed = errors.New("failed to get false positives")
+	ErrModerationMetricsFalsePositivesQueryFailed  = errors.New("failed to get false positives")
 	ErrModerationMetricsDecisionSamplesQueryFailed = errors.New("failed to get decision samples")
 	ErrModerationMetricsTopPatternsQueryFailed     = errors.New("failed to get top patterns")
 	ErrModerationMetricsEntriesQueryFailed         = errors.New("failed to get metrics entries")
@@ -440,7 +440,7 @@ var (
 var (
 	// Validation errors
 	ErrRelationshipPaginationModelTypeUnsupported = errors.New("unsupported model type")
-	
+
 	// Operation errors
 	ErrRelationshipPaginationQueryFailed = errors.New("failed to get relationship data")
 )
@@ -455,17 +455,17 @@ var (
 var (
 	// Query operation errors
 	ErrTimelineQueryFailed                    = errors.New("failed to get timeline entries")
-	ErrTimelineEntriesByPostQueryFailed      = errors.New("failed to get timeline entries by post")
-	ErrTimelineEntriesByActorQueryFailed     = errors.New("failed to get timeline entries by actor")
+	ErrTimelineEntriesByPostQueryFailed       = errors.New("failed to get timeline entries by post")
+	ErrTimelineEntriesByActorQueryFailed      = errors.New("failed to get timeline entries by actor")
 	ErrTimelineEntriesByVisibilityQueryFailed = errors.New("failed to get timeline entries by visibility")
-	ErrTimelineEntriesByLanguageQueryFailed  = errors.New("failed to get timeline entries by language")
-	ErrTimelineEntryQueryFailed              = errors.New("failed to get timeline entry")
-	ErrTimelineEntriesForDeletionQueryFailed = errors.New("failed to get timeline entries for deletion")
-	ErrTimelineExpiredEntriesScanFailed      = errors.New("failed to scan for expired timeline entries")
-	ErrTimelineCountQueryFailed              = errors.New("failed to count timeline entries")
-	ErrTimelineEntriesInRangeQueryFailed     = errors.New("failed to get timeline entries in range")
-	ErrTimelineFilteredEntriesQueryFailed    = errors.New("failed to get filtered timeline entries")
-	
+	ErrTimelineEntriesByLanguageQueryFailed   = errors.New("failed to get timeline entries by language")
+	ErrTimelineEntryQueryFailed               = errors.New("failed to get timeline entry")
+	ErrTimelineEntriesForDeletionQueryFailed  = errors.New("failed to get timeline entries for deletion")
+	ErrTimelineExpiredEntriesScanFailed       = errors.New("failed to scan for expired timeline entries")
+	ErrTimelineCountQueryFailed               = errors.New("failed to count timeline entries")
+	ErrTimelineEntriesInRangeQueryFailed      = errors.New("failed to get timeline entries in range")
+	ErrTimelineFilteredEntriesQueryFailed     = errors.New("failed to get filtered timeline entries")
+
 	// Test mock error
 	ErrTestMockError = errors.New("mock error")
 )
@@ -473,13 +473,13 @@ var (
 // StreamingConnection-specific error constants
 var (
 	// Connection limit validation errors
-	ErrStreamingConnectionUserLimitReached  = errors.New("user has reached maximum connections")
+	ErrStreamingConnectionUserLimitReached   = errors.New("user has reached maximum connections")
 	ErrStreamingConnectionGlobalLimitReached = errors.New("maximum total connections reached")
-	
+
 	// Resource validation errors
 	ErrStreamingConnectionMessageSizeExceeded = errors.New("message size exceeds limit")
 	ErrStreamingConnectionRateLimitExceeded   = errors.New("rate limit exceeded")
-	
+
 	// Connection not found error
 	ErrStreamingConnectionNotFound = errors.New("connection not found")
 )
@@ -489,7 +489,7 @@ var (
 	// Validation errors
 	ErrStreamingUsernameRequired     = errors.New("username is required")
 	ErrStreamingDeviceParamsRequired = errors.New("username and deviceID are required")
-	
+
 	// Operation errors
 	ErrStreamingConflictResolutionFailed = errors.New("failed to resolve preference conflict")
 )

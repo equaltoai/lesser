@@ -109,7 +109,7 @@ const (
 	// TrendDecreasing indicates a decreasing trend
 	TrendDecreasing = "decreasing"
 	// TrendStable indicates a stable trend
-	TrendStable     = "stable"
+	TrendStable = "stable"
 )
 
 // Resource category constants
@@ -204,7 +204,7 @@ const (
 	CostTierPremium = "premium"
 )
 
-// Period time constants  
+// Period time constants
 const (
 	PeriodTimeHour = "hour"
 )

@@ -71,9 +71,9 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 	// Check quote permissions
 	canQuote, err := qs.checkQuotePermissions(ctx, req.QuoterUsername, targetStatus)
 	if err != nil {
-		qs.logger.Error("failed to check quote permissions", 
-			zap.String("quoter", req.QuoterUsername), 
-			zap.String("target_author", targetStatus.AuthorUsername), 
+		qs.logger.Error("failed to check quote permissions",
+			zap.String("quoter", req.QuoterUsername),
+			zap.String("target_author", targetStatus.AuthorUsername),
 			zap.Error(err))
 		return nil, services.ErrCheckQuotePermissions
 	}
@@ -84,9 +84,9 @@ func (qs *QuoteService) CreateQuotePost(ctx context.Context, req *CreateQuoteReq
 	// Create the quote status
 	quoteStatus, err := qs.createQuoteStatus(ctx, req, targetStatus)
 	if err != nil {
-		qs.logger.Error("failed to create quote status", 
-			zap.String("quoter", req.QuoterUsername), 
-			zap.String("target_status_id", req.TargetStatusID), 
+		qs.logger.Error("failed to create quote status",
+			zap.String("quoter", req.QuoterUsername),
+			zap.String("target_status_id", req.TargetStatusID),
 			zap.Error(err))
 		return nil, services.ErrCreateQuoteStatus
 	}
@@ -157,9 +157,9 @@ func (qs *QuoteService) DeleteQuotePost(ctx context.Context, quoteStatusID, targ
 	// Get the quote relationship
 	rel, err := qs.getQuoteRelationshipByIDs(ctx, quoteStatusID, targetStatusID)
 	if err != nil {
-		qs.logger.Error("failed to get quote relationship", 
-			zap.String("quote_status_id", quoteStatusID), 
-			zap.String("target_status_id", targetStatusID), 
+		qs.logger.Error("failed to get quote relationship",
+			zap.String("quote_status_id", quoteStatusID),
+			zap.String("target_status_id", targetStatusID),
 			zap.Error(err))
 		return services.ErrGetQuoteRelationship
 	}
@@ -175,9 +175,9 @@ func (qs *QuoteService) DeleteQuotePost(ctx context.Context, quoteStatusID, targ
 	// Mark relationship as withdrawn
 	rel.Withdraw()
 	if err := qs.saveQuoteRelationship(ctx, rel); err != nil {
-		qs.logger.Error("failed to withdraw quote relationship", 
-			zap.String("quote_status_id", quoteStatusID), 
-			zap.String("target_status_id", targetStatusID), 
+		qs.logger.Error("failed to withdraw quote relationship",
+			zap.String("quote_status_id", quoteStatusID),
+			zap.String("target_status_id", targetStatusID),
 			zap.Error(err))
 		return services.ErrWithdrawQuoteRelationship
 	}
@@ -211,15 +211,18 @@ func (qs *QuoteService) GetQuotePermissions(ctx context.Context, username string
 
 // UpdateQuotePermissions updates quote permissions for a user
 func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error {
-	permissions.UpdateKeys()
-	
+	if err := permissions.UpdateKeys(); err != nil {
+		qs.logger.Error("failed to update quote permissions keys", zap.Error(err))
+		return err
+	}
+
 	// Try to get existing permissions first
 	existing, err := qs.repos.Quote().GetQuotePermissions(ctx, permissions.Username)
 	if err != nil {
 		qs.logger.Error("failed to check existing permissions", zap.String("username", permissions.Username), zap.Error(err))
 		return services.ErrCheckExistingPermissions
 	}
-	
+
 	if existing == nil {
 		// Create new permissions
 		err = qs.repos.Quote().CreateQuotePermissions(ctx, permissions)
@@ -227,16 +230,16 @@ func (qs *QuoteService) UpdateQuotePermissions(ctx context.Context, permissions 
 		// Update existing permissions
 		err = qs.repos.Quote().UpdateQuotePermissions(ctx, permissions)
 	}
-	
+
 	if err != nil {
 		qs.logger.Error("failed to save quote permissions", zap.String("username", permissions.Username), zap.Error(err))
 		return services.ErrSaveQuotePermissions
 	}
-	
+
 	qs.logger.Info("quote permissions updated",
 		zap.String("username", permissions.Username),
 		zap.Bool("allow_public", permissions.AllowPublic))
-	
+
 	return nil
 }
 
@@ -306,7 +309,7 @@ func (qs *QuoteService) checkQuotePermissions(ctx context.Context, quoterUsernam
 
 func (qs *QuoteService) createQuoteStatus(ctx context.Context, req *CreateQuoteRequest, _ *models.Status) (*models.Status, error) {
 	now := time.Now()
-	
+
 	// Create new status for the quote
 	quoteStatus := &models.Status{
 		StatusID:       generateStatusID(),
@@ -318,7 +321,7 @@ func (qs *QuoteService) createQuoteStatus(ctx context.Context, req *CreateQuoteR
 		CreatedAt:      now,
 		ModifiedAt:     now,
 		PublishedAt:    now,
-		
+
 		// Quote-specific fields would be stored in the Note field
 		// For now, we'll use a placeholder approach
 	}
@@ -343,7 +346,10 @@ func (qs *QuoteService) createQuoteRelationship(ctx context.Context, quoteStatus
 	}
 
 	rel.GenerateID()
-	rel.UpdateKeys()
+	if err := rel.UpdateKeys(); err != nil {
+		qs.logger.Error("failed to update quote relationship keys", zap.Error(err))
+		return nil, err
+	}
 
 	// Save the relationship
 	err := qs.repos.Quote().CreateQuoteRelationship(ctx, rel)
@@ -358,12 +364,12 @@ func (qs *QuoteService) getQuoteRelationships(ctx context.Context, statusID stri
 	opts := interfaces.PaginationOptions{
 		Limit: limit,
 	}
-	
+
 	result, err := qs.repos.Quote().GetQuotesForStatus(ctx, statusID, opts)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return result.Items, nil
 }
 

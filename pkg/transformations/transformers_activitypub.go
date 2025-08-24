@@ -16,7 +16,7 @@ import (
 const (
 	// Default URL constants
 	defaultBaseURL = "https://example.com"
-	
+
 	// ActivityPub attachment types
 	propertyValueType = "PropertyValue"
 )
@@ -36,16 +36,16 @@ func registerActivityPubTransformers() {
 	_ = ActivityPubRegistry.Register("actor_to_storage", NewActorToStorageTransformer())
 	_ = ActivityPubRegistry.Register("storage_to_actor", NewStorageToActorTransformer())
 	_ = ActivityPubRegistry.Register("actor_to_mastodon", NewActorToMastodonTransformer())
-	
+
 	// Object transformations
 	_ = ActivityPubRegistry.Register("object_to_storage", NewObjectToStorageTransformer())
 	_ = ActivityPubRegistry.Register("storage_to_object", NewStorageToObjectTransformer())
 	_ = ActivityPubRegistry.Register("object_to_mastodon", NewObjectToMastodonTransformer())
-	
+
 	// Activity transformations
 	_ = ActivityPubRegistry.Register("activity_to_storage", NewActivityToStorageTransformer())
 	_ = ActivityPubRegistry.Register("storage_to_activity", NewStorageToActivityTransformer())
-	
+
 	// Batch transformers for performance
 	_ = ActivityPubRegistry.Register("actors_to_mastodon_batch", NewActorBatchToMastodonTransformer())
 	_ = ActivityPubRegistry.Register("objects_to_mastodon_batch", NewObjectBatchToMastodonTransformer())
@@ -67,10 +67,10 @@ func ActivityPubActorToStorage(actor *activitypub.Actor) (*storagemodels.Actor, 
 
 	storageActor := &storagemodels.Actor{
 		// Set primary keys according to storage model requirements
-		PK:       fmt.Sprintf("ACTOR#%s", username),
-		SK:       "PROFILE",
-		Username: username,
-		Actor:    actor, // Store the entire ActivityPub actor
+		PK:        fmt.Sprintf("ACTOR#%s", username),
+		SK:        "PROFILE",
+		Username:  username,
+		Actor:     actor, // Store the entire ActivityPub actor
 		NumericID: generateNumericIDFromUsername(username),
 	}
 
@@ -78,7 +78,7 @@ func ActivityPubActorToStorage(actor *activitypub.Actor) (*storagemodels.Actor, 
 	now := time.Now()
 	storageActor.CreatedAt = now
 	storageActor.UpdatedAt = now
-	
+
 	if actor.LastStatusAt != nil {
 		storageActor.LastStatusAt = actor.LastStatusAt
 	}
@@ -133,20 +133,20 @@ func ActivityPubActorToMastodon(actor *activitypub.Actor, baseURL string) (*mode
 	}
 
 	account := &models.Account{
-		ID:              generateNumericIDFromUsername(actor.PreferredUsername),
-		Username:        actor.PreferredUsername,
-		Acct:            actor.PreferredUsername,
-		DisplayName:     actor.Name,
-		Note:            actor.Summary,
-		URL:             actor.URL,
-		Locked:          actor.ManuallyApprovesFollowers,
-		Bot:             isBot(actor.Type),
-		Discoverable:    actor.Discoverable,
-		FollowersCount:  0, // To be populated by caller
-		FollowingCount:  0, // To be populated by caller
-		StatusesCount:   0, // To be populated by caller
-		Fields:          convertAttachmentsToMastodonFields(actor.Attachment),
-		Emojis:          []any{}, // To be populated by emoji service
+		ID:             generateNumericIDFromUsername(actor.PreferredUsername),
+		Username:       actor.PreferredUsername,
+		Acct:           actor.PreferredUsername,
+		DisplayName:    actor.Name,
+		Note:           actor.Summary,
+		URL:            actor.URL,
+		Locked:         actor.ManuallyApprovesFollowers,
+		Bot:            isBot(actor.Type),
+		Discoverable:   actor.Discoverable,
+		FollowersCount: 0, // To be populated by caller
+		FollowingCount: 0, // To be populated by caller
+		StatusesCount:  0, // To be populated by caller
+		Fields:         convertAttachmentsToMastodonFields(actor.Attachment),
+		Emojis:         []any{}, // To be populated by emoji service
 	}
 
 	// Handle timestamps
@@ -199,7 +199,7 @@ func ActivityPubObjectToStorage(obj *activitypub.Note) (*storagemodels.Object, e
 	} else {
 		storageObj.Published = time.Now()
 	}
-	
+
 	if obj.Updated != nil {
 		storageObj.Updated = *obj.Updated
 	} else {
@@ -304,25 +304,25 @@ func ActivityPubObjectToMastodon(obj *activitypub.Note, actor *activitypub.Actor
 	}
 
 	status := &models.Status{
-		ID:                 generateNumericIDFromURL(obj.ID),
-		URI:                obj.ID,
-		URL:                obj.ID,
-		Account:            *account,
-		Content:            obj.Content,
-		Sensitive:          obj.Sensitive,
-		SpoilerText:        obj.Summary,
-		Visibility:         determineVisibility(obj.To, obj.CC, baseURL),
-		Language:           extractLanguageFromContent(obj.Content),
-		ReblogsCount:       0, // To be populated by caller
-		FavouritesCount:    0, // To be populated by caller
-		RepliesCount:       0, // To be populated by caller
-		Reblogged:          false, // To be populated by caller
-		Favourited:         false, // To be populated by caller
-		Bookmarked:         false, // To be populated by caller
-		MediaAttachments:   convertAttachmentsToMastodonMedia(obj.Attachment),
-		Mentions:           convertTagsToMastodonMentions(obj.Tag, baseURL),
-		Tags:               convertTagsToMastodonTags(obj.Tag, baseURL),
-		Emojis:             []any{}, // To be populated by emoji service
+		ID:               generateNumericIDFromURL(obj.ID),
+		URI:              obj.ID,
+		URL:              obj.ID,
+		Account:          *account,
+		Content:          obj.Content,
+		Sensitive:        obj.Sensitive,
+		SpoilerText:      obj.Summary,
+		Visibility:       determineVisibility(obj.To, obj.CC, baseURL),
+		Language:         extractLanguageFromContent(obj.Content),
+		ReblogsCount:     0,     // To be populated by caller
+		FavouritesCount:  0,     // To be populated by caller
+		RepliesCount:     0,     // To be populated by caller
+		Reblogged:        false, // To be populated by caller
+		Favourited:       false, // To be populated by caller
+		Bookmarked:       false, // To be populated by caller
+		MediaAttachments: convertAttachmentsToMastodonMedia(obj.Attachment),
+		Mentions:         convertTagsToMastodonMentions(obj.Tag, baseURL),
+		Tags:             convertTagsToMastodonTags(obj.Tag, baseURL),
+		Emojis:           []any{}, // To be populated by emoji service
 	}
 
 	// Handle timestamps
@@ -363,9 +363,9 @@ func ActivityPubActivityToStorage(activity *activitypub.Activity) (*storagemodel
 
 	storageActivity := &storagemodels.Activity{
 		// Set primary keys according to storage model requirements
-		PK:       fmt.Sprintf("ACTOR#%s", username),
-		SK:       fmt.Sprintf("ACTIVITY#%d#%s", timestamp, activity.ID),
-		Activity: activity, // Store the entire ActivityPub activity
+		PK:        fmt.Sprintf("ACTOR#%s", username),
+		SK:        fmt.Sprintf("ACTIVITY#%d#%s", timestamp, activity.ID),
+		Activity:  activity, // Store the entire ActivityPub activity
 		CreatedAt: time.Now(),
 	}
 
@@ -458,12 +458,12 @@ func NewObjectToMastodonTransformer() common.Transformer[*activitypub.Note, *mod
 			if !ok {
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
-			
+
 			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
-			
+
 			return ActivityPubObjectToMastodon(obj, actor, baseURL)
 		},
 		nil,
@@ -510,7 +510,7 @@ func NewActorBatchToMastodonTransformer() common.BatchTransformer[*activitypub.A
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
-			
+
 			accounts := make([]*models.Account, 0, len(actors))
 			for _, actor := range actors {
 				account, err := ActivityPubActorToMastodon(actor, baseURL)
@@ -535,12 +535,12 @@ func NewObjectBatchToMastodonTransformer() common.BatchTransformer[*activitypub.
 			if !ok {
 				return nil, common.ValidationError{Field: "context", Message: "actor not found in context"}
 			}
-			
+
 			baseURL := defaultBaseURL // Default fallback
 			if url, ok := ctx.Value("baseURL").(string); ok {
 				baseURL = url
 			}
-			
+
 			return ActivityPubObjectToMastodon(obj, actor, baseURL)
 		},
 		nil, // Single transform function will be used for batch
@@ -555,7 +555,7 @@ func convertAttachmentsToActorFields(attachments []activitypub.Attachment) []sto
 	if len(attachments) == 0 {
 		return nil
 	}
-	
+
 	fields := make([]storagemodels.ActorField, 0, len(attachments))
 	for _, attachment := range attachments {
 		if attachment.Type == propertyValueType {
@@ -565,7 +565,7 @@ func convertAttachmentsToActorFields(attachments []activitypub.Attachment) []sto
 			})
 		}
 	}
-	
+
 	return fields
 }
 
@@ -574,7 +574,7 @@ func convertActorFieldsToAttachments(fields []storagemodels.ActorField) []activi
 	if len(fields) == 0 {
 		return nil
 	}
-	
+
 	attachments := make([]activitypub.Attachment, 0, len(fields))
 	for _, field := range fields {
 		attachments = append(attachments, activitypub.Attachment{
@@ -583,7 +583,7 @@ func convertActorFieldsToAttachments(fields []storagemodels.ActorField) []activi
 			Value: field.Value,
 		})
 	}
-	
+
 	return attachments
 }
 
@@ -592,7 +592,7 @@ func convertAttachmentsToMastodonFields(attachments []activitypub.Attachment) []
 	if len(attachments) == 0 {
 		return []any{}
 	}
-	
+
 	fields := make([]any, 0, len(attachments))
 	for _, attachment := range attachments {
 		if attachment.Type == propertyValueType {
@@ -602,7 +602,7 @@ func convertAttachmentsToMastodonFields(attachments []activitypub.Attachment) []
 			})
 		}
 	}
-	
+
 	return fields
 }
 
@@ -611,7 +611,7 @@ func convertAttachmentsToMastodonMedia(attachments []activitypub.Attachment) []a
 	if len(attachments) == 0 {
 		return []any{}
 	}
-	
+
 	media := make([]any, 0, len(attachments))
 	for _, attachment := range attachments {
 		if attachment.Type != propertyValueType { // Skip profile fields
@@ -624,14 +624,14 @@ func convertAttachmentsToMastodonMedia(attachments []activitypub.Attachment) []a
 			})
 		}
 	}
-	
+
 	return media
 }
 
 // convertTagsToMastodonMentions converts ActivityPub tags to Mastodon mentions
 func convertTagsToMastodonMentions(tags []activitypub.Tag, _ string) []any {
 	var mentions []any
-	
+
 	for _, tag := range tags {
 		if tag.Type == "Mention" {
 			mentions = append(mentions, map[string]any{
@@ -642,14 +642,14 @@ func convertTagsToMastodonMentions(tags []activitypub.Tag, _ string) []any {
 			})
 		}
 	}
-	
+
 	return mentions
 }
 
 // convertTagsToMastodonTags converts ActivityPub tags to Mastodon hashtags
 func convertTagsToMastodonTags(tags []activitypub.Tag, baseURL string) []any {
 	var hashtagResults []any
-	
+
 	for _, tag := range tags {
 		if tag.Type == "Hashtag" {
 			name := strings.TrimPrefix(tag.Name, "#")
@@ -659,7 +659,7 @@ func convertTagsToMastodonTags(tags []activitypub.Tag, baseURL string) []any {
 			})
 		}
 	}
-	
+
 	return hashtagResults
 }
 
@@ -675,13 +675,13 @@ func generateNumericIDFromURL(url string) string {
 	if url == "" {
 		return "0"
 	}
-	
+
 	// Extract the last segment of the URL for ID generation
 	parts := strings.Split(strings.TrimSuffix(url, "/"), "/")
 	if len(parts) > 0 {
 		return generateNumericID(parts[len(parts)-1])
 	}
-	
+
 	return generateNumericID(url)
 }
 
@@ -692,7 +692,7 @@ func extractUsernameFromActorID(actorID string) string {
 	if actorID == "" {
 		return ""
 	}
-	
+
 	// Handle full URLs like "https://example.com/users/alice"
 	if strings.Contains(actorID, "/users/") {
 		parts := strings.Split(actorID, "/users/")
@@ -700,13 +700,13 @@ func extractUsernameFromActorID(actorID string) string {
 			return parts[1]
 		}
 	}
-	
+
 	// Handle other formats
 	parts := strings.Split(strings.TrimSuffix(actorID, "/"), "/")
 	if len(parts) > 0 {
 		return parts[len(parts)-1]
 	}
-	
+
 	return actorID
 }
 
@@ -720,28 +720,28 @@ func extractUsernameFromActorID(actorID string) string {
 func determineVisibility(to, cc []string, baseURL string) string {
 	publicURL := "https://www.w3.org/ns/activitystreams#Public"
 	followersURL := baseURL + "/followers"
-	
+
 	// Check if public
 	for _, recipient := range to {
 		if recipient == publicURL {
 			return "public"
 		}
 	}
-	
+
 	// Check if unlisted (public in CC)
 	for _, recipient := range cc {
 		if recipient == publicURL {
 			return "unlisted"
 		}
 	}
-	
+
 	// Check if followers-only
 	for _, recipient := range to {
 		if recipient == followersURL {
 			return "private"
 		}
 	}
-	
+
 	// Default to direct if none of the above
 	return "direct"
 }
@@ -753,7 +753,7 @@ func extractLanguageFromContent(content string) string {
 	if content == "" {
 		return ""
 	}
-	
+
 	// Default to English for now
 	return "en"
 }

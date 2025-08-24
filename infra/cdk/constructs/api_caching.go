@@ -9,10 +9,10 @@ import (
 
 // CachingConfig defines cache configuration for API Gateway
 type CachingConfig struct {
-	Environment       string
-	CachingEnabled    bool
-	CacheTTLSeconds   int
-	CacheClusterSize  string // 0.5, 1.6, 6.1, 13.5, 28.4, 58.2, 118, 237 GB
+	Environment        string
+	CachingEnabled     bool
+	CacheTTLSeconds    int
+	CacheClusterSize   string // 0.5, 1.6, 6.1, 13.5, 28.4, 58.2, 118, 237 GB
 	CacheKeyParameters []string
 }
 
@@ -23,7 +23,7 @@ func GetCachingConfig(environment string) CachingConfig {
 		return CachingConfig{
 			Environment:      environment,
 			CachingEnabled:   true,
-			CacheTTLSeconds:  300, // 5 minutes
+			CacheTTLSeconds:  300,   // 5 minutes
 			CacheClusterSize: "1.6", // 1.6 GB for production
 			CacheKeyParameters: []string{
 				"authorization",
@@ -35,7 +35,7 @@ func GetCachingConfig(environment string) CachingConfig {
 		return CachingConfig{
 			Environment:      environment,
 			CachingEnabled:   true,
-			CacheTTLSeconds:  120, // 2 minutes
+			CacheTTLSeconds:  120,   // 2 minutes
 			CacheClusterSize: "0.5", // 0.5 GB for staging
 			CacheKeyParameters: []string{
 				"authorization",
@@ -44,10 +44,10 @@ func GetCachingConfig(environment string) CachingConfig {
 		}
 	default: // development
 		return CachingConfig{
-			Environment:      environment,
-			CachingEnabled:   false, // No caching in development
-			CacheTTLSeconds:  0,
-			CacheClusterSize: "",
+			Environment:        environment,
+			CachingEnabled:     false, // No caching in development
+			CacheTTLSeconds:    0,
+			CacheClusterSize:   "",
 			CacheKeyParameters: []string{},
 		}
 	}
@@ -213,22 +213,22 @@ func GetNonCacheableRoutes() []string {
 		// Authentication endpoints
 		"/oauth/*",
 		"/auth/*",
-		
+
 		// User-specific timelines
 		"/api/v1/timelines/home",
 		"/api/v1/timelines/list/*",
 		"/api/v1/timelines/direct",
-		
+
 		// Notifications
 		"/api/v1/notifications",
 		"/api/v1/notifications/*",
 		"/api/v1/push/*",
-		
+
 		// Account management
 		"/api/v1/accounts/verify_credentials",
 		"/api/v1/accounts/update_credentials",
 		"/api/v1/accounts/relationships",
-		
+
 		// User actions
 		"/api/v1/statuses/*/favourite",
 		"/api/v1/statuses/*/unfavourite",
@@ -240,7 +240,7 @@ func GetNonCacheableRoutes() []string {
 		"/api/v1/statuses/*/unmute",
 		"/api/v1/statuses/*/pin",
 		"/api/v1/statuses/*/unpin",
-		
+
 		// Follow/unfollow
 		"/api/v1/accounts/*/follow",
 		"/api/v1/accounts/*/unfollow",
@@ -248,27 +248,27 @@ func GetNonCacheableRoutes() []string {
 		"/api/v1/accounts/*/unblock",
 		"/api/v1/accounts/*/mute",
 		"/api/v1/accounts/*/unmute",
-		
+
 		// Posting
 		"/api/v1/statuses",
 		"/api/v1/media",
 		"/api/v1/media/*",
-		
+
 		// Moderation
 		"/api/v1/admin/*",
 		"/api/v1/reports",
 		"/api/v1/reports/*",
-		
+
 		// Streaming
 		"/api/v1/streaming/*",
-		
+
 		// GraphQL (dynamic queries)
 		"/api/graphql",
-		
+
 		// ActivityPub inboxes/outboxes (must be fresh)
 		"/users/*/inbox",
 		"/users/*/outbox",
-		
+
 		// Health checks (should always be fresh)
 		"/health",
 	}
@@ -276,8 +276,8 @@ func GetNonCacheableRoutes() []string {
 
 // CacheInvalidationRule defines when to invalidate cache
 type CacheInvalidationRule struct {
-	TriggerEvent    string   // e.g., "status.created", "account.updated"
-	AffectedPaths   []string // Paths to invalidate
+	TriggerEvent  string   // e.g., "status.created", "account.updated"
+	AffectedPaths []string // Paths to invalidate
 }
 
 // GetCacheInvalidationRules returns rules for cache invalidation
@@ -329,11 +329,11 @@ func ApplyCachingToHttpApi(api awsapigatewayv2.HttpApi, config CachingConfig) {
 	if !config.CachingEnabled {
 		return
 	}
-	
+
 	// Note: HTTP APIs (v2) don't support caching directly like REST APIs
 	// We need to implement caching at the CloudFront level or use REST API
 	// This function would be used if we switch to REST API or add CloudFront
-	
+
 	// For now, we'll add response headers to enable client-side caching
 	stage := api.DefaultStage()
 	if stage != nil {
@@ -349,7 +349,7 @@ func ApplyCachingToHttpApi(api awsapigatewayv2.HttpApi, config CachingConfig) {
 // CreateCachePolicy creates cache policies for CloudFront distribution
 func CreateCachePolicy(environment string) map[string]interface{} {
 	config := GetCachingConfig(environment)
-	
+
 	return map[string]interface{}{
 		"defaultTTL": config.CacheTTLSeconds,
 		"maxTTL":     config.CacheTTLSeconds * 2,
@@ -380,11 +380,11 @@ func CreateCachePolicy(environment string) map[string]interface{} {
 // GetCacheHeaders returns appropriate cache headers for a response
 func GetCacheHeaders(path string, method string, isAuthenticated bool) map[string]string {
 	headers := make(map[string]string)
-	
+
 	// Check if route is cacheable
 	cacheable := false
 	var ttl int
-	
+
 	for _, route := range GetCacheableRoutes() {
 		if route.Path == path && route.Method == method {
 			if !route.RequireAuth || !isAuthenticated {
@@ -394,7 +394,7 @@ func GetCacheHeaders(path string, method string, isAuthenticated bool) map[strin
 			}
 		}
 	}
-	
+
 	if cacheable {
 		// Public caching for non-authenticated content
 		if !isAuthenticated {
@@ -405,10 +405,10 @@ func GetCacheHeaders(path string, method string, isAuthenticated bool) map[strin
 			headers["Cache-Control"] = fmt.Sprintf("private, max-age=%d", ttl)
 			headers["CDN-Cache-Control"] = "no-cache"
 		}
-		
+
 		// Add ETag support
 		headers["Vary"] = "Accept-Encoding, Accept, Authorization"
-		
+
 		// Stale-while-revalidate for better performance
 		if ttl > 60 {
 			headers["Cache-Control"] += fmt.Sprintf(", stale-while-revalidate=%d", ttl/2)
@@ -419,7 +419,7 @@ func GetCacheHeaders(path string, method string, isAuthenticated bool) map[strin
 		headers["Pragma"] = "no-cache"
 		headers["Expires"] = "0"
 	}
-	
+
 	return headers
 }
 
@@ -439,14 +439,14 @@ func CreateResponseHeadersPolicy(environment string) map[string]interface{} {
 				"override":       true,
 			},
 			"xssProtection": map[string]interface{}{
-				"modeBlock": true,
+				"modeBlock":  true,
 				"protection": true,
 				"override":   true,
 			},
 			"strictTransportSecurity": map[string]interface{}{
 				"accessControlMaxAgeSec": 63072000, // 2 years
-				"includeSubdomains":       true,
-				"override":                true,
+				"includeSubdomains":      true,
+				"override":               true,
 			},
 			"contentSecurityPolicy": map[string]interface{}{
 				"contentSecurityPolicy": "default-src 'self'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'",
@@ -491,7 +491,7 @@ func CreateResponseHeadersPolicy(environment string) map[string]interface{} {
 				"items": []string{"*"},
 			},
 			"accessControlMaxAgeSec": 86400, // 24 hours
-			"originOverride":          false,
+			"originOverride":         false,
 		},
 	}
 }

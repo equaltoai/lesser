@@ -150,7 +150,7 @@ func (r *ActorRepository) GetActorByNumericID(ctx context.Context, numericID str
 	// First get the numeric ID mapping using BaseRepository pattern
 	// Note: This uses a different model type, so we use direct query
 	var mapping models.NumericIDMapping
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
+	err := r.db.WithContext(ctx).Model(&models.NumericIDMapping{}).
 		Where("PK", "=", "NUMERIC_ID#"+numericID).
 		Where("SK", "=", "METADATA").
 		First(&mapping)
@@ -170,7 +170,7 @@ func (r *ActorRepository) GetActorPrivateKey(ctx context.Context, username strin
 	actorModel := &models.Actor{}
 
 	// Use direct query for Select functionality (BaseRepository doesn't support Select)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("PrivateKey").
@@ -304,7 +304,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 	// Try username search first using GSI1
 	if len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
-		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("username-search-index").
 			Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefix).
 			Filter("GSI1SK", "BEGINS_WITH", normalizedQuery).
@@ -318,7 +318,7 @@ func (r *ActorRepository) SearchAccounts(ctx context.Context, query string, limi
 	// If no results and query could be a display name, try name search
 	if len(actors) == 0 && len(normalizedQuery) >= 2 {
 		prefix := normalizedQuery[:2]
-		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("name-search-index").
 			Where("GSI2PK", "=", "NAME_SEARCH#"+prefix).
 			Filter("GSI2SK", "BEGINS_WITH", normalizedQuery).
@@ -350,7 +350,7 @@ func (r *ActorRepository) GetSearchSuggestions(ctx context.Context, prefix strin
 	prefixKey := normalizedPrefix[:2]
 
 	var actors []models.Actor
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Index("username-search-index").
 		Where("GSI1PK", "=", "USERNAME_SEARCH#"+prefixKey).
 		Filter("GSI1SK", "BEGINS_WITH", normalizedPrefix).
@@ -410,7 +410,6 @@ func convertStorageActorFields(fields []storage.ActorField) []models.ActorField 
 	return result
 }
 
-
 // getEncryptor returns an encryptor for private key encryption using DynamORM AES encryption
 func getEncryptor() (marshalers.Encryptor, error) {
 	// Use DynamORM AES encryption from centralized config
@@ -468,7 +467,7 @@ func (r *ActorRepository) modelToActivityPubActor(model *models.Actor) (*activit
 //
 //nolint:dupl // Account suggestion algorithms are shared between actor repositories
 func (r *ActorRepository) GetAccountSuggestions(ctx context.Context, userID string, limit int) ([]*activitypub.Actor, error) {
-	log := r.BaseRepository.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
+	log := r.logger.With(zap.String("method", "GetAccountSuggestions"), zap.String("user_id", userID))
 
 	if r.deps == nil {
 		log.Warn("dependencies not set, returning empty suggestions")
@@ -702,7 +701,7 @@ type MigrationInfo struct {
 
 // UpdateAlsoKnownAs updates the AlsoKnownAs field for an actor
 func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string, alsoKnownAs []string) error {
-	log := r.BaseRepository.logger.With(
+	log := r.logger.With(
 		zap.String("method", "UpdateAlsoKnownAs"),
 		zap.String("username", username),
 		zap.Int("also_known_as_count", len(alsoKnownAs)),
@@ -742,7 +741,7 @@ func (r *ActorRepository) UpdateAlsoKnownAs(ctx context.Context, username string
 
 // UpdateMovedTo updates the MovedTo field for an actor
 func (r *ActorRepository) UpdateMovedTo(ctx context.Context, username string, movedTo string) error {
-	log := r.BaseRepository.logger.With(
+	log := r.logger.With(
 		zap.String("method", "UpdateMovedTo"),
 		zap.String("username", username),
 		zap.String("moved_to", movedTo),
@@ -782,7 +781,7 @@ func (r *ActorRepository) UpdateMovedTo(ctx context.Context, username string, mo
 
 // CheckAlsoKnownAs checks if targetActorID is in the AlsoKnownAs slice for the given username
 func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string, targetActorID string) (bool, error) {
-	log := r.BaseRepository.logger.With(
+	log := r.logger.With(
 		zap.String("method", "CheckAlsoKnownAs"),
 		zap.String("username", username),
 		zap.String("target_actor_id", targetActorID),
@@ -791,7 +790,7 @@ func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string,
 	// Get existing actor
 	actorModel := &models.Actor{}
 	// Use direct query for Select functionality (BaseRepository doesn't support Select)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("Actor"). // Only select the Actor field for efficiency
@@ -825,7 +824,7 @@ func (r *ActorRepository) CheckAlsoKnownAs(ctx context.Context, username string,
 
 // GetActorMigrationInfo returns migration information for an actor
 func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username string) (*MigrationInfo, error) {
-	log := r.BaseRepository.logger.With(
+	log := r.logger.With(
 		zap.String("method", "GetActorMigrationInfo"),
 		zap.String("username", username),
 	)
@@ -833,7 +832,7 @@ func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username st
 	// Get existing actor
 	actorModel := &models.Actor{}
 	// Use direct query for Select functionality (BaseRepository doesn't support Select)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", "ACTOR#"+username).
 		Where("SK", "=", "PROFILE").
 		Select("Actor"). // Only select the Actor field for efficiency
@@ -870,7 +869,7 @@ func (r *ActorRepository) GetActorMigrationInfo(ctx context.Context, username st
 
 // RemoveAccountSuggestion removes an account from suggestions for a user
 func (r *ActorRepository) RemoveAccountSuggestion(ctx context.Context, userID, targetID string) error {
-	log := r.BaseRepository.logger.With(
+	log := r.logger.With(
 		zap.String("method", "RemoveAccountSuggestion"),
 		zap.String("user_id", userID),
 		zap.String("target_id", targetID),
@@ -905,7 +904,7 @@ func (r *ActorRepository) getDiscoverableActors(ctx context.Context, limit int) 
 
 // getRecentActiveActors returns recently active actors using the activity index
 func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
-	log := r.BaseRepository.logger.With(zap.String("method", "getRecentActiveActors"))
+	log := r.logger.With(zap.String("method", "getRecentActiveActors"))
 
 	// Query using the activity index (GSI5) to get recently active actors
 	// Try multiple days to get enough results
@@ -917,7 +916,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 		dateKey := "ACTIVE#" + searchDate.Format(common.DateFormat)
 
 		var actors []models.Actor
-		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("activity-index").
 			Where("GSI5PK", "=", dateKey).
 			OrderBy("GSI5SK", "DESC"). // Get most recent first
@@ -963,7 +962,7 @@ func (r *ActorRepository) getRecentActiveActors(ctx context.Context, limit int) 
 
 // getPopularActors returns actors sorted by popularity (follower count)
 func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*activitypub.Actor, error) {
-	log := r.BaseRepository.logger.With(zap.String("method", "getPopularActors"))
+	log := r.logger.With(zap.String("method", "getPopularActors"))
 
 	// Query popularity buckets starting from highest
 	buckets := []string{"10K+", "1K+", "100+", "10+", "0-9"}
@@ -975,7 +974,7 @@ func (r *ActorRepository) getPopularActors(ctx context.Context, limit int) ([]*a
 		}
 
 		var actors []models.Actor
-		err := r.BaseRepository.db.WithContext(ctx).Model(&models.Actor{}).
+		err := r.db.WithContext(ctx).Model(&models.Actor{}).
 			Index("popularity-index").
 			Where("GSI4PK", "=", "ACTOR_RANK#"+bucket).
 			OrderBy("GSI4SK", "DESC"). // Highest follower count first
@@ -1024,12 +1023,12 @@ func (r *ActorRepository) extractUsernameFromActorID(actorID string) string {
 //
 //nolint:dupl // Remote actor caching patterns are shared between actor repositories
 func (r *ActorRepository) GetCachedRemoteActor(ctx context.Context, handle string) (*activitypub.Actor, error) {
-	log := r.BaseRepository.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
+	log := r.logger.With(zap.String("method", "GetCachedRemoteActor"), zap.String("handle", handle))
 
 	// Use direct query for RemoteActor (different model type)
 	var remoteActor models.RemoteActor
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.RemoteActor{}).
+	err := r.db.WithContext(ctx).Model(&models.RemoteActor{}).
 		Where("PK", "=", fmt.Sprintf("REMOTE_ACTOR#%s", handle)).
 		Where("SK", "=", "PROFILE").
 		First(&remoteActor)

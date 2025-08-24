@@ -14,9 +14,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudfront"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/media/streaming"
 	"github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/common"
 	"go.uber.org/zap"
 )
 
@@ -104,14 +104,14 @@ type DASHTrack struct {
 
 // streamingService implements StreamingService
 type streamingService struct {
-	distributionDomain      string
-	keyPairID               string
-	privateKey              []byte
-	cloudFront              *cloudfront.Client
-	cloudWatch              *cloudwatch.Client
-	mediaStorage            streaming.MediaStorage
-	cloudWatchEnhanced      *CloudWatchEnhancedStreamingService
-	storage                 core.RepositoryStorage
+	distributionDomain string
+	keyPairID          string
+	privateKey         []byte
+	cloudFront         *cloudfront.Client
+	cloudWatch         *cloudwatch.Client
+	mediaStorage       streaming.MediaStorage
+	cloudWatchEnhanced *CloudWatchEnhancedStreamingService
+	storage            core.RepositoryStorage
 }
 
 // NewStreamingService creates a new streaming service
@@ -489,8 +489,8 @@ func (s *streamingService) executeMetricQueries(ctx context.Context, metricQueri
 		results[result.name] = result
 		if result.err != nil {
 			// Log error but continue with available data
-			zap.L().Error("failed to get metric", 
-				zap.String("metric_name", result.name), 
+			zap.L().Error("failed to get metric",
+				zap.String("metric_name", result.name),
 				zap.Error(result.err))
 		}
 	}
@@ -558,7 +558,7 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 			qualityBreakdown = realBreakdown
 		}
 	}
-	
+
 	// Fallback to default quality breakdown if CloudWatch data unavailable
 	if qualityBreakdown == nil {
 		qualityBreakdown = map[string]int64{
@@ -574,7 +574,7 @@ func (s *streamingService) calculateAnalytics(results map[string]*metricResult) 
 		ViewCount:        totalViews,
 		BandwidthUsed:    totalBandwidth,
 		QualityBreakdown: qualityBreakdown,
-		GeographicData: s.getGeographicData(totalViews),
+		GeographicData:   s.getGeographicData(totalViews),
 		BufferingEvents:  totalRebufferEvents,
 		AverageWatchTime: averageWatchTime,
 		PeakConcurrent:   s.getPeakConcurrentViewers(totalViews),
@@ -670,7 +670,7 @@ func (s *streamingService) getGeographicData(totalViews int64) map[string]int64 
 			return realGeoData
 		}
 	}
-	
+
 	// Fallback to default geographic data
 	return map[string]int64{
 		"US": totalViews * 60 / 100,
@@ -688,7 +688,7 @@ func (s *streamingService) getPeakConcurrentViewers(totalViews int64) int64 {
 			return peakViewers
 		}
 	}
-	
+
 	// Fallback to simple calculation
 	return totalViews / 24
 }

@@ -645,11 +645,11 @@ type CustomEmoji struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 
 	// Enhanced fields for sophisticated queries
-	UsageCount      int64     `json:"usage_count"`          // How many times this emoji has been used
-	LastUsedAt      time.Time `json:"last_used_at"`         // When this emoji was last used
-	PopularityScore float64   `json:"popularity_score"`     // Calculated popularity score
-	SearchKeywords  []string  `json:"search_keywords"`      // Additional search terms
-	AltText         string    `json:"alt_text,omitempty"`   // Alternative text for accessibility
+	UsageCount      int64     `json:"usage_count"`        // How many times this emoji has been used
+	LastUsedAt      time.Time `json:"last_used_at"`       // When this emoji was last used
+	PopularityScore float64   `json:"popularity_score"`   // Calculated popularity score
+	SearchKeywords  []string  `json:"search_keywords"`    // Additional search terms
+	AltText         string    `json:"alt_text,omitempty"` // Alternative text for accessibility
 }
 
 // Announcement represents an admin announcement
@@ -938,10 +938,10 @@ type CostProjection struct {
 	Confidence    float64   `json:"confidence"` // 0.0-1.0
 	CalculatedAt  time.Time `json:"calculated_at"`
 	// Additional projection fields
-	CurrentCost     float64      `json:"current_cost"`
-	Variance        float64      `json:"variance"`
+	CurrentCost     float64  `json:"current_cost"`
+	Variance        float64  `json:"variance"`
 	TopDrivers      []Driver `json:"top_drivers,omitempty"`
-	Recommendations []string     `json:"recommendations,omitempty"`
+	Recommendations []string `json:"recommendations,omitempty"`
 }
 
 // Driver represents a factor that drives federation costs
@@ -1708,21 +1708,21 @@ type ReviewerStats struct {
 
 // Filter represents a content filter
 type Filter struct {
-	ID           string          `json:"id"`
-	Username     string          `json:"username"`
-	Title        string          `json:"title"`
-	Context      []string        `json:"context"`       // "home", "notifications", "public", "thread"
-	FilterAction string          `json:"filter_action"` // "warn", "hide", "blur", "silence", "limit_reach"
-	Severity     string          `json:"severity"`      // "low", "medium", "high"
-	MatchMode    string          `json:"match_mode"`    // "keyword", "regex", "semantic", "exact"
-	CaseSensitive bool           `json:"case_sensitive"` // Case-sensitive matching
-	ExpiresAt    *time.Time      `json:"expires_at,omitempty"`
-	Irreversible bool            `json:"irreversible"`
-	WholeWord    bool            `json:"whole_word"`
-	Keywords     []FilterKeyword `json:"keywords,omitempty"`
-	Statuses     []FilterStatus  `json:"statuses,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID            string          `json:"id"`
+	Username      string          `json:"username"`
+	Title         string          `json:"title"`
+	Context       []string        `json:"context"`        // "home", "notifications", "public", "thread"
+	FilterAction  string          `json:"filter_action"`  // "warn", "hide", "blur", "silence", "limit_reach"
+	Severity      string          `json:"severity"`       // "low", "medium", "high"
+	MatchMode     string          `json:"match_mode"`     // "keyword", "regex", "semantic", "exact"
+	CaseSensitive bool            `json:"case_sensitive"` // Case-sensitive matching
+	ExpiresAt     *time.Time      `json:"expires_at,omitempty"`
+	Irreversible  bool            `json:"irreversible"`
+	WholeWord     bool            `json:"whole_word"`
+	Keywords      []FilterKeyword `json:"keywords,omitempty"`
+	Statuses      []FilterStatus  `json:"statuses,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
 // FilterKeyword represents a keyword in a filter
@@ -1731,9 +1731,9 @@ type FilterKeyword struct {
 	FilterID     string    `json:"filter_id"`
 	Keyword      string    `json:"keyword"`
 	WholeWord    bool      `json:"whole_word"`
-	IsRegex      bool      `json:"is_regex"`       // Whether keyword is a regex pattern
-	MatchWeight  float64   `json:"match_weight"`   // Weight for scoring matches (0.0-1.0)
-	ContextTypes []string  `json:"context_types"`  // Specific contexts where this keyword applies
+	IsRegex      bool      `json:"is_regex"`      // Whether keyword is a regex pattern
+	MatchWeight  float64   `json:"match_weight"`  // Weight for scoring matches (0.0-1.0)
+	ContextTypes []string  `json:"context_types"` // Specific contexts where this keyword applies
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

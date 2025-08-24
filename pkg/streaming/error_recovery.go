@@ -29,19 +29,19 @@ type ErrorRecoveryManager struct {
 	logger    *zap.Logger
 
 	// Configuration
-	maxRetries       int
-	baseRetryDelay   time.Duration
-	maxRetryDelay    time.Duration
-	jitterFactor     float64
-	circuitBreaker   *CircuitBreaker
-	enableBackoff    bool
+	maxRetries     int
+	baseRetryDelay time.Duration
+	maxRetryDelay  time.Duration
+	jitterFactor   float64
+	circuitBreaker *CircuitBreaker
+	enableBackoff  bool
 }
 
 // RetryJobMessage represents a streaming connection retry job
 type RetryJobMessage struct {
-	ConnectionID string `json:"connection_id"`
-	RetryCount   int    `json:"retry_count"`
-	Timestamp    int64  `json:"timestamp"`
+	ConnectionID  string `json:"connection_id"`
+	RetryCount    int    `json:"retry_count"`
+	Timestamp     int64  `json:"timestamp"`
 	OriginalError string `json:"original_error,omitempty"`
 }
 
@@ -79,12 +79,12 @@ const (
 
 // CircuitBreaker implements the circuit breaker pattern for connection recovery
 type CircuitBreaker struct {
-	state           CircuitBreakerState
-	failures        int
-	maxFailures     int
-	timeout         time.Duration
-	lastFailureTime time.Time
-	successCount    int
+	state            CircuitBreakerState
+	failures         int
+	maxFailures      int
+	timeout          time.Duration
+	lastFailureTime  time.Time
+	successCount     int
 	halfOpenMaxTries int
 }
 
@@ -254,10 +254,10 @@ func (erm *ErrorRecoveryManager) shouldAttemptRecovery(conn *models.WebSocketCon
 // attemptRecovery attempts to recover a connection with exponential backoff
 func (erm *ErrorRecoveryManager) attemptRecovery(ctx context.Context, conn *models.WebSocketConnection, err error) error {
 	conn.RetryCount++
-	
+
 	// Calculate retry delay with exponential backoff and jitter
 	delay := erm.calculateRetryDelay(conn.RetryCount)
-	
+
 	erm.logger.Info("scheduling connection recovery",
 		zap.String("connection_id", conn.ConnectionID),
 		zap.Int("retry_count", conn.RetryCount),
@@ -266,7 +266,7 @@ func (erm *ErrorRecoveryManager) attemptRecovery(ctx context.Context, conn *mode
 	// Update connection state
 	conn.UpdateState(models.ConnectionStateError)
 	conn.CloseReason = fmt.Sprintf("Connection error, retry %d/%d: %v", conn.RetryCount, conn.MaxRetries, err)
-	
+
 	if updateErr := erm.connRepo.UpdateConnection(ctx, conn); updateErr != nil {
 		erm.logger.Error("failed to update connection for retry",
 			zap.String("connection_id", conn.ConnectionID),
@@ -278,7 +278,7 @@ func (erm *ErrorRecoveryManager) attemptRecovery(ctx context.Context, conn *mode
 		erm.logger.Error("failed to schedule retry job, falling back to goroutine",
 			zap.String("connection_id", conn.ConnectionID),
 			zap.Error(err))
-		
+
 		// Fallback to goroutine if job queue fails
 		go func() {
 			time.Sleep(delay)
@@ -297,12 +297,12 @@ func (erm *ErrorRecoveryManager) calculateRetryDelay(retryCount int) time.Durati
 
 	// Exponential backoff: baseDelay * 2^(retryCount-1)
 	delay := float64(erm.baseRetryDelay) * math.Pow(2, float64(retryCount-1))
-	
+
 	// Apply jitter to avoid thundering herd
 	// #nosec G404 - Using math/rand for jitter is acceptable for backoff timing
 	jitter := delay * erm.jitterFactor * (2*rand.Float64() - 1) // Random between -jitterFactor and +jitterFactor
 	delay += jitter
-	
+
 	// Clamp to maximum delay
 	if time.Duration(delay) > erm.maxRetryDelay {
 		delay = float64(erm.maxRetryDelay)
@@ -341,10 +341,10 @@ func (erm *ErrorRecoveryManager) executeRecovery(ctx context.Context, connection
 	// 3. Re-establishing subscriptions if needed
 	conn.UpdateState(models.ConnectionStateConnecting)
 	conn.CloseReason = "Recovery attempt in progress"
-	
+
 	// Record recovery attempt for metrics
 	erm.recordRecoveryAttempt(ctx, conn)
-	
+
 	if err := erm.connRepo.UpdateConnection(ctx, conn); err != nil {
 		erm.logger.Error("failed to update connection during recovery",
 			zap.String("connection_id", connectionID),
@@ -356,7 +356,7 @@ func (erm *ErrorRecoveryManager) executeRecovery(ctx context.Context, connection
 	// Test connection health by sending a ping message
 	// In serverless WebSocket, we can't "reconnect" - we can only validate if connection is still alive
 	recoverySuccess := erm.validateConnectionHealth(ctx, conn)
-	
+
 	if recoverySuccess {
 		erm.handleRecoverySuccess(ctx, conn)
 		erm.circuitBreaker.RecordSuccess()
@@ -413,11 +413,11 @@ func (erm *ErrorRecoveryManager) simulateRecoveryAttempt(conn *models.WebSocketC
 	baseSuccessRate := conn.Metrics.ConnectionQuality
 	retryPenalty := float64(conn.RetryCount) * 0.1
 	successRate := baseSuccessRate - retryPenalty
-	
+
 	if successRate < 0.1 {
 		successRate = 0.1 // Minimum 10% chance
 	}
-	
+
 	// #nosec G404 - Using math/rand for probabilistic success simulation is acceptable
 	return rand.Float64() < successRate
 }
@@ -432,8 +432,8 @@ func (erm *ErrorRecoveryManager) handleRecoverySuccess(ctx context.Context, conn
 	conn.UpdateState(models.ConnectionStateConnected)
 	conn.CloseReason = ""
 	conn.LastActivity = time.Now()
-	conn.RetryCount = 0 // Reset retry count on success
-	conn.Metrics.ErrorCount = 0 // Reset error count
+	conn.RetryCount = 0               // Reset retry count on success
+	conn.Metrics.ErrorCount = 0       // Reset error count
 	conn.CalculateConnectionQuality() // Recalculate quality
 
 	if err := erm.connRepo.UpdateConnection(ctx, conn); err != nil {
@@ -468,7 +468,7 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 		// Schedule another retry
 		conn.UpdateState(models.ConnectionStateError)
 		conn.CloseReason = fmt.Sprintf("Recovery failed, retry %d/%d", conn.RetryCount, conn.MaxRetries)
-		
+
 		if err := erm.connRepo.UpdateConnection(ctx, conn); err != nil {
 			erm.logger.Error("failed to update connection after recovery failure",
 				zap.String("connection_id", conn.ConnectionID),
@@ -481,7 +481,7 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 			erm.logger.Error("failed to schedule next retry job, using fallback goroutine",
 				zap.String("connection_id", conn.ConnectionID),
 				zap.Error(err))
-			
+
 			// Fallback to goroutine if job queue fails
 			go func() {
 				time.Sleep(delay)
@@ -590,9 +590,9 @@ func (erm *ErrorRecoveryManager) recordRecoveryAttempt(_ context.Context, conn *
 		zap.String("connection_id", conn.ConnectionID),
 		zap.Int("retry_count", conn.RetryCount),
 		zap.Float64("connection_quality", conn.Metrics.ConnectionQuality))
-	
+
 	// Update connection metrics (using existing fields)
-	conn.Metrics.ErrorCount = 0 // Reset error count on recovery attempt
+	conn.Metrics.ErrorCount = 0    // Reset error count on recovery attempt
 	conn.LastActivity = time.Now() // Update activity time
 }
 
@@ -600,7 +600,7 @@ func (erm *ErrorRecoveryManager) recordRecoveryAttempt(_ context.Context, conn *
 func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, conn *models.WebSocketConnection) error {
 	erm.logger.Info("resynchronizing connection after recovery",
 		zap.String("connection_id", conn.ConnectionID))
-	
+
 	// Send connection state sync message
 	syncMessage := map[string]interface{}{
 		"type":      "connection_sync",
@@ -609,29 +609,29 @@ func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, co
 		"streams":   conn.Streams,
 		"quality":   conn.Metrics.ConnectionQuality,
 	}
-	
+
 	if erm.apiClient != nil {
 		messageBytes, err := json.Marshal(syncMessage)
 		if err != nil {
 			return fmt.Errorf("failed to marshal sync message: %w", err)
 		}
-		
+
 		_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
 			ConnectionId: aws.String(conn.ConnectionID),
 			Data:         messageBytes,
 		})
-		
+
 		if err != nil {
 			erm.logger.Warn("failed to send sync message, connection may be stale",
 				zap.String("connection_id", conn.ConnectionID),
 				zap.Error(err))
 			return err
 		}
-		
+
 		erm.logger.Debug("sync message sent successfully",
 			zap.String("connection_id", conn.ConnectionID))
 	}
-	
+
 	return nil
 }
 
@@ -641,29 +641,29 @@ func (erm *ErrorRecoveryManager) PerformHealthCheck(ctx context.Context, connect
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connection for health check: %w", err)
 	}
-	
+
 	result := &HealthCheckResult{
 		ConnectionID:      connectionID,
-		Timestamp:        time.Now(),
-		IsHealthy:        false,
-		QualityScore:     conn.Metrics.ConnectionQuality,
-		LatencyMs:        0,
-		PacketLoss:       0,
+		Timestamp:         time.Now(),
+		IsHealthy:         false,
+		QualityScore:      conn.Metrics.ConnectionQuality,
+		LatencyMs:         0,
+		PacketLoss:        0,
 		RecommendedAction: "none",
 	}
-	
+
 	// Test connection with ping
 	pingSuccess := erm.validateConnectionHealth(ctx, conn)
 	if !pingSuccess {
 		result.RecommendedAction = "disconnect"
 		return result, nil
 	}
-	
+
 	// Calculate health metrics
 	result.IsHealthy = conn.IsHealthy()
 	result.LatencyMs = erm.measureConnectionLatency(ctx, conn)
 	result.PacketLoss = erm.calculatePacketLoss(conn)
-	
+
 	// Determine recommended action based on health
 	if result.QualityScore < 0.3 {
 		result.RecommendedAction = "consider_disconnect"
@@ -672,18 +672,18 @@ func (erm *ErrorRecoveryManager) PerformHealthCheck(ctx context.Context, connect
 	} else {
 		result.RecommendedAction = "healthy"
 	}
-	
+
 	return result, nil
 }
 
 // HealthCheckResult contains the results of a connection health check
 type HealthCheckResult struct {
 	ConnectionID      string    `json:"connection_id"`
-	Timestamp        time.Time `json:"timestamp"`
-	IsHealthy        bool      `json:"is_healthy"`
-	QualityScore     float64   `json:"quality_score"`
-	LatencyMs        int64     `json:"latency_ms"`
-	PacketLoss       float64   `json:"packet_loss"`
+	Timestamp         time.Time `json:"timestamp"`
+	IsHealthy         bool      `json:"is_healthy"`
+	QualityScore      float64   `json:"quality_score"`
+	LatencyMs         int64     `json:"latency_ms"`
+	PacketLoss        float64   `json:"packet_loss"`
 	RecommendedAction string    `json:"recommended_action"`
 }
 
@@ -692,30 +692,30 @@ func (erm *ErrorRecoveryManager) measureConnectionLatency(ctx context.Context, c
 	if erm.apiClient == nil {
 		return 0
 	}
-	
+
 	start := time.Now()
-	
+
 	// Send a latency test message
 	testMessage := map[string]interface{}{
 		"type":      "latency_test",
 		"timestamp": start.UnixNano(),
 		"test_id":   fmt.Sprintf("lat_%d", start.UnixNano()),
 	}
-	
+
 	messageBytes, err := json.Marshal(testMessage)
 	if err != nil {
 		return 0
 	}
-	
+
 	_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
 		ConnectionId: aws.String(conn.ConnectionID),
 		Data:         messageBytes,
 	})
-	
+
 	if err != nil {
 		return 0
 	}
-	
+
 	// Measure API call latency as proxy for connection latency
 	// In serverless WebSocket (API Gateway), this is the best available metric
 	return time.Since(start).Milliseconds()
@@ -726,7 +726,7 @@ func (erm *ErrorRecoveryManager) calculatePacketLoss(conn *models.WebSocketConne
 	if conn.Metrics.MessagesSent == 0 {
 		return 0
 	}
-	
+
 	// Estimate packet loss based on error count vs messages sent
 	return float64(conn.Metrics.ErrorCount) / float64(conn.Metrics.MessagesSent) * 100
 }
@@ -734,16 +734,16 @@ func (erm *ErrorRecoveryManager) calculatePacketLoss(conn *models.WebSocketConne
 // GetRecoveryStats returns current error recovery statistics
 func (erm *ErrorRecoveryManager) GetRecoveryStats() map[string]interface{} {
 	return map[string]interface{}{
-		"max_retries":       erm.maxRetries,
-		"base_retry_delay":  erm.baseRetryDelay.String(),
-		"max_retry_delay":   erm.maxRetryDelay.String(),
-		"jitter_factor":     erm.jitterFactor,
-		"backoff_enabled":   erm.enableBackoff,
+		"max_retries":      erm.maxRetries,
+		"base_retry_delay": erm.baseRetryDelay.String(),
+		"max_retry_delay":  erm.maxRetryDelay.String(),
+		"jitter_factor":    erm.jitterFactor,
+		"backoff_enabled":  erm.enableBackoff,
 		"circuit_breaker": map[string]interface{}{
-			"state":         fmt.Sprintf("%d", erm.circuitBreaker.GetState()),
-			"failures":      erm.circuitBreaker.failures,
-			"max_failures":  erm.circuitBreaker.maxFailures,
-			"timeout":       erm.circuitBreaker.timeout.String(),
+			"state":        fmt.Sprintf("%d", erm.circuitBreaker.GetState()),
+			"failures":     erm.circuitBreaker.failures,
+			"max_failures": erm.circuitBreaker.maxFailures,
+			"timeout":      erm.circuitBreaker.timeout.String(),
 		},
 	}
 }

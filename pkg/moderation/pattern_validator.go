@@ -41,31 +41,31 @@ type ValidationResult struct {
 	Warnings           []string               `json:"warnings,omitempty"`
 	Recommendations    []string               `json:"recommendations,omitempty"`
 	TestResults        map[string]interface{} `json:"test_results"`
-	CompilationTime    float64                `json:"compilation_time"` // milliseconds
+	CompilationTime    float64                `json:"compilation_time"`     // milliseconds
 	EstimatedMatchTime float64                `json:"estimated_match_time"` // milliseconds per match
 }
 
 // SecurityTestConfig defines security testing parameters
 type SecurityTestConfig struct {
-	TestReDoSVulnerability    bool     `json:"test_redos_vulnerability"`
-	TestInjectionAttacks      bool     `json:"test_injection_attacks"`
-	TestPatternComplexity     bool     `json:"test_pattern_complexity"`
-	TestResourceConsumption   bool     `json:"test_resource_consumption"`
-	MaxAllowedComplexity      int      `json:"max_allowed_complexity"`
-	MaxExecutionTimeMs        float64  `json:"max_execution_time_ms"`
-	DangerousPatterns         []string `json:"dangerous_patterns"`
-	TestInputs                []string `json:"test_inputs"`
+	TestReDoSVulnerability  bool     `json:"test_redos_vulnerability"`
+	TestInjectionAttacks    bool     `json:"test_injection_attacks"`
+	TestPatternComplexity   bool     `json:"test_pattern_complexity"`
+	TestResourceConsumption bool     `json:"test_resource_consumption"`
+	MaxAllowedComplexity    int      `json:"max_allowed_complexity"`
+	MaxExecutionTimeMs      float64  `json:"max_execution_time_ms"`
+	DangerousPatterns       []string `json:"dangerous_patterns"`
+	TestInputs              []string `json:"test_inputs"`
 }
 
 // DefaultSecurityTestConfig returns default security test configuration
 func DefaultSecurityTestConfig() *SecurityTestConfig {
 	return &SecurityTestConfig{
-		TestReDoSVulnerability:    true,
-		TestInjectionAttacks:      true,
-		TestPatternComplexity:     true,
-		TestResourceConsumption:   true,
-		MaxAllowedComplexity:      1000,
-		MaxExecutionTimeMs:        100.0,
+		TestReDoSVulnerability:  true,
+		TestInjectionAttacks:    true,
+		TestPatternComplexity:   true,
+		TestResourceConsumption: true,
+		MaxAllowedComplexity:    1000,
+		MaxExecutionTimeMs:      100.0,
 		DangerousPatterns: []string{
 			`(.*){`,      // Nested quantifiers
 			`.*.*.*.*`,   // Multiple greedy quantifiers
@@ -98,10 +98,10 @@ func (v *PatternValidator) ValidatePattern(_ context.Context, pattern *models.En
 	}
 
 	result := &ValidationResult{
-		Valid:        true,
-		TestResults:  make(map[string]interface{}),
-		Errors:       make([]string, 0),
-		Warnings:     make([]string, 0),
+		Valid:           true,
+		TestResults:     make(map[string]interface{}),
+		Errors:          make([]string, 0),
+		Warnings:        make([]string, 0),
 		Recommendations: make([]string, 0),
 	}
 
@@ -395,14 +395,14 @@ func (v *PatternValidator) testPatternComplexity(patternContent string, config *
 	factors := make([]string, 0)
 
 	// Count various complexity factors
-	complexity += strings.Count(patternContent, "*") * 5      // Wildcard quantifiers
-	complexity += strings.Count(patternContent, "+") * 5      // Plus quantifiers
-	complexity += strings.Count(patternContent, "?") * 2      // Question quantifiers
-	complexity += strings.Count(patternContent, "|") * 3      // Alternation
-	complexity += strings.Count(patternContent, "(") * 2      // Groups
-	complexity += strings.Count(patternContent, "[") * 3      // Character classes
-	complexity += strings.Count(patternContent, "\\") * 1     // Escapes
-	complexity += len(patternContent) / 10                    // Base length penalty
+	complexity += strings.Count(patternContent, "*") * 5  // Wildcard quantifiers
+	complexity += strings.Count(patternContent, "+") * 5  // Plus quantifiers
+	complexity += strings.Count(patternContent, "?") * 2  // Question quantifiers
+	complexity += strings.Count(patternContent, "|") * 3  // Alternation
+	complexity += strings.Count(patternContent, "(") * 2  // Groups
+	complexity += strings.Count(patternContent, "[") * 3  // Character classes
+	complexity += strings.Count(patternContent, "\\") * 1 // Escapes
+	complexity += len(patternContent) / 10                // Base length penalty
 
 	if strings.Count(patternContent, "*") > 5 {
 		factors = append(factors, "too many wildcards")
@@ -437,14 +437,14 @@ func (v *PatternValidator) validatePerformance(pattern *models.EnhancedModeratio
 	// Test compilation time
 	compilationStart := time.Now()
 	var err error
-	
+
 	switch {
 	case strings.HasPrefix(pattern.PatternType, "url_"):
 		err = v.testURLPatternPerformance(pattern, performanceTests)
 	case strings.HasPrefix(pattern.PatternType, "ip_"):
 		err = v.testIPPatternPerformance(pattern, performanceTests)
 	}
-	
+
 	compilationTime := float64(time.Since(compilationStart).Nanoseconds()) / 1e6
 	performanceTests["compilation_time_ms"] = compilationTime
 
@@ -576,7 +576,7 @@ func (v *PatternValidator) testIPPatternPerformance(pattern *models.EnhancedMode
 // validateAccuracy tests pattern accuracy with known test cases
 func (v *PatternValidator) validateAccuracy(_ *models.EnhancedModerationPattern, _ *SecurityTestConfig, result *ValidationResult) (float64, error) {
 	accuracyTests := make(map[string]interface{})
-	
+
 	// For now, return a base accuracy score
 	// In a real implementation, this would test against known good/bad examples
 	accuracyScore := 0.8 // Default reasonable accuracy
@@ -705,7 +705,7 @@ func (v *PatternValidator) generateRecommendations(pattern *models.EnhancedModer
 // CreateTestResult creates a test result record for storage
 func (v *PatternValidator) CreateTestResult(pattern *models.EnhancedModerationPattern, validationResult *ValidationResult, testType string, runBy string) *models.PatternTestResult {
 	testID := uuid.New().String()
-	
+
 	result := &models.PatternTestResult{
 		TestID:          testID,
 		PatternID:       pattern.PatternID,

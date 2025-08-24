@@ -193,8 +193,8 @@ func (hm *HealthMonitor) CheckSQSHealth(ctx context.Context, queueURL string) er
 
 	// Record queue depth metric
 	if err := hm.monitor.RecordSQSQueueDepth(ctx, queueURL, int64(totalMessages)); err != nil {
-		zap.L().Warn("failed to record SQS queue depth", 
-			zap.String("queue_url", queueURL), 
+		zap.L().Warn("failed to record SQS queue depth",
+			zap.String("queue_url", queueURL),
 			zap.Error(err))
 	}
 
@@ -316,20 +316,20 @@ func (hm *HealthMonitor) runHealthChecks(ctx context.Context, components []Healt
 		switch component.Type {
 		case "dynamodb":
 			if err := hm.CheckDynamoDBHealth(ctx, component.Identifier); err != nil {
-				zap.L().Warn("DynamoDB health check failed", 
-					zap.String("component", component.Identifier), 
+				zap.L().Warn("DynamoDB health check failed",
+					zap.String("component", component.Identifier),
 					zap.Error(err))
 			}
 		case "lambda":
 			if err := hm.CheckLambdaHealth(ctx, component.Identifier); err != nil {
-				zap.L().Warn("Lambda health check failed", 
-					zap.String("component", component.Identifier), 
+				zap.L().Warn("Lambda health check failed",
+					zap.String("component", component.Identifier),
 					zap.Error(err))
 			}
 		case "sqs":
 			if err := hm.CheckSQSHealth(ctx, component.Identifier); err != nil {
-				zap.L().Warn("SQS health check failed", 
-					zap.String("component", component.Identifier), 
+				zap.L().Warn("SQS health check failed",
+					zap.String("component", component.Identifier),
 					zap.Error(err))
 			}
 		}
@@ -364,8 +364,8 @@ func parseInt(s string) int {
 	var result int
 	if _, err := fmt.Sscanf(s, "%d", &result); err != nil {
 		// Log warning but return 0 for parsing errors
-		zap.L().Warn("failed to parse integer", 
-			zap.String("value", s), 
+		zap.L().Warn("failed to parse integer",
+			zap.String("value", s),
 			zap.Error(err))
 	}
 	return result

@@ -643,11 +643,11 @@ func createStatusNotifications(ctx context.Context, status StatusModel, repo Not
 
 // NotificationData holds parameters for creating notifications
 type NotificationData struct {
-	Type         string
-	UserID       string
-	FromUser     string
-	StatusID     string
-	ErrorFields  []zap.Field
+	Type        string
+	UserID      string
+	FromUser    string
+	StatusID    string
+	ErrorFields []zap.Field
 }
 
 // createNotificationWithPush creates a notification and sends push notification asynchronously

@@ -38,7 +38,7 @@ type appContext struct {
 
 func main() {
 	flags := parseFlags()
-	
+
 	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "configure-instance",
 		LambdaType:  common.LambdaTypeBasic,
@@ -99,7 +99,6 @@ func parseFlags() *configFlags {
 	flag.Parse()
 	return flags
 }
-
 
 // showCurrentConfiguration displays the current instance configuration
 func showCurrentConfiguration(appCtx *appContext) {

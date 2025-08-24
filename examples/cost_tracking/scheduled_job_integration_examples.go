@@ -32,28 +32,28 @@ func ExampleCostAggregationJobWithTracking(ctx context.Context, tracker *Schedul
 
 	// Track the work being done
 	startTime := time.Now()
-	
+
 	// Simulate cost aggregation work
 	var itemsProcessed int64
 	var dynamoDBOps int64
-	
+
 	// Example: Process cost records for aggregation
 	operationTypes := []string{"GetItem", "PutItem", "Query", "Scan"}
 	for _, opType := range operationTypes {
 		// Simulate processing each operation type
 		execution.TrackLambdaUsage(1, 2000, 512) // 1 invocation, 2 seconds, 512MB
-		
+
 		// Simulate DynamoDB operations
 		readOps := int64(100)
 		writeOps := int64(50)
 		execution.TrackDynamoDBUsage(readOps, writeOps, float64(readOps)*0.5, float64(writeOps)*1.0)
 		dynamoDBOps += readOps + writeOps
-		
+
 		// Track items processed
 		processed := int64(1000)
 		execution.TrackItemsProcessed(processed, 0, 0)
 		itemsProcessed += processed
-		
+
 		logger.Info("processed operation type for aggregation",
 			zap.String("operation_type", opType),
 			zap.Int64("items_processed", processed))
@@ -101,35 +101,35 @@ func ExampleCleanupJobWithTracking(ctx context.Context, tracker *ScheduledJobCos
 
 	// Step 1: Find expired tokens
 	step1 := multiStepExecution.StartStep("find_expired_tokens")
-	
+
 	// Simulate querying for expired tokens
-	step1.TrackStepLambdaUsage(5000) // 5 seconds
+	step1.TrackStepLambdaUsage(5000)  // 5 seconds
 	step1.TrackStepDynamoDBUsage(500) // 500 operations
 	expiredTokens := int64(250)
 	step1.TrackStepItemsProcessed(expiredTokens, 0)
 	step1.SetStepProperty("tokens_found", expiredTokens)
-	
+
 	multiStepExecution.FinishStep("find_expired_tokens", "success", nil)
 
 	// Step 2: Delete expired tokens
 	step2 := multiStepExecution.StartStep("delete_expired_tokens")
-	
+
 	// Simulate batch deletion
 	batchSize := 25
 	batches := int(expiredTokens) / batchSize
 	multiStepExecution.SetBatchSize(batchSize)
-	
+
 	var deletedTokens int64
 	for i := 0; i < batches; i++ {
-		step2.TrackStepLambdaUsage(1000) // 1 second per batch
+		step2.TrackStepLambdaUsage(1000)               // 1 second per batch
 		step2.TrackStepDynamoDBUsage(int64(batchSize)) // Delete operations
 		deletedTokens += int64(batchSize)
-		
+
 		// Track in main execution
 		multiStepExecution.TrackDynamoDBUsage(0, int64(batchSize), 0, float64(batchSize))
 		multiStepExecution.TrackItemsProcessed(int64(batchSize), 0, 0)
 	}
-	
+
 	step2.TrackStepItemsProcessed(deletedTokens, 0)
 	step2.SetStepProperty("tokens_deleted", deletedTokens)
 	multiStepExecution.FinishStep("delete_expired_tokens", "success", nil)
@@ -188,26 +188,26 @@ func ExampleTrendCalculationJobWithTracking(ctx context.Context, tracker *Schedu
 	for i := 0; i < userBatches; i++ {
 		// Track processing each batch of users
 		execution.TrackLambdaUsage(1, 3000, 1024) // 3 seconds per batch, 1GB memory
-		
+
 		// Read user activity data
 		readOps := int64(200)
 		execution.TrackDynamoDBUsage(readOps, 0, float64(readOps)*0.5, 0)
-		
+
 		// Write trend data
 		writeOps := int64(10)
 		execution.TrackDynamoDBUsage(0, writeOps, 0, float64(writeOps)*1.0)
-		
+
 		// Track business metrics
 		batchDataPoints := int64(2000)
 		batchTrends := int64(50)
 		execution.TrackItemsProcessed(batchDataPoints, 0, 0)
-		
+
 		dataPointsProcessed += batchDataPoints
 		trendsCalculated += batchTrends
 	}
 
 	// Track data transfer for storing results
-	resultDataMB := int64(10) // 10MB of trend data
+	resultDataMB := int64(10)                               // 10MB of trend data
 	execution.TrackDataTransfer(resultDataMB * 1024 * 1024) // Convert to bytes
 
 	// Track S3 operations for storing trend reports
@@ -268,19 +268,19 @@ func ExampleIndexOptimizationJobWithTracking(ctx context.Context, tracker *Sched
 	for _, gsiName := range gsiList {
 		// Track analysis of each GSI
 		execution.TrackLambdaUsage(1, 10000, 512) // 10 seconds per GSI, 512MB
-		
+
 		// Query usage metrics from CloudWatch/DynamoDB
 		readOps := int64(500)
 		execution.TrackDynamoDBUsage(readOps, 0, float64(readOps)*0.5, 0)
-		
+
 		indicesAnalyzed++
-		
+
 		// Generate recommendations based on usage patterns
 		recommendationsForGSI := int64(3) // Average 3 recommendations per GSI
 		recommendationsGenerated += recommendationsForGSI
-		
+
 		execution.SetProperty(fmt.Sprintf("gsi_%s_recommendations", gsiName), recommendationsForGSI)
-		
+
 		logger.Debug("analyzed GSI usage patterns",
 			zap.String("gsi_name", gsiName),
 			zap.Int64("recommendations", recommendationsForGSI))
@@ -288,7 +288,7 @@ func ExampleIndexOptimizationJobWithTracking(ctx context.Context, tracker *Sched
 
 	// Generate optimization report
 	execution.TrackS3Usage(5) // Store report in S3
-	reportSize := int64(2) // 2MB report
+	reportSize := int64(2)    // 2MB report
 	execution.TrackDataTransfer(reportSize * 1024 * 1024)
 
 	// Track performance metrics
@@ -347,10 +347,10 @@ func ExampleDLQProcessingJobWithTracking(ctx context.Context, tracker *Scheduled
 	for i := int64(0); i < dlqMessages; i++ {
 		// Track processing each message
 		execution.TrackLambdaUsage(1, 2000, 256) // 2 seconds per message, 256MB
-		
+
 		// Simulate message analysis and reprocessing attempt
 		messageProcessingSuccessful := i%4 != 0 // 75% success rate
-		
+
 		if messageProcessingSuccessful {
 			// Successfully reprocessed - write back to main queue or process directly
 			execution.TrackDynamoDBUsage(0, 2, 0, 2.0) // 2 write operations
@@ -366,7 +366,7 @@ func ExampleDLQProcessingJobWithTracking(ctx context.Context, tracker *Scheduled
 				messagesDiscarded++
 			}
 		}
-		
+
 		messagesProcessed++
 	}
 
@@ -426,7 +426,7 @@ func ExampleScheduledJobCostAnalysis(ctx context.Context, tracker *ScheduledJobC
 	// Get summary of all scheduled jobs for the last 7 days
 	endTime := time.Now()
 	startTime := endTime.AddDate(0, 0, -7)
-	
+
 	logger.Info("analyzing scheduled jobs cost data",
 		zap.Time("start_time", startTime),
 		zap.Time("end_time", endTime))
@@ -477,31 +477,31 @@ func ExampleScheduledJobCostAnalysis(ctx context.Context, tracker *ScheduledJobC
 func ExampleIntegratingWithExistingScheduledJobs(ctx context.Context, tracker *ScheduledJobCostTracker, logger *zap.Logger) {
 	// This example shows how to modify existing scheduled Lambda functions
 	// to include cost tracking
-	
+
 	logger.Info("example of integrating cost tracking with existing scheduled jobs",
 		zap.String("approach", "wrap_existing_handlers"))
 
 	// Example pattern for wrapping existing job handlers:
 	/*
-	Original handler:
-	func handleCostAggregation(ctx context.Context, event events.CloudWatchEvent) error {
-		// existing job logic
-		return nil
-	}
-
-	Modified handler with cost tracking:
-	func handleCostAggregationWithTracking(ctx context.Context, event events.CloudWatchEvent) error {
-		// Initialize cost tracking
-		execution := tracker.TrackCostAggregationJob(ctx, "hourly", windowStart, windowEnd)
-		
-		// Execute original logic with tracking
-		err := executeOriginalLogic(ctx, execution)
-		
-		// Complete tracking
-		if err != nil {
-			return execution.FinishWithError(ctx, tracker, err.Error())
+		Original handler:
+		func handleCostAggregation(ctx context.Context, event events.CloudWatchEvent) error {
+			// existing job logic
+			return nil
 		}
-		return execution.FinishWithSuccess(ctx, tracker)
-	}
+
+		Modified handler with cost tracking:
+		func handleCostAggregationWithTracking(ctx context.Context, event events.CloudWatchEvent) error {
+			// Initialize cost tracking
+			execution := tracker.TrackCostAggregationJob(ctx, "hourly", windowStart, windowEnd)
+
+			// Execute original logic with tracking
+			err := executeOriginalLogic(ctx, execution)
+
+			// Complete tracking
+			if err != nil {
+				return execution.FinishWithError(ctx, tracker, err.Error())
+			}
+			return execution.FinishWithSuccess(ctx, tracker)
+		}
 	*/
 }

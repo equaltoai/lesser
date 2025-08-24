@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // Session constants - enhanced security
 const (
 	SessionDuration               = 7 * 24 * time.Hour // 7 days (reduced from 30)

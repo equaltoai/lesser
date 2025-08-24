@@ -444,14 +444,45 @@ func (r *DomainBlockRepository) IsDomainBlocked(ctx context.Context, domain stri
 	return r.IsInstanceDomainBlocked(ctx, domain)
 }
 
+// DomainModel interface defines methods required for domain models
+type DomainModel interface {
+	UpdateKeys() error
+	GetDomain() string
+}
+
+// createDomainModelHelper is a generic helper for creating domain models with common patterns
+func createDomainModelHelper[T DomainModel](
+	ctx context.Context,
+	db core.DB,
+	model T,
+	id *string,
+	createdAt *time.Time,
+	entityType string,
+) error {
+	// Generate ID if not provided
+	if err := common.ValidateRequiredParam("id", *id); err != nil {
+		*id = uuid.New().String()
+	}
+	*createdAt = time.Now()
+
+	// Update keys and create with condition to prevent duplicates
+	if err := model.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleCreateError(err, entityType, model.GetDomain())
+	}
+
+	err := db.WithContext(ctx).Model(model).Create()
+	if err != nil {
+		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
+			return ErrorHandler.HandleCreateError(err, entityType, model.GetDomain())
+		}
+		return ErrorHandler.HandleCreateError(err, entityType, model.GetDomain())
+	}
+
+	return nil
+}
+
 // CreateEmailDomainBlock creates an email domain block
 func (r *DomainBlockRepository) CreateEmailDomainBlock(ctx context.Context, block *storage.EmailDomainBlock) error {
-	// Generate ID if not provided
-	if err := common.ValidateRequiredParam("block.ID", block.ID); err != nil {
-		block.ID = uuid.New().String()
-	}
-	block.CreatedAt = time.Now()
-
 	// Convert to model
 	modelBlock := &models.EmailDomainBlock{
 		ID:        block.ID,
@@ -459,21 +490,8 @@ func (r *DomainBlockRepository) CreateEmailDomainBlock(ctx context.Context, bloc
 		CreatedBy: block.CreatedBy,
 		CreatedAt: block.CreatedAt,
 	}
-	if err := modelBlock.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleCreateError(err, "email domain block", block.Domain)
-	}
 
-	// Create with condition to prevent duplicates
-	err := r.db.WithContext(ctx).Model(modelBlock).Create()
-
-	if err != nil {
-		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			return ErrorHandler.HandleCreateError(err, "email domain block", modelBlock.Domain)
-		}
-		return ErrorHandler.HandleCreateError(err, "email domain block", modelBlock.Domain)
-	}
-
-	return nil
+	return createDomainModelHelper(ctx, r.db, modelBlock, &block.ID, &block.CreatedAt, "email domain block")
 }
 
 // GetEmailDomainBlocks retrieves email domain blocks with pagination
@@ -503,12 +521,6 @@ func (r *DomainBlockRepository) GetDomainAllows(ctx context.Context, limit int, 
 
 // CreateDomainAllow adds a domain to the allowlist
 func (r *DomainBlockRepository) CreateDomainAllow(ctx context.Context, allow *storage.DomainAllow) error {
-	// Generate ID if not provided
-	if err := common.ValidateRequiredParam("allow.ID", allow.ID); err != nil {
-		allow.ID = uuid.New().String()
-	}
-	allow.CreatedAt = time.Now()
-
 	// Convert to model
 	modelAllow := &models.DomainAllow{
 		ID:        allow.ID,
@@ -516,21 +528,8 @@ func (r *DomainBlockRepository) CreateDomainAllow(ctx context.Context, allow *st
 		CreatedBy: allow.CreatedBy,
 		CreatedAt: allow.CreatedAt,
 	}
-	if err := modelAllow.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleCreateError(err, "domain allow", allow.Domain)
-	}
 
-	// Create with condition to prevent duplicates
-	err := r.db.WithContext(ctx).Model(modelAllow).Create()
-
-	if err != nil {
-		if strings.Contains(err.Error(), "ConditionalCheckFailedException") {
-			return ErrorHandler.HandleCreateError(err, "domain allow", modelAllow.Domain)
-		}
-		return ErrorHandler.HandleCreateError(err, "domain allow", modelAllow.Domain)
-	}
-
-	return nil
+	return createDomainModelHelper(ctx, r.db, modelAllow, &allow.ID, &allow.CreatedAt, "domain allow")
 }
 
 // DeleteDomainAllow removes a domain from the allowlist

@@ -2,8 +2,8 @@ package monitoring
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks

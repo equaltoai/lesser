@@ -81,7 +81,7 @@ func (f *FederationCostActivity) UpdateKeys() error {
 
 	// Set TTL to 90 days
 	f.TTL = now.Add(90 * 24 * time.Hour).Unix()
-	
+
 	return nil
 }
 

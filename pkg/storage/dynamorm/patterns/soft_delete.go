@@ -110,7 +110,7 @@ func (r *SoftDeleteRepository) OnlyDeleted() *SoftDeleteRepository {
 }
 
 // SoftDelete performs a soft delete operation
-func (r *SoftDeleteRepository) SoftDelete(ctx context.Context, model SoftDeletable, userID string) error {
+func (r *SoftDeleteRepository) SoftDelete(_ context.Context, model SoftDeletable, userID string) error {
 	// Mark as soft deleted
 	model.SoftDelete()
 	model.SetDeletedBy(userID)
@@ -131,7 +131,7 @@ func (r *SoftDeleteRepository) SoftDelete(ctx context.Context, model SoftDeletab
 }
 
 // Restore restores a soft-deleted item
-func (r *SoftDeleteRepository) Restore(ctx context.Context, model SoftDeletable) error {
+func (r *SoftDeleteRepository) Restore(_ context.Context, model SoftDeletable) error {
 	if !model.IsDeleted() {
 		return fmt.Errorf("item is not soft deleted")
 	}
@@ -153,7 +153,7 @@ func (r *SoftDeleteRepository) Restore(ctx context.Context, model SoftDeletable)
 }
 
 // HardDelete permanently deletes an item from DynamoDB using DynamORM
-func (r *SoftDeleteRepository) HardDelete(ctx context.Context, model interface{}) error {
+func (r *SoftDeleteRepository) HardDelete(_ context.Context, model interface{}) error {
 	// Use DynamORM's delete method - Note: This would typically use a repository method
 	r.logger.Info("hard delete operation performed (storage not implemented in pattern)",
 		zap.String("type", reflect.TypeOf(model).String()))
@@ -171,7 +171,7 @@ func (r *SoftDeleteRepository) HardDelete(ctx context.Context, model interface{}
 func (r *SoftDeleteRepository) Get(ctx context.Context, model SoftDeletable, pk, sk interface{}) error {
 	// Use DynamORM to get the item
 	query := r.db.WithContext(ctx).Model(model)
-	
+
 	// Add primary key conditions
 	if pk != nil {
 		query = query.Where("PK", "=", pk)
@@ -179,7 +179,7 @@ func (r *SoftDeleteRepository) Get(ctx context.Context, model SoftDeletable, pk,
 	if sk != nil {
 		query = query.Where("SK", "=", sk)
 	}
-	
+
 	if err := query.First(model); err != nil {
 		return fmt.Errorf("failed to get item: %w", err)
 	}
@@ -193,55 +193,51 @@ func (r *SoftDeleteRepository) Get(ctx context.Context, model SoftDeletable, pk,
 }
 
 // Query performs a query with soft delete filtering using DynamORM
-func (r *SoftDeleteRepository) Query(ctx context.Context, model interface{}, results interface{}) core.Query {
+func (r *SoftDeleteRepository) Query(ctx context.Context, model interface{}, _ interface{}) core.Query {
 	query := r.db.WithContext(ctx).Model(model)
-	
+
 	// Add soft delete filter if needed
 	if !r.includeDeleted {
 		query = query.Where("deleted_at", "attribute_not_exists", nil)
 	}
-	
+
 	return query
 }
 
 // QueryOnlyDeleted queries only soft-deleted items using DynamORM
 func (r *SoftDeleteRepository) QueryOnlyDeleted(ctx context.Context, model interface{}) core.Query {
 	query := r.db.WithContext(ctx).Model(model)
-	
+
 	// Add filter for only soft-deleted items
 	query = query.Where("deleted_at", "attribute_exists", nil)
-	
+
 	return query
 }
 
 // Scan performs a scan with soft delete filtering using DynamORM
 func (r *SoftDeleteRepository) Scan(ctx context.Context, model interface{}) core.Query {
 	query := r.db.WithContext(ctx).Model(model)
-	
+
 	// Add soft delete filter if needed
 	if !r.includeDeleted {
 		query = query.Where("deleted_at", "attribute_not_exists", nil)
 	}
-	
+
 	return query
 }
 
 // ScanOnlyDeleted scans only soft-deleted items using DynamORM
 func (r *SoftDeleteRepository) ScanOnlyDeleted(ctx context.Context, model interface{}) core.Query {
 	query := r.db.WithContext(ctx).Model(model)
-	
+
 	// Add filter for only soft-deleted items
 	query = query.Where("deleted_at", "attribute_exists", nil)
-	
+
 	return query
 }
 
 // CleanupOldDeletes permanently removes items that have been soft-deleted for longer than the specified duration
-func (r *SoftDeleteRepository) CleanupOldDeletes(ctx context.Context, model interface{}, olderThan time.Duration, batchSize int) (int, error) {
-	if batchSize <= 0 {
-		batchSize = 25 // DynamoDB batch limit
-	}
-
+func (r *SoftDeleteRepository) CleanupOldDeletes(_ context.Context, model interface{}, olderThan time.Duration, _ int) (int, error) {
 	cutoff := time.Now().Add(-olderThan)
 	totalDeleted := 0
 
@@ -262,7 +258,7 @@ func (r *SoftDeleteRepository) CleanupOldDeletes(ctx context.Context, model inte
 }
 
 // GetDeletedItemsOlderThan returns items that have been soft-deleted for longer than the specified duration
-func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(ctx context.Context, model interface{}, results interface{}, olderThan time.Duration) error {
+func (r *SoftDeleteRepository) GetDeletedItemsOlderThan(_ context.Context, model interface{}, _ interface{}, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 
 	// Note: This would typically use a repository method to find old deleted items
@@ -297,7 +293,6 @@ func (r *SoftDeleteRepository) GetSoftDeleteStats(ctx context.Context, model int
 
 	return stats, nil
 }
-
 
 // SoftDeleteStats contains statistics about soft-deleted items
 type SoftDeleteStats struct {
@@ -343,9 +338,9 @@ func GetItemDeletionInfo(model SoftDeletable) (deletedAt *time.Time, deletedBy s
 
 // ExampleModel demonstrates usage of soft delete pattern with DynamORM
 type ExampleModel struct {
-	PK    string `dynamorm:"pk" json:"pk"`      // Primary key for DynamORM
-	SK    string `dynamorm:"sk" json:"sk"`      // Sort key for DynamORM
-	ID    string `json:"id"`                    // Business ID
+	PK    string `dynamorm:"pk" json:"pk"` // Primary key for DynamORM
+	SK    string `dynamorm:"sk" json:"sk"` // Sort key for DynamORM
+	ID    string `json:"id"`               // Business ID
 	Name  string `json:"name"`
 	Email string `json:"email"`
 

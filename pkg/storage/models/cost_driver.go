@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-
 // Driver represents a major cost contributor
 type Driver struct {
 	// Keys

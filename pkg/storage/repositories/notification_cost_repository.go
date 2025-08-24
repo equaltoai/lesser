@@ -36,7 +36,7 @@ func (r *NotificationCostRepository) CreateCostTracking(ctx context.Context, tra
 		return ErrorHandler.HandleCreateError(err, "notification cost", "preparation")
 	}
 
-	err := r.BaseRepository.Create(ctx, tracking)
+	err := r.Create(ctx, tracking)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "notification cost", tracking.ID)
 	}
@@ -57,7 +57,7 @@ func (r *NotificationCostRepository) GetCostTrackingByNotification(ctx context.C
 
 	pk := fmt.Sprintf("NOTIF_COST#%s", notificationID)
 
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "DESC").
 		Limit(limit)
@@ -88,7 +88,7 @@ func (r *NotificationCostRepository) GetDailyCostTracking(ctx context.Context, d
 
 	dateStr := date.Format(common.CompactDateFormat)
 
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Index("gsi3").
 		Where("GSI3PK", "=", fmt.Sprintf("DAILY#%s", dateStr)).
 		OrderBy("GSI3SK", "DESC").
@@ -108,7 +108,7 @@ func (r *NotificationCostRepository) CreateAggregation(ctx context.Context, aggr
 		return ErrorHandler.HandleCreateError(err, "cost aggregation", "preparation")
 	}
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(aggregation).Create()
+	err := r.GetDB().WithContext(ctx).Model(aggregation).Create()
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "cost aggregation", aggregation.Period)
 	}
@@ -129,7 +129,7 @@ func (r *NotificationCostRepository) UpdateAggregation(ctx context.Context, aggr
 		return ErrorHandler.HandleUpdateError(err, "cost aggregation", "preparation")
 	}
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(aggregation).Update()
+	err := r.GetDB().WithContext(ctx).Model(aggregation).Update()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "cost aggregation", aggregation.Period)
 	}
@@ -144,7 +144,7 @@ func (r *NotificationCostRepository) GetAggregation(ctx context.Context, period,
 	pk := fmt.Sprintf("NOTIF_AGG#%s#%s", period, deliveryMethod)
 	sk := fmt.Sprintf("WINDOW#%s", windowStart.Format(time.RFC3339))
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&aggregation)
@@ -167,7 +167,7 @@ func (r *NotificationCostRepository) ListAggregationsByPeriod(ctx context.Contex
 	startSK := fmt.Sprintf("WINDOW#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("WINDOW#%s", endTime.Format(time.RFC3339))
 
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.NotificationCostAggregation{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -188,7 +188,7 @@ func (r *NotificationCostRepository) CreateBudget(ctx context.Context, budget *m
 		return ErrorHandler.HandleCreateError(err, "notification budget", "preparation")
 	}
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(budget).Create()
+	err := r.GetDB().WithContext(ctx).Model(budget).Create()
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "notification budget", budget.Username)
 	}
@@ -208,7 +208,7 @@ func (r *NotificationCostRepository) UpdateBudget(ctx context.Context, budget *m
 		return ErrorHandler.HandleUpdateError(err, "notification budget", "preparation")
 	}
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(budget).Update()
+	err := r.GetDB().WithContext(ctx).Model(budget).Update()
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "notification budget", budget.Username)
 	}
@@ -223,7 +223,7 @@ func (r *NotificationCostRepository) GetBudget(ctx context.Context, username, pe
 	pk := fmt.Sprintf("NOTIF_BUDGET#%s", username)
 	sk := fmt.Sprintf("PERIOD#%s", period)
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(&budget)
@@ -244,7 +244,7 @@ func (r *NotificationCostRepository) GetUserBudgets(ctx context.Context, usernam
 
 	pk := fmt.Sprintf("NOTIF_BUDGET#%s", username)
 
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.NotificationBudget{}).
 		Where("PK", "=", pk).
 		OrderBy("SK", "ASC")
 
@@ -889,7 +889,7 @@ func (r *NotificationCostRepository) GetDailySpending(ctx context.Context, usern
 	startSK := fmt.Sprintf("COST#%s", today.Format(time.RFC3339))
 	endSK := fmt.Sprintf("COST#%s", tomorrow.Format(time.RFC3339))
 
-	err := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
+	err := r.GetDB().WithContext(ctx).Model(&models.NotificationCostTracking{}).
 		Where("GSI1PK", "=", gsi1PK).
 		Where("GSI1SK", ">=", startSK).
 		Where("GSI1SK", "<", endSK).

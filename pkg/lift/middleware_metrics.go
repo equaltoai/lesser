@@ -13,10 +13,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"github.com/pay-theory/lift/pkg/lift"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/pay-theory/lift/pkg/lift"
+	"go.uber.org/zap"
 )
 
 // MetricsConfig configures the metrics middleware
@@ -386,7 +386,7 @@ func getErrorType(err error) string {
 // getEnvironment determines the current environment
 func getEnvironment() string {
 	cfg := config.Get()
-	
+
 	// Use centralized config first (Environment field has priority over Stage)
 	if cfg.Environment != "" {
 		return cfg.Environment
@@ -394,7 +394,7 @@ func getEnvironment() string {
 	if cfg.Stage != "" {
 		return cfg.Stage
 	}
-	
+
 	// Fallback to AWS Lambda function name pattern
 	if env := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); env != "" {
 		// Extract environment from function name if it follows pattern

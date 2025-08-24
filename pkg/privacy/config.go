@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -120,119 +119,19 @@ func (cl *ConfigLoader) LoadHasherFromEnvironment() (*Hasher, error) {
 	return NewHasher(config)
 }
 
-// getEnvKey returns the full environment variable key with prefix
-func (cl *ConfigLoader) getEnvKey(key string) string {
-	return fmt.Sprintf("%s_%s", cl.envPrefix, key)
-}
 
-// decodeMasterKey attempts to decode a master key from various formats
-func (cl *ConfigLoader) decodeMasterKey(keyStr string) ([]byte, error) {
-	// Try base64 first
-	if decoded, err := base64.StdEncoding.DecodeString(keyStr); err == nil && len(decoded) >= 32 {
-		return decoded, nil
-	}
-
-	// Try hex encoding
-	if decoded, err := hex.DecodeString(keyStr); err == nil && len(decoded) >= 32 {
-		return decoded, nil
-	}
-
-	// If it's a raw string, ensure it's long enough
-	keyBytes := []byte(keyStr)
-	if len(keyBytes) < 32 {
-		return nil, fmt.Errorf("master key must be at least 32 bytes when provided as raw string, got %d", len(keyBytes))
-	}
-
-	// Pad or truncate to exactly 64 bytes for consistency
-	masterKey := make([]byte, 64)
-	if len(keyBytes) >= 64 {
-		copy(masterKey, keyBytes[:64])
-	} else {
-		copy(masterKey, keyBytes)
-		// Fill the rest with a derived value to ensure full entropy
-		for i := len(keyBytes); i < 64; i++ {
-			masterKey[i] = byte(i ^ len(keyBytes))
-		}
-	}
-
-	return masterKey, nil
-}
 
 // Legacy functions below are deprecated - they now use centralized config
 
-// loadLevel loads a privacy level from environment variable (deprecated - now uses centralized config)
-func (cl *ConfigLoader) loadLevel(key string, defaultValue Level) Level {
-	// All privacy level loading now happens through centralized config
-	// This function is maintained for backward compatibility but delegates to LoadFromConfig
-	cfg := config.Get()
-	switch key {
-	case "IP_PRIVACY_LEVEL":
-		return parsePrivacyLevel(cfg.IPLevel, defaultValue)
-	case "EMAIL_PRIVACY_LEVEL":
-		return parsePrivacyLevel(cfg.EmailLevel, defaultValue)
-	case "USERNAME_PRIVACY_LEVEL":
-		return parsePrivacyLevel(cfg.UsernameLevel, defaultValue)
-	case "PII_PRIVACY_LEVEL":
-		return parsePrivacyLevel(cfg.PIILevel, defaultValue)
-	case "GENERIC_PRIVACY_LEVEL":
-		return parsePrivacyLevel(cfg.GenericLevel, defaultValue)
-	default:
-		return defaultValue
-	}
-}
 
-// loadBool loads a boolean value from environment variable (deprecated - now uses centralized config)
-func (cl *ConfigLoader) loadBool(key string, defaultValue bool) bool {
-	cfg := config.Get()
-	switch key {
-	case "KEY_ROTATION_ENABLED":
-		return cfg.KeyRotationEnabled
-	default:
-		return defaultValue
-	}
-}
 
-// loadDuration loads a duration from environment variable (deprecated - now uses centralized config)
-func (cl *ConfigLoader) loadDuration(key string, defaultValue time.Duration) time.Duration {
-	cfg := config.Get()
-	switch key {
-	case "KEY_ROTATION_INTERVAL":
-		return cfg.KeyRotationInterval
-	default:
-		return defaultValue
-	}
-}
 
-// loadUint32 loads a uint32 value from environment variable (deprecated - now uses centralized config)
-func (cl *ConfigLoader) loadUint32(key string, defaultValue uint32) uint32 {
-	cfg := config.Get()
-	switch key {
-	case "ARGON2_MEMORY":
-		return cfg.Argon2Memory
-	case "ARGON2_TIME":
-		return cfg.Argon2Time
-	case "ARGON2_KEY_LENGTH":
-		return cfg.Argon2KeyLen
-	default:
-		return defaultValue
-	}
-}
 
-// loadUint8 loads a uint8 value from environment variable (deprecated - now uses centralized config)
-func (cl *ConfigLoader) loadUint8(key string, defaultValue uint8) uint8 {
-	cfg := config.Get()
-	switch key {
-	case "ARGON2_THREADS":
-		return cfg.Argon2Threads
-	default:
-		return defaultValue
-	}
-}
 
 // GetEnvironmentDocumentation returns documentation for all privacy environment variables
 func (cl *ConfigLoader) GetEnvironmentDocumentation() string {
 	prefix := cl.envPrefix
-	
+
 	return fmt.Sprintf(`Privacy Hashing Environment Variables (prefix: %s_):
 
 REQUIRED:
@@ -277,7 +176,7 @@ func (cl *ConfigLoader) ValidateEnvironmentVariables() error {
 	if err := common.ValidateRequiredParam("privacy_master_key", cfg.PrivacyMasterKey); err != nil {
 		return fmt.Errorf("required privacy master key is not configured in centralized config")
 	}
-	
+
 	return nil
 }
 
@@ -288,7 +187,7 @@ func (cl *ConfigLoader) SetupFromEnvironmentOrGenerate() (*Hasher, error) {
 	if err == nil {
 		return hasher, nil
 	}
-	
+
 	// If master key is missing, generate a new one and provide instructions
 	cfg := config.Get()
 	if err := common.ValidateRequiredParam("privacy_master_key", cfg.PrivacyMasterKey); err != nil {
@@ -296,7 +195,7 @@ func (cl *ConfigLoader) SetupFromEnvironmentOrGenerate() (*Hasher, error) {
 		if genErr != nil {
 			return nil, fmt.Errorf("failed to generate master key: %w", genErr)
 		}
-		
+
 		return nil, fmt.Errorf(`master key not found in configuration. Generated a new one:
 
 Set this environment variable:
@@ -306,7 +205,7 @@ Then restart your application.
 
 %s`, masterKey, cl.GetEnvironmentDocumentation())
 	}
-	
+
 	return nil, err
 }
 
@@ -320,7 +219,7 @@ func (pc *PresetConfigurations) GetDevelopmentConfig() (*HashingConfig, error) {
 	for i := range devKey {
 		devKey[i] = byte(i % 256)
 	}
-	
+
 	config := DefaultConfig()
 	config.MasterKey = devKey
 	config.IPLevel = LevelPartial
@@ -328,12 +227,12 @@ func (pc *PresetConfigurations) GetDevelopmentConfig() (*HashingConfig, error) {
 	config.UsernameLevel = LevelPartial // Less privacy for development
 	config.PIILevel = LevelPartial
 	config.GenericLevel = LevelPartial
-	
+
 	// Faster Argon2 for development
-	config.Argon2Memory = 4 * 1024  // 4 MB
-	config.Argon2Time = 1           // 1 iteration
-	config.Argon2Threads = 1        // 1 thread
-	
+	config.Argon2Memory = 4 * 1024 // 4 MB
+	config.Argon2Time = 1          // 1 iteration
+	config.Argon2Threads = 1       // 1 thread
+
 	return config, nil
 }
 
@@ -342,21 +241,21 @@ func (pc *PresetConfigurations) GetProductionConfig(masterKey []byte) (*HashingC
 	if len(masterKey) < 32 {
 		return nil, fmt.Errorf("production configuration requires a master key of at least 32 bytes")
 	}
-	
+
 	config := DefaultConfig()
 	config.MasterKey = masterKey
-	config.IPLevel = LevelPartial      // Preserve network info for security analysis
-	config.EmailLevel = LevelPartial   // Preserve domain for analytics
-	config.UsernameLevel = LevelFull   // Full privacy for usernames
-	config.PIILevel = LevelFull        // Full privacy for PII
-	config.GenericLevel = LevelFull    // Full privacy by default
-	
+	config.IPLevel = LevelPartial    // Preserve network info for security analysis
+	config.EmailLevel = LevelPartial // Preserve domain for analytics
+	config.UsernameLevel = LevelFull // Full privacy for usernames
+	config.PIILevel = LevelFull      // Full privacy for PII
+	config.GenericLevel = LevelFull  // Full privacy by default
+
 	// Strong Argon2 parameters for production
 	config.Argon2Memory = 128 * 1024 // 128 MB
 	config.Argon2Time = 4            // 4 iterations
 	config.Argon2Threads = 8         // 8 threads
 	config.Argon2KeyLen = 64         // 64 bytes output
-	
+
 	return config, nil
 }
 
@@ -365,22 +264,22 @@ func (pc *PresetConfigurations) GetComplianceConfig(masterKey []byte) (*HashingC
 	if len(masterKey) < 32 {
 		return nil, fmt.Errorf("compliance configuration requires a master key of at least 32 bytes")
 	}
-	
+
 	config := DefaultConfig()
 	config.MasterKey = masterKey
-	
+
 	// Maximum privacy for compliance
 	config.IPLevel = LevelFull
 	config.EmailLevel = LevelFull
 	config.UsernameLevel = LevelFull
 	config.PIILevel = LevelFull
 	config.GenericLevel = LevelFull
-	
+
 	// Very strong Argon2 parameters for compliance
 	config.Argon2Memory = 256 * 1024 // 256 MB
 	config.Argon2Time = 5            // 5 iterations
 	config.Argon2Threads = 8         // 8 threads
 	config.Argon2KeyLen = 64         // 64 bytes output
-	
+
 	return config, nil
 }

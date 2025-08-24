@@ -315,7 +315,7 @@ func (ir *InstanceRegistry) BatchUpdateInstancesHealth(ctx context.Context, heal
 	return nil
 }
 
-// BatchUpdateInstancesUsage updates usage counters for multiple instances efficiently  
+// BatchUpdateInstancesUsage updates usage counters for multiple instances efficiently
 func (ir *InstanceRegistry) BatchUpdateInstancesUsage(ctx context.Context, usageUpdates map[string]int64) error {
 	err := ir.repo.BatchUpdateInstancesUsage(ctx, usageUpdates)
 	if err != nil {

@@ -161,9 +161,6 @@ type createFilterParams struct {
 	KeywordsAttributes []map[string]any `json:"keywords_attributes"`
 }
 
-
-
-
 // buildFilterFromParams builds a Filter object from request parameters
 func (h *Handler) buildFilterFromParams(username string, params *createFilterParams) *storage.Filter {
 	filter := &storage.Filter{

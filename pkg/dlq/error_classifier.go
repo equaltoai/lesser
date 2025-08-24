@@ -3,8 +3,8 @@ package dlq
 
 import (
 	"encoding/json"
-	"strings"
 	"github.com/equaltoai/lesser/pkg/common"
+	"strings"
 )
 
 // Processor name constants

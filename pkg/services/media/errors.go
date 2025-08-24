@@ -10,7 +10,7 @@ var (
 	// ErrMediaCreateFailed is returned when media creation fails
 	ErrMediaCreateFailed = errors.New("failed to create media")
 
-	// ErrMediaUpdateFailed is returned when media update fails  
+	// ErrMediaUpdateFailed is returned when media update fails
 	ErrMediaUpdateFailed = errors.New("failed to update media")
 
 	// ErrMediaDeleteFailed is returned when media deletion fails

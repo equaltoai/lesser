@@ -86,20 +86,20 @@ type CostAlert struct {
 func init() {
 	// Standardized Lambda initialization for cost-aggregator function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "cost-aggregator", // cost-aggregator
+		ServiceName: "cost-aggregator",          // cost-aggregator
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Function-specific initialization only
 	// Get table name from environment or config
 	tableName := cfg.DynamoTableName
@@ -112,8 +112,8 @@ func init() {
 
 	// Initialize cost tracking repository
 	costTrackingRepository := repositories.NewTrackingRepository(
-		db, 
-		tableName, 
+		db,
+		tableName,
 		logger,
 	)
 
@@ -129,7 +129,7 @@ func init() {
 }
 
 func main() {
-	// Use Lift DynamoDB stream pattern for primary stream processing  
+	// Use Lift DynamoDB stream pattern for primary stream processing
 	patterns.StartDynamoDBStreamLambda("cost-aggregator", processor, logger)
 }
 

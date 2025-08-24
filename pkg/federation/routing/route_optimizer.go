@@ -254,7 +254,7 @@ func (sro *SmartRouteOptimizer) RecordDeliveryResult(ctx context.Context, result
 	// Use repository to store the result
 	err := sro.repoInterface.RecordDeliveryResult(ctx, result)
 	if err != nil {
-		sro.logger.Error("failed to record delivery result", 
+		sro.logger.Error("failed to record delivery result",
 			zap.Error(err),
 			zap.String("route_id", result.RouteID),
 			zap.Bool("success", result.Success))

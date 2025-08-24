@@ -10,10 +10,10 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
 // AuthRepository handles authentication-related storage operations
@@ -580,7 +580,7 @@ func (r *AuthRepository) StoreWalletChallenge(ctx context.Context, challenge *st
 func (r *AuthRepository) GetWalletChallenge(ctx context.Context, challengeID string) (*storage.WalletChallenge, error) {
 	// Construct the key
 	pk := "WALLET_CHALLENGE#" + challengeID
-	sk := "CHALLENGE"
+	sk := SKChallenge
 
 	// Use helper method for WalletChallenge retrieval
 	model, err := r.getWalletChallenge(ctx, pk, sk)
@@ -621,7 +621,7 @@ func (r *AuthRepository) GetWalletChallenge(ctx context.Context, challengeID str
 func (r *AuthRepository) DeleteWalletChallenge(ctx context.Context, challengeID string) error {
 	// Construct the key
 	pk := "WALLET_CHALLENGE#" + challengeID
-	sk := "CHALLENGE"
+	sk := SKChallenge
 
 	// Use helper method for WalletChallenge deletion
 	err := r.deleteWalletChallenge(ctx, pk, sk)
@@ -735,11 +735,16 @@ func (r *AuthRepository) isRecoverableIndexError(err error) bool {
 // === TYPED HELPER METHODS FOR NON-PRIMARY MODELS ===
 // These methods provide type-safe operations for models other than WebAuthnCredential
 
-// createWebAuthnChallenge creates a WebAuthnChallenge using proper typing
-func (r *AuthRepository) createWebAuthnChallenge(ctx context.Context, model *models.WebAuthnChallenge) error {
+// ChallengeModel interface for any model that has UpdateKeys and can be used in challenge operations
+type ChallengeModel interface {
+	UpdateKeys() error
+}
+
+// createChallenge creates any challenge model using proper typing and cost tracking
+func (r *AuthRepository) createChallenge(ctx context.Context, model ChallengeModel, operationSuffix, logName, identifier string) error {
 	// Update keys before saving
 	if err := model.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityWebAuthnChallenge, "keys")
+		return ErrorHandler.HandleUpdateError(err, "Challenge", "keys")
 	}
 
 	// Track cost if available
@@ -751,12 +756,12 @@ func (r *AuthRepository) createWebAuthnChallenge(ctx context.Context, model *mod
 			ConsumedWriteUnits: 1,
 			ItemCount:          1,
 			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_createChallenge_%d", time.Now().UnixNano()),
+			OperationID:        fmt.Sprintf("AuthRepository_%s_%d", operationSuffix, time.Now().UnixNano()),
 		}
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB create challenge operation cost",
-					zap.String("challenge", model.Challenge),
+				r.logger.Warn(fmt.Sprintf("failed to track DynamoDB %s operation cost", logName),
+					zap.String("identifier", identifier),
 					zap.Error(trackErr))
 			}
 		}()
@@ -765,17 +770,22 @@ func (r *AuthRepository) createWebAuthnChallenge(ctx context.Context, model *mod
 	// Create the item
 	err := r.db.WithContext(ctx).Model(model).Create()
 	if err != nil {
-		r.logger.Error("failed to create WebAuthn challenge",
+		r.logger.Error(fmt.Sprintf("failed to create %s", logName),
 			zap.Error(err),
-			zap.String("challenge", model.Challenge))
+			zap.String("identifier", identifier))
 		return err
 	}
 
 	return nil
 }
 
-// getWebAuthnChallenge retrieves a WebAuthnChallenge by keys
-func (r *AuthRepository) getWebAuthnChallenge(ctx context.Context, pk, sk string) (*models.WebAuthnChallenge, error) {
+// createWebAuthnChallenge creates a WebAuthnChallenge using the generic helper
+func (r *AuthRepository) createWebAuthnChallenge(ctx context.Context, model *models.WebAuthnChallenge) error {
+	return r.createChallenge(ctx, model, "createChallenge", "WebAuthn challenge", model.Challenge)
+}
+
+// getChallengeModel retrieves any challenge model by keys with cost tracking
+func (r *AuthRepository) getChallengeModel(ctx context.Context, pk, sk, operationSuffix, logName string, modelPtr interface{}) error {
 	// Track cost if available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{
@@ -785,32 +795,41 @@ func (r *AuthRepository) getWebAuthnChallenge(ctx context.Context, pk, sk string
 			ConsumedWriteUnits: 0,
 			ItemCount:          1,
 			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_getChallenge_%d", time.Now().UnixNano()),
+			OperationID:        fmt.Sprintf("AuthRepository_%s_%d", operationSuffix, time.Now().UnixNano()),
 		}
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB get challenge operation cost",
+				r.logger.Warn(fmt.Sprintf("failed to track DynamoDB %s operation cost", logName),
 					zap.String("pk", pk),
 					zap.Error(trackErr))
 			}
 		}()
 	}
 
-	var model models.WebAuthnChallenge
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
+	err := r.db.WithContext(ctx).Model(modelPtr).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
-		First(&model)
+		First(modelPtr)
 
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// getWebAuthnChallenge retrieves a WebAuthnChallenge using the generic helper
+func (r *AuthRepository) getWebAuthnChallenge(ctx context.Context, pk, sk string) (*models.WebAuthnChallenge, error) {
+	var model models.WebAuthnChallenge
+	err := r.getChallengeModel(ctx, pk, sk, "getChallenge", "get challenge", &model)
 	if err != nil {
 		return nil, err
 	}
-
 	return &model, nil
 }
 
-// deleteWebAuthnChallenge deletes a WebAuthnChallenge by keys
-func (r *AuthRepository) deleteWebAuthnChallenge(ctx context.Context, pk, sk string) error {
+// deleteChallengeModel deletes any challenge model by keys with cost tracking
+func (r *AuthRepository) deleteChallengeModel(ctx context.Context, pk, sk, operationSuffix, logName string, modelPtr interface{}) error {
 	// Track cost if available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{
@@ -820,24 +839,24 @@ func (r *AuthRepository) deleteWebAuthnChallenge(ctx context.Context, pk, sk str
 			ConsumedWriteUnits: 1,
 			ItemCount:          1,
 			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_deleteChallenge_%d", time.Now().UnixNano()),
+			OperationID:        fmt.Sprintf("AuthRepository_%s_%d", operationSuffix, time.Now().UnixNano()),
 		}
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB delete challenge operation cost",
+				r.logger.Warn(fmt.Sprintf("failed to track DynamoDB %s operation cost", logName),
 					zap.String("pk", pk),
 					zap.Error(trackErr))
 			}
 		}()
 	}
 
-	err := r.db.WithContext(ctx).Model(&models.WebAuthnChallenge{}).
+	err := r.db.WithContext(ctx).Model(modelPtr).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		Delete()
 
 	if err != nil {
-		r.logger.Error("failed to delete WebAuthn challenge",
+		r.logger.Error(fmt.Sprintf("failed to delete %s", logName),
 			zap.Error(err),
 			zap.String("pk", pk),
 			zap.String("sk", sk))
@@ -845,6 +864,11 @@ func (r *AuthRepository) deleteWebAuthnChallenge(ctx context.Context, pk, sk str
 	}
 
 	return nil
+}
+
+// deleteWebAuthnChallenge deletes a WebAuthnChallenge using the generic helper
+func (r *AuthRepository) deleteWebAuthnChallenge(ctx context.Context, pk, sk string) error {
+	return r.deleteChallengeModel(ctx, pk, sk, "deleteChallenge", "delete challenge", &models.WebAuthnChallenge{})
 }
 
 // createWalletCredential creates a WalletCredential using proper typing
@@ -887,43 +911,9 @@ func (r *AuthRepository) createWalletCredential(ctx context.Context, model *mode
 	return nil
 }
 
-// createWalletChallenge creates a WalletChallenge using proper typing
+// createWalletChallenge creates a WalletChallenge using the generic helper
 func (r *AuthRepository) createWalletChallenge(ctx context.Context, model *models.WalletChallenge) error {
-	// Update keys before saving
-	if err := model.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityWalletChallenge, "keys")
-	}
-
-	// Track cost if available
-	if r.costService != nil {
-		operation := cost.DynamoOperation{
-			Type:               "PutItem",
-			TableName:          r.tableName,
-			ConsumedReadUnits:  0,
-			ConsumedWriteUnits: 1,
-			ItemCount:          1,
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_createWalletChallenge_%d", time.Now().UnixNano()),
-		}
-		defer func() {
-			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB create wallet challenge operation cost",
-					zap.String("challenge_id", model.ID),
-					zap.Error(trackErr))
-			}
-		}()
-	}
-
-	// Create the item
-	err := r.db.WithContext(ctx).Model(model).Create()
-	if err != nil {
-		r.logger.Error("failed to create wallet challenge",
-			zap.Error(err),
-			zap.String("challenge_id", model.ID))
-		return err
-	}
-
-	return nil
+	return r.createChallenge(ctx, model, "createWalletChallenge", "wallet challenge", model.ID)
 }
 
 // queryWalletCredentials queries wallet credentials with SK prefix
@@ -965,75 +955,17 @@ func (r *AuthRepository) queryWalletCredentials(ctx context.Context, pk, skPrefi
 	return modelList, nil
 }
 
-// getWalletChallenge retrieves a WalletChallenge by keys
+// getWalletChallenge retrieves a WalletChallenge using the generic helper
 func (r *AuthRepository) getWalletChallenge(ctx context.Context, pk, sk string) (*models.WalletChallenge, error) {
-	// Track cost if available
-	if r.costService != nil {
-		operation := cost.DynamoOperation{
-			Type:               "GetItem",
-			TableName:          r.tableName,
-			ConsumedReadUnits:  1,
-			ConsumedWriteUnits: 0,
-			ItemCount:          1,
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_getWalletChallenge_%d", time.Now().UnixNano()),
-		}
-		defer func() {
-			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB get wallet challenge operation cost",
-					zap.String("pk", pk),
-					zap.Error(trackErr))
-			}
-		}()
-	}
-
 	var model models.WalletChallenge
-	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		First(&model)
-
+	err := r.getChallengeModel(ctx, pk, sk, "getWalletChallenge", "get wallet challenge", &model)
 	if err != nil {
 		return nil, err
 	}
-
 	return &model, nil
 }
 
-// deleteWalletChallenge deletes a WalletChallenge by keys
+// deleteWalletChallenge deletes a WalletChallenge using the generic helper
 func (r *AuthRepository) deleteWalletChallenge(ctx context.Context, pk, sk string) error {
-	// Track cost if available
-	if r.costService != nil {
-		operation := cost.DynamoOperation{
-			Type:               "DeleteItem",
-			TableName:          r.tableName,
-			ConsumedReadUnits:  0,
-			ConsumedWriteUnits: 1,
-			ItemCount:          1,
-			Timestamp:          time.Now(),
-			OperationID:        fmt.Sprintf("AuthRepository_deleteWalletChallenge_%d", time.Now().UnixNano()),
-		}
-		defer func() {
-			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
-				r.logger.Warn("failed to track DynamoDB delete wallet challenge operation cost",
-					zap.String("pk", pk),
-					zap.Error(trackErr))
-			}
-		}()
-	}
-
-	err := r.db.WithContext(ctx).Model(&models.WalletChallenge{}).
-		Where("PK", "=", pk).
-		Where("SK", "=", sk).
-		Delete()
-
-	if err != nil {
-		r.logger.Error("failed to delete wallet challenge",
-			zap.Error(err),
-			zap.String("pk", pk),
-			zap.String("sk", sk))
-		return err
-	}
-
-	return nil
+	return r.deleteChallengeModel(ctx, pk, sk, "deleteWalletChallenge", "delete wallet challenge", &models.WalletChallenge{})
 }

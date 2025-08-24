@@ -16,7 +16,7 @@ type EnhancedURLMatcher struct {
 	compiled map[string]*compiledURLPattern
 }
 
-// EnhancedIPMatcher provides advanced IP pattern matching capabilities  
+// EnhancedIPMatcher provides advanced IP pattern matching capabilities
 type EnhancedIPMatcher struct {
 	compiled map[string]*compiledIPPattern
 }
@@ -49,15 +49,15 @@ type compiledURLPattern struct {
 
 // compiledIPPattern represents a compiled IP pattern for efficient matching
 type compiledIPPattern struct {
-	original     string
-	network      *net.IPNet
-	singleIP     net.IP
-	ipv4         bool
-	ipv6         bool
-	cidr         bool
-	rangeStart   net.IP
-	rangeEnd     net.IP
-	isRange      bool
+	original   string
+	network    *net.IPNet
+	singleIP   net.IP
+	ipv4       bool
+	ipv6       bool
+	cidr       bool
+	rangeStart net.IP
+	rangeEnd   net.IP
+	isRange    bool
 }
 
 // URLPatternType represents the type of URL pattern
@@ -65,30 +65,30 @@ type URLPatternType string
 
 const (
 	// URLPatternExact represents exact URL matching
-	URLPatternExact     URLPatternType = "exact"     // Exact match
+	URLPatternExact URLPatternType = "exact" // Exact match
 	// URLPatternDomain represents domain and all subdomain matching
-	URLPatternDomain    URLPatternType = "domain"    // Domain and all subdomains
+	URLPatternDomain URLPatternType = "domain" // Domain and all subdomains
 	// URLPatternSubdomain represents specific subdomain pattern matching
 	URLPatternSubdomain URLPatternType = "subdomain" // Specific subdomain pattern
 	// URLPatternPath represents path-based URL matching
-	URLPatternPath      URLPatternType = "path"      // Path-based matching
+	URLPatternPath URLPatternType = "path" // Path-based matching
 	// URLPatternQuery represents query parameter URL matching
-	URLPatternQuery     URLPatternType = "query"     // Query parameter matching
+	URLPatternQuery URLPatternType = "query" // Query parameter matching
 	// URLPatternRegex represents regular expression URL matching
-	URLPatternRegex     URLPatternType = "regex"     // Regular expression
-	
+	URLPatternRegex URLPatternType = "regex" // Regular expression
+
 	// URLPatternExactStr represents the string for exact URL pattern validation
-	URLPatternExactStr     = "url_exact"
+	URLPatternExactStr = "url_exact"
 	// URLPatternDomainStr represents the string for domain URL pattern validation
-	URLPatternDomainStr    = "url_domain"
+	URLPatternDomainStr = "url_domain"
 	// URLPatternSubdomainStr represents the string for subdomain URL pattern validation
 	URLPatternSubdomainStr = "url_subdomain"
 	// URLPatternPathStr represents the string for path URL pattern validation
-	URLPatternPathStr      = "url_path"
+	URLPatternPathStr = "url_path"
 	// URLPatternQueryStr represents the string for query URL pattern validation
-	URLPatternQueryStr     = "url_query"
+	URLPatternQueryStr = "url_query"
 	// URLPatternRegexStr represents the string for regex URL pattern validation
-	URLPatternRegexStr     = "url_regex"
+	URLPatternRegexStr = "url_regex"
 )
 
 // IPPatternType represents the type of IP pattern
@@ -98,20 +98,20 @@ const (
 	// IPPatternSingle represents single IP address matching
 	IPPatternSingle IPPatternType = "single" // Single IP address
 	// IPPatternCIDR represents CIDR block matching
-	IPPatternCIDR   IPPatternType = "cidr"   // CIDR block
+	IPPatternCIDR IPPatternType = "cidr" // CIDR block
 	// IPPatternRange represents IP range matching
-	IPPatternRange  IPPatternType = "range"  // IP range
+	IPPatternRange IPPatternType = "range" // IP range
 	// IPPatternRegex represents regular expression IP matching
-	IPPatternRegex  IPPatternType = "regex"  // Regular expression
-	
+	IPPatternRegex IPPatternType = "regex" // Regular expression
+
 	// IPPatternSingleStr represents the string for single IP pattern validation
 	IPPatternSingleStr = "ip_single"
 	// IPPatternCIDRStr represents the string for CIDR IP pattern validation
-	IPPatternCIDRStr   = "ip_cidr"
+	IPPatternCIDRStr = "ip_cidr"
 	// IPPatternRangeStr represents the string for IP range pattern validation
-	IPPatternRangeStr  = "ip_range"
+	IPPatternRangeStr = "ip_range"
 	// IPPatternRegexStr represents the string for IP regex pattern validation
-	IPPatternRegexStr  = "ip_regex"
+	IPPatternRegexStr = "ip_regex"
 )
 
 // CompileURLPattern compiles a URL pattern for efficient matching
@@ -249,7 +249,7 @@ func (m *EnhancedURLMatcher) normalizeURL(urlStr string) (string, error) {
 	if err := common.ValidateRequiredParam("parsedURL.Path", parsedURL.Path); err != nil {
 		parsedURL.Path = "/"
 	}
-	
+
 	// Clean up path by removing double slashes and resolving relative paths
 	path := parsedURL.Path
 	if strings.Contains(path, "//") {
@@ -304,7 +304,7 @@ func (m *EnhancedURLMatcher) compileExactURLPattern(pattern string, compiled *co
 func (m *EnhancedURLMatcher) compileDomainPattern(pattern string, compiled *compiledURLPattern) error {
 	// Clean domain pattern
 	domain := strings.TrimSpace(strings.ToLower(pattern))
-	
+
 	// Remove protocol if present
 	if strings.Contains(domain, "://") {
 		parsedURL, err := url.Parse(domain)
@@ -327,7 +327,7 @@ func (m *EnhancedURLMatcher) compileDomainPattern(pattern string, compiled *comp
 	// Create regex pattern for domain and subdomains
 	escapedDomain := regexp.QuoteMeta(domain)
 	regexPattern := fmt.Sprintf(`(^|\.)%s$`, escapedDomain)
-	
+
 	regex, err := regexp.Compile(regexPattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFailedToCompileDomainRegex, err)
@@ -342,7 +342,7 @@ func (m *EnhancedURLMatcher) compileDomainPattern(pattern string, compiled *comp
 func (m *EnhancedURLMatcher) compileSubdomainPattern(pattern string, compiled *compiledURLPattern) error {
 	// Handle wildcard subdomains like *.example.com
 	domain := strings.TrimSpace(strings.ToLower(pattern))
-	
+
 	if strings.HasPrefix(domain, "*.") {
 		domain = domain[2:] // Remove *.
 		compiled.wildcard = true
@@ -350,7 +350,7 @@ func (m *EnhancedURLMatcher) compileSubdomainPattern(pattern string, compiled *c
 
 	// Escape special regex characters except for our wildcards
 	escapedDomain := regexp.QuoteMeta(domain)
-	
+
 	var regexPattern string
 	if compiled.wildcard {
 		// Match any subdomain
@@ -374,7 +374,7 @@ func (m *EnhancedURLMatcher) compileSubdomainPattern(pattern string, compiled *c
 func (m *EnhancedURLMatcher) compilePathPattern(pattern string, compiled *compiledURLPattern) error {
 	// Handle path patterns like /api/*, /admin/**, etc.
 	pathPattern := strings.TrimSpace(pattern)
-	
+
 	// Convert path wildcards to regex
 	// * matches any single path segment
 	// ** matches any number of path segments
@@ -397,7 +397,7 @@ func (m *EnhancedURLMatcher) compilePathPattern(pattern string, compiled *compil
 func (m *EnhancedURLMatcher) compileQueryPattern(pattern string, compiled *compiledURLPattern) error {
 	// Handle query patterns like ?param=value, ?param=*, etc.
 	queryPattern := strings.TrimSpace(pattern)
-	
+
 	// Remove leading ? if present
 	queryPattern = strings.TrimPrefix(queryPattern, "?")
 
@@ -457,7 +457,7 @@ func (m *EnhancedURLMatcher) matchCompiledURL(parsedURL *url.URL, compiled *comp
 				host = h
 			}
 		}
-		
+
 		// For regex patterns that should match full URL (no specific path/query patterns)
 		if compiled.pathPattern == nil && compiled.queryPattern == nil && (compiled.original != host) {
 			// Check if this might be a full URL regex
@@ -465,7 +465,7 @@ func (m *EnhancedURLMatcher) matchCompiledURL(parsedURL *url.URL, compiled *comp
 				return compiled.domainPattern.MatchString(parsedURL.String()), nil
 			}
 		}
-		
+
 		if !compiled.domainPattern.MatchString(host) {
 			return false, nil
 		}
@@ -564,12 +564,12 @@ func (m *EnhancedIPMatcher) compileRegexIPPattern(pattern string, compiled *comp
 
 	// Check for potentially dangerous regex patterns
 	dangerousPatterns := []string{
-		`(.*){`,     // Nested quantifiers
-		`.*.*.*.*`,  // Multiple greedy quantifiers
-		`(.*)+`,     // Nested quantifiers with +
-		`([^x])*`,   // Negated character class with quantifier
+		`(.*){`,    // Nested quantifiers
+		`.*.*.*.*`, // Multiple greedy quantifiers
+		`(.*)+`,    // Nested quantifiers with +
+		`([^x])*`,  // Negated character class with quantifier
 	}
-	
+
 	for _, dangerous := range dangerousPatterns {
 		if strings.Contains(pattern, dangerous) {
 			return ErrUnsafeRegexPattern
@@ -618,7 +618,7 @@ func compareIPs(a, b net.IP) int {
 	// Ensure both are same format
 	a16 := a.To16()
 	b16 := b.To16()
-	
+
 	for i := 0; i < len(a16); i++ {
 		if a16[i] < b16[i] {
 			return -1
@@ -701,7 +701,7 @@ func ValidateIPPattern(pattern string, patternType IPPatternType) error {
 // validateDomainPattern validates a domain pattern
 func validateDomainPattern(pattern string) error {
 	domain := pattern
-	
+
 	// Remove protocol if present
 	if strings.Contains(domain, "://") {
 		parsedURL, err := url.Parse(domain)
@@ -784,14 +784,14 @@ func validateRegexPattern(pattern string) error {
 
 	// Check for potentially dangerous regex patterns that could cause ReDoS
 	dangerousPatterns := []string{
-		`(.*){`,     // Nested quantifiers
-		`.*.*.*.*`,  // Multiple greedy quantifiers
-		`(.*)+`,     // Nested quantifiers with +
-		`([^x])*`,   // Negated character class with quantifier
-		`(a+)+`,     // Catastrophic backtracking
-		`(a*)*`,     // Catastrophic backtracking
+		`(.*){`,    // Nested quantifiers
+		`.*.*.*.*`, // Multiple greedy quantifiers
+		`(.*)+`,    // Nested quantifiers with +
+		`([^x])*`,  // Negated character class with quantifier
+		`(a+)+`,    // Catastrophic backtracking
+		`(a*)*`,    // Catastrophic backtracking
 	}
-	
+
 	for _, dangerous := range dangerousPatterns {
 		if strings.Contains(pattern, dangerous) {
 			return ErrUnsafeRegexPattern

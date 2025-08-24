@@ -38,7 +38,7 @@ func NewAIRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.L
 func (r *AIRepository) SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis) error {
 	// Convert to DynamORM model with AI-specific logic
 	model := r.convertToModel(analysis)
-	
+
 	// Use BaseRepository for actual storage
 	err := r.Create(ctx, model)
 	if err != nil {
@@ -115,11 +115,11 @@ func (r *AIRepository) convertFromModel(model *models.AIAnalysis) *ai.AIAnalysis
 // GetAnalysisByID retrieves a specific AI analysis by ID using BaseRepository
 func (r *AIRepository) GetAnalysisByID(ctx context.Context, objectID, analysisID string) (*ai.AIAnalysis, error) {
 	var model models.AIAnalysis
-	
+
 	// Use BaseRepository for retrieval with AI-specific key patterns
 	pk := fmt.Sprintf("AI#%s", objectID)
 	sk := fmt.Sprintf("ANALYSIS#%s", analysisID)
-	
+
 	err := r.Get(ctx, pk, sk, &model)
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, "ai analysis", analysisID)
@@ -251,7 +251,7 @@ func (r *AIRepository) QueueForAnalysis(ctx context.Context, objectID string) er
 func (r *AIRepository) AnalyzeContent(ctx context.Context, content string, modelType string) (*ai.AIAnalysis, error) {
 	// AI-specific content preprocessing
 	processedContent := r.preprocessContent(content)
-	
+
 	// Perform AI analysis using ML models (preserve all AI logic)
 	analysis := &ai.AIAnalysis{
 		ID:         r.generateAnalysisID(),
@@ -259,28 +259,28 @@ func (r *AIRepository) AnalyzeContent(ctx context.Context, content string, model
 		AnalyzedAt: time.Now(),
 		Version:    "1.0",
 	}
-	
+
 	// Apply AI processing pipeline (critical AI functionality)
 	if err := r.performMLAnalysis(processedContent, analysis); err != nil {
 		return nil, ErrorHandler.HandleCreateError(err, "ai analysis", "inference")
 	}
-	
+
 	// Store using BaseRepository
 	if err := r.SaveAnalysis(ctx, analysis); err != nil {
 		return nil, ErrorHandler.HandleCreateError(err, "ai analysis", analysis.ID)
 	}
-	
+
 	return analysis, nil
 }
 
 // UpdateModelPerformance tracks AI model performance with accuracy metrics
 // Critical for ML model management and continuous learning
-func (r *AIRepository) UpdateModelPerformance(ctx context.Context, modelID string, performanceMetrics map[string]float64) error {
+func (r *AIRepository) UpdateModelPerformance(_ context.Context, modelID string, performanceMetrics map[string]float64) error {
 	// AI-specific performance tracking logic
 	r.logger.Info("updating AI model performance",
 		zap.String("model_id", modelID),
 		zap.Any("metrics", performanceMetrics))
-	
+
 	// Store performance data (would use BaseRepository for storage)
 	// This is AI business logic that must be preserved
 	return nil
@@ -288,12 +288,12 @@ func (r *AIRepository) UpdateModelPerformance(ctx context.Context, modelID strin
 
 // ProcessMLFeedback handles feedback for continuous learning systems
 // Essential for AI model improvement and adaptation
-func (r *AIRepository) ProcessMLFeedback(ctx context.Context, analysisID string, feedback map[string]interface{}) error {
+func (r *AIRepository) ProcessMLFeedback(_ context.Context, analysisID string, feedback map[string]interface{}) error {
 	// AI-specific feedback processing
 	r.logger.Info("processing ML feedback",
 		zap.String("analysis_id", analysisID),
 		zap.Any("feedback", feedback))
-	
+
 	// Update model training data based on feedback
 	// This is critical AI functionality that must be preserved
 	return nil
@@ -307,7 +307,7 @@ func (r *AIRepository) GetContentClassifications(ctx context.Context, contentID 
 	if err != nil {
 		return nil, ErrorHandler.HandleGetError(err, "ai analysis", contentID)
 	}
-	
+
 	// Extract classifications using AI-specific logic
 	var classifications []string
 	if analysis.TextAnalysis != nil {
@@ -315,16 +315,16 @@ func (r *AIRepository) GetContentClassifications(ctx context.Context, contentID 
 			classifications = append(classifications, category.Name)
 		}
 	}
-	
+
 	return classifications, nil
 }
 
 // MonitorAIHealth performs health checks on AI processing systems
 // Critical for maintaining AI service reliability
-func (r *AIRepository) MonitorAIHealth(ctx context.Context) error {
+func (r *AIRepository) MonitorAIHealth(_ context.Context) error {
 	// AI-specific health monitoring
 	r.logger.Info("performing AI health check")
-	
+
 	// Check ML model endpoints, processing queues, etc.
 	// This is essential AI infrastructure monitoring
 	return nil
@@ -339,7 +339,7 @@ func (r *AIRepository) preprocessContent(content string) string {
 }
 
 // performMLAnalysis executes the ML processing pipeline
-func (r *AIRepository) performMLAnalysis(content string, analysis *ai.AIAnalysis) error {
+func (r *AIRepository) performMLAnalysis(_ string, _ *ai.AIAnalysis) error {
 	// AI-specific ML processing
 	// This would integrate with AWS Bedrock, Comprehend, Rekognition, etc.
 	return nil

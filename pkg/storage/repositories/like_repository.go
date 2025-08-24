@@ -80,7 +80,7 @@ func (r *LikeRepository) DeleteLike(ctx context.Context, actor, object string) e
 func (r *LikeRepository) GetLike(ctx context.Context, actor, object string) (*models.Like, error) {
 	pk := fmt.Sprintf("object#%s#likes", object)
 	sk := fmt.Sprintf("actor#%s", actor)
-	
+
 	like := &models.Like{}
 	if err := r.Get(ctx, pk, sk, like); err != nil {
 		if err.Error() == fmt.Sprintf("item not found: pk=%s, sk=%s", pk, sk) {
@@ -95,13 +95,13 @@ func (r *LikeRepository) GetLike(ctx context.Context, actor, object string) (*mo
 // GetObjectLikes retrieves all likes for an object
 func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, limit int, cursor string) ([]*models.Like, string, error) {
 	pk := fmt.Sprintf("object#%s#likes", objectID)
-	
+
 	opts := BasePaginationOptions{
 		Limit:  limit,
 		Cursor: cursor,
 		Order:  "ASC",
 	}
-	
+
 	result, err := r.FindWithPagination(ctx, pk, opts)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, "status like", fmt.Sprintf("object %s", objectID))
@@ -109,9 +109,7 @@ func (r *LikeRepository) GetObjectLikes(ctx context.Context, objectID string, li
 
 	// Convert to pointer slice
 	likePtrs := make([]*models.Like, len(result.Items))
-	for i := range result.Items {
-		likePtrs[i] = result.Items[i]
-	}
+	copy(likePtrs, result.Items)
 
 	return likePtrs, result.NextCursor, nil
 }
@@ -130,11 +128,11 @@ func (r *LikeRepository) GetActorLikes(ctx context.Context, actorID string, limi
 			OrderBy:   "ASC",
 		},
 	}
-	
+
 	converter := func(likes []*models.Like) ([]*models.Like, error) {
 		return likes, nil
 	}
-	
+
 	return QueryCollectionWithConversion(ctx, r.BaseRepository, config, actorID, limit, cursor, converter)
 }
 

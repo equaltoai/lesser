@@ -291,7 +291,7 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 	}
 
 	// Get counts by status
-	statuses := []string{"firing", "resolved", "acknowledged", "suppressed"}
+	statuses := []string{"firing", DLQStatusResolved, "acknowledged", "suppressed"}
 	for _, status := range statuses {
 		count, err := r.countAlertsByStatus(ctx, status, since)
 		if err != nil {
@@ -304,7 +304,7 @@ func (r *AlertRepository) GetAlertStats(ctx context.Context, since time.Time) (*
 		switch status {
 		case "firing":
 			stats.FiringCount = count
-		case "resolved":
+		case DLQStatusResolved:
 			stats.ResolvedCount = count
 		case "acknowledged":
 			stats.AcknowledgedCount = count

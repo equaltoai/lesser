@@ -118,7 +118,7 @@ func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
 	if err := common.ValidateRequiredParam("limit_str", limitStr); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		limitStr = ctx.Request.Request.QueryParams["limit"]
 	}
-	
+
 	// Use centralized search limit parsing
 	limit, err := common.ParseSearchLimit(limitStr)
 	if err != nil {
@@ -127,7 +127,6 @@ func (h *Handler) parseSearchLimit(ctx *lift.Context) int {
 	}
 	return limit
 }
-
 
 // parseSearchFollowing parses the following filter parameter
 func (h *Handler) parseSearchFollowing(ctx *lift.Context) bool {
@@ -159,7 +158,6 @@ func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly boo
 
 	return authenticatedUser, nil
 }
-
 
 // authenticateFromSearchHeader authenticates from Authorization header
 func (h *Handler) authenticateFromSearchHeader(ctx *lift.Context, _ bool) string {

@@ -136,7 +136,7 @@ func (h *Handler) HandleGetTagLift(ctx *lift.Context) error {
 type tagFollowAction int
 
 const (
-	tagFollow   tagFollowAction = iota
+	tagFollow tagFollowAction = iota
 	tagUnfollow
 )
 

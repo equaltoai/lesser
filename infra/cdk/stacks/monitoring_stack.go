@@ -26,36 +26,36 @@ type MonitoringStackProps struct {
 
 type MonitoringStack struct {
 	awscdk.Stack
-	AlertTopic  awssns.Topic
-	Dashboard   awscloudwatch.Dashboard
+	AlertTopic awssns.Topic
+	Dashboard  awscloudwatch.Dashboard
 }
 
 func NewMonitoringStack(scope constructs.Construct, id string, props *MonitoringStackProps) *MonitoringStack {
 	stack := awscdk.NewStack(scope, &id, &props.StackProps)
-	
+
 	monitoringStack := &MonitoringStack{
 		Stack: stack,
 	}
-	
+
 	// Create SNS topic for alerts
 	monitoringStack.AlertTopic = awssns.NewTopic(stack, jsii.String("AlertTopic"), &awssns.TopicProps{
 		TopicName:   jsii.String(fmt.Sprintf("%s-%s-alerts", props.AppName, props.Environment)),
 		DisplayName: jsii.String(fmt.Sprintf("%s %s Alerts", props.AppName, props.Environment)),
 	})
-	
+
 	// Add email subscription if provided
 	if props.AlertEmail != "" {
 		monitoringStack.AlertTopic.AddSubscription(
 			awssnssubscriptions.NewEmailSubscription(jsii.String(props.AlertEmail), nil),
 		)
 	}
-	
+
 	// Create CloudWatch dashboard
 	monitoringStack.Dashboard = awscloudwatch.NewDashboard(stack, jsii.String("Dashboard"), &awscloudwatch.DashboardProps{
 		DashboardName: jsii.String(fmt.Sprintf("%s-%s", props.AppName, props.Environment)),
 		Start:         jsii.String("-P1D"), // Last 24 hours
 	})
-	
+
 	// Add dashboard widgets (placeholder - will be populated by other stacks)
 	monitoringStack.Dashboard.AddWidgets(
 		awscloudwatch.NewTextWidget(&awscloudwatch.TextWidgetProps{
@@ -64,19 +64,19 @@ func NewMonitoringStack(scope constructs.Construct, id string, props *Monitoring
 			Height:   jsii.Number(2),
 		}),
 	)
-	
+
 	// Create outputs
 	awscdk.NewCfnOutput(stack, jsii.String("AlertTopicArn"), &awscdk.CfnOutputProps{
 		Value:       monitoringStack.AlertTopic.TopicArn(),
 		Description: jsii.String("SNS topic ARN for alerts"),
 		ExportName:  jsii.String(fmt.Sprintf("%s-%s-alert-topic-arn", props.AppName, props.Environment)),
 	})
-	
+
 	awscdk.NewCfnOutput(stack, jsii.String("DashboardURL"), &awscdk.CfnOutputProps{
 		Value:       jsii.String(fmt.Sprintf("https://console.aws.amazon.com/cloudwatch/home?region=%s#dashboards:name=%s-%s", *stack.Region(), props.AppName, props.Environment)),
 		Description: jsii.String("CloudWatch dashboard URL"),
 	})
-	
+
 	return monitoringStack
 }
 
@@ -87,40 +87,40 @@ func (s *MonitoringStack) AddLambdaMetrics(functionName string, functionArn stri
 		Namespace:     jsii.String("AWS/Lambda"),
 		MetricName:    jsii.String("Invocations"),
 		DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	errorsMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/Lambda"),
 		MetricName:    jsii.String("Errors"),
 		DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
-	
+
 	durationMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/Lambda"),
 		MetricName:    jsii.String("Duration"),
 		DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-		Statistic:    jsii.String("Average"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Average"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	throttlesMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/Lambda"),
 		MetricName:    jsii.String("Throttles"),
 		DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	concurrentExecutionsMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/Lambda"),
 		MetricName:    jsii.String("ConcurrentExecutions"),
 		DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-		Statistic:    jsii.String("Maximum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Maximum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	// For stream processors, add iterator age metric
@@ -130,11 +130,11 @@ func (s *MonitoringStack) AddLambdaMetrics(functionName string, functionArn stri
 			Namespace:     jsii.String("AWS/Lambda"),
 			MetricName:    jsii.String("IteratorAge"),
 			DimensionsMap: &map[string]*string{"FunctionName": jsii.String(functionName)},
-			Statistic:    jsii.String("Maximum"),
-			Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+			Statistic:     jsii.String("Maximum"),
+			Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 		})
 	}
-	
+
 	// Add widgets to dashboard
 	s.Dashboard.AddWidgets(
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
@@ -167,20 +167,20 @@ func (s *MonitoringStack) AddLambdaMetrics(functionName string, functionArn stri
 
 		// Create alarm for iterator age (critical for stream processing)
 		awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sIteratorAgeAlarm", functionName)), &awscloudwatch.AlarmProps{
-			AlarmName:         jsii.String(fmt.Sprintf("%s-iterator-age", functionName)),
-			Metric:            iteratorAgeMetric,
-			Threshold:         jsii.Number(60000), // 1 minute in milliseconds
-			EvaluationPeriods: jsii.Number(2),
+			AlarmName:          jsii.String(fmt.Sprintf("%s-iterator-age", functionName)),
+			Metric:             iteratorAgeMetric,
+			Threshold:          jsii.Number(60000), // 1 minute in milliseconds
+			EvaluationPeriods:  jsii.Number(2),
 			ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
-			TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+			TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 		}).AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 	}
-	
+
 	// Create production-ready alarms
 	// Error rate alarm (more than 5% error rate)
 	errorRateAlarm := awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sErrorRateAlarm", functionName)), &awscloudwatch.AlarmProps{
-		AlarmName:         jsii.String(fmt.Sprintf("%s-error-rate", functionName)),
-		Metric:            awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
+		AlarmName: jsii.String(fmt.Sprintf("%s-error-rate", functionName)),
+		Metric: awscloudwatch.NewMathExpression(&awscloudwatch.MathExpressionProps{
 			Expression: jsii.String("(errors / invocations) * 100"),
 			UsingMetrics: &map[string]awscloudwatch.IMetric{
 				"errors":      errorsMetric,
@@ -188,32 +188,32 @@ func (s *MonitoringStack) AddLambdaMetrics(functionName string, functionArn stri
 			},
 			Period: awscdk.Duration_Minutes(jsii.Number(5)),
 		}),
-		Threshold:         jsii.Number(5), // 5% error rate
-		EvaluationPeriods: jsii.Number(2),
+		Threshold:          jsii.Number(5), // 5% error rate
+		EvaluationPeriods:  jsii.Number(2),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
-		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	})
 	errorRateAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
 	// Duration alarm (average duration > 10 seconds)
 	durationAlarm := awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sDurationAlarm", functionName)), &awscloudwatch.AlarmProps{
-		AlarmName:         jsii.String(fmt.Sprintf("%s-duration", functionName)),
-		Metric:            durationMetric,
-		Threshold:         jsii.Number(10000), // 10 seconds in milliseconds
-		EvaluationPeriods: jsii.Number(3),
+		AlarmName:          jsii.String(fmt.Sprintf("%s-duration", functionName)),
+		Metric:             durationMetric,
+		Threshold:          jsii.Number(10000), // 10 seconds in milliseconds
+		EvaluationPeriods:  jsii.Number(3),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_THRESHOLD,
-		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	})
 	durationAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
 	// Throttle alarm
 	throttleAlarm := awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sThrottleAlarm", functionName)), &awscloudwatch.AlarmProps{
-		AlarmName:         jsii.String(fmt.Sprintf("%s-throttles", functionName)),
-		Metric:            throttlesMetric,
-		Threshold:         jsii.Number(1),
-		EvaluationPeriods: jsii.Number(1),
+		AlarmName:          jsii.String(fmt.Sprintf("%s-throttles", functionName)),
+		Metric:             throttlesMetric,
+		Threshold:          jsii.Number(1),
+		EvaluationPeriods:  jsii.Number(1),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	})
 	throttleAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 }
@@ -221,25 +221,25 @@ func (s *MonitoringStack) AddLambdaMetrics(functionName string, functionArn stri
 // Helper method to add API Gateway metrics
 func (s *MonitoringStack) AddAPIGatewayMetrics(apiName string, apiId string) {
 	count4xx := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
-		Namespace:     jsii.String("AWS/ApiGateway"),
-		MetricName:    jsii.String("4XXError"),
+		Namespace:  jsii.String("AWS/ApiGateway"),
+		MetricName: jsii.String("4XXError"),
 		DimensionsMap: &map[string]*string{
 			"ApiName": jsii.String(apiName),
 		},
 		Statistic: jsii.String("Sum"),
 		Period:    awscdk.Duration_Minutes(jsii.Number(5)),
 	})
-	
+
 	count5xx := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
-		Namespace:     jsii.String("AWS/ApiGateway"),
-		MetricName:    jsii.String("5XXError"),
+		Namespace:  jsii.String("AWS/ApiGateway"),
+		MetricName: jsii.String("5XXError"),
 		DimensionsMap: &map[string]*string{
 			"ApiName": jsii.String(apiName),
 		},
 		Statistic: jsii.String("Sum"),
 		Period:    awscdk.Duration_Minutes(jsii.Number(5)),
 	})
-	
+
 	// Add widgets to dashboard
 	s.Dashboard.AddWidgets(
 		awscloudwatch.NewGraphWidget(&awscloudwatch.GraphWidgetProps{
@@ -250,7 +250,7 @@ func (s *MonitoringStack) AddAPIGatewayMetrics(apiName string, apiId string) {
 			Height: jsii.Number(6),
 		}),
 	)
-	
+
 	// Create alarm for 5XX errors
 	awscloudwatch.NewAlarm(s.Stack, jsii.String("APIGateway5XXAlarm"), &awscloudwatch.AlarmProps{
 		AlarmName:         jsii.String(fmt.Sprintf("%s-5xx-errors", apiName)),
@@ -265,10 +265,10 @@ func (s *MonitoringStack) AddAPIGatewayMetrics(apiName string, apiId string) {
 func (s *MonitoringStack) CreateEventBridgeRules(costAggregatorFunction awslambda.Function, trendAggregatorFunction awslambda.Function, environment string) {
 	// Cost aggregation rule - triggers every hour
 	costAggregationRule := awsevents.NewRule(s.Stack, jsii.String("CostAggregationRule"), &awsevents.RuleProps{
-		RuleName:           jsii.String(fmt.Sprintf("lesser-%s-cost-aggregation", environment)),
-		Description:        jsii.String("Trigger cost aggregation every hour"),
-		Schedule:           awsevents.Schedule_Rate(awscdk.Duration_Hours(jsii.Number(1))),
-		Enabled:            jsii.Bool(true),
+		RuleName:    jsii.String(fmt.Sprintf("lesser-%s-cost-aggregation", environment)),
+		Description: jsii.String("Trigger cost aggregation every hour"),
+		Schedule:    awsevents.Schedule_Rate(awscdk.Duration_Hours(jsii.Number(1))),
+		Enabled:     jsii.Bool(true),
 	})
 
 	// Add target for cost aggregation
@@ -279,10 +279,10 @@ func (s *MonitoringStack) CreateEventBridgeRules(costAggregatorFunction awslambd
 
 	// Trend aggregation rule - triggers every 15 minutes
 	trendAggregationRule := awsevents.NewRule(s.Stack, jsii.String("TrendAggregationRule"), &awsevents.RuleProps{
-		RuleName:           jsii.String(fmt.Sprintf("lesser-%s-trend-aggregation", environment)),
-		Description:        jsii.String("Trigger trend aggregation every 15 minutes"),
-		Schedule:           awsevents.Schedule_Rate(awscdk.Duration_Minutes(jsii.Number(15))),
-		Enabled:            jsii.Bool(true),
+		RuleName:    jsii.String(fmt.Sprintf("lesser-%s-trend-aggregation", environment)),
+		Description: jsii.String("Trigger trend aggregation every 15 minutes"),
+		Schedule:    awsevents.Schedule_Rate(awscdk.Duration_Minutes(jsii.Number(15))),
+		Enabled:     jsii.Bool(true),
 	})
 
 	// Add target for trend aggregation
@@ -335,32 +335,32 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 		Namespace:     jsii.String("AWS/DynamoDB"),
 		MetricName:    jsii.String("ConsumedReadCapacityUnits"),
 		DimensionsMap: &map[string]*string{"TableName": jsii.String(tableName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	writeCapacityMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/DynamoDB"),
 		MetricName:    jsii.String("ConsumedWriteCapacityUnits"),
 		DimensionsMap: &map[string]*string{"TableName": jsii.String(tableName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	throttledReadsMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/DynamoDB"),
 		MetricName:    jsii.String("UserReadThrottledRequests"),
 		DimensionsMap: &map[string]*string{"TableName": jsii.String(tableName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	throttledWritesMetric := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
 		Namespace:     jsii.String("AWS/DynamoDB"),
 		MetricName:    jsii.String("UserWriteThrottledRequests"),
 		DimensionsMap: &map[string]*string{"TableName": jsii.String(tableName)},
-		Statistic:    jsii.String("Sum"),
-		Period:       awscdk.Duration_Minutes(jsii.Number(5)),
+		Statistic:     jsii.String("Sum"),
+		Period:        awscdk.Duration_Minutes(jsii.Number(5)),
 	})
 
 	// Add dashboard widgets
@@ -383,22 +383,22 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 
 	// Create alarms for throttling
 	readThrottleAlarm := awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sReadThrottleAlarm", tableName)), &awscloudwatch.AlarmProps{
-		AlarmName:         jsii.String(fmt.Sprintf("%s-read-throttles", tableName)),
-		Metric:            throttledReadsMetric,
-		Threshold:         jsii.Number(1),
-		EvaluationPeriods: jsii.Number(1),
+		AlarmName:          jsii.String(fmt.Sprintf("%s-read-throttles", tableName)),
+		Metric:             throttledReadsMetric,
+		Threshold:          jsii.Number(1),
+		EvaluationPeriods:  jsii.Number(1),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	})
 	readThrottleAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
 	writeThrottleAlarm := awscloudwatch.NewAlarm(s.Stack, jsii.String(fmt.Sprintf("%sWriteThrottleAlarm", tableName)), &awscloudwatch.AlarmProps{
-		AlarmName:         jsii.String(fmt.Sprintf("%s-write-throttles", tableName)),
-		Metric:            throttledWritesMetric,
-		Threshold:         jsii.Number(1),
-		EvaluationPeriods: jsii.Number(1),
+		AlarmName:          jsii.String(fmt.Sprintf("%s-write-throttles", tableName)),
+		Metric:             throttledWritesMetric,
+		Threshold:          jsii.Number(1),
+		EvaluationPeriods:  jsii.Number(1),
 		ComparisonOperator: awscloudwatch.ComparisonOperator_GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-		TreatMissingData:  awscloudwatch.TreatMissingData_NOT_BREACHING,
+		TreatMissingData:   awscloudwatch.TreatMissingData_NOT_BREACHING,
 	})
 	writeThrottleAlarm.AddAlarmAction(awscloudwatchactions.NewSnsAction(s.AlertTopic))
 
@@ -409,8 +409,8 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 
 	for _, gsiName := range gsiNames {
 		gsiReadCapacity := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
-			Namespace:     jsii.String("AWS/DynamoDB"),
-			MetricName:    jsii.String("ConsumedReadCapacityUnits"),
+			Namespace:  jsii.String("AWS/DynamoDB"),
+			MetricName: jsii.String("ConsumedReadCapacityUnits"),
 			DimensionsMap: &map[string]*string{
 				"TableName":                jsii.String(tableName),
 				"GlobalSecondaryIndexName": jsii.String(gsiName),
@@ -420,8 +420,8 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 		})
 
 		_ = awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
-			Namespace:     jsii.String("AWS/DynamoDB"),
-			MetricName:    jsii.String("ConsumedWriteCapacityUnits"),
+			Namespace:  jsii.String("AWS/DynamoDB"),
+			MetricName: jsii.String("ConsumedWriteCapacityUnits"),
 			DimensionsMap: &map[string]*string{
 				"TableName":                jsii.String(tableName),
 				"GlobalSecondaryIndexName": jsii.String(gsiName),
@@ -432,17 +432,23 @@ func (s *MonitoringStack) AddDynamoDBMetrics(table awsdynamodb.Table, tableName 
 
 		// Add GSI widget every 2 GSIs to keep dashboard organized
 		if gsiName == "GSI1" || gsiName == "GSI3" || gsiName == "GSI5" || gsiName == "GSI7" {
-			nextGSI := fmt.Sprintf("GSI%d", 
+			nextGSI := fmt.Sprintf("GSI%d",
 				func() int {
-					if gsiName == "GSI1" { return 2 }
-					if gsiName == "GSI3" { return 4 }
-					if gsiName == "GSI5" { return 6 }
+					if gsiName == "GSI1" {
+						return 2
+					}
+					if gsiName == "GSI3" {
+						return 4
+					}
+					if gsiName == "GSI5" {
+						return 6
+					}
 					return 8
 				}())
-			
+
 			gsiReadCapacity2 := awscloudwatch.NewMetric(&awscloudwatch.MetricProps{
-				Namespace:     jsii.String("AWS/DynamoDB"),
-				MetricName:    jsii.String("ConsumedReadCapacityUnits"),
+				Namespace:  jsii.String("AWS/DynamoDB"),
+				MetricName: jsii.String("ConsumedReadCapacityUnits"),
 				DimensionsMap: &map[string]*string{
 					"TableName":                jsii.String(tableName),
 					"GlobalSecondaryIndexName": jsii.String(nextGSI),

@@ -4494,6 +4494,7 @@ func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingClo
 	return args.Get(0).(*repositories.StreamingCloudWatchRepository)
 }
 
+// DNSCache returns the DNSCacheRepository instance for testing.
 func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
 	args := m.Called()
 	if args.Get(0) == nil {
@@ -4502,6 +4503,7 @@ func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository {
 	return args.Get(0).(*repositories.DNSCacheRepository)
 }
 
+// Filter returns the FilterRepository instance for testing.
 func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository {
 	args := m.Called()
 	if args.Get(0) == nil {

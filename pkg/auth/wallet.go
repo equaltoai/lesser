@@ -315,7 +315,7 @@ func buildAuthMessage(chainID int, nonce, issuedAt, expiresAt string) string {
 	sb.WriteString("URI: https://lesser.app\n")
 	sb.WriteString("Version: 1\n")
 	sb.WriteString("Chain ID: ")
-	
+
 	// Convert chainID to string manually
 	if chainID == 0 {
 		sb.WriteString("0")
@@ -329,13 +329,13 @@ func buildAuthMessage(chainID int, nonce, issuedAt, expiresAt string) string {
 		}
 		sb.Write(digits)
 	}
-	
+
 	sb.WriteString("\nNonce: ")
 	sb.WriteString(nonce)
 	sb.WriteString("\nIssued At: ")
 	sb.WriteString(issuedAt)
 	sb.WriteString("\nExpiration Time: ")
 	sb.WriteString(expiresAt)
-	
+
 	return sb.String()
 }

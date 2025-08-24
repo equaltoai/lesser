@@ -50,7 +50,7 @@ func MapError(err error) error {
 	errMsg := err.Error()
 
 	// Not found errors
-	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") || 
+	if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "item not found") ||
 		strings.Contains(errMsg, "record not found") {
 		return storage.ErrNotFound
 	}
@@ -61,13 +61,13 @@ func MapError(err error) error {
 	}
 
 	// Conditional check errors
-	if strings.Contains(errMsg, "conditional check failed") || 
+	if strings.Contains(errMsg, "conditional check failed") ||
 		strings.Contains(errMsg, "condition failed") {
 		return ErrConditionalCheckFailed
 	}
 
 	// Transaction errors
-	if strings.Contains(errMsg, "transaction canceled") || 
+	if strings.Contains(errMsg, "transaction canceled") ||
 		strings.Contains(errMsg, "transaction failed") {
 		return ErrTransactionCanceled
 	}
@@ -107,23 +107,23 @@ func MapError(err error) error {
 func isDynamORMNotFoundError(err error) bool {
 	// Check for DynamORM error patterns that indicate not found
 	// Note: core.ErrNotFound may not be exported, so check error strings
-	
+
 	// Check error message patterns that indicate not found
 	errMsg := strings.ToLower(err.Error())
 	notFoundPatterns := []string{
 		"record not found",
-		"item not found", 
+		"item not found",
 		"no rows",
 		"no items found",
 		"does not exist",
 	}
-	
+
 	for _, pattern := range notFoundPatterns {
 		if strings.Contains(errMsg, pattern) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

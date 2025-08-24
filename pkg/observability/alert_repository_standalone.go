@@ -63,7 +63,7 @@ func (r *StandaloneAlertRepository) CreateAlert(ctx context.Context, alert *mode
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("alert_create_%d", time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB create operation cost",
@@ -112,7 +112,7 @@ func (r *StandaloneAlertRepository) GetByID(ctx context.Context, alertID string)
 // Update updates an existing alert
 func (r *StandaloneAlertRepository) Update(ctx context.Context, alert *models.Alert) error {
 	alert.UpdatedAt = time.Now()
-	
+
 	// Track cost if cost service is available
 	if r.costService != nil {
 		operation := cost.DynamoOperation{
@@ -124,7 +124,7 @@ func (r *StandaloneAlertRepository) Update(ctx context.Context, alert *models.Al
 			Timestamp:          time.Now(),
 			OperationID:        fmt.Sprintf("alert_update_%d", time.Now().UnixNano()),
 		}
-		
+
 		defer func() {
 			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
 				r.logger.Warn("failed to track DynamoDB update operation cost",
@@ -214,7 +214,7 @@ func (r *StandaloneAlertRepository) CleanupOldAlerts(ctx context.Context, olderT
 	// Find old alerts across all types
 	var oldAlerts []*models.Alert
 	types := []string{"error_rate", "latency", "cost", "health", "security", "capacity"}
-	
+
 	for _, alertType := range types {
 		var typeAlerts []*models.Alert
 		err := r.db.WithContext(ctx).Model(&models.Alert{}).

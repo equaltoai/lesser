@@ -12,12 +12,12 @@ type CostProjection struct {
 	SK string `dynamorm:"sk" json:"-"` // {period}#{timestamp}
 
 	// Attributes from interface
-	Period          string       `json:"period"`
-	CurrentCost     float64      `json:"current_cost"`
-	ProjectedCost   float64      `json:"projected_cost"`
-	Variance        float64      `json:"variance"`
+	Period          string   `json:"period"`
+	CurrentCost     float64  `json:"current_cost"`
+	ProjectedCost   float64  `json:"projected_cost"`
+	Variance        float64  `json:"variance"`
 	TopDrivers      []Driver `json:"top_drivers"`
-	Recommendations []string     `json:"recommendations"`
+	Recommendations []string `json:"recommendations"`
 
 	// Additional metadata
 	Timestamp    time.Time `json:"timestamp"`

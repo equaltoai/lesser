@@ -108,7 +108,7 @@ func (h *Handler) HandleOAuthAuthorizeLift(ctx *lift.Context) error {
 	if err := common.ValidateApplicationScopes(scopesStr); err != nil {
 		return h.oauthErrorLift(ctx, "invalid_scope", fmt.Sprintf("Invalid scopes: %v", err), redirectURI, state)
 	}
-	
+
 	// Additional validation using auth package for backward compatibility
 	if err := auth.ValidateScopes(scopes); err != nil {
 		return h.oauthErrorLift(ctx, "invalid_scope", "One or more requested scopes are invalid", redirectURI, state)
@@ -321,18 +321,18 @@ func (h *Handler) getScopeDescription(scope string) string {
 func (h *Handler) extractUsernameFromSessionCookie(ctx context.Context, cookieHeader string) string {
 	// Parse cookies from header
 	cookies := common.ParseCookies(cookieHeader)
-	
+
 	// Look for session cookie
 	sessionToken := cookies["session_token"]
 	if err := common.ValidateRequiredParam("session_token", sessionToken); err != nil {
 		// Try alternate cookie names
 		sessionToken = cookies["user_session"]
 	}
-	
+
 	if err := common.ValidateRequiredParam("session_token", sessionToken); err != nil {
 		return ""
 	}
-	
+
 	// Validate session token and get user
 	session, err := h.repos.Account().GetSessionByRefreshToken(ctx, sessionToken)
 	if err != nil {
@@ -340,14 +340,14 @@ func (h *Handler) extractUsernameFromSessionCookie(ctx context.Context, cookieHe
 			zap.String("error", err.Error()))
 		return ""
 	}
-	
+
 	// Check if session is valid (not expired)
 	if time.Now().After(session.ExpiresAt) {
 		h.logger.Debug("session expired",
 			zap.String("sessionID", session.SessionID))
 		return ""
 	}
-	
+
 	// Update session activity
 	ipAddress := h.getClientIP(cookieHeader) // Extract from context
 	if err := h.updateSessionActivity(ctx, session.SessionID, ipAddress); err != nil {
@@ -355,7 +355,7 @@ func (h *Handler) extractUsernameFromSessionCookie(ctx context.Context, cookieHe
 			zap.String("sessionID", session.SessionID),
 			zap.Error(err))
 	}
-	
+
 	return session.Username
 }
 
@@ -405,7 +405,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 	// Parse form data from request body
 	if err := common.ValidateSliceNotEmpty("request_body", ctx.Request.Body); err != nil {
 		return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
-			"error":             "invalid_request", 
+			"error":             "invalid_request",
 			"error_description": "Empty request body",
 		})
 	}
@@ -421,7 +421,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 	// Extract form parameters
 	grantType := params["grant_type"]
 	code := params["code"]
-	redirectURI := params["redirect_uri"] 
+	redirectURI := params["redirect_uri"]
 	clientID := params["client_id"]
 	clientSecret := params["client_secret"]
 	codeVerifier := params["code_verifier"]
@@ -448,7 +448,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 		accessToken, refreshTokenOut, err := h.exchangeAuthorizationCode(ctx.Context, oauthSvc, code, clientID, redirectURI, codeVerifier, clientSecret)
 		if err != nil {
 			h.logger.Error("failed to exchange authorization code", zap.Error(err))
-			
+
 			// Return appropriate OAuth error based on the error type
 			if err == auth.ErrInvalidGrant {
 				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
@@ -464,11 +464,11 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 			}
 			if err == auth.ErrInvalidCodeChallenge {
 				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
-					"error":             "invalid_grant", 
+					"error":             "invalid_grant",
 					"error_description": "PKCE verification failed",
 				})
 			}
-			
+
 			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Authorization code exchange failed",
@@ -500,7 +500,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 		accessToken, newRefreshToken, err := h.exchangeRefreshToken(ctx.Context, oauthSvc, refreshToken, clientID, clientSecret)
 		if err != nil {
 			h.logger.Error("failed to refresh tokens", zap.Error(err))
-			
+
 			// Return appropriate OAuth error based on the error type
 			if err == auth.ErrInvalidToken {
 				return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
@@ -514,7 +514,7 @@ func (h *Handler) HandleOAuthTokenLift(ctx *lift.Context) error {
 					"error_description": "Invalid client credentials",
 				})
 			}
-			
+
 			return ctx.Status(http.StatusBadRequest).JSON(map[string]string{
 				"error":             "invalid_grant",
 				"error_description": "Refresh token exchange failed",

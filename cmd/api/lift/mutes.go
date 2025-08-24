@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // convertRelationshipResponse converts service relationship to API format
 func (h *Handler) convertRelationshipResponse(ctx *lift.Context, relationship *relationshipsvc.RelationshipData) error {
 	response := models.Relationship{

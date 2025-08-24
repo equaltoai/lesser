@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/google/uuid"
 )
 
 // Reaction represents an available reaction for announcements
@@ -69,24 +69,24 @@ type Announcement struct {
 func (a *Announcement) UpdateKeys() error {
 	a.PK = fmt.Sprintf("ANNOUNCEMENT#%s", a.ID)
 	a.SK = "ANNOUNCEMENT"
-	
+
 	// Set up GSI keys
 	a.setupGSIKeys()
-	
+
 	return nil
 }
 
 // setupGSIKeys configures GSI partition and sort keys
 func (a *Announcement) setupGSIKeys() {
 	now := time.Now()
-	
+
 	// GSI1 - Status-based queries with date ordering
 	status := a.getStatusString(now)
 	a.GSI1PK = fmt.Sprintf("ANNOUNCEMENT#%s", status)
 	// Use reverse timestamp for newest-first ordering
 	reverseTimestamp := 9999999999 - a.PublishedAt.Unix()
 	a.GSI1SK = fmt.Sprintf("%010d", reverseTimestamp)
-	
+
 	// GSI2 - Admin queries
 	if a.CreatedBy != "" {
 		a.GSI2PK = "ADMIN#" + a.CreatedBy
@@ -103,12 +103,12 @@ func (a *Announcement) getStatusString(now time.Time) string {
 	if a.StartsAt != nil && a.StartsAt.After(now) {
 		return "inactive" // Not yet started
 	}
-	
+
 	// Check if announcement has ended (if EndsAt is set)
 	if a.EndsAt != nil && a.EndsAt.Before(now) {
 		return "inactive" // Already ended
 	}
-	
+
 	return StatusActive
 }
 

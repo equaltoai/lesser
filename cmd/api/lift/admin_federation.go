@@ -533,7 +533,7 @@ func (h *Handler) HandleCreateAdminDomainAllowLift(ctx *lift.Context) error {
 
 // HandleDeleteAdminDomainAllowLift handles DELETE /api/v1/admin/domain_allows/:id
 func (h *Handler) HandleDeleteAdminDomainAllowLift(ctx *lift.Context) error {
-	return h.adminDomainDeleteAction(ctx, "allow", "allow ID required", "domain allow not found", 
+	return h.adminDomainDeleteAction(ctx, "allow", "allow ID required", "domain allow not found",
 		func(itemID string) error {
 			return h.repos.DomainBlock().DeleteDomainAllow(ctx.Context, itemID)
 		})

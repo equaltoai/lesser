@@ -97,7 +97,6 @@ func (f *FederationStorageAdapter) RecordFederationActivity(ctx context.Context,
 	return f.repos.Federation().RecordFederationActivity(ctx, activity)
 }
 
-
 // FederationDeliveryMessage represents a message from the SQS queue
 type FederationDeliveryMessage struct {
 	DeliveryID     string                `json:"delivery_id"`
@@ -133,21 +132,21 @@ var (
 func init() {
 	// Standardized Lambda initialization for federation-delivery function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "federation-delivery", // federation-delivery
+		ServiceName: "federation-delivery",      // federation-delivery
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Function-specific initialization only
 	// Initialize AWS SQS client config
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background())
@@ -352,7 +351,7 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 
 		// Classify the error to determine if we should retry
 		errorType := p.classifyDeliveryError(err)
-		
+
 		logger.Info("delivery failed - analyzing error",
 			zap.String("delivery_id", msg.DeliveryID),
 			zap.String("error_type", errorType),
@@ -670,7 +669,7 @@ func (p *FederationDeliveryProcessor) classifyDeliveryError(err error) string {
 
 	// Permanent HTTP errors (4xx except 429)
 	permanentPatterns := []string{
-		"status 400", "status 401", "status 403", "status 404", 
+		"status 400", "status 401", "status 403", "status 404",
 		"status 405", "status 406", "status 410", "status 413",
 		"status 422", "status 451",
 		"signature verification failed",
@@ -714,7 +713,7 @@ func (p *FederationDeliveryProcessor) classifyDeliveryError(err error) string {
 func (p *FederationDeliveryProcessor) calculateRetryBackoff(retryCount int, errorType, _ string) int {
 	// Base exponential backoff
 	baseBackoff := calculateBackoff(retryCount)
-	
+
 	// Adjust based on error type
 	switch errorType {
 	case "rate_limit":
@@ -744,7 +743,7 @@ func (p *FederationDeliveryProcessor) recordRetryMetrics(_ context.Context, deli
 		zap.Int("retry_count", retryCount),
 		zap.Int("backoff_minutes", backoffMinutes),
 		zap.Time("timestamp", time.Now()))
-	
+
 	// Additional structured metrics for monitoring systems
 	p.logger.Info("federation_delivery_status",
 		zap.String("delivery_id", deliveryID),
@@ -765,7 +764,7 @@ func (p *FederationDeliveryProcessor) recordSuccessMetrics(_ context.Context, de
 		zap.Duration("total_duration", totalDuration),
 		zap.Bool("required_retry", totalAttempts > 1),
 		zap.Time("timestamp", time.Now()))
-	
+
 	// Log domain-specific success rate data
 	p.logger.Info("federation_domain_metric",
 		zap.String("metric_type", "domain_delivery"),

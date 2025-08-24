@@ -32,10 +32,10 @@ func ProductionLatencyAggregator(ctx context.Context, metricsRepo HistoricalMetr
 	aggregator := NewLatencyAggregator(
 		logger,
 		metricsRecorder,
-		WithAggregateInterval(5*time.Minute),        // 5-minute buckets
-		WithRetentionPeriod(24*time.Hour),           // Keep 24 hours in memory
-		WithMaxBuckets(500),                         // Memory limit
-		WithMetricsRepository(metricsRepo),          // Historical DynamORM data
+		WithAggregateInterval(5*time.Minute), // 5-minute buckets
+		WithRetentionPeriod(24*time.Hour),    // Keep 24 hours in memory
+		WithMaxBuckets(500),                  // Memory limit
+		WithMetricsRepository(metricsRepo),   // Historical DynamORM data
 		WithCloudWatch(cloudWatchClient, "Lesser/Observability"), // CloudWatch fallback
 	)
 
@@ -46,14 +46,14 @@ func ProductionLatencyAggregator(ctx context.Context, metricsRepo HistoricalMetr
 func ExampleUsage() {
 	ctx := context.Background()
 	logger, _ := zap.NewProduction()
-	
+
 	// In real usage, these would be injected dependencies
 	var metricsRepo HistoricalMetricsReader // Actual metrics repository instance
 	createMetricFn := func(_ context.Context, _ *models.MetricRecord) error {
 		// Implement metric storage logic
 		return nil
 	}
-	
+
 	// Create production aggregator
 	aggregator, err := ProductionLatencyAggregator(ctx, metricsRepo, createMetricFn, logger)
 	if err != nil {
@@ -114,15 +114,15 @@ func IntegrateWithExistingMetrics(
 ) {
 	// Start timing
 	startTime := time.Now()
-	
+
 	// ... perform operation ...
-	
+
 	// Record latency in both systems
 	duration := time.Since(startTime)
-	
+
 	// Record in CloudWatch via MetricsCollector
 	metricsCollector.RecordLatency(operation, duration)
-	
+
 	// Record in LatencyAggregator for detailed analysis
 	aggregator.RecordLatency(operation, serviceName, duration)
 }
@@ -139,14 +139,14 @@ func MonitorLatencyAlerts(ctx context.Context, aggregator *LatencyAggregator, lo
 			// Check recent trends for all operations
 			endTime := time.Now()
 			startTime := endTime.Add(-30 * time.Minute)
-			
+
 			// Get service stats (example for API service)
 			stats, err := aggregator.GetAggregatedStats("api", 30*time.Minute)
 			if err != nil {
 				logger.Error("Failed to get service stats", zap.Error(err))
 				continue
 			}
-			
+
 			for operation, operationStats := range stats {
 				// Alert if P95 latency is high
 				if p95, exists := operationStats.Percentiles["p95"]; exists && p95 > 1000 { // 1 second
@@ -155,13 +155,13 @@ func MonitorLatencyAlerts(ctx context.Context, aggregator *LatencyAggregator, lo
 						zap.Float64("p95_ms", p95),
 						zap.Int64("count", operationStats.Count))
 				}
-				
+
 				// Get trend analysis
 				trend, err := aggregator.GetLatencyTrend(ctx, operation, "api", startTime, endTime, 5*time.Minute)
 				if err != nil {
 					continue
 				}
-				
+
 				// Alert on significant degradations
 				if trend.TrendAnalysis.ChangeClassification == "significant_degradation" {
 					logger.Error("Latency degradation detected",
@@ -170,7 +170,7 @@ func MonitorLatencyAlerts(ctx context.Context, aggregator *LatencyAggregator, lo
 						zap.Float64("trend_strength", trend.TrendAnalysis.RSquared))
 				}
 			}
-			
+
 		case <-ctx.Done():
 			return
 		}

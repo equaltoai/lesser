@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // Conversation represents a direct message conversation between users
@@ -26,7 +26,7 @@ type Conversation struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 
 	// Message counting fields
-	TotalMessageCount int64 `json:"total_message_count"` // Total messages in conversation
+	TotalMessageCount int64     `json:"total_message_count"`         // Total messages in conversation
 	LastMessageTime   time.Time `json:"last_message_time,omitempty"` // Time of last message
 }
 

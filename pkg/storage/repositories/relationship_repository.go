@@ -112,7 +112,6 @@ func (r *RelationshipRepository) CreateRelationship(ctx context.Context, followe
 	return nil
 }
 
-
 // DeleteRelationship removes a follow relationship
 func (r *RelationshipRepository) DeleteRelationship(ctx context.Context, followerUsername, followingUsername string) error {
 	pk := fmt.Sprintf("FOLLOW#%s", followerUsername)

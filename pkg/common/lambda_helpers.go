@@ -12,23 +12,23 @@ import (
 // LambdaInitOptions provides additional initialization options
 type LambdaInitOptions struct {
 	// Storage options
-	InitializeStorage     bool
+	InitializeStorage      bool
 	InitializeRepositories bool
-	TableName            string
-	
+	TableName              string
+
 	// Observability options
-	InitializeEMFMetrics     bool
-	InitializeHealthChecker  bool
-	InitializeTracingManager bool
+	InitializeEMFMetrics       bool
+	InitializeHealthChecker    bool
+	InitializeTracingManager   bool
 	InitializeMetricsCollector bool
-	InitializeLatencyTracking bool
-	InitializeAlerting       bool
-	
+	InitializeLatencyTracking  bool
+	InitializeAlerting         bool
+
 	// Service-specific options
-	InitializeAuthService    bool
+	InitializeAuthService        bool
 	InitializeFederationServices bool
-	InitializeStreamingServices bool
-	
+	InitializeStreamingServices  bool
+
 	// Performance options
 	OptimizeForColdStart bool
 	EnableServiceCaching bool
@@ -37,12 +37,12 @@ type LambdaInitOptions struct {
 // DefaultLambdaInitOptions returns sensible defaults for different Lambda types
 func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 	baseOptions := LambdaInitOptions{
-		InitializeStorage:     true,
+		InitializeStorage:      true,
 		InitializeRepositories: true,
-		OptimizeForColdStart:  true,
-		EnableServiceCaching:  true,
+		OptimizeForColdStart:   true,
+		EnableServiceCaching:   true,
 	}
-	
+
 	switch lambdaType {
 	case LambdaTypeAPI:
 		return LambdaInitOptions{
@@ -60,7 +60,7 @@ func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 			OptimizeForColdStart:         true,
 			EnableServiceCaching:         true,
 		}
-		
+
 	case LambdaTypeFederation:
 		return LambdaInitOptions{
 			InitializeStorage:            true,
@@ -77,7 +77,7 @@ func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 			OptimizeForColdStart:         true,
 			EnableServiceCaching:         true,
 		}
-		
+
 	case LambdaTypeProcessor:
 		return LambdaInitOptions{
 			InitializeStorage:            true,
@@ -94,7 +94,7 @@ func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 			OptimizeForColdStart:         true,
 			EnableServiceCaching:         false, // Processors are typically one-shot
 		}
-		
+
 	case LambdaTypeMedia:
 		return LambdaInitOptions{
 			InitializeStorage:            true,
@@ -111,7 +111,7 @@ func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 			OptimizeForColdStart:         false, // Media processing is long-running
 			EnableServiceCaching:         true,
 		}
-		
+
 	case LambdaTypeAI:
 		return LambdaInitOptions{
 			InitializeStorage:            true,
@@ -128,7 +128,7 @@ func DefaultLambdaInitOptions(lambdaType LambdaType) LambdaInitOptions {
 			OptimizeForColdStart:         false, // AI processing is long-running
 			EnableServiceCaching:         true,
 		}
-		
+
 	default: // LambdaTypeBasic
 		return baseOptions
 	}
@@ -139,10 +139,10 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 	if !options.InitializeStorage {
 		return nil
 	}
-	
+
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
-	
+
 	// Get table name from options or config
 	tableName := options.TableName
 	if tableName == "" {
@@ -151,14 +151,14 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 	if tableName == "" {
 		return ErrDynamoTableRequired
 	}
-	
-	logger.Debug("initializing storage services", 
+
+	logger.Debug("initializing storage services",
 		zap.String("table_name", tableName),
 		zap.Bool("optimize_cold_start", options.OptimizeForColdStart))
-	
+
 	// Initialize DynamORM with appropriate optimization
 	var db interface{}
-	
+
 	if options.OptimizeForColdStart {
 		// Use Lambda-optimized client for faster cold starts
 		dynamormClient, dynamormErr := initializeDynamORM(context.Background(), cfg.Region, true)
@@ -174,9 +174,9 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 		}
 		db = dynamormClient
 	}
-	
+
 	lambdaCtx.DynamoDB = db
-	
+
 	// Initialize repository factory if requested
 	if options.InitializeRepositories {
 		repos, repoErr := initializeRepositoryFactory(db, tableName, lambdaCtx.AWSServices, logger)
@@ -184,11 +184,11 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 			return fmt.Errorf("failed to initialize repository factory: %w", repoErr)
 		}
 		lambdaCtx.Repos = repos
-		
+
 		logger.Debug("initialized repository storage",
 			zap.String("table_name", tableName))
 	}
-	
+
 	return nil
 }
 
@@ -196,29 +196,29 @@ func (lambdaCtx *LambdaContext) InitializeStorageServices(options LambdaInitOpti
 func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaInitOptions) error {
 	logger := lambdaCtx.Logger
 	cfg := lambdaCtx.Config
-	
+
 	// Skip if metrics are disabled globally
 	if cfg.DisableMetrics {
 		logger.Info("metrics disabled globally, skipping observability initialization")
 		return nil
 	}
-	
+
 	logger.Debug("initializing observability services",
 		zap.Bool("emf_metrics", options.InitializeEMFMetrics),
 		zap.Bool("health_checker", options.InitializeHealthChecker),
 		zap.Bool("tracing", options.InitializeTracingManager),
 		zap.Bool("latency_tracking", options.InitializeLatencyTracking))
-	
+
 	// Initialize EMF Metrics
 	if options.InitializeEMFMetrics {
 		namespace := fmt.Sprintf("Lesser/%s", TitleCase(lambdaCtx.ServiceName))
 		emfMetrics := initializeEMFMetrics(logger, namespace, lambdaCtx.ServiceName, cfg)
 		lambdaCtx.EMFMetrics = emfMetrics
-		
+
 		logger.Debug("initialized EMF metrics",
 			zap.String("namespace", namespace))
 	}
-	
+
 	// Initialize Health Checker
 	if options.InitializeHealthChecker {
 		tableName := ""
@@ -226,61 +226,61 @@ func (lambdaCtx *LambdaContext) InitializeObservabilityServices(options LambdaIn
 			// Extract table name from config
 			tableName = cfg.DynamoTableName
 		}
-		
+
 		healthChecker := initializeHealthChecker(logger, lambdaCtx.AWSServices, lambdaCtx.ServiceName, cfg.Version, tableName)
 		lambdaCtx.HealthChecker = healthChecker
-		
+
 		logger.Debug("initialized health checker",
 			zap.String("service", lambdaCtx.ServiceName))
 	}
-	
+
 	// Initialize Tracing Manager
 	if options.InitializeTracingManager && lambdaCtx.Config != nil {
 		tracingManager := initializeTracingManager(logger, lambdaCtx.ServiceName, cfg.Version)
 		lambdaCtx.TracingManager = tracingManager
-		
+
 		logger.Debug("initialized tracing manager",
 			zap.String("service", lambdaCtx.ServiceName),
 			zap.Bool("enabled", isTracingEnabled(tracingManager)))
 	}
-	
+
 	// Initialize Metrics Collector (legacy support)
 	if options.InitializeMetricsCollector && lambdaCtx.AWSServices != nil {
 		metricsCollector := initializeMetricsCollector(lambdaCtx.AWSServices, logger, lambdaCtx.ServiceName)
 		lambdaCtx.MetricsCollector = metricsCollector
-		
+
 		logger.Debug("initialized metrics collector")
 	}
-	
+
 	// Initialize Latency Tracking
 	if options.InitializeLatencyTracking && lambdaCtx.Repos != nil {
 		latencyAggregator, latencyAlerter := initializeLatencyTracking(logger, lambdaCtx.Repos, lambdaCtx.ServiceName)
 		lambdaCtx.LatencyAggregator = latencyAggregator
 		lambdaCtx.LatencyAlerter = latencyAlerter
-		
+
 		logger.Debug("initialized latency tracking")
 	}
-	
+
 	// Initialize Alert Manager (federation-specific)
 	if options.InitializeAlerting {
 		alertManager := initializeAlertManager(logger)
 		lambdaCtx.AlertManager = alertManager
-		
+
 		logger.Debug("initialized alert manager")
 	}
-	
+
 	return nil
 }
 
 // InitializeServiceSpecificDependencies initializes service-specific dependencies
 func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options LambdaInitOptions) error {
 	logger := lambdaCtx.Logger
-	
+
 	logger.Debug("initializing service-specific dependencies",
 		zap.Bool("auth_service", options.InitializeAuthService),
 		zap.Bool("federation_services", options.InitializeFederationServices),
 		zap.Bool("streaming_services", options.InitializeStreamingServices))
-	
+
 	// Initialize Auth Service
 	if options.InitializeAuthService && lambdaCtx.Repos != nil {
 		authService, authMiddleware, err := initializeAuthServices(lambdaCtx.Repos)
@@ -289,10 +289,10 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 		}
 		lambdaCtx.AuthService = authService
 		lambdaCtx.AuthMiddleware = authMiddleware
-		
+
 		logger.Debug("initialized auth services")
 	}
-	
+
 	// Initialize Federation Services
 	if options.InitializeFederationServices && lambdaCtx.Repos != nil {
 		signatureService, deliveryService, costCalculator, rateLimiter := initializeFederationServices(lambdaCtx.Repos, logger)
@@ -300,37 +300,37 @@ func (lambdaCtx *LambdaContext) InitializeServiceSpecificDependencies(options La
 		lambdaCtx.DeliveryService = deliveryService
 		lambdaCtx.CostCalculator = costCalculator
 		lambdaCtx.RateLimiter = rateLimiter
-		
+
 		logger.Debug("initialized federation services")
 	}
-	
+
 	// Initialize Streaming Services
 	if options.InitializeStreamingServices && lambdaCtx.DynamoDB != nil {
 		streamQueue := initializeStreamingServices(lambdaCtx.DynamoDB, lambdaCtx.Config.DynamoTableName, logger)
 		lambdaCtx.StreamQueue = streamQueue
-		
+
 		logger.Debug("initialized streaming services")
 	}
-	
+
 	return nil
 }
 
 // InitializeWithDefaults initializes Lambda with default options for the Lambda type
 func (lambdaCtx *LambdaContext) InitializeWithDefaults() error {
 	options := DefaultLambdaInitOptions(lambdaCtx.LambdaType)
-	
+
 	if err := lambdaCtx.InitializeStorageServices(options); err != nil {
 		return fmt.Errorf("failed to initialize storage services: %w", err)
 	}
-	
+
 	if err := lambdaCtx.InitializeObservabilityServices(options); err != nil {
 		return fmt.Errorf("failed to initialize observability services: %w", err)
 	}
-	
+
 	if err := lambdaCtx.InitializeServiceSpecificDependencies(options); err != nil {
 		return fmt.Errorf("failed to initialize service-specific dependencies: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -339,15 +339,15 @@ func (lambdaCtx *LambdaContext) InitializeWithOptions(options LambdaInitOptions)
 	if err := lambdaCtx.InitializeStorageServices(options); err != nil {
 		return fmt.Errorf("failed to initialize storage services: %w", err)
 	}
-	
+
 	if err := lambdaCtx.InitializeObservabilityServices(options); err != nil {
 		return fmt.Errorf("failed to initialize observability services: %w", err)
 	}
-	
+
 	if err := lambdaCtx.InitializeServiceSpecificDependencies(options); err != nil {
 		return fmt.Errorf("failed to initialize service-specific dependencies: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -357,12 +357,12 @@ func (lambdaCtx *LambdaContext) FlushObservabilityServices() {
 	if lambdaCtx.EMFMetrics != nil {
 		flushEMFMetrics(lambdaCtx.EMFMetrics)
 	}
-	
+
 	// Flush legacy metrics collector
 	if lambdaCtx.MetricsCollector != nil {
 		flushMetricsCollector(lambdaCtx.MetricsCollector)
 	}
-	
+
 	// Note: Latency aggregator stops automatically due to Lambda termination
 	// No explicit flush needed as it's designed for graceful shutdown
 }
@@ -371,22 +371,22 @@ func (lambdaCtx *LambdaContext) FlushObservabilityServices() {
 func (lambdaCtx *LambdaContext) CreateStandardizedLambdaHandler(handler func(ctx context.Context, event interface{}) (interface{}, error)) func(ctx context.Context, event interface{}) (interface{}, error) {
 	return func(ctx context.Context, event interface{}) (interface{}, error) {
 		requestStart := time.Now()
-		
+
 		// Record cold start metrics if this is a cold start
 		if time.Since(lambdaCtx.StartTime) < 30*time.Second {
 			recordColdStartMetrics(lambdaCtx, time.Since(lambdaCtx.StartTime))
 		}
-		
+
 		// Process the request
 		result, err := handler(ctx, event)
-		
+
 		// Record request metrics
 		requestDuration := time.Since(requestStart)
 		recordRequestMetrics(lambdaCtx, requestDuration, err)
-		
+
 		// Flush all observability data before termination
 		lambdaCtx.FlushObservabilityServices()
-		
+
 		return result, err
 	}
 }

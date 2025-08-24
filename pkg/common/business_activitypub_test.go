@@ -249,7 +249,7 @@ func TestGetStandardActivityPubContext(t *testing.T) {
 	if len(context) == 0 {
 		t.Error("ActivityPub context is empty")
 	}
-	
+
 	// Check that it includes the main ActivityStreams context
 	if context[0] != "https://www.w3.org/ns/activitystreams" {
 		t.Errorf("First context item = %v, want %v", context[0], "https://www.w3.org/ns/activitystreams")
@@ -268,7 +268,7 @@ func TestActivityPubError(t *testing.T) {
 	if !err.IsTemporary() {
 		t.Error("Error should be temporary")
 	}
-	
+
 	errorStr := err.Error()
 	if !strings.Contains(errorStr, "timeout") {
 		t.Errorf("Error string should contain 'timeout': %s", errorStr)

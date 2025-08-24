@@ -26,7 +26,7 @@ type InstanceConfig struct {
 // GetInstanceConfig returns the instance configuration
 func GetInstanceConfig() *InstanceConfig {
 	cfg := Get() // Get centralized config
-	
+
 	return &InstanceConfig{
 		// From centralized config
 		Title:            cfg.InstanceTitle,
@@ -49,4 +49,3 @@ func GetInstanceConfig() *InstanceConfig {
 		FederationEnabled: cfg.FederationEnabled,
 	}
 }
-

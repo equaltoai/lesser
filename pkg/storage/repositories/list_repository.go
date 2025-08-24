@@ -54,8 +54,8 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 func (r *ListRepository) GetList(ctx context.Context, listID string) (*models.List, error) {
 	list := &models.List{}
 	pk := fmt.Sprintf("LIST#%s", listID)
-	sk := "METADATA"
-	
+	sk := models.SKMetadata
+
 	err := r.Get(ctx, pk, sk, list)
 	if err != nil {
 		if dmerrors.IsNotFound(err) {
@@ -91,7 +91,7 @@ func (r *ListRepository) DeleteList(ctx context.Context, listID string) error {
 	// Delete list metadata
 	listModel := &models.List{
 		PK: fmt.Sprintf("LIST#%s", listID),
-		SK: "METADATA",
+		SK: models.SKMetadata,
 	}
 	if err := r.db.WithContext(ctx).Model(listModel).Delete(); err != nil {
 		return ErrorHandler.HandleDeleteError(err, EntityList, listID)
@@ -354,7 +354,7 @@ func (r *ListRepository) GetListMembers(ctx context.Context, listID string, opts
 		var user models.User
 		err := r.db.WithContext(ctx).Model(&models.User{}).
 			Where("PK", "=", fmt.Sprintf("USER#%s", member.AccountID)).
-			Where("SK", "=", "METADATA").
+			Where("SK", "=", models.SKMetadata).
 			First(&user)
 		if err != nil {
 			r.logger.Warn("failed to get user for list member",

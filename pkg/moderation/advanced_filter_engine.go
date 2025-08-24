@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Filter match mode constants
@@ -34,24 +34,24 @@ func NewAdvancedFilterEngine(logger *zap.Logger) *AdvancedFilterEngine {
 
 // FilterResult represents the result of filter evaluation
 type FilterResult struct {
-	Matched      bool                 `json:"matched"`
-	Action       string               `json:"action"`
-	Severity     string               `json:"severity"`
-	MatchScore   float64              `json:"match_score"`
-	MatchedRules []string             `json:"matched_rules"`
-	Filter       *models.Filter       `json:"filter,omitempty"`
+	Matched      bool                    `json:"matched"`
+	Action       string                  `json:"action"`
+	Severity     string                  `json:"severity"`
+	MatchScore   float64                 `json:"match_score"`
+	MatchedRules []string                `json:"matched_rules"`
+	Filter       *models.Filter          `json:"filter,omitempty"`
 	Keywords     []*models.FilterKeyword `json:"keywords,omitempty"`
 }
 
 // ContentContext represents the context in which content is being filtered
 type ContentContext struct {
-	Type        string    `json:"type"`         // home, notifications, public, thread, account
-	AuthorID    string    `json:"author_id"`    // ID of content author
-	Timestamp   time.Time `json:"timestamp"`    // When content was created
-	IsReply     bool      `json:"is_reply"`     // Whether content is a reply
-	HasMedia    bool      `json:"has_media"`    // Whether content has media attachments
-	Language    string    `json:"language"`     // Content language
-	Visibility  string    `json:"visibility"`   // public, unlisted, private, direct
+	Type       string    `json:"type"`       // home, notifications, public, thread, account
+	AuthorID   string    `json:"author_id"`  // ID of content author
+	Timestamp  time.Time `json:"timestamp"`  // When content was created
+	IsReply    bool      `json:"is_reply"`   // Whether content is a reply
+	HasMedia   bool      `json:"has_media"`  // Whether content has media attachments
+	Language   string    `json:"language"`   // Content language
+	Visibility string    `json:"visibility"` // public, unlisted, private, direct
 }
 
 // EvaluateContent evaluates content against user filters with advanced matching
@@ -133,7 +133,7 @@ func (afe *AdvancedFilterEngine) evaluateKeywordFilter(
 
 	// TODO: Integrate with keyword repository to get filter keywords
 	// For now, simulate keyword evaluation logic
-	
+
 	// Placeholder for keyword matching logic
 	// This would integrate with the FilterKeyword model and repository
 	words := strings.Fields(contentToMatch)
@@ -161,7 +161,7 @@ func (afe *AdvancedFilterEngine) evaluateRegexFilter(
 ) (*FilterResult, error) {
 	// TODO: Integrate with regex patterns from FilterKeyword model
 	// This would compile and cache regex patterns from keywords marked as IsRegex
-	
+
 	// Placeholder regex patterns for demonstration
 	patterns := []string{
 		`\b(spam|scam)\b`,
@@ -195,7 +195,7 @@ func (afe *AdvancedFilterEngine) evaluateSemanticFilter(
 	}
 
 	score, categories := afe.semanticMatcher.AnalyzeContent(content)
-	
+
 	if score > 0.7 { // High confidence threshold
 		result.Matched = true
 		result.MatchScore = score
@@ -212,7 +212,7 @@ func (afe *AdvancedFilterEngine) evaluateExactFilter(
 	result *FilterResult,
 ) (*FilterResult, error) {
 	// TODO: Integrate with exact match patterns from FilterKeyword model
-	
+
 	// Placeholder exact matches
 	blockedPhrases := []string{
 		"click here now",
@@ -305,21 +305,21 @@ func NewSemanticMatcher() *SemanticMatcher {
 func (sm *SemanticMatcher) AnalyzeContent(content string) (score float64, categories []string) {
 	// Placeholder implementation
 	// In production, this would use ML models for content classification
-	
+
 	// Simple heuristics for demonstration
 	content = strings.ToLower(content)
-	
+
 	if strings.Contains(content, "hate") || strings.Contains(content, "violence") {
 		return 0.9, []string{"hate_speech"}
 	}
-	
+
 	if strings.Contains(content, "buy now") || strings.Contains(content, "limited offer") {
 		return 0.8, []string{"spam", "commercial"}
 	}
-	
+
 	if strings.Contains(content, "click here") || strings.Contains(content, "free money") {
 		return 0.85, []string{"spam", "suspicious"}
 	}
-	
+
 	return 0.1, []string{"normal"}
 }

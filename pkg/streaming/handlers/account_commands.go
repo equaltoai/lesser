@@ -40,7 +40,7 @@ func (ach *AccountCommandHandler) HandleCommand(ctx context.Context, conn *strea
 	case streaming.CmdUpdatePreferences:
 		return ach.handleUpdatePreferences(ctx, conn, cmd)
 	default:
-		return ach.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND", 
+		return ach.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND",
 			"Unsupported account command", fmt.Sprintf("Command %s not supported by account handler", cmd.Type)), nil
 	}
 }
@@ -76,14 +76,14 @@ func (ach *AccountCommandHandler) handleUpdateProfile(ctx context.Context, conn 
 
 	result, err := ach.accountsService.UpdateProfile(ctx, updateCmd)
 	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "UPDATE_FAILED", 
+		return ach.CreateErrorResponse(cmd.ID, "UPDATE_FAILED",
 			"Failed to update profile", err.Error()), nil
 	}
 
 	// Convert result to JSON for response
 	data, err := ach.ConvertToJSON(result.Account)
 	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 
@@ -112,14 +112,14 @@ func (ach *AccountCommandHandler) handleUpdatePreferences(ctx context.Context, c
 
 	result, err := ach.accountsService.UpdatePreferences(ctx, updateCmd)
 	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "UPDATE_FAILED", 
+		return ach.CreateErrorResponse(cmd.ID, "UPDATE_FAILED",
 			"Failed to update preferences", err.Error()), nil
 	}
 
 	// Convert result to JSON for response
 	data, err := ach.ConvertToJSON(result.Preferences)
 	if err != nil {
-		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return ach.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 

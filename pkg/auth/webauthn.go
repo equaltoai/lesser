@@ -19,10 +19,10 @@ import (
 
 // WebAuthn errors
 var (
-	ErrChallengeNotFound     = errors.New("challenge not found or expired")
-	ErrCredentialNotFound    = errors.New("credential not found")
-	ErrInvalidCredential     = errors.New("invalid credential")
-	ErrUserHasNoCredentials  = errors.New("user has no credentials")
+	ErrChallengeNotFound    = errors.New("challenge not found or expired")
+	ErrCredentialNotFound   = errors.New("credential not found")
+	ErrInvalidCredential    = errors.New("invalid credential")
+	ErrUserHasNoCredentials = errors.New("user has no credentials")
 )
 
 // WebAuthn constants
