@@ -18,8 +18,8 @@ import (
 
 // MediaSessionRepository implements session management using DynamORM with BaseRepository
 type MediaSessionRepository struct {
-	*BaseRepository[*models.MediaSession]
-	qualityChangeRepo *BaseRepository[*models.QualityChange]
+	*EnhancedBaseRepository[*models.MediaSession]
+	qualityChangeRepo *EnhancedBaseRepository[*models.QualityChange]
 	sessionTTL        time.Duration
 }
 
@@ -36,18 +36,18 @@ func NewMediaSessionRepository(db core.DB, logger *zap.Logger, _ interface{}) *M
 	// Note: For now, pass nil cost service; can be enhanced later with proper cost tracking
 
 	return &MediaSessionRepository{
-		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository"),
-		qualityChangeRepo: NewBaseRepositoryWithCostTracking[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository"),
-		sessionTTL:        24 * time.Hour, // Default TTL for streaming sessions
+		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository", "media_session"),
+		qualityChangeRepo:      NewEnhancedBaseRepository[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository", "quality_change"),
+		sessionTTL:             24 * time.Hour, // Default TTL for streaming sessions
 	}
 }
 
 // NewMediaSessionRepositoryWithCostTracking creates a new MediaSessionRepository with cost tracking
 func NewMediaSessionRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaSessionRepository {
 	return &MediaSessionRepository{
-		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository"),
-		qualityChangeRepo: NewBaseRepositoryWithCostTracking[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository"),
-		sessionTTL:        24 * time.Hour, // Default TTL for streaming sessions
+		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.MediaSession](db, tableName, logger, costService, "MediaSessionRepository", "media_session"),
+		qualityChangeRepo:      NewEnhancedBaseRepository[*models.QualityChange](db, tableName, logger, costService, "QualityChangeRepository", "quality_change"),
+		sessionTTL:             24 * time.Hour, // Default TTL for streaming sessions
 	}
 }
 
@@ -108,7 +108,7 @@ func (r *MediaSessionRepository) StartStreamingSession(ctx context.Context, user
 	model.SetTTL(r.sessionTTL)
 
 	// Create using BaseRepository
-	if err := r.Create(ctx, model); err != nil {
+	if err := r.ValidateAndCreate(ctx, model); err != nil {
 		return nil, ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
 
@@ -142,7 +142,7 @@ func (r *MediaSessionRepository) UpdateStreamingMetrics(ctx context.Context, ses
 	existingModel.LastUpdate = &now
 
 	// Update using BaseRepository
-	if err := r.Update(ctx, &existingModel); err != nil {
+	if err := r.ValidateAndUpdate(ctx, &existingModel); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
 	}
 
@@ -182,7 +182,7 @@ func (r *MediaSessionRepository) EndStreamingSession(ctx context.Context, sessio
 	existingModel.LastUpdate = &now
 
 	// Update using BaseRepository
-	if err := r.Update(ctx, &existingModel); err != nil {
+	if err := r.ValidateAndUpdate(ctx, &existingModel); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntitySession, sessionID)
 	}
 
@@ -263,7 +263,7 @@ func (r *MediaSessionRepository) CreateSession(ctx context.Context, session *typ
 	model.SetTTL(r.sessionTTL)
 
 	// Use BaseRepository Create
-	return r.Create(ctx, model)
+	return r.ValidateAndCreate(ctx, model)
 }
 
 // GetSession retrieves a streaming session (legacy compatibility)
@@ -299,7 +299,7 @@ func (r *MediaSessionRepository) UpdateSession(ctx context.Context, session *typ
 	existingModel.LastUpdate = &now
 
 	// Use BaseRepository Update
-	if err := r.Update(ctx, &existingModel); err != nil {
+	if err := r.ValidateAndUpdate(ctx, &existingModel); err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntitySession, session.SessionID)
 	}
 
@@ -441,7 +441,7 @@ func (r *MediaSessionRepository) CleanupExpiredSessions(ctx context.Context, max
 	deletedCount := 0
 	for _, session := range expiredSessions {
 		if session != nil {
-			err := r.Delete(ctx, session.PK, session.SK)
+			err := r.ValidateAndDelete(ctx, session.PK, session.SK)
 			if err != nil {
 				r.logger.Warn("failed to delete expired session",
 					zap.String("sessionID", session.SessionID),

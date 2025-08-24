@@ -50,7 +50,7 @@ func (h *Handler) HandleOAuthConsentLift(ctx *lift.Context) error {
 	}
 
 	// Initialize OAuth session repository
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
+	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
 
 	// Get OAuth state from storage
 	authState, err := h.repos.OAuth().GetOAuthState(ctx.Context, state)
@@ -292,7 +292,7 @@ func (h *Handler) HandleOAuthLoginLift(ctx *lift.Context) error {
 	}
 
 	// Create OAuth session for tracking the flow
-	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
+	oauthSessionRepo := repositories.NewOAuthSessionRepository(h.repos.GetDB(), h.repos.GetTableName(), h.logger, nil)
 
 	clientIP := ""  // Extract from Lambda event context
 	userAgent := "" // Extract from Lambda event headers

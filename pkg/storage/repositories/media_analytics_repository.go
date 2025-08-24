@@ -14,20 +14,22 @@ import (
 
 // MediaAnalyticsRepository handles media analytics operations using DynamORM with BaseRepository
 type MediaAnalyticsRepository struct {
-	*BaseRepository[*models.MediaAnalytics]
+	*EnhancedBaseRepository[*models.MediaAnalytics]
 }
 
-// NewMediaAnalyticsRepository creates a new media analytics repository
-func NewMediaAnalyticsRepository(db core.DB, tableName string, logger *zap.Logger) *MediaAnalyticsRepository {
+// NewMediaAnalyticsRepository creates a new media analytics repository with enhanced functionality
+func NewMediaAnalyticsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaAnalyticsRepository {
+	// Create enhanced repository optimized for media analytics operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.MediaAnalytics](db, tableName, logger, costService, "MediaAnalyticsRepository", "media_analytics")
+	
+	// Set up enhanced services for media analytics operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Analytics cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Analytics events
+	
 	return &MediaAnalyticsRepository{
-		BaseRepository: NewBaseRepository[*models.MediaAnalytics](db, tableName, logger),
-	}
-}
-
-// NewMediaAnalyticsRepositoryWithCostTracking creates a new media analytics repository with cost tracking
-func NewMediaAnalyticsRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaAnalyticsRepository {
-	return &MediaAnalyticsRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.MediaAnalytics](db, tableName, logger, costService, "MediaAnalyticsRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -39,7 +41,7 @@ func (r *MediaAnalyticsRepository) RecordMediaAnalytics(ctx context.Context, ana
 	}
 
 	// Use BaseRepository.Create for standardized creation with cost tracking
-	err := r.Create(ctx, analytics)
+	err := r.ValidateAndCreate(ctx, analytics)
 	if err != nil {
 		r.logger.Error("Failed to record media analytics",
 			zap.String("media_id", analytics.MediaID),
@@ -133,7 +135,7 @@ func (r *MediaAnalyticsRepository) UpdateMediaAnalytics(ctx context.Context, ana
 	_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use BaseRepository.Update for standardized updates with cost tracking
-	err := r.Update(ctx, analytics)
+	err := r.ValidateAndUpdate(ctx, analytics)
 	if err != nil {
 		r.logger.Error("Failed to update media analytics",
 			zap.String("media_id", analytics.MediaID),
@@ -529,7 +531,7 @@ func (r *MediaAnalyticsRepository) CleanupOldAnalytics(ctx context.Context, olde
 	// Delete old records using BaseRepository.Delete for cost tracking
 	deletedCount := 0
 	for _, record := range oldRecords {
-		if err := r.Delete(ctx, record.PK, record.SK); err != nil {
+		if err := r.ValidateAndDelete(ctx, record.PK, record.SK); err != nil {
 			r.logger.Warn("Failed to delete old analytics record",
 				zap.String("media_id", record.MediaID),
 				zap.Error(err))

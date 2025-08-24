@@ -17,7 +17,7 @@ type DynamORMCSRFStore struct {
 // NewDynamORMCSRFStore creates a new DynamORM-backed CSRF store
 func NewDynamORMCSRFStore(db core.DB, tableName string, logger *zap.Logger) *DynamORMCSRFStore {
 	return &DynamORMCSRFStore{
-		repo: repositories.NewCSRFRepository(db, tableName, logger),
+		repo: repositories.NewCSRFRepository(db, tableName, logger, nil),
 	}
 }
 

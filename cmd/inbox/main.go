@@ -218,7 +218,7 @@ func createSignatureService(repoFactory storageCore.RepositoryStorage, coreDB dy
 		publicKeyCacheRepo = factory.PublicKeyCache()
 	} else {
 		// Fallback: create repository directly
-		publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
+		publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger, nil)
 	}
 	return federation.NewSignatureService(publicKeyCacheRepo, logger)
 }
@@ -273,7 +273,7 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 		repos.publicKeyCacheRepo = factory.PublicKeyCache()
 	} else {
 		// Fallback: create repository directly
-		repos.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger)
+		repos.publicKeyCacheRepo = repositories.NewPublicKeyCacheRepository(coreDB, cfg.DynamoTableName, logger, nil)
 	}
 
 	// Initialize legacy repositories that don't use factory pattern yet

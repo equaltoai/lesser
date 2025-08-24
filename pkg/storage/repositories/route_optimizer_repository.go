@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -18,21 +19,26 @@ import (
 
 // RouteOptimizerRepository handles route optimizer data persistence
 type RouteOptimizerRepository struct {
-	*BaseRepository[*models.RouteDeliveryResult]
-	optimizationDecisionRepo *BaseRepository[*models.OptimizationDecision]
+	*EnhancedBaseRepository[*models.RouteDeliveryResult]
+	optimizationDecisionRepo *EnhancedBaseRepository[*models.OptimizationDecision]
 	logger                   *zap.Logger
 }
 
-// NewRouteOptimizerRepository creates a new route optimizer repository
-func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logger) *RouteOptimizerRepository {
-	baseRepo := NewBaseRepository[*models.RouteDeliveryResult](db, tableName, logger)
-	baseRepo.SetRepoName("route_optimizer")
+// NewRouteOptimizerRepository creates a new route optimizer repository with enhanced functionality
+func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RouteOptimizerRepository {
+	// Create enhanced repository optimized for route optimization operations
+	baseRepo := NewEnhancedBaseRepository[*models.RouteDeliveryResult](db, tableName, logger, costService, "RouteOptimizerRepository", "route_optimizer")
+	
+	// Set up enhanced services for route optimization operations
+	baseRepo.SetValidationService(NewDefaultValidationService())
+	baseRepo.SetPermissionService(NewDefaultPermissionService())
+	baseRepo.SetCachingService(NewInMemoryCachingService()) // Route results cached
+	baseRepo.SetEventService(NewDefaultEventService())      // Route optimization events
 
-	optDecisionRepo := NewBaseRepository[*models.OptimizationDecision](db, tableName, logger)
-	optDecisionRepo.SetRepoName("optimization_decision")
+	optDecisionRepo := NewEnhancedBaseRepository[*models.OptimizationDecision](db, tableName, logger, costService, "OptimizationDecisionRepository", "optimization_decision")
 
 	return &RouteOptimizerRepository{
-		BaseRepository:           baseRepo,
+		EnhancedBaseRepository:   baseRepo,
 		optimizationDecisionRepo: optDecisionRepo,
 		logger:                   logger,
 	}
@@ -40,7 +46,7 @@ func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logge
 
 // recordDeliveryResultInternal stores a delivery result for route learning
 func (r *RouteOptimizerRepository) recordDeliveryResultInternal(ctx context.Context, result *models.RouteDeliveryResult) error {
-	err := r.Create(ctx, result)
+	err := r.ValidateAndCreate(ctx, result)
 	if err != nil {
 		r.logger.Error("Failed to record delivery result",
 			zap.String("routeID", result.RouteID),

@@ -13,41 +13,58 @@ import (
 	"go.uber.org/zap"
 )
 
-// RateLimitRepository handles rate limiting operations using BaseRepository pattern
+// RateLimitRepository handles rate limiting operations using enhanced repository patterns
 type RateLimitRepository struct {
-	// Embedded BaseRepository for different rate limit models
-	loginAttempts       *BaseRepository[*models.LoginAttempt]
-	rateLimitLockouts   *BaseRepository[*models.RateLimitLockout]
-	apiRateLimits       *BaseRepository[*models.APIRateLimit]
-	rateLimitViolations *BaseRepository[*models.RateLimitViolation]
-	communityNotes      *BaseRepository[*models.CommunityNote]
+	// Embedded EnhancedBaseRepository for different rate limit models
+	loginAttempts       *EnhancedBaseRepository[*models.LoginAttempt]
+	rateLimitLockouts   *EnhancedBaseRepository[*models.RateLimitLockout]
+	apiRateLimits       *EnhancedBaseRepository[*models.APIRateLimit]
+	rateLimitViolations *EnhancedBaseRepository[*models.RateLimitViolation]
+	communityNotes      *EnhancedBaseRepository[*models.CommunityNote]
 	db                  core.DB
 	tableName           string
 	logger              *zap.Logger
 }
 
-// NewRateLimitRepository creates a new RateLimitRepository using BaseRepository pattern
-func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger) *RateLimitRepository {
+// NewRateLimitRepository creates a new RateLimitRepository with enhanced functionality
+func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RateLimitRepository {
+	// Create enhanced repositories for all rate limit operations
+	loginAttempts := NewEnhancedBaseRepository[*models.LoginAttempt](db, tableName, logger, costService, "LoginAttemptRepository", "login_attempt")
+	loginAttempts.SetValidationService(NewDefaultValidationService())
+	loginAttempts.SetPermissionService(NewDefaultPermissionService())
+	loginAttempts.SetCachingService(NewInMemoryCachingService())
+	loginAttempts.SetEventService(NewDefaultEventService())
+	
+	rateLimitLockouts := NewEnhancedBaseRepository[*models.RateLimitLockout](db, tableName, logger, costService, "RateLimitLockoutRepository", "rate_limit_lockout")
+	rateLimitLockouts.SetValidationService(NewDefaultValidationService())
+	rateLimitLockouts.SetPermissionService(NewDefaultPermissionService())
+	rateLimitLockouts.SetCachingService(NewInMemoryCachingService())
+	rateLimitLockouts.SetEventService(NewDefaultEventService())
+	
+	apiRateLimits := NewEnhancedBaseRepository[*models.APIRateLimit](db, tableName, logger, costService, "APIRateLimitRepository", "api_rate_limit")
+	apiRateLimits.SetValidationService(NewDefaultValidationService())
+	apiRateLimits.SetPermissionService(NewDefaultPermissionService())
+	apiRateLimits.SetCachingService(NewInMemoryCachingService())
+	apiRateLimits.SetEventService(NewDefaultEventService())
+	
+	rateLimitViolations := NewEnhancedBaseRepository[*models.RateLimitViolation](db, tableName, logger, costService, "RateLimitViolationRepository", "rate_limit_violation")
+	rateLimitViolations.SetValidationService(NewDefaultValidationService())
+	rateLimitViolations.SetPermissionService(NewDefaultPermissionService())
+	rateLimitViolations.SetCachingService(NewInMemoryCachingService())
+	rateLimitViolations.SetEventService(NewDefaultEventService())
+	
+	communityNotes := NewEnhancedBaseRepository[*models.CommunityNote](db, tableName, logger, costService, "CommunityNoteRepository", "community_note")
+	communityNotes.SetValidationService(NewDefaultValidationService())
+	communityNotes.SetPermissionService(NewDefaultPermissionService())
+	communityNotes.SetCachingService(NewInMemoryCachingService())
+	communityNotes.SetEventService(NewDefaultEventService())
+	
 	return &RateLimitRepository{
-		loginAttempts:       NewBaseRepository[*models.LoginAttempt](db, tableName, logger),
-		rateLimitLockouts:   NewBaseRepository[*models.RateLimitLockout](db, tableName, logger),
-		apiRateLimits:       NewBaseRepository[*models.APIRateLimit](db, tableName, logger),
-		rateLimitViolations: NewBaseRepository[*models.RateLimitViolation](db, tableName, logger),
-		communityNotes:      NewBaseRepository[*models.CommunityNote](db, tableName, logger),
-		db:                  db,
-		tableName:           tableName,
-		logger:              logger,
-	}
-}
-
-// NewRateLimitRepositoryWithCostTracking creates a new RateLimitRepository with cost tracking
-func NewRateLimitRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RateLimitRepository {
-	return &RateLimitRepository{
-		loginAttempts:       NewBaseRepositoryWithCostTracking[*models.LoginAttempt](db, tableName, logger, costService, "rate_limit_login_attempts"),
-		rateLimitLockouts:   NewBaseRepositoryWithCostTracking[*models.RateLimitLockout](db, tableName, logger, costService, "rate_limit_lockouts"),
-		apiRateLimits:       NewBaseRepositoryWithCostTracking[*models.APIRateLimit](db, tableName, logger, costService, "rate_limit_api"),
-		rateLimitViolations: NewBaseRepositoryWithCostTracking[*models.RateLimitViolation](db, tableName, logger, costService, "rate_limit_violations"),
-		communityNotes:      NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, costService, "community_notes"),
+		loginAttempts:       loginAttempts,
+		rateLimitLockouts:   rateLimitLockouts,
+		apiRateLimits:       apiRateLimits,
+		rateLimitViolations: rateLimitViolations,
+		communityNotes:      communityNotes,
 		db:                  db,
 		tableName:           tableName,
 		logger:              logger,

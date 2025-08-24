@@ -427,7 +427,7 @@ func init() {
 	userRepo = repositories.NewUserRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	notificationRepo = repositories.NewNotificationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 	objectRepo = repositories.NewObjectRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
-	patternRepo = repositories.NewPatternRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	patternRepo = repositories.NewPatternRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 
 	// Initialize consensus engine with repository adapter
 	adapter := &repositoryStorageAdapter{

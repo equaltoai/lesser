@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -14,13 +15,22 @@ import (
 
 // OAuthSessionRepository handles OAuth authorization session operations using BaseRepository
 type OAuthSessionRepository struct {
-	*BaseRepository[*models.OAuthAuthSession]
+	*EnhancedBaseRepository[*models.OAuthAuthSession]
 }
 
-// NewOAuthSessionRepository creates a new OAuth session repository
-func NewOAuthSessionRepository(db core.DB, tableName string, logger *zap.Logger) *OAuthSessionRepository {
+// NewOAuthSessionRepository creates a new OAuth session repository with enhanced functionality
+func NewOAuthSessionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *OAuthSessionRepository {
+	// Create enhanced repository optimized for OAuth session operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.OAuthAuthSession](db, tableName, logger, costService, "OAuthSessionRepository", "oauth_session")
+	
+	// Set up enhanced services for OAuth session operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // OAuth sessions cached
+	enhancedRepo.SetEventService(NewDefaultEventService())      // OAuth events
+	
 	return &OAuthSessionRepository{
-		BaseRepository: NewBaseRepository[*models.OAuthAuthSession](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -30,7 +40,7 @@ func (r *OAuthSessionRepository) CreateOAuthSession(ctx context.Context, session
 		return ErrorHandler.HandleCreateError(errors.New("session cannot be nil"), EntitySession, "nil")
 	}
 
-	err := r.Create(ctx, session)
+	err := r.ValidateAndCreate(ctx, session)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntitySession, session.SessionID)
 	}
@@ -95,7 +105,7 @@ func (r *OAuthSessionRepository) UpdateOAuthSession(ctx context.Context, session
 	// Touch the session to update last used time
 	session.Touch()
 
-	err := r.Update(ctx, session)
+	err := r.ValidateAndUpdate(ctx, session)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, EntitySession, session.SessionID)
 	}
@@ -108,7 +118,7 @@ func (r *OAuthSessionRepository) DeleteOAuthSession(ctx context.Context, session
 	pk := fmt.Sprintf("OAUTH_AUTH#%s", sessionID)
 	sk := fmt.Sprintf("SESSION#%s", sessionID)
 
-	err := r.Delete(ctx, pk, sk)
+	err := r.ValidateAndDelete(ctx, pk, sk)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil // Already deleted is not an error

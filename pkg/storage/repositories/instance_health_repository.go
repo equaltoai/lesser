@@ -17,25 +17,18 @@ import (
 
 // InstanceHealthRepository handles health check data using BaseRepository with DynamORM
 type InstanceHealthRepository struct {
-	*BaseRepository[*models.InstanceHealth]
-	summaryRepo *BaseRepository[*models.InstanceHealthSummary]
+	*EnhancedBaseRepository[*models.InstanceHealth]
+	summaryRepo *EnhancedBaseRepository[*models.InstanceHealthSummary]
 }
 
-// NewInstanceHealthRepository creates a new instance health repository with cost tracking
-func NewInstanceHealthRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceHealthRepository {
+// NewInstanceHealthRepository creates a new instance health repository with enhanced functionality
+func NewInstanceHealthRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceHealthRepository {
 	return &InstanceHealthRepository{
-		BaseRepository: NewBaseRepository[*models.InstanceHealth](db, tableName, logger),
-		summaryRepo:    NewBaseRepository[*models.InstanceHealthSummary](db, tableName, logger),
+		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.InstanceHealth](db, tableName, logger, costService, "InstanceHealthRepository", "instance_health"),
+		summaryRepo:           NewEnhancedBaseRepository[*models.InstanceHealthSummary](db, tableName, logger, costService, "InstanceHealthSummaryRepository", "instance_health_summary"),
 	}
 }
 
-// NewInstanceHealthRepositoryWithCostTracking creates a new repository with integrated cost tracking
-func NewInstanceHealthRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceHealthRepository {
-	return &InstanceHealthRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.InstanceHealth](db, tableName, logger, costService, "instance_health"),
-		summaryRepo:    NewBaseRepositoryWithCostTracking[*models.InstanceHealthSummary](db, tableName, logger, costService, "instance_health_summary"),
-	}
-}
 
 // SaveHealthCheck stores a health check result with health validation and alerting logic
 func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error {
@@ -61,7 +54,7 @@ func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *
 	}
 
 	// Save using BaseRepository
-	err := r.Create(ctx, health)
+	err := r.ValidateAndCreate(ctx, health)
 	if err != nil {
 		r.logger.Error("Failed to save health check",
 			zap.String("domain", health.Domain),

@@ -15,22 +15,19 @@ import (
 
 // RoutingMetricsRepository handles routing metrics data persistence using BaseRepository pattern
 type RoutingMetricsRepository struct {
-	routeMetricsRepo    *BaseRepository[*models.RouteMetricsWindow]
-	globalMetricsRepo   *BaseRepository[*models.GlobalMetricsWindow]
-	instanceMetricsRepo *BaseRepository[*models.InstanceMetricsWindow]
+	routeMetricsRepo    *EnhancedBaseRepository[*models.RouteMetricsWindow]
+	globalMetricsRepo   *EnhancedBaseRepository[*models.GlobalMetricsWindow]
+	instanceMetricsRepo *EnhancedBaseRepository[*models.InstanceMetricsWindow]
 	logger              *zap.Logger
 }
 
 // NewRoutingMetricsRepository creates a new routing metrics repository
-func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *RoutingMetricsRepository {
-	routeRepo := NewBaseRepository[*models.RouteMetricsWindow](db, tableName, logger)
-	routeRepo.SetRepoName("route_metrics")
-
-	globalRepo := NewBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger)
-	globalRepo.SetRepoName("global_metrics")
-
-	instanceRepo := NewBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger)
-	instanceRepo.SetRepoName("instance_metrics")
+func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RoutingMetricsRepository {
+	routeRepo := NewEnhancedBaseRepository[*models.RouteMetricsWindow](db, tableName, logger, costService, "RoutingMetricsRepository", "route_metrics")
+	
+	globalRepo := NewEnhancedBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger, costService, "GlobalMetricsRepository", "global_metrics")
+	
+	instanceRepo := NewEnhancedBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger, costService, "InstanceMetricsRepository", "instance_metrics")
 
 	return &RoutingMetricsRepository{
 		routeMetricsRepo:    routeRepo,
@@ -42,9 +39,9 @@ func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logge
 
 // NewRoutingMetricsRepositoryWithCostTracking creates a new routing metrics repository with cost tracking
 func NewRoutingMetricsRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RoutingMetricsRepository {
-	routeRepo := NewBaseRepositoryWithCostTracking[*models.RouteMetricsWindow](db, tableName, logger, costService, "route_metrics")
-	globalRepo := NewBaseRepositoryWithCostTracking[*models.GlobalMetricsWindow](db, tableName, logger, costService, "global_metrics")
-	instanceRepo := NewBaseRepositoryWithCostTracking[*models.InstanceMetricsWindow](db, tableName, logger, costService, "instance_metrics")
+	routeRepo := NewEnhancedBaseRepository[*models.RouteMetricsWindow](db, tableName, logger, costService, "RoutingMetricsRepository", "route_metrics")
+	globalRepo := NewEnhancedBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger, costService, "GlobalMetricsRepository", "global_metrics")
+	instanceRepo := NewEnhancedBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger, costService, "InstanceMetricsRepository", "instance_metrics")
 
 	return &RoutingMetricsRepository{
 		routeMetricsRepo:    routeRepo,

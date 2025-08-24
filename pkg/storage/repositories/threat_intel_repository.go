@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -13,15 +14,24 @@ import (
 
 // ThreatIntelRepository implements threat intelligence operations using BaseRepository
 type ThreatIntelRepository struct {
-	*BaseRepository[*models.ThreatIntel]
+	*EnhancedBaseRepository[*models.ThreatIntel]
 	queryUtils *QueryUtils
 }
 
 // NewThreatIntelRepository creates a new threat intelligence repository
-func NewThreatIntelRepository(db core.DB, tableName string, logger *zap.Logger) *ThreatIntelRepository {
+func NewThreatIntelRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ThreatIntelRepository {
+	// Create enhanced repository optimized for threat intel operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.ThreatIntel](db, tableName, logger, costService, "ThreatIntelRepository", "threat_intel")
+	
+	// Set up enhanced services for threat intel operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &ThreatIntelRepository{
-		BaseRepository: NewBaseRepository[*models.ThreatIntel](db, tableName, logger),
-		queryUtils:     NewQueryUtils(db, logger),
+		EnhancedBaseRepository: enhancedRepo,
+		queryUtils:             NewQueryUtils(db, logger),
 	}
 }
 
@@ -64,7 +74,7 @@ func (r *ThreatIntelRepository) ShareThreat(ctx context.Context, threat *ThreatI
 	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Store the threat
-	if err := r.Create(ctx, model); err != nil {
+	if err := r.ValidateAndCreate(ctx, model); err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityThreatIntel, threat.ID)
 	}
 

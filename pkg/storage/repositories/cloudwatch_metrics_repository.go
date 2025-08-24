@@ -22,7 +22,7 @@ import (
 // NOTE: This repository primarily uses CloudWatch AWS SDK for metrics collection.
 // BaseRepository integration demonstrates how DynamoDB caching could be added for performance optimization.
 type CloudWatchMetricsRepository struct {
-	*BaseRepository[*models.CloudWatchMetrics]                    // Optional caching layer
+	*EnhancedBaseRepository[*models.CloudWatchMetrics]                    // Optional caching layer
 	client                                     *cloudwatch.Client // PRESERVE: CloudWatch AWS SDK for metrics collection
 	namespace                                  string             // PRESERVE: CloudWatch namespace
 	environment                                string             // PRESERVE: Environment for metrics filtering
@@ -63,16 +63,16 @@ func NewCloudWatchMetricsRepository(namespace, environment string, logger *zap.L
 		logger.Error("Failed to load AWS config for CloudWatch metrics", zap.Error(err))
 		// Return repository with nil client - metrics will be disabled but won't crash
 		return &CloudWatchMetricsRepository{
-			BaseRepository: nil,
-			client:         nil,
+			EnhancedBaseRepository: nil,
+			client:                nil,
 			namespace:      namespace,
 			environment:    environment,
 		}
 	}
 
 	return &CloudWatchMetricsRepository{
-		BaseRepository: nil, // Optional - only used if DynamoDB caching is enabled
-		client:         cloudwatch.NewFromConfig(cfg),
+		EnhancedBaseRepository: nil, // Optional - only used if DynamoDB caching is enabled
+		client:                cloudwatch.NewFromConfig(cfg),
 		namespace:      namespace,
 		environment:    environment,
 	}
@@ -82,11 +82,11 @@ func NewCloudWatchMetricsRepository(namespace, environment string, logger *zap.L
 // This demonstrates how BaseRepository integration would work for performance optimization
 func NewCloudWatchMetricsRepositoryWithCaching(awsConfig aws.Config, namespace, environment, _ string, _ *zap.Logger, _ *cost.TrackingService, _ interface{}) *CloudWatchMetricsRepository {
 	// This would enable DynamoDB caching of CloudWatch metrics for improved performance
-	// baseRepo := NewBaseRepositoryWithCostTracking[*models.CloudWatchMetrics](db, tableName, logger, costService, "cloudwatch_metrics")
+	// baseRepo := NewEnhancedBaseRepository[*models.CloudWatchMetrics](db, tableName, logger, costService, "cloudwatch_metrics")
 
 	return &CloudWatchMetricsRepository{
-		BaseRepository: nil, // Would set baseRepo here if caching was fully implemented
-		client:         cloudwatch.NewFromConfig(awsConfig),
+		EnhancedBaseRepository: nil, // Would set baseRepo here if caching was fully implemented
+		client:                cloudwatch.NewFromConfig(awsConfig),
 		namespace:      namespace,
 		environment:    environment,
 	}
@@ -639,7 +639,7 @@ func (r *CloudWatchMetricsRepository) CacheMetrics(ctx context.Context, serviceN
 	cacheModel.SetCacheExpiry()
 
 	// Use BaseRepository for DynamoDB caching
-	return r.Create(ctx, cacheModel)
+	return r.ValidateAndCreate(ctx, cacheModel)
 }
 
 // GetCachedMetrics retrieves cached metrics from DynamoDB (OPTIONAL enhancement)

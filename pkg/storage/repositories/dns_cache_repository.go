@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -12,20 +13,28 @@ import (
 	"go.uber.org/zap"
 )
 
-// DNSCacheRepository handles DNS cache operations with DynamORM
+// DNSCacheRepository handles DNS cache operations with enhanced patterns
 type DNSCacheRepository struct {
-	*BaseRepository[*models.DNSCache]
+	*EnhancedBaseRepository[*models.DNSCache]
 	logger *zap.Logger
 	db     core.DB
 }
 
-// NewDNSCacheRepository creates a new DNS cache repository instance
-func NewDNSCacheRepository(db core.DB, tableName string, logger *zap.Logger) *DNSCacheRepository {
+// NewDNSCacheRepository creates a new DNS cache repository with enhanced functionality
+func NewDNSCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DNSCacheRepository {
+	// Create enhanced repository optimized for DNS cache operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.DNSCache](db, tableName, logger, costService, "DNSCacheRepository", "dns_cache")
+	
+	// Set up enhanced services for DNS cache operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // DNS entries cached in memory
+	enhancedRepo.SetEventService(NewDefaultEventService())      // DNS resolution events
+	
 	return &DNSCacheRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.DNSCache](
-			db, tableName, logger, nil, "DNSCacheRepository"),
-		logger: logger,
-		db:     db,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                logger,
+		db:                    db,
 	}
 }
 

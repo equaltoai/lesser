@@ -13,22 +13,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// AuditRepository handles audit log storage operations with integrated security features
+// AuditRepository handles audit log storage operations with enhanced security features
 type AuditRepository struct {
-	*BaseRepository[*models.AuthAuditLog]
+	*EnhancedBaseRepository[*models.AuthAuditLog]
 }
 
-// NewAuditRepository creates a new audit repository with cost tracking
-func NewAuditRepository(db core.DB, logger *zap.Logger) *AuditRepository {
+// NewAuditRepository creates a new audit repository with enhanced security features
+func NewAuditRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuditRepository {
+	// Create enhanced repository optimized for audit operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.AuthAuditLog](db, tableName, logger, costService, "AuditRepository", "audit")
+	
+	// Set up enhanced services for audit operations - SECURITY CRITICAL
+	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Special security validation
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())    // Audit-specific permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())       // Security logs cached briefly
+	enhancedRepo.SetEventService(NewDefaultEventService())          // Critical for security monitoring
+	
 	return &AuditRepository{
-		BaseRepository: NewBaseRepository[*models.AuthAuditLog](db, "", logger),
-	}
-}
-
-// NewAuditRepositoryWithCostTracking creates a new audit repository with cost tracking
-func NewAuditRepositoryWithCostTracking(db core.DB, logger *zap.Logger, costService *cost.TrackingService) *AuditRepository {
-	return &AuditRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.AuthAuditLog](db, "", logger, costService, "audit"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -42,8 +44,8 @@ func (r *AuditRepository) StoreAuditLog(ctx context.Context, log *models.AuthAud
 		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityAudit, log.ID)
 	}
 
-	// Use BaseRepository for storage with cost tracking
-	return r.Create(ctx, log)
+	// Use Enhanced BaseRepository for storage with security validation
+	return r.ValidateAndCreate(ctx, log)
 }
 
 // GetAuditLogByID retrieves an audit log by ID and date - SECURITY CRITICAL

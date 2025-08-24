@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -41,18 +42,27 @@ func (f *Feature) GetSK() string {
 	return f.SK
 }
 
-// FeatureRepository manages feature flags using BaseRepository
-// This demonstrates a complete repository implementation with BaseRepository
+// FeatureRepository manages feature flags using EnhancedBaseRepository
+// This demonstrates a complete repository implementation with EnhancedBaseRepository
 type FeatureRepository struct {
-	*BaseRepository[*Feature]
+	*EnhancedBaseRepository[*Feature]
 	logger *zap.Logger
 }
 
 // NewFeatureRepository creates a new feature repository
-func NewFeatureRepository(db core.DB, tableName string, logger *zap.Logger) *FeatureRepository {
+func NewFeatureRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FeatureRepository {
+	// Create enhanced repository optimized for feature flag operations
+	enhancedRepo := NewEnhancedBaseRepository[*Feature](db, tableName, logger, costService, "FeatureRepository", "feature")
+	
+	// Set up enhanced services for feature flag operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &FeatureRepository{
-		BaseRepository: NewBaseRepository[*Feature](db, tableName, logger),
-		logger:         logger,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -105,8 +115,8 @@ func (r *FeatureRepository) EnableFeature(ctx context.Context, name string, perc
 	feature.Percentage = percentage
 	feature.UpdatedAt = time.Now()
 
-	// Use BaseRepository Update
-	return r.Update(ctx, feature)
+	// Use Enhanced BaseRepository with validation
+	return r.ValidateAndUpdate(ctx, feature)
 }
 
 // DisableFeature disables a feature flag
@@ -121,8 +131,8 @@ func (r *FeatureRepository) DisableFeature(ctx context.Context, name string) err
 	feature.Percentage = 0
 	feature.UpdatedAt = time.Now()
 
-	// Use BaseRepository Update
-	return r.Update(ctx, feature)
+	// Use Enhanced BaseRepository with validation
+	return r.ValidateAndUpdate(ctx, feature)
 }
 
 // AddUserGroup adds a user group to the feature
@@ -143,8 +153,8 @@ func (r *FeatureRepository) AddUserGroup(ctx context.Context, name, group string
 	feature.UserGroups = append(feature.UserGroups, group)
 	feature.UpdatedAt = time.Now()
 
-	// Use BaseRepository Update
-	return r.Update(ctx, feature)
+	// Use Enhanced BaseRepository with validation
+	return r.ValidateAndUpdate(ctx, feature)
 }
 
 // ListFeatures lists all features

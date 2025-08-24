@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -12,16 +13,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// RecoveryRepository implements recovery operations using DynamORM with BaseRepository pattern
+// RecoveryRepository implements recovery operations using enhanced repository patterns
 type RecoveryRepository struct {
-	*BaseRepository[*models.RecoveryRequest]
+	*EnhancedBaseRepository[*models.RecoveryRequest]
 }
 
-// NewRecoveryRepository creates a new recovery repository
-func NewRecoveryRepository(db core.DB, tableName string, logger *zap.Logger) *RecoveryRepository {
+// NewRecoveryRepository creates a new recovery repository with enhanced functionality
+func NewRecoveryRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RecoveryRepository {
+	// Create enhanced repository optimized for recovery operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.RecoveryRequest](db, tableName, logger, costService, "RecoveryRepository", "recovery")
+	
+	// Set up enhanced services for recovery operations - SECURITY CRITICAL
+	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical recovery validation
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())   // Standard permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // Recovery requests cached
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
+	
 	return &RecoveryRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.RecoveryRequest](
-			db, tableName, logger, nil, "RecoveryRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 

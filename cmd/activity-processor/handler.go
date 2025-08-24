@@ -2794,8 +2794,8 @@ func createRouteManager(db core.DB, tableName string, logger *zap.Logger) *routi
 	// Create the necessary repositories
 	federationInstanceRepo := repositories.NewFederationInstanceRepository(db, tableName, logger, nil)
 	circuitBreakerRepo := repositories.NewCircuitBreakerRepositoryBasic(db, tableName, logger)
-	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
-	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
+	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger, nil)
+	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger, nil)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
 	costTrackingRepo := repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)

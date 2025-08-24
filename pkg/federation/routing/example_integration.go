@@ -16,9 +16,9 @@ import (
 // ExampleRouteManagerIntegration demonstrates how to set up the complete route management system
 func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Logger) *Manager {
 	// Create repositories
-	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
+	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger, nil)
 	circuitBreakerRepo := repositories.NewCircuitBreakerRepositoryBasic(db, tableName, logger)
-	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
+	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger, nil)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
 	federationCostRepo := repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)

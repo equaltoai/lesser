@@ -4162,7 +4162,7 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	relationshipRepo := repositories.NewRelationshipRepository(nil, "test-table", logger)
 	instanceRepo := repositories.NewInstanceRepository(nil, "test-table", logger)
 	federationRepo := repositories.NewFederationRepository(nil, "test-table", logger, nil, config.Get())
-	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger)
+	recoveryRepo := repositories.NewRecoveryRepository(nil, "test-table", logger, nil)
 	conversationRepo := repositories.NewConversationRepository(nil, "test-table", logger, nil)
 	pushSubscriptionRepo := repositories.NewPushSubscriptionRepository(nil, "test-table", logger, nil)
 	analyticsRepo := repositories.NewTrendingRepository(nil, logger, nil)
@@ -4175,12 +4175,12 @@ func NewMockRepositoryStorage() *MockRepositoryStorage {
 	relayRepo := repositories.NewRelayRepository(nil, "test-table", logger, nil)
 	markerRepo := repositories.NewMarkerRepository(nil, "test-table", logger, nil)
 	featuredTagRepo := repositories.NewFeaturedTagRepository(nil, "test-table", logger, nil)
-	aiRepo := repositories.NewAIRepository(nil, "test-table", logger)
+	aiRepo := repositories.NewAIRepository(nil, "test-table", logger, nil)
 	exportRepo := repositories.NewExportRepository(nil, "test-table", logger)
 	importRepo := repositories.NewImportRepository(nil, "test-table", logger)
 	dlqRepo := repositories.NewDLQRepositorySimple(nil, "test-table", logger)
 	emojiRepo := repositories.NewEmojiRepository(nil, "test-table", logger, nil)
-	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger)
+	rateLimitRepo := repositories.NewRateLimitRepository(nil, "test-table", logger, nil)
 
 	return &MockRepositoryStorage{
 		accountRepo:          accountRepo,
