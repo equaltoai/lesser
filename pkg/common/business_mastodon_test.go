@@ -172,13 +172,13 @@ func TestValidateRateLimit(t *testing.T) {
 
 	// Test basic rate limit validation (this may be a placeholder implementation)
 	limits := RateLimitConfig{
-		PostsPerHour:   300,
-		FollowsPerHour: 100,
-		ReportsPerHour: 5,
-		UploadsPerHour: 30,
+		PostsPerHour:    300,
+		FollowsPerHour:  100,
+		ReportsPerHour:  5,
+		UploadsPerHour:  30,
 		SearchesPerHour: 60,
 	}
-	
+
 	err := logic.ValidateRateLimit(ctx, "user123", "posts", limits)
 	// Note: This might return nil in placeholder implementation
 	if err != nil {
@@ -197,7 +197,7 @@ func TestValidateMastodonPaginationParams(t *testing.T) {
 	}
 
 	result := logic.ValidateMastodonPaginationParams(params)
-	
+
 	if result.MaxID != "12345" {
 		t.Errorf("MaxID = %v, want %v", result.MaxID, "12345")
 	}

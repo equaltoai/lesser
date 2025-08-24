@@ -52,10 +52,10 @@ type TranscriptionResult struct {
 // TranscribeAudio transcribes audio from S3 URI and returns the transcription
 func (ts *TranscriptionService) TranscribeAudio(ctx context.Context, s3URI string) (*TranscriptionResult, error) {
 	startTime := time.Now()
-	
+
 	// Generate unique job name
 	jobName := fmt.Sprintf("moderation-job-%d", time.Now().UnixNano())
-	
+
 	ts.logger.Info("starting audio transcription",
 		zap.String("s3_uri", s3URI),
 		zap.String("job_name", jobName))
@@ -66,9 +66,9 @@ func (ts *TranscriptionService) TranscribeAudio(ctx context.Context, s3URI strin
 		Media: &types.Media{
 			MediaFileUri: aws.String(s3URI),
 		},
-		MediaFormat:                   types.MediaFormatMp4, // Auto-detect format
-		LanguageCode:                 types.LanguageCodeEnUs, // Can be auto-detected
-		OutputBucketName:             aws.String(ts.outputBucket),
+		MediaFormat:      types.MediaFormatMp4,   // Auto-detect format
+		LanguageCode:     types.LanguageCodeEnUs, // Can be auto-detected
+		OutputBucketName: aws.String(ts.outputBucket),
 		Settings: &types.Settings{
 			ShowSpeakerLabels: aws.Bool(false), // Disable speaker labeling for moderation
 			MaxSpeakerLabels:  nil,
@@ -109,7 +109,7 @@ func (ts *TranscriptionService) TranscribeAudio(ctx context.Context, s3URI strin
 	go func() {
 		deleteCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		
+
 		err := ts.deleteTranscriptionJob(deleteCtx, jobName)
 		if err != nil {
 			ts.logger.Warn("failed to delete transcription job",
@@ -131,49 +131,49 @@ func (ts *TranscriptionService) TranscribeAudio(ctx context.Context, s3URI strin
 func (ts *TranscriptionService) pollForCompletion(ctx context.Context, jobName string) (*types.TranscriptionJob, error) {
 	maxAttempts := 60 // Maximum 5 minutes of polling
 	backoffDuration := 5 * time.Second
-	
+
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		// Check job status
 		getJobInput := &transcribe.GetTranscriptionJobInput{
 			TranscriptionJobName: aws.String(jobName),
 		}
-		
+
 		response, err := ts.transcribeClient.GetTranscriptionJob(ctx, getJobInput)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get job status: %w", err)
 		}
-		
+
 		job := response.TranscriptionJob
 		status := job.TranscriptionJobStatus
-		
+
 		ts.logger.Debug("transcription job status",
 			zap.String("job_name", jobName),
 			zap.String("status", string(status)),
 			zap.Int("attempt", attempt+1))
-		
+
 		switch status {
 		case types.TranscriptionJobStatusCompleted:
 			ts.logger.Info("transcription job completed",
 				zap.String("job_name", jobName),
 				zap.Int("attempts", attempt+1))
 			return job, nil
-			
+
 		case types.TranscriptionJobStatusFailed:
 			failureReason := "unknown"
 			if job.FailureReason != nil {
 				failureReason = *job.FailureReason
 			}
 			return nil, fmt.Errorf("transcription job failed: %s", failureReason)
-			
+
 		case types.TranscriptionJobStatusInProgress:
 			// Continue polling
-			
+
 		default:
 			ts.logger.Warn("unexpected job status",
 				zap.String("job_name", jobName),
 				zap.String("status", string(status)))
 		}
-		
+
 		// Wait before next poll with exponential backoff (up to 30 seconds)
 		select {
 		case <-ctx.Done():
@@ -184,7 +184,7 @@ func (ts *TranscriptionService) pollForCompletion(ctx context.Context, jobName s
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("transcription job timed out after %d attempts", maxAttempts)
 }
 
@@ -193,14 +193,14 @@ func (ts *TranscriptionService) downloadTranscript(ctx context.Context, s3URI *s
 	if s3URI == nil {
 		return "", 0, fmt.Errorf("transcript URI is nil")
 	}
-	
+
 	// Parse S3 URI (format: https://s3.region.amazonaws.com/bucket/key)
 	uri := *s3URI
 	parts := strings.Split(strings.TrimPrefix(uri, "https://"), "/")
 	if len(parts) < 2 {
 		return "", 0, fmt.Errorf("invalid S3 URI format: %s", uri)
 	}
-	
+
 	// Extract bucket and key
 	// URI format: s3.region.amazonaws.com/bucket/key...
 	bucketAndKey := strings.Join(parts[1:], "/")
@@ -208,20 +208,20 @@ func (ts *TranscriptionService) downloadTranscript(ctx context.Context, s3URI *s
 	if len(keyParts) < 2 {
 		return "", 0, fmt.Errorf("could not parse bucket and key from URI: %s", uri)
 	}
-	
+
 	bucket := keyParts[0]
 	key := keyParts[1]
-	
+
 	ts.logger.Debug("downloading transcript",
 		zap.String("bucket", bucket),
 		zap.String("key", key))
-	
+
 	// Download transcript from S3
 	getObjectInput := &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	}
-	
+
 	result, err := ts.s3Client.GetObject(ctx, getObjectInput)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to download transcript: %w", err)
@@ -229,20 +229,20 @@ func (ts *TranscriptionService) downloadTranscript(ctx context.Context, s3URI *s
 	defer func() {
 		_ = result.Body.Close()
 	}()
-	
+
 	// Read transcript content
 	var transcriptContent strings.Builder
 	_, err = io.Copy(&transcriptContent, result.Body)
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to read transcript content: %w", err)
 	}
-	
+
 	// Parse JSON transcript (AWS Transcribe JSON format)
 	transcript, confidence, err := ts.parseTranscriptJSON(transcriptContent.String())
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to parse transcript JSON: %w", err)
 	}
-	
+
 	return transcript, confidence, nil
 }
 
@@ -251,33 +251,33 @@ func (ts *TranscriptionService) parseTranscriptJSON(jsonContent string) (string,
 	// For now, use a simple JSON parsing approach
 	// In production, you might want to use a proper JSON parser to extract
 	// more detailed information like timestamps, speaker labels, etc.
-	
+
 	// Look for transcript text in the JSON
 	// AWS Transcribe format includes a "results" section with transcript text
-	
+
 	// Simple extraction - look for "transcript" field
 	transcriptStart := strings.Index(jsonContent, `"transcript":"`)
 	if transcriptStart == -1 {
 		return "", 0, fmt.Errorf("transcript text not found in JSON")
 	}
-	
+
 	// Extract transcript text
 	transcriptStart += len(`"transcript":"`)
 	transcriptEnd := strings.Index(jsonContent[transcriptStart:], `"`)
 	if transcriptEnd == -1 {
 		return "", 0, fmt.Errorf("transcript text end not found")
 	}
-	
+
 	transcript := jsonContent[transcriptStart : transcriptStart+transcriptEnd]
-	
+
 	// Unescape JSON string
 	transcript = strings.ReplaceAll(transcript, `\"`, `"`)
 	transcript = strings.ReplaceAll(transcript, `\\`, `\`)
-	
+
 	// Extract confidence score (rough average)
 	// Look for confidence scores in the items array
 	confidence := 0.85 // Default confidence if not found
-	
+
 	// Simple confidence extraction - look for confidence values
 	confidenceStart := strings.Index(jsonContent, `"confidence":`)
 	if confidenceStart != -1 {
@@ -286,7 +286,7 @@ func (ts *TranscriptionService) parseTranscriptJSON(jsonContent string) (string,
 		if confidenceEnd != -1 {
 			confidenceStr := jsonContent[confidenceStart : confidenceStart+confidenceEnd]
 			confidenceStr = strings.Trim(confidenceStr, `" `)
-			
+
 			// Parse confidence value (0.0 to 1.0)
 			if len(confidenceStr) > 0 && confidenceStr[0] >= '0' && confidenceStr[0] <= '9' {
 				// Simple float parsing - take first few digits
@@ -296,11 +296,11 @@ func (ts *TranscriptionService) parseTranscriptJSON(jsonContent string) (string,
 			}
 		}
 	}
-	
+
 	ts.logger.Debug("parsed transcript",
 		zap.Int("text_length", len(transcript)),
 		zap.Float64("confidence", confidence))
-	
+
 	return transcript, confidence, nil
 }
 
@@ -309,15 +309,14 @@ func (ts *TranscriptionService) deleteTranscriptionJob(ctx context.Context, jobN
 	deleteInput := &transcribe.DeleteTranscriptionJobInput{
 		TranscriptionJobName: aws.String(jobName),
 	}
-	
+
 	_, err := ts.transcribeClient.DeleteTranscriptionJob(ctx, deleteInput)
 	if err != nil {
 		return fmt.Errorf("failed to delete transcription job: %w", err)
 	}
-	
+
 	ts.logger.Debug("transcription job deleted",
 		zap.String("job_name", jobName))
-	
+
 	return nil
 }
-

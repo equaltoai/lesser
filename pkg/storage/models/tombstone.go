@@ -60,7 +60,9 @@ func (t *Tombstone) BeforeCreate() error {
 	t.SK = "TOMBSTONE"
 
 	// Update GSI keys
-	t.UpdateKeys()
+	if err := t.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return nil
 }

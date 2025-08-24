@@ -930,7 +930,9 @@ func (al *AuditLogger) convertToAuditEvents(logs []*models.AuthAuditLog) []*Audi
 	for i, log := range logs {
 		var metadata map[string]interface{}
 		if log.Metadata != "" {
-			_ = json.Unmarshal([]byte(log.Metadata), &metadata)
+			if err := json.Unmarshal([]byte(log.Metadata), &metadata); err != nil {
+				al.logger.Warn("failed to unmarshal audit log metadata", zap.Error(err), zap.String("log_id", log.ID))
+			}
 		}
 
 		events[i] = &AuditEvent{

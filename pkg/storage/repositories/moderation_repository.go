@@ -19,7 +19,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // ModerationRepository implements moderation operations using DynamORM with BaseRepository pattern
 type ModerationRepository struct {
 	*BaseRepository[*models.ModerationEvent]
@@ -438,7 +437,7 @@ func (r *ModerationRepository) AddModerationReview(ctx context.Context, review *
 		CreatedAt:   review.Created,
 		TTL:         time.Now().Add(30 * 24 * time.Hour).Unix(),
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Create the review
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -516,7 +515,7 @@ func (r *ModerationRepository) CreateModerationDecision(ctx context.Context, dec
 		CreatedAt:        time.Now(),
 		TTL:              time.Now().Add(90 * 24 * time.Hour).Unix(), // 90 days retention
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Create the decision
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -718,7 +717,9 @@ func (r *ModerationRepository) UpdateModerationPattern(ctx context.Context, patt
 		UpdatedAt:   pattern.UpdatedAt,
 		TTL:         time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Update the pattern
 	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
@@ -805,7 +806,9 @@ func (r *ModerationRepository) CreateModerationPattern(ctx context.Context, patt
 		UpdatedAt:   pattern.UpdatedAt,
 		TTL:         time.Now().Add(90 * 24 * time.Hour).Unix(),
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Create the pattern
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -1331,7 +1334,7 @@ func (r *ModerationRepository) RecordPatternMatch(_ context.Context, patternID s
 		Timestamp: timestamp,
 		CreatedAt: time.Now(),
 	}
-	analytics.UpdateKeys()
+	_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.db.Model(analytics).Create()
 	if err != nil {
@@ -1370,7 +1373,9 @@ func (r *ModerationRepository) CreateFilter(ctx context.Context, filter *storage
 		CreatedAt:    filter.CreatedAt,
 		UpdatedAt:    filter.UpdatedAt,
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Create the filter
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -1489,7 +1494,9 @@ func (r *ModerationRepository) UpdateFilter(ctx context.Context, filterID string
 		CreatedAt:    filter.CreatedAt,
 		UpdatedAt:    filter.UpdatedAt,
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	if err := r.db.WithContext(ctx).Model(model).Update(); err != nil {
 		r.logger.Error("Failed to update filter",
@@ -1581,7 +1588,9 @@ func (r *ModerationRepository) AddFilterKeyword(ctx context.Context, filterID st
 		WholeWord: keyword.WholeWord,
 		CreatedAt: keyword.CreatedAt,
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Create the keyword
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -1728,7 +1737,9 @@ func (r *ModerationRepository) AddFilterStatus(ctx context.Context, filterID str
 		StatusID:  status.StatusID,
 		CreatedAt: status.CreatedAt,
 	}
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Create the status
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -1872,7 +1883,7 @@ func (r *ModerationRepository) AssignReport(ctx context.Context, reportID string
 		UpdatedAt:         report.UpdatedAt,
 		AssignedTo:        report.AssignedTo,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	err = r.db.WithContext(ctx).Model(model).Update()
 
@@ -1931,7 +1942,7 @@ func (r *ModerationRepository) UnassignReport(ctx context.Context, reportID stri
 		UpdatedAt:         report.UpdatedAt,
 		AssignedTo:        report.AssignedTo,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	err = r.db.WithContext(ctx).Model(model).Update()
 
@@ -2022,7 +2033,7 @@ func (r *ModerationRepository) CreateFlag(ctx context.Context, flag *storage.Fla
 		ReviewNote: flag.ReviewNote,
 		CreatedAt:  flag.CreatedAt,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Create the flag
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -2243,7 +2254,7 @@ func (r *ModerationRepository) UpdateFlagStatus(ctx context.Context, id string, 
 		ReviewNote: flag.ReviewNote,
 		CreatedAt:  flag.CreatedAt,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	err = r.db.WithContext(ctx).Model(model).Update()
 
@@ -2301,7 +2312,7 @@ func (r *ModerationRepository) DeleteFlag(ctx context.Context, id string) error 
 		ReviewNote: flag.ReviewNote,
 		CreatedAt:  flag.CreatedAt,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Delete the flag
 	if err := r.db.WithContext(ctx).Model(model).Delete(); err != nil {
@@ -2366,7 +2377,7 @@ func (r *ModerationRepository) CreateReport(ctx context.Context, report *storage
 		UpdatedAt:         report.UpdatedAt,
 		AssignedTo:        report.AssignedTo,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Create the report
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -2533,7 +2544,7 @@ func (r *ModerationRepository) UpdateReportStatus(ctx context.Context, id string
 		UpdatedAt:         report.UpdatedAt,
 		AssignedTo:        report.AssignedTo,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	err = r.db.WithContext(ctx).Model(model).Update()
 
@@ -2782,7 +2793,7 @@ func (r *ModerationRepository) CreateAuditLog(ctx context.Context, auditLog *sto
 		Timestamp:  auditLog.Timestamp,
 		CreatedAt:  auditLog.CreatedAt,
 	}
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	// Create the audit log entry
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
@@ -3038,7 +3049,7 @@ func (r *ModerationRepository) StoreAnalysisResult(ctx context.Context, analysis
 	}
 
 	// Update keys and create
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
 		r.logger.Error("Failed to store analysis result",
@@ -3120,7 +3131,7 @@ func (r *ModerationRepository) StoreDecision(ctx context.Context, decisionData m
 	}
 
 	// Update keys and create
-	model.UpdateKeys()
+	model.UpdateKeys() // Internal model operation
 
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {
 		r.logger.Error("Failed to store decision",
@@ -3258,7 +3269,7 @@ func (r *ModerationRepository) UpdateEnforcementStatus(ctx context.Context, cont
 	}
 
 	// Update keys (in case GSI keys need updating)
-	decision.UpdateKeys()
+	decision.UpdateKeys() // Internal model operation
 
 	if err := r.db.WithContext(ctx).Model(decision).Update(); err != nil {
 		r.logger.Error("Failed to update enforcement status",
@@ -3312,7 +3323,7 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 	}
 
 	// Update keys and create
-	queueItem.UpdateKeys()
+	queueItem.UpdateKeys() // Internal model operation
 
 	if err := r.db.WithContext(ctx).Model(queueItem).Create(); err != nil {
 		return ErrorHandler.HandleCreateError(err, "review queue", queueItem.ID)
@@ -3325,20 +3336,20 @@ func (r *ModerationRepository) addToReviewQueue(ctx context.Context, decision *m
 func (r *ModerationRepository) GetModerationDecisionsByModerator(ctx context.Context, moderatorUsername string, limit int) ([]*models.ModerationReview, error) {
 	// Query moderation reviews by reviewer ID using the existing key structure
 	// ModerationReview has SK=REVIEWER#{reviewer_id}, so we can scan for reviews by this moderator
-	
+
 	var reviews []*models.ModerationReview
-	
+
 	// Query reviews where SK starts with "REVIEWER#{moderatorUsername}"
 	query := r.db.WithContext(ctx).Model(&models.ModerationReview{}).
 		Where("SK", "=", fmt.Sprintf("REVIEWER#%s", moderatorUsername))
-	
+
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	
+
 	if err := query.All(&reviews); err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "moderation review", moderatorUsername)
 	}
-	
+
 	return reviews, nil
 }

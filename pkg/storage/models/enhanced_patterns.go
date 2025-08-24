@@ -33,11 +33,11 @@ type EnhancedModerationPattern struct {
 	Version     int    `json:"version"`
 
 	// Pattern configuration
-	PatternType     string `json:"pattern_type"`     // "url_exact", "url_domain", "url_subdomain", "url_path", "url_query", "url_regex", "ip_single", "ip_cidr", "ip_range", "ip_regex"
-	PatternContent  string `json:"pattern_content"`  // The actual pattern string
-	Category        string `json:"category"`         // "spam", "malware", "phishing", "harassment", etc.
-	Severity        string `json:"severity"`         // "low", "medium", "high", "critical"
-	Priority        int    `json:"priority"`         // 1-10, higher is more important
+	PatternType     string `json:"pattern_type"`    // "url_exact", "url_domain", "url_subdomain", "url_path", "url_query", "url_regex", "ip_single", "ip_cidr", "ip_range", "ip_regex"
+	PatternContent  string `json:"pattern_content"` // The actual pattern string
+	Category        string `json:"category"`        // "spam", "malware", "phishing", "harassment", etc.
+	Severity        string `json:"severity"`        // "low", "medium", "high", "critical"
+	Priority        int    `json:"priority"`        // 1-10, higher is more important
 	Active          bool   `json:"active"`
 	Compiled        bool   `json:"compiled"`         // Whether pattern has been compiled successfully
 	CompilationHash string `json:"compilation_hash"` // Hash of compiled pattern for cache invalidation
@@ -53,23 +53,23 @@ type EnhancedModerationPattern struct {
 	MatchCount         int64     `json:"match_count"`
 	FalsePositiveCount int64     `json:"false_positive_count"`
 	TruePositiveCount  int64     `json:"true_positive_count"`
-	Effectiveness      float64   `json:"effectiveness"`       // Calculated effectiveness score 0.0-1.0
-	ConfidenceScore    float64   `json:"confidence_score"`    // Pattern confidence 0.0-1.0
+	Effectiveness      float64   `json:"effectiveness"`    // Calculated effectiveness score 0.0-1.0
+	ConfidenceScore    float64   `json:"confidence_score"` // Pattern confidence 0.0-1.0
 	LastMatch          time.Time `json:"last_match,omitempty"`
-	AverageMatchTime   float64   `json:"average_match_time"`  // Average time to match in milliseconds
+	AverageMatchTime   float64   `json:"average_match_time"` // Average time to match in milliseconds
 
 	// Pattern validation metrics
-	TestResults     map[string]interface{} `json:"test_results,omitempty"`     // Results from pattern testing
-	ValidationScore float64                `json:"validation_score"`           // 0.0-1.0 based on test results
+	TestResults     map[string]interface{} `json:"test_results,omitempty"` // Results from pattern testing
+	ValidationScore float64                `json:"validation_score"`       // 0.0-1.0 based on test results
 	LastValidated   time.Time              `json:"last_validated,omitempty"`
 
 	// Metadata
-	CreatedBy   string    `json:"created_by"`
-	UpdatedBy   string    `json:"updated_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	LastUsed    time.Time `json:"last_used,omitempty"`
-	ExpiresAt   time.Time `json:"expires_at,omitempty"`
+	CreatedBy string    `json:"created_by"`
+	UpdatedBy string    `json:"updated_by,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	LastUsed  time.Time `json:"last_used,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 
 	// DynamoDB TTL (90 days default)
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`
@@ -190,9 +190,9 @@ type PatternCache struct {
 	PatternID       string                 `json:"pattern_id"`
 	PatternType     string                 `json:"pattern_type"`
 	CompilationHash string                 `json:"compilation_hash"`
-	CompiledData    map[string]interface{} `json:"compiled_data"`      // Serialized compiled pattern data
-	CompileTime     float64                `json:"compile_time"`       // Time taken to compile in milliseconds
-	CacheHits       int64                  `json:"cache_hits"`         // Number of times this cache entry was used
+	CompiledData    map[string]interface{} `json:"compiled_data"` // Serialized compiled pattern data
+	CompileTime     float64                `json:"compile_time"`  // Time taken to compile in milliseconds
+	CacheHits       int64                  `json:"cache_hits"`    // Number of times this cache entry was used
 	LastUsed        time.Time              `json:"last_used"`
 	CreatedAt       time.Time              `json:"created_at"`
 	UpdatedAt       time.Time              `json:"updated_at"`
@@ -259,16 +259,16 @@ type PatternPerformanceMetric struct {
 	Hour        int    `json:"hour"` // 0-23
 
 	// Performance counters
-	MatchAttempts      int64   `json:"match_attempts"`      // Total match attempts
-	SuccessfulMatches  int64   `json:"successful_matches"`  // Actual matches
-	FalsePositives     int64   `json:"false_positives"`     // Confirmed false positives
-	TruePositives      int64   `json:"true_positives"`      // Confirmed true positives
-	AverageMatchTime   float64 `json:"average_match_time"`  // Average time per match in milliseconds
-	MaxMatchTime       float64 `json:"max_match_time"`      // Maximum time for a single match
-	MinMatchTime       float64 `json:"min_match_time"`      // Minimum time for a single match
-	TotalMatchTime     float64 `json:"total_match_time"`    // Total time spent matching
-	MemoryUsage        int64   `json:"memory_usage"`        // Memory usage in bytes
-	CPUTime            float64 `json:"cpu_time"`            // CPU time used in milliseconds
+	MatchAttempts     int64   `json:"match_attempts"`     // Total match attempts
+	SuccessfulMatches int64   `json:"successful_matches"` // Actual matches
+	FalsePositives    int64   `json:"false_positives"`    // Confirmed false positives
+	TruePositives     int64   `json:"true_positives"`     // Confirmed true positives
+	AverageMatchTime  float64 `json:"average_match_time"` // Average time per match in milliseconds
+	MaxMatchTime      float64 `json:"max_match_time"`     // Maximum time for a single match
+	MinMatchTime      float64 `json:"min_match_time"`     // Minimum time for a single match
+	TotalMatchTime    float64 `json:"total_match_time"`   // Total time spent matching
+	MemoryUsage       int64   `json:"memory_usage"`       // Memory usage in bytes
+	CPUTime           float64 `json:"cpu_time"`           // CPU time used in milliseconds
 
 	// Quality metrics
 	Precision float64 `json:"precision"` // true_positives / (true_positives + false_positives)
@@ -329,7 +329,7 @@ func (m *PatternPerformanceMetric) CalculateQualityMetrics() {
 
 	// Note: Recall calculation requires false negatives, which we don't track per hour
 	// This would need to be calculated at a higher level with additional data
-	
+
 	if m.Precision > 0 && m.Recall > 0 {
 		m.F1Score = 2 * (m.Precision * m.Recall) / (m.Precision + m.Recall)
 	}
@@ -361,20 +361,20 @@ type PatternTestResult struct {
 
 	// Test results
 	Passed          bool                   `json:"passed"`
-	Score           float64                `json:"score"`           // 0.0-1.0
-	ExecutionTime   float64                `json:"execution_time"`  // Time in milliseconds
-	MemoryUsage     int64                  `json:"memory_usage"`    // Memory usage in bytes
-	Results         map[string]interface{} `json:"results"`         // Detailed test results
+	Score           float64                `json:"score"`          // 0.0-1.0
+	ExecutionTime   float64                `json:"execution_time"` // Time in milliseconds
+	MemoryUsage     int64                  `json:"memory_usage"`   // Memory usage in bytes
+	Results         map[string]interface{} `json:"results"`        // Detailed test results
 	ExpectedResults []string               `json:"expected_results,omitempty"`
 	ActualResults   []string               `json:"actual_results,omitempty"`
 	Errors          []string               `json:"errors,omitempty"`
 
 	// Test metadata
-	TestVersion   string    `json:"test_version"`
-	RunBy         string    `json:"run_by"`
-	RunAt         time.Time `json:"run_at"`
-	Environment   string    `json:"environment"` // "development", "staging", "production"
-	CreatedAt     time.Time `json:"created_at"`
+	TestVersion string    `json:"test_version"`
+	RunBy       string    `json:"run_by"`
+	RunAt       time.Time `json:"run_at"`
+	Environment string    `json:"environment"` // "development", "staging", "production"
+	CreatedAt   time.Time `json:"created_at"`
 
 	// TTL (90 days for test results)
 	TTL int64 `dynamorm:"ttl" json:"ttl,omitempty"`

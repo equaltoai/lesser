@@ -53,7 +53,7 @@ func getImportExportItemsForUser(
 
 		return exports, nextCursor, nil
 	}
-	
+
 	var imports []*models.Import
 	query := db.Model(&models.Import{}).
 		Where("Username", "=", username).
@@ -112,9 +112,8 @@ func getImportExportItemsByStatus[T ImportExportItem](
 			zap.Error(err))
 		if itemType == "export" {
 			return nil, ErrorHandler.HandleQueryError(err, EntityExport, username)
-		} else {
-			return nil, ErrorHandler.HandleQueryError(err, EntityImport, username)
 		}
+		return nil, ErrorHandler.HandleQueryError(err, EntityImport, username)
 	}
 
 	// Filter by status
@@ -239,9 +238,8 @@ func getUserCosts[T any](
 			zap.Error(err))
 		if itemType == "export" {
 			return nil, ErrorHandler.HandleQueryError(err, EntityExportCostTracking, username)
-		} else {
-			return nil, ErrorHandler.HandleQueryError(err, EntityImportCostTracking, username)
 		}
+		return nil, ErrorHandler.HandleQueryError(err, EntityImportCostTracking, username)
 	}
 
 	return costTrackingRecords, nil

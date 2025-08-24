@@ -67,7 +67,7 @@ func (h *Handler) HandleGetFavouritesLift(ctx *lift.Context) error {
 	// Set pagination headers
 	if result.Pagination.NextCursor != "" {
 		params.MaxID = result.Pagination.NextCursor
-		h.withPaginationHeaders(ctx, fmt.Sprintf("%s/api/v1/favourites", h.cfg.BaseURL()), 
+		h.withPaginationHeaders(ctx, fmt.Sprintf("%s/api/v1/favourites", h.cfg.BaseURL()),
 			params, true, false)
 	}
 

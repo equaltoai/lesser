@@ -52,7 +52,7 @@ func (r *Relay) UpdateKeys() error {
 		r.GSI2PK = fmt.Sprintf("RELAY_DOMAIN#%s", r.Domain)
 		r.GSI2SK = r.URL
 	}
-	
+
 	return nil
 }
 

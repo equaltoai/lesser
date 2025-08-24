@@ -314,12 +314,12 @@ type OAuthServiceInterface interface {
 
 // Common scope constants to avoid import cycles
 const (
-	ScopeRead      = "read"
-	ScopeWrite     = "write"
-	WriteFollows   = "write:follows"
-	ReadFollows    = "read:follows"
-	AdminRead      = "admin:read"
-	AdminWrite     = "admin:write"
+	ScopeRead    = "read"
+	ScopeWrite   = "write"
+	WriteFollows = "write:follows"
+	ReadFollows  = "read:follows"
+	AdminRead    = "admin:read"
+	AdminWrite   = "admin:write"
 )
 
 // Common scope validation patterns
@@ -354,11 +354,11 @@ func HasAllScopes(claims Claims, scopes []string) bool {
 
 // Common scope combinations found in the codebase
 var (
-	ReadScopes     = []string{ScopeRead, "read:accounts", "read:statuses", "read:follows"}
-	WriteScopes    = []string{ScopeWrite, "write:accounts", "write:statuses", "write:follows"}
-	FollowScopes   = []string{WriteFollows, ScopeWrite, "write:follows"}
-	BlockScopes    = []string{ScopeWrite, "write:blocks"}
-	AdminScopes    = []string{AdminRead, AdminWrite}
+	ReadScopes   = []string{ScopeRead, "read:accounts", "read:statuses", "read:follows"}
+	WriteScopes  = []string{ScopeWrite, "write:accounts", "write:statuses", "write:follows"}
+	FollowScopes = []string{WriteFollows, ScopeWrite, "write:follows"}
+	BlockScopes  = []string{ScopeWrite, "write:blocks"}
+	AdminScopes  = []string{AdminRead, AdminWrite}
 )
 
 // ValidateReadScopes validates against common read scope combinations

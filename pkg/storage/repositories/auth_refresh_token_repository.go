@@ -28,7 +28,7 @@ func NewAuthRefreshTokenRepository(db core.DB) *AuthRefreshTokenRepository {
 		nil, // Cost service can be nil for now
 		"auth_refresh_token",
 	)
-	
+
 	return &AuthRefreshTokenRepository{
 		BaseRepository: baseRepo,
 	}
@@ -60,12 +60,12 @@ func (r *AuthRefreshTokenRepository) CreateRefreshToken(ctx context.Context, use
 	}
 
 	// Create the token using BaseRepository
-	err := r.BaseRepository.Create(ctx, token)
+	err := r.Create(ctx, token)
 	if err != nil {
 		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, token.Token)
 	}
 
-	r.BaseRepository.logger.Info("Created new auth refresh token",
+	r.logger.Info("Created new auth refresh token",
 		zap.String("user_id", userID),
 		zap.String("family", token.Family),
 		zap.String("device", deviceName),
@@ -77,9 +77,9 @@ func (r *AuthRefreshTokenRepository) CreateRefreshToken(ctx context.Context, use
 // GetRefreshToken retrieves a refresh token by token value
 func (r *AuthRefreshTokenRepository) GetRefreshToken(ctx context.Context, token string) (*models.AuthRefreshToken, error) {
 	var authToken models.AuthRefreshToken
-	
+
 	// Use BaseRepository.Get to retrieve the token
-	err := r.BaseRepository.Get(ctx, token, models.SKToken, &authToken)
+	err := r.Get(ctx, token, models.SKToken, &authToken)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(storage.ErrInvalidRefreshToken, EntityRefreshToken, token)
@@ -108,7 +108,7 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 		// SECURITY ALERT: Token reuse detected!
 		// Revoke entire family
 		if err := r.RevokeTokenFamily(ctx, oldToken.Family, "Token reuse detected"); err != nil {
-			r.BaseRepository.logger.Error("Failed to revoke token family after reuse detection",
+			r.logger.Error("Failed to revoke token family after reuse detection",
 				zap.String("family", oldToken.Family),
 				zap.Error(err))
 		}
@@ -144,7 +144,7 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 	}
 
 	// Use DynamORM transaction to ensure atomicity
-	err = r.BaseRepository.db.Transaction(func(tx *core.Tx) error {
+	err = r.db.Transaction(func(tx *core.Tx) error {
 		// Step 1: Revoke old token
 		oldToken.Revoked = true
 		oldToken.RevokedReason = "Rotated"
@@ -165,7 +165,7 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 		return nil, ErrorHandler.HandleUpdateError(err, EntityRefreshToken, "rotation")
 	}
 
-	r.BaseRepository.logger.Info("Rotated auth refresh token",
+	r.logger.Info("Rotated auth refresh token",
 		zap.String("user_id", newToken.UserID),
 		zap.String("family", newToken.Family),
 		zap.Int("generation", newToken.Generation),
@@ -176,7 +176,7 @@ func (r *AuthRefreshTokenRepository) RotateRefreshToken(ctx context.Context, old
 
 // RevokeTokenFamily revokes all tokens in a family (security breach response)
 func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, family string, reason string) error {
-	r.BaseRepository.logger.Warn("Revoking token family due to security event",
+	r.logger.Warn("Revoking token family due to security event",
 		zap.String("family", family),
 		zap.String("reason", reason))
 
@@ -187,12 +187,12 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 	}
 
 	if err := common.ValidateSliceNotEmpty("tokens", tokens); err != nil {
-		r.BaseRepository.logger.Debug("No tokens found for family", zap.String("family", family))
+		r.logger.Debug("No tokens found for family", zap.String("family", family))
 		return nil
 	}
 
 	// Use transaction to revoke all tokens atomically
-	err = r.BaseRepository.db.Transaction(func(tx *core.Tx) error {
+	err = r.db.Transaction(func(tx *core.Tx) error {
 		now := time.Now().Unix()
 
 		for _, token := range tokens {
@@ -220,7 +220,7 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 		zap.String("reason", reason),
 		zap.Int("tokens_revoked", len(tokens)))
 
-	r.BaseRepository.logger.Info("Successfully revoked token family",
+	r.logger.Info("Successfully revoked token family",
 		zap.String("family", family),
 		zap.String("reason", reason),
 		zap.Int("tokens_revoked", len(tokens)))
@@ -230,32 +230,32 @@ func (r *AuthRefreshTokenRepository) RevokeTokenFamily(ctx context.Context, fami
 
 // RevokeUserTokens revokes all tokens for a user (logout all devices)
 func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userID string, reason string) error {
-	r.BaseRepository.logger.Info("Revoking all tokens for user",
+	r.logger.Info("Revoking all tokens for user",
 		zap.String("user_id", userID),
 		zap.String("reason", reason))
 
 	// Get all tokens for the user (both active and inactive for complete revocation)
 	var tokens []models.AuthRefreshToken
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Where("UserID", "=", userID).
 		All(&tokens)
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			r.BaseRepository.logger.Debug("No tokens found for user", zap.String("user_id", userID))
+			r.logger.Debug("No tokens found for user", zap.String("user_id", userID))
 			return nil
 		}
 		return ErrorHandler.HandleQueryError(err, EntityRefreshToken, "user tokens")
 	}
 
 	if err := common.ValidateSliceNotEmpty("tokens", tokens); err != nil {
-		r.BaseRepository.logger.Debug("No tokens found for user", zap.String("user_id", userID))
+		r.logger.Debug("No tokens found for user", zap.String("user_id", userID))
 		return nil
 	}
 
 	// Use transaction to revoke all tokens atomically
 	tokensToRevoke := 0
-	err = r.BaseRepository.db.Transaction(func(tx *core.Tx) error {
+	err = r.db.Transaction(func(tx *core.Tx) error {
 		now := time.Now().Unix()
 
 		for _, token := range tokens {
@@ -284,7 +284,7 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 		zap.String("reason", reason),
 		zap.Int("tokens_revoked", tokensToRevoke))
 
-	r.BaseRepository.logger.Info("Successfully revoked user tokens",
+	r.logger.Info("Successfully revoked user tokens",
 		zap.String("user_id", userID),
 		zap.String("reason", reason),
 		zap.Int("tokens_revoked", tokensToRevoke))
@@ -294,11 +294,11 @@ func (r *AuthRefreshTokenRepository) RevokeUserTokens(ctx context.Context, userI
 
 // GetTokensByUser retrieves all active tokens for a user
 func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID string) ([]models.AuthRefreshToken, error) {
-	r.BaseRepository.logger.Debug("Getting tokens by user",
+	r.logger.Debug("Getting tokens by user",
 		zap.String("user_id", userID))
 
 	var tokens []models.AuthRefreshToken
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Where("UserID", "=", userID).
 		All(&tokens)
 
@@ -317,7 +317,7 @@ func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID
 		}
 	}
 
-	r.BaseRepository.logger.Debug("Retrieved active tokens for user",
+	r.logger.Debug("Retrieved active tokens for user",
 		zap.String("user_id", userID),
 		zap.Int("total_tokens", len(tokens)),
 		zap.Int("active_tokens", len(activeTokens)))
@@ -327,11 +327,11 @@ func (r *AuthRefreshTokenRepository) GetTokensByUser(ctx context.Context, userID
 
 // GetTokensByFamily retrieves all tokens in a family
 func (r *AuthRefreshTokenRepository) GetTokensByFamily(ctx context.Context, family string) ([]models.AuthRefreshToken, error) {
-	r.BaseRepository.logger.Debug("Getting tokens by family",
+	r.logger.Debug("Getting tokens by family",
 		zap.String("family", family))
 
 	var tokens []models.AuthRefreshToken
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
+	err := r.db.WithContext(ctx).Model(&models.AuthRefreshToken{}).
 		Where("Family", "=", family).
 		All(&tokens)
 
@@ -342,7 +342,7 @@ func (r *AuthRefreshTokenRepository) GetTokensByFamily(ctx context.Context, fami
 		return nil, ErrorHandler.HandleQueryError(err, EntityRefreshToken, "family tokens")
 	}
 
-	r.BaseRepository.logger.Debug("Retrieved tokens for family",
+	r.logger.Debug("Retrieved tokens for family",
 		zap.String("family", family),
 		zap.Int("token_count", len(tokens)))
 

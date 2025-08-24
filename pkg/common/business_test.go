@@ -41,7 +41,7 @@ func TestBusinessLogicService_NewBusinessLogicService(t *testing.T) {
 
 func TestValidateCommand(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name     string
 		cmd      interface{}
@@ -244,7 +244,7 @@ func TestValidateBusinessContent(t *testing.T) {
 
 func TestValidateUserRelationship(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name             string
 		actorID          string
@@ -398,7 +398,7 @@ func TestValidateStateTransition(t *testing.T) {
 
 func TestValidateResourceAccess(t *testing.T) {
 	ctx := context.Background()
-	
+
 	tests := []struct {
 		name           string
 		actorID        string

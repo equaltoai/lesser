@@ -406,7 +406,10 @@ func (si *SearchIndexer) recordIndexingCost(ctx *lift.Context, costData *models.
 	costData.DynamoCostMicros = si.calculateIndexingCost(writeCount)
 	costData.TotalCostMicros = costData.DynamoCostMicros
 
-	costData.UpdateKeys()
+	if err := costData.UpdateKeys(); err != nil {
+		si.logger.Warn("failed to update cost data keys", zap.Error(err))
+		// Continue with recording cost even if key update fails
+	}
 
 	// Record cost asynchronously to not impact indexing performance
 	go func() {

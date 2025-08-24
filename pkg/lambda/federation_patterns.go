@@ -131,16 +131,16 @@ func (fdp *FederationDeliveryPattern) ProcessSQSEvent(ctx *liftPkg.Context, even
 func (fdp *FederationDeliveryPattern) processMessagesWithConcurrency(ctx *liftPkg.Context, records []events.SQSMessage, concurrency int) []DeliveryResult {
 	sem := make(chan struct{}, concurrency)
 	results := make([]DeliveryResult, len(records))
-	
+
 	for i, record := range records {
 		sem <- struct{}{} // Acquire semaphore
-		
+
 		go func(index int, msg events.SQSMessage) {
 			defer func() { <-sem }() // Release semaphore
-			
+
 			result := fdp.processMessage(ctx, msg)
 			results[index] = result
-			
+
 			if !result.Success {
 				fdp.logger.Error("failed to process federation message",
 					zap.String("message_id", msg.MessageId),
@@ -149,12 +149,12 @@ func (fdp *FederationDeliveryPattern) processMessagesWithConcurrency(ctx *liftPk
 			}
 		}(i, record)
 	}
-	
+
 	// Wait for all goroutines to complete
 	for i := 0; i < concurrency; i++ {
 		sem <- struct{}{}
 	}
-	
+
 	return results
 }
 
@@ -313,24 +313,24 @@ func (fdp *FederationDeliveryPattern) recordDeliveryMetrics(msg ActivityDelivery
 
 	// Create cost calculation parameters
 	costParams := &federation.CostCalculationParams{
-		ActivityID:        msg.Activity.ID,
-		Domain:            targetDomain,
-		ActivityType:      msg.Activity.Type,
-		Direction:         "outbound",
-		OperationType:     "federation_delivery",
-		Timestamp:         time.Now(),
-		PayloadSize:       payloadSize,
-		Success:           result.Success,
-		ResponseTimeMs:    totalDuration.Milliseconds(),
-		LambdaDurationMs:  totalDuration.Milliseconds(),
-		ProcessingTimeMs:  result.Duration.Milliseconds(),
-		RetryCount:        result.Attempt - 1,
-		HTTPRequestCount:  1,
-		DataTransferBytes: payloadSize,
-		DynamoDBReadCount: 1,
+		ActivityID:         msg.Activity.ID,
+		Domain:             targetDomain,
+		ActivityType:       msg.Activity.Type,
+		Direction:          "outbound",
+		OperationType:      "federation_delivery",
+		Timestamp:          time.Now(),
+		PayloadSize:        payloadSize,
+		Success:            result.Success,
+		ResponseTimeMs:     totalDuration.Milliseconds(),
+		LambdaDurationMs:   totalDuration.Milliseconds(),
+		ProcessingTimeMs:   result.Duration.Milliseconds(),
+		RetryCount:         result.Attempt - 1,
+		HTTPRequestCount:   1,
+		DataTransferBytes:  payloadSize,
+		DynamoDBReadCount:  1,
 		DynamoDBWriteCount: 2,
-		SQSMessageCount:   1,
-		DNSLookupCount:    1,
+		SQSMessageCount:    1,
+		DNSLookupCount:     1,
 	}
 
 	if result.Error != nil {

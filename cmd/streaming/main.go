@@ -54,13 +54,13 @@ type StreamEvent struct {
 
 // StreamingHandler handles WebSocket streaming connections using DynamORM and Lift
 type StreamingHandler struct {
-	userRepo          *repositories.UserRepository
-	connectionRepo    *repositories.StreamingConnectionRepository
-	costTracker       *repositories.WebSocketCostTracker
-	logger            *zap.Logger
-	cfg               *config.Config
-	awsConfig         aws.Config
-	apiClient         *apigatewaymanagementapi.Client
+	userRepo        *repositories.UserRepository
+	connectionRepo  *repositories.StreamingConnectionRepository
+	costTracker     *repositories.WebSocketCostTracker
+	logger          *zap.Logger
+	cfg             *config.Config
+	awsConfig       aws.Config
+	apiClient       *apigatewaymanagementapi.Client
 	commandRouter   *streaming.CommandRouter
 	serviceRegistry *services.Registry
 	storageFactory  core.RepositoryStorage
@@ -81,18 +81,18 @@ func init() {
 		ServiceName: "streaming",
 		LambdaType:  common.LambdaTypeAPI, // WebSocket/HTTP streaming endpoints
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with API-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Streaming-specific initialization
 	db := lambdaCtx.DynamoDB.(dynamormCore.DB)
 	tableName := cfg.DynamoTableName
@@ -116,13 +116,13 @@ func init() {
 
 	// Initialize service registry
 	publisher := streaming.NewMockPublisher() // Use mock publisher for Lambda
-	
+
 	// Convert config to ServiceConfig
 	serviceConfig := &services.ServiceConfig{
 		BaseURL:   cfg.Domain,
 		JWTSecret: cfg.JWTSecret,
 	}
-	
+
 	serviceRegistry, err := services.NewRegistry(
 		services.WithStorage(repos),
 		services.WithPublisher(publisher),
@@ -135,7 +135,7 @@ func init() {
 
 	// Initialize command router and register handlers
 	commandRouter := streaming.NewCommandRouter(logger)
-	
+
 	// Register command handlers
 	statusHandler := handlers.NewStatusCommandHandlerV2(serviceRegistry.Notes(), logger)
 	accountHandler := handlers.NewAccountCommandHandler(serviceRegistry.Accounts(), logger)
@@ -147,7 +147,7 @@ func init() {
 		serviceRegistry.Notifications(),
 		logger,
 	)
-	
+
 	commandRouter.RegisterHandler(statusHandler)
 	commandRouter.RegisterHandler(accountHandler)
 	commandRouter.RegisterHandler(relationshipHandler)
@@ -584,7 +584,7 @@ func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *model
 func (sh *StreamingHandler) parseCommand(message StreamMessage) (*streaming.Command, error) {
 	// Extract command details from message payload
 	var command streaming.Command
-	
+
 	// Get command ID (required for request/response matching)
 	if id, exists := message.Payload["id"]; exists {
 		if idStr, ok := id.(string); ok {

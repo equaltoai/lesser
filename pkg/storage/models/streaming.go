@@ -61,7 +61,7 @@ func (s *StreamingPreferences) UpdateKeys() error {
 		s.GSI2PK = fmt.Sprintf(KeyPatternDevice, s.DeviceID)
 		s.GSI2SK = fmt.Sprintf("STREAMING_PREFS#%s", s.Username)
 	}
-	
+
 	return nil
 }
 

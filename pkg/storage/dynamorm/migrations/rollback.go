@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // RollbackOptions contains options for rolling back migrations

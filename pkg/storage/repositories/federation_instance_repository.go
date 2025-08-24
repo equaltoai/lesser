@@ -39,12 +39,12 @@ func NewFederationInstanceRepositoryWithCostTracking(db core.DB, logger *zap.Log
 func (r *FederationInstanceRepository) CreateInstance(ctx context.Context, instance *types.Instance) error {
 	model := r.toModel(instance)
 
-	err := r.BaseRepository.Create(ctx, model)
+	err := r.Create(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "federation instance", "create")
 	}
 
-	r.BaseRepository.logger.Info("created federation instance",
+	r.logger.Info("created federation instance",
 		zap.String("instanceID", instance.ID),
 		zap.String("domain", instance.Domain),
 		zap.String("tier", string(instance.TierLevel)))
@@ -55,7 +55,7 @@ func (r *FederationInstanceRepository) CreateInstance(ctx context.Context, insta
 // GetInstance retrieves an instance by ID
 func (r *FederationInstanceRepository) GetInstance(ctx context.Context, instanceID string) (*types.Instance, error) {
 	var model models.FederationInstanceRegistry
-	err := r.BaseRepository.Get(ctx, fmt.Sprintf("INSTANCE#%s", instanceID), "METADATA", &model)
+	err := r.Get(ctx, fmt.Sprintf("INSTANCE#%s", instanceID), "METADATA", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrEntityNotFound, instanceID), EntityFederationInstance, instanceID)
@@ -69,7 +69,7 @@ func (r *FederationInstanceRepository) GetInstance(ctx context.Context, instance
 // GetInstanceByDomain retrieves an instance by domain name
 func (r *FederationInstanceRepository) GetInstanceByDomain(ctx context.Context, domain string) (*types.Instance, error) {
 	var model models.FederationInstanceRegistry
-	err := r.BaseRepository.Get(ctx, fmt.Sprintf("INSTANCE#%s", domain), "METADATA", &model)
+	err := r.Get(ctx, fmt.Sprintf("INSTANCE#%s", domain), "METADATA", &model)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(fmt.Errorf("%w: %s", ErrEntityNotFound, domain), EntityFederationInstance, domain)
@@ -84,7 +84,7 @@ func (r *FederationInstanceRepository) GetInstanceByDomain(ctx context.Context, 
 func (r *FederationInstanceRepository) UpdateInstance(ctx context.Context, instance *types.Instance) error {
 	model := r.toModel(instance)
 
-	err := r.BaseRepository.Update(ctx, model)
+	err := r.Update(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "federation instance", "update")
 	}
@@ -94,7 +94,7 @@ func (r *FederationInstanceRepository) UpdateInstance(ctx context.Context, insta
 
 // DeleteInstance removes an instance
 func (r *FederationInstanceRepository) DeleteInstance(ctx context.Context, instanceID string) error {
-	err := r.BaseRepository.Delete(ctx, fmt.Sprintf("INSTANCE#%s", instanceID), "METADATA")
+	err := r.Delete(ctx, fmt.Sprintf("INSTANCE#%s", instanceID), "METADATA")
 	if err != nil {
 		return ErrorHandler.HandleDeleteError(err, "federation instance", instanceID)
 	}
@@ -123,7 +123,7 @@ func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx conte
 		"cursor": cursor,
 	})
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
+	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Index("GSI1").
 		Where("GSI1PK", "=", fmt.Sprintf("STATUS#%s", status))
 
@@ -148,7 +148,7 @@ func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx conte
 	if limit > 0 && len(instances) > actualLimit {
 		// We got more results than requested, so there are more pages
 		nextCursor = instances[actualLimit-1].GSI1SK // Use the last item's sort key as cursor
-		instances = instances[:actualLimit] // Trim to requested limit
+		instances = instances[:actualLimit]          // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -156,7 +156,7 @@ func (r *FederationInstanceRepository) ListInstancesByStatusWithCursor(ctx conte
 		result[i] = r.fromModel(&model)
 	}
 
-	r.BaseRepository.logger.Debug("listed instances by status with pagination",
+	r.logger.Debug("listed instances by status with pagination",
 		zap.String("status", string(status)),
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor),
@@ -193,7 +193,7 @@ func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.
 		"cursor": cursor,
 	})
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
+	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Index("GSI2").
 		Where("GSI2PK", "=", fmt.Sprintf("TIER#%s", tier)).
 		OrderBy("GSI2SK", "ASC") // Sort by usage ascending (least used first)
@@ -219,7 +219,7 @@ func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.
 	if limit > 0 && len(instances) > actualLimit {
 		// We got more results than requested, so there are more pages
 		nextCursor = instances[actualLimit-1].GSI2SK // Use the last item's sort key as cursor
-		instances = instances[:actualLimit] // Trim to requested limit
+		instances = instances[:actualLimit]          // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -227,7 +227,7 @@ func (r *FederationInstanceRepository) GetInstancesByTierWithCursor(ctx context.
 		result[i] = r.fromModel(&model)
 	}
 
-	r.BaseRepository.logger.Debug("get instances by tier with pagination",
+	r.logger.Debug("get instances by tier with pagination",
 		zap.String("tier", string(tier)),
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor),
@@ -259,7 +259,7 @@ func (r *FederationInstanceRepository) BatchGetInstances(ctx context.Context, in
 	}
 
 	// Use BaseRepository batch get
-	instanceModels, err := r.BaseRepository.BatchGet(ctx, batchKeys)
+	instanceModels, err := r.BatchGet(ctx, batchKeys)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "federation instance", "batch get")
 	}
@@ -271,7 +271,7 @@ func (r *FederationInstanceRepository) BatchGetInstances(ctx context.Context, in
 		instances = append(instances, instance)
 	}
 
-	r.BaseRepository.logger.Debug("batch get instances completed",
+	r.logger.Debug("batch get instances completed",
 		zap.Int("requested", len(instanceIDs)),
 		zap.Int("found", len(instances)))
 
@@ -299,7 +299,7 @@ func (r *FederationInstanceRepository) UpdateInstanceHealth(ctx context.Context,
 		GSI1PK:          fmt.Sprintf("STATUS#%s", status),
 	}
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(updateModel).
+	err := r.db.WithContext(ctx).Model(updateModel).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", instanceID)).
 		Where("SK", "=", "METADATA").
 		Update()
@@ -309,7 +309,7 @@ func (r *FederationInstanceRepository) UpdateInstanceHealth(ctx context.Context,
 
 	// Store health history
 	if err := r.storeHealthHistory(ctx, instanceID, health); err != nil {
-		r.BaseRepository.logger.Warn("failed to store health history",
+		r.logger.Warn("failed to store health history",
 			zap.String("instanceID", instanceID),
 			zap.Error(err))
 	}
@@ -321,7 +321,7 @@ func (r *FederationInstanceRepository) UpdateInstanceHealth(ctx context.Context,
 func (r *FederationInstanceRepository) UpdateInstanceUsage(ctx context.Context, instanceID string, bytesUsed int64) error {
 	// Get current usage first to calculate new GSI2SK
 	var currentModel models.FederationInstanceRegistry
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
+	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", instanceID)).
 		Where("SK", "=", "METADATA").
 		First(&currentModel)
@@ -337,7 +337,7 @@ func (r *FederationInstanceRepository) UpdateInstanceUsage(ctx context.Context, 
 		GSI2SK:       fmt.Sprintf("USAGE#%010d", newUsage),
 	}
 
-	err = r.BaseRepository.db.WithContext(ctx).Model(updateModel).
+	err = r.db.WithContext(ctx).Model(updateModel).
 		Where("PK", "=", fmt.Sprintf("INSTANCE#%s", instanceID)).
 		Where("SK", "=", "METADATA").
 		Update()
@@ -354,12 +354,12 @@ func (r *FederationInstanceRepository) UpdateInstanceUsage(ctx context.Context, 
 			GSI1PK: "STATUS#blocked",
 		}
 
-		err = r.BaseRepository.db.WithContext(ctx).Model(statusUpdateModel).
+		err = r.db.WithContext(ctx).Model(statusUpdateModel).
 			Where("PK", "=", fmt.Sprintf("INSTANCE#%s", instanceID)).
 			Where("SK", "=", "METADATA").
 			Update()
 		if err != nil {
-			r.BaseRepository.logger.Warn("failed to update instance status to blocked",
+			r.logger.Warn("failed to update instance status to blocked",
 				zap.String("instanceID", instanceID),
 				zap.Error(err))
 		}
@@ -389,7 +389,7 @@ func (r *FederationInstanceRepository) SearchInstancesWithCursor(ctx context.Con
 		"cursor":         cursor,
 	})
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
+	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("SK", "=", "METADATA").
 		Filter("Domain", "contains", domainPattern)
 
@@ -414,7 +414,7 @@ func (r *FederationInstanceRepository) SearchInstancesWithCursor(ctx context.Con
 	if limit > 0 && len(instances) > actualLimit {
 		// We got more results than requested, so there are more pages
 		nextCursor = instances[actualLimit-1].PK // Use the last item's primary key as cursor
-		instances = instances[:actualLimit] // Trim to requested limit
+		instances = instances[:actualLimit]      // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -422,7 +422,7 @@ func (r *FederationInstanceRepository) SearchInstancesWithCursor(ctx context.Con
 		result[i] = r.fromModel(&model)
 	}
 
-	r.BaseRepository.logger.Debug("search instances with pagination",
+	r.logger.Debug("search instances with pagination",
 		zap.String("domain_pattern", domainPattern),
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor),
@@ -437,7 +437,7 @@ func (r *FederationInstanceRepository) storeHealthHistory(ctx context.Context, i
 	history := r.toHealthHistoryModel(instanceID, health)
 
 	// Create a temporary BaseRepository for health history
-	healthRepo := NewBaseRepository[*models.FederationInstanceRegistryHealthHistory](r.BaseRepository.db, "FederationInstances", r.BaseRepository.logger)
+	healthRepo := NewBaseRepository[*models.FederationInstanceRegistryHealthHistory](r.db, "FederationInstances", r.logger)
 	err := healthRepo.Create(ctx, history)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFederationInstanceHealthStoreFailed, err)
@@ -451,8 +451,8 @@ func (r *FederationInstanceRepository) GetHealthHistory(ctx context.Context, ins
 	since := time.Now().Add(-duration)
 
 	// Create a temporary BaseRepository for health history
-	healthRepo := NewBaseRepository[*models.FederationInstanceRegistryHealthHistory](r.BaseRepository.db, "FederationInstances", r.BaseRepository.logger)
-	historyModels, err := healthRepo.QueryBetween(ctx, 
+	healthRepo := NewBaseRepository[*models.FederationInstanceRegistryHealthHistory](r.db, "FederationInstances", r.logger)
+	historyModels, err := healthRepo.QueryBetween(ctx,
 		fmt.Sprintf("INSTANCE#%s", instanceID),
 		fmt.Sprintf("HEALTH#%d", since.UnixNano()),
 		fmt.Sprintf("HEALTH#%d", time.Now().UnixNano()),
@@ -518,12 +518,12 @@ func (r *FederationInstanceRepository) BatchCreateInstances(ctx context.Context,
 	}
 
 	// Use BaseRepository batch create
-	err := r.BaseRepository.BatchCreate(ctx, instanceModels)
+	err := r.BatchCreate(ctx, instanceModels)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFederationInstanceBatchCreateFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("batch created federation instances",
+	r.logger.Info("batch created federation instances",
 		zap.Int("count", len(instances)))
 
 	return nil
@@ -589,7 +589,7 @@ func (r *FederationInstanceRepository) BatchUpdateInstancesHealth(ctx context.Co
 	}
 
 	// Use DynamORM batch update (implemented as batch put)
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
+	err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFederationInstanceBatchUpdateHealthFailed, err)
 	}
@@ -597,13 +597,13 @@ func (r *FederationInstanceRepository) BatchUpdateInstancesHealth(ctx context.Co
 	// Store health history for each instance
 	for instanceID, health := range healthUpdates {
 		if err := r.storeHealthHistory(ctx, instanceID, health); err != nil {
-			r.BaseRepository.logger.Warn("failed to store health history",
+			r.logger.Warn("failed to store health history",
 				zap.String("instanceID", instanceID),
 				zap.Error(err))
 		}
 	}
 
-	r.BaseRepository.logger.Info("batch updated instance health",
+	r.logger.Info("batch updated instance health",
 		zap.Int("count", len(healthUpdates)))
 
 	return nil
@@ -706,12 +706,12 @@ func (r *FederationInstanceRepository) BatchUpdateInstancesUsage(ctx context.Con
 	}
 
 	// Use DynamORM batch update
-	err = r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
+	err = r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(updateModels)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrFederationInstanceBatchUpdateUsageFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("batch updated instance usage",
+	r.logger.Info("batch updated instance usage",
 		zap.Int("count", len(updateModels)))
 
 	return nil
@@ -726,7 +726,7 @@ func (r *FederationInstanceRepository) batchUpdateUsageInChunks(ctx context.Cont
 		}
 
 		chunk := updateModels[i:end]
-		err := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(chunk)
+		err := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).BatchCreate(chunk)
 		if err != nil {
 			return fmt.Errorf("%w at index %d: %w", ErrFederationInstanceBatchUpdateUsageChunkFailed, i, err)
 		}
@@ -783,7 +783,7 @@ func (r *FederationInstanceRepository) ListAllInstancesWithCursor(ctx context.Co
 		"cursor": cursor,
 	})
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
+	query := r.db.WithContext(ctx).Model(&models.FederationInstanceRegistry{}).
 		Where("SK", "=", "METADATA")
 
 	// Add cursor for pagination
@@ -807,7 +807,7 @@ func (r *FederationInstanceRepository) ListAllInstancesWithCursor(ctx context.Co
 	if limit > 0 && len(instances) > actualLimit {
 		// We got more results than requested, so there are more pages
 		nextCursor = instances[actualLimit-1].PK // Use the last item's primary key as cursor
-		instances = instances[:actualLimit] // Trim to requested limit
+		instances = instances[:actualLimit]      // Trim to requested limit
 	}
 
 	result := make([]*types.Instance, len(instances))
@@ -815,7 +815,7 @@ func (r *FederationInstanceRepository) ListAllInstancesWithCursor(ctx context.Co
 		result[i] = r.fromModel(&model)
 	}
 
-	r.BaseRepository.logger.Debug("listed all instances with pagination",
+	r.logger.Debug("listed all instances with pagination",
 		zap.Int("limit", limit),
 		zap.String("cursor", cursor),
 		zap.String("next_cursor", nextCursor),
@@ -869,7 +869,7 @@ func (r *FederationInstanceRepository) validatePaginationParams(limit int, curso
 
 // logPaginationQuery logs pagination query details for debugging
 func (r *FederationInstanceRepository) logPaginationQuery(operation string, params map[string]interface{}) {
-	r.BaseRepository.logger.Debug("pagination query",
+	r.logger.Debug("pagination query",
 		zap.String("operation", operation),
 		zap.Any("params", params))
 }
@@ -914,7 +914,7 @@ func (r *FederationInstanceRepository) toModel(instance *types.Instance) *models
 	}
 
 	// Update keys after setting fields
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	return model
 }
@@ -996,7 +996,7 @@ func (r *FederationInstanceRepository) toHealthHistoryModel(instanceID string, h
 
 	// Set keys
 	model.PK = fmt.Sprintf("INSTANCE#%s", instanceID)
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	return model
 }

@@ -37,9 +37,10 @@ func NewLike(actor, object, statusAuthorID string) *Like {
 		Published:      now,
 		CreatedAt:      now,
 	}
-	
+
 	// Use UpdateKeys to set all key fields consistently
-	like.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = like.UpdateKeys()
 	return like
 }
 
@@ -63,7 +64,6 @@ func (l *Like) GetSK() string {
 	return l.SK
 }
 
-// FavoriteModel interface implementation for notification hooks
 // GetUserID returns the actor who liked (favoriter)
 func (l *Like) GetUserID() string {
 	return l.Actor

@@ -9,26 +9,26 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // TrackingServiceConfig contains configuration for the centralized cost tracking service
 type TrackingServiceConfig struct {
-	CloudWatchNamespace string
-	MetricsBatchSize    int
-	MetricsFlushInterval time.Duration
+	CloudWatchNamespace   string
+	MetricsBatchSize      int
+	MetricsFlushInterval  time.Duration
 	EnableDetailedMetrics bool
-	CostThresholds      Thresholds
+	CostThresholds        Thresholds
 }
 
 // Thresholds defines cost alert thresholds for various AWS services
 type Thresholds struct {
-	DynamoDBReadWarning   float64 // dollars
-	DynamoDBWriteWarning  float64 // dollars
-	S3OperationWarning    float64 // dollars
+	DynamoDBReadWarning     float64 // dollars
+	DynamoDBWriteWarning    float64 // dollars
+	S3OperationWarning      float64 // dollars
 	LambdaInvocationWarning float64 // dollars
-	DailyBudgetLimit      float64 // dollars
+	DailyBudgetLimit        float64 // dollars
 }
 
 // DefaultTrackingServiceConfig returns sensible defaults for cost tracking
@@ -39,10 +39,10 @@ func DefaultTrackingServiceConfig() TrackingServiceConfig {
 		MetricsFlushInterval:  30 * time.Second,
 		EnableDetailedMetrics: true,
 		CostThresholds: Thresholds{
-			DynamoDBReadWarning:     10.0, // $10/day
-			DynamoDBWriteWarning:    50.0, // $50/day
-			S3OperationWarning:      5.0,  // $5/day
-			LambdaInvocationWarning: 25.0, // $25/day
+			DynamoDBReadWarning:     10.0,  // $10/day
+			DynamoDBWriteWarning:    50.0,  // $50/day
+			S3OperationWarning:      5.0,   // $5/day
+			LambdaInvocationWarning: 25.0,  // $25/day
 			DailyBudgetLimit:        100.0, // $100/day total
 		},
 	}
@@ -50,21 +50,21 @@ func DefaultTrackingServiceConfig() TrackingServiceConfig {
 
 // TrackingService provides centralized cost tracking for all AWS operations
 type TrackingService struct {
-	config        TrackingServiceConfig
-	cloudWatch    *cloudwatch.Client
-	logger        *zap.Logger
-	
+	config     TrackingServiceConfig
+	cloudWatch *cloudwatch.Client
+	logger     *zap.Logger
+
 	// Core trackers
 	dynamoTracker *DynamoDBTracker
 	s3Tracker     *S3Tracker
 	lambdaTracker *LambdaTracker
-	
+
 	// Metrics batching
-	metricsBatch  []types.MetricDatum
-	batchMu       sync.Mutex
-	flushTicker   *time.Ticker
-	stopChan      chan struct{}
-	wg            sync.WaitGroup
+	metricsBatch []types.MetricDatum
+	batchMu      sync.Mutex
+	flushTicker  *time.Ticker
+	stopChan     chan struct{}
+	wg           sync.WaitGroup
 }
 
 // NewTrackingService creates a new centralized cost tracking service
@@ -79,10 +79,10 @@ func NewTrackingService(cloudWatch *cloudwatch.Client, logger *zap.Logger, confi
 		metricsBatch:  make([]types.MetricDatum, 0, config.MetricsBatchSize),
 		stopChan:      make(chan struct{}),
 	}
-	
+
 	// Start metrics flushing goroutine
 	ts.startMetricsFlusher()
-	
+
 	return ts
 }
 
@@ -91,7 +91,7 @@ func NewTrackingService(cloudWatch *cloudwatch.Client, logger *zap.Logger, confi
 // TrackDynamoOperation tracks a DynamoDB operation with comprehensive cost calculation
 func (ts *TrackingService) TrackDynamoOperation(ctx context.Context, operation DynamoOperation) error {
 	cost := ts.dynamoTracker.CalculateCost(operation)
-	
+
 	ts.logger.Debug("tracking DynamoDB operation",
 		zap.String("operation", operation.Type),
 		zap.String("table", operation.TableName),
@@ -99,16 +99,16 @@ func (ts *TrackingService) TrackDynamoOperation(ctx context.Context, operation D
 		zap.Int64("read_units", operation.ConsumedReadUnits),
 		zap.Int64("write_units", operation.ConsumedWriteUnits),
 	)
-	
+
 	// Record metrics
 	if err := ts.recordDynamoMetrics(ctx, operation, cost); err != nil {
 		ts.logger.Error("failed to record DynamoDB metrics", zap.Error(err))
 		return fmt.Errorf("failed to record DynamoDB metrics: %w", err)
 	}
-	
+
 	// Check cost thresholds
 	ts.checkCostThresholds(operation.Type, cost.TotalDollars())
-	
+
 	return nil
 }
 
@@ -117,7 +117,7 @@ func (ts *TrackingService) TrackDynamoOperation(ctx context.Context, operation D
 // TrackS3Operation tracks an S3 operation with cost calculation
 func (ts *TrackingService) TrackS3Operation(ctx context.Context, operation S3Operation) error {
 	cost := ts.s3Tracker.CalculateCost(operation)
-	
+
 	ts.logger.Debug("tracking S3 operation",
 		zap.String("operation", operation.Type),
 		zap.String("bucket", operation.BucketName),
@@ -125,16 +125,16 @@ func (ts *TrackingService) TrackS3Operation(ctx context.Context, operation S3Ope
 		zap.Int64("requests", operation.RequestCount),
 		zap.Int64("bytes", operation.BytesTransferred),
 	)
-	
+
 	// Record metrics
 	if err := ts.recordS3Metrics(ctx, operation, cost); err != nil {
 		ts.logger.Error("failed to record S3 metrics", zap.Error(err))
 		return fmt.Errorf("failed to record S3 metrics: %w", err)
 	}
-	
+
 	// Check cost thresholds
 	ts.checkCostThresholds("S3", cost.TotalDollars())
-	
+
 	return nil
 }
 
@@ -143,23 +143,23 @@ func (ts *TrackingService) TrackS3Operation(ctx context.Context, operation S3Ope
 // TrackLambdaInvocation tracks a Lambda invocation with cost calculation
 func (ts *TrackingService) TrackLambdaInvocation(ctx context.Context, operation LambdaOperation) error {
 	cost := ts.lambdaTracker.CalculateCost(operation)
-	
+
 	ts.logger.Debug("tracking Lambda invocation",
 		zap.String("function", operation.FunctionName),
 		zap.Duration("duration", operation.Duration),
 		zap.Int64("memory_mb", operation.MemoryMB),
 		zap.Float64("cost_dollars", cost.TotalDollars()),
 	)
-	
+
 	// Record metrics
 	if err := ts.recordLambdaMetrics(ctx, operation, cost); err != nil {
 		ts.logger.Error("failed to record Lambda metrics", zap.Error(err))
 		return fmt.Errorf("failed to record Lambda metrics: %w", err)
 	}
-	
+
 	// Check cost thresholds
 	ts.checkCostThresholds("Lambda", cost.TotalDollars())
-	
+
 	return nil
 }
 
@@ -170,7 +170,7 @@ func (ts *TrackingService) RecordMetrics(ctx context.Context, metrics []MetricDa
 	if err := common.ValidateSliceNotEmpty("metrics", metrics); err != nil {
 		return nil
 	}
-	
+
 	// Convert to CloudWatch format
 	cwMetrics := make([]types.MetricDatum, 0, len(metrics))
 	for _, metric := range metrics {
@@ -182,18 +182,18 @@ func (ts *TrackingService) RecordMetrics(ctx context.Context, metrics []MetricDa
 			Timestamp:  aws.Time(metric.Timestamp),
 		})
 	}
-	
+
 	// Add to batch for efficient sending
 	ts.batchMu.Lock()
 	ts.metricsBatch = append(ts.metricsBatch, cwMetrics...)
 	shouldFlush := len(ts.metricsBatch) >= ts.config.MetricsBatchSize
 	ts.batchMu.Unlock()
-	
+
 	// Flush immediately if batch is full
 	if shouldFlush {
 		return ts.flushMetrics(ctx)
 	}
-	
+
 	return nil
 }
 
@@ -203,7 +203,7 @@ func (ts *TrackingService) RecordMetrics(ctx context.Context, metrics []MetricDa
 func CalculateDynamoDBCost(readUnits, writeUnits float64) Cost {
 	readCostMicroCents := int64(readUnits * float64(DynamoDBReadRequestUnit))
 	writeCostMicroCents := int64(writeUnits * float64(DynamoDBWriteRequestUnit))
-	
+
 	return Cost{
 		Service:             "DynamoDB",
 		ReadCostMicroCents:  readCostMicroCents,
@@ -217,13 +217,13 @@ func CalculateDynamoDBCost(readUnits, writeUnits float64) Cost {
 func CalculateS3Cost(requests int64, storage float64) Cost {
 	requestCostMicroCents := int64(float64(requests) * float64(S3PutRequestCost) / 1000)
 	storageCostMicroCents := int64(storage * float64(S3StorageStandardGB) / (1024 * 1024 * 1024))
-	
+
 	return Cost{
-		Service:             "S3",
+		Service:               "S3",
 		RequestCostMicroCents: requestCostMicroCents,
 		StorageCostMicroCents: storageCostMicroCents,
-		TotalMicroCents:     requestCostMicroCents + storageCostMicroCents,
-		Timestamp:           time.Now(),
+		TotalMicroCents:       requestCostMicroCents + storageCostMicroCents,
+		Timestamp:             time.Now(),
 	}
 }
 
@@ -233,17 +233,17 @@ func CalculateLambdaCost(duration time.Duration, memory int64) Cost {
 	if durationMs < LambdaDurationMinMS {
 		durationMs = LambdaDurationMinMS
 	}
-	
+
 	gbSeconds := float64(memory) / 1024.0 * float64(durationMs) / 1000.0
 	invocationCostMicroCents := int64(LambdaRequestCost)
 	durationCostMicroCents := int64(gbSeconds * float64(LambdaGBSecondCost))
-	
+
 	return Cost{
-		Service:               "Lambda",
+		Service:                  "Lambda",
 		InvocationCostMicroCents: invocationCostMicroCents,
 		DurationCostMicroCents:   durationCostMicroCents,
-		TotalMicroCents:       invocationCostMicroCents + durationCostMicroCents,
-		Timestamp:             time.Now(),
+		TotalMicroCents:          invocationCostMicroCents + durationCostMicroCents,
+		Timestamp:                time.Now(),
 	}
 }
 
@@ -277,7 +277,7 @@ func (ts *TrackingService) Close(ctx context.Context) error {
 	// Stop the metrics flusher
 	close(ts.stopChan)
 	ts.wg.Wait()
-	
+
 	// Flush any remaining metrics
 	return ts.flushMetrics(ctx)
 }
@@ -287,11 +287,11 @@ func (ts *TrackingService) Close(ctx context.Context) error {
 func (ts *TrackingService) startMetricsFlusher() {
 	ts.flushTicker = time.NewTicker(ts.config.MetricsFlushInterval)
 	ts.wg.Add(1)
-	
+
 	go func() {
 		defer ts.wg.Done()
 		defer ts.flushTicker.Stop()
-		
+
 		for {
 			select {
 			case <-ts.flushTicker.C:
@@ -311,28 +311,28 @@ func (ts *TrackingService) flushMetrics(ctx context.Context) error {
 		ts.batchMu.Unlock()
 		return nil
 	}
-	
+
 	// Copy batch and reset
 	batch := make([]types.MetricDatum, len(ts.metricsBatch))
 	copy(batch, ts.metricsBatch)
 	ts.metricsBatch = ts.metricsBatch[:0]
 	ts.batchMu.Unlock()
-	
+
 	// Send to CloudWatch
 	input := &cloudwatch.PutMetricDataInput{
 		Namespace:  aws.String(ts.config.CloudWatchNamespace),
 		MetricData: batch,
 	}
-	
+
 	if _, err := ts.cloudWatch.PutMetricData(ctx, input); err != nil {
 		return fmt.Errorf("failed to put metric data: %w", err)
 	}
-	
+
 	ts.logger.Debug("flushed metrics to CloudWatch",
 		zap.Int("metric_count", len(batch)),
 		zap.String("namespace", ts.config.CloudWatchNamespace),
 	)
-	
+
 	return nil
 }
 
@@ -346,7 +346,7 @@ type ServiceMetric struct {
 // recordServiceMetrics provides a generic method for recording service-specific metrics
 func (ts *TrackingService) recordServiceMetrics(ctx context.Context, serviceName string, cost Cost, serviceMetrics []ServiceMetric, dimensions []types.Dimension) error {
 	metrics := make([]MetricData, 0, len(serviceMetrics)+1)
-	
+
 	// Add service-specific metrics
 	for _, metric := range serviceMetrics {
 		metrics = append(metrics, MetricData{
@@ -357,7 +357,7 @@ func (ts *TrackingService) recordServiceMetrics(ctx context.Context, serviceName
 			Dimensions: dimensions,
 		})
 	}
-	
+
 	// Add cost metric
 	metrics = append(metrics, MetricData{
 		Name:       fmt.Sprintf("%s.Cost", serviceName),
@@ -366,7 +366,7 @@ func (ts *TrackingService) recordServiceMetrics(ctx context.Context, serviceName
 		Timestamp:  time.Now(),
 		Dimensions: dimensions,
 	})
-	
+
 	return ts.RecordMetrics(ctx, metrics)
 }
 
@@ -413,7 +413,7 @@ func (ts *TrackingService) checkCostThresholds(operationType string, costDollars
 	default:
 		return
 	}
-	
+
 	if costDollars > threshold {
 		ts.logger.Warn("cost threshold exceeded",
 			zap.String("operation", operationType),

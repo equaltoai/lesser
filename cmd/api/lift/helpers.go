@@ -158,6 +158,7 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (
 
 // authenticateUserOptional handles optional authentication (for search, public endpoints etc.)
 // Returns empty string if no authentication provided, or username if valid auth
+//
 //nolint:unused // Utility function for optional authentication patterns
 func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []string) (username string, err error) {
 	// Test hook - check for test username header
@@ -561,7 +562,6 @@ func (h *Handler) respondBadRequest(ctx *lift.Context, message string) error {
 	return h.respondWithError(ctx, 400, message)
 }
 
-
 // Additional standardized error response functions for common patterns
 
 // respondInternalError sends a standardized 500 response
@@ -573,6 +573,7 @@ func (h *Handler) respondInternalError(ctx *lift.Context, message string) error 
 }
 
 // respondConflict sends a standardized 409 response
+//
 //nolint:unused // Part of complete set of standardized HTTP response helpers
 func (h *Handler) respondConflict(ctx *lift.Context, message string) error {
 	if common.ValidateRequiredParam("message", message) != nil {
@@ -647,8 +648,6 @@ func (h *Handler) parseArrayParam(ctx *lift.Context, param string) []string {
 
 	return unique
 }
-
-
 
 // buildLinkHeader builds a Link header for pagination
 func buildLinkHeader(baseURL string, params *PaginationParams, hasNext, hasPrev bool) string {
@@ -853,7 +852,7 @@ func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []str
 // Supports both test mode (via X-Test-Username header) and production OAuth with write scope validation
 // Returns the authenticated username or triggers an HTTP error response
 func (h *Handler) authenticateUserWithWriteScope(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header  
+	// Test hook - check for test username header
 	testUsername := ctx.Header("X-Test-Username")
 	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
 		testUsername = ctx.Request.Request.Headers["X-Test-Username"]

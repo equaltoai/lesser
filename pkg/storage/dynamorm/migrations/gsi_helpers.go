@@ -11,8 +11,8 @@ import (
 
 // Projection type constants
 const (
-	projectionTypeInclude = "INCLUDE"
-	projectionTypeAll     = "ALL"
+	projectionTypeInclude  = "INCLUDE"
+	projectionTypeAll      = "ALL"
 	projectionTypeKeysOnly = "KEYS_ONLY"
 )
 
@@ -75,7 +75,7 @@ type GSIDefinition struct {
 }
 
 // CreateGSI creates a new Global Secondary Index using DynamORM patterns
-func (h *GSIHelper) CreateGSI(ctx context.Context, gsi GSIDefinition) error {
+func (h *GSIHelper) CreateGSI(_ context.Context, gsi GSIDefinition) error {
 	h.logger.Info("Creating GSI with DynamORM",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsi.Name))
@@ -83,7 +83,7 @@ func (h *GSIHelper) CreateGSI(ctx context.Context, gsi GSIDefinition) error {
 	// Note: DynamORM focuses on data operations, not schema management.
 	// GSI creation should be handled via CDK/Terraform during deployment.
 	// This method validates the GSI definition and records it for migration tracking.
-	
+
 	if err := h.validateGSIDefinition(gsi); err != nil {
 		return fmt.Errorf("invalid GSI definition: %w", err)
 	}
@@ -105,7 +105,7 @@ func (h *GSIHelper) CreateGSI(ctx context.Context, gsi GSIDefinition) error {
 }
 
 // DeleteGSI deletes a Global Secondary Index using DynamORM patterns
-func (h *GSIHelper) DeleteGSI(ctx context.Context, gsiName string) error {
+func (h *GSIHelper) DeleteGSI(_ context.Context, gsiName string) error {
 	h.logger.Info("Deleting GSI with DynamORM",
 		zap.String("table", h.tableName),
 		zap.String("gsi", gsiName))
@@ -139,12 +139,12 @@ func (h *GSIHelper) validateGSIDefinition(gsi GSIDefinition) error {
 	if gsi.HashKeyType == "" {
 		return fmt.Errorf("GSI hash key type is required")
 	}
-	
+
 	// Validate hash key type
 	if gsi.HashKeyType != "S" && gsi.HashKeyType != "N" && gsi.HashKeyType != "B" {
 		return fmt.Errorf("invalid hash key type: %s (must be S, N, or B)", gsi.HashKeyType)
 	}
-	
+
 	// Validate range key type if provided
 	if gsi.RangeKey != "" {
 		if gsi.RangeKeyType == "" {
@@ -154,7 +154,7 @@ func (h *GSIHelper) validateGSIDefinition(gsi GSIDefinition) error {
 			return fmt.Errorf("invalid range key type: %s (must be S, N, or B)", gsi.RangeKeyType)
 		}
 	}
-	
+
 	// Validate projection type
 	if gsi.ProjectionType == "" {
 		gsi.ProjectionType = projectionTypeAll // Default
@@ -162,21 +162,21 @@ func (h *GSIHelper) validateGSIDefinition(gsi GSIDefinition) error {
 	if gsi.ProjectionType != projectionTypeAll && gsi.ProjectionType != projectionTypeKeysOnly && gsi.ProjectionType != projectionTypeInclude {
 		return fmt.Errorf("invalid projection type: %s", gsi.ProjectionType)
 	}
-	
+
 	// Validate include fields for INCLUDE projection
 	if gsi.ProjectionType == projectionTypeInclude && len(gsi.IncludeFields) == 0 {
 		return fmt.Errorf("include fields are required for INCLUDE projection type")
 	}
-	
+
 	return nil
 }
 
 // GetGSIStatus retrieves the status of a GSI migration
-func (h *GSIHelper) GetGSIStatus(ctx context.Context, gsiName string) (*GSIMigrationRecord, error) {
+func (h *GSIHelper) GetGSIStatus(_ context.Context, gsiName string) (*GSIMigrationRecord, error) {
 	// Note: This would typically use a repository method in a real implementation
 	h.logger.Info("GetGSIStatus called (storage not implemented in helper)",
 		zap.String("gsi", gsiName))
-	
+
 	// Return mock record for demonstration
 	return &GSIMigrationRecord{
 		PK:        fmt.Sprintf("GSI_MIGRATION#%s", gsiName),
@@ -188,10 +188,10 @@ func (h *GSIHelper) GetGSIStatus(ctx context.Context, gsiName string) (*GSIMigra
 }
 
 // ListGSIMigrations lists all GSI migration records
-func (h *GSIHelper) ListGSIMigrations(ctx context.Context) ([]*GSIMigrationRecord, error) {
+func (h *GSIHelper) ListGSIMigrations(_ context.Context) ([]*GSIMigrationRecord, error) {
 	// Note: This would typically use a repository method in a real implementation
 	h.logger.Info("ListGSIMigrations called (storage not implemented in helper)")
-	
+
 	// Return empty slice for demonstration
 	return []*GSIMigrationRecord{}, nil
 }

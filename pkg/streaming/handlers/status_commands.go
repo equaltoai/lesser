@@ -24,10 +24,10 @@ func NewStatusCommandHandlerV2(notesService *notes.Service, logger *zap.Logger) 
 		notesService:       notesService,
 		executors:          make(map[string]CommandExecutor),
 	}
-	
+
 	// Initialize executors for each command type
 	handler.initializeExecutors()
-	
+
 	return handler
 }
 
@@ -35,7 +35,7 @@ func NewStatusCommandHandlerV2(notesService *notes.Service, logger *zap.Logger) 
 func (sch *StatusCommandHandlerV2) initializeExecutors() {
 	// Initialize payload helpers
 	payloadHelpers := createPayloadHelpers()
-	
+
 	// Initialize all status command executors
 	sch.initializeCreateExecutor(payloadHelpers)
 	sch.initializeDeleteExecutor(payloadHelpers)
@@ -142,7 +142,7 @@ func (sch *StatusCommandHandlerV2) initializeFavoriteExecutors(h payloadHelpers)
 	// Favorite Status executor
 	sch.executors[streaming.CmdFavoriteStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "LikeNoteCommand", sch.notesService.LikeNote)
-	
+
 	// Unfavorite Status executor
 	sch.executors[streaming.CmdUnfavoriteStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "UnlikeNoteCommand", sch.notesService.UnlikeNote)
@@ -153,7 +153,7 @@ func (sch *StatusCommandHandlerV2) initializeReblogExecutors(h payloadHelpers) {
 	// Reblog Status executor
 	sch.executors[streaming.CmdReblogStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "ReblogNoteCommand", sch.notesService.ReblogNote)
-	
+
 	// Unreblog Status executor
 	sch.executors[streaming.CmdUnreblogStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "UnreblogNoteCommand", sch.notesService.UnreblogNote)
@@ -164,7 +164,7 @@ func (sch *StatusCommandHandlerV2) initializeBookmarkExecutors(h payloadHelpers)
 	// Bookmark Status executor
 	sch.executors[streaming.CmdBookmarkStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "BookmarkNoteCommand", sch.notesService.BookmarkNote)
-	
+
 	// Unbookmark Status executor
 	sch.executors[streaming.CmdUnbookmarkStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "UnbookmarkNoteCommand", sch.notesService.UnbookmarkNote)
@@ -175,7 +175,7 @@ func (sch *StatusCommandHandlerV2) initializeMuteExecutors(h payloadHelpers) {
 	// Mute Status executor
 	sch.executors[streaming.CmdMuteStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "MuteNoteCommand", sch.notesService.MuteNote)
-	
+
 	// Unmute Status executor
 	sch.executors[streaming.CmdUnmuteStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "UnmuteNoteCommand", sch.notesService.UnmuteNote)
@@ -186,7 +186,7 @@ func (sch *StatusCommandHandlerV2) initializePinExecutors(h payloadHelpers) {
 	// Pin Status executor
 	sch.executors[streaming.CmdPinStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "PinNoteCommand", sch.notesService.PinNote)
-	
+
 	// Unpin Status executor
 	sch.executors[streaming.CmdUnpinStatus] = sch.createSimpleStatusExecutor(
 		h, "id", "UnpinNoteCommand", sch.notesService.UnpinNote)
@@ -226,7 +226,7 @@ func (sch *StatusCommandHandlerV2) buildCommand(
 ) interface{} {
 	statusID := h.getString(payload, idField, "")
 	userID := conn.UserID
-	
+
 	switch cmdType {
 	case "LikeNoteCommand":
 		return &notes.LikeNoteCommand{StatusID: statusID, LikerID: userID}
@@ -326,10 +326,10 @@ func (sch *StatusCommandHandlerV2) HandleCommand(ctx context.Context, conn *stre
 		return sch.CreateErrorResponse(cmd.ID, "UNSUPPORTED_COMMAND",
 			"Unsupported status command", fmt.Sprintf("Command %s not supported by status handler", cmd.Type)), nil
 	}
-	
+
 	// Map command type to error code
 	errorCode := getErrorCodeForCommand(cmd.Type)
-	
+
 	// Use the generic execution flow
 	return ExecuteGenericCommand(ctx, sch.BaseCommandHandler, conn, cmd, executor, errorCode)
 }
@@ -337,20 +337,20 @@ func (sch *StatusCommandHandlerV2) HandleCommand(ctx context.Context, conn *stre
 // getErrorCodeForCommand returns the appropriate error code for a command type
 func getErrorCodeForCommand(cmdType string) string {
 	errorCodes := map[string]string{
-		streaming.CmdCreateStatus:      "CREATE_FAILED",
-		streaming.CmdDeleteStatus:      "DELETE_FAILED",
-		streaming.CmdFavoriteStatus:    "FAVORITE_FAILED",
-		streaming.CmdUnfavoriteStatus:  "UNFAVORITE_FAILED",
-		streaming.CmdReblogStatus:      "REBLOG_FAILED",
-		streaming.CmdUnreblogStatus:    "UNREBLOG_FAILED",
-		streaming.CmdBookmarkStatus:    "BOOKMARK_FAILED",
-		streaming.CmdUnbookmarkStatus:  "UNBOOKMARK_FAILED",
-		streaming.CmdMuteStatus:        "MUTE_FAILED",
-		streaming.CmdUnmuteStatus:      "UNMUTE_FAILED",
-		streaming.CmdPinStatus:         "PIN_FAILED",
-		streaming.CmdUnpinStatus:       "UNPIN_FAILED",
+		streaming.CmdCreateStatus:     "CREATE_FAILED",
+		streaming.CmdDeleteStatus:     "DELETE_FAILED",
+		streaming.CmdFavoriteStatus:   "FAVORITE_FAILED",
+		streaming.CmdUnfavoriteStatus: "UNFAVORITE_FAILED",
+		streaming.CmdReblogStatus:     "REBLOG_FAILED",
+		streaming.CmdUnreblogStatus:   "UNREBLOG_FAILED",
+		streaming.CmdBookmarkStatus:   "BOOKMARK_FAILED",
+		streaming.CmdUnbookmarkStatus: "UNBOOKMARK_FAILED",
+		streaming.CmdMuteStatus:       "MUTE_FAILED",
+		streaming.CmdUnmuteStatus:     "UNMUTE_FAILED",
+		streaming.CmdPinStatus:        "PIN_FAILED",
+		streaming.CmdUnpinStatus:      "UNPIN_FAILED",
 	}
-	
+
 	if code, exists := errorCodes[cmdType]; exists {
 		return code
 	}

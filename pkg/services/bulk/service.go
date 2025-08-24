@@ -210,7 +210,7 @@ type Operation struct {
 
 // OperationResult contains the result of a bulk operation
 type OperationResult struct {
-	Operation *Operation    `json:"operation"`
+	Operation *Operation        `json:"operation"`
 	Events    []streaming.Event `json:"-"`
 }
 
@@ -440,10 +440,10 @@ func (s *Service) GetOperation(_ context.Context, query *GetOperationQuery) (*Op
 	// Verify ownership
 	if operation.Username != query.Username {
 		s.logger.Warn("unauthorized bulk operation access",
-		zap.String("requesting_user", query.Username),
-		zap.String("operation_user", operation.Username),
-		zap.String("operation_id", query.OperationID))
-	return nil, common.ErrForbidden(serviceerrors.ErrBulkOperationUnauthorizedAccess)
+			zap.String("requesting_user", query.Username),
+			zap.String("operation_user", operation.Username),
+			zap.String("operation_id", query.OperationID))
+		return nil, common.ErrForbidden(serviceerrors.ErrBulkOperationUnauthorizedAccess)
 	}
 
 	return &OperationResult{
@@ -567,17 +567,17 @@ func (s *Service) validateContentOwnership(ctx context.Context, contentID, usern
 	status, err := s.statusRepo.GetStatus(ctx, contentID)
 	if err != nil {
 		s.logger.Debug("bulk content not found",
-		zap.String("content_id", contentID),
-		zap.String("username", username))
-	return nil, errors.Join(serviceerrors.ErrBulkContentNotFound, err)
+			zap.String("content_id", contentID),
+			zap.String("username", username))
+		return nil, errors.Join(serviceerrors.ErrBulkContentNotFound, err)
 	}
 
 	if status.AuthorUsername != username {
 		s.logger.Warn("unauthorized bulk content deletion",
-		zap.String("content_id", contentID),
-		zap.String("content_owner", status.AuthorUsername),
-		zap.String("requesting_user", username))
-	return nil, serviceerrors.ErrBulkContentUnauthorizedDelete
+			zap.String("content_id", contentID),
+			zap.String("content_owner", status.AuthorUsername),
+			zap.String("requesting_user", username))
+		return nil, serviceerrors.ErrBulkContentUnauthorizedDelete
 	}
 
 	return status, nil

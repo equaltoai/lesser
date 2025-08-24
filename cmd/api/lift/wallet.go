@@ -293,7 +293,6 @@ func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 	})
 }
 
-
 // getAuthenticatedUserLift gets the authenticated user from the context
 func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
 	// Test mode - check for test header

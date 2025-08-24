@@ -18,9 +18,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/storage"
-	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	storagemodels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -177,10 +177,10 @@ func (h *Handler) executeHashtagSearch(ctx *lift.Context, params *SearchParams, 
 func (h *Handler) convertActorToAccount(actor *activitypub.Actor) models.Account {
 	// Use centralized transformation framework - ELIMINATES 25+ LINES OF DUPLICATE CODE
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-	
+
 	// Override ID to use PreferredUsername instead of numeric ID for this specific use case
 	account.ID = actor.PreferredUsername
-	
+
 	return account
 }
 
@@ -263,11 +263,11 @@ func (h *Handler) convertStatusResultToAPI(ctx *lift.Context, sr *storage.Status
 		"url":       sr.URL,
 		"published": sr.Published.Format(time.RFC3339),
 	}
-	
+
 	// Use centralized transformation framework - ELIMINATES 8+ LINES OF DUPLICATE CODE
 	transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
 	transformCtx := context.WithValue(ctx.Context, baseURLContextKey, h.cfg.BaseURL())
-	
+
 	status, err := transformer.Transform(transformCtx, statusMap)
 	if err != nil {
 		// Fallback to minimal status if transformation fails
@@ -439,8 +439,6 @@ func (h *Handler) HandleGetNotificationsLift(ctx *lift.Context) error {
 
 	return ctx.JSON(apiNotifications)
 }
-
-
 
 // buildNotificationFilter builds a notification filter from query parameters
 func (h *Handler) buildNotificationFilter(ctx *lift.Context) *storage.NotificationFilter {
@@ -1356,15 +1354,15 @@ func (h *Handler) convertGroupedNotificationsToAPI(
 
 	for _, group := range groupedNotifications {
 		groupResponse := map[string]interface{}{
-			"id":                 group.ID,
-			"type":               group.Type,
-			"group_key":          group.GroupKey,
-			"count":              group.Count,
-			"latest_created_at":  group.LatestCreatedAt.Format(time.RFC3339),
+			"id":                  group.ID,
+			"type":                group.Type,
+			"group_key":           group.GroupKey,
+			"count":               group.Count,
+			"latest_created_at":   group.LatestCreatedAt.Format(time.RFC3339),
 			"earliest_created_at": group.EarliestCreatedAt.Format(time.RFC3339),
-			"read":               group.IsRead,
-			"sample_accounts":    h.convertNotificationAccountsToAPI(group.SampleAccounts),
-			"summary":            h.generateGroupSummary(group),
+			"read":                group.IsRead,
+			"sample_accounts":     h.convertNotificationAccountsToAPI(group.SampleAccounts),
+			"summary":             h.generateGroupSummary(group),
 		}
 
 		// Add target status if available

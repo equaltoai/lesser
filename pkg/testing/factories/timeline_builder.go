@@ -93,7 +93,7 @@ func (b *TimelineBuilder) WithPosts(count int) *TimelineBuilder {
 	for i := 0; i < count; i++ {
 		// Pick an author from following list
 		author := b.timeline.Following[i%len(b.timeline.Following)]
-		
+
 		// Create a note
 		note := b.noteBuilder.
 			Reset().
@@ -102,7 +102,7 @@ func (b *TimelineBuilder) WithPosts(count int) *TimelineBuilder {
 			WithPublished(baseTime.Add(time.Duration(i) * 10 * time.Minute)).
 			AsPublic().
 			Build()
-		
+
 		// Create a Create activity for the note
 		activity := b.activityBuilder.
 			Reset().
@@ -111,7 +111,7 @@ func (b *TimelineBuilder) WithPosts(count int) *TimelineBuilder {
 			WithObject(note).
 			WithPublished(baseTime.Add(time.Duration(i) * 10 * time.Minute)).
 			Build()
-		
+
 		b.timeline.Activities = append(b.timeline.Activities, activity)
 	}
 	return b
@@ -126,7 +126,7 @@ func (b *TimelineBuilder) WithReplies(count int) *TimelineBuilder {
 
 	for i := 0; i < count && i < len(b.timeline.Activities); i++ {
 		originalActivity := b.timeline.Activities[i]
-		
+
 		// Get a replier (could be from followers or following)
 		var replier *activitypub.Actor
 		if err := common.ValidateSliceNotEmpty("followers", b.timeline.Followers); err == nil {
@@ -137,13 +137,13 @@ func (b *TimelineBuilder) WithReplies(count int) *TimelineBuilder {
 				WithUsername(fmt.Sprintf("replier_%d", i+1)).
 				Build()
 		}
-		
+
 		// Create reply note
 		var originalNoteID string
 		if note, ok := originalActivity.Object.(*activitypub.Note); ok {
 			originalNoteID = note.ID
 		}
-		
+
 		replyNote := b.noteBuilder.
 			Reset().
 			WithContent(fmt.Sprintf("Reply to post #%d", i+1)).
@@ -151,7 +151,7 @@ func (b *TimelineBuilder) WithReplies(count int) *TimelineBuilder {
 			WithInReplyTo(originalNoteID).
 			AsPublic().
 			Build()
-		
+
 		// Create reply activity
 		replyActivity := b.activityBuilder.
 			Reset().
@@ -159,7 +159,7 @@ func (b *TimelineBuilder) WithReplies(count int) *TimelineBuilder {
 			WithActor(replier.ID).
 			WithObject(replyNote).
 			Build()
-		
+
 		b.timeline.Activities = append(b.timeline.Activities, replyActivity)
 	}
 	return b
@@ -174,7 +174,7 @@ func (b *TimelineBuilder) WithBoosts(count int) *TimelineBuilder {
 
 	for i := 0; i < count && i < len(b.timeline.Activities); i++ {
 		originalActivity := b.timeline.Activities[i]
-		
+
 		// Get a booster
 		var booster *activitypub.Actor
 		if err := common.ValidateSliceNotEmpty("following", b.timeline.Following); err == nil {
@@ -185,7 +185,7 @@ func (b *TimelineBuilder) WithBoosts(count int) *TimelineBuilder {
 				WithUsername(fmt.Sprintf("booster_%d", i+1)).
 				Build()
 		}
-		
+
 		// Create boost activity
 		boostActivity := b.activityBuilder.
 			Reset().
@@ -194,7 +194,7 @@ func (b *TimelineBuilder) WithBoosts(count int) *TimelineBuilder {
 			WithObject(originalActivity.Object).
 			WithTo("https://www.w3.org/ns/activitystreams#Public").
 			Build()
-		
+
 		b.timeline.Activities = append(b.timeline.Activities, boostActivity)
 	}
 	return b
@@ -209,7 +209,7 @@ func (b *TimelineBuilder) WithLikes(count int) *TimelineBuilder {
 
 	for i := 0; i < count && i < len(b.timeline.Activities); i++ {
 		originalActivity := b.timeline.Activities[i]
-		
+
 		// Get a liker
 		var liker *activitypub.Actor
 		if err := common.ValidateSliceNotEmpty("followers", b.timeline.Followers); err == nil {
@@ -220,7 +220,7 @@ func (b *TimelineBuilder) WithLikes(count int) *TimelineBuilder {
 				WithUsername(fmt.Sprintf("liker_%d", i+1)).
 				Build()
 		}
-		
+
 		// Create like activity
 		likeActivity := b.activityBuilder.
 			Reset().
@@ -228,7 +228,7 @@ func (b *TimelineBuilder) WithLikes(count int) *TimelineBuilder {
 			WithActor(liker.ID).
 			WithObject(originalActivity.Object).
 			Build()
-		
+
 		b.timeline.Activities = append(b.timeline.Activities, likeActivity)
 	}
 	return b
@@ -243,17 +243,17 @@ func (b *TimelineBuilder) Build() *TimelineData {
 			WithUsername("testuser").
 			Build()
 	}
-	
+
 	if err := common.ValidateRequiredParam("scenario", string(b.timeline.Scenario)); err != nil {
 		b.timeline.Scenario = SimpleTimeline
 	}
-	
+
 	// Create a copy to return
 	result := *b.timeline
-	
+
 	// Reset for next build
 	b.Reset()
-	
+
 	return &result
 }
 
@@ -311,7 +311,7 @@ func (b *TimelineBuilder) BuildConversationTimeline(username string) *TimelineDa
 		WithScenario(ConversationTimeline).
 		WithFollowing(3).
 		WithFollowers(3)
-	
+
 	// Create conversation threads
 	for i := 0; i < 3; i++ {
 		// Original post
@@ -319,6 +319,6 @@ func (b *TimelineBuilder) BuildConversationTimeline(username string) *TimelineDa
 		// Multiple replies to create a thread
 		builder.WithReplies(4)
 	}
-	
+
 	return builder.Build()
 }

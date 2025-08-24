@@ -132,13 +132,13 @@ func (sch *SystemCommandHandler) handleCreateList(ctx context.Context, conn *str
 
 	result, err := sch.listsService.CreateList(ctx, createCmd)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CREATE_LIST_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "CREATE_LIST_FAILED",
 			"Failed to create list", err.Error()), nil
 	}
 
 	data, err := sch.ConvertToJSON(result.List)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 
@@ -168,13 +168,13 @@ func (sch *SystemCommandHandler) handleUpdateList(ctx context.Context, conn *str
 
 	result, err := sch.listsService.UpdateList(ctx, updateCmd)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "UPDATE_LIST_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "UPDATE_LIST_FAILED",
 			"Failed to update list", err.Error()), nil
 	}
 
 	data, err := sch.ConvertToJSON(result.List)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 
@@ -200,7 +200,7 @@ func (sch *SystemCommandHandler) handleDeleteList(ctx context.Context, conn *str
 
 	err := sch.listsService.DeleteList(ctx, deleteCmd)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "DELETE_LIST_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "DELETE_LIST_FAILED",
 			"Failed to delete list", err.Error()), nil
 	}
 
@@ -235,7 +235,7 @@ func (sch *SystemCommandHandler) handleListMembership(ctx context.Context, conn 
 		}
 		result, err = sch.listsService.AddToList(ctx, addCmd)
 		if err != nil {
-			return sch.CreateErrorResponse(cmd.ID, "ADD_TO_LIST_FAILED", 
+			return sch.CreateErrorResponse(cmd.ID, "ADD_TO_LIST_FAILED",
 				"Failed to add accounts to list", err.Error()), nil
 		}
 	} else {
@@ -246,7 +246,7 @@ func (sch *SystemCommandHandler) handleListMembership(ctx context.Context, conn 
 		}
 		result, err = sch.listsService.RemoveFromList(ctx, removeCmd)
 		if err != nil {
-			return sch.CreateErrorResponse(cmd.ID, "REMOVE_FROM_LIST_FAILED", 
+			return sch.CreateErrorResponse(cmd.ID, "REMOVE_FROM_LIST_FAILED",
 				"Failed to remove accounts from list", err.Error()), nil
 		}
 	}
@@ -259,7 +259,7 @@ func (sch *SystemCommandHandler) handleListMembership(ctx context.Context, conn 
 	}
 
 	data := map[string]interface{}{
-		resultKey:     result.Success,
+		resultKey:    result.Success,
 		"list_id":    listID,
 		"account_id": accountID,
 	}
@@ -291,11 +291,11 @@ func (sch *SystemCommandHandler) handleUploadMedia(_ context.Context, conn *stre
 
 	// Note: In a real WebSocket implementation, file_data would likely be base64 encoded
 	// This is a simplified example
-	
+
 	// For this example, we'll return an error since actual file upload via WebSocket
 	// would require more complex handling
-	return sch.CreateErrorResponse(cmd.ID, "UPLOAD_NOT_SUPPORTED", 
-		"Media upload via WebSocket not currently supported", 
+	return sch.CreateErrorResponse(cmd.ID, "UPLOAD_NOT_SUPPORTED",
+		"Media upload via WebSocket not currently supported",
 		"Use the REST API or GraphQL for media uploads"), nil
 }
 
@@ -318,7 +318,7 @@ func (sch *SystemCommandHandler) handleMarkNotificationRead(ctx context.Context,
 			return sch.notificationsService.MarkAsRead(ctx, markCmd)
 		},
 	}
-	
+
 	return sch.ExecuteStandardCommandFlow(ctx, conn, cmd, config)
 }
 
@@ -335,7 +335,7 @@ func (sch *SystemCommandHandler) handleMarkAllNotificationsRead(ctx context.Cont
 
 	result, err := sch.notificationsService.ClearNotifications(ctx, clearCmd)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "MARK_ALL_READ_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "MARK_ALL_READ_FAILED",
 			"Failed to mark all notifications as read", err.Error()), nil
 	}
 
@@ -366,7 +366,7 @@ func (sch *SystemCommandHandler) handleDismissNotification(ctx context.Context, 
 
 	result, err := sch.notificationsService.ClearNotifications(ctx, clearCmd)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "DISMISS_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "DISMISS_FAILED",
 			"Failed to dismiss notification", err.Error()), nil
 	}
 
@@ -389,11 +389,11 @@ func (sch *SystemCommandHandler) handleSubscribeTimeline(_ context.Context, conn
 	}
 
 	timeline := sch.GetString(cmd.Payload, "timeline", "home")
-	
+
 	// Subscribe to the timeline (this would typically update connection subscriptions)
 	// For now, we'll return success and rely on the streaming infrastructure
 	// to actually push timeline updates
-	
+
 	data := map[string]interface{}{
 		"subscribed": true,
 		"timeline":   timeline,
@@ -404,12 +404,12 @@ func (sch *SystemCommandHandler) handleSubscribeTimeline(_ context.Context, conn
 	if conn.Metadata == nil {
 		conn.Metadata = make(map[string]interface{})
 	}
-	
+
 	subscriptions, ok := conn.Metadata["subscriptions"].([]string)
 	if !ok {
 		subscriptions = []string{}
 	}
-	
+
 	// Add timeline subscription if not already present
 	timelineKey := fmt.Sprintf("timeline:%s", timeline)
 	found := false
@@ -419,7 +419,7 @@ func (sch *SystemCommandHandler) handleSubscribeTimeline(_ context.Context, conn
 			break
 		}
 	}
-	
+
 	if !found {
 		subscriptions = append(subscriptions, timelineKey)
 		conn.Metadata["subscriptions"] = subscriptions
@@ -439,7 +439,7 @@ func (sch *SystemCommandHandler) handleUnsubscribeTimeline(_ context.Context, co
 	}
 
 	timeline := sch.GetString(cmd.Payload, "timeline", "home")
-	
+
 	// Unsubscribe from the timeline
 	data := map[string]interface{}{
 		"unsubscribed": true,
@@ -468,10 +468,10 @@ func (sch *SystemCommandHandler) handleUnsubscribeTimeline(_ context.Context, co
 // handleGetServerInfo returns server information
 func (sch *SystemCommandHandler) handleGetServerInfo(_ context.Context, _ *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	// Server info doesn't require authentication
-	
+
 	// Get server configuration and stats
 	serverInfo := map[string]interface{}{
-		"version": "1.0.0",
+		"version":     "1.0.0",
 		"server_name": "Lesser",
 		"description": "A serverless ActivityPub implementation",
 		"features": []string{
@@ -483,9 +483,9 @@ func (sch *SystemCommandHandler) handleGetServerInfo(_ context.Context, _ *strea
 			"webauthn",
 		},
 		"stats": map[string]interface{}{
-			"user_count": 0,    // Would need to query from DB
-			"status_count": 0,  // Would need to query from DB
-			"domain_count": 0,  // Would need to query from DB
+			"user_count":   0, // Would need to query from DB
+			"status_count": 0, // Would need to query from DB
+			"domain_count": 0, // Would need to query from DB
 		},
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
@@ -515,21 +515,21 @@ func (sch *SystemCommandHandler) handleGetTimeline(ctx context.Context, conn *st
 
 	result, err := sch.notesService.GetTimeline(ctx, query)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "TIMELINE_FETCH_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "TIMELINE_FETCH_FAILED",
 			"Failed to fetch timeline", err.Error()), nil
 	}
 
 	// Convert result to JSON for response
 	data, err := sch.ConvertToJSON(result)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 
 	return sch.CreateSuccessResponse(cmd.ID, data), nil
 }
 
-// handleGetNotifications handles notification retrieval requests  
+// handleGetNotifications handles notification retrieval requests
 func (sch *SystemCommandHandler) handleGetNotifications(ctx context.Context, conn *streaming.ConnectionInfo, cmd *streaming.Command) (*streaming.CommandResponse, error) {
 	if authErr := sch.RequireAuth(conn, cmd.ID); authErr != nil {
 		return authErr, nil
@@ -555,14 +555,14 @@ func (sch *SystemCommandHandler) handleGetNotifications(ctx context.Context, con
 
 	result, err := sch.notificationsService.ListNotifications(ctx, query)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "NOTIFICATIONS_FETCH_FAILED", 
+		return sch.CreateErrorResponse(cmd.ID, "NOTIFICATIONS_FETCH_FAILED",
 			"Failed to fetch notifications", err.Error()), nil
 	}
 
 	// Convert result to JSON for response
 	data, err := sch.ConvertToJSON(result)
 	if err != nil {
-		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR", 
+		return sch.CreateErrorResponse(cmd.ID, "CONVERSION_ERROR",
 			"Failed to format response", err.Error()), nil
 	}
 

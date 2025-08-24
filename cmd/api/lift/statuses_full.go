@@ -46,7 +46,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 	var pollExpiresIn int
 	var pollMultiple bool
 	var pollHideTotals bool
-	
+
 	if req.Poll != nil && len(req.Poll.Options) > 0 {
 		// Validate poll parameters using centralized validation
 		pollMap := map[string]interface{}{
@@ -58,7 +58,7 @@ func (h *Handler) HandleCreateStatusFull(ctx *lift.Context) error {
 		if err := common.ValidatePollParams(pollMap); err != nil {
 			return common.RespondUnprocessableEntity(ctx, "Invalid poll parameters: "+err.Error())
 		}
-		
+
 		pollOptions = req.Poll.Options
 		pollExpiresIn = req.Poll.ExpiresIn
 		pollMultiple = req.Poll.Multiple
@@ -128,7 +128,7 @@ func (h *Handler) HandleGetStatusFull(ctx *lift.Context) error {
 			zap.Error(err))
 		return common.RespondInternalServerError(ctx, "Internal server error")
 	}
-	
+
 	if !canView {
 		return common.RespondNotFound(ctx, "status not found")
 	}
@@ -183,7 +183,7 @@ func (h *Handler) checkStatusViewPermission(ctx context.Context, status *storage
 	// Import the visibility constants
 	const (
 		VisibilityPublic   = "public"
-		VisibilityUnlisted = "unlisted" 
+		VisibilityUnlisted = "unlisted"
 		VisibilityPrivate  = "private"
 		VisibilityDirect   = "direct"
 	)
@@ -253,7 +253,7 @@ func (h *Handler) isViewerMentioned(mentions []string, viewerID string) bool {
 // isViewerInRecipientLists checks all recipient lists for viewer
 func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerID string) bool {
 	viewerActorID := "https://" + h.cfg.Domain + "/users/" + viewerID
-	
+
 	// Check all recipient lists
 	recipientLists := [][]string{
 		status.ToRecipients,
@@ -261,7 +261,7 @@ func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerI
 		status.BtoRecipients,
 		status.BccRecipients,
 	}
-	
+
 	for _, recipients := range recipientLists {
 		for _, recipient := range recipients {
 			if recipient == viewerActorID {
@@ -269,7 +269,7 @@ func (h *Handler) isViewerInRecipientLists(status *storageModels.Status, viewerI
 			}
 		}
 	}
-	
+
 	return false
 }
 

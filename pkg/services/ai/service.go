@@ -400,7 +400,10 @@ func (s *Service) ConvertToModel(analysis *ai.AIAnalysis) *models.AIAnalysis {
 	}
 
 	// Update the DynamoDB keys
-	model.UpdateKeys()
+	if err := model.UpdateKeys(); err != nil {
+		s.logger.Error("failed to update AI analysis keys", zap.Error(err))
+		// Continue returning model since this function doesn't return errors
+	}
 
 	return model
 }

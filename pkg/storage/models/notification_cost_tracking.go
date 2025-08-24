@@ -87,7 +87,9 @@ func (n *NotificationCostTracking) BeforeCreate() error {
 		n.Timestamp = now
 	}
 
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 
 	return nil
@@ -96,7 +98,9 @@ func (n *NotificationCostTracking) BeforeCreate() error {
 // BeforeUpdate sets up the notification cost tracking before update
 func (n *NotificationCostTracking) BeforeUpdate() error {
 	n.UpdatedAt = time.Now()
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 	return nil
 }
@@ -239,7 +243,9 @@ func (n *NotificationCostAggregation) BeforeCreate() error {
 	now := time.Now()
 	n.CreatedAt = now
 	n.UpdatedAt = now
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 	n.CalculateRates()
 	return nil
@@ -248,7 +254,9 @@ func (n *NotificationCostAggregation) BeforeCreate() error {
 // BeforeUpdate sets up the aggregation before update
 func (n *NotificationCostAggregation) BeforeUpdate() error {
 	n.UpdatedAt = time.Now()
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 	n.CalculateRates()
 	return nil
@@ -378,7 +386,9 @@ func (n *NotificationBudget) BeforeCreate() error {
 	now := time.Now()
 	n.CreatedAt = now
 	n.UpdatedAt = now
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 	n.CalculateRemaining()
 	return nil
@@ -387,7 +397,9 @@ func (n *NotificationBudget) BeforeCreate() error {
 // BeforeUpdate sets up the budget before update
 func (n *NotificationBudget) BeforeUpdate() error {
 	n.UpdatedAt = time.Now()
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	n.CalculateDollarAmounts()
 	n.CalculateRemaining()
 	return nil

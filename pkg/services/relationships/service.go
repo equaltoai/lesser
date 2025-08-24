@@ -31,7 +31,7 @@ type Service struct {
 
 	// Additional repositories for extended functionality
 	storage core.RepositoryStorage // Full storage interface for access to all repos
-	
+
 	// Business logic frameworks for semantic consolidation
 	businessLogic    *common.BusinessLogicService
 	activityPubLogic *common.ActivityPubBusinessLogic
@@ -61,14 +61,14 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 			Payload:   event.Metadata,
 		}
 	}
-	
+
 	// Emit using the publisher
 	for _, event := range streamingEvents {
 		if err := e.publisher.PublishToStream(ctx, event.Stream, event); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

@@ -48,7 +48,7 @@ func (r *PatternRepository) CreatePattern(ctx context.Context, pattern *models.M
 		return ErrorHandler.HandleCreateError(err, EntityModerationPattern, pattern.PatternID)
 	}
 
-	r.BaseRepository.logger.Info("created moderation pattern",
+	r.logger.Info("created moderation pattern",
 		zap.String("pattern_id", pattern.PatternID),
 		zap.String("type", pattern.Type))
 
@@ -150,7 +150,7 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 
 	// For patterns, we need to scan all patterns (PK prefix "PATTERN#") and apply filters
 	// Since patterns don't share a common PK, we'll use the direct DB query approach
-	query := r.BaseRepository.GetDB().WithContext(ctx).Model(&models.ModerationPattern{}).
+	query := r.GetDB().WithContext(ctx).Model(&models.ModerationPattern{}).
 		Where("SK", "=", models.SKMetadata)
 
 	// Apply filters
@@ -160,7 +160,7 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 
 	err := query.All(&patterns)
 	if err != nil {
-		r.BaseRepository.logger.Error("failed to get patterns",
+		r.logger.Error("failed to get patterns",
 			zap.Error(err),
 			zap.String("category", category),
 			zap.Bool("activeOnly", activeOnly))
@@ -168,14 +168,14 @@ func (r *PatternRepository) GetPatterns(ctx context.Context, category string, ac
 	}
 
 	// Track cost if available
-	if r.BaseRepository.costService != nil {
+	if r.costService != nil {
 		itemCount := int64(len(patterns))
 		estimatedRU := itemCount
 		if estimatedRU == 0 {
 			estimatedRU = 1
 		}
 		if trackErr := r.TrackRead(ctx, "Scan", estimatedRU); trackErr != nil {
-			r.BaseRepository.logger.Warn("failed to track pattern scan cost", zap.Error(trackErr))
+			r.logger.Warn("failed to track pattern scan cost", zap.Error(trackErr))
 		}
 	}
 

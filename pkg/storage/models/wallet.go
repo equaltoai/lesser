@@ -33,7 +33,9 @@ func (WalletChallenge) TableName() string {
 
 // BeforeCreate sets up the keys and TTL before creating
 func (w *WalletChallenge) BeforeCreate() error {
-	w.UpdateKeys()
+	if err := w.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	if w.IssuedAt.IsZero() {
 		w.IssuedAt = time.Now()
 	}
@@ -82,7 +84,9 @@ func (WalletCredential) TableName() string {
 
 // BeforeCreate sets up the keys before creating
 func (w *WalletCredential) BeforeCreate() error {
-	w.UpdateKeys()
+	if err := w.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	if w.LinkedAt.IsZero() {
 		w.LinkedAt = time.Now()
 	}

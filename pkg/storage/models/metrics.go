@@ -268,12 +268,12 @@ func (am *AggregatedMetrics) BeforeCreate() error {
 // BeforeUpdate for AggregatedMetrics
 func (am *AggregatedMetrics) BeforeUpdate() error {
 	am.UpdatedAt = time.Now()
-	
+
 	// Update all keys in case indexed fields changed
 	if err := am.UpdateKeys(); err != nil {
 		return err
 	}
-	
+
 	return am.Validate()
 }
 

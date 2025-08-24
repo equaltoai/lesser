@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -13,7 +14,6 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CommunityNoteRepository implements community note operations using BaseRepository with DynamORM
@@ -38,7 +38,7 @@ func NewCommunityNoteRepositoryWithCostTracking(db core.DB, tableName string, lo
 // GetUserVotingHistory retrieves a user's voting history for reputation calculation - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, userID string, limit int) ([]*storage.CommunityNoteVote, error) {
 	var votes []models.CommunityNoteVote
-	
+
 	// Query using GSI to get all votes by this user - preserve community voting history functionality
 	err := r.GetDB().WithContext(ctx).Model(&models.CommunityNoteVote{}).
 		Index("user-votes-index").
@@ -46,11 +46,11 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 		OrderBy("GSI1SK", "DESC"). // Most recent first
 		Limit(limit).
 		All(&votes)
-		
+
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, "community note", "user voting history")
 	}
-	
+
 	// Convert to storage models - preserve exact conversion logic
 	result := make([]*storage.CommunityNoteVote, len(votes))
 	for i, model := range votes {
@@ -63,7 +63,7 @@ func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, user
 			CreatedAt: model.CreatedAt,
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -112,7 +112,7 @@ func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note 
 // GetCommunityNote retrieves a note by ID - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) GetCommunityNote(ctx context.Context, noteID string) (*storage.CommunityNote, error) {
 	var model models.CommunityNote
-	
+
 	// Use BaseRepository Get method for consistent cost tracking and error handling
 	err := r.Get(ctx, fmt.Sprintf("NOTE#%s", noteID), "METADATA", &model)
 	if err != nil {
@@ -249,7 +249,7 @@ func (r *CommunityNoteRepository) CreateCommunityNoteVote(ctx context.Context, v
 	}
 
 	// Create the vote using our own DB connection (no BaseRepository for votes)
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 	err := r.GetDB().WithContext(ctx).Model(model).Create()
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "community note vote", vote.NoteID)

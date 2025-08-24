@@ -20,8 +20,8 @@ import (
 // InstanceRepository implements instance operations using DynamORM with BaseRepository pattern
 type InstanceRepository struct {
 	*BaseRepository[*models.InstanceConfig]
-	historyRepo *BaseRepository[*models.InstanceHistory]
-	metricsRepo *BaseRepository[*models.InstanceMetrics]
+	historyRepo  *BaseRepository[*models.InstanceHistory]
+	metricsRepo  *BaseRepository[*models.InstanceMetrics]
 	activityRepo *BaseRepository[*models.WeeklyActivity]
 	logger       *zap.Logger
 }
@@ -285,23 +285,23 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 	// Use GSI4 (replies-index) to efficiently count comments
 	// Comments are statuses with InReplyToID set, which populate GSI4PK with "REPLIES#<parent_id>"
 	// We need to scan the GSI4 to count all entries, but this is more efficient than scanning the main table
-	
+
 	var comments []models.Status
-	
+
 	// Query the replies-index GSI for all comments
 	// Since we only need the count, we'll use a projection that minimizes data transfer
 	err := r.metricsRepo.GetDB().WithContext(ctx).Model(&models.Status{}).
 		Index("replies-index").
 		Where("GSI4PK", "begins_with", "REPLIES#").
 		All(&comments)
-	
+
 	if err != nil {
 		r.logger.Error("Failed to count local comments using GSI", zap.Error(err))
 		// Fall back to returning 0 - the metric will be populated over time via real-time tracking
 		r.logger.Warn("Failed to batch count comments, falling back to metric tracking over time")
 		return 0, nil
 	}
-	
+
 	// Filter for local comments (comments from local users)
 	cfg := config.Get()
 	localDomain := cfg.Domain
@@ -310,7 +310,7 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 		r.logger.Debug("No domain configured, counting all comments as local")
 		return int64(len(comments)), nil
 	}
-	
+
 	localCount := int64(0)
 	for _, comment := range comments {
 		// Check if the comment author is from the local domain
@@ -318,11 +318,11 @@ func (r *InstanceRepository) countLocalComments(ctx context.Context) (int64, err
 			localCount++
 		}
 	}
-	
+
 	r.logger.Info("Successfully counted local comments using batch GSI query",
 		zap.Int64("local_comments", localCount),
 		zap.Int("total_comments_scanned", len(comments)))
-	
+
 	return localCount, nil
 }
 

@@ -35,10 +35,10 @@ type MockMetricsRecorder struct {
 }
 
 type MetricRecording struct {
-	Operation string
-	Table     string
-	Duration  time.Duration
-	Success   bool
+	Operation  string
+	Table      string
+	Duration   time.Duration
+	Success    bool
 	Dimensions map[string]string
 }
 
@@ -55,13 +55,13 @@ func (m *MockMetricsRecorder) RecordLatency(ctx context.Context, operation, tabl
 
 func TestLatencyAggregatorWithHistoricalData(t *testing.T) {
 	logger := zap.NewNop()
-	
+
 	// Create mock historical data
 	mockRepo := &MockHistoricalMetricsReader{
 		records: []*models.MetricRecord{
 			{
 				MetricType:  "latency_aggregated",
-				ServiceName: "test-service", 
+				ServiceName: "test-service",
 				Timestamp:   time.Now().Add(-2 * time.Hour),
 				Count:       100,
 				Sum:         5000, // 50ms average
@@ -156,15 +156,15 @@ func TestLatencyAggregatorDataPointAggregation(t *testing.T) {
 	// Test data point aggregation by interval
 	dataPoints := []LatencyDataPoint{
 		{
-			Timestamp: time.Date(2024, 1, 1, 10, 5, 0, 0, time.UTC),
-			Average:   50.0,
-			Count:     10,
+			Timestamp:   time.Date(2024, 1, 1, 10, 5, 0, 0, time.UTC),
+			Average:     50.0,
+			Count:       10,
 			Percentiles: map[string]float64{"p95": 80.0},
 		},
 		{
-			Timestamp: time.Date(2024, 1, 1, 10, 7, 0, 0, time.UTC),
-			Average:   60.0,
-			Count:     15,
+			Timestamp:   time.Date(2024, 1, 1, 10, 7, 0, 0, time.UTC),
+			Average:     60.0,
+			Count:       15,
 			Percentiles: map[string]float64{"p95": 90.0},
 		},
 	}

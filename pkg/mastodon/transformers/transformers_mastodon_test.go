@@ -222,7 +222,7 @@ func TestMastodonTransformer_BuildLinkHeader(t *testing.T) {
 	}
 
 	linkHeader := transformer.BuildLinkHeader("https://example.com/api/v1/statuses", pagination)
-	
+
 	expectedNext := `<https://example.com/api/v1/statuses?max_id=next-123&limit=20>; rel="next"`
 	expectedPrev := `<https://example.com/api/v1/statuses?min_id=min-456&limit=20>; rel="prev"`
 	expected := expectedNext + ", " + expectedPrev
@@ -300,7 +300,7 @@ func TestBatchProcessor_ProcessStatusBatch(t *testing.T) {
 			CreatedAt:      now,
 		},
 		{
-			StatusID:       "status-2", 
+			StatusID:       "status-2",
 			Content:        "Second status",
 			AuthorUsername: "user2",
 			AuthorID:       "https://example.com/users/user2",

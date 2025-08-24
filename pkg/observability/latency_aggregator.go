@@ -34,41 +34,41 @@ type LatencyAggregator struct {
 
 // LatencyBucket holds latency measurements for a specific operation/time window
 type LatencyBucket struct {
-	Operation   string
-	Service     string
-	WindowStart time.Time
-	WindowEnd   time.Time
+	Operation    string
+	Service      string
+	WindowStart  time.Time
+	WindowEnd    time.Time
 	Measurements []float64
-	Count       int64
-	Sum         float64
-	Min         float64
-	Max         float64
-	mu          sync.Mutex
+	Count        int64
+	Sum          float64
+	Min          float64
+	Max          float64
+	mu           sync.Mutex
 }
 
 // LatencyStats represents calculated latency statistics
 type LatencyStats struct {
-	Operation   string          `json:"operation"`
-	Service     string          `json:"service"`
-	WindowStart time.Time       `json:"window_start"`
-	WindowEnd   time.Time       `json:"window_end"`
-	Count       int64           `json:"count"`
-	Sum         float64         `json:"sum"`
-	Average     float64         `json:"average"`
-	Min         float64         `json:"min"`
-	Max         float64         `json:"max"`
+	Operation   string             `json:"operation"`
+	Service     string             `json:"service"`
+	WindowStart time.Time          `json:"window_start"`
+	WindowEnd   time.Time          `json:"window_end"`
+	Count       int64              `json:"count"`
+	Sum         float64            `json:"sum"`
+	Average     float64            `json:"average"`
+	Min         float64            `json:"min"`
+	Max         float64            `json:"max"`
 	Percentiles map[string]float64 `json:"percentiles"`
-	StdDev      float64         `json:"std_dev"`
+	StdDev      float64            `json:"std_dev"`
 }
 
 // LatencyTrend represents latency trending over time
 type LatencyTrend struct {
-	Operation      string               `json:"operation"`
-	Service        string               `json:"service"`
-	TimeRange      string               `json:"time_range"`
-	DataPoints     []LatencyDataPoint   `json:"data_points"`
-	TrendAnalysis  TrendAnalysis        `json:"trend_analysis"`
-	Percentiles    map[string][]float64 `json:"percentiles"`
+	Operation     string               `json:"operation"`
+	Service       string               `json:"service"`
+	TimeRange     string               `json:"time_range"`
+	DataPoints    []LatencyDataPoint   `json:"data_points"`
+	TrendAnalysis TrendAnalysis        `json:"trend_analysis"`
+	Percentiles   map[string][]float64 `json:"percentiles"`
 }
 
 // LatencyDataPoint represents a single data point in a trend
@@ -81,13 +81,13 @@ type LatencyDataPoint struct {
 
 // TrendAnalysis provides statistical analysis of latency trends
 type TrendAnalysis struct {
-	Slope             float64 `json:"slope"`               // Trend direction (positive = increasing)
-	RSquared          float64 `json:"r_squared"`           // Trend strength (0-1)
-	TrendDirection    string  `json:"trend_direction"`     // "increasing", "decreasing", "stable"
-	PercentChange     float64 `json:"percent_change"`      // Change from first to last data point
-	Volatility        float64 `json:"volatility"`          // Standard deviation of changes
-	IsSignificant     bool    `json:"is_significant"`      // Whether trend is statistically significant
-	ChangeClassification string `json:"change_classification"` // "significant_improvement", "significant_degradation", "stable"
+	Slope                float64 `json:"slope"`                 // Trend direction (positive = increasing)
+	RSquared             float64 `json:"r_squared"`             // Trend strength (0-1)
+	TrendDirection       string  `json:"trend_direction"`       // "increasing", "decreasing", "stable"
+	PercentChange        float64 `json:"percent_change"`        // Change from first to last data point
+	Volatility           float64 `json:"volatility"`            // Standard deviation of changes
+	IsSignificant        bool    `json:"is_significant"`        // Whether trend is statistically significant
+	ChangeClassification string  `json:"change_classification"` // "significant_improvement", "significant_degradation", "stable"
 }
 
 // HistoricalMetricsReader provides access to historical metrics data
@@ -101,9 +101,9 @@ func NewLatencyAggregator(logger *zap.Logger, recorder MetricsRecorder, options 
 		buckets:           make(map[string]*LatencyBucket),
 		logger:            logger,
 		metricsRecorder:   recorder,
-		aggregateInterval: 5 * time.Minute,  // Default 5-minute windows
-		retentionPeriod:   24 * time.Hour,   // Keep data for 24 hours in memory
-		maxBuckets:        1000,             // Maximum number of buckets to keep in memory
+		aggregateInterval: 5 * time.Minute, // Default 5-minute windows
+		retentionPeriod:   24 * time.Hour,  // Keep data for 24 hours in memory
+		maxBuckets:        1000,            // Maximum number of buckets to keep in memory
 		stopCh:            make(chan struct{}),
 	}
 
@@ -167,7 +167,7 @@ func (la *LatencyAggregator) Start() {
 
 	go la.aggregationLoop()
 	go la.cleanupLoop()
-	
+
 	la.logger.Info("latency aggregator started",
 		zap.Duration("aggregate_interval", la.aggregateInterval),
 		zap.Duration("retention_period", la.retentionPeriod),
@@ -195,7 +195,7 @@ func (la *LatencyAggregator) RecordLatency(operation, service string, duration t
 
 	bucketKey := la.getBucketKey(operation, service, time.Now())
 	bucket, exists := la.buckets[bucketKey]
-	
+
 	if !exists {
 		bucket = la.createBucket(operation, service, time.Now())
 		la.buckets[bucketKey] = bucket
@@ -211,7 +211,7 @@ func (la *LatencyAggregator) GetCurrentStats(operation, service string) (*Latenc
 
 	bucketKey := la.getBucketKey(operation, service, time.Now())
 	bucket, exists := la.buckets[bucketKey]
-	
+
 	if !exists {
 		return nil, fmt.Errorf("no data available for operation %s", operation)
 	}
@@ -229,12 +229,12 @@ func (la *LatencyAggregator) GetLatencyTrend(ctx context.Context, operation, ser
 
 	if len(dataPoints) < 2 {
 		return &LatencyTrend{
-			Operation: operation,
-			Service:   service,
-			TimeRange: fmt.Sprintf("%s to %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)),
+			Operation:  operation,
+			Service:    service,
+			TimeRange:  fmt.Sprintf("%s to %s", startTime.Format(time.RFC3339), endTime.Format(time.RFC3339)),
 			DataPoints: dataPoints,
 			TrendAnalysis: TrendAnalysis{
-				TrendDirection: "insufficient_data",
+				TrendDirection:       "insufficient_data",
 				ChangeClassification: "insufficient_data",
 			},
 		}, nil
@@ -242,7 +242,7 @@ func (la *LatencyAggregator) GetLatencyTrend(ctx context.Context, operation, ser
 
 	// Calculate trend analysis
 	analysis := la.calculateTrendAnalysis(dataPoints)
-	
+
 	// Calculate percentile trends
 	percentileTrends := la.calculatePercentileTrends(dataPoints)
 
@@ -268,7 +268,7 @@ func (la *LatencyAggregator) GetAggregatedStats(service string, timeWindow time.
 		if bucket.Service == service && bucket.WindowStart.After(cutoffTime) {
 			stats := bucket.calculateStats()
 			existing, exists := results[bucket.Operation]
-			
+
 			if !exists {
 				results[bucket.Operation] = stats
 			} else {
@@ -291,7 +291,7 @@ func (la *LatencyAggregator) getBucketKey(operation, service string, timestamp t
 func (la *LatencyAggregator) createBucket(operation, service string, timestamp time.Time) *LatencyBucket {
 	bucketStart := timestamp.Truncate(la.aggregateInterval)
 	bucketEnd := bucketStart.Add(la.aggregateInterval)
-	
+
 	return &LatencyBucket{
 		Operation:    operation,
 		Service:      service,
@@ -310,7 +310,7 @@ func (lb *LatencyBucket) addMeasurement(value float64) {
 	lb.Measurements = append(lb.Measurements, value)
 	lb.Count++
 	lb.Sum += value
-	
+
 	if value < lb.Min {
 		lb.Min = value
 	}
@@ -385,7 +385,7 @@ func (la *LatencyAggregator) aggregateAndFlush() {
 
 	cutoffTime := time.Now().Add(-la.aggregateInterval * 2) // Keep current and previous window
 	toFlush := make([]*LatencyBucket, 0)
-	
+
 	for key, bucket := range la.buckets {
 		if bucket.WindowEnd.Before(cutoffTime) && bucket.Count > 0 {
 			toFlush = append(toFlush, bucket)
@@ -426,17 +426,17 @@ func (la *LatencyAggregator) cleanup() {
 			key    string
 			bucket *LatencyBucket
 		}
-		
+
 		entries := make([]bucketEntry, 0, len(la.buckets))
 		for k, b := range la.buckets {
 			entries = append(entries, bucketEntry{k, b})
 		}
-		
+
 		// Sort by window start time
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].bucket.WindowStart.Before(entries[j].bucket.WindowStart)
 		})
-		
+
 		// Remove oldest entries
 		excessCount := len(la.buckets) - la.maxBuckets
 		for i := 0; i < excessCount; i++ {
@@ -492,13 +492,13 @@ func (la *LatencyAggregator) flushBucket(bucket *LatencyBucket) {
 
 func (la *LatencyAggregator) getDataPoints(_ context.Context, operation, service string, startTime, endTime time.Time, _ time.Duration) ([]LatencyDataPoint, error) {
 	dataPoints := make([]LatencyDataPoint, 0)
-	
+
 	// Get data from memory buckets first
 	la.mu.RLock()
 	for _, bucket := range la.buckets {
 		if bucket.Operation == operation && bucket.Service == service &&
 			bucket.WindowStart.After(startTime) && bucket.WindowStart.Before(endTime) {
-			
+
 			stats := bucket.calculateStats()
 			dataPoint := LatencyDataPoint{
 				Timestamp:   bucket.WindowStart,
@@ -525,7 +525,7 @@ func (la *LatencyAggregator) getDataPoints(_ context.Context, operation, service
 func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoint) TrendAnalysis {
 	if len(dataPoints) < 2 {
 		return TrendAnalysis{
-			TrendDirection: "insufficient_data",
+			TrendDirection:       "insufficient_data",
 			ChangeClassification: "insufficient_data",
 		}
 	}
@@ -533,7 +533,7 @@ func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoin
 	// Calculate linear regression
 	n := float64(len(dataPoints))
 	var sumX, sumY, sumXY, sumX2 float64
-	
+
 	for i, point := range dataPoints {
 		x := float64(i)
 		y := point.Average
@@ -545,19 +545,19 @@ func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoin
 
 	// Calculate slope and R-squared
 	slope := (n*sumXY - sumX*sumY) / (n*sumX2 - sumX*sumX)
-	
+
 	yMean := sumY / n
 	var totalSumSquares, residualSumSquares float64
-	
+
 	for i, point := range dataPoints {
 		x := float64(i)
 		y := point.Average
 		predicted := slope*x + (yMean - slope*sumX/n)
-		
+
 		totalSumSquares += (y - yMean) * (y - yMean)
 		residualSumSquares += (y - predicted) * (y - predicted)
 	}
-	
+
 	rSquared := 1 - (residualSumSquares / totalSumSquares)
 	if math.IsNaN(rSquared) {
 		rSquared = 0
@@ -591,7 +591,7 @@ func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoin
 
 	// Determine significance and classification
 	isSignificant := rSquared > 0.5 && math.Abs(percentChange) > 5 // 5% change threshold
-	
+
 	var changeClassification string
 	if !isSignificant {
 		changeClassification = "stable"
@@ -616,7 +616,7 @@ func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoin
 
 func (la *LatencyAggregator) calculatePercentileTrends(dataPoints []LatencyDataPoint) map[string][]float64 {
 	percentileTrends := make(map[string][]float64)
-	
+
 	percentiles := []string{"p50", "p95", "p99"}
 	for _, p := range percentiles {
 		values := make([]float64, len(dataPoints))
@@ -627,7 +627,7 @@ func (la *LatencyAggregator) calculatePercentileTrends(dataPoints []LatencyDataP
 		}
 		percentileTrends[p] = values
 	}
-	
+
 	return percentileTrends
 }
 
@@ -685,15 +685,15 @@ func getPercentile(sorted []float64, percentile float64) float64 {
 	if err := common.ValidateSliceNotEmpty("sorted", sorted); err != nil {
 		return 0
 	}
-	
+
 	index := percentile / 100 * float64(len(sorted)-1)
 	lower := int(math.Floor(index))
 	upper := int(math.Ceil(index))
-	
+
 	if lower == upper {
 		return sorted[lower]
 	}
-	
+
 	weight := index - float64(lower)
 	return sorted[lower]*(1-weight) + sorted[upper]*weight
 }

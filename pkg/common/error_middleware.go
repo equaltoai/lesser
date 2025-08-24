@@ -11,24 +11,24 @@ import (
 
 // ErrorMiddlewareConfig holds configuration for error handling middleware
 type ErrorMiddlewareConfig struct {
-	Logger           *zap.Logger
-	ServiceName      string
-	EnableStackTrace bool
+	Logger              *zap.Logger
+	ServiceName         string
+	EnableStackTrace    bool
 	EnablePanicRecovery bool
-	EnableErrorMetrics bool
-	MaxErrorLogLength int
+	EnableErrorMetrics  bool
+	MaxErrorLogLength   int
 }
 
 // DefaultErrorConfig returns a default error middleware configuration
 func DefaultErrorConfig(serviceName string, logger *zap.Logger) ErrorMiddlewareConfig {
 	cfg := config.Get()
 	return ErrorMiddlewareConfig{
-		Logger:             logger,
-		ServiceName:        serviceName,
-		EnableStackTrace:   cfg.DebugMode,
+		Logger:              logger,
+		ServiceName:         serviceName,
+		EnableStackTrace:    cfg.DebugMode,
 		EnablePanicRecovery: true,
-		EnableErrorMetrics: true,
-		MaxErrorLogLength:  2000,
+		EnableErrorMetrics:  true,
+		MaxErrorLogLength:   2000,
 	}
 }
 
@@ -43,28 +43,28 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) lift.Middleware {
 						// Capture stack trace for panics
 						buf := make([]byte, 4096)
 						buf = buf[:runtime.Stack(buf, false)]
-						
+
 						config.Logger.Error("panic recovered in error middleware",
 							zap.String("service", config.ServiceName),
 							zap.String("path", ctx.Request.Path),
 							zap.String("method", ctx.Request.Method),
 							zap.Any("panic", r),
 							zap.String("stack", string(buf)))
-						
+
 						// Return generic internal server error
 						err = RespondInternalServerError(ctx, "Internal server error")
 					}
 				}()
 			}
-			
+
 			// Process the request
 			err = next.Handle(ctx)
-			
+
 			// Handle any errors returned by handlers
 			if err != nil {
 				handleRequestError(ctx, err, config)
 			}
-			
+
 			return err
 		})
 	}
@@ -77,7 +77,7 @@ func handleRequestError(ctx *lift.Context, err error, config ErrorMiddlewareConf
 		handleAppError(ctx, appErr, config)
 		return
 	}
-	
+
 	// Check for common error patterns and convert to appropriate responses
 	switch {
 	case IsNotFound(err):
@@ -109,30 +109,30 @@ func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareCo
 		zap.String("method", ctx.Request.Method),
 		zap.Int("status_code", appErr.StatusCode),
 	}
-	
+
 	// Add user context if available
 	if username := ctx.Get("username"); username != nil {
 		logFields = append(logFields, zap.Any("username", username))
 	}
-	
+
 	if requestID := ctx.Get("request_id"); requestID != nil {
 		logFields = append(logFields, zap.Any("request_id", requestID))
 	}
-	
+
 	// Log internal error (truncated if too long)
 	internalMsg := appErr.InternalError.Error()
 	if config.MaxErrorLogLength > 0 && len(internalMsg) > config.MaxErrorLogLength {
 		internalMsg = internalMsg[:config.MaxErrorLogLength] + "... (truncated)"
 	}
 	logFields = append(logFields, zap.String("internal_error", internalMsg))
-	
+
 	// Add stack trace in debug mode
 	if config.EnableStackTrace {
 		buf := make([]byte, 4096)
 		buf = buf[:runtime.Stack(buf, false)]
 		logFields = append(logFields, zap.String("stack_trace", string(buf)))
 	}
-	
+
 	// Log at appropriate level based on status code
 	switch {
 	case appErr.StatusCode >= 500:
@@ -142,12 +142,12 @@ func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareCo
 	default:
 		config.Logger.Info("handled error", logFields...)
 	}
-	
+
 	// Emit error metrics if enabled
 	if config.EnableErrorMetrics {
 		emitErrorMetrics(appErr, config)
 	}
-	
+
 	// Return safe response to client
 	_ = ctx.Status(appErr.StatusCode).JSON(StandardErrorResponse{
 		Error: appErr.UserMessage,
@@ -172,7 +172,7 @@ func emitErrorMetrics(appErr AppError, config ErrorMiddlewareConfig) {
 func ValidationErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middleware {
 	config := DefaultErrorConfig(serviceName, logger)
 	config.EnableStackTrace = false // Don't need stack traces for validation errors
-	
+
 	return ErrorHandlingMiddleware(config)
 }
 
@@ -183,7 +183,7 @@ func ProductionErrorMiddleware(serviceName string, logger *zap.Logger) lift.Midd
 	config.EnablePanicRecovery = true
 	config.EnableErrorMetrics = true
 	config.MaxErrorLogLength = 1000 // Shorter logs in production
-	
+
 	return ErrorHandlingMiddleware(config)
 }
 
@@ -194,7 +194,7 @@ func DevelopmentErrorMiddleware(serviceName string, logger *zap.Logger) lift.Mid
 	config.EnablePanicRecovery = true
 	config.EnableErrorMetrics = false
 	config.MaxErrorLogLength = 5000 // Longer logs in development
-	
+
 	return ErrorHandlingMiddleware(config)
 }
 
@@ -205,12 +205,12 @@ func NotFoundMiddleware() lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
-			
+
 			// If no error but no response was set, it's likely a 404
 			if err == nil && ctx.Response.StatusCode == 0 {
 				return RespondNotFound(ctx)
 			}
-			
+
 			return err
 		})
 	}
@@ -221,16 +221,16 @@ func TimeoutErrorMiddleware(serviceName string, logger *zap.Logger) lift.Middlew
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
-			
+
 			if err != nil && isTimeoutError(err) {
 				logger.Warn("request timeout",
 					zap.String("service", serviceName),
 					zap.String("path", ctx.Request.Path),
 					zap.Error(err))
-				
+
 				return RespondServiceUnavailable(ctx, "request timeout")
 			}
-			
+
 			return err
 		})
 	}
@@ -248,14 +248,14 @@ func ErrorRecoveryMiddleware(serviceName string, logger *zap.Logger) lift.Middle
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			err := next.Handle(ctx)
-			
+
 			if err != nil {
 				// Attempt graceful recovery for specific error types
 				if recoveredErr := attemptErrorRecovery(ctx, err, serviceName, logger); recoveredErr != nil {
 					return recoveredErr
 				}
 			}
-			
+
 			return err
 		})
 	}
@@ -269,14 +269,14 @@ func attemptErrorRecovery(ctx *lift.Context, err error, serviceName string, logg
 			zap.String("service", serviceName),
 			zap.Error(err))
 		return RespondServiceUnavailable(ctx, "temporary service issue")
-		
+
 	case isRetryableError(err):
 		logger.Info("retryable error detected",
 			zap.String("service", serviceName),
 			zap.Error(err))
 		// Could implement retry logic here
 		return RespondServiceUnavailable(ctx, "please retry")
-		
+
 	default:
 		return err // No recovery possible
 	}

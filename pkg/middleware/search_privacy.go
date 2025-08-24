@@ -140,7 +140,7 @@ func applyAccountSearchFilters(ctx *lift.Context, userID string) {
 // applyHashtagSearchFilters applies privacy filters for hashtag searches
 func applyHashtagSearchFilters(ctx *lift.Context, userID string) {
 	ctx.Set("public_search", true)
-	
+
 	// Filter NSFW content for unauthenticated users
 	if err := common.ValidateRequiredParam("userID", userID); err != nil {
 		ctx.Set("filter_nsfw", true)

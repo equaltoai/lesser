@@ -31,7 +31,6 @@ type AuthService struct {
 	config          *config.Config
 }
 
-
 // NewAuthService creates a comprehensive auth service
 func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, error) {
 	jwtSecret := cfg.JWTSecret

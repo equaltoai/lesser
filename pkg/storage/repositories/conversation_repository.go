@@ -385,7 +385,7 @@ func (r *ConversationRepository) AddStatusToConversation(ctx context.Context, co
 
 		// Update the conversation's last status and counts
 		conv.LastStatusID = statusID
-		
+
 		if err := r.UpdateConversation(ctx, conv); err != nil {
 			log.Warn("failed to update conversation counts", zap.Error(err))
 			// Don't fail the operation if count update fails

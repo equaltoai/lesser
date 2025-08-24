@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // PatternRepository defines the interface for pattern storage operations needed by the cache
@@ -22,8 +22,8 @@ type PatternRepository interface {
 // PatternCacheManager manages in-memory and persistent pattern caching for performance
 type PatternCacheManager struct {
 	// In-memory cache
-	urlCache   *sync.Map // map[string]*CompiledURLPattern
-	ipCache    *sync.Map // map[string]*CompiledIPPattern
+	urlCache *sync.Map // map[string]*CompiledURLPattern
+	ipCache  *sync.Map // map[string]*CompiledIPPattern
 
 	// Pattern managers
 	urlMatcher *EnhancedURLMatcher
@@ -43,13 +43,13 @@ type PatternCacheManager struct {
 
 // CacheConfig defines cache behavior parameters
 type CacheConfig struct {
-	MaxMemoryPatterns    int           `json:"max_memory_patterns"`     // Maximum patterns in memory
-	MemoryCacheTimeout   time.Duration `json:"memory_cache_timeout"`    // How long to keep patterns in memory
+	MaxMemoryPatterns      int           `json:"max_memory_patterns"`      // Maximum patterns in memory
+	MemoryCacheTimeout     time.Duration `json:"memory_cache_timeout"`     // How long to keep patterns in memory
 	PersistentCacheTimeout time.Duration `json:"persistent_cache_timeout"` // How long to keep in DynamoDB
-	PreloadActivePatterns bool          `json:"preload_active_patterns"` // Preload active patterns on startup
-	EnableStatistics     bool          `json:"enable_statistics"`       // Track cache statistics
-	CleanupInterval      time.Duration `json:"cleanup_interval"`        // How often to cleanup cache
-	EnablePersistentCache bool         `json:"enable_persistent_cache"` // Enable DynamoDB caching
+	PreloadActivePatterns  bool          `json:"preload_active_patterns"`  // Preload active patterns on startup
+	EnableStatistics       bool          `json:"enable_statistics"`        // Track cache statistics
+	CleanupInterval        time.Duration `json:"cleanup_interval"`         // How often to cleanup cache
+	EnablePersistentCache  bool          `json:"enable_persistent_cache"`  // Enable DynamoDB caching
 }
 
 // DefaultCacheConfig returns default cache configuration
@@ -67,31 +67,31 @@ func DefaultCacheConfig() *CacheConfig {
 
 // CacheStatistics tracks cache performance metrics
 type CacheStatistics struct {
-	MemoryHits           int64 `json:"memory_hits"`
-	MemoryMisses         int64 `json:"memory_misses"`
-	PersistentHits       int64 `json:"persistent_hits"`
-	PersistentMisses     int64 `json:"persistent_misses"`
-	CompilationCount     int64 `json:"compilation_count"`
-	CacheEvictions       int64 `json:"cache_evictions"`
-	TotalLookups         int64 `json:"total_lookups"`
-	AverageCompileTime   float64 `json:"average_compile_time"`
-	AverageRetrievalTime float64 `json:"average_retrieval_time"`
+	MemoryHits           int64     `json:"memory_hits"`
+	MemoryMisses         int64     `json:"memory_misses"`
+	PersistentHits       int64     `json:"persistent_hits"`
+	PersistentMisses     int64     `json:"persistent_misses"`
+	CompilationCount     int64     `json:"compilation_count"`
+	CacheEvictions       int64     `json:"cache_evictions"`
+	TotalLookups         int64     `json:"total_lookups"`
+	AverageCompileTime   float64   `json:"average_compile_time"`
+	AverageRetrievalTime float64   `json:"average_retrieval_time"`
 	LastReset            time.Time `json:"last_reset"`
 	mutex                sync.RWMutex
 }
 
 // CachedPattern represents a cached compiled pattern with metadata
 type CachedPattern struct {
-	PatternID        string                 `json:"pattern_id"`
-	PatternContent   string                 `json:"pattern_content"`
-	PatternType      string                 `json:"pattern_type"`
-	CompiledData     interface{}            `json:"compiled_data"`
-	CompilationHash  string                 `json:"compilation_hash"`
-	CachedAt         time.Time              `json:"cached_at"`
-	LastUsed         time.Time              `json:"last_used"`
-	HitCount         int64                  `json:"hit_count"`
-	CompileTime      float64                `json:"compile_time"`
-	Metadata         map[string]interface{} `json:"metadata,omitempty"`
+	PatternID       string                 `json:"pattern_id"`
+	PatternContent  string                 `json:"pattern_content"`
+	PatternType     string                 `json:"pattern_type"`
+	CompiledData    interface{}            `json:"compiled_data"`
+	CompilationHash string                 `json:"compilation_hash"`
+	CachedAt        time.Time              `json:"cached_at"`
+	LastUsed        time.Time              `json:"last_used"`
+	HitCount        int64                  `json:"hit_count"`
+	CompileTime     float64                `json:"compile_time"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // NewPatternCacheManager creates a new pattern cache manager
@@ -292,7 +292,7 @@ func (c *PatternCacheManager) storeInPersistentCache(ctx context.Context, patter
 		PatternID:       pattern.PatternID,
 		PatternType:     pattern.PatternType,
 		CompilationHash: pattern.CompilationHash,
-		CompiledData:    map[string]interface{}{
+		CompiledData: map[string]interface{}{
 			"data":         pattern.CompiledData,
 			"content":      pattern.PatternContent,
 			"compile_time": pattern.CompileTime,
@@ -486,7 +486,7 @@ func (c *PatternCacheManager) evictIfNecessary(cache *sync.Map, _ string) {
 		// Evict oldest entries
 		toEvict := make([]string, 0)
 		oldestTime := time.Now()
-		
+
 		cache.Range(func(key, value interface{}) bool {
 			if cached, ok := value.(*CachedPattern); ok {
 				if cached.LastUsed.Before(oldestTime) {
@@ -617,13 +617,13 @@ func (c *PatternCacheManager) updateRetrievalTime(retrievalTime float64) {
 
 // isURLPatternType checks if pattern type is a URL pattern
 func isURLPatternType(patternType string) bool {
-	return patternType == "url_exact" || patternType == "url_domain" || 
-		   patternType == "url_subdomain" || patternType == "url_path" || 
-		   patternType == "url_query" || patternType == "url_regex"
+	return patternType == "url_exact" || patternType == "url_domain" ||
+		patternType == "url_subdomain" || patternType == "url_path" ||
+		patternType == "url_query" || patternType == "url_regex"
 }
 
 // isIPPatternType checks if pattern type is an IP pattern
 func isIPPatternType(patternType string) bool {
-	return patternType == "ip_single" || patternType == "ip_cidr" || 
-		   patternType == "ip_range" || patternType == "ip_regex"
+	return patternType == "ip_single" || patternType == "ip_cidr" ||
+		patternType == "ip_range" || patternType == "ip_regex"
 }

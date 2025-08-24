@@ -48,8 +48,8 @@ func (r *NotificationRepository) GetNotification(ctx context.Context, notificati
 	var notification models.Notification
 	// Use notification ID patterns - these need to be determined based on the model
 	pk := fmt.Sprintf("NOTIFICATION#%s", notificationID)
-	sk := "METADATA" // Assuming standard metadata pattern
-	
+	sk := models.SKMetadata // Assuming standard metadata pattern
+
 	err := r.Get(ctx, pk, sk, &notification)
 	if err != nil {
 		return nil, err // BaseRepository handles error formatting
@@ -433,13 +433,13 @@ func (r *NotificationRepository) GetNotificationGroups(ctx context.Context, user
 	// Filter notifications for the specific user and group them
 	userGroups := make(map[string]*models.Notification)
 	groupKeys := make([]string, 0)
-	
+
 	for i := range allNotifications {
 		notif := &allNotifications[i]
 		if notif.UserID != userID {
 			continue // Skip notifications for other users
 		}
-		
+
 		// Keep only the most recent notification per group
 		if existing, exists := userGroups[notif.GroupKey]; !exists || notif.CreatedAt.After(existing.CreatedAt) {
 			if !exists {

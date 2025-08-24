@@ -464,13 +464,13 @@ func ParseStatusTimelineLimit(limitStr string) (int, error) {
 	if limitStr == "" {
 		return 20, nil
 	}
-	
+
 	result, err := ParseAndValidateIntWithBounds("limit", limitStr, 0, 80, 20)
 	if err != nil {
 		// For timeline endpoints, return default on parse error instead of failing
 		return 20, nil
 	}
-	
+
 	return result, nil
 }
 
@@ -480,13 +480,13 @@ func ParseAccountStatusesLimit(limitStr string) (int, error) {
 	if limitStr == "" {
 		return 20, nil
 	}
-	
+
 	result, err := ParseAndValidateIntWithBounds("limit", limitStr, 0, 40, 20)
 	if err != nil {
 		// For account status endpoints, return default on parse error instead of failing
 		return 20, nil
 	}
-	
+
 	return result, nil
 }
 
@@ -830,7 +830,6 @@ func ValidateRepositoryAccess(userID, resourceID string, operation string) error
 
 // Content-specific validation functions
 
-
 // ValidateDisplayName validates display name length
 func ValidateDisplayName(displayName string) error {
 	if len(displayName) > 30 {
@@ -871,7 +870,6 @@ func IsProcessableMediaType(mediaType string) bool {
 	return mediaType == "Image" || mediaType == "Video" || mediaType == "Document"
 }
 
-
 // ValidateStatusState validates status states (pending, completed, failed, etc.)
 func ValidateStatusState(status string) error {
 	validStates := []string{"pending", "completed", "failed", "processing", "ready"}
@@ -885,11 +883,11 @@ func ValidateSliceNotEmpty(fieldName string, slice interface{}) error {
 	if v.Kind() != reflect.Slice {
 		return ValidationError{Field: fieldName, Message: "expected a slice"}
 	}
-	
+
 	if v.Len() == 0 {
 		return ValidationError{Field: fieldName, Message: "cannot be empty"}
 	}
-	
+
 	return nil
 }
 
@@ -900,7 +898,7 @@ func ValidateSliceLength(fieldName string, slice interface{}, maxLength int) err
 	if v.Kind() != reflect.Slice {
 		return ValidationError{Field: fieldName, Message: "expected a slice"}
 	}
-	
+
 	length := v.Len()
 	if length > maxLength {
 		return ValidationError{Field: fieldName, Message: fmt.Sprintf("cannot contain more than %d items", maxLength)}
@@ -1090,7 +1088,6 @@ func ValidateIntRange(field string, value, minValue, maxValue int) error {
 
 	return nil
 }
-
 
 // ValidateContentOrAttachments validates that either content or attachments are provided
 func ValidateContentOrAttachments(content string, attachmentIDs []string) error {

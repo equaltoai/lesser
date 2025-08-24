@@ -2,9 +2,9 @@ package models
 
 import (
 	"fmt"
+	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // CSRFToken represents a CSRF token stored in DynamoDB
@@ -55,7 +55,9 @@ func (c *CSRFToken) BeforeCreate() error {
 	c.SK = SKToken
 
 	// Set up GSI keys for user lookups (rate limiting)
-	c.UpdateKeys()
+	if err := c.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return c.Validate()
 }
@@ -63,7 +65,9 @@ func (c *CSRFToken) BeforeCreate() error {
 // BeforeUpdate sets up the model before update
 func (c *CSRFToken) BeforeUpdate() error {
 	// Update GSI keys in case user or other indexed fields changed
-	c.UpdateKeys()
+	if err := c.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	// Ensure TTL matches expiry
 	c.TTL = c.ExpiresAt

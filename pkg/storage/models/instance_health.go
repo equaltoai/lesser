@@ -69,7 +69,8 @@ func NewInstanceHealth(domain string) *InstanceHealth {
 		CheckerVersion: "serverless-v1",
 		UserAgent:      "Lesser/1.0 (Federation Health Check)",
 	}
-	health.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = health.UpdateKeys()
 	return health
 }
 
@@ -187,7 +188,8 @@ func NewInstanceHealthSummary(domain string, window time.Duration) *InstanceHeal
 		SampleCount:      0,
 		StatusCodeCounts: make(map[string]int),
 	}
-	summary.UpdateKeys()
+	// UpdateKeys() is safe to ignore error here as it only does string formatting
+	_ = summary.UpdateKeys()
 	return summary
 }
 

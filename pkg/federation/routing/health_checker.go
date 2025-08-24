@@ -68,7 +68,7 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 	// Perform HTTP health check
 	req, err := http.NewRequestWithContext(ctx, "GET", instance.InboxURL, nil)
 	if err != nil {
-		hc.logger.Error("invalid URL for health check", 
+		hc.logger.Error("invalid URL for health check",
 			zap.Error(err),
 			zap.String("domain", instance.Domain),
 			zap.String("inbox_url", instance.InboxURL))

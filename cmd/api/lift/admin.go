@@ -15,8 +15,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
-	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	storageModels "github.com/equaltoai/lesser/pkg/storage/models"
+	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/transformations"
 	"github.com/google/uuid"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -150,7 +150,7 @@ func (h *Handler) adminAction(ctx *lift.Context, action string, updatesFn func(u
 		return ctx.JSON(map[string]string{"error": err.Error()})
 	}
 
-	// Update user if we have updates  
+	// Update user if we have updates
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
@@ -419,7 +419,7 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 		updates["sensitive_media"] = false
 	}
 
-	// Update user in storage  
+	// Update user in storage
 	if len(updates) > 0 {
 		updates["updated_at"] = time.Now()
 		if err := h.repos.Account().UpdateUser(ctx.Context, username, updates); err != nil {
@@ -1380,10 +1380,10 @@ func (h *Handler) HandleAdminDemoteModeratorLift(ctx *lift.Context) error {
 func (h *Handler) convertActorToAccountWithCounts(ctx context.Context, actor *activitypub.Actor) models.Account {
 	// Use centralized transformation framework for base conversion - ELIMINATES 40+ LINES OF DUPLICATE CODE
 	account := transformations.ActorToAccountBase(actor, h.cfg.BaseURL())
-	
+
 	// Override ID to use PreferredUsername for admin interface consistency
 	account.ID = actor.PreferredUsername
-	
+
 	// Get metadata for accurate timestamps
 	_, metadata, err := h.repos.Actor().GetActorWithMetadata(ctx, actor.PreferredUsername)
 	if err == nil && metadata != nil {
@@ -1558,7 +1558,7 @@ func (h *Handler) loadReportedStatuses(ctx context.Context, reportID string) []m
 		// Convert status using transformation framework - ELIMINATES 6+ LINES OF DUPLICATE CODE
 		transformer := transformations.NewStatusResponseTransformer(h.cfg.BaseURL(), transformations.ObjectToStatusWithContext)
 		transformCtx := context.WithValue(ctx, baseURLContextKey, h.cfg.BaseURL())
-		
+
 		apiStatus, err := transformer.Transform(transformCtx, statusMap)
 		if err != nil {
 			// Fallback for failed transformations
@@ -1818,7 +1818,7 @@ func (h *Handler) buildPaginationParams(ctx *lift.Context, limit int, nextCursor
 
 	// Add filter parameters to maintain filter state across pagination
 	filterParams := []string{
-		"local", "remote", "by_domain", "visibility", "flagged", 
+		"local", "remote", "by_domain", "visibility", "flagged",
 		"reported", "media", "sensitive", "min_date", "max_date",
 	}
 

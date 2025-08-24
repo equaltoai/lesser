@@ -23,7 +23,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // Service provides business logic for scheduled status operations
 type Service struct {
 	scheduledRepo *repositories.ScheduledStatusRepository

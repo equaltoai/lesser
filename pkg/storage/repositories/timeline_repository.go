@@ -42,7 +42,7 @@ func (r *TimelineRepository) CreateTimelineEntries(ctx context.Context, entries 
 			return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "prepare creation")
 		}
 	}
-	
+
 	return r.BatchCreate(ctx, entries)
 }
 
@@ -114,18 +114,18 @@ func (r *TimelineRepository) GetHashtagTimeline(ctx context.Context, hashtag str
 // getTimelineEntries is a helper method to retrieve timeline entries using BaseRepository pagination
 func (r *TimelineRepository) getTimelineEntries(ctx context.Context, timelineType, timelineID string, limit int, cursor string) ([]*models.Timeline, string, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
-	
+
 	opts := BasePaginationOptions{
 		Limit:  limit,
 		Cursor: cursor,
 		Order:  "ASC", // ASC because we use reverse timestamp
 	}
-	
+
 	result, err := r.FindWithPagination(ctx, pk, opts)
 	if err != nil {
 		return nil, "", ErrorHandler.HandleQueryError(err, EntityTimelineEntry, "timeline entries")
 	}
-	
+
 	return result.Items, result.NextCursor, nil
 }
 
@@ -289,28 +289,28 @@ func (r *TimelineRepository) GetTimelineEntriesInRange(ctx context.Context, time
 }
 
 // GetTimelineEntriesWithFilters retrieves timeline entries with various filters using BaseRepository
-func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, cursor string) ([]*models.Timeline, string, error) {
+func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, timelineType, timelineID string, filters TimelineFilters, limit int, _ string) ([]*models.Timeline, string, error) {
 	pk := fmt.Sprintf("TIMELINE#%s#%s", timelineType, timelineID)
-	
+
 	// Build filter map for BaseRepository's QueryWithFilter
 	filterMap := make(map[string]interface{})
-	
+
 	if filters.OnlyMedia {
 		filterMap["HasMedia"] = true
 	}
-	
+
 	if filters.ExcludeReplies {
 		filterMap["IsReply"] = false
 	}
-	
+
 	if filters.ExcludeBoosts {
 		filterMap["IsBoost"] = false
 	}
-	
+
 	if filters.Language != "" {
 		filterMap["Language"] = filters.Language
 	}
-	
+
 	if filters.MinID != "" {
 		// Convert minID to timestamp for comparison
 		if timestamp, err := strconv.ParseInt(filters.MinID, 10, 64); err == nil {
@@ -320,12 +320,12 @@ func (r *TimelineRepository) GetTimelineEntriesWithFilters(ctx context.Context, 
 			}
 		}
 	}
-	
+
 	if filters.MaxID != "" {
 		// Convert maxID to timestamp for comparison
 		if timestamp, err := strconv.ParseInt(filters.MaxID, 10, 64); err == nil {
 			filterMap["TimelineAt"] = map[string]interface{}{
-				"op":    "<=", 
+				"op":    "<=",
 				"value": time.Unix(timestamp, 0),
 			}
 		}

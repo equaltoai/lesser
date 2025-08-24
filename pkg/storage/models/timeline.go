@@ -2,8 +2,8 @@ package models
 
 import (
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // Timeline represents an entry in a user's timeline stored in DynamoDB using DynamORM
@@ -27,7 +27,6 @@ type Timeline struct {
 	// GSI4 - Language timeline (entries by language)
 	GSI4PK string `dynamorm:"index:language-timeline-index,pk" json:"gsi4_pk,omitempty"` // Format: "LANGUAGE#{language}"
 	GSI4SK string `dynamorm:"index:language-timeline-index,sk" json:"gsi4_sk,omitempty"` // Format: "{timeline_at_timestamp}#{entry_id}"
-
 
 	// Core timeline data
 	TimelineType string `json:"timeline_type"` // HOME, PUBLIC, LIST, DIRECT, HASHTAG
@@ -53,8 +52,8 @@ type Timeline struct {
 	SpoilerText string `json:"spoiler_text"` // Content warning text
 
 	// Timestamps
-	CreatedAt  time.Time `json:"created_at"`  // When the post was created
-	TimelineAt time.Time `json:"timeline_at"` // When it was added to timeline (for sorting)
+	CreatedAt  time.Time `json:"created_at"`                   // When the post was created
+	TimelineAt time.Time `json:"timeline_at"`                  // When it was added to timeline (for sorting)
 	TTL        int64     `dynamorm:"ttl" json:"ttl,omitempty"` // DynamoDB TTL (Unix timestamp)
 
 	// DynamORM metadata
@@ -232,7 +231,7 @@ func (t *Timeline) GetPK() string {
 	return t.PK
 }
 
-// GetSK returns the sort key for this timeline entry (required by BaseModel interface)  
+// GetSK returns the sort key for this timeline entry (required by BaseModel interface)
 func (t *Timeline) GetSK() string {
 	return t.SK
 }

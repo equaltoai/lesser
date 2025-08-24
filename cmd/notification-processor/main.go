@@ -647,7 +647,10 @@ func (np *NotificationProcessor) getUserPreferences(ctx context.Context, userID 
 	// Check if prefs has preferences map
 	if prefs != nil && prefs.Preferences != nil {
 		return &UserPreferences{
-			PushNotifications:      func() bool { result, _ := common.ParseAndValidateBoolean(prefs.Preferences["push_enabled"]); return result }(),
+			PushNotifications: func() bool {
+				result, _ := common.ParseAndValidateBoolean(prefs.Preferences["push_enabled"])
+				return result
+			}(),
 			WebSocketNotifications: prefs.Preferences["websocket_enabled"] != "false", // Default true
 			PushEndpoint:           prefs.Preferences["push_endpoint"],
 		}, nil
@@ -770,15 +773,15 @@ func init() {
 			ServiceName:        "notification-processor",
 		},
 	})
-	
+
 	// Automatic dependency injection handled by processor initialization
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		lambdaCtx.Logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Initialize processor
 	processor = NewNotificationProcessor(lambdaCtx)
 }

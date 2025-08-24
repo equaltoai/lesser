@@ -23,7 +23,7 @@ type SocialRepository struct {
 	accountPinRepo  *BaseRepository[*models.AccountPin]
 	accountNoteRepo *BaseRepository[*models.AccountNote]
 	statusPinRepo   *BaseRepository[*models.StatusPin]
-	
+
 	// Keep direct db access for complex queries
 	db     core.DB
 	logger *zap.Logger
@@ -787,7 +787,7 @@ func (r *SocialRepository) UpdateAccountNote(ctx context.Context, note *storage.
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use BaseRepository Create method (overwrites existing in DynamoDB)
 	err := r.accountNoteRepo.Create(ctx, model)

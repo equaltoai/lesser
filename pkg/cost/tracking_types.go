@@ -11,54 +11,54 @@ import (
 
 // DynamoOperation represents a DynamoDB operation for cost tracking
 type DynamoOperation struct {
-	Type                string    // "Query", "Scan", "PutItem", "UpdateItem", "DeleteItem", "BatchWrite"
-	TableName           string    // Name of the DynamoDB table
-	ConsumedReadUnits   int64     // Read capacity units consumed
-	ConsumedWriteUnits  int64     // Write capacity units consumed
-	ItemCount           int64     // Number of items affected
-	IndexName           string    // GSI name if applicable
-	OperationID         string    // Unique operation identifier
-	UserID              string    // User associated with the operation
-	Timestamp           time.Time // When the operation occurred
+	Type               string    // "Query", "Scan", "PutItem", "UpdateItem", "DeleteItem", "BatchWrite"
+	TableName          string    // Name of the DynamoDB table
+	ConsumedReadUnits  int64     // Read capacity units consumed
+	ConsumedWriteUnits int64     // Write capacity units consumed
+	ItemCount          int64     // Number of items affected
+	IndexName          string    // GSI name if applicable
+	OperationID        string    // Unique operation identifier
+	UserID             string    // User associated with the operation
+	Timestamp          time.Time // When the operation occurred
 }
 
 // S3Operation represents an S3 operation for cost tracking
 type S3Operation struct {
-	Type              string    // "PutObject", "GetObject", "DeleteObject", "ListObjects"
-	BucketName        string    // Name of the S3 bucket
-	ObjectKey         string    // S3 object key
-	RequestCount      int64     // Number of requests
-	BytesTransferred  int64     // Bytes uploaded/downloaded
-	StorageClass      string    // Standard, IA, Glacier, etc.
-	OperationID       string    // Unique operation identifier
-	UserID            string    // User associated with the operation
-	Timestamp         time.Time // When the operation occurred
+	Type             string    // "PutObject", "GetObject", "DeleteObject", "ListObjects"
+	BucketName       string    // Name of the S3 bucket
+	ObjectKey        string    // S3 object key
+	RequestCount     int64     // Number of requests
+	BytesTransferred int64     // Bytes uploaded/downloaded
+	StorageClass     string    // Standard, IA, Glacier, etc.
+	OperationID      string    // Unique operation identifier
+	UserID           string    // User associated with the operation
+	Timestamp        time.Time // When the operation occurred
 }
 
 // LambdaOperation represents a Lambda invocation for cost tracking
 type LambdaOperation struct {
-	FunctionName      string        // Name of the Lambda function
-	Duration          time.Duration // Actual execution duration
-	MemoryMB          int64         // Memory allocated in MB
-	MemoryUsedMB      int64         // Memory actually used (if available)
-	ColdStart         bool          // Whether this was a cold start
-	RequestID         string        // Lambda request ID
-	UserID            string        // User associated with the invocation
-	Timestamp         time.Time     // When the invocation occurred
+	FunctionName string        // Name of the Lambda function
+	Duration     time.Duration // Actual execution duration
+	MemoryMB     int64         // Memory allocated in MB
+	MemoryUsedMB int64         // Memory actually used (if available)
+	ColdStart    bool          // Whether this was a cold start
+	RequestID    string        // Lambda request ID
+	UserID       string        // User associated with the invocation
+	Timestamp    time.Time     // When the invocation occurred
 }
 
 // Cost represents the calculated cost of an operation
 type Cost struct {
-	Service                   string    // "DynamoDB", "S3", "Lambda", etc.
-	ReadCostMicroCents        int64     // Cost for read operations
-	WriteCostMicroCents       int64     // Cost for write operations
-	RequestCostMicroCents     int64     // Cost for requests
-	StorageCostMicroCents     int64     // Cost for storage
-	InvocationCostMicroCents  int64     // Cost for Lambda invocations
-	DurationCostMicroCents    int64     // Cost for Lambda duration
-	DataTransferCostMicroCents int64    // Cost for data transfer
-	TotalMicroCents           int64     // Total cost in microcents
-	Timestamp                 time.Time // When the cost was calculated
+	Service                    string    // "DynamoDB", "S3", "Lambda", etc.
+	ReadCostMicroCents         int64     // Cost for read operations
+	WriteCostMicroCents        int64     // Cost for write operations
+	RequestCostMicroCents      int64     // Cost for requests
+	StorageCostMicroCents      int64     // Cost for storage
+	InvocationCostMicroCents   int64     // Cost for Lambda invocations
+	DurationCostMicroCents     int64     // Cost for Lambda duration
+	DataTransferCostMicroCents int64     // Cost for data transfer
+	TotalMicroCents            int64     // Total cost in microcents
+	Timestamp                  time.Time // When the cost was calculated
 }
 
 // TotalDollars returns the total cost in dollars
@@ -68,11 +68,11 @@ func (c *Cost) TotalDollars() float64 {
 
 // MetricData represents a custom metric to be sent to CloudWatch
 type MetricData struct {
-	Name       string              // Metric name
-	Value      float64             // Metric value
-	Unit       types.StandardUnit  // CloudWatch unit
-	Dimensions []types.Dimension   // CloudWatch dimensions
-	Timestamp  time.Time           // Metric timestamp
+	Name       string             // Metric name
+	Value      float64            // Metric value
+	Unit       types.StandardUnit // CloudWatch unit
+	Dimensions []types.Dimension  // CloudWatch dimensions
+	Timestamp  time.Time          // Metric timestamp
 }
 
 // Specialized trackers for each service
@@ -95,7 +95,7 @@ func NewDynamoDBTracker() *DynamoDBTracker {
 func (dt *DynamoDBTracker) CalculateCost(operation DynamoOperation) Cost {
 	readCostMicroCents := int64(float64(operation.ConsumedReadUnits) * float64(DynamoDBReadRequestUnit))
 	writeCostMicroCents := int64(float64(operation.ConsumedWriteUnits) * float64(DynamoDBWriteRequestUnit))
-	
+
 	return Cost{
 		Service:             "DynamoDB",
 		ReadCostMicroCents:  readCostMicroCents,
@@ -122,7 +122,7 @@ func NewS3Tracker() *S3Tracker {
 // CalculateCost calculates the cost of an S3 operation
 func (st *S3Tracker) CalculateCost(operation S3Operation) Cost {
 	var requestCostMicroCents int64
-	
+
 	// Calculate request costs based on operation type
 	switch operation.Type {
 	case "PutObject", "PostObject", "CopyObject":
@@ -130,10 +130,10 @@ func (st *S3Tracker) CalculateCost(operation S3Operation) Cost {
 	case "GetObject", "ListObjects", "HeadObject":
 		requestCostMicroCents = int64(float64(operation.RequestCount) * float64(S3GetRequestCost) / 1000)
 	}
-	
+
 	// Calculate data transfer costs
 	dataTransferCostMicroCents := int64(float64(operation.BytesTransferred) * float64(S3DataTransferPerGB) / (1024 * 1024 * 1024))
-	
+
 	return Cost{
 		Service:                    "S3",
 		RequestCostMicroCents:      requestCostMicroCents,
@@ -161,22 +161,22 @@ func NewLambdaTracker() *LambdaTracker {
 func (lt *LambdaTracker) CalculateCost(operation LambdaOperation) Cost {
 	// Lambda invocation cost (per request)
 	invocationCostMicroCents := int64(LambdaRequestCost)
-	
+
 	// Lambda duration cost (GB-seconds)
 	durationMs := operation.Duration.Milliseconds()
 	if durationMs < LambdaDurationMinMS {
 		durationMs = LambdaDurationMinMS
 	}
-	
+
 	gbSeconds := float64(operation.MemoryMB) / 1024.0 * float64(durationMs) / 1000.0
 	durationCostMicroCents := int64(gbSeconds * float64(LambdaGBSecondCost))
-	
+
 	// Cold start penalty (estimated additional cost)
 	var coldStartPenalty int64
 	if operation.ColdStart {
 		coldStartPenalty = int64(LambdaRequestCost) / 10 // 10% penalty for cold starts
 	}
-	
+
 	return Cost{
 		Service:                  "Lambda",
 		InvocationCostMicroCents: invocationCostMicroCents + coldStartPenalty,
@@ -188,15 +188,15 @@ func (lt *LambdaTracker) CalculateCost(operation LambdaOperation) Cost {
 
 // Summary provides aggregated cost information across all services
 type Summary struct {
-	TotalCostMicroCents       int64                   `json:"total_cost_microcents"`
-	ServiceBreakdown          map[string]int64        `json:"service_breakdown"`
-	OperationBreakdown        map[string]int64        `json:"operation_breakdown"`
-	HourlyBreakdown           map[string]int64        `json:"hourly_breakdown"`
-	TopDrivers            []Driver            `json:"top_drivers"`
-	CostTrends                []TrendPoint        `json:"cost_trends"`
-	BudgetUtilization         float64                 `json:"budget_utilization"`
-	ProjectedMonthlyCost      int64                   `json:"projected_monthly_cost"`
-	RecommendedOptimizations  []OptimizationSuggestion `json:"optimizations"`
+	TotalCostMicroCents      int64                    `json:"total_cost_microcents"`
+	ServiceBreakdown         map[string]int64         `json:"service_breakdown"`
+	OperationBreakdown       map[string]int64         `json:"operation_breakdown"`
+	HourlyBreakdown          map[string]int64         `json:"hourly_breakdown"`
+	TopDrivers               []Driver                 `json:"top_drivers"`
+	CostTrends               []TrendPoint             `json:"cost_trends"`
+	BudgetUtilization        float64                  `json:"budget_utilization"`
+	ProjectedMonthlyCost     int64                    `json:"projected_monthly_cost"`
+	RecommendedOptimizations []OptimizationSuggestion `json:"optimizations"`
 }
 
 // Driver represents a significant contributor to costs in the system
@@ -211,18 +211,18 @@ type Driver struct {
 
 // TrendPoint represents a point in cost trends over time for analysis
 type TrendPoint struct {
-	Timestamp       time.Time `json:"timestamp"`
-	CostMicroCents  int64     `json:"cost_microcents"`
-	OperationCount  int64     `json:"operation_count"`
+	Timestamp      time.Time `json:"timestamp"`
+	CostMicroCents int64     `json:"cost_microcents"`
+	OperationCount int64     `json:"operation_count"`
 }
 
 // OptimizationSuggestion provides cost optimization recommendations
 type OptimizationSuggestion struct {
-	Category        string  `json:"category"`        // "DynamoDB", "S3", "Lambda", etc.
-	Suggestion      string  `json:"suggestion"`      // Human-readable suggestion
+	Category         string `json:"category"`          // "DynamoDB", "S3", "Lambda", etc.
+	Suggestion       string `json:"suggestion"`        // Human-readable suggestion
 	EstimatedSavings int64  `json:"estimated_savings"` // Estimated savings in microcents
-	Priority        string  `json:"priority"`        // "High", "Medium", "Low"
-	Effort          string  `json:"effort"`          // "Low", "Medium", "High"
+	Priority         string `json:"priority"`          // "High", "Medium", "Low"
+	Effort           string `json:"effort"`            // "Low", "Medium", "High"
 }
 
 // TrackingRepository interface for cost tracking storage
@@ -230,12 +230,12 @@ type TrackingRepository interface {
 	// Store cost records
 	StoreCost(ctx context.Context, cost *Cost) error
 	StoreCostBatch(ctx context.Context, costs []*Cost) error
-	
+
 	// Retrieve cost information
 	GetCostSummary(ctx context.Context, startTime, endTime time.Time) (*Summary, error)
 	GetServiceCosts(ctx context.Context, service string, startTime, endTime time.Time) ([]*Cost, error)
 	GetUserCosts(ctx context.Context, userID string, startTime, endTime time.Time) ([]*Cost, error)
-	
+
 	// Cost analysis
 	GetTopDrivers(ctx context.Context, startTime, endTime time.Time, limit int) ([]Driver, error)
 	GetCostTrends(ctx context.Context, startTime, endTime time.Time, granularity string) ([]TrendPoint, error)
@@ -249,15 +249,15 @@ type UnifiedCostTracker interface {
 	TrackDynamoWrite(ctx context.Context, tableName string, units int64) error
 	TrackDynamoQuery(ctx context.Context, tableName string, units int64) error
 	TrackDynamoScan(ctx context.Context, tableName string, units int64) error
-	
+
 	// S3 operations
 	TrackS3Get(ctx context.Context, bucketName string, bytes int64) error
 	TrackS3Put(ctx context.Context, bucketName string, bytes int64) error
 	TrackS3Delete(ctx context.Context, bucketName string) error
-	
+
 	// Lambda operations
 	TrackLambdaInvocation(ctx context.Context, functionName string, duration time.Duration, memoryMB int64) error
-	
+
 	// Metrics and reporting
 	GetCurrentCostMicroCents() int64
 	GetCostBreakdown() map[string]int64

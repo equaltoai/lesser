@@ -456,7 +456,7 @@ func (h *Handler) calculateRealLatencyMetricsLift(ctx context.Context, startTime
 			if latency == 0 {
 				latency = record.Sum / float64(record.Count)
 			}
-			
+
 			totalLatency += latency * float64(record.Count)
 			totalCount += record.Count
 		}
@@ -467,7 +467,7 @@ func (h *Handler) calculateRealLatencyMetricsLift(ctx context.Context, startTime
 	}
 
 	avgLatency := totalLatency / float64(totalCount)
-	
+
 	h.logger.Debug("calculated real latency metrics",
 		zap.Float64("avg_latency_ms", avgLatency),
 		zap.Int64("total_requests", totalCount),

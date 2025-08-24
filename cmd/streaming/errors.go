@@ -6,20 +6,20 @@ import "errors"
 // These are used for client-facing error messages and command-specific errors
 var (
 	// Client message format errors
-	ErrInvalidMessageFormat = errors.New("Invalid message format")
-	ErrConnectionNotFound   = errors.New("Connection not found")
-	ErrUnknownMessageType   = errors.New("Unknown message type")
-	
-	// Stream validation errors  
-	ErrInvalidStream           = errors.New("Invalid stream")
-	ErrAuthenticationRequired  = errors.New("Authentication required for stream")
-	ErrFailedToSubscribe      = errors.New("Failed to subscribe")
-	ErrFailedToUnsubscribe    = errors.New("Failed to unsubscribe")
-	
+	ErrInvalidMessageFormat = errors.New("invalid message format")
+	ErrConnectionNotFound   = errors.New("connection not found")
+	ErrUnknownMessageType   = errors.New("unknown message type")
+
+	// Stream validation errors
+	ErrInvalidStream          = errors.New("invalid stream")
+	ErrAuthenticationRequired = errors.New("authentication required for stream")
+	ErrFailedToSubscribe      = errors.New("failed to subscribe")
+	ErrFailedToUnsubscribe    = errors.New("failed to unsubscribe")
+
 	// Command processing errors
-	ErrInvalidCommandFormat   = errors.New("Invalid command format")
-	ErrCommandExecutionFailed = errors.New("Command execution failed")
-	
+	ErrInvalidCommandFormat   = errors.New("invalid command format")
+	ErrCommandExecutionFailed = errors.New("command execution failed")
+
 	// WebSocket route errors
-	ErrUnknownRoute = errors.New("Unknown WebSocket route")
+	ErrUnknownRoute = errors.New("unknown WebSocket route")
 )

@@ -157,7 +157,7 @@ func (m *ModerationEvent) UpdateKeys() error {
 	if m.TTL == 0 {
 		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
-	
+
 	return nil
 }
 
@@ -308,7 +308,7 @@ func (p *ModerationPattern) GetSK() string {
 // UpdateKeys updates the keys based on current field values
 func (p *ModerationPattern) UpdateKeys() error {
 	p.PK = fmt.Sprintf("PATTERN#%s", p.PatternID)
-	p.SK = "METADATA"
+	p.SK = SKMetadata
 
 	// GSI1 - Active patterns
 	if p.Active {
@@ -327,7 +327,7 @@ func (p *ModerationPattern) UpdateKeys() error {
 	if p.TTL == 0 {
 		p.TTL = time.Now().Add(90 * 24 * time.Hour).Unix()
 	}
-	
+
 	return nil
 }
 

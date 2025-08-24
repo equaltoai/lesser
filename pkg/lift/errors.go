@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/pay-theory/lift/pkg/lift"
 )
 
 // Base error constants
@@ -128,10 +128,10 @@ func TimeoutError(operation string) *lift.LiftError {
 
 // Testing-specific error constants
 var (
-	ErrTestSetupFailed             = errors.New("test setup failed")
-	ErrIntegrationTestFailed       = errors.New("integration test execution failed")
-	ErrTestValidationFailed        = errors.New("test validation failed")
-	ErrTestCleanupFailed          = errors.New("test cleanup failed")
-	ErrTestExpectedSuccess        = errors.New("expected success response")
-	ErrTestUnexpectedStatusCode   = errors.New("unexpected status code")
+	ErrTestSetupFailed          = errors.New("test setup failed")
+	ErrIntegrationTestFailed    = errors.New("integration test execution failed")
+	ErrTestValidationFailed     = errors.New("test validation failed")
+	ErrTestCleanupFailed        = errors.New("test cleanup failed")
+	ErrTestExpectedSuccess      = errors.New("expected success response")
+	ErrTestUnexpectedStatusCode = errors.New("unexpected status code")
 )

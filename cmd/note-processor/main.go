@@ -58,26 +58,26 @@ const (
 	EngagementScoreWeight = 100.0 // Up to 100 points for engagement quality
 
 	// Account age scoring (in days)
-	AccountAgeNewThreshold      = 7    // Less than 7 days = new account
-	AccountAgeEstablishedThreshold = 90 // 90+ days = established account
-	AccountAgeTrustedThreshold  = 365  // 365+ days = trusted account
+	AccountAgeNewThreshold         = 7   // Less than 7 days = new account
+	AccountAgeEstablishedThreshold = 90  // 90+ days = established account
+	AccountAgeTrustedThreshold     = 365 // 365+ days = trusted account
 
 	// Social scoring thresholds
-	SocialRatioMinFollowers = 10     // Minimum followers to calculate ratio
-	SocialRatioOptimal      = 2.0    // Optimal follower/following ratio
-	SocialRatioMaxBonus     = 10.0   // Maximum ratio for full bonus
+	SocialRatioMinFollowers = 10   // Minimum followers to calculate ratio
+	SocialRatioOptimal      = 2.0  // Optimal follower/following ratio
+	SocialRatioMaxBonus     = 10.0 // Maximum ratio for full bonus
 
 	// Activity scoring thresholds (posts per day)
 	ActivityOptimalPostsPerDay = 3.0  // Optimal posting frequency
 	ActivityMaxPostsPerDay     = 20.0 // Maximum posts before penalty
 
 	// Voting history scoring
-	VotingMinVotesForScore = 5     // Minimum votes needed for scoring
-	VotingAccuracyThreshold = 0.7  // 70% accuracy threshold for bonus
+	VotingMinVotesForScore  = 5   // Minimum votes needed for scoring
+	VotingAccuracyThreshold = 0.7 // 70% accuracy threshold for bonus
 
 	// Engagement scoring
-	EngagementMinInteractions = 10   // Minimum interactions for scoring
-	EngagementSpamThreshold   = 0.1  // Spam ratio threshold
+	EngagementMinInteractions = 10  // Minimum interactions for scoring
+	EngagementSpamThreshold   = 0.1 // Spam ratio threshold
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -121,7 +121,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 
 	// Use pre-initialized AWS clients
 	comprehendClient := lambdaCtx.AWSServices.Comprehend
-	
+
 	// Initialize Bedrock client with proper error handling
 	bedrockClient, err := ai.NewBedrockClient(context.Background(), logger)
 	if err != nil {
@@ -137,7 +137,7 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 			o.BaseEndpoint = &wsEndpoint
 		})
 	}
-	
+
 	baseURL := cfg.BaseURL()
 
 	return &NoteProcessor{
@@ -323,7 +323,6 @@ type Analysis struct {
 
 // getAuthorReputation retrieves the reputation score for an author
 
-
 // extractUsernameFromActorID extracts username from ActivityPub actor ID
 func (np *NoteProcessor) extractUsernameFromActorID(actorID string) string {
 	// Extract username from URL like https://domain.com/users/username
@@ -331,12 +330,12 @@ func (np *NoteProcessor) extractUsernameFromActorID(actorID string) string {
 	if len(parts) >= 2 && parts[len(parts)-2] == "users" {
 		return parts[len(parts)-1]
 	}
-	
+
 	// Try alternative format like https://domain.com/@username
 	if len(parts) >= 1 && strings.HasPrefix(parts[len(parts)-1], "@") {
 		return strings.TrimPrefix(parts[len(parts)-1], "@")
 	}
-	
+
 	return ""
 }
 
@@ -344,17 +343,17 @@ func (np *NoteProcessor) extractUsernameFromActorID(actorID string) string {
 func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username string) float64 {
 	// Get user from user repository using shared database connection
 	userRepo := repositories.NewUserRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
-	
+
 	user, err := userRepo.GetUser(ctx, username)
 	if err != nil {
-		np.logger.Debug("could not get user for age calculation", 
-			zap.String("username", username), 
+		np.logger.Debug("could not get user for age calculation",
+			zap.String("username", username),
 			zap.Error(err))
 		return 0.0 // Default to no bonus for unknown users
 	}
-	
+
 	accountAge := time.Since(user.CreatedAt).Hours() / 24 // Convert to days
-	
+
 	switch {
 	case accountAge >= AccountAgeTrustedThreshold:
 		return 1.0 // Full score for trusted accounts (1+ year)
@@ -371,37 +370,37 @@ func (np *NoteProcessor) calculateAccountAgeScore(ctx context.Context, username 
 func (np *NoteProcessor) calculateSocialScore(ctx context.Context, username string) float64 {
 	// Get relationship repository
 	relationshipRepo := repositories.NewRelationshipRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
-	
+
 	// Get follower count
 	followers, err := relationshipRepo.GetFollowerCount(ctx, username)
 	if err != nil {
-		np.logger.Debug("could not get follower count", 
-			zap.String("username", username), 
+		np.logger.Debug("could not get follower count",
+			zap.String("username", username),
 			zap.Error(err))
 		return 0.0
 	}
-	
-	// Get following count  
+
+	// Get following count
 	following, err := relationshipRepo.GetFollowingCount(ctx, username)
 	if err != nil {
-		np.logger.Debug("could not get following count", 
-			zap.String("username", username), 
+		np.logger.Debug("could not get following count",
+			zap.String("username", username),
 			zap.Error(err))
 		return 0.0
 	}
-	
+
 	// Minimum followers required for social scoring
 	if followers < SocialRatioMinFollowers {
 		return 0.0
 	}
-	
+
 	// Calculate follower/following ratio (capped to prevent division issues)
 	if following == 0 {
 		following = 1 // Avoid division by zero
 	}
-	
+
 	ratio := float64(followers) / float64(following)
-	
+
 	// Score based on how close to optimal ratio
 	switch {
 	case ratio >= SocialRatioMaxBonus:
@@ -427,20 +426,20 @@ func (np *NoteProcessor) calculateActivityScore(ctx context.Context, username st
 			zap.Error(err))
 		return 0.0
 	}
-	
+
 	// Count recent posts (last 30 days)
 	cutoffDate := time.Now().AddDate(0, 0, -30)
 	recentPosts := 0
-	
+
 	for _, activity := range activities {
 		if activity.Type == "Create" && activity.Published != nil && activity.Published.After(cutoffDate) {
 			recentPosts++
 		}
 	}
-	
+
 	days := 30.0
 	postsPerDay := float64(recentPosts) / days
-	
+
 	switch {
 	case postsPerDay > ActivityMaxPostsPerDay:
 		return 0.2 // Penalty for spam-like behavior
@@ -459,19 +458,19 @@ func (np *NoteProcessor) calculateActivityScore(ctx context.Context, username st
 func (np *NoteProcessor) calculateVotingHistoryScore(ctx context.Context, username string) float64 {
 	// Get voting history from community note repository
 	// This would check the user's voting accuracy on community notes
-	
+
 	votes, err := np.communityNoteRepo.GetUserVotingHistory(ctx, username, VotingMinVotesForScore*2) // Get more than minimum
 	if err != nil {
-		np.logger.Debug("could not get voting history", 
-			zap.String("username", username), 
+		np.logger.Debug("could not get voting history",
+			zap.String("username", username),
 			zap.Error(err))
 		return 0.0
 	}
-	
+
 	if len(votes) < VotingMinVotesForScore {
 		return 0.0 // Not enough voting history
 	}
-	
+
 	// Calculate voting accuracy against actual community consensus
 	correctVotes := 0
 	for _, vote := range votes {
@@ -483,23 +482,23 @@ func (np *NoteProcessor) calculateVotingHistoryScore(ctx context.Context, userna
 				zap.Error(err))
 			continue // Skip votes we can't verify
 		}
-		
+
 		// Compare user's vote with final community consensus
 		userVotedHelpful := vote.Helpful || vote.VoteType == "helpful"
 		communityConsensusHelpful := note.Status == "accepted" || note.Score > 0.5
-		
+
 		if userVotedHelpful == communityConsensusHelpful {
 			correctVotes++
 		}
 	}
-	
+
 	accuracy := float64(correctVotes) / float64(len(votes))
-	
+
 	switch {
 	case accuracy >= VotingAccuracyThreshold+0.2:
 		return 1.0 // Excellent judgment
 	case accuracy >= VotingAccuracyThreshold:
-		return 0.8 // Good judgment  
+		return 0.8 // Good judgment
 	case accuracy >= 0.5:
 		return 0.5 // Average judgment
 	case accuracy >= 0.3:
@@ -513,19 +512,19 @@ func (np *NoteProcessor) calculateVotingHistoryScore(ctx context.Context, userna
 func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, username string) float64 {
 	// Get moderation repository and query actual moderation actions
 	moderationRepo := repositories.NewModerationRepository(np.communityNoteRepo.GetDB(), np.tableName, np.logger)
-	
+
 	// Look at last 90 days of moderation actions against this user (not by them)
 	since := time.Now().AddDate(0, 0, -90)
-	
+
 	// Get actual moderation events against this user's content/account
 	events, _, err := moderationRepo.GetModerationEventsByObject(ctx, username, 100, "")
 	if err != nil {
-		np.logger.Debug("could not get moderation history", 
-			zap.String("username", username), 
+		np.logger.Debug("could not get moderation history",
+			zap.String("username", username),
 			zap.Error(err))
 		return 0.0 // Default to no penalty if we can't check
 	}
-	
+
 	// Filter events to last 90 days
 	recentEvents := make([]*storage.ModerationEvent, 0)
 	for _, event := range events {
@@ -533,13 +532,13 @@ func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, usernam
 			recentEvents = append(recentEvents, event)
 		}
 	}
-	
+
 	// Count different types of moderation actions with different weights
 	suspensions := 0
 	warnings := 0
 	contentRemovals := 0
 	reports := 0
-	
+
 	for _, event := range recentEvents {
 		switch event.EventType {
 		case "suspend", "ban":
@@ -552,10 +551,10 @@ func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, usernam
 			reports++
 		}
 	}
-	
+
 	// Calculate weighted moderation score
 	moderationScore := float64(suspensions*5 + warnings*2 + contentRemovals*3 + reports*1)
-	
+
 	switch {
 	case moderationScore >= 20:
 		return 1.0 // Maximum penalty for severe repeat offenders
@@ -570,10 +569,6 @@ func (np *NoteProcessor) calculateModerationPenalty(ctx context.Context, usernam
 	}
 }
 
-
-
-
-
 // calculateComprehensiveReputation calculates reputation using comprehensive metrics and AI analysis
 func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, authorID string, note *storage.CommunityNote) float64 {
 	// Extract username from actor ID for queries
@@ -585,7 +580,7 @@ func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, a
 
 	// Calculate comprehensive reputation factors
 	baseReputation := ReputationBaseValue
-	
+
 	// 1. Account age and social factors
 	accountAgeScore := np.calculateAccountAgeScore(ctx, username)
 	socialScore := np.calculateSocialScore(ctx, username)
@@ -607,7 +602,7 @@ func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, a
 		Priority:        "normal",
 		Timestamp:       time.Now(),
 	}
-	
+
 	aiReputation, _, err := np.performAIReputationAnalysis(ctx, authorID, note, aiCost)
 	if err != nil {
 		np.logger.Warn("AI reputation analysis failed, using base reputation",
@@ -618,12 +613,12 @@ func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, a
 
 	// 3. Combine all factors with appropriate weights
 	comprehensiveScore := baseReputation +
-		(accountAgeScore * 0.15) +      // Account maturity factor
-		(socialScore * 0.20) +          // Social engagement factor  
-		(activityScore * 0.15) +        // Activity consistency factor
-		(votingScore * 0.25) +          // Historical voting accuracy factor
-		(aiReputation * 0.30) -         // AI sentiment/quality analysis (highest weight)
-		(moderationPenalty * 0.15)      // Moderation penalty factor
+		(accountAgeScore * 0.15) + // Account maturity factor
+		(socialScore * 0.20) + // Social engagement factor
+		(activityScore * 0.15) + // Activity consistency factor
+		(votingScore * 0.25) + // Historical voting accuracy factor
+		(aiReputation * 0.30) - // AI sentiment/quality analysis (highest weight)
+		(moderationPenalty * 0.15) // Moderation penalty factor
 
 	// Normalize to valid reputation range
 	if comprehensiveScore < ReputationMinValue {
@@ -644,7 +639,8 @@ func (np *NoteProcessor) calculateComprehensiveReputation(ctx context.Context, a
 		zap.Float64("ai_analysis", aiReputation),
 		zap.Float64("moderation_penalty", moderationPenalty))
 
-	return comprehensiveScore}
+	return comprehensiveScore
+}
 
 // Source represents a source referenced in a note
 type Source struct {
@@ -952,7 +948,6 @@ func (np *NoteProcessor) determineAction(note *storage.CommunityNote) string {
 	}
 }
 
-
 func (np *NoteProcessor) generateID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -1087,7 +1082,7 @@ Respond in JSON format:
 
 	// Calculate input metrics
 	aiCost.InputCharacters = int64(len(prompt))
-	aiCost.InputTokens = int64(len(prompt) / 4) // Rough token estimate
+	aiCost.InputTokens = int64(len(prompt) / 4)            // Rough token estimate
 	aiCost.UserPrompt = prompt[:minInt(1000, len(prompt))] // Store truncated prompt
 
 	// Add complexity factors based on content analysis
@@ -1289,21 +1284,21 @@ func (np *NoteProcessor) fallbackReputationAnalysis(content string, sources []st
 
 // getAuthorMetadata retrieves metadata about the author for AI analysis
 func (np *NoteProcessor) getAuthorMetadata(_ string) struct {
-	AccountAge      int     `json:"account_age_days"`
-	FollowerCount   int     `json:"follower_count"`
-	PostHistory     int     `json:"post_count"`
-	EngagementRate  float64 `json:"engagement_rate"`
+	AccountAge     int     `json:"account_age_days"`
+	FollowerCount  int     `json:"follower_count"`
+	PostHistory    int     `json:"post_count"`
+	EngagementRate float64 `json:"engagement_rate"`
 } {
 	metadata := struct {
-		AccountAge      int     `json:"account_age_days"`
-		FollowerCount   int     `json:"follower_count"`
-		PostHistory     int     `json:"post_count"`
-		EngagementRate  float64 `json:"engagement_rate"`
+		AccountAge     int     `json:"account_age_days"`
+		FollowerCount  int     `json:"follower_count"`
+		PostHistory    int     `json:"post_count"`
+		EngagementRate float64 `json:"engagement_rate"`
 	}{
-		AccountAge:     30,   // Default for unknown accounts
-		FollowerCount:  10,   // Default follower count
-		PostHistory:    5,    // Default post count
-		EngagementRate: 2.5,  // Default engagement rate
+		AccountAge:     30,  // Default for unknown accounts
+		FollowerCount:  10,  // Default follower count
+		PostHistory:    5,   // Default post count
+		EngagementRate: 2.5, // Default engagement rate
 	}
 
 	// In a full implementation, this would query the user/account repositories
@@ -1312,8 +1307,6 @@ func (np *NoteProcessor) getAuthorMetadata(_ string) struct {
 
 	return metadata
 }
-
-
 
 // Helper function for minimum value
 func minInt(a, b int) int {
@@ -1343,18 +1336,18 @@ func init() {
 			ServiceName:        "note-processor",
 		},
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Initialize processor
 	processor = NewNoteProcessor(lambdaCtx)
 }

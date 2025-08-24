@@ -55,7 +55,8 @@ func (r *TrackingRepository) Get(ctx context.Context, operationType, id string, 
 	sk := fmt.Sprintf("ts#%s#%s", timestamp.Format("20060102150405"), id)
 
 	tracking := &models.DynamoDBCostRecord{}
-	return tracking, r.BaseRepository.Get(ctx, pk, sk, tracking)
+	err := r.BaseRepository.Get(ctx, pk, sk, tracking)
+	return tracking, err
 }
 
 // ListByOperationType lists cost tracking records by operation type within a time range
@@ -65,7 +66,7 @@ func (r *TrackingRepository) ListByOperationType(ctx context.Context, operationT
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	return r.BaseRepository.QueryBetween(ctx, pk, startSK, endSK, limit)
+	return r.QueryBetween(ctx, pk, startSK, endSK, limit)
 }
 
 // ListByTable lists cost tracking records by table within a time range
@@ -76,7 +77,7 @@ func (r *TrackingRepository) ListByTable(ctx context.Context, tableName string, 
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
+	query := r.db.WithContext(ctx).Model(&models.DynamoDBCostRecord{}).
 		Index("table-index").
 		Where("GSI1PK", "=", fmt.Sprintf("COST_TABLE#%s", tableName)).
 		Where("GSI1SK", ">=", startSK).
@@ -127,7 +128,7 @@ func (r *TrackingRepository) GetAggregated(ctx context.Context, period, operatio
 	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
 	sk := fmt.Sprintf("window#%s", windowStart.Format(time.RFC3339))
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).
+	err := r.db.WithContext(ctx).Model(aggregated).
 		Where("PK", "=", pk).
 		Where("SK", "=", sk).
 		First(aggregated)
@@ -147,12 +148,12 @@ func (r *TrackingRepository) CreateAggregated(ctx context.Context, aggregated *m
 	}
 
 	// Create the aggregated cost tracking
-	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).Create()
+	err := r.db.WithContext(ctx).Model(aggregated).Create()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated cost tracking")
 	}
 
-	r.BaseRepository.logger.Debug("created aggregated cost tracking",
+	r.logger.Debug("created aggregated cost tracking",
 		zap.String("operation_type", aggregated.OperationType),
 		zap.String("period", aggregated.Period),
 		zap.Time("window_start", aggregated.WindowStart),
@@ -169,7 +170,7 @@ func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *m
 	}
 
 	// Update the aggregated cost tracking
-	err := r.BaseRepository.db.WithContext(ctx).Model(aggregated).Update()
+	err := r.db.WithContext(ctx).Model(aggregated).Update()
 	if err != nil {
 		return MapErrorWithContext(err, "failed to update aggregated cost tracking")
 	}
@@ -179,25 +180,22 @@ func (r *TrackingRepository) UpdateAggregated(ctx context.Context, aggregated *m
 
 // ListAggregatedByPeriod lists aggregated cost tracking for a period
 func (r *TrackingRepository) ListAggregatedByPeriod(ctx context.Context, period, operationType string, startTime, endTime time.Time, limit int) ([]*models.DynamoDBCostAggregation, error) {
-	var aggregatedList []*models.DynamoDBCostAggregation
-
-	pk := fmt.Sprintf("cost_agg#%s#%s", period, operationType)
-	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
-
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.DynamoDBCostAggregation{}).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&aggregatedList)
-	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to list aggregated cost tracking")
+	config := AggregatedQueryConfig{
+		PKPrefix:    "cost_agg",
+		LogContext:  "cost tracking",
+		ErrorPrefix: "failed to list aggregated cost tracking",
 	}
 
-	return aggregatedList, nil
+	return ListAggregatedByPeriod[*models.DynamoDBCostAggregation](
+		ctx,
+		r.db,
+		config,
+		period,
+		operationType,
+		startTime,
+		endTime,
+		limit,
+	)
 }
 
 // GetTableCostStats calculates cost statistics for a table

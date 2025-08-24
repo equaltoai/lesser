@@ -34,12 +34,12 @@ func init() {
 		ServiceName: "collections",
 		LambdaType:  common.LambdaTypeAPI,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with default options for API Lambda type
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
@@ -141,7 +141,7 @@ func (ch *CollectionsHandler) handleCollection(ctx *lift.Context, collectionType
 	isPage := ctx.Query("page") != ""
 	cursor := ctx.Query("cursor")
 	direction := ctx.Query("dir") // Check for direction parameter
-	limit := 20 // default
+	limit := 20                   // default
 	if l := ctx.Query("limit"); l != "" {
 		if parsed, err := strconv.Atoi(l); err == nil && parsed >= 1 && parsed <= 100 {
 			limit = parsed
@@ -335,11 +335,11 @@ func (ch *CollectionsHandler) returnCollectionPage(ctx *lift.Context, actor *act
 func (ch *CollectionsHandler) generatePreviousCursor(_ string, collectionType string, usernames []string, likes []*storage.Like) string {
 	// For reverse pagination, we need to create a cursor that points to the item before the first item in the current page
 	// This is collection-type specific
-	
+
 	if err := common.ValidateSliceNotEmpty("usernames", usernames); err != nil && common.ValidateSliceNotEmpty("likes", likes) != nil {
 		return ""
 	}
-	
+
 	switch collectionType {
 	case collectionTypeFollowers, collectionTypeFollowing:
 		if err := common.ValidateSliceNotEmpty("usernames", usernames); err == nil {
@@ -357,7 +357,7 @@ func (ch *CollectionsHandler) generatePreviousCursor(_ string, collectionType st
 			return fmt.Sprintf("before_%s", firstLike.ID)
 		}
 	}
-	
+
 	return ""
 }
 
@@ -366,15 +366,15 @@ func (ch *CollectionsHandler) handleReverseDirection(ctx *lift.Context, actor *a
 	// For reverse pagination, we need to fetch items in reverse order
 	// This would typically involve modifying the query to sort in the opposite direction
 	// and then reversing the results
-	
+
 	var usernames []string
 	var likes []*storage.Like
 	var nextCursor string
 	var err error
-	
+
 	// Extract the actual cursor value (remove the "before_" prefix if present)
 	actualCursor := strings.TrimPrefix(cursor, "before_")
-	
+
 	switch collectionType {
 	case collectionTypeFollowers:
 		// For reverse pagination, we'd need a special method that fetches in reverse order
@@ -406,18 +406,18 @@ func (ch *CollectionsHandler) handleReverseDirection(ctx *lift.Context, actor *a
 			ch.reverseLikeSlice(likes)
 		}
 	}
-	
+
 	if err != nil {
 		logger.Error("failed to get relationships for reverse pagination",
 			zap.String("type", collectionType),
 			zap.Error(err))
 		return lift.NewLiftError("DATABASE_ERROR", "failed to retrieve collection data", 500)
 	}
-	
+
 	// For reverse pagination, the "next" cursor becomes previous, and we generate a new next cursor
 	prevCursor := nextCursor
 	nextCursor = ch.generateNextCursorForReverse(collectionType, usernames, likes)
-	
+
 	// Build and return page with swapped navigation
 	return ch.returnCollectionPageReverse(ctx, actor, collectionType, usernames, likes, cursor, prevCursor, nextCursor, limit)
 }
@@ -505,7 +505,7 @@ func (ch *CollectionsHandler) returnCollectionPageReverse(ctx *lift.Context, act
 	if nextCursor != "" {
 		page.Next = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d", collectionID, nextCursor, limit)
 	}
-	
+
 	if prevCursor != "" {
 		page.Prev = fmt.Sprintf("%s?page=1&cursor=%s&limit=%d&dir=prev", collectionID, prevCursor, limit)
 	}

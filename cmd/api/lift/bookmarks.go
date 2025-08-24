@@ -14,7 +14,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // bookmarkAction performs the bookmark action for a status using the Notes service
 func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, error) {
 	// Use the Notes service to bookmark the status

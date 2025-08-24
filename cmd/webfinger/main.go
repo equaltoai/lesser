@@ -11,8 +11,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
-	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
+	"github.com/equaltoai/lesser/pkg/reputation"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
@@ -35,8 +35,6 @@ type WebFingerHandler struct {
 	repService *reputation.Service
 	lambdaCtx  *common.LambdaContext
 }
-
-
 
 // parseWebFingerResource parses a WebFinger resource identifier
 // Expected format: acct:username@domain
@@ -80,7 +78,7 @@ func (wh *WebFingerHandler) handleWebFinger(ctx *liftPkg.Context) error {
 
 	// Validate webfinger resource format
 	if err := common.ValidateWebfingerResource(resource); err != nil {
-		wh.logger.Warn("invalid webfinger resource format", 
+		wh.logger.Warn("invalid webfinger resource format",
 			zap.String("resource", resource),
 			zap.Error(err))
 		return liftPkg.ValidationError(err.Error())
@@ -384,7 +382,6 @@ func (wh *WebFingerHandler) getPostCount(ctx *liftPkg.Context) (int, error) {
 	return int(count), nil
 }
 
-
 // NewWebFingerHandler creates a new webfinger handler with standardized initialization
 func NewWebFingerHandler() *WebFingerHandler {
 	// Create reputation service directly
@@ -424,12 +421,12 @@ func init() {
 		ServiceName: "webfinger",
 		LambdaType:  common.LambdaTypeAPI,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with default options for API Lambda type
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
@@ -440,10 +437,10 @@ func init() {
 func main() {
 	// Create webfinger handler using standardized services
 	handler := NewWebFingerHandler()
-	
+
 	// Create Lift application
 	app := liftPkg.New()
-	
+
 	// Add request ID middleware (first - generates request ID)
 	app.Use(func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {

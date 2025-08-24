@@ -46,11 +46,11 @@ type Service struct {
 	logger            *zap.Logger
 	domainName        string
 	federation        FederationService // Interface to be defined
-	
+
 	// Business logic services
-	businessLogic     *common.BusinessLogicService
-	activityPubLogic  *common.ActivityPubBusinessLogic
-	mastodonLogic     *common.MastodonBusinessLogic
+	businessLogic    *common.BusinessLogicService
+	activityPubLogic *common.ActivityPubBusinessLogic
+	mastodonLogic    *common.MastodonBusinessLogic
 }
 
 // ScheduledStatusRepository defines the interface for scheduled status operations
@@ -93,14 +93,14 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 			Payload:   event.Metadata,
 		}
 	}
-	
+
 	// Emit using the publisher
 	for _, event := range streamingEvents {
 		if err := e.publisher.PublishToStream(ctx, event.Stream, event); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -129,7 +129,7 @@ func NewService(
 
 	// Create business logic services
 	businessLogic := common.NewBusinessLogicService(logger, &streamingEventEmitter{publisher: publisher}, domainName)
-	
+
 	activityPubConfig := &common.FederationConfig{
 		Domain:         domainName,
 		UserAgent:      "Lesser/1.0",
@@ -137,7 +137,7 @@ func NewService(
 		RequestTimeout: 30 * time.Second,
 	}
 	activityPubLogic := common.NewActivityPubBusinessLogic(activityPubConfig, logger)
-	
+
 	mastodonConfig := common.DefaultMastodonConfig()
 	mastodonConfig.Domain = domainName
 	mastodonLogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
@@ -190,13 +190,13 @@ type CreateNoteCommand struct {
 
 // UpdateNoteCommand contains all data needed to update an existing note
 type UpdateNoteCommand struct {
-	StatusID  string   `json:"status_id" validate:"required"`
+	StatusID    string   `json:"status_id" validate:"required"`
 	Content     string   `json:"content" validate:"required,max=5000"`
 	Sensitive   bool     `json:"sensitive"`
 	SpoilerText string   `json:"spoiler_text"`
 	Language    string   `json:"language"`
-	MediaIDs  []string `json:"media_ids"`
-	UpdaterID string   `json:"updater_id" validate:"required"` // Must be author
+	MediaIDs    []string `json:"media_ids"`
+	UpdaterID   string   `json:"updater_id" validate:"required"` // Must be author
 }
 
 // DeleteNoteCommand contains data needed to delete a note
@@ -322,10 +322,10 @@ func (s *Service) CreateNote(ctx context.Context, cmd *CreateNoteCommand) (*Note
 		if status.InReplyToID != "" {
 			activityType = "comment" // This is a reply/comment
 		}
-		
+
 		if err := s.analytics.RecordInstanceActivity(ctx, activityType, time.Now()); err != nil {
 			// Log the error but don't fail the creation - metrics are not critical
-			s.logger.Warn("failed to record instance metrics", 
+			s.logger.Warn("failed to record instance metrics",
 				zap.String("activity_type", activityType),
 				zap.String("status_id", statusID),
 				zap.Error(err))
@@ -429,7 +429,7 @@ func (s *Service) DeleteNote(ctx context.Context, cmd *DeleteNoteCommand) error 
 				isAdmin = deleter.Role == "admin"
 			}
 		}
-		
+
 		if !isAdmin {
 			s.logger.Warn("user cannot delete post owned by another user without admin privileges",
 				zap.String("deleter_id", cmd.DeleterID),
@@ -561,7 +561,7 @@ func (s *Service) checkViewPermissions(ctx context.Context, status *models.Statu
 				return true, nil
 			}
 		}
-		
+
 		for _, recipient := range status.CcRecipients {
 			if strings.Contains(recipient, viewerUsername) {
 				return true, nil
@@ -691,7 +691,7 @@ func (s *Service) validateCreateCommand(ctx context.Context, cmd *CreateNoteComm
 			"content": 5000,
 		},
 	}
-	
+
 	// Validate basic command structure
 	validationResult := common.ValidateCommand(ctx, cmd, rules)
 	if !validationResult.IsValid {
@@ -793,17 +793,17 @@ func (s *Service) buildActivityPubNote(cmd *CreateNoteCommand, statusID string, 
 func (s *Service) emitStatusCreatedEvents(ctx context.Context, status *models.Status) []*streaming.Event {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityCreatedEvents(ctx, "status", status.StatusID, status.AuthorID, status)
-	
+
 	// Convert to streaming events and emit
 	var streamingEvents []*streaming.Event
 	for _, businessEvent := range businessEvents {
 		streamingEvent := &streaming.Event{
 			Type:      businessEvent.Type,
-			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername), 
+			Stream:    fmt.Sprintf("user:%s", status.AuthorUsername),
 			Timestamp: businessEvent.Timestamp,
 			Payload:   businessEvent.Metadata,
 		}
-		
+
 		// Emit to user's stream
 		userEvent := *streamingEvent
 		userEvent.Stream = fmt.Sprintf("user:%s", status.AuthorUsername)
@@ -858,7 +858,7 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 		"visibility": status.Visibility,
 		"author":     status.AuthorUsername,
 	})
-	
+
 	// Convert to streaming events and emit
 	var streamingEvents []*streaming.Event
 	for _, businessEvent := range businessEvents {
@@ -868,8 +868,8 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 			Timestamp: businessEvent.Timestamp,
 			Payload:   businessEvent.Metadata,
 		}
-		
-		// Emit to user's stream  
+
+		// Emit to user's stream
 		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
 			s.logger.Error("failed to publish update to user stream", zap.Error(err))
 		} else {
@@ -883,7 +883,7 @@ func (s *Service) emitStatusUpdatedEvents(ctx context.Context, status *models.St
 func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.Status) {
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityDeletedEvents(ctx, "status", status.StatusID, status.AuthorID)
-	
+
 	// Convert to streaming events and emit
 	for _, businessEvent := range businessEvents {
 		streamingEvent := &streaming.Event{
@@ -892,7 +892,7 @@ func (s *Service) emitStatusDeletedEvents(ctx context.Context, status *models.St
 			Timestamp: businessEvent.Timestamp,
 			Payload:   businessEvent.Metadata,
 		}
-		
+
 		// Emit to user's stream
 		if err := s.publisher.PublishToUser(ctx, status.AuthorID, streamingEvent); err != nil {
 			s.logger.Error("failed to publish deletion to user stream", zap.Error(err))
@@ -1329,12 +1329,12 @@ type UsersResult struct {
 
 // noteActionParams contains parameters for note actions
 type noteActionParams struct {
-	statusID    string
-	actorID     string
-	actorType   string
-	actionFn    func(context.Context, string, string, string) error
+	statusID     string
+	actorID      string
+	actorType    string
+	actionFn     func(context.Context, string, string, string) error
 	emitEventsFn func(context.Context, *models.Status, string) []*streaming.Event
-	errorMsg    string
+	errorMsg     string
 }
 
 // executeNoteActionGeneric handles the common pattern for note actions
@@ -1560,11 +1560,11 @@ func (s *Service) executePinActionGeneric(ctx context.Context, params pinActionP
 	// Emit events
 	events := []*streaming.Event{
 		{
-			Type: string(params.eventType),
+			Type:   string(params.eventType),
 			Stream: streaming.UserStreamName(params.pinnerID),
 			Payload: map[string]interface{}{
-				"status_id": params.statusID,
-				params.actorKey: params.pinnerID,
+				"status_id":         params.statusID,
+				params.actorKey:     params.pinnerID,
 				params.timestampKey: time.Now(),
 			},
 			Timestamp: time.Now(),
@@ -1633,13 +1633,13 @@ func (s *Service) MuteNote(ctx context.Context, cmd *MuteNoteCommand) (*LikeResu
 	// Emit mute events (conversation muted)
 	events := []*streaming.Event{
 		{
-			Type: streaming.ConversationUpdated,
+			Type:   streaming.ConversationUpdated,
 			Stream: streaming.UserStreamName(cmd.MuterID),
 			Payload: map[string]interface{}{
 				"status_id": cmd.StatusID,
-				"muter_id": cmd.MuterID,
-				"action": "muted",
-				"muted_at": time.Now(),
+				"muter_id":  cmd.MuterID,
+				"action":    "muted",
+				"muted_at":  time.Now(),
 			},
 			Timestamp: time.Now(),
 		},
@@ -1667,12 +1667,12 @@ func (s *Service) UnmuteNote(ctx context.Context, cmd *UnmuteNoteCommand) (*Like
 	// Emit unmute events (conversation unmuted)
 	events := []*streaming.Event{
 		{
-			Type: streaming.ConversationUpdated,
+			Type:   streaming.ConversationUpdated,
 			Stream: streaming.UserStreamName(cmd.MuterID),
 			Payload: map[string]interface{}{
-				"status_id": cmd.StatusID,
+				"status_id":  cmd.StatusID,
 				"unmuter_id": cmd.MuterID,
-				"action": "unmuted",
+				"action":     "unmuted",
 				"unmuted_at": time.Now(),
 			},
 			Timestamp: time.Now(),
@@ -1695,7 +1695,7 @@ func (s *Service) createLike(ctx context.Context, actorURL, objectURL, statusAut
 	return nil
 }
 
-func (s *Service) deleteLike(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
+func (s *Service) deleteLike(ctx context.Context, actorURL, objectURL, _ string) error {
 	err := s.likeRepo.DeleteLike(ctx, actorURL, objectURL)
 	if err != nil {
 		return ErrDeleteLike
@@ -1743,7 +1743,7 @@ func (s *Service) createReblog(ctx context.Context, actorURL, objectURL, _, _ st
 	return nil
 }
 
-func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, statusAuthorID string) error {
+func (s *Service) deleteReblog(ctx context.Context, actorURL, objectURL, _ string) error {
 	err := s.socialRepo.DeleteAnnounce(ctx, actorURL, objectURL)
 	if err != nil {
 		return ErrDeleteReblog
@@ -2167,7 +2167,7 @@ func (s *Service) validateCreateScheduledNoteCommand(_ context.Context, cmd *Cre
 		return ErrContentTooLongShort
 	}
 
-	// Validate scheduled time using business logic 
+	// Validate scheduled time using business logic
 	if cmd.ScheduledAt.Before(time.Now()) {
 		return ErrScheduledTimeInPast
 	}

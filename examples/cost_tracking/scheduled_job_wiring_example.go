@@ -22,10 +22,10 @@ import (
 func WireScheduledJobCostTracking(db core.DB, logger *zap.Logger) *cost.ScheduledJobCostTracker {
 	// Create the concrete repository implementation
 	repository := repositories.NewScheduledJobCostRepository(db, "lesser-main", logger)
-	
+
 	// Create the tracker with the repository interface
 	tracker := cost.NewScheduledJobCostTracker(repository, logger)
-	
+
 	return tracker
 }
 
@@ -38,9 +38,9 @@ func ExampleScheduledJobExecution(ctx context.Context, tracker *cost.ScheduledJo
 		WithContext("production", "us-east-1", "cleanup-lambda", "req-12345")
 
 	// Track some work being done
-	execution.TrackLambdaUsage(5, 10000, 512) // 5 invocations, 10 seconds total, 512MB
+	execution.TrackLambdaUsage(5, 10000, 512)         // 5 invocations, 10 seconds total, 512MB
 	execution.TrackDynamoDBUsage(100, 50, 50.0, 50.0) // 100 reads, 50 writes
-	execution.TrackItemsProcessed(1000, 100, 5) // 1000 processed, 100 skipped, 5 errors
+	execution.TrackItemsProcessed(1000, 100, 5)       // 1000 processed, 100 skipped, 5 errors
 
 	// Set job-specific properties
 	execution.SetProperty("cleanup_type", "expired_tokens")
@@ -52,7 +52,7 @@ func ExampleScheduledJobExecution(ctx context.Context, tracker *cost.ScheduledJo
 	if execution.itemsErrored > 0 {
 		return execution.FinishWithError(ctx, tracker, "some items failed processing")
 	}
-	
+
 	return execution.FinishWithSuccess(ctx, tracker)
 }
 
@@ -117,30 +117,30 @@ func ExampleMultiStepJobTracking(ctx context.Context, tracker *ScheduledJobCostT
 
 	// Step 1: Data extraction
 	step1 := execution.StartStep("extract_data")
-	step1.TrackStepLambdaUsage(5000) // 5 seconds
-	step1.TrackStepDynamoDBUsage(200) // 200 operations
+	step1.TrackStepLambdaUsage(5000)      // 5 seconds
+	step1.TrackStepDynamoDBUsage(200)     // 200 operations
 	step1.TrackStepItemsProcessed(500, 0) // 500 items extracted
 	step1.SetStepProperty("source", "user_activity_table")
 	execution.FinishStep("extract_data", "success", nil)
 
 	// Step 2: Data transformation
 	step2 := execution.StartStep("transform_data")
-	step2.TrackStepLambdaUsage(8000) // 8 seconds
+	step2.TrackStepLambdaUsage(8000)       // 8 seconds
 	step2.TrackStepItemsProcessed(500, 10) // 500 processed, 10 with errors
 	step2.SetStepProperty("transformation_rules", "aggregate_by_user")
 	execution.FinishStep("transform_data", "success", nil)
 
 	// Step 3: Data loading
 	step3 := execution.StartStep("load_data")
-	step3.TrackStepLambdaUsage(3000) // 3 seconds
-	step3.TrackStepDynamoDBUsage(100) // 100 write operations
+	step3.TrackStepLambdaUsage(3000)      // 3 seconds
+	step3.TrackStepDynamoDBUsage(100)     // 100 write operations
 	step3.TrackStepItemsProcessed(490, 0) // 490 items loaded (10 were errors)
 	step3.SetStepProperty("destination", "analytics_table")
 	execution.FinishStep("load_data", "success", nil)
 
 	// Set overall job metrics
 	execution.SetPerformanceMetric("data_quality_score", 0.98) // 98% success rate
-	execution.SetPerformanceMetric("throughput", 490.0/16.0) // items per second
+	execution.SetPerformanceMetric("throughput", 490.0/16.0)   // items per second
 	execution.AddTag("pipeline_version", "v2.1")
 
 	// Complete the multi-step job
@@ -181,13 +181,13 @@ func TrackCostAggregationJob(ctx context.Context, tracker *ScheduledJobCostTrack
 	execution := NewJobExecution("cost-aggregation", "hourly").
 		WithCategory("maintenance").
 		WithPriority("normal")
-	
+
 	execution.SetProperty("aggregation_period", period)
 	execution.SetProperty("window_start", windowStart)
 	execution.SetProperty("window_end", windowEnd)
 	execution.AddTag("automation", "true")
 	execution.AddTag("service", "cost-management")
-	
+
 	return execution, nil
 }
 
@@ -196,12 +196,12 @@ func TrackDataCleanupJob(ctx context.Context, tracker *ScheduledJobCostTracker, 
 	execution := NewJobExecution(fmt.Sprintf("cleanup-%s", cleanupType), "daily").
 		WithCategory("maintenance").
 		WithPriority("low")
-	
+
 	execution.SetProperty("cleanup_type", cleanupType)
 	execution.SetProperty("target_table", targetTable)
 	execution.AddTag("cleanup", "true")
 	execution.AddTag("data_management", "true")
-	
+
 	return execution, nil
 }
 
@@ -210,11 +210,11 @@ func TrackAnalyticsJob(ctx context.Context, tracker *ScheduledJobCostTracker, an
 	execution := NewJobExecution(fmt.Sprintf("analytics-%s", analysisType), schedule).
 		WithCategory("analytics").
 		WithPriority("normal")
-	
+
 	execution.SetProperty("analysis_type", analysisType)
 	execution.AddTag("analytics", "true")
 	execution.AddTag("reporting", "true")
-	
+
 	return execution, nil
 }
 
@@ -223,10 +223,10 @@ func TrackMaintenanceJob(ctx context.Context, tracker *ScheduledJobCostTracker, 
 	execution := NewJobExecution(fmt.Sprintf("maintenance-%s", maintenanceType), schedule).
 		WithCategory("maintenance").
 		WithPriority("low")
-	
+
 	execution.SetProperty("maintenance_type", maintenanceType)
 	execution.AddTag("maintenance", "true")
 	execution.AddTag("system", "true")
-	
+
 	return execution, nil
 }

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ProcessEventConfig contains configuration for generic event processing
@@ -25,7 +25,7 @@ func ProcessEventWithTiming(
 ) error {
 	start := time.Now()
 	requestID := ctx.GetRequestID()
-	
+
 	if err := common.ValidateRequiredParam("requestID", requestID); err != nil {
 		requestID = fmt.Sprintf("%s-%d", config.ProcessorName, time.Now().UnixNano())
 		ctx.Set("requestID", requestID)

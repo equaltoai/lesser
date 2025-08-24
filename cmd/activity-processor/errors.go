@@ -32,10 +32,10 @@ var (
 
 // Activity processing workflow errors
 var (
-	ErrEntityTypeExtraction        = errors.New("entity type extraction failed")
-	ErrActivityRecordUnmarshaling  = errors.New("activity record unmarshaling failed") 
-	ErrActivityParsing             = errors.New("activity parsing failed")
-	ErrUnknownActivityDirection    = errors.New("unknown activity direction")
+	ErrEntityTypeExtraction       = errors.New("entity type extraction failed")
+	ErrActivityRecordUnmarshaling = errors.New("activity record unmarshaling failed")
+	ErrActivityParsing            = errors.New("activity parsing failed")
+	ErrUnknownActivityDirection   = errors.New("unknown activity direction")
 )
 
 // Follow activity errors
@@ -43,7 +43,7 @@ var (
 	ErrFollowRelationshipCreation = errors.New("follow relationship creation failed")
 )
 
-// Accept/Reject activity errors  
+// Accept/Reject activity errors
 var (
 	ErrRelationshipStatusUpdate     = errors.New("relationship status update failed")
 	ErrRejectedRelationshipDeletion = errors.New("rejected relationship deletion failed")
@@ -51,10 +51,10 @@ var (
 
 // Create activity errors
 var (
-	ErrNoteExtraction         = errors.New("note extraction failed")
-	ErrStatusCreation         = errors.New("status creation failed")
-	ErrObjectStorage          = errors.New("object storage failed")
-	ErrUnsupportedObjectType  = errors.New("unsupported object type")
+	ErrNoteExtraction          = errors.New("note extraction failed")
+	ErrStatusCreation          = errors.New("status creation failed")
+	ErrObjectStorage           = errors.New("object storage failed")
+	ErrUnsupportedObjectType   = errors.New("unsupported object type")
 	ErrTimelineEntriesCreation = errors.New("timeline entries creation failed")
 )
 
@@ -76,22 +76,22 @@ var (
 
 // Undo activity errors
 var (
-	ErrActivityNotFoundLocally           = errors.New("activity not found locally")
-	ErrFollowRelationshipDeletion        = errors.New("follow relationship deletion failed")
-	ErrCreatedObjectDeletion             = errors.New("created object deletion failed")
-	ErrObjectHistoryRetrieval            = errors.New("object history retrieval failed")
-	ErrNoHistoryFound                    = errors.New("no history found")
-	ErrPreviousStateNotAvailable         = errors.New("previous state not available")
-	ErrObjectReversion                   = errors.New("object reversion failed")
-	ErrTombstoneStatusCheck              = errors.New("tombstone status check failed")
-	ErrObjectNotDeleted                  = errors.New("object not deleted")
-	ErrTombstoneRetrieval                = errors.New("tombstone retrieval failed")
-	ErrObjectHistoryRestoration          = errors.New("object history restoration failed")
-	ErrObjectRestoration                 = errors.New("object restoration failed")
-	ErrFlagsRetrieval                    = errors.New("flags retrieval failed")
-	ErrFlagRecordDeletion                = errors.New("flag record deletion failed")
-	ErrUsernameExtractionFromActorURI    = errors.New("username extraction from actor URI failed")
-	ErrMovedToFieldClearing              = errors.New("movedTo field clearing failed")
+	ErrActivityNotFoundLocally        = errors.New("activity not found locally")
+	ErrFollowRelationshipDeletion     = errors.New("follow relationship deletion failed")
+	ErrCreatedObjectDeletion          = errors.New("created object deletion failed")
+	ErrObjectHistoryRetrieval         = errors.New("object history retrieval failed")
+	ErrNoHistoryFound                 = errors.New("no history found")
+	ErrPreviousStateNotAvailable      = errors.New("previous state not available")
+	ErrObjectReversion                = errors.New("object reversion failed")
+	ErrTombstoneStatusCheck           = errors.New("tombstone status check failed")
+	ErrObjectNotDeleted               = errors.New("object not deleted")
+	ErrTombstoneRetrieval             = errors.New("tombstone retrieval failed")
+	ErrObjectHistoryRestoration       = errors.New("object history restoration failed")
+	ErrObjectRestoration              = errors.New("object restoration failed")
+	ErrFlagsRetrieval                 = errors.New("flags retrieval failed")
+	ErrFlagRecordDeletion             = errors.New("flag record deletion failed")
+	ErrUsernameExtractionFromActorURI = errors.New("username extraction from actor URI failed")
+	ErrMovedToFieldClearing           = errors.New("movedTo field clearing failed")
 )
 
 // Undo generic activity errors
@@ -100,13 +100,13 @@ var (
 	ErrUndoActivityMissingActor       = errors.New("undo activity missing actor")
 )
 
-// Add/Remove activity errors  
+// Add/Remove activity errors
 var (
-	ErrTargetListRetrieval                = errors.New("target list retrieval failed")
-	ErrListOperation                      = errors.New("list operation failed")
-	ErrActivityMissingTargetCollection    = errors.New("activity missing target collection")
-	ErrObjectExtractionFromActivity       = errors.New("object extraction from activity failed")
-	ErrNoObjectsFoundInActivity           = errors.New("no objects found in activity")
+	ErrTargetListRetrieval             = errors.New("target list retrieval failed")
+	ErrListOperation                   = errors.New("list operation failed")
+	ErrActivityMissingTargetCollection = errors.New("activity missing target collection")
+	ErrObjectExtractionFromActivity    = errors.New("object extraction from activity failed")
+	ErrNoObjectsFoundInActivity        = errors.New("no objects found in activity")
 )
 
 // Block activity errors
@@ -128,7 +128,7 @@ var (
 // Undo activity-specific record deletion errors
 var (
 	ErrTargetIDExtractionFromActivity = errors.New("target ID extraction from activity failed")
-	ErrActivityRecordDeletion          = errors.New("activity record deletion failed")
+	ErrActivityRecordDeletion         = errors.New("activity record deletion failed")
 )
 
 // Timeline processing errors
@@ -139,19 +139,19 @@ var (
 
 // Stream record processing errors
 var (
-	ErrStreamRecordUnmarshalNew     = errors.New("failed to unmarshal new image")
-	ErrStreamRecordUnmarshalOld     = errors.New("failed to unmarshal old image")
-	ErrActivityParsingFailed        = errors.New("failed to parse activity")
-	ErrActivityObjectProcessing     = errors.New("failed to process activity object")
-	ErrNoteMarshaling              = errors.New("failed to marshal note")
-	ErrNoteUnmarshaling            = errors.New("failed to unmarshal note")
-	ErrTimelineEntriesWrite        = errors.New("failed to write timeline entries")
-	ErrActorRetrieval              = errors.New("failed to get actor")
-	ErrFollowersQuerying           = errors.New("failed to query followers")
-	ErrObjectValidation            = errors.New("validation failed")
-	ErrRemoteObjectFetch           = errors.New("failed after attempts")
-	ErrObjectMarshaling            = errors.New("failed to marshal object")
-	ErrObjectUnmarshalingToNote    = errors.New("failed to unmarshal to Note")
-	ErrDLQRecordCreation           = errors.New("failed to create DLQ record")
-	ErrTombstoneCreationFailed     = errors.New("failed to create tombstone")
+	ErrStreamRecordUnmarshalNew = errors.New("failed to unmarshal new image")
+	ErrStreamRecordUnmarshalOld = errors.New("failed to unmarshal old image")
+	ErrActivityParsingFailed    = errors.New("failed to parse activity")
+	ErrActivityObjectProcessing = errors.New("failed to process activity object")
+	ErrNoteMarshaling           = errors.New("failed to marshal note")
+	ErrNoteUnmarshaling         = errors.New("failed to unmarshal note")
+	ErrTimelineEntriesWrite     = errors.New("failed to write timeline entries")
+	ErrActorRetrieval           = errors.New("failed to get actor")
+	ErrFollowersQuerying        = errors.New("failed to query followers")
+	ErrObjectValidation         = errors.New("validation failed")
+	ErrRemoteObjectFetch        = errors.New("failed after attempts")
+	ErrObjectMarshaling         = errors.New("failed to marshal object")
+	ErrObjectUnmarshalingToNote = errors.New("failed to unmarshal to Note")
+	ErrDLQRecordCreation        = errors.New("failed to create DLQ record")
+	ErrTombstoneCreationFailed  = errors.New("failed to create tombstone")
 )

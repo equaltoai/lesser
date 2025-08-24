@@ -20,27 +20,27 @@ const (
 
 // ConnectionMetrics tracks connection performance metrics
 type ConnectionMetrics struct {
-	MessagesReceived    int64     `json:"messages_received"`
-	MessagesSent        int64     `json:"messages_sent"`
-	BytesReceived      int64     `json:"bytes_received"`
-	BytesSent          int64     `json:"bytes_sent"`
-	LastPingTime       time.Time `json:"last_ping_time"`
-	LastPongTime       time.Time `json:"last_pong_time"`
-	PingLatencyMs      int64     `json:"ping_latency_ms"`
-	ErrorCount         int32     `json:"error_count"`
-	LastError          string    `json:"last_error,omitempty"`
-	ConnectionQuality  float64   `json:"connection_quality"` // 0.0-1.0
+	MessagesReceived  int64     `json:"messages_received"`
+	MessagesSent      int64     `json:"messages_sent"`
+	BytesReceived     int64     `json:"bytes_received"`
+	BytesSent         int64     `json:"bytes_sent"`
+	LastPingTime      time.Time `json:"last_ping_time"`
+	LastPongTime      time.Time `json:"last_pong_time"`
+	PingLatencyMs     int64     `json:"ping_latency_ms"`
+	ErrorCount        int32     `json:"error_count"`
+	LastError         string    `json:"last_error,omitempty"`
+	ConnectionQuality float64   `json:"connection_quality"` // 0.0-1.0
 }
 
 // ConnectionInfo holds metadata about the connection
 type ConnectionInfo struct {
-	ClientIP        string            `json:"client_ip"`
-	UserAgent       string            `json:"user_agent"`
-	Origin          string            `json:"origin"`
-	Protocol        string            `json:"protocol"`
-	AuthMethod      string            `json:"auth_method"`
-	APIVersion      string            `json:"api_version"`
-	CustomHeaders   map[string]string `json:"custom_headers,omitempty"`
+	ClientIP      string            `json:"client_ip"`
+	UserAgent     string            `json:"user_agent"`
+	Origin        string            `json:"origin"`
+	Protocol      string            `json:"protocol"`
+	AuthMethod    string            `json:"auth_method"`
+	APIVersion    string            `json:"api_version"`
+	CustomHeaders map[string]string `json:"custom_headers,omitempty"`
 }
 
 // WebSocketConnection represents a WebSocket connection with complete lifecycle management
@@ -66,23 +66,23 @@ type WebSocketConnection struct {
 	LastActivity time.Time `json:"last_activity"`
 
 	// Connection lifecycle fields
-	State           ConnectionState    `json:"state"`
-	StateChangedAt  time.Time         `json:"state_changed_at"`
-	CloseReason     string            `json:"close_reason,omitempty"`
-	CloseCode       int               `json:"close_code,omitempty"`
-	RetryCount      int               `json:"retry_count"`
-	MaxRetries      int               `json:"max_retries"`
-	
+	State          ConnectionState `json:"state"`
+	StateChangedAt time.Time       `json:"state_changed_at"`
+	CloseReason    string          `json:"close_reason,omitempty"`
+	CloseCode      int             `json:"close_code,omitempty"`
+	RetryCount     int             `json:"retry_count"`
+	MaxRetries     int             `json:"max_retries"`
+
 	// Connection metadata and metrics
-	Metrics      ConnectionMetrics `json:"metrics"`
-	Info         ConnectionInfo    `json:"info"`
+	Metrics ConnectionMetrics `json:"metrics"`
+	Info    ConnectionInfo    `json:"info"`
 
 	// Resource management
-	IdleTimeout     time.Duration `json:"idle_timeout"`
-	MaxMessageSize  int64         `json:"max_message_size"`
-	RateLimit       int           `json:"rate_limit"` // messages per minute
-	CurrentRate     int           `json:"current_rate"`
-	RateLimitReset  time.Time     `json:"rate_limit_reset"`
+	IdleTimeout    time.Duration `json:"idle_timeout"`
+	MaxMessageSize int64         `json:"max_message_size"`
+	RateLimit      int           `json:"rate_limit"` // messages per minute
+	CurrentRate    int           `json:"current_rate"`
+	RateLimitReset time.Time     `json:"rate_limit_reset"`
 
 	// TTL for automatic cleanup
 	TTL int64 `json:"ttl,omitempty" dynamorm:"ttl"`
@@ -103,7 +103,7 @@ func (w *WebSocketConnection) UpdateKeys() error {
 	// Set GSI2 keys for state-based queries
 	w.GSI2PK = fmt.Sprintf("STATE#%s", w.State)
 	w.GSI2SK = fmt.Sprintf("CONN#%s", w.ConnectionID)
-	
+
 	return nil
 }
 
@@ -232,7 +232,7 @@ func (w *WebSocketSubscription) UpdateKeys() error {
 	// Set GSI1 keys for connection-based queries
 	w.GSI1PK = fmt.Sprintf("CONN#%s", w.ConnectionID)
 	w.GSI1SK = fmt.Sprintf("STREAM#%s", w.Stream)
-	
+
 	return nil
 }
 

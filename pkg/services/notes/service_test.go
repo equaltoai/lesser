@@ -439,7 +439,6 @@ func (m *MockSocialRepository) DeleteStatusPin(ctx context.Context, userID, stat
 	return args.Error(0)
 }
 
-
 // MockConversationRepository implements interfaces.ConversationRepository
 type MockConversationRepository struct {
 	mock.Mock

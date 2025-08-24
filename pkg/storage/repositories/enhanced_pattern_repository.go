@@ -54,12 +54,12 @@ func (r *EnhancedPatternRepository) CreatePattern(ctx context.Context, pattern *
 	pattern.CalculateEffectiveness()
 
 	// Use BaseRepository Create method
-	err := r.BaseRepository.Create(ctx, pattern)
+	err := r.Create(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternCreateFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("created enhanced moderation pattern",
+	r.logger.Info("created enhanced moderation pattern",
 		zap.String("pattern_id", pattern.PatternID),
 		zap.String("pattern_type", pattern.PatternType),
 		zap.String("category", pattern.Category),
@@ -72,9 +72,9 @@ func (r *EnhancedPatternRepository) CreatePattern(ctx context.Context, pattern *
 func (r *EnhancedPatternRepository) GetPattern(ctx context.Context, patternID string) (*models.EnhancedModerationPattern, error) {
 	pattern := &models.EnhancedModerationPattern{}
 	pk := fmt.Sprintf("ENHANCED_PATTERN#%s", patternID)
-	sk := "METADATA"
+	sk := models.SKMetadata
 
-	err := r.BaseRepository.Get(ctx, pk, sk, pattern)
+	err := r.Get(ctx, pk, sk, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", storage.ErrPatternNotFound, err)
 	}
@@ -93,12 +93,12 @@ func (r *EnhancedPatternRepository) UpdatePattern(ctx context.Context, pattern *
 	pattern.CalculateEffectiveness()
 
 	// Use BaseRepository Update method
-	err := r.BaseRepository.Update(ctx, pattern)
+	err := r.Update(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternUpdateFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("updated enhanced moderation pattern",
+	r.logger.Info("updated enhanced moderation pattern",
 		zap.String("pattern_id", pattern.PatternID),
 		zap.Float64("effectiveness", pattern.Effectiveness))
 
@@ -117,12 +117,12 @@ func (r *EnhancedPatternRepository) DeletePattern(ctx context.Context, patternID
 	pattern.UpdatedAt = time.Now()
 
 	// Use BaseRepository Update method for soft delete
-	err = r.BaseRepository.Update(ctx, pattern)
+	err = r.Update(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternDeleteFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("deleted enhanced moderation pattern",
+	r.logger.Info("deleted enhanced moderation pattern",
 		zap.String("pattern_id", patternID))
 
 	return nil
@@ -132,7 +132,7 @@ func (r *EnhancedPatternRepository) DeletePattern(ctx context.Context, patternID
 func (r *EnhancedPatternRepository) GetActivePatterns(ctx context.Context, limit int) ([]*models.EnhancedModerationPattern, error) {
 	patterns := []*models.EnhancedModerationPattern{}
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
 		Where("GSI1PK", "=", "ENHANCED_PATTERNS#ACTIVE")
 
 	if limit > 0 {
@@ -151,7 +151,7 @@ func (r *EnhancedPatternRepository) GetActivePatterns(ctx context.Context, limit
 func (r *EnhancedPatternRepository) GetPatternsByType(ctx context.Context, patternType string, limit int) ([]*models.EnhancedModerationPattern, error) {
 	patterns := []*models.EnhancedModerationPattern{}
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
 		Where("GSI2PK", "=", fmt.Sprintf("ENHANCED_PATTERNS#%s", patternType)).
 		OrderBy("GSI2SK", "DESC") // Descending order for best effectiveness first
 
@@ -171,7 +171,7 @@ func (r *EnhancedPatternRepository) GetPatternsByType(ctx context.Context, patte
 func (r *EnhancedPatternRepository) GetPatternsByCategory(ctx context.Context, category string, limit int) ([]*models.EnhancedModerationPattern, error) {
 	patterns := []*models.EnhancedModerationPattern{}
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+	query := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
 		Where("GSI3PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", category)).
 		OrderBy("GSI3SK", "DESC") // Descending order for best effectiveness first
 
@@ -215,7 +215,7 @@ func (r *EnhancedPatternRepository) AnalyzeContentPatterns(ctx context.Context, 
 
 		match, err := r.analyzePatternMatch(ctx, content, pattern)
 		if err != nil {
-			r.BaseRepository.logger.Warn("failed to analyze pattern match",
+			r.logger.Warn("failed to analyze pattern match",
 				zap.String("pattern_id", pattern.PatternID),
 				zap.Error(err))
 			continue
@@ -236,7 +236,7 @@ func (r *EnhancedPatternRepository) AnalyzeContentPatterns(ctx context.Context, 
 	// Calculate overall risk and confidence
 	r.calculateAnalysisMetrics(analysis)
 
-	r.BaseRepository.logger.Info("completed content pattern analysis",
+	r.logger.Info("completed content pattern analysis",
 		zap.String("content_hash", fmt.Sprintf("%x", content[:minInt(10, len(content))])),
 		zap.Int("total_patterns", len(patterns)),
 		zap.Int("matches", len(analysis.Matches)),
@@ -318,7 +318,7 @@ func (r *EnhancedPatternRepository) DetectSpamPatterns(ctx context.Context, cont
 		result.Confidence = minFloat64(result.SpamScore, 1.0)
 	}
 
-	r.BaseRepository.logger.Info("completed spam detection analysis",
+	r.logger.Info("completed spam detection analysis",
 		zap.Bool("is_spam", result.IsSpam),
 		zap.Float64("spam_score", result.SpamScore),
 		zap.Float64("confidence", result.Confidence),
@@ -359,7 +359,7 @@ func (r *EnhancedPatternRepository) UpdatePatternEffectiveness(ctx context.Conte
 		return fmt.Errorf("%w: %w", storage.ErrPatternUpdateFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("updated pattern effectiveness",
+	r.logger.Info("updated pattern effectiveness",
 		zap.String("pattern_id", patternID),
 		zap.String("feedback_type", feedback.FeedbackType),
 		zap.Float64("new_effectiveness", pattern.Effectiveness),
@@ -406,7 +406,7 @@ func (r *EnhancedPatternRepository) GetOptimalPatterns(ctx context.Context, cate
 		result[i] = scoredPatterns[i].Pattern
 	}
 
-	r.BaseRepository.logger.Info("retrieved optimal patterns",
+	r.logger.Info("retrieved optimal patterns",
 		zap.String("category", category),
 		zap.Int("total_patterns", len(allPatterns)),
 		zap.Int("optimal_patterns", len(result)),
@@ -431,7 +431,7 @@ func (r *EnhancedPatternRepository) LearnFromFeedback(ctx context.Context, feedb
 	for patternID, feedbacks := range feedbackMap {
 		err := r.processFeedbackBatch(ctx, patternID, feedbacks)
 		if err != nil {
-			r.BaseRepository.logger.Error("failed to process feedback batch",
+			r.logger.Error("failed to process feedback batch",
 				zap.String("pattern_id", patternID),
 				zap.Int("feedback_count", len(feedbacks)),
 				zap.Error(err))
@@ -442,10 +442,10 @@ func (r *EnhancedPatternRepository) LearnFromFeedback(ctx context.Context, feedb
 	// Analyze trends and suggest pattern improvements
 	err := r.analyzeFeedbackTrends(ctx, feedbackBatch)
 	if err != nil {
-		r.BaseRepository.logger.Warn("failed to analyze feedback trends", zap.Error(err))
+		r.logger.Warn("failed to analyze feedback trends", zap.Error(err))
 	}
 
-	r.BaseRepository.logger.Info("completed feedback learning cycle",
+	r.logger.Info("completed feedback learning cycle",
 		zap.Int("total_feedback", len(feedbackBatch)),
 		zap.Int("patterns_updated", len(feedbackMap)))
 
@@ -493,7 +493,7 @@ func (r *EnhancedPatternRepository) GetPatternCache(ctx context.Context, pattern
 	cache.PK = fmt.Sprintf("PATTERN_CACHE#%s", patternType)
 	cache.SK = fmt.Sprintf("COMPILED#%s", patternID)
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(cache).
+	err := r.db.WithContext(ctx).Model(cache).
 		Where("PK", "=", cache.PK).
 		Where("SK", "=", cache.SK).
 		First(cache)
@@ -505,13 +505,13 @@ func (r *EnhancedPatternRepository) GetPatternCache(ctx context.Context, pattern
 	// Update last used and cache hits
 	cache.LastUsed = time.Now()
 	cache.CacheHits++
-	cache.UpdateKeys()
+	_ = cache.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Update cache statistics (fire and forget)
 	go func() {
 		updateCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = r.BaseRepository.db.WithContext(updateCtx).Model(cache).Update()
+		_ = r.db.WithContext(updateCtx).Model(cache).Update()
 	}()
 
 	return cache, nil
@@ -529,13 +529,13 @@ func (r *EnhancedPatternRepository) SetPatternCache(ctx context.Context, cache *
 	cache.LastUsed = now
 	cache.CacheHits = 0
 
-	cache.UpdateKeys()
+	_ = cache.UpdateKeys() // Ignore error as this is internal model operation
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(cache).Create()
+	err := r.db.WithContext(ctx).Model(cache).Create()
 	if err != nil {
 		// Try update if create fails (cache entry might exist)
 		cache.UpdatedAt = now
-		err = r.BaseRepository.db.WithContext(ctx).Model(cache).Update()
+		err = r.db.WithContext(ctx).Model(cache).Update()
 		if err != nil {
 			return fmt.Errorf("%w: %w", storage.ErrPatternCacheUpdateFailed, err)
 		}
@@ -550,13 +550,13 @@ func (r *EnhancedPatternRepository) InvalidatePatternCache(ctx context.Context, 
 	cache.PK = fmt.Sprintf("PATTERN_CACHE#%s", patternType)
 	cache.SK = fmt.Sprintf("COMPILED#%s", patternID)
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(cache).
+	err := r.db.WithContext(ctx).Model(cache).
 		Where("PK", "=", cache.PK).
 		Where("SK", "=", cache.SK).
 		Delete()
 
 	if err != nil {
-		r.BaseRepository.logger.Warn("failed to invalidate pattern cache",
+		r.logger.Warn("failed to invalidate pattern cache",
 			zap.String("pattern_id", patternID),
 			zap.String("pattern_type", patternType),
 			zap.Error(err))
@@ -580,21 +580,21 @@ func (r *EnhancedPatternRepository) RecordPerformanceMetric(ctx context.Context,
 	// Calculate quality metrics
 	metric.CalculateQualityMetrics()
 
-	metric.UpdateKeys()
+	_ = metric.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Try to get existing metric for this hour
 	existing := &models.PatternPerformanceMetric{}
 	existing.PK = metric.PK
 	existing.SK = metric.SK
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(existing).
+	err := r.db.WithContext(ctx).Model(existing).
 		Where("PK", "=", existing.PK).
 		Where("SK", "=", existing.SK).
 		First(existing)
 
 	if err != nil {
 		// Create new metric
-		err = r.BaseRepository.db.WithContext(ctx).Model(metric).Create()
+		err = r.db.WithContext(ctx).Model(metric).Create()
 		if err != nil {
 			return fmt.Errorf("%w: %w", storage.ErrPatternMetricsCreateFailed, err)
 		}
@@ -623,9 +623,9 @@ func (r *EnhancedPatternRepository) RecordPerformanceMetric(ctx context.Context,
 
 		existing.UpdatedAt = now
 		existing.CalculateQualityMetrics()
-		existing.UpdateKeys()
+		_ = existing.UpdateKeys() // Ignore error as this is internal model operation
 
-		err = r.BaseRepository.db.WithContext(ctx).Model(existing).Update()
+		err = r.db.WithContext(ctx).Model(existing).Update()
 		if err != nil {
 			return fmt.Errorf("%w: %w", storage.ErrPatternMetricsUpdateFailed, err)
 		}
@@ -644,14 +644,14 @@ func (r *EnhancedPatternRepository) CreateTestResult(ctx context.Context, result
 	result.CreatedAt = now
 	result.RunAt = now
 
-	result.UpdateKeys()
+	_ = result.UpdateKeys() // Ignore error as this is internal model operation
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(result).Create()
+	err := r.db.WithContext(ctx).Model(result).Create()
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternTestResultCreateFailed, err)
 	}
 
-	r.BaseRepository.logger.Info("recorded pattern test result",
+	r.logger.Info("recorded pattern test result",
 		zap.String("pattern_id", result.PatternID),
 		zap.String("test_type", result.TestType),
 		zap.Bool("passed", result.Passed),
@@ -664,7 +664,7 @@ func (r *EnhancedPatternRepository) CreateTestResult(ctx context.Context, result
 func (r *EnhancedPatternRepository) GetTestResults(ctx context.Context, patternID string, testType string, limit int) ([]*models.PatternTestResult, error) {
 	results := []*models.PatternTestResult{}
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.PatternTestResult{}).
+	query := r.db.WithContext(ctx).Model(&models.PatternTestResult{}).
 		Where("PK", "=", fmt.Sprintf("PATTERN_TEST#%s", patternID))
 
 	if testType != "" {
@@ -701,7 +701,7 @@ func (r *EnhancedPatternRepository) GetLatestTestResult(ctx context.Context, pat
 func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, patternID, startDate, endDate string) ([]*models.PatternPerformanceMetric, error) {
 	metrics := []*models.PatternPerformanceMetric{}
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.PatternPerformanceMetric{}).
+	query := r.db.WithContext(ctx).Model(&models.PatternPerformanceMetric{}).
 		Where("PK", "=", fmt.Sprintf("PATTERN_METRICS#%s", patternID))
 
 	if startDate != "" {
@@ -725,8 +725,8 @@ func (r *EnhancedPatternRepository) GetPerformanceMetrics(ctx context.Context, p
 func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) (int, error) {
 	// Get all patterns to check expiration
 	patterns := []*models.EnhancedModerationPattern{}
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("SK", "=", "METADATA").
+	err := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+		Where("SK", "=", models.SKMetadata).
 		All(&patterns)
 
 	if err != nil {
@@ -738,7 +738,7 @@ func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) 
 		if pattern.IsExpired() {
 			err := r.DeletePattern(ctx, pattern.PatternID)
 			if err != nil {
-				r.BaseRepository.logger.Warn("failed to cleanup expired pattern",
+				r.logger.Warn("failed to cleanup expired pattern",
 					zap.String("pattern_id", pattern.PatternID),
 					zap.Error(err))
 			} else {
@@ -748,7 +748,7 @@ func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) 
 	}
 
 	if cleanedCount > 0 {
-		r.BaseRepository.logger.Info("cleaned up expired patterns",
+		r.logger.Info("cleaned up expired patterns",
 			zap.Int("count", cleanedCount))
 	}
 
@@ -758,8 +758,8 @@ func (r *EnhancedPatternRepository) CleanupExpiredPatterns(ctx context.Context) 
 // GetPatternStatistics returns aggregate statistics for patterns
 func (r *EnhancedPatternRepository) GetPatternStatistics(ctx context.Context) (map[string]interface{}, error) {
 	patterns := []*models.EnhancedModerationPattern{}
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
-		Where("SK", "=", "METADATA").
+	err := r.db.WithContext(ctx).Model(&models.EnhancedModerationPattern{}).
+		Where("SK", "=", models.SKMetadata).
 		All(&patterns)
 
 	if err != nil {
@@ -821,7 +821,7 @@ func (r *EnhancedPatternRepository) GetPatternStatistics(ctx context.Context) (m
 // ===== HELPER METHODS FOR PATTERN ANALYSIS =====
 
 // analyzePatternMatch analyzes if content matches a specific pattern
-func (r *EnhancedPatternRepository) analyzePatternMatch(ctx context.Context, content string, pattern *models.EnhancedModerationPattern) (*PatternMatch, error) {
+func (r *EnhancedPatternRepository) analyzePatternMatch(_ context.Context, content string, pattern *models.EnhancedModerationPattern) (*PatternMatch, error) {
 	match := &PatternMatch{
 		PatternID:   pattern.PatternID,
 		PatternType: pattern.PatternType,
@@ -991,7 +991,7 @@ func (r *EnhancedPatternRepository) processFeedbackBatch(ctx context.Context, pa
 }
 
 // analyzeFeedbackTrends analyzes feedback trends to suggest improvements
-func (r *EnhancedPatternRepository) analyzeFeedbackTrends(ctx context.Context, feedbackBatch []*PatternFeedback) error {
+func (r *EnhancedPatternRepository) analyzeFeedbackTrends(_ context.Context, feedbackBatch []*PatternFeedback) error {
 	// Analyze patterns with high false positive rates
 	falsePositiveThreshold := 0.3
 	patternIssues := make(map[string]int)
@@ -1005,7 +1005,7 @@ func (r *EnhancedPatternRepository) analyzeFeedbackTrends(ctx context.Context, f
 	// Log patterns that may need adjustment
 	for patternID, falsePositiveCount := range patternIssues {
 		if float64(falsePositiveCount)/float64(len(feedbackBatch)) > falsePositiveThreshold {
-			r.BaseRepository.logger.Warn("pattern shows high false positive rate",
+			r.logger.Warn("pattern shows high false positive rate",
 				zap.String("pattern_id", patternID),
 				zap.Int("false_positives", falsePositiveCount),
 				zap.Float64("rate", float64(falsePositiveCount)/float64(len(feedbackBatch))))
@@ -1037,13 +1037,13 @@ func (r *EnhancedPatternRepository) matchTextPattern(content, pattern string) bo
 
 func (r *EnhancedPatternRepository) getSeverityWeight(severity string) float64 {
 	switch severity {
-	case "critical":
+	case StatusCritical:
 		return 1.0
-	case "high":
+	case StatusHigh:
 		return 0.8
-	case "medium":
+	case StatusMedium:
 		return 0.6
-	case "low":
+	case StatusLow:
 		return 0.4
 	default:
 		return 0.5

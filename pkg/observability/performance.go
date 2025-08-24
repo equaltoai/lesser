@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
+	"go.uber.org/zap"
 )
 
 // PerformanceOptimization contains guidelines and utilities for minimal overhead observability

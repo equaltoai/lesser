@@ -36,7 +36,7 @@ func (r *DNSCacheRepository) GetDNSCache(ctx context.Context, hostname string) (
 	dnsCache := &models.DNSCache{
 		Hostname: hostname,
 	}
-	dnsCache.UpdateKeys()
+	_ = dnsCache.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Query for the entry using DynamORM pattern
 	err := r.db.WithContext(ctx).Model(&models.DNSCache{}).
@@ -90,7 +90,7 @@ func (r *DNSCacheRepository) SetDNSCache(ctx context.Context, entry *storage.DNS
 		TTL:        int(entry.TTL),
 		ExpiresAt:  expiresAt,
 	}
-	dnsCache.UpdateKeys()
+	_ = dnsCache.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Save to DynamoDB using DynamORM pattern
 	if err := r.db.WithContext(ctx).Model(dnsCache).Create(); err != nil {
@@ -115,7 +115,7 @@ func (r *DNSCacheRepository) InvalidateDNSCache(ctx context.Context, hostname st
 	dnsCache := &models.DNSCache{
 		Hostname: hostname,
 	}
-	dnsCache.UpdateKeys()
+	_ = dnsCache.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Delete the entry
 	err := r.db.WithContext(ctx).Model(&models.DNSCache{}).

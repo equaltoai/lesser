@@ -236,7 +236,7 @@ func RecordRepositoryLatency(ctx context.Context, repository, method string, dur
 
 // DynamORMMetrics provides pre-configured metrics tracking for common patterns
 type DynamORMMetrics struct {
-	tracker  *DynamORMTracker
+	tracker   *DynamORMTracker
 	tableName string
 }
 

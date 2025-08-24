@@ -29,33 +29,33 @@ type ReputationAnalysisRequest struct {
 	Sources           []string `json:"sources"`
 	ComplexityFactors []string `json:"complexity_factors"`
 	AuthorMetadata    struct {
-		AccountAge      int     `json:"account_age_days"`
-		FollowerCount   int     `json:"follower_count"`
-		PostHistory     int     `json:"post_count"`
-		EngagementRate  float64 `json:"engagement_rate"`
+		AccountAge     int     `json:"account_age_days"`
+		FollowerCount  int     `json:"follower_count"`
+		PostHistory    int     `json:"post_count"`
+		EngagementRate float64 `json:"engagement_rate"`
 	} `json:"author_metadata"`
 }
 
 // ReputationAnalysisResponse represents the AI analysis result
 type ReputationAnalysisResponse struct {
-	ReputationScore    float64 `json:"reputation_score"`
-	ConfidenceLevel    float64 `json:"confidence_level"`
-	QualityIndicators  struct {
-		SourceCredibility  float64 `json:"source_credibility"`
-		ContentCoherence   float64 `json:"content_coherence"`
-		FactualAccuracy    float64 `json:"factual_accuracy"`
-		LanguageQuality    float64 `json:"language_quality"`
+	ReputationScore   float64 `json:"reputation_score"`
+	ConfidenceLevel   float64 `json:"confidence_level"`
+	QualityIndicators struct {
+		SourceCredibility float64 `json:"source_credibility"`
+		ContentCoherence  float64 `json:"content_coherence"`
+		FactualAccuracy   float64 `json:"factual_accuracy"`
+		LanguageQuality   float64 `json:"language_quality"`
 	} `json:"quality_indicators"`
-	RiskFactors        []string `json:"risk_factors"`
-	Reasoning          string   `json:"reasoning"`
+	RiskFactors []string `json:"risk_factors"`
+	Reasoning   string   `json:"reasoning"`
 }
 
 // BedrockInvokeRequest represents the structure for Bedrock API calls
 type BedrockInvokeRequest struct {
-	Prompt     string  `json:"prompt"`
-	MaxTokens  int     `json:"max_tokens"`
+	Prompt      string  `json:"prompt"`
+	MaxTokens   int     `json:"max_tokens"`
 	Temperature float64 `json:"temperature"`
-	TopP       float64 `json:"top_p"`
+	TopP        float64 `json:"top_p"`
 }
 
 // BedrockInvokeResponse represents the response from Bedrock
@@ -129,7 +129,7 @@ func (c *BedrockClient) AnalyzeReputation(ctx context.Context, req ReputationAna
 		c.logger.Warn("failed to parse AI response, using fallback analysis",
 			zap.Error(err),
 			zap.String("raw_response", response.Completion))
-		
+
 		// Fall back to a basic analysis if parsing fails
 		return c.fallbackAnalysis(req), nil
 	}
@@ -253,7 +253,7 @@ func (c *BedrockClient) parseReputationResponse(completion string) (*ReputationA
 	// The response might have extra text, so look for JSON block
 	startIdx := -1
 	endIdx := -1
-	
+
 	for i := 0; i < len(completion); i++ {
 		if completion[i] == '{' && startIdx == -1 {
 			startIdx = i
@@ -268,7 +268,7 @@ func (c *BedrockClient) parseReputationResponse(completion string) (*ReputationA
 	}
 
 	jsonStr := completion[startIdx:endIdx]
-	
+
 	var result ReputationAnalysisResponse
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 		return nil, fmt.Errorf("failed to parse JSON response: %w", err)
@@ -278,7 +278,7 @@ func (c *BedrockClient) parseReputationResponse(completion string) (*ReputationA
 	if err := common.ValidateFloatRange("reputation_score", result.ReputationScore, 0, 1000); err != nil {
 		result.ReputationScore = 500 // Default to neutral
 	}
-	
+
 	if err := common.ValidateFloatRange("confidence_level", result.ConfidenceLevel, 0, 1); err != nil {
 		result.ConfidenceLevel = 0.5 // Default confidence
 	}
@@ -328,10 +328,10 @@ func (c *BedrockClient) fallbackAnalysis(req ReputationAnalysisRequest) *Reputat
 		ReputationScore: score,
 		ConfidenceLevel: 0.6, // Moderate confidence for fallback
 		QualityIndicators: struct {
-			SourceCredibility  float64 `json:"source_credibility"`
-			ContentCoherence   float64 `json:"content_coherence"`
-			FactualAccuracy    float64 `json:"factual_accuracy"`
-			LanguageQuality    float64 `json:"language_quality"`
+			SourceCredibility float64 `json:"source_credibility"`
+			ContentCoherence  float64 `json:"content_coherence"`
+			FactualAccuracy   float64 `json:"factual_accuracy"`
+			LanguageQuality   float64 `json:"language_quality"`
 		}{
 			SourceCredibility: 0.7,
 			ContentCoherence:  0.7,

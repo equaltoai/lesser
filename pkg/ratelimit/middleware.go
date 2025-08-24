@@ -77,16 +77,16 @@ func Middleware(storage core.RepositoryStorage, config *Config) lift.Middleware 
 func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, storage core.RepositoryStorage, _ time.Time, _ lift.Handler) (string, bool) {
 	claims, hasClaims := ctx.Get("claims").(*auth.Claims)
 	var userID string
-	
+
 	if hasClaims && claims != nil {
 		userID = claims.Username
-		
+
 		// Admin bypass check
 		if config.AdminBypass && isAdminUser(ctx, claims, storage) {
 			return userID, true
 		}
 	}
-	
+
 	// For unauthenticated users, use IP-based rate limiting
 	if err := common.ValidateRequiredParam("user_id", userID); err != nil {
 		userID = getClientIP(ctx)
@@ -94,7 +94,7 @@ func getUserIDAndCheckBypass(ctx *lift.Context, config *Config, storage core.Rep
 			userID = "anonymous"
 		}
 	}
-	
+
 	return userID, false
 }
 
@@ -171,7 +171,7 @@ func trackCostIfEnabled(ctx *lift.Context, config *Config, rateLimitErr error) {
 	if !config.TrackCosts {
 		return
 	}
-	
+
 	// Get unified cost tracker from context
 	tracker := ctx.Get("unified_cost_tracker")
 	if tracker == nil {
@@ -179,24 +179,24 @@ func trackCostIfEnabled(ctx *lift.Context, config *Config, rateLimitErr error) {
 		logger := common.Logger()
 		tracker = cost.NewRepositoryTracker(nil, logger, "RateLimitMiddleware", "", "")
 	}
-	
+
 	unifiedTracker, ok := tracker.(*cost.UnifiedTracker)
 	if !ok {
 		return
 	}
-	
+
 	globalCfg := appconfig.Get()
 	tableName := globalCfg.DynamoTableName
 	if tableName == "" {
 		tableName = "lesser-main"
 	}
-	
+
 	// Track rate limiting cost using centralized tracker
 	backgroundCtx := context.Background()
 	if err := unifiedTracker.TrackDynamoRead(backgroundCtx, tableName, 1); err != nil {
 		common.Logger().Warn("failed to track rate limit read cost", zap.Error(err))
 	}
-	
+
 	if rateLimitErr == nil {
 		if err := unifiedTracker.TrackDynamoWrite(backgroundCtx, tableName, 1); err != nil {
 			common.Logger().Warn("failed to track rate limit write cost", zap.Error(err))

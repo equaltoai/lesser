@@ -17,6 +17,11 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+// Media field constants
+const (
+	FieldDescription = "description"
+)
+
 // MediaRepository handles media and media job operations using DynamORM with cost tracking
 type MediaRepository struct {
 	*BaseRepository[*models.Media]
@@ -27,7 +32,7 @@ type MediaRepository struct {
 func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger) *MediaRepository {
 	return &MediaRepository{
 		BaseRepository: NewBaseRepository[*models.Media](db, tableName, logger),
-		deps:          make(map[string]interface{}),
+		deps:           make(map[string]interface{}),
 	}
 }
 
@@ -35,7 +40,7 @@ func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger) *Media
 func NewMediaRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaRepository {
 	return &MediaRepository{
 		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Media](db, tableName, logger, costService, "MediaRepository"),
-		deps:          make(map[string]interface{}),
+		deps:           make(map[string]interface{}),
 	}
 }
 
@@ -57,7 +62,7 @@ func (r *MediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJ
 		return err
 	}
 
-	r.BaseRepository.logger.Debug("creating media job",
+	r.logger.Debug("creating media job",
 		zap.String("job_id", job.JobID),
 		zap.String("media_id", job.MediaID),
 		zap.String("username", job.Username))
@@ -66,7 +71,7 @@ func (r *MediaRepository) CreateMediaJob(ctx context.Context, job *models.MediaJ
 		return ErrorHandler.HandleCreateError(err, "media job", "job creation")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(job).Create()
+	return r.db.WithContext(ctx).Model(job).Create()
 }
 
 // GetMediaJob retrieves a media job by ID
@@ -76,10 +81,10 @@ func (r *MediaRepository) GetMediaJob(ctx context.Context, jobID string) (*model
 		return nil, err
 	}
 
-	r.BaseRepository.logger.Debug("getting media job", zap.String("job_id", jobID))
+	r.logger.Debug("getting media job", zap.String("job_id", jobID))
 
 	var job models.MediaJob
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaJob{}).
+	err := r.db.WithContext(ctx).Model(&models.MediaJob{}).
 		Where("PK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		Where("SK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		First(&job)
@@ -96,7 +101,7 @@ func (r *MediaRepository) GetMediaJob(ctx context.Context, jobID string) (*model
 
 // UpdateMediaJob updates an existing media job
 func (r *MediaRepository) UpdateMediaJob(ctx context.Context, job *models.MediaJob) error {
-	r.BaseRepository.logger.Debug("updating media job",
+	r.logger.Debug("updating media job",
 		zap.String("job_id", job.JobID),
 		zap.String("status", job.Status))
 
@@ -104,7 +109,7 @@ func (r *MediaRepository) UpdateMediaJob(ctx context.Context, job *models.MediaJ
 		return ErrorHandler.HandleUpdateError(err, "media job", "job update")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(job).Update()
+	return r.db.WithContext(ctx).Model(job).Update()
 }
 
 // GetJobsByStatus retrieves jobs by status
@@ -117,12 +122,12 @@ func (r *MediaRepository) GetJobsByStatus(ctx context.Context, status string, li
 		return nil, err
 	}
 
-	r.BaseRepository.logger.Debug("getting jobs by status",
+	r.logger.Debug("getting jobs by status",
 		zap.String("status", status),
 		zap.Int("limit", limit))
 
 	var jobs []*models.MediaJob
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaJob{}).
+	query := r.db.WithContext(ctx).Model(&models.MediaJob{}).
 		Where("GSI2PK", "=", fmt.Sprintf("STATUS#%s", status))
 
 	if limit > 0 {
@@ -139,12 +144,12 @@ func (r *MediaRepository) GetJobsByStatus(ctx context.Context, status string, li
 
 // GetJobsByUser retrieves jobs for a specific user
 func (r *MediaRepository) GetJobsByUser(ctx context.Context, username string, limit int) ([]*models.MediaJob, error) {
-	r.BaseRepository.logger.Debug("getting jobs by user",
+	r.logger.Debug("getting jobs by user",
 		zap.String("username", username),
 		zap.Int("limit", limit))
 
 	var jobs []*models.MediaJob
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaJob{}).
+	query := r.db.WithContext(ctx).Model(&models.MediaJob{}).
 		Where("GSI1PK", "=", fmt.Sprintf("USER_JOBS#%s", username))
 
 	if limit > 0 {
@@ -161,7 +166,7 @@ func (r *MediaRepository) GetJobsByUser(ctx context.Context, username string, li
 
 // CreateMedia creates a new media record
 func (r *MediaRepository) CreateMedia(ctx context.Context, media *models.Media) error {
-	r.BaseRepository.logger.Debug("creating media record",
+	r.logger.Debug("creating media record",
 		zap.String("media_id", media.MediaID),
 		zap.String("user_id", media.UserID),
 		zap.String("content_type", media.ContentType))
@@ -170,18 +175,18 @@ func (r *MediaRepository) CreateMedia(ctx context.Context, media *models.Media) 
 		return ErrorHandler.HandleCreateError(err, EntityMedia, "media creation")
 	}
 
-	return r.BaseRepository.Create(ctx, media)
+	return r.Create(ctx, media)
 }
 
 // GetMedia retrieves a media record by ID
 func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models.Media, error) {
-	r.BaseRepository.logger.Debug("getting media", zap.String("media_id", mediaID))
+	r.logger.Debug("getting media", zap.String("media_id", mediaID))
 
 	var media models.Media
 	pk := fmt.Sprintf("media#%s", mediaID)
 	sk := "version#original"
-	
-	err := r.BaseRepository.Get(ctx, pk, sk, &media)
+
+	err := r.Get(ctx, pk, sk, &media)
 	if err != nil {
 		if dynamormerrors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(err, EntityMedia, mediaID)
@@ -194,7 +199,7 @@ func (r *MediaRepository) GetMedia(ctx context.Context, mediaID string) (*models
 
 // UpdateMedia updates an existing media record
 func (r *MediaRepository) UpdateMedia(ctx context.Context, media *models.Media) error {
-	r.BaseRepository.logger.Debug("updating media",
+	r.logger.Debug("updating media",
 		zap.String("media_id", media.MediaID),
 		zap.String("status", media.Status))
 
@@ -202,17 +207,17 @@ func (r *MediaRepository) UpdateMedia(ctx context.Context, media *models.Media) 
 		return ErrorHandler.HandleUpdateError(err, EntityMedia, "media update")
 	}
 
-	return r.BaseRepository.Update(ctx, media)
+	return r.Update(ctx, media)
 }
 
 // GetMediaByUser retrieves media records for a specific user
 func (r *MediaRepository) GetMediaByUser(ctx context.Context, userID string, limit int) ([]*models.Media, error) {
-	r.BaseRepository.logger.Debug("getting media by user",
+	r.logger.Debug("getting media by user",
 		zap.String("user_id", userID),
 		zap.Int("limit", limit))
 
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Where("GSI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
 
 	if limit > 0 {
@@ -229,12 +234,12 @@ func (r *MediaRepository) GetMediaByUser(ctx context.Context, userID string, lim
 
 // GetMediaByStatus retrieves media records by processing status
 func (r *MediaRepository) GetMediaByStatus(ctx context.Context, status string, limit int) ([]*models.Media, error) {
-	r.BaseRepository.logger.Debug("getting media by status",
+	r.logger.Debug("getting media by status",
 		zap.String("status", status),
 		zap.Int("limit", limit))
 
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
 
 	if limit > 0 {
@@ -251,12 +256,12 @@ func (r *MediaRepository) GetMediaByStatus(ctx context.Context, status string, l
 
 // GetMediaByContentType retrieves media records by content type
 func (r *MediaRepository) GetMediaByContentType(ctx context.Context, contentType string, limit int) ([]*models.Media, error) {
-	r.BaseRepository.logger.Debug("getting media by content type",
+	r.logger.Debug("getting media by content type",
 		zap.String("content_type", contentType),
 		zap.Int("limit", limit))
 
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Where("GSI3PK", "=", fmt.Sprintf("CONTENT_TYPE#%s", contentType))
 
 	if limit > 0 {
@@ -273,9 +278,9 @@ func (r *MediaRepository) GetMediaByContentType(ctx context.Context, contentType
 
 // DeleteMediaJob deletes a media job
 func (r *MediaRepository) DeleteMediaJob(ctx context.Context, jobID string) error {
-	r.BaseRepository.logger.Debug("deleting media job", zap.String("job_id", jobID))
+	r.logger.Debug("deleting media job", zap.String("job_id", jobID))
 
-	return r.BaseRepository.db.WithContext(ctx).Model(&models.MediaJob{}).
+	return r.db.WithContext(ctx).Model(&models.MediaJob{}).
 		Where("PK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		Where("SK", "=", fmt.Sprintf("JOB#%s", jobID)).
 		Delete()
@@ -283,17 +288,17 @@ func (r *MediaRepository) DeleteMediaJob(ctx context.Context, jobID string) erro
 
 // DeleteMedia deletes a media record
 func (r *MediaRepository) DeleteMedia(ctx context.Context, mediaID string) error {
-	r.BaseRepository.logger.Debug("deleting media", zap.String("media_id", mediaID))
+	r.logger.Debug("deleting media", zap.String("media_id", mediaID))
 
 	pk := fmt.Sprintf("media#%s", mediaID)
 	sk := "version#original"
-	
-	return r.BaseRepository.Delete(ctx, pk, sk)
+
+	return r.Delete(ctx, pk, sk)
 }
 
 // GetUserMediaLegacy retrieves media records for a user (for legacy interface compatibility)
 func (r *MediaRepository) GetUserMediaLegacy(ctx context.Context, username string) ([]any, error) {
-	r.BaseRepository.logger.Debug("getting user media legacy", zap.String("username", username))
+	r.logger.Debug("getting user media legacy", zap.String("username", username))
 
 	mediaList, err := r.GetMediaByUser(ctx, username, 0)
 	if err != nil {
@@ -311,7 +316,7 @@ func (r *MediaRepository) GetUserMediaLegacy(ctx context.Context, username strin
 
 // UpdateMediaAttachment updates a media attachment (for interface compatibility)
 func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID string, updates map[string]any) error {
-	r.BaseRepository.logger.Debug("updating media attachment",
+	r.logger.Debug("updating media attachment",
 		zap.String("media_id", mediaID),
 		zap.Any("updates", updates))
 
@@ -323,24 +328,24 @@ func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID str
 	// Apply updates to the media model
 	for key, value := range updates {
 		switch key {
-		case "description":
+		case FieldDescription:
 			if desc, ok := value.(string); ok {
 				media.Description = desc
-				r.BaseRepository.logger.Debug("updated media description",
+				r.logger.Debug("updated media description",
 					zap.String("media_id", mediaID),
-					zap.String("description", desc))
+					zap.String(FieldDescription, desc))
 			}
 		case "focus":
 			if focus, ok := value.(string); ok {
 				media.Focus = focus
-				r.BaseRepository.logger.Debug("updated media focus",
+				r.logger.Debug("updated media focus",
 					zap.String("media_id", mediaID),
 					zap.String("focus", focus))
 			}
 		case "sensitive":
 			if sensitive, ok := value.(bool); ok {
 				media.IsNSFW = sensitive
-				r.BaseRepository.logger.Debug("updated media sensitivity",
+				r.logger.Debug("updated media sensitivity",
 					zap.String("media_id", mediaID),
 					zap.Bool("is_nsfw", sensitive))
 			}
@@ -352,7 +357,7 @@ func (r *MediaRepository) UpdateMediaAttachment(ctx context.Context, mediaID str
 
 // UnmarkAllMediaAsSensitive unmarks all media for a user as non-sensitive
 func (r *MediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, username string) error {
-	r.BaseRepository.logger.Debug("unmarking all media as sensitive", zap.String("username", username))
+	r.logger.Debug("unmarking all media as sensitive", zap.String("username", username))
 
 	mediaList, err := r.GetMediaByUser(ctx, username, 0)
 	if err != nil {
@@ -362,7 +367,7 @@ func (r *MediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, usernam
 	for _, media := range mediaList {
 		media.IsNSFW = false
 		if err := r.UpdateMedia(ctx, media); err != nil {
-			r.BaseRepository.logger.Error("failed to update media sensitivity",
+			r.logger.Error("failed to update media sensitivity",
 				zap.String("media_id", media.MediaID),
 				zap.Error(err))
 			// Continue with other media
@@ -376,7 +381,7 @@ func (r *MediaRepository) UnmarkAllMediaAsSensitive(ctx context.Context, usernam
 
 // CreateUserMediaConfig creates a new user media configuration
 func (r *MediaRepository) CreateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error {
-	r.BaseRepository.logger.Debug("creating user media config",
+	r.logger.Debug("creating user media config",
 		zap.String("user_id", config.UserID),
 		zap.String("username", config.Username),
 		zap.String("plan_tier", config.PlanTier))
@@ -385,15 +390,15 @@ func (r *MediaRepository) CreateUserMediaConfig(ctx context.Context, config *mod
 		return ErrorHandler.HandleCreateError(err, "user media config", "config creation")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(config).Create()
+	return r.db.WithContext(ctx).Model(config).Create()
 }
 
 // GetUserMediaConfig retrieves a user's media configuration
 func (r *MediaRepository) GetUserMediaConfig(ctx context.Context, userID string) (*models.UserMediaConfig, error) {
-	r.BaseRepository.logger.Debug("getting user media config", zap.String("user_id", userID))
+	r.logger.Debug("getting user media config", zap.String("user_id", userID))
 
 	var config models.UserMediaConfig
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
+	err := r.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
 		Where("PK", "=", fmt.Sprintf("USER_MEDIA_CONFIG#%s", userID)).
 		Where("SK", "=", "CONFIG").
 		First(&config)
@@ -407,7 +412,7 @@ func (r *MediaRepository) GetUserMediaConfig(ctx context.Context, userID string)
 
 // GetUserMediaConfigByUsername retrieves a user's media configuration by username
 func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, username string) (*models.UserMediaConfig, error) {
-	r.BaseRepository.logger.Debug("getting user media config by username", zap.String("username", username))
+	r.logger.Debug("getting user media config by username", zap.String("username", username))
 
 	// Try to resolve username to userID using user repository dependency
 	if userRepo, ok := r.deps["user"].(interface {
@@ -422,7 +427,7 @@ func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, user
 
 	// Fallback: scan for config by username (less efficient)
 	var config models.UserMediaConfig
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
+	err := r.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
 		Filter("Username", "=", username).
 		First(&config)
 
@@ -438,7 +443,7 @@ func (r *MediaRepository) GetUserMediaConfigByUsername(ctx context.Context, user
 
 // UpdateUserMediaConfig updates an existing user media configuration
 func (r *MediaRepository) UpdateUserMediaConfig(ctx context.Context, config *models.UserMediaConfig) error {
-	r.BaseRepository.logger.Debug("updating user media config",
+	r.logger.Debug("updating user media config",
 		zap.String("user_id", config.UserID),
 		zap.String("plan_tier", config.PlanTier))
 
@@ -446,14 +451,14 @@ func (r *MediaRepository) UpdateUserMediaConfig(ctx context.Context, config *mod
 		return ErrorHandler.HandleUpdateError(err, "user media config", "config update")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(config).Update()
+	return r.db.WithContext(ctx).Model(config).Update()
 }
 
 // DeleteUserMediaConfig deletes a user's media configuration
 func (r *MediaRepository) DeleteUserMediaConfig(ctx context.Context, userID string) error {
-	r.BaseRepository.logger.Debug("deleting user media config", zap.String("user_id", userID))
+	r.logger.Debug("deleting user media config", zap.String("user_id", userID))
 
-	return r.BaseRepository.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
+	return r.db.WithContext(ctx).Model(&models.UserMediaConfig{}).
 		Where("PK", "=", fmt.Sprintf("USER_MEDIA_CONFIG#%s", userID)).
 		Where("SK", "=", "CONFIG").
 		Delete()
@@ -463,7 +468,7 @@ func (r *MediaRepository) DeleteUserMediaConfig(ctx context.Context, userID stri
 
 // CreateMediaSpending creates a new media spending record
 func (r *MediaRepository) CreateMediaSpending(ctx context.Context, spending *models.MediaSpending) error {
-	r.BaseRepository.logger.Debug("creating media spending record",
+	r.logger.Debug("creating media spending record",
 		zap.String("user_id", spending.UserID),
 		zap.String("period", spending.Period),
 		zap.String("period_type", spending.PeriodType))
@@ -472,17 +477,17 @@ func (r *MediaRepository) CreateMediaSpending(ctx context.Context, spending *mod
 		return ErrorHandler.HandleCreateError(err, "media spending", "spending creation")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(spending).Create()
+	return r.db.WithContext(ctx).Model(spending).Create()
 }
 
 // GetMediaSpending retrieves a media spending record for a user and period
 func (r *MediaRepository) GetMediaSpending(ctx context.Context, userID, period string) (*models.MediaSpending, error) {
-	r.BaseRepository.logger.Debug("getting media spending",
+	r.logger.Debug("getting media spending",
 		zap.String("user_id", userID),
 		zap.String("period", period))
 
 	var spending models.MediaSpending
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaSpending{}).
+	err := r.db.WithContext(ctx).Model(&models.MediaSpending{}).
 		Where("PK", "=", fmt.Sprintf("MEDIA_SPENDING#%s", userID)).
 		Where("SK", "=", fmt.Sprintf("PERIOD#%s", period)).
 		First(&spending)
@@ -496,7 +501,7 @@ func (r *MediaRepository) GetMediaSpending(ctx context.Context, userID, period s
 
 // UpdateMediaSpending updates an existing media spending record
 func (r *MediaRepository) UpdateMediaSpending(ctx context.Context, spending *models.MediaSpending) error {
-	r.BaseRepository.logger.Debug("updating media spending",
+	r.logger.Debug("updating media spending",
 		zap.String("user_id", spending.UserID),
 		zap.String("period", spending.Period),
 		zap.Int64("total_spend_micros", spending.TotalSpendMicros))
@@ -505,18 +510,18 @@ func (r *MediaRepository) UpdateMediaSpending(ctx context.Context, spending *mod
 		return ErrorHandler.HandleUpdateError(err, "media spending", "spending update")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(spending).Update()
+	return r.db.WithContext(ctx).Model(spending).Update()
 }
 
 // GetMediaSpendingByTimeRange retrieves spending records for a user within a time range
 func (r *MediaRepository) GetMediaSpendingByTimeRange(ctx context.Context, userID string, periodType string, limit int) ([]*models.MediaSpending, error) {
-	r.BaseRepository.logger.Debug("getting media spending by time range",
+	r.logger.Debug("getting media spending by time range",
 		zap.String("user_id", userID),
 		zap.String("period_type", periodType),
 		zap.Int("limit", limit))
 
 	var spendingList []*models.MediaSpending
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaSpending{}).
+	query := r.db.WithContext(ctx).Model(&models.MediaSpending{}).
 		Where("PK", "=", fmt.Sprintf("MEDIA_SPENDING#%s", userID)).
 		Where("SK", "BEGINS_WITH", "PERIOD#")
 
@@ -545,7 +550,7 @@ func (r *MediaRepository) GetMediaSpendingByTimeRange(ctx context.Context, userI
 
 // CreateMediaSpendingTransaction creates a new spending transaction
 func (r *MediaRepository) CreateMediaSpendingTransaction(ctx context.Context, transaction *models.MediaSpendingTransaction) error {
-	r.BaseRepository.logger.Debug("creating media spending transaction",
+	r.logger.Debug("creating media spending transaction",
 		zap.String("user_id", transaction.UserID),
 		zap.String("category", transaction.Category),
 		zap.Int64("cost_micros", transaction.CostMicros))
@@ -554,17 +559,17 @@ func (r *MediaRepository) CreateMediaSpendingTransaction(ctx context.Context, tr
 		return ErrorHandler.HandleCreateError(err, "spending transaction", "transaction creation")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(transaction).Create()
+	return r.db.WithContext(ctx).Model(transaction).Create()
 }
 
 // GetMediaSpendingTransactions retrieves spending transactions for a user
 func (r *MediaRepository) GetMediaSpendingTransactions(ctx context.Context, userID string, limit int) ([]*models.MediaSpendingTransaction, error) {
-	r.BaseRepository.logger.Debug("getting media spending transactions",
+	r.logger.Debug("getting media spending transactions",
 		zap.String("user_id", userID),
 		zap.Int("limit", limit))
 
 	var transactions []*models.MediaSpendingTransaction
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MediaSpendingTransaction{}).
+	query := r.db.WithContext(ctx).Model(&models.MediaSpendingTransaction{}).
 		Where("PK", "=", fmt.Sprintf("SPENDING_TXN#%s", userID)).
 		Where("SK", "BEGINS_WITH", "TXN#")
 
@@ -582,7 +587,7 @@ func (r *MediaRepository) GetMediaSpendingTransactions(ctx context.Context, user
 
 // GetOrCreateMediaSpending gets an existing spending record or creates a new one
 func (r *MediaRepository) GetOrCreateMediaSpending(ctx context.Context, userID, period, periodType string) (*models.MediaSpending, error) {
-	r.BaseRepository.logger.Debug("getting or creating media spending",
+	r.logger.Debug("getting or creating media spending",
 		zap.String("user_id", userID),
 		zap.String("period", period),
 		zap.String("period_type", periodType))
@@ -613,7 +618,7 @@ func (r *MediaRepository) GetOrCreateMediaSpending(ctx context.Context, userID, 
 
 // AddSpendingTransaction adds a transaction and updates the spending record
 func (r *MediaRepository) AddSpendingTransaction(ctx context.Context, transaction *models.MediaSpendingTransaction) error {
-	r.BaseRepository.logger.Debug("adding spending transaction",
+	r.logger.Debug("adding spending transaction",
 		zap.String("user_id", transaction.UserID),
 		zap.String("category", transaction.Category),
 		zap.Int64("cost_micros", transaction.CostMicros))
@@ -648,7 +653,7 @@ func (r *MediaRepository) AddSpendingTransaction(ctx context.Context, transactio
 
 // CreateTranscodingJob creates a new transcoding job record
 func (r *MediaRepository) CreateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error {
-	r.BaseRepository.logger.Debug("creating transcoding job",
+	r.logger.Debug("creating transcoding job",
 		zap.String("job_id", job.JobID),
 		zap.String("media_id", job.MediaID),
 		zap.String("user_id", job.UserID),
@@ -658,15 +663,15 @@ func (r *MediaRepository) CreateTranscodingJob(ctx context.Context, job *models.
 		return ErrorHandler.HandleCreateError(err, "transcoding job", "job creation")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(job).Create()
+	return r.db.WithContext(ctx).Model(job).Create()
 }
 
 // GetTranscodingJob retrieves a transcoding job by ID
 func (r *MediaRepository) GetTranscodingJob(ctx context.Context, jobID string) (*models.TranscodingJob, error) {
-	r.BaseRepository.logger.Debug("getting transcoding job", zap.String("job_id", jobID))
+	r.logger.Debug("getting transcoding job", zap.String("job_id", jobID))
 
 	var job models.TranscodingJob
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.TranscodingJob{}).
+	err := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("PK", "=", fmt.Sprintf("TRANSCODING_JOB#%s", jobID)).
 		Where("SK", "=", "JOB_METRICS").
 		First(&job)
@@ -680,7 +685,7 @@ func (r *MediaRepository) GetTranscodingJob(ctx context.Context, jobID string) (
 
 // UpdateTranscodingJob updates an existing transcoding job
 func (r *MediaRepository) UpdateTranscodingJob(ctx context.Context, job *models.TranscodingJob) error {
-	r.BaseRepository.logger.Debug("updating transcoding job",
+	r.logger.Debug("updating transcoding job",
 		zap.String("job_id", job.JobID),
 		zap.String("status", job.Status),
 		zap.Int64("total_cost_micros", job.TotalCostMicros))
@@ -689,17 +694,17 @@ func (r *MediaRepository) UpdateTranscodingJob(ctx context.Context, job *models.
 		return ErrorHandler.HandleUpdateError(err, "transcoding job", "job update")
 	}
 
-	return r.BaseRepository.db.WithContext(ctx).Model(job).Update()
+	return r.db.WithContext(ctx).Model(job).Update()
 }
 
 // GetTranscodingJobsByUser retrieves transcoding jobs for a specific user
 func (r *MediaRepository) GetTranscodingJobsByUser(ctx context.Context, userID string, limit int) ([]*models.TranscodingJob, error) {
-	r.BaseRepository.logger.Debug("getting transcoding jobs by user",
+	r.logger.Debug("getting transcoding jobs by user",
 		zap.String("user_id", userID),
 		zap.Int("limit", limit))
 
 	var jobs []*models.TranscodingJob
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.TranscodingJob{}).
+	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("GSI1PK", "=", fmt.Sprintf("USER_TRANSCODING#%s", userID))
 
 	if limit > 0 {
@@ -716,12 +721,12 @@ func (r *MediaRepository) GetTranscodingJobsByUser(ctx context.Context, userID s
 
 // GetTranscodingJobsByMedia retrieves transcoding jobs for a specific media item
 func (r *MediaRepository) GetTranscodingJobsByMedia(ctx context.Context, mediaID string, limit int) ([]*models.TranscodingJob, error) {
-	r.BaseRepository.logger.Debug("getting transcoding jobs by media",
+	r.logger.Debug("getting transcoding jobs by media",
 		zap.String("media_id", mediaID),
 		zap.Int("limit", limit))
 
 	var jobs []*models.TranscodingJob
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.TranscodingJob{}).
+	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_TRANSCODING#%s", mediaID))
 
 	if limit > 0 {
@@ -738,14 +743,14 @@ func (r *MediaRepository) GetTranscodingJobsByMedia(ctx context.Context, mediaID
 
 // GetTranscodingJobsByStatus retrieves transcoding jobs by status
 func (r *MediaRepository) GetTranscodingJobsByStatus(ctx context.Context, status string, limit int) ([]*models.TranscodingJob, error) {
-	r.BaseRepository.logger.Debug("getting transcoding jobs by status",
+	r.logger.Debug("getting transcoding jobs by status",
 		zap.String("status", status),
 		zap.Int("limit", limit))
 
 	var jobs []*models.TranscodingJob
 	// Use scan with filter for status queries. In production, consider adding a GSI
 	// for frequently queried statuses to improve performance
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.TranscodingJob{}).
+	query := r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("status", "=", status)
 
 	if limit > 0 {
@@ -767,9 +772,9 @@ func (r *MediaRepository) GetTranscodingJobsByStatus(ctx context.Context, status
 
 // DeleteTranscodingJob deletes a transcoding job
 func (r *MediaRepository) DeleteTranscodingJob(ctx context.Context, jobID string) error {
-	r.BaseRepository.logger.Debug("deleting transcoding job", zap.String("job_id", jobID))
+	r.logger.Debug("deleting transcoding job", zap.String("job_id", jobID))
 
-	return r.BaseRepository.db.WithContext(ctx).Model(&models.TranscodingJob{}).
+	return r.db.WithContext(ctx).Model(&models.TranscodingJob{}).
 		Where("PK", "=", fmt.Sprintf("TRANSCODING_JOB#%s", jobID)).
 		Where("SK", "=", "JOB_METRICS").
 		Delete()
@@ -777,7 +782,7 @@ func (r *MediaRepository) DeleteTranscodingJob(ctx context.Context, jobID string
 
 // GetTranscodingCostsByUser retrieves aggregated transcoding costs for a user
 func (r *MediaRepository) GetTranscodingCostsByUser(ctx context.Context, userID string, timeRange string) (map[string]int64, error) {
-	r.BaseRepository.logger.Debug("getting transcoding costs by user",
+	r.logger.Debug("getting transcoding costs by user",
 		zap.String("user_id", userID),
 		zap.String("time_range", timeRange))
 
@@ -827,7 +832,7 @@ func (r *MediaRepository) isWithinTimeRange(timestamp time.Time, timeRange strin
 
 // MarkMediaProcessing marks a media item as currently being processed
 func (r *MediaRepository) MarkMediaProcessing(ctx context.Context, mediaID string) error {
-	r.BaseRepository.logger.Debug("marking media as processing", zap.String("media_id", mediaID))
+	r.logger.Debug("marking media as processing", zap.String("media_id", mediaID))
 
 	media, err := r.GetMedia(ctx, mediaID)
 	if err != nil {
@@ -840,7 +845,7 @@ func (r *MediaRepository) MarkMediaProcessing(ctx context.Context, mediaID strin
 
 // MarkMediaReady marks a media item as successfully processed and ready
 func (r *MediaRepository) MarkMediaReady(ctx context.Context, mediaID string) error {
-	r.BaseRepository.logger.Debug("marking media as ready", zap.String("media_id", mediaID))
+	r.logger.Debug("marking media as ready", zap.String("media_id", mediaID))
 
 	media, err := r.GetMedia(ctx, mediaID)
 	if err != nil {
@@ -853,7 +858,7 @@ func (r *MediaRepository) MarkMediaReady(ctx context.Context, mediaID string) er
 
 // MarkMediaFailed marks a media item as failed with an error message
 func (r *MediaRepository) MarkMediaFailed(ctx context.Context, mediaID, errorMsg string) error {
-	r.BaseRepository.logger.Debug("marking media as failed", 
+	r.logger.Debug("marking media as failed",
 		zap.String("media_id", mediaID),
 		zap.String("error", errorMsg))
 
@@ -868,7 +873,7 @@ func (r *MediaRepository) MarkMediaFailed(ctx context.Context, mediaID, errorMsg
 
 // GetPendingMedia retrieves media items with pending status
 func (r *MediaRepository) GetPendingMedia(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting pending media", 
+	r.logger.Debug("getting pending media",
 		zap.Int("limit", opts.Limit))
 
 	return r.getMediaByStatus(ctx, models.StatusPending, opts)
@@ -876,7 +881,7 @@ func (r *MediaRepository) GetPendingMedia(ctx context.Context, opts interfaces.P
 
 // GetProcessingMedia retrieves media items with processing status
 func (r *MediaRepository) GetProcessingMedia(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting processing media", 
+	r.logger.Debug("getting processing media",
 		zap.Int("limit", opts.Limit))
 
 	return r.getMediaByStatus(ctx, models.StatusProcessing, opts)
@@ -884,7 +889,7 @@ func (r *MediaRepository) GetProcessingMedia(ctx context.Context, opts interface
 
 // AddMediaVariant adds a variant to a media item
 func (r *MediaRepository) AddMediaVariant(ctx context.Context, mediaID, variantName string, variant models.MediaVariant) error {
-	r.BaseRepository.logger.Debug("adding media variant",
+	r.logger.Debug("adding media variant",
 		zap.String("media_id", mediaID),
 		zap.String("variant_name", variantName))
 
@@ -899,7 +904,7 @@ func (r *MediaRepository) AddMediaVariant(ctx context.Context, mediaID, variantN
 
 // GetMediaVariant retrieves a specific variant of a media item
 func (r *MediaRepository) GetMediaVariant(ctx context.Context, mediaID, variantName string) (*models.MediaVariant, error) {
-	r.BaseRepository.logger.Debug("getting media variant",
+	r.logger.Debug("getting media variant",
 		zap.String("media_id", mediaID),
 		zap.String("variant_name", variantName))
 
@@ -918,7 +923,7 @@ func (r *MediaRepository) GetMediaVariant(ctx context.Context, mediaID, variantN
 
 // DeleteMediaVariant removes a variant from a media item
 func (r *MediaRepository) DeleteMediaVariant(ctx context.Context, mediaID, variantName string) error {
-	r.BaseRepository.logger.Debug("deleting media variant",
+	r.logger.Debug("deleting media variant",
 		zap.String("media_id", mediaID),
 		zap.String("variant_name", variantName))
 
@@ -943,7 +948,7 @@ func (r *MediaRepository) DeleteMediaVariant(ctx context.Context, mediaID, varia
 
 // GetUserMedia retrieves media for a user with pagination (interface compatible)
 func (r *MediaRepository) GetUserMedia(ctx context.Context, userID string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting user media with pagination", 
+	r.logger.Debug("getting user media with pagination",
 		zap.String("user_id", userID),
 		zap.Int("limit", opts.Limit))
 
@@ -952,7 +957,7 @@ func (r *MediaRepository) GetUserMedia(ctx context.Context, userID string, opts 
 
 // GetUserMediaByType retrieves media for a user filtered by content type
 func (r *MediaRepository) GetUserMediaByType(ctx context.Context, userID, contentType string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting user media by type", 
+	r.logger.Debug("getting user media by type",
 		zap.String("user_id", userID),
 		zap.String("content_type", contentType),
 		zap.Int("limit", opts.Limit))
@@ -962,13 +967,13 @@ func (r *MediaRepository) GetUserMediaByType(ctx context.Context, userID, conten
 
 // GetUnusedMedia retrieves media that hasn't been used since a specific time
 func (r *MediaRepository) GetUnusedMedia(ctx context.Context, olderThan time.Time, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting unused media", 
+	r.logger.Debug("getting unused media",
 		zap.Time("older_than", olderThan),
 		zap.Int("limit", opts.Limit))
 
 	// Query all media and filter by usage
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{})
+	query := r.db.WithContext(ctx).Model(&models.Media{})
 
 	if opts.Limit > 0 {
 		query = query.Limit(opts.Limit * 2) // Get more to account for filtering
@@ -1020,7 +1025,7 @@ func (r *MediaRepository) GetUnusedMedia(ctx context.Context, olderThan time.Tim
 
 // MarkMediaUsed marks a media item as used (increments usage count)
 func (r *MediaRepository) MarkMediaUsed(ctx context.Context, mediaID string) error {
-	r.BaseRepository.logger.Debug("marking media as used", zap.String("media_id", mediaID))
+	r.logger.Debug("marking media as used", zap.String("media_id", mediaID))
 
 	media, err := r.GetMedia(ctx, mediaID)
 	if err != nil {
@@ -1033,7 +1038,7 @@ func (r *MediaRepository) MarkMediaUsed(ctx context.Context, mediaID string) err
 
 // GetMediaUsageStats returns usage statistics for a media item
 func (r *MediaRepository) GetMediaUsageStats(ctx context.Context, mediaID string) (usageCount int, lastUsed *time.Time, err error) {
-	r.BaseRepository.logger.Debug("getting media usage stats", zap.String("media_id", mediaID))
+	r.logger.Debug("getting media usage stats", zap.String("media_id", mediaID))
 
 	media, err := r.GetMedia(ctx, mediaID)
 	if err != nil {
@@ -1045,7 +1050,7 @@ func (r *MediaRepository) GetMediaUsageStats(ctx context.Context, mediaID string
 
 // SetMediaModeration sets moderation results for a media item
 func (r *MediaRepository) SetMediaModeration(ctx context.Context, mediaID string, isNSFW bool, score float64, labels []string) error {
-	r.BaseRepository.logger.Debug("setting media moderation",
+	r.logger.Debug("setting media moderation",
 		zap.String("media_id", mediaID),
 		zap.Bool("is_nsfw", isNSFW),
 		zap.Float64("score", score))
@@ -1064,7 +1069,7 @@ func (r *MediaRepository) SetMediaModeration(ctx context.Context, mediaID string
 // getMediaByStatus retrieves media by status with pagination
 func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Where("GSI2PK", "=", fmt.Sprintf("MEDIA_STATUS#%s", status))
 
 	if opts.Limit > 0 {
@@ -1102,7 +1107,7 @@ func (r *MediaRepository) getMediaByStatus(ctx context.Context, status string, o
 // getUserMediaWithOptions retrieves user media with optional content type filter
 func (r *MediaRepository) getUserMediaWithOptions(ctx context.Context, userID string, opts interfaces.PaginationOptions, contentType string) (*interfaces.PaginatedResult[*models.Media], error) {
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Where("GSI1PK", "=", fmt.Sprintf("USER_MEDIA#%s", userID))
 
 	// Apply content type filter if provided
@@ -1164,12 +1169,12 @@ func (r *MediaRepository) encodeCursor(offset int) string {
 
 // GetModerationPendingMedia retrieves media items that need moderation review
 func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts interfaces.PaginationOptions) (*interfaces.PaginatedResult[*models.Media], error) {
-	r.BaseRepository.logger.Debug("getting moderation pending media", 
+	r.logger.Debug("getting moderation pending media",
 		zap.Int("limit", opts.Limit))
 
 	// Query media that needs moderation (has no moderation score or labels)
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Filter("ModerationScore", "=", 0.0) // Assuming 0.0 means not moderated yet
 
 	if opts.Limit > 0 {
@@ -1206,14 +1211,14 @@ func (r *MediaRepository) GetModerationPendingMedia(ctx context.Context, opts in
 
 // GetMediaByIDs retrieves multiple media items by their IDs
 func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) ([]*models.Media, error) {
-	r.BaseRepository.logger.Debug("getting media by IDs", zap.Int("count", len(mediaIDs)))
+	r.logger.Debug("getting media by IDs", zap.Int("count", len(mediaIDs)))
 
 	if err := common.ValidateSliceNotEmpty("mediaIDs", mediaIDs); err != nil {
 		return []*models.Media{}, nil
 	}
 
 	var mediaList []*models.Media
-	
+
 	// Use batch get for efficiency
 	// Note: DynamORM might not support batch operations directly,
 	// so we'll fetch them individually for now
@@ -1234,11 +1239,11 @@ func (r *MediaRepository) GetMediaByIDs(ctx context.Context, mediaIDs []string) 
 
 // DeleteExpiredMedia deletes media items that have expired
 func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore time.Time) (int64, error) {
-	r.BaseRepository.logger.Debug("deleting expired media", zap.Time("expired_before", expiredBefore))
+	r.logger.Debug("deleting expired media", zap.Time("expired_before", expiredBefore))
 
 	// Query all media with TTL that has expired
 	var mediaList []*models.Media
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).
+	query := r.db.WithContext(ctx).Model(&models.Media{}).
 		Filter("ExpiresAt", "<", expiredBefore.Unix())
 
 	err := query.All(&mediaList)
@@ -1249,7 +1254,7 @@ func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore 
 	deletedCount := int64(0)
 	for _, media := range mediaList {
 		if err := r.DeleteMedia(ctx, media.MediaID); err != nil {
-			r.BaseRepository.logger.Error("failed to delete expired media",
+			r.logger.Error("failed to delete expired media",
 				zap.String("media_id", media.MediaID),
 				zap.Error(err))
 			// Continue with other deletions
@@ -1258,7 +1263,7 @@ func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore 
 		}
 	}
 
-	r.BaseRepository.logger.Info("deleted expired media", 
+	r.logger.Info("deleted expired media",
 		zap.Int64("deleted_count", deletedCount),
 		zap.Int("total_expired", len(mediaList)))
 
@@ -1267,7 +1272,7 @@ func (r *MediaRepository) DeleteExpiredMedia(ctx context.Context, expiredBefore 
 
 // GetMediaStorageUsage returns the total storage used by a user's media
 func (r *MediaRepository) GetMediaStorageUsage(ctx context.Context, userID string) (int64, error) {
-	r.BaseRepository.logger.Debug("getting media storage usage", zap.String("user_id", userID))
+	r.logger.Debug("getting media storage usage", zap.String("user_id", userID))
 
 	// Get all user media
 	mediaList, err := r.GetMediaByUser(ctx, userID, 0)
@@ -1285,11 +1290,11 @@ func (r *MediaRepository) GetMediaStorageUsage(ctx context.Context, userID strin
 
 // GetTotalStorageUsage returns the total storage used by all media in the system
 func (r *MediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, error) {
-	r.BaseRepository.logger.Debug("getting total storage usage")
+	r.logger.Debug("getting total storage usage")
 
 	// This is an expensive operation - consider caching or aggregation in production
 	var mediaList []*models.Media
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Media{}).All(&mediaList)
+	err := r.db.WithContext(ctx).Model(&models.Media{}).All(&mediaList)
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, EntityMedia, "all media for total storage")
 	}
@@ -1299,7 +1304,7 @@ func (r *MediaRepository) GetTotalStorageUsage(ctx context.Context) (int64, erro
 		totalSize += media.GetTotalSize() // Includes variants
 	}
 
-	r.BaseRepository.logger.Info("calculated total storage usage", zap.Int64("total_bytes", totalSize))
+	r.logger.Info("calculated total storage usage", zap.Int64("total_bytes", totalSize))
 	return totalSize, nil
 }
 
@@ -1324,7 +1329,7 @@ func (r *MediaRepository) TrackWrite(ctx context.Context, operationType string, 
 func (r *MediaRepository) TrackQuery(ctx context.Context, indexName string, readUnits int64, itemCount int64) error {
 	operation := cost.DynamoOperation{
 		Type:               "Query",
-		TableName:          r.BaseRepository.tableName,
+		TableName:          r.tableName,
 		ConsumedReadUnits:  readUnits,
 		ConsumedWriteUnits: 0,
 		ItemCount:          itemCount,
@@ -1332,6 +1337,6 @@ func (r *MediaRepository) TrackQuery(ctx context.Context, indexName string, read
 		Timestamp:          time.Now(),
 		OperationID:        fmt.Sprintf("media_query_%d", time.Now().UnixNano()),
 	}
-	
-	return r.BaseRepository.TrackCustomOperation(ctx, operation)
+
+	return r.TrackCustomOperation(ctx, operation)
 }

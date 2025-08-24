@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
@@ -151,30 +151,30 @@ func (r *BlockRepository) IsBlockedBidirectional(ctx context.Context, actor1, ac
 // GetBlockedUsers returns a list of users blocked by the given actor
 func (r *BlockRepository) GetBlockedUsers(ctx context.Context, blockerActor string, limit int, cursor string) ([]string, string, error) {
 	blockerUsername := extractUsernameFromActor(blockerActor)
-	
+
 	config := RelationshipPaginationConfig{
-		IndexName:   "",                       // Use main table
-		PKFormat:    "ACTOR#%s#BLOCKS",       // PK format
-		SKField:     "SK",                    // Sort key field
-		ActorField:  "Object",                // Extract blocked users (Object field)
-		ErrorPrefix: "blocked users",         // Error message prefix
+		IndexName:   "",                // Use main table
+		PKFormat:    "ACTOR#%s#BLOCKS", // PK format
+		SKField:     "SK",              // Sort key field
+		ActorField:  "Object",          // Extract blocked users (Object field)
+		ErrorPrefix: "blocked users",   // Error message prefix
 	}
-	
+
 	return getPaginatedBlockList(ctx, r.db, r.logger, blockerUsername, limit, cursor, config)
 }
 
 // GetUsersWhoBlocked returns a list of users who have blocked the given actor
 func (r *BlockRepository) GetUsersWhoBlocked(ctx context.Context, blockedActor string, limit int, cursor string) ([]string, string, error) {
 	blockedUsername := extractUsernameFromActor(blockedActor)
-	
+
 	config := RelationshipPaginationConfig{
-		IndexName:   "GSI5",                     // Use GSI5 for reverse lookup
-		PKFormat:    "BLOCKED#%s",               // GSI5PK format
-		SKField:     "GSI5SK",                   // Sort key field for GSI5
-		ActorField:  "Actor",                    // Extract blocker users (Actor field)
+		IndexName:   "GSI5",                    // Use GSI5 for reverse lookup
+		PKFormat:    "BLOCKED#%s",              // GSI5PK format
+		SKField:     "GSI5SK",                  // Sort key field for GSI5
+		ActorField:  "Actor",                   // Extract blocker users (Actor field)
 		ErrorPrefix: "users who blocked actor", // Error message prefix
 	}
-	
+
 	return getPaginatedBlockList(ctx, r.db, r.logger, blockedUsername, limit, cursor, config)
 }
 

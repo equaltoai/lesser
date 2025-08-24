@@ -530,7 +530,9 @@ func (si *StatusIndexer) storeEmbedding(ctx context.Context, statusID string, em
 			"embedding_model": "amazon.titan-embed-text-v1",
 		},
 	}
-	embeddingModel.UpdateKeys()
+	if err := embeddingModel.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update embedding keys: %w", err)
+	}
 
 	return si.db.WithContext(ctx).Model(embeddingModel).Create()
 }
@@ -673,7 +675,7 @@ func main() {
 
 	cfg := lambdaCtx.Config
 	logger := lambdaCtx.Logger
-	
+
 	// Initialize AWS config for AI service
 	awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
 		awsconfig.WithRegion(cfg.Region),

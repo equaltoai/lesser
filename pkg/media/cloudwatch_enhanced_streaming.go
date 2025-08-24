@@ -34,10 +34,12 @@ func NewCloudWatchEnhancedStreamingService(awsConfig aws.Config, storage core.Re
 
 // GetRealQualityBreakdown retrieves real quality breakdown from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealQualityBreakdown(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
-	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "quality", 
+	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "quality",
 		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetQualityBreakdown(ctx, mediaID) },
 		func() (interface{}, error) { return s.fetchQualityMetricsFromCloudWatch(ctx, mediaID) },
-		func(data interface{}) error { return s.storage.StreamingCloudWatch().CacheQualityBreakdown(ctx, mediaID, data.(map[string]models.QualityMetric)) },
+		func(data interface{}) error {
+			return s.storage.StreamingCloudWatch().CacheQualityBreakdown(ctx, mediaID, data.(map[string]models.QualityMetric))
+		},
 		func() map[string]int64 { return s.generateFallbackQualityBreakdown(totalViews) },
 		s.extractQualityViewerCounts,
 	)
@@ -45,10 +47,12 @@ func (s *CloudWatchEnhancedStreamingService) GetRealQualityBreakdown(ctx context
 
 // GetRealGeographicData retrieves real geographic distribution from CloudWatch with DynamORM caching
 func (s *CloudWatchEnhancedStreamingService) GetRealGeographicData(ctx context.Context, mediaID string, totalViews int64) (map[string]int64, error) {
-	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "geographic", 
+	return s.getMetricsWithCaching(ctx, mediaID, totalViews, "geographic",
 		func() (interface{}, error) { return s.storage.StreamingCloudWatch().GetGeographicData(ctx, mediaID) },
 		func() (interface{}, error) { return s.fetchGeographicMetricsFromCloudWatch(ctx, mediaID) },
-		func(data interface{}) error { return s.storage.StreamingCloudWatch().CacheGeographicData(ctx, mediaID, data.(map[string]models.GeographicMetric)) },
+		func(data interface{}) error {
+			return s.storage.StreamingCloudWatch().CacheGeographicData(ctx, mediaID, data.(map[string]models.GeographicMetric))
+		},
 		func() map[string]int64 { return s.generateFallbackGeographicData(totalViews) },
 		s.extractGeographicViewerCounts,
 	)
@@ -181,14 +185,14 @@ func (s *CloudWatchEnhancedStreamingService) fetchSingleQualityMetrics(ctx conte
 	}
 
 	return &models.QualityMetric{
-		Quality:           quality,
-		ViewerCount:       int64(viewerCount),
-		ViewerPercentage:  percentage,
-		BufferingRate:     bufferingRate,
-		AverageLatencyMs:  int64(latency),
-		ErrorRate:         errorRate / 100.0, // Convert to decimal
-		BitrateUtilization: 0.85,              // Default utilization
-		StartupTimeMs:     int64(latency * 2), // Startup usually 2x latency
+		Quality:            quality,
+		ViewerCount:        int64(viewerCount),
+		ViewerPercentage:   percentage,
+		BufferingRate:      bufferingRate,
+		AverageLatencyMs:   int64(latency),
+		ErrorRate:          errorRate / 100.0,  // Convert to decimal
+		BitrateUtilization: 0.85,               // Default utilization
+		StartupTimeMs:      int64(latency * 2), // Startup usually 2x latency
 	}, nil
 }
 
@@ -248,12 +252,12 @@ func (s *CloudWatchEnhancedStreamingService) fetchSingleRegionMetrics(ctx contex
 	}
 
 	return &models.GeographicMetric{
-		Region:            region,
-		ViewerCount:       int64(viewerCount),
-		ViewerPercentage:  0, // Will be calculated later with total viewers
-		AverageLatencyMs:  int64(latency),
-		PreferredQuality:  s.getPreferredQualityForRegion(region),
-		CacheHitRate:      cacheHitRate / 100.0, // Convert to decimal
+		Region:             region,
+		ViewerCount:        int64(viewerCount),
+		ViewerPercentage:   0, // Will be calculated later with total viewers
+		AverageLatencyMs:   int64(latency),
+		PreferredQuality:   s.getPreferredQualityForRegion(region),
+		CacheHitRate:       cacheHitRate / 100.0, // Convert to decimal
 		BandwidthUsageMbps: bandwidth,
 	}, nil
 }
@@ -294,8 +298,8 @@ func (s *CloudWatchEnhancedStreamingService) fetchConcurrentMetricsFromCloudWatc
 		AverageViewers:   int64(avgViewers),
 		ViewerGrowthRate: 0.05, // Default 5% growth
 		SessionDuration:  sessionDuration,
-		NewViewers:       int64(currentViewers * 0.3),    // 30% new viewers
-		ReturningViewers: int64(currentViewers * 0.7),    // 70% returning
+		NewViewers:       int64(currentViewers * 0.3), // 30% new viewers
+		ReturningViewers: int64(currentViewers * 0.7), // 70% returning
 	}, nil
 }
 
@@ -420,9 +424,9 @@ func (s *CloudWatchEnhancedStreamingService) getMetricValueWithDimension(ctx con
 
 // getMetricsWithCaching provides a generic caching pattern for CloudWatch metrics
 func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
-	_ context.Context, 
-	mediaID string, 
-	_ int64, 
+	_ context.Context,
+	mediaID string,
+	_ int64,
 	metricType string,
 	getCached func() (interface{}, error),
 	fetchFromCloudWatch func() (interface{}, error),
@@ -442,7 +446,7 @@ func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
 		if data, ok := cachedData.(*models.StreamingCloudWatchMetrics); ok {
 			if !data.IsExpired() {
 				s.logger.Debug("using cached data", zap.String("media_id", mediaID), zap.String("metric_type", metricType))
-				
+
 				// Convert cached data to result format based on metric type
 				switch metricType {
 				case "quality":
@@ -492,10 +496,10 @@ func (s *CloudWatchEnhancedStreamingService) getMetricsWithCaching(
 
 func (s *CloudWatchEnhancedStreamingService) generateFallbackQualityBreakdown(totalViews int64) map[string]int64 {
 	return map[string]int64{
-		"480p":  totalViews * 30 / 100,
-		Resolution720p:  totalViews * 40 / 100,
-		"1080p": totalViews * 25 / 100,
-		"4k":    totalViews * 5 / 100,
+		"480p":         totalViews * 30 / 100,
+		Resolution720p: totalViews * 40 / 100,
+		"1080p":        totalViews * 25 / 100,
+		"4k":           totalViews * 5 / 100,
 	}
 }
 

@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/shopspring/decimal"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/shopspring/decimal"
 )
 
 // Marshaler interface for custom DynamORM marshaling
@@ -75,7 +75,7 @@ func (pt *PreciseTime) UnmarshalDynamORM(data interface{}) error {
 	if !exists {
 		return fmt.Errorf("invalid PreciseTime format: missing timestamp")
 	}
-	
+
 	timestampStr, ok := timestampRaw.(string)
 	if !ok {
 		return fmt.Errorf("invalid PreciseTime format: timestamp must be string")
@@ -601,7 +601,11 @@ func (ss StringSet) String() string {
 		return "[]"
 	}
 
-	jsonBytes, _ := json.Marshal(ss.Values)
+	jsonBytes, err := json.Marshal(ss.Values)
+	if err != nil {
+		// Fallback to a simple string representation if JSON marshaling fails
+		return fmt.Sprintf("%v", ss.Values)
+	}
 	return string(jsonBytes)
 }
 

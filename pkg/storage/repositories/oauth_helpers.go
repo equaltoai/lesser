@@ -12,9 +12,9 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // OAuthHelper provides common OAuth storage operations
@@ -53,7 +53,7 @@ func (h *OAuthHelper) StoreOAuthStateGeneric(ctx context.Context, state string, 
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the item
 	err := h.db.WithContext(ctx).Model(model).Create()
@@ -113,7 +113,7 @@ func (h *OAuthHelper) DeleteOAuthStateGeneric(ctx context.Context, state string)
 	model := &models.OAuthState{
 		State: state,
 	}
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := h.db.WithContext(ctx).Model(model).Delete()
 	if err != nil && !errors.IsNotFound(err) {
@@ -160,7 +160,7 @@ func (h *OAuthHelper) CreateOAuthClientGeneric(ctx context.Context, client *stor
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the item
 	err := h.db.WithContext(ctx).Model(model).Create()
@@ -274,7 +274,7 @@ func (h *OAuthHelper) UpdateOAuthClientGeneric(ctx context.Context, clientID str
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Update the item
 	err = h.db.WithContext(ctx).Model(model).Update()
@@ -293,7 +293,7 @@ func (h *OAuthHelper) DeleteOAuthClientGeneric(ctx context.Context, clientID str
 	model := &models.OAuthClient{
 		ClientID: clientID,
 	}
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := h.db.WithContext(ctx).Model(model).Delete()
 	if err != nil && !errors.IsNotFound(err) {
@@ -625,7 +625,7 @@ func (h *OAuthHelper) SaveUserAppConsentGeneric(ctx context.Context, consent *st
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use upsert logic - try to update first, then create if not exists
 	err := h.db.WithContext(ctx).Model(model).

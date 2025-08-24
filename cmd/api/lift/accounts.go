@@ -769,7 +769,7 @@ func (h *Handler) returnActivityPubCollectionPage(ctx *lift.Context, actor *acti
 
 	// Build and return the ActivityPub collection page
 	page := h.buildCollectionPage(actor, collectionType, cursor, nextCursor, limit, usernames)
-	
+
 	// Set ActivityPub content type and caching headers
 	ctx.Response.Header("Content-Type", "application/activity+json")
 	ctx.Response.Header("Cache-Control", "max-age=300")

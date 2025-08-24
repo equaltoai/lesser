@@ -101,7 +101,6 @@ type AggregationEvent struct {
 	Metrics   []string  `json:"metrics,omitempty"`  // Optional: specific metrics to aggregate
 }
 
-
 func main() {
 	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "metrics-aggregator",
@@ -120,7 +119,7 @@ func main() {
 
 	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
 		liftCtx := &lift.Context{
-			Request: &lift.Request{},
+			Request:   &lift.Request{},
 			RequestID: fmt.Sprintf("metrics-%d", time.Now().UnixNano()),
 		}
 		return processor.HandleStreamWithContext(ctx, liftCtx, event)

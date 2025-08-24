@@ -384,7 +384,7 @@ func (rl *RateLimiter) calculateProgressiveDelay(violationCount int) time.Durati
 		exponent = 30
 	}
 	// Safe conversion to uint after bounds checking
-	exponentUint := uint(exponent) //nolint:gosec // G115: bounded by check above
+	exponentUint := uint(exponent)                      //nolint:gosec // G115: bounded by check above
 	delay := baseDelay * time.Duration(1<<exponentUint) // 2^(violations-1)
 
 	// Cap at max delay

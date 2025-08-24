@@ -31,12 +31,12 @@ type OAuthAuthSession struct {
 	ClientID            string   `json:"client_id"`
 	RedirectURI         string   `json:"redirect_uri"`
 	Scopes              []string `json:"scopes,omitempty"`
-	CodeChallenge       string   `json:"code_challenge,omitempty"`       // PKCE
+	CodeChallenge       string   `json:"code_challenge,omitempty"`        // PKCE
 	CodeChallengeMethod string   `json:"code_challenge_method,omitempty"` // PKCE method
 
 	// User data (populated after login)
-	Username     string `json:"username,omitempty"`      // Set after user authenticates
-	IsAuthorized bool   `json:"is_authorized"`           // User has authorized the app
+	Username     string     `json:"username,omitempty"`      // Set after user authenticates
+	IsAuthorized bool       `json:"is_authorized"`           // User has authorized the app
 	AuthorizedAt *time.Time `json:"authorized_at,omitempty"` // When user authorized
 
 	// Security and tracking
@@ -45,14 +45,14 @@ type OAuthAuthSession struct {
 	DeviceID  string `json:"device_id,omitempty"`
 
 	// Session flow tracking
-	FlowStep    string    `json:"flow_step"`    // login, consent, authorized, error
-	FlowData    map[string]interface{} `json:"flow_data,omitempty"` // Additional flow context
-	ReturnURL   string    `json:"return_url,omitempty"`   // URL to return to after login
+	FlowStep  string                 `json:"flow_step"`            // login, consent, authorized, error
+	FlowData  map[string]interface{} `json:"flow_data,omitempty"`  // Additional flow context
+	ReturnURL string                 `json:"return_url,omitempty"` // URL to return to after login
 
 	// Security measures
-	CSRFToken     string `json:"csrf_token"`              // CSRF protection
-	SessionNonce  string `json:"session_nonce,omitempty"` // Additional entropy
-	IsSecure      bool   `json:"is_secure"`               // Created over HTTPS
+	CSRFToken    string `json:"csrf_token"`              // CSRF protection
+	SessionNonce string `json:"session_nonce,omitempty"` // Additional entropy
+	IsSecure     bool   `json:"is_secure"`               // Created over HTTPS
 
 	// Timestamps
 	CreatedAt  time.Time `json:"created_at"`

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // RouteOptimizerRepository handles route optimizer data persistence
@@ -27,10 +27,10 @@ type RouteOptimizerRepository struct {
 func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logger) *RouteOptimizerRepository {
 	baseRepo := NewBaseRepository[*models.RouteDeliveryResult](db, tableName, logger)
 	baseRepo.SetRepoName("route_optimizer")
-	
+
 	optDecisionRepo := NewBaseRepository[*models.OptimizationDecision](db, tableName, logger)
 	optDecisionRepo.SetRepoName("optimization_decision")
-	
+
 	return &RouteOptimizerRepository{
 		BaseRepository:           baseRepo,
 		optimizationDecisionRepo: optDecisionRepo,
@@ -116,7 +116,7 @@ func (r *RouteOptimizerRepository) GetRecentResults(ctx context.Context, since t
 
 // storeOptimizationDecisionInternal records an optimization decision for analysis
 func (r *RouteOptimizerRepository) storeOptimizationDecisionInternal(ctx context.Context, decision *models.OptimizationDecision) error {
-	decision.UpdateKeys()
+	_ = decision.UpdateKeys() // Ignore error as this is internal model operation
 
 	err := r.db.WithContext(ctx).Model(decision).Create()
 	if err != nil {
@@ -325,7 +325,7 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 		}
 
 		query = query.OrderBy("SK", "DESC").Limit(limit)
-		
+
 		err := query.All(&results)
 		if err != nil {
 			r.logger.Error("Failed to get route-specific metrics",
@@ -363,7 +363,7 @@ func (r *RouteOptimizerRepository) GetMetricsInRange(ctx context.Context, routeI
 	for _, result := range results {
 		// Extract instance ID from route if possible (routes often encode instance info)
 		instanceID := r.extractInstanceFromRoute(result.RouteID)
-		
+
 		deliveryResult := &types.DeliveryResult{
 			MessageID:    result.MessageID,
 			InstanceID:   instanceID,
@@ -397,14 +397,14 @@ func (r *RouteOptimizerRepository) extractInstanceFromRoute(routeID string) stri
 			return parts[len(parts)-1] // Return domain part
 		}
 	}
-	
+
 	// Try to extract from URL-like route IDs
 	if strings.Contains(routeID, "://") {
 		if parsed, err := url.Parse(routeID); err == nil {
 			return parsed.Host
 		}
 	}
-	
+
 	return "" // No instance ID extractable
 }
 
@@ -413,7 +413,7 @@ func (r *RouteOptimizerRepository) estimateAttempts(success bool, statusCode int
 	if success {
 		return 1 // Successful on first try
 	}
-	
+
 	// Estimate attempts based on status code patterns
 	switch {
 	case statusCode >= 500: // Server errors typically get more retries

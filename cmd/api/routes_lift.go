@@ -4,8 +4,6 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
-// envTrue constant is defined in main.go
-
 // configureLiftRoutes sets up routes that use native Lift handlers
 // This allows gradual migration from Lambda handlers to Lift handlers
 func configureLiftRoutes(app *lift.App) {
@@ -26,7 +24,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/exports/{id}/download", lift.HandlerFunc(liftHandler.HandleDownloadExportLift))
 	_ = app.GET("/exports", lift.HandlerFunc(liftHandler.HandleListExportsLift))
 
-	// Data imports with native Lift implementation  
+	// Data imports with native Lift implementation
 	_ = app.POST("/imports", lift.HandlerFunc(liftHandler.HandleCreateImportLift))
 	_ = app.GET("/imports/{id}", lift.HandlerFunc(liftHandler.HandleGetImportStatusLift))
 	_ = app.DELETE("/imports/{id}", lift.HandlerFunc(liftHandler.HandleCancelImportLift))
@@ -98,7 +96,7 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.POST("/admin/moderation/reviewers/{id}/promote", lift.HandlerFunc(liftHandler.HandleAdminPromoteModeratorLift))
 	_ = app.POST("/admin/moderation/reviewers/{id}/demote", lift.HandlerFunc(liftHandler.HandleAdminDemoteModeratorLift))
 
-	// Media endpoints - V1 (synchronous) and V2 (asynchronous) 
+	// Media endpoints - V1 (synchronous) and V2 (asynchronous)
 	// V1 Media endpoints (backwards compatibility)
 	_ = app.POST("/media", lift.HandlerFunc(liftHandler.HandleUploadMediaLift))
 	_ = app.GET("/media/{id}", lift.HandlerFunc(liftHandler.HandleGetMediaLift))
@@ -115,14 +113,14 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/api/v2/instance", lift.HandlerFunc(liftHandler.HandleGetInstanceV2Lift))
 	_ = app.GET("/api/v2/search", lift.HandlerFunc(liftHandler.HandleSearchV2Lift))
 	_ = app.GET("/api/v2/suggestions", lift.HandlerFunc(liftHandler.HandleGetSuggestionsV2Lift))
-	
+
 	// API v2 filters (advanced filtering) - existing implementations
 	_ = app.GET("/api/v2/filters", lift.HandlerFunc(liftHandler.HandleGetFiltersLift))
 	_ = app.GET("/api/v2/filters/{id}", lift.HandlerFunc(liftHandler.HandleGetFilterLift))
 	_ = app.POST("/api/v2/filters", lift.HandlerFunc(liftHandler.HandleCreateFilterLift))
 	_ = app.PUT("/api/v2/filters/{id}", lift.HandlerFunc(liftHandler.HandleUpdateFilterLift))
 	_ = app.DELETE("/api/v2/filters/{id}", lift.HandlerFunc(liftHandler.HandleDeleteFilterLift))
-	
+
 	// API v2 filter keywords and statuses
 	_ = app.GET("/api/v2/filters/{filter_id}/keywords", lift.HandlerFunc(liftHandler.HandleGetFilterKeywordsLift))
 	_ = app.POST("/api/v2/filters/{filter_id}/keywords", lift.HandlerFunc(liftHandler.HandleAddFilterKeywordLift))
@@ -130,20 +128,20 @@ func configureLiftRoutes(app *lift.App) {
 	_ = app.GET("/api/v2/filters/{filter_id}/statuses", lift.HandlerFunc(liftHandler.HandleGetFilterStatusesLift))
 	_ = app.POST("/api/v2/filters/{filter_id}/statuses", lift.HandlerFunc(liftHandler.HandleAddFilterStatusLift))
 	_ = app.DELETE("/api/v2/filters/{filter_id}/statuses/{status_id}", lift.HandlerFunc(liftHandler.HandleDeleteFilterStatusLift))
-	
+
 	// API v2 trends endpoints - Enhanced trending with metadata
 	_ = app.GET("/api/v2/trends", lift.HandlerFunc(liftHandler.HandleGetTrendsV2Lift))
 	_ = app.GET("/api/v2/trends/tags", lift.HandlerFunc(liftHandler.HandleGetTrendingTagsV2Lift))
 	_ = app.GET("/api/v2/trends/statuses", lift.HandlerFunc(liftHandler.HandleGetTrendingStatusesV2Lift))
 	_ = app.GET("/api/v2/trends/links", lift.HandlerFunc(liftHandler.HandleGetTrendingLinksV2Lift))
-	
+
 	// API v2 filter testing endpoint
 	_ = app.POST("/api/v2/filters/test", lift.HandlerFunc(liftHandler.HandleTestFilterLift))
-	
+
 	// API v2 grouped notifications endpoints
 	_ = app.GET("/api/v2/notifications/grouped", lift.HandlerFunc(liftHandler.HandleGetGroupedNotificationsLift))
 	_ = app.POST("/api/v2/notifications/groups/{group_id}/read", lift.HandlerFunc(liftHandler.HandleMarkGroupAsReadLift))
-	
+
 	// Quote posts API endpoints
 	_ = app.POST("/api/v1/statuses/{id}/quote", lift.HandlerFunc(liftHandler.HandleCreateQuotePostLift))
 	_ = app.GET("/api/v1/statuses/{id}/quotes", lift.HandlerFunc(liftHandler.HandleGetQuotesOfStatusLift))

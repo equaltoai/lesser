@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/pay-theory/lift/pkg/lift"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/pay-theory/lift/pkg/lift"
+	"go.uber.org/zap"
 )
 
 // ProcessorWithDLQ demonstrates how to integrate DLQ support into existing processors
@@ -241,17 +241,3 @@ func NewDLQConfigFromEnv(service string) *DLQConfig {
 	}
 }
 
-// parseIntEnv is deprecated - use centralized config instead
-// This function is kept for backward compatibility but should not be used
-func parseIntEnv(key string, defaultValue int) int {
-	cfg := config.Get()
-	// Map known DLQ keys to config fields
-	switch key {
-	case "DLQ_MAX_RETRIES":
-		return cfg.DLQMaxRetries
-	case "DLQ_RETRY_DELAY":
-		return cfg.DLQRetryDelay
-	default:
-		return defaultValue
-	}
-}

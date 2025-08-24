@@ -268,7 +268,7 @@ func (h *Handler) loadTargetAccountLift(ctx context.Context, targetAccountID str
 		PreferredUsername: account.Username,
 		Name:              account.DisplayName,
 	}
-	
+
 	apiAccount := transformations.ActorToAccountBase(fakeActor, h.cfg.BaseURL())
 	return &apiAccount
 }

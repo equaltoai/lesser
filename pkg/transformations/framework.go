@@ -149,7 +149,7 @@ func TransformIDList(ids []string, prefix string) []string {
 	if err := common.ValidateSliceNotEmpty("ids", ids); err != nil {
 		return []string{}
 	}
-	
+
 	result := make([]string, len(ids))
 	for i, id := range ids {
 		if prefix != "" && !strings.HasPrefix(id, prefix) {
@@ -164,7 +164,7 @@ func TransformIDList(ids []string, prefix string) []string {
 // TransformPaginationInfo converts pagination info to map format
 func TransformPaginationInfo(info PaginationInfo) map[string]interface{} {
 	result := make(map[string]interface{})
-	
+
 	if info.MaxID != "" {
 		result["max_id"] = info.MaxID
 	}
@@ -180,7 +180,7 @@ func TransformPaginationInfo(info PaginationInfo) map[string]interface{} {
 	if info.Offset > 0 {
 		result["offset"] = info.Offset
 	}
-	
+
 	return result
 }
 
@@ -191,10 +191,10 @@ func TransformErrorResponse(err error) map[string]interface{} {
 			"error": "unknown error",
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"error":       err.Error(),
-		"error_type":  fmt.Sprintf("%T", err),
-		"timestamp":   time.Now().Format(time.RFC3339),
+		"error":      err.Error(),
+		"error_type": fmt.Sprintf("%T", err),
+		"timestamp":  time.Now().Format(time.RFC3339),
 	}
 }

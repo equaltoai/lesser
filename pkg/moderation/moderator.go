@@ -68,8 +68,8 @@ func (m *Moderator) ModerateContent(ctx context.Context, content *ContentSubmiss
 	aiAnalysis, err := m.moderateWithAI(ctx, content)
 	if err != nil {
 		// AI failure shouldn't block moderation, log and continue
-		zap.L().Error("AI moderation failed", 
-			zap.String("content_id", content.ID), 
+		zap.L().Error("AI moderation failed",
+			zap.String("content_id", content.ID),
 			zap.Error(err))
 	} else {
 		result.AIAnalysis = aiAnalysis
@@ -415,8 +415,8 @@ func (m *Moderator) ReviewModerationDecision(ctx context.Context, review *Modera
 	// Update pattern effectiveness if pattern was involved
 	for patternID, feedback := range review.PatternFeedback {
 		if err := m.patternManager.UpdatePatternStats(ctx, patternID, feedback.WasMatch, feedback.WasFalsePositive); err != nil {
-			zap.L().Error("failed to update pattern stats", 
-				zap.String("pattern_id", patternID), 
+			zap.L().Error("failed to update pattern stats",
+				zap.String("pattern_id", patternID),
 				zap.Error(err))
 		}
 	}

@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"time"
 	"github.com/equaltoai/lesser/pkg/common"
+	"time"
 )
 
 // Announce represents a reblog/boost activity
@@ -52,7 +52,9 @@ func (a *Announce) BeforeCreate() error {
 	}
 
 	// Update keys
-	a.UpdateKeys()
+	if err := a.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return nil
 }

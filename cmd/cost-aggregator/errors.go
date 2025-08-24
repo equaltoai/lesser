@@ -6,12 +6,12 @@ import "errors"
 var (
 	// Processing errors
 	ErrAggregationFailed = errors.New("failed to aggregate costs")
-	
+
 	// AWS service errors
-	ErrSNSMessageMarshal  = errors.New("failed to marshal SNS message")
-	ErrSNSPublish         = errors.New("failed to publish SNS message")
-	ErrCloudWatchMetric   = errors.New("failed to put CloudWatch metric")
-	ErrEventMarshal       = errors.New("failed to marshal aggregation event")
-	ErrLambdaInvoke       = errors.New("failed to invoke lambda and send SQS message")
+	ErrSNSMessageMarshal   = errors.New("failed to marshal SNS message")
+	ErrSNSPublish          = errors.New("failed to publish SNS message")
+	ErrCloudWatchMetric    = errors.New("failed to put CloudWatch metric")
+	ErrEventMarshal        = errors.New("failed to marshal aggregation event")
+	ErrLambdaInvoke        = errors.New("failed to invoke lambda and send SQS message")
 	ErrLambdaFunctionError = errors.New("lambda function returned error")
 )

@@ -17,12 +17,12 @@ import (
 
 // SearchCostTrackingWrapper wraps a SearchRepository with comprehensive cost tracking
 type SearchCostTrackingWrapper struct {
-	searchRepo      *SearchRepository
-	costRepo        *SearchCostRepository
-	costTracker     *cost.Tracker
-	unifiedTracker  *cost.UnifiedTracker
-	tableName       string
-	logger          *zap.Logger
+	searchRepo     *SearchRepository
+	costRepo       *SearchCostRepository
+	costTracker    *cost.Tracker
+	unifiedTracker *cost.UnifiedTracker
+	tableName      string
+	logger         *zap.Logger
 }
 
 // NewSearchCostTrackingWrapper creates a new cost tracking wrapper for search operations
@@ -32,17 +32,17 @@ func NewSearchCostTrackingWrapper(searchRepo *SearchRepository, costRepo *Search
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	
+
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "SearchCostTrackingWrapper", "", "")
-	
+
 	return &SearchCostTrackingWrapper{
-		searchRepo:      searchRepo,
-		costRepo:        costRepo,
-		costTracker:     costTracker,
-		unifiedTracker:  unifiedTracker,
-		tableName:       tableName,
-		logger:          logger,
+		searchRepo:     searchRepo,
+		costRepo:       costRepo,
+		costTracker:    costTracker,
+		unifiedTracker: unifiedTracker,
+		tableName:      tableName,
+		logger:         logger,
 	}
 }
 

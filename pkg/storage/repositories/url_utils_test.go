@@ -76,9 +76,9 @@ func TestURLValidator_ExtractAndValidateURL(t *testing.T) {
 			expectSocial:   true,
 		},
 		{
-			name:        "HTTP URL (insecure)",
-			url:         "http://example.com",
-			expectValid: true,
+			name:         "HTTP URL (insecure)",
+			url:          "http://example.com",
+			expectValid:  true,
 			expectSecure: false,
 		},
 		{

@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"unicode"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/mastodon"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // UnicodeEmojiRegex matches Unicode emoji characters

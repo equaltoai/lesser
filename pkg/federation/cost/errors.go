@@ -44,7 +44,7 @@ var (
 	ErrUpdateInstanceHealth = errors.New("failed to update instance health")
 
 	// Cost Integration specific errors
-	
+
 	// ErrDomainExtractionFailed indicates failure to extract domain from URL
 	ErrDomainExtractionFailed = errors.New("domain extraction failed")
 

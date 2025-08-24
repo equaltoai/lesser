@@ -18,7 +18,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // Service provides list operations
 type Service struct {
 	listRepo   interfaces.ListRepository

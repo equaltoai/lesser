@@ -309,8 +309,8 @@ func (m *MockRepositoryStorage) Analytics() *repositories.TrendingRepository    
 func (m *MockRepositoryStorage) Social() *repositories.SocialRepository                   { return nil }
 func (m *MockRepositoryStorage) User() *repositories.UserRepository                       { return nil }
 func (m *MockRepositoryStorage) Status() *repositories.StatusRepository                   { return nil }
-func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository               { return nil }
-func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository       { return nil }
+func (m *MockRepositoryStorage) Cost() *repositories.TrackingRepository                   { return nil }
+func (m *MockRepositoryStorage) WebSocketCost() *repositories.WebSocketCostRepository     { return nil }
 func (m *MockRepositoryStorage) Trust() *repositories.TrustRepository                     { return nil }
 func (m *MockRepositoryStorage) Search() *repositories.SearchRepository                   { return nil }
 func (m *MockRepositoryStorage) Relay() *repositories.RelayRepository                     { return nil }
@@ -326,14 +326,16 @@ func (m *MockRepositoryStorage) MetricRecord() *repositories.MetricRecordReposit
 func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetricsRepository {
 	return nil
 }
-func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository         { return nil }
-func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository { return nil }
-func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository         { return nil }
+func (m *MockRepositoryStorage) Emoji() *repositories.EmojiRepository                 { return nil }
+func (m *MockRepositoryStorage) RateLimit() *repositories.RateLimitRepository         { return nil }
+func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository                 { return nil }
 func (m *MockRepositoryStorage) MediaMetadata() *repositories.MediaMetadataRepository { return nil }
-func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository         { return nil }
-func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository { return nil }
-func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository     { return nil }
-func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository         { return nil }
+func (m *MockRepositoryStorage) OAuth() *repositories.OAuthRepository                 { return nil }
+func (m *MockRepositoryStorage) StreamingCloudWatch() *repositories.StreamingCloudWatchRepository {
+	return nil
+}
+func (m *MockRepositoryStorage) DNSCache() *repositories.DNSCacheRepository { return nil }
+func (m *MockRepositoryStorage) Filter() *repositories.FilterRepository     { return nil }
 
 // Utility methods
 func (m *MockRepositoryStorage) GetDB() dynamormCore.DB { return nil }

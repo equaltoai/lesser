@@ -1499,7 +1499,7 @@ func (e *ActivityType) UnmarshalGQL(v any) error {
 
 	*e = ActivityType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ActivityType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ActivityType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1560,7 +1560,7 @@ func (e *ActorType) UnmarshalGQL(v any) error {
 
 	*e = ActorType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ActorType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ActorType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1617,7 +1617,7 @@ func (e *AlertLevel) UnmarshalGQL(v any) error {
 
 	*e = AlertLevel(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("AlertLevel %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("AlertLevel %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1676,7 +1676,7 @@ func (e *AlertSeverity) UnmarshalGQL(v any) error {
 
 	*e = AlertSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("AlertSeverity %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("AlertSeverity %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1739,7 +1739,7 @@ func (e *ConnectionType) UnmarshalGQL(v any) error {
 
 	*e = ConnectionType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ConnectionType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ConnectionType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1800,7 +1800,7 @@ func (e *CostOrderBy) UnmarshalGQL(v any) error {
 
 	*e = CostOrderBy(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("CostOrderBy %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("CostOrderBy %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1859,7 +1859,7 @@ func (e *DigestFrequency) UnmarshalGQL(v any) error {
 
 	*e = DigestFrequency(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("DigestFrequency %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("DigestFrequency %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1914,7 +1914,7 @@ func (e *DirectoryOrder) UnmarshalGQL(v any) error {
 
 	*e = DirectoryOrder(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("DirectoryOrder %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("DirectoryOrder %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -1975,7 +1975,7 @@ func (e *FederationState) UnmarshalGQL(v any) error {
 
 	*e = FederationState(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("FederationState %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("FederationState %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2030,7 +2030,7 @@ func (e *HashtagMode) UnmarshalGQL(v any) error {
 
 	*e = HashtagMode(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("HashtagMode %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("HashtagMode %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2089,7 +2089,7 @@ func (e *HealthStatus) UnmarshalGQL(v any) error {
 
 	*e = HealthStatus(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("HealthStatus %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("HealthStatus %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2150,7 +2150,7 @@ func (e *InfrastructureEventType) UnmarshalGQL(v any) error {
 
 	*e = InfrastructureEventType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("InfrastructureEventType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("InfrastructureEventType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2211,7 +2211,7 @@ func (e *InstanceHealthStatus) UnmarshalGQL(v any) error {
 
 	*e = InstanceHealthStatus(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("InstanceHealthStatus %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("InstanceHealthStatus %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2270,7 +2270,7 @@ func (e *IssueSeverity) UnmarshalGQL(v any) error {
 
 	*e = IssueSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("IssueSeverity %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("IssueSeverity %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2329,7 +2329,7 @@ func (e *MediaType) UnmarshalGQL(v any) error {
 
 	*e = MediaType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("MediaType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("MediaType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2392,7 +2392,7 @@ func (e *ModerationAction) UnmarshalGQL(v any) error {
 
 	*e = ModerationAction(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ModerationAction %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ModerationAction %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2453,7 +2453,7 @@ func (e *ModerationSeverity) UnmarshalGQL(v any) error {
 
 	*e = ModerationSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ModerationSeverity %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ModerationSeverity %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2512,7 +2512,7 @@ func (e *NotificationLevel) UnmarshalGQL(v any) error {
 
 	*e = NotificationLevel(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("NotificationLevel %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("NotificationLevel %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2577,7 +2577,7 @@ func (e *ObjectType) UnmarshalGQL(v any) error {
 
 	*e = ObjectType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ObjectType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ObjectType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2636,7 +2636,7 @@ func (e *PatternType) UnmarshalGQL(v any) error {
 
 	*e = PatternType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("PatternType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("PatternType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2697,7 +2697,7 @@ func (e *Period) UnmarshalGQL(v any) error {
 
 	*e = Period(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("Period %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("Period %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2756,7 +2756,7 @@ func (e *Priority) UnmarshalGQL(v any) error {
 
 	*e = Priority(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("Priority %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("Priority %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2813,7 +2813,7 @@ func (e *QuotePermission) UnmarshalGQL(v any) error {
 
 	*e = QuotePermission(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("QuotePermission %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("QuotePermission %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2872,7 +2872,7 @@ func (e *QuoteType) UnmarshalGQL(v any) error {
 
 	*e = QuoteType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("QuoteType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("QuoteType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2933,7 +2933,7 @@ func (e *RecommendationType) UnmarshalGQL(v any) error {
 
 	*e = RecommendationType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("RecommendationType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("RecommendationType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -2990,7 +2990,7 @@ func (e *RepliesPolicy) UnmarshalGQL(v any) error {
 
 	*e = RepliesPolicy(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("RepliesPolicy %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("RepliesPolicy %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3049,7 +3049,7 @@ func (e *Sentiment) UnmarshalGQL(v any) error {
 
 	*e = Sentiment(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("Sentiment %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("Sentiment %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3112,7 +3112,7 @@ func (e *ServiceCategory) UnmarshalGQL(v any) error {
 
 	*e = ServiceCategory(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("ServiceCategory %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("ServiceCategory %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3173,7 +3173,7 @@ func (e *SeveranceReason) UnmarshalGQL(v any) error {
 
 	*e = SeveranceReason(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("SeveranceReason %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("SeveranceReason %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3234,7 +3234,7 @@ func (e *StreamQuality) UnmarshalGQL(v any) error {
 
 	*e = StreamQuality(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("StreamQuality %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("StreamQuality %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3293,7 +3293,7 @@ func (e *SuggestionSource) UnmarshalGQL(v any) error {
 
 	*e = SuggestionSource(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("SuggestionSource %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("SuggestionSource %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3352,7 +3352,7 @@ func (e *SyncStatus) UnmarshalGQL(v any) error {
 
 	*e = SyncStatus(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("SyncStatus %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("SyncStatus %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3411,7 +3411,7 @@ func (e *TimePeriod) UnmarshalGQL(v any) error {
 
 	*e = TimePeriod(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("TimePeriod %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("TimePeriod %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3474,7 +3474,7 @@ func (e *TimelineType) UnmarshalGQL(v any) error {
 
 	*e = TimelineType(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("TimelineType %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("TimelineType %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3531,7 +3531,7 @@ func (e *Trend) UnmarshalGQL(v any) error {
 
 	*e = Trend(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("Trend %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("Trend %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }
@@ -3590,7 +3590,7 @@ func (e *Visibility) UnmarshalGQL(v any) error {
 
 	*e = Visibility(str)
 	if !e.IsValid() {
-		return errors.Join(errors.New(fmt.Sprintf("Visibility %s", str)), ErrInvalidEnumValue)
+		return errors.Join(fmt.Errorf("Visibility %s", str), ErrInvalidEnumValue)
 	}
 	return nil
 }

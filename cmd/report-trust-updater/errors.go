@@ -6,7 +6,7 @@ import "errors"
 var (
 	// Stream processing errors
 	ErrMissingKeys = errors.New("missing keys")
-	
+
 	// Report processing errors
 	ErrReportRetrieval = errors.New("failed to get report")
 )

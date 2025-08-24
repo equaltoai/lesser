@@ -104,7 +104,7 @@ func TestCanonicalizeJSON_SimpleObject(t *testing.T) {
 				RemoveSignatureFields: false,
 			}
 			c := NewCanonicalizer(options)
-			
+
 			result, err := c.CanonicalizeToJSON(tt.input)
 			require.NoError(t, err)
 			assert.JSONEq(t, tt.expected, string(result))
@@ -177,19 +177,19 @@ func TestCanonicalizeJSON_ActivityPubObjects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := CanonicalizeActivityPubObject(tt.input)
 			require.NoError(t, err)
-			
+
 			var parsed map[string]interface{}
 			err = json.Unmarshal(result, &parsed)
 			require.NoError(t, err)
-			
+
 			// Note: We can't do exact comparison due to key ordering
 			// Instead, verify signature fields are removed and required fields exist
 			_, hasSignature := parsed["signature"]
 			assert.False(t, hasSignature, "signature field should be removed")
-			
+
 			_, hasProof := parsed["proof"]
 			assert.False(t, hasProof, "proof field should be removed")
-			
+
 			// Verify required fields exist
 			assert.Equal(t, tt.expected["type"], parsed["type"])
 			assert.Equal(t, tt.expected["id"], parsed["id"])
@@ -216,52 +216,52 @@ func TestCanonicalizeJSON_ReputationObjects(t *testing.T) {
 	t.Run("reputation with signature removal", func(t *testing.T) {
 		result, err := CanonicalizeBytesToJSON(mustMarshal(reputation), true)
 		require.NoError(t, err)
-		
+
 		var parsed map[string]interface{}
 		err = json.Unmarshal(result, &parsed)
 		require.NoError(t, err)
-		
+
 		// Verify signature removed but publicKey preserved
 		_, hasSignature := parsed["signature"]
 		assert.False(t, hasSignature)
-		
+
 		_, hasPublicKey := parsed["publicKey"]
 		assert.True(t, hasPublicKey)
-		
+
 		// Verify key ordering (should be alphabetical)
 		resultStr := string(result)
 		actorIdPos := strings.Index(resultStr, "actorId")
 		instancePos := strings.Index(resultStr, "instance")
 		versionPos := strings.Index(resultStr, "version")
-		
+
 		assert.True(t, actorIdPos < instancePos, "actorId should come before instance")
 		assert.True(t, instancePos < versionPos, "instance should come before version")
 	})
 
 	vouch := map[string]interface{}{
-		"id":          "https://example.com/vouches/1",
-		"from":        "https://example.com/users/alice",
-		"to":          "https://example.com/users/bob",
-		"instance":    "https://example.com",
-		"createdAt":   "2023-01-01T00:00:00Z",
-		"expiresAt":   "2023-12-31T23:59:59Z",
-		"confidence":  0.95,
-		"context":     "colleague",
-		"active":      true,
-		"signature":   "should_be_removed",
+		"id":         "https://example.com/vouches/1",
+		"from":       "https://example.com/users/alice",
+		"to":         "https://example.com/users/bob",
+		"instance":   "https://example.com",
+		"createdAt":  "2023-01-01T00:00:00Z",
+		"expiresAt":  "2023-12-31T23:59:59Z",
+		"confidence": 0.95,
+		"context":    "colleague",
+		"active":     true,
+		"signature":  "should_be_removed",
 	}
 
 	t.Run("vouch with signature removal", func(t *testing.T) {
 		result, err := CanonicalizeStructToJSON(vouch, true)
 		require.NoError(t, err)
-		
+
 		var parsed map[string]interface{}
 		err = json.Unmarshal(result, &parsed)
 		require.NoError(t, err)
-		
+
 		_, hasSignature := parsed["signature"]
 		assert.False(t, hasSignature)
-		
+
 		assert.Equal(t, vouch["from"], parsed["from"])
 		assert.Equal(t, vouch["to"], parsed["to"])
 	})
@@ -326,14 +326,14 @@ func TestCanonicalizeJSON_DataTypes(t *testing.T) {
 				RemoveSignatureFields: false,
 			}
 			c := NewCanonicalizer(options)
-			
+
 			result, err := c.CanonicalizeToJSON(tt.input)
 			require.NoError(t, err)
-			
+
 			var parsed interface{}
 			err = json.Unmarshal(result, &parsed)
 			require.NoError(t, err)
-			
+
 			assert.Equal(t, tt.expected, parsed)
 		})
 	}
@@ -394,15 +394,15 @@ func TestCanonicalizeJSON_EdgeCases(t *testing.T) {
 				RemoveSignatureFields: false,
 			}
 			c := NewCanonicalizer(options)
-			
+
 			result, err := c.CanonicalizeToJSON(tt.input)
-			
+
 			if tt.wantErr {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
 				assert.NotNil(t, result)
-				
+
 				// Verify result is valid JSON
 				var parsed interface{}
 				err = json.Unmarshal(result, &parsed)
@@ -444,15 +444,15 @@ func TestCanonicalizeJSON_Unicode(t *testing.T) {
 				RemoveSignatureFields: false,
 			}
 			c := NewCanonicalizer(options)
-			
+
 			result, err := c.CanonicalizeToJSON(tt.input)
 			require.NoError(t, err)
-			
+
 			// Verify result is valid JSON
 			var parsed map[string]interface{}
 			err = json.Unmarshal(result, &parsed)
 			require.NoError(t, err)
-			
+
 			// Verify Unicode content is preserved
 			for key, expectedValue := range tt.input {
 				actualValue, exists := parsed[key]
@@ -513,14 +513,14 @@ func TestDeterministicOrdering(t *testing.T) {
 func TestHash(t *testing.T) {
 	canonical := []byte(`{"name":"test","value":123}`)
 	hash := Hash(canonical)
-	
+
 	assert.NotEmpty(t, hash)
 	assert.Len(t, hash, 64) // SHA256 hex string length
-	
+
 	// Same input should produce same hash
 	hash2 := Hash(canonical)
 	assert.Equal(t, hash, hash2)
-	
+
 	// Different input should produce different hash
 	differentCanonical := []byte(`{"name":"different","value":456}`)
 	differentHash := Hash(differentCanonical)

@@ -42,7 +42,7 @@ type AccountRepository struct {
 func NewAccountRepository(db core.DB, tableName string, domain string, logger *zap.Logger) *AccountRepository {
 	// Use cost tracking version of BaseRepository
 	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, nil, "AccountRepository")
-	
+
 	return &AccountRepository{
 		BaseRepository: baseRepo,
 		db:             db,
@@ -55,7 +55,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 // NewAccountRepositoryWithCostTracking creates a new account repository with cost tracking
 func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain string, logger *zap.Logger, costService *cost.TrackingService) *AccountRepository {
 	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, costService, "AccountRepository")
-	
+
 	return &AccountRepository{
 		BaseRepository: baseRepo,
 		db:             db,
@@ -137,7 +137,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		if err := r.createActor(ctx, actor, privateKey); err != nil {
 			// Rollback user creation (best effort)
 			pk := fmt.Sprintf("USER#%s", user.Username)
-			if delErr := r.Delete(ctx, pk, "METADATA"); delErr != nil {
+			if delErr := r.Delete(ctx, pk, models.SKMetadata); delErr != nil {
 				r.logger.Warn("failed to rollback user creation after actor failure", zap.Error(delErr))
 			}
 			return ErrorHandler.HandleCreateError(err, EntityActor, user.Username)
@@ -202,7 +202,7 @@ func (r *AccountRepository) DeleteAccount(ctx context.Context, username string) 
 
 	// Delete user using consistent key pattern
 	pk := fmt.Sprintf("USER#%s", username)
-	if err := r.Delete(ctx, pk, "METADATA"); err != nil {
+	if err := r.Delete(ctx, pk, models.SKMetadata); err != nil {
 		r.logger.Error("failed to delete user", zap.Error(err), zap.String("username", username))
 		return ErrorHandler.HandleDeleteError(err, EntityUser, username)
 	}
@@ -220,7 +220,7 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 	// Use consistent key pattern
 	pk := fmt.Sprintf("USER#%s", username)
 
-	err := r.Get(ctx, pk, "METADATA", user)
+	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			return nil, ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
@@ -256,7 +256,7 @@ func (r *AccountRepository) UpdateUser(ctx context.Context, username string, upd
 	// Get existing user
 	user := &models.User{}
 	pk := fmt.Sprintf("USER#%s", username)
-	err := r.Get(ctx, pk, "METADATA", user)
+	err := r.Get(ctx, pk, models.SKMetadata, user)
 	if err != nil {
 		if dynamormErrors.IsNotFound(err) {
 			return ErrorHandler.HandleGetError(errors.New("not found"), EntityUser, username)
@@ -523,7 +523,9 @@ func (r *AccountRepository) DeleteAccountPin(ctx context.Context, username, targ
 		Username:      username,
 		PinnedActorID: targetActorID,
 	}
-	pin.UpdateKeys()
+	if err := pin.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	err := r.db.WithContext(ctx).Model(&models.AccountPin{}).
 		Where("PK", "=", pin.PK).
@@ -583,7 +585,9 @@ func (r *AccountRepository) CreateAccountNote(ctx context.Context, note *storage
 
 	// Use upsert pattern - try to get existing first
 	var existing models.AccountNote
-	noteModel.UpdateKeys()
+	if err := noteModel.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	err := r.db.WithContext(ctx).Model(&existing).
 		Where("PK", "=", noteModel.PK).
 		Where("SK", "=", noteModel.SK).
@@ -829,13 +833,13 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 	// In a full implementation, this would use search indices or full-text search
 
 	var users []models.User
-	
+
 	// Apply limit
 	limit := opts.Limit
 	if err := common.ValidateQueryLimit(limit, 100, "user search"); err != nil {
 		limit = 20 // Default limit on validation error
 	}
-	
+
 	// Use the user list GSI (GSI1) which is more efficient than scanning
 	// This still requires client-side filtering but operates on a smaller dataset
 	queryBuilder := r.db.WithContext(ctx).Model(&models.User{}).
@@ -864,7 +868,7 @@ func (r *AccountRepository) SearchAccounts(ctx context.Context, query string, op
 			strings.Contains(strings.ToLower(user.DisplayName), queryLower) {
 			filteredUsers = append(filteredUsers, user)
 		}
-		
+
 		// Stop if we have enough results
 		if len(filteredUsers) >= opts.Limit {
 			break

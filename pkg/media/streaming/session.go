@@ -41,10 +41,10 @@ func NewSessionManager(repo MediaSessionRepository, logger *zap.Logger, costTrac
 	if err := common.ValidateRequiredParam("tableName", tableName); err != nil {
 		tableName = "lesser-main"
 	}
-	
+
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, logger, "SessionManager", "", "")
-	
+
 	return &SessionManager{
 		repo:           repo,
 		logger:         logger,

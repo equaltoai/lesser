@@ -26,7 +26,7 @@ import (
 // LegacyUserItem represents a user as stored in legacy DynamoDB format
 type LegacyUserItem map[string]interface{}
 
-// LegacyActorItem represents an actor as stored in legacy DynamoDB format  
+// LegacyActorItem represents an actor as stored in legacy DynamoDB format
 type LegacyActorItem map[string]interface{}
 
 // LegacyActivityItem represents an activity as stored in legacy DynamoDB format
@@ -293,7 +293,7 @@ func TestReadLegacyActorData(t *testing.T) {
 		actor.UpdatedAt = time.Now()
 		actor.NumericID = legacyItem["numeric_id"].(string)
 
-		// Parse follower counts  
+		// Parse follower counts
 		actor.FollowerCount = legacyItem["follower_count"].(int)
 		actor.FollowingCount = legacyItem["following_count"].(int)
 		actor.StatusCount = legacyItem["status_count"].(int)

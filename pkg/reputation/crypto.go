@@ -440,7 +440,7 @@ func canonicalizeJSON(v any) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("JSON-LD canonicalization failed: %w", err)
 	}
-	
+
 	return canonical, nil
 }
 

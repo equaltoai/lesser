@@ -79,9 +79,9 @@ func TestErrorResponseConsolidation(t *testing.T) {
 		t.Run(tc.name+"_with_custom_message", func(t *testing.T) {
 			customMessage := "Custom error message"
 			statusCode, response := tc.function(t, customMessage)
-			
+
 			assert.Equal(t, tc.expectedStatus, statusCode)
-			
+
 			// Special handling for functions that append text to custom messages
 			expectedError := customMessage
 			if tc.name == "RespondNotFound" {
@@ -89,13 +89,13 @@ func TestErrorResponseConsolidation(t *testing.T) {
 			} else if tc.name == "RespondServiceUnavailable" {
 				expectedError = customMessage + " service unavailable"
 			}
-			
+
 			assert.Equal(t, expectedError, response.Error)
 		})
 
 		t.Run(tc.name+"_with_default_message", func(t *testing.T) {
 			statusCode, response := tc.function(t, "")
-			
+
 			assert.Equal(t, tc.expectedStatus, statusCode)
 			assert.Equal(t, tc.defaultMessage, response.Error)
 		})
@@ -217,24 +217,24 @@ func parseResponse(t *testing.T, ctx *lift.Context) (int, StandardErrorResponse)
 	if response, ok := ctx.Response.Body.(StandardErrorResponse); ok {
 		return ctx.Response.StatusCode, response
 	}
-	
+
 	// Otherwise, try to parse as JSON bytes (following Lift testing pattern)
 	var response StandardErrorResponse
 	bodyBytes, ok := ctx.Response.Body.([]byte)
 	if !ok {
 		bodyBytes = []byte(fmt.Sprintf("%v", ctx.Response.Body))
 	}
-	
+
 	err := json.Unmarshal(bodyBytes, &response)
 	require.NoError(t, err, "Response should be valid JSON")
-	
+
 	return ctx.Response.StatusCode, response
 }
 
 // TestErrorResponseJSONStructure validates that all error responses produce valid JSON
 func TestErrorResponseJSONStructure(t *testing.T) {
 	ctx := liftTesting.MockLiftContext("GET", "/test")
-	
+
 	// Test that each response function produces valid JSON
 	errorFunctions := []func() error{
 		func() error { return RespondBadRequest(ctx, "test") },
@@ -251,10 +251,10 @@ func TestErrorResponseJSONStructure(t *testing.T) {
 	for i, fn := range errorFunctions {
 		t.Run(t.Name()+"_"+string(rune('A'+i)), func(t *testing.T) {
 			ctx = liftTesting.MockLiftContext("GET", "/test") // Reset context
-			
+
 			err := fn()
 			require.NoError(t, err)
-			
+
 			// Validate structure using our parseResponse helper
 			statusCode, response := parseResponse(t, ctx)
 			require.NotZero(t, statusCode, "Status code should be set")
@@ -288,10 +288,10 @@ func TestValidationErrorResponse(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := liftTesting.MockLiftContext("GET", "/test")
-			
+
 			err := RespondValidationError(ctx, tt.err)
 			require.NoError(t, err)
-			
+
 			statusCode, response := parseResponse(t, ctx)
 			assert.Equal(t, tt.expectedStatus, statusCode)
 			assert.Equal(t, tt.expectedError, response.Error)
@@ -350,7 +350,7 @@ func TestAuthHelperFunctions(t *testing.T) {
 				"X-Test-Username": "testuser",
 			}),
 		)
-		
+
 		username := GetTestUsername(ctx)
 		assert.Equal(t, "testuser", username)
 
@@ -367,7 +367,7 @@ func TestAuthHelperFunctions(t *testing.T) {
 				"Authorization": "Bearer token123",
 			}),
 		)
-		
+
 		authHeader := ExtractAuthHeader(ctx)
 		assert.Equal(t, "Bearer token123", authHeader)
 
@@ -377,7 +377,7 @@ func TestAuthHelperFunctions(t *testing.T) {
 				"authorization": "Bearer token456",
 			}),
 		)
-		
+
 		authHeader = ExtractAuthHeader(ctx)
 		assert.Equal(t, "Bearer token456", authHeader)
 
@@ -394,7 +394,7 @@ func TestScopeValidationHelpers(t *testing.T) {
 	type mockClaims struct {
 		scopes []string
 	}
-	
+
 	claims := &mockClaims{
 		scopes: []string{ScopeRead, WriteFollows},
 	}
@@ -412,10 +412,10 @@ func TestScopeValidationHelpers(t *testing.T) {
 	t.Run("scope validation", func(t *testing.T) {
 		// Test that user has read scope
 		assert.True(t, hasScope(ScopeRead))
-		
+
 		// Test that user doesn't have write scope
 		assert.False(t, hasScope(ScopeWrite))
-		
+
 		// Test that user has write:follows scope
 		assert.True(t, hasScope(WriteFollows))
 	})
@@ -443,10 +443,10 @@ func TestEndToEndErrorConsolidation(t *testing.T) {
 		for name, testCase := range errorFunctions {
 			t.Run("status_"+name, func(t *testing.T) {
 				ctx := liftTesting.MockLiftContext("GET", "/test")
-				
+
 				err := testCase.fn(ctx)
 				require.NoError(t, err)
-				
+
 				// All responses should have the same JSON structure
 				statusCode, response := parseResponse(t, ctx)
 				require.NotZero(t, statusCode, "Status code should be set")

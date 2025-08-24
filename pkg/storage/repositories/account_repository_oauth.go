@@ -13,6 +13,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// OAuth field constants
+const (
+	FieldName         = "name"
+	FieldWebsite      = "website"
+	FieldRedirectURIs = "redirect_uris"
+	FieldScopes       = "scopes"
+)
+
 // ===== OAuth Methods =====
 // This file contains OAuth-related methods for the AccountRepository
 
@@ -38,7 +46,7 @@ func (r *AccountRepository) StoreOAuthState(ctx context.Context, state string, d
 	}
 
 	// Update keys
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the item
 	err := r.db.WithContext(ctx).Model(model).Create()
@@ -317,29 +325,29 @@ func (r *AccountRepository) UpdateOAuthClient(ctx context.Context, clientID stri
 
 	// Only allow specific fields to be updated
 	allowedFields := map[string]bool{
-		"name":          true,
-		"website":       true,
-		"redirect_uris": true,
-		"scopes":        true,
+		FieldName:         true,
+		FieldWebsite:      true,
+		FieldRedirectURIs: true,
+		FieldScopes:       true,
 	}
 
 	// Apply updates to the model
 	for key, value := range updates {
 		if allowedFields[key] {
 			switch key {
-			case "name":
+			case FieldName:
 				if v, ok := value.(string); ok {
 					existingClient.Name = v
 				}
-			case "website":
+			case FieldWebsite:
 				if v, ok := value.(string); ok {
 					existingClient.Website = v
 				}
-			case "redirect_uris":
+			case FieldRedirectURIs:
 				if v, ok := value.([]string); ok {
 					existingClient.RedirectURIs = v
 				}
-			case "scopes":
+			case FieldScopes:
 				if v, ok := value.([]string); ok {
 					existingClient.Scopes = v
 				}

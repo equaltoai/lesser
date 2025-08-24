@@ -94,7 +94,7 @@ func (pm *ProductionMonitor) LiftMiddleware() lift.Middleware {
 			tracker := cost.NewWithRequest(requestID, "api")
 			ctxWithCost := cost.WithTracker(ctx.Context, tracker)
 			ctx.Context = ctxWithCost
-			
+
 			// Also attach unified tracker for enhanced cost tracking
 			unifiedTracker := cost.NewUnifiedTracker(nil, pm.logger, ctx.GetUserID(), requestID)
 			ctx.Set("unified_cost_tracker", unifiedTracker)
@@ -249,12 +249,12 @@ func (pm *ProductionMonitor) recordCostMetrics(ctx context.Context, operation st
 		// Process unified tracker costs - simplified for now
 		totalCost := unifiedTracker.GetCurrentCostMicroCents()
 		costBreakdown := unifiedTracker.GetCostBreakdown()
-		pm.logger.Debug("unified cost tracking", 
+		pm.logger.Debug("unified cost tracking",
 			zap.Int64("total_cost_microcents", totalCost),
 			zap.Any("cost_breakdown", costBreakdown))
 		return
 	}
-	
+
 	// Fall back to existing cost tracker pattern
 	costTracker := cost.FromContext(ctx)
 	if costTracker == nil {

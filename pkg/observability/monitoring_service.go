@@ -10,10 +10,10 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
+	awsinit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	awsinit "github.com/equaltoai/lesser/pkg/aws"
 )
 
 // MonitoringService provides centralized monitoring and alerting configuration
@@ -22,39 +22,39 @@ type MonitoringService struct {
 	alertingSystem *AlertingSystem
 	latencyAlerter *LatencyAlerter
 	enabled        bool
-	
+
 	// Configuration
-	environment    string
-	serviceName    string
-	region         string
-	
+	environment string
+	serviceName string
+	region      string
+
 	// Alert routing configuration
-	alertRoutes    map[string]*AlertRoute
-	defaultRoute   *AlertRoute
+	alertRoutes  map[string]*AlertRoute
+	defaultRoute *AlertRoute
 }
 
 // AlertRoute defines how alerts should be routed based on criteria
 type AlertRoute struct {
-	Name            string              `json:"name"`
-	Description     string              `json:"description"`
-	Enabled         bool                `json:"enabled"`
-	
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Enabled     bool   `json:"enabled"`
+
 	// Matching criteria
-	AlertTypes      []string            `json:"alert_types,omitempty"`     // error_rate, latency, cost, etc.
-	SeverityLevels  []string            `json:"severity_levels,omitempty"` // critical, error, warning, info
-	Services        []string            `json:"services,omitempty"`        // api, federation, etc.
-	Priorities      []string            `json:"priorities,omitempty"`      // P0, P1, P2, P3
-	
+	AlertTypes     []string `json:"alert_types,omitempty"`     // error_rate, latency, cost, etc.
+	SeverityLevels []string `json:"severity_levels,omitempty"` // critical, error, warning, info
+	Services       []string `json:"services,omitempty"`        // api, federation, etc.
+	Priorities     []string `json:"priorities,omitempty"`      // P0, P1, P2, P3
+
 	// Delivery configuration
-	WebhookURLs     []string            `json:"webhook_urls"`
-	SNSTopicARNs    []string            `json:"sns_topic_arns,omitempty"`
-	EmailAddresses  []string            `json:"email_addresses,omitempty"`
-	SlackChannels   []string            `json:"slack_channels,omitempty"`
-	
+	WebhookURLs    []string `json:"webhook_urls"`
+	SNSTopicARNs   []string `json:"sns_topic_arns,omitempty"`
+	EmailAddresses []string `json:"email_addresses,omitempty"`
+	SlackChannels  []string `json:"slack_channels,omitempty"`
+
 	// Timing and throttling
-	Throttle        *ThrottleConfig     `json:"throttle,omitempty"`
-	Schedule        *ScheduleConfig     `json:"schedule,omitempty"`
-	EscalationRules []*EscalationRule   `json:"escalation_rules,omitempty"`
+	Throttle        *ThrottleConfig   `json:"throttle,omitempty"`
+	Schedule        *ScheduleConfig   `json:"schedule,omitempty"`
+	EscalationRules []*EscalationRule `json:"escalation_rules,omitempty"`
 }
 
 // ThrottleConfig controls alert throttling
@@ -69,8 +69,8 @@ type ThrottleConfig struct {
 type ScheduleConfig struct {
 	BusinessHoursOnly bool     `json:"business_hours_only"`
 	Timezone          string   `json:"timezone"`
-	BusinessHours     string   `json:"business_hours"` // e.g., "9:00-17:00"
-	BusinessDays      []string `json:"business_days"`  // e.g., ["mon", "tue", "wed", "thu", "fri"]
+	BusinessHours     string   `json:"business_hours"`  // e.g., "9:00-17:00"
+	BusinessDays      []string `json:"business_days"`   // e.g., ["mon", "tue", "wed", "thu", "fri"]
 	SuppressDuring    []string `json:"suppress_during"` // Maintenance windows
 }
 
@@ -88,24 +88,24 @@ type MonitoringServiceConfig struct {
 	DB          core.DB
 	TableName   string
 	CostService *cost.TrackingService
-	
+
 	// AWS services
 	SNSClient   *sns.Client
 	SNSTopicArn string
-	
+
 	// Webhook configuration
 	WebhookURL     string
 	WebhookHeaders map[string]string
-	
+
 	// Service identification
 	Environment string
 	ServiceName string
 	Region      string
-	
+
 	// Alert routing
 	AlertRoutes  []*AlertRoute
 	DefaultRoute *AlertRoute
-	
+
 	Enabled bool
 }
 
@@ -114,7 +114,7 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 	if monitoringConfig.Logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	
+
 	// Set defaults from centralized config
 	globalCfg := config.Get()
 	if monitoringConfig.Environment == "" {
@@ -126,7 +126,7 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 	if monitoringConfig.Region == "" {
 		monitoringConfig.Region = globalCfg.Region
 	}
-	
+
 	// Create alerting system
 	alertingConfig := &AlertingConfig{
 		Logger:         monitoringConfig.Logger,
@@ -142,34 +142,34 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 		ServiceName:    monitoringConfig.ServiceName,
 		Enabled:        monitoringConfig.Enabled,
 	}
-	
+
 	alertingSystem, err := NewAlertingSystem(alertingConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create alerting system: %w", err)
 	}
-	
+
 	// Create latency alerter
 	createMetricFn := func(_ context.Context, metric *models.MetricRecord) error {
-		monitoringConfig.Logger.Debug("storing monitoring metric", 
+		monitoringConfig.Logger.Debug("storing monitoring metric",
 			zap.String("metric_type", metric.MetricType),
 			zap.String("service_name", metric.ServiceName))
 		return nil
 	}
 	metricsRecorder := NewDefaultMetricsRecorder(createMetricFn, monitoringConfig.ServiceName)
 	latencyAlerter := NewLatencyAlerter(monitoringConfig.Logger, metricsRecorder)
-	
+
 	// Set up alert routes
 	alertRoutes := make(map[string]*AlertRoute)
 	for _, route := range monitoringConfig.AlertRoutes {
 		alertRoutes[route.Name] = route
 	}
-	
+
 	// Create default route if not provided
 	defaultRoute := monitoringConfig.DefaultRoute
 	if defaultRoute == nil {
 		defaultRoute = createDefaultAlertRoute(monitoringConfig.WebhookURL, monitoringConfig.SNSTopicArn)
 	}
-	
+
 	ms := &MonitoringService{
 		logger:         monitoringConfig.Logger,
 		alertingSystem: alertingSystem,
@@ -181,7 +181,7 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 		alertRoutes:    alertRoutes,
 		defaultRoute:   defaultRoute,
 	}
-	
+
 	return ms, nil
 }
 
@@ -194,10 +194,10 @@ func NewMonitoringServiceFromEnv(logger *zap.Logger, db core.DB) (*MonitoringSer
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize AWS services: %w", err)
 	}
-	
+
 	// Get centralized configuration
 	globalCfg := config.Get()
-	
+
 	monitoringConfig := &MonitoringServiceConfig{
 		Logger:      logger,
 		DB:          db,
@@ -210,10 +210,10 @@ func NewMonitoringServiceFromEnv(logger *zap.Logger, db core.DB) (*MonitoringSer
 		},
 		Enabled: globalCfg.MonitoringEnabled,
 	}
-	
+
 	// Add default alert routes
 	monitoringConfig.AlertRoutes = createDefaultAlertRoutes()
-	
+
 	return NewMonitoringService(monitoringConfig)
 }
 
@@ -225,13 +225,13 @@ func (ms *MonitoringService) SendAlert(ctx context.Context, alertReq *AlertReque
 			zap.String("title", alertReq.Title))
 		return nil
 	}
-	
+
 	// Find matching route
 	route := ms.findMatchingRoute(alertReq)
 	if route == nil {
 		route = ms.defaultRoute
 	}
-	
+
 	if route == nil || !route.Enabled {
 		ms.logger.Debug("no enabled route found for alert",
 			zap.String("type", alertReq.Type),
@@ -239,7 +239,7 @@ func (ms *MonitoringService) SendAlert(ctx context.Context, alertReq *AlertReque
 			zap.String("service", alertReq.Service))
 		return nil
 	}
-	
+
 	// Check throttling
 	if route.Throttle != nil && ms.shouldThrottleAlert(alertReq, route.Throttle) {
 		ms.logger.Debug("alert throttled",
@@ -247,7 +247,7 @@ func (ms *MonitoringService) SendAlert(ctx context.Context, alertReq *AlertReque
 			zap.String("route", route.Name))
 		return nil
 	}
-	
+
 	// Check schedule
 	if route.Schedule != nil && ms.shouldSuppressAlertBySchedule(alertReq, route.Schedule) {
 		ms.logger.Debug("alert suppressed by schedule",
@@ -255,7 +255,7 @@ func (ms *MonitoringService) SendAlert(ctx context.Context, alertReq *AlertReque
 			zap.String("route", route.Name))
 		return nil
 	}
-	
+
 	// Send alert through alerting system
 	err := ms.alertingSystem.SendAlert(ctx, alertReq)
 	if err != nil {
@@ -265,13 +265,13 @@ func (ms *MonitoringService) SendAlert(ctx context.Context, alertReq *AlertReque
 			zap.Error(err))
 		return err
 	}
-	
+
 	ms.logger.Info("alert routed successfully",
 		zap.String("type", alertReq.Type),
 		zap.String("severity", alertReq.Severity),
 		zap.String("route", route.Name),
 		zap.String("service", alertReq.Service))
-	
+
 	return nil
 }
 
@@ -312,22 +312,22 @@ func (ms *MonitoringService) GetActiveAlerts(ctx context.Context, limit int) ([]
 	if err != nil {
 		return nil, err
 	}
-	
+
 	summaries := make([]*AlertSummary, len(alerts))
 	for i, alert := range alerts {
 		summaries[i] = &AlertSummary{
-			AlertID:     alert.AlertID,
-			Type:        alert.Type,
-			Severity:    alert.Severity,
-			Priority:    alert.Priority,
-			Status:      alert.Status,
-			Title:       alert.Title,
-			Service:     alert.Service,
-			FiredAt:     alert.FiredAt,
-			RunbookURL:  alert.RunbookURL,
+			AlertID:    alert.AlertID,
+			Type:       alert.Type,
+			Severity:   alert.Severity,
+			Priority:   alert.Priority,
+			Status:     alert.Status,
+			Title:      alert.Title,
+			Service:    alert.Service,
+			FiredAt:    alert.FiredAt,
+			RunbookURL: alert.RunbookURL,
 		}
 	}
-	
+
 	return summaries, nil
 }
 
@@ -366,22 +366,22 @@ func (ms *MonitoringService) routeMatches(route *AlertRoute, alertReq *AlertRequ
 	if len(route.AlertTypes) > 0 && !stringInSlice(alertReq.Type, route.AlertTypes) {
 		return false
 	}
-	
+
 	// Check severity
 	if len(route.SeverityLevels) > 0 && !stringInSlice(alertReq.Severity, route.SeverityLevels) {
 		return false
 	}
-	
+
 	// Check service
 	if len(route.Services) > 0 && !stringInSlice(alertReq.Service, route.Services) {
 		return false
 	}
-	
+
 	// Check priority
 	if len(route.Priorities) > 0 && !stringInSlice(alertReq.Priority, route.Priorities) {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -431,15 +431,15 @@ func createDefaultAlertRoute(webhookURL, snsTopicArn string) *AlertRoute {
 			GroupBy:            []string{"service", "type"},
 		},
 	}
-	
+
 	if webhookURL != "" {
 		route.WebhookURLs = append(route.WebhookURLs, webhookURL)
 	}
-	
+
 	if snsTopicArn != "" {
 		route.SNSTopicARNs = append(route.SNSTopicARNs, snsTopicArn)
 	}
-	
+
 	return route
 }
 

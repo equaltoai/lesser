@@ -18,31 +18,31 @@ import (
 
 // ShutdownManager manages graceful shutdown of WebSocket connections and backpressure control
 type ShutdownManager struct {
-	connRepo    *repositories.StreamingConnectionRepository
-	apiClient   *apigatewaymanagementapi.Client
-	logger      *zap.Logger
+	connRepo  *repositories.StreamingConnectionRepository
+	apiClient *apigatewaymanagementapi.Client
+	logger    *zap.Logger
 
 	// Shutdown management
-	shutdownTimeout    time.Duration
-	drainTimeout       time.Duration
-	isShuttingDown     bool
-	shutdownStarted    time.Time
-	
+	shutdownTimeout time.Duration
+	drainTimeout    time.Duration
+	isShuttingDown  bool
+	shutdownStarted time.Time
+
 	// Backpressure management
 	backpressureConfig *BackpressureConfig
 	rateLimiter        *RateLimiter
-	
-	mu                 sync.RWMutex
-	wg                 sync.WaitGroup
+
+	mu sync.RWMutex
+	wg sync.WaitGroup
 }
 
 // BackpressureConfig contains configuration for backpressure management
 type BackpressureConfig struct {
 	MaxConcurrentMessages int           `json:"max_concurrent_messages"` // Maximum concurrent message processing
 	MessageQueueSize      int           `json:"message_queue_size"`      // Maximum queued messages per connection
-	ProcessingTimeout     time.Duration `json:"processing_timeout"`     // Timeout for message processing
-	DropStrategy          DropStrategy  `json:"drop_strategy"`          // Strategy when queue is full
-	EnableAdaptive        bool          `json:"enable_adaptive"`        // Enable adaptive backpressure
+	ProcessingTimeout     time.Duration `json:"processing_timeout"`      // Timeout for message processing
+	DropStrategy          DropStrategy  `json:"drop_strategy"`           // Strategy when queue is full
+	EnableAdaptive        bool          `json:"enable_adaptive"`         // Enable adaptive backpressure
 }
 
 // DropStrategy defines how to handle messages when backpressure is applied
@@ -61,17 +61,17 @@ const (
 
 // RateLimiter implements a token bucket rate limiter for backpressure control
 type RateLimiter struct {
-	capacity     int           // Maximum tokens
-	tokens       int           // Current tokens
-	refillRate   int           // Tokens per second
-	lastRefill   time.Time     // Last refill time
-	mu           sync.Mutex
+	capacity   int       // Maximum tokens
+	tokens     int       // Current tokens
+	refillRate int       // Tokens per second
+	lastRefill time.Time // Last refill time
+	mu         sync.Mutex
 }
 
 // ShutdownManagerConfig contains configuration for shutdown management
 type ShutdownManagerConfig struct {
-	ShutdownTimeout time.Duration    // Total time to wait for graceful shutdown
-	DrainTimeout    time.Duration    // Time to wait for connection draining
+	ShutdownTimeout time.Duration       // Total time to wait for graceful shutdown
+	DrainTimeout    time.Duration       // Time to wait for connection draining
 	Backpressure    *BackpressureConfig // Backpressure configuration
 }
 
@@ -176,29 +176,29 @@ func (sm *ShutdownManager) executeGracefulShutdown(ctx context.Context) {
 // stopAcceptingConnections marks the system as not accepting new connections
 func (sm *ShutdownManager) stopAcceptingConnections(ctx context.Context) error {
 	sm.logger.Info("stopping acceptance of new connections")
-	
+
 	// Implementation for serverless WebSocket (AWS API Gateway):
 	// 1. Mark this instance as draining in DynamoDB
 	// 2. Update health check endpoints to return unhealthy
 	// 3. Stop processing new connection requests
-	
+
 	sm.mu.Lock()
 	sm.isShuttingDown = true
 	sm.shutdownStarted = time.Now()
 	sm.mu.Unlock()
-	
+
 	// Mark instance as draining in storage
 	if err := sm.markInstanceDraining(ctx); err != nil {
 		sm.logger.Error("failed to mark instance as draining", zap.Error(err))
 		return err
 	}
-	
+
 	// Send notification to load balancer / health checks
 	if err := sm.notifyHealthCheckFailure(ctx); err != nil {
 		sm.logger.Warn("failed to notify health check failure", zap.Error(err))
 		// Non-fatal error - continue with shutdown
 	}
-	
+
 	sm.logger.Info("new connection acceptance stopped")
 	return nil
 }
@@ -265,9 +265,9 @@ func (sm *ShutdownManager) sendDrainNotification(ctx context.Context, conn *mode
 
 	// Create drain notification message (simplified implementation)
 	_ = map[string]interface{}{
-		"type":    "server_drain",
-		"message": "Server is shutting down, please reconnect to another instance",
-		"timeout": int(sm.drainTimeout.Seconds()),
+		"type":      "server_drain",
+		"message":   "Server is shutting down, please reconnect to another instance",
+		"timeout":   int(sm.drainTimeout.Seconds()),
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	}
 
@@ -317,7 +317,7 @@ func (sm *ShutdownManager) waitForConnectionDrain(ctx context.Context, initialCo
 			}
 
 			drainedCount := initialCount - len(remaining)
-			
+
 			if err := common.ValidateSliceNotEmpty("remaining", remaining); err != nil {
 				sm.logger.Info("all connections drained successfully",
 					zap.Int("total_drained", drainedCount))
@@ -384,7 +384,7 @@ func (sm *ShutdownManager) forceCloseConnection(ctx context.Context, conn *model
 // WaitForShutdown waits for the graceful shutdown process to complete
 func (sm *ShutdownManager) WaitForShutdown() error {
 	sm.wg.Wait()
-	
+
 	sm.mu.RLock()
 	duration := time.Since(sm.shutdownStarted)
 	sm.mu.RUnlock()
@@ -446,14 +446,14 @@ func (sm *ShutdownManager) checkConnectionBackpressure(connectionID string, mess
 	// 2. Check processing latency
 	// 3. Apply adaptive backpressure based on connection quality
 	// 4. Implement the configured drop strategy
-	
+
 	// Basic size check (use hardcoded limit for now)
 	maxMessageSize := int64(64 * 1024) // 64KB max message size
 	if messageSize > maxMessageSize {
-		return BackpressureReject, fmt.Errorf("message size %d exceeds maximum %d", 
+		return BackpressureReject, fmt.Errorf("message size %d exceeds maximum %d",
 			messageSize, maxMessageSize)
 	}
-	
+
 	// Get connection for quality assessment
 	ctx := context.Background()
 	conn, err := sm.connRepo.GetConnection(ctx, connectionID)
@@ -461,20 +461,20 @@ func (sm *ShutdownManager) checkConnectionBackpressure(connectionID string, mess
 		// If we can't get connection info, apply conservative backpressure
 		return BackpressureDelay, fmt.Errorf("unable to assess connection quality: %w", err)
 	}
-	
+
 	// Check connection quality
 	if conn.Metrics.ConnectionQuality < 0.3 {
 		// Poor quality connections get aggressive backpressure
 		return BackpressureDelay, fmt.Errorf("connection quality too low: %f", conn.Metrics.ConnectionQuality)
 	}
-	
+
 	// Check rate limiting
 	if sm.rateLimiter != nil {
 		if !sm.rateLimiter.AllowRequest() {
 			return BackpressureDelay, fmt.Errorf("rate limit exceeded for connection")
 		}
 	}
-	
+
 	// Check system load
 	systemLoad := sm.getSystemLoad()
 	if systemLoad > 0.8 { // 80% system load
@@ -483,7 +483,7 @@ func (sm *ShutdownManager) checkConnectionBackpressure(connectionID string, mess
 			return BackpressureDelay, fmt.Errorf("system under high load, delaying large message")
 		}
 	}
-	
+
 	return BackpressureAllow, nil
 }
 
@@ -546,9 +546,9 @@ func (sm *ShutdownManager) GetShutdownStats() map[string]interface{} {
 	sm.mu.RUnlock()
 
 	stats := map[string]interface{}{
-		"is_shutting_down":  isShuttingDown,
-		"shutdown_timeout":  sm.shutdownTimeout.String(),
-		"drain_timeout":     sm.drainTimeout.String(),
+		"is_shutting_down": isShuttingDown,
+		"shutdown_timeout": sm.shutdownTimeout.String(),
+		"drain_timeout":    sm.drainTimeout.String(),
 	}
 
 	if isShuttingDown && !shutdownStarted.IsZero() {
@@ -564,7 +564,7 @@ func (sm *ShutdownManager) markInstanceDraining(_ context.Context) error {
 	// For serverless, we could store instance state in DynamoDB
 	// This helps coordinate graceful shutdown across multiple Lambda instances
 	sm.logger.Info("marking instance as draining")
-	
+
 	// In a Lambda/serverless environment, this could store state in DynamoDB
 	// to coordinate with other instances or load balancers
 	return nil
@@ -573,33 +573,33 @@ func (sm *ShutdownManager) markInstanceDraining(_ context.Context) error {
 // notifyHealthCheckFailure notifies health check systems of shutdown
 func (sm *ShutdownManager) notifyHealthCheckFailure(_ context.Context) error {
 	sm.logger.Info("notifying health check systems of shutdown")
-	
+
 	// For AWS Lambda + API Gateway, this could:
 	// 1. Update a DynamoDB health status record
 	// 2. Send CloudWatch metrics indicating unhealthy state
 	// 3. Update Route 53 health checks if using custom health endpoints
-	
+
 	return nil
 }
 
 // getSystemLoad returns current system load (0.0 to 1.0)
 func (sm *ShutdownManager) getSystemLoad() float64 {
 	// For serverless environments, calculate load based on available metrics
-	
+
 	load := 0.0
-	
+
 	// 1. Memory pressure (if available via runtime stats)
 	memLoad := sm.getMemoryLoad()
 	load += memLoad * 0.4 // 40% weight
-	
+
 	// 2. Goroutine count (proxy for concurrent processing)
 	goroutineLoad := sm.getGoroutineLoad()
 	load += goroutineLoad * 0.3 // 30% weight
-	
+
 	// 3. Rate limiter token availability
 	rateLimiterLoad := sm.getRateLimiterLoad()
 	load += rateLimiterLoad * 0.3 // 30% weight
-	
+
 	// Clamp to valid range
 	if load > 1.0 {
 		load = 1.0
@@ -607,7 +607,7 @@ func (sm *ShutdownManager) getSystemLoad() float64 {
 	if load < 0.0 {
 		load = 0.0
 	}
-	
+
 	return load
 }
 
@@ -616,43 +616,43 @@ func (sm *ShutdownManager) getMemoryLoad() float64 {
 	// Use runtime memory stats to calculate memory pressure
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	// Calculate memory usage ratio
 	// In Lambda, we have limited memory (configurable: 128MB - 10GB)
 	// We'll assume 512MB as baseline and scale accordingly
-	
+
 	heapInUse := float64(m.HeapInuse)
 	heapSys := float64(m.HeapSys)
-	
+
 	if heapSys == 0 {
 		return 0.0
 	}
-	
+
 	// Memory pressure based on heap utilization
 	memoryRatio := heapInUse / heapSys
-	
+
 	// Add pressure for high GC activity
 	if m.NumGC > 0 {
 		// Recent GC activity indicates memory pressure
 		gcPressure := float64(m.GCCPUFraction)
 		memoryRatio += gcPressure * 0.5
 	}
-	
+
 	return memoryRatio
 }
 
 // getGoroutineLoad calculates load based on goroutine count (0.0 to 1.0)
 func (sm *ShutdownManager) getGoroutineLoad() float64 {
 	numGoroutines := float64(runtime.NumGoroutine())
-	
+
 	// Typical healthy goroutine count for WebSocket service: 10-100
 	// High load threshold: 500+ goroutines
 	maxHealthyGoroutines := 100.0
-	
+
 	if numGoroutines <= maxHealthyGoroutines {
 		return numGoroutines / maxHealthyGoroutines
 	}
-	
+
 	// Logarithmic scaling for high goroutine counts
 	// This prevents the load from spiking too aggressively
 	return 1.0 - (1.0 / (1.0 + (numGoroutines-maxHealthyGoroutines)/100.0))
@@ -663,16 +663,16 @@ func (sm *ShutdownManager) getRateLimiterLoad() float64 {
 	if sm.rateLimiter == nil {
 		return 0.0
 	}
-	
+
 	sm.rateLimiter.mu.Lock()
 	tokens := float64(sm.rateLimiter.tokens)
 	capacity := float64(sm.rateLimiter.capacity)
 	sm.rateLimiter.mu.Unlock()
-	
+
 	if capacity == 0 {
 		return 1.0 // No capacity means high load
 	}
-	
+
 	// Inverted: low tokens = high load
 	return 1.0 - (tokens / capacity)
 }

@@ -71,7 +71,7 @@ func (f *FederationInstanceRegistry) UpdateKeys() error {
 
 	// Set TTL (1 year from now)
 	f.TTL = time.Now().Add(365 * 24 * time.Hour).Unix()
-	
+
 	return nil
 }
 

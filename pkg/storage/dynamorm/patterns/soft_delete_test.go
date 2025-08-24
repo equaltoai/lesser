@@ -251,7 +251,7 @@ func TestSoftDeleteRepository_Get(t *testing.T) {
 			// Simulate finding an active item
 			m := args.Get(0).(*ExampleModel)
 			m.PK = "EXAMPLE#test-id"
-			m.SK = "PROFILE" 
+			m.SK = "PROFILE"
 			m.ID = "test-id"
 			m.DeletedAt = nil // Not deleted
 		})
@@ -320,9 +320,9 @@ func TestSoftDeleteRepository_Stats(t *testing.T) {
 
 	db.On("WithContext", mock.Anything).Return(db).Maybe()
 	db.On("Model", model).Return(query).Maybe()
-	query.On("Count").Return(int64(100), nil).Once()                                         // Total count
+	query.On("Count").Return(int64(100), nil).Once()                                           // Total count
 	query.On("Where", "deleted_at", "attribute_exists", interface{}(nil)).Return(query).Once() // Deleted filter
-	query.On("Count").Return(int64(15), nil).Once()                                          // Deleted count
+	query.On("Count").Return(int64(15), nil).Once()                                            // Deleted count
 
 	stats, err := repo.GetSoftDeleteStats(context.Background(), model)
 	assert.NoError(t, err)
@@ -332,7 +332,7 @@ func TestSoftDeleteRepository_Stats(t *testing.T) {
 	assert.Equal(t, 15.0, stats.GetDeletionPercentage())
 }
 
-// TestSoftDeleteRepository_Cleanup tests cleanup functionality  
+// TestSoftDeleteRepository_Cleanup tests cleanup functionality
 func TestSoftDeleteRepository_Cleanup(t *testing.T) {
 	db := &MockDynamORMDB{}
 	query := &MockQuery{}

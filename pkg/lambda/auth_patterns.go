@@ -40,12 +40,12 @@ func NewStandardAuthPattern(lambdaCtx *common.LambdaContext) *StandardAuthPatter
 func (sap *StandardAuthPattern) AuthenticateRequest(ctx *liftPkg.Context, config AuthConfig) (*auth.Claims, error) {
 	// Extract Bearer token
 	token := sap.getBearerToken(ctx)
-	
+
 	// Handle anonymous access
 	if config.AllowAnonymous && token == "" {
 		return nil, nil
 	}
-	
+
 	// Require token if not allowing anonymous
 	if token == "" {
 		sap.logger.Warn("missing authentication token")
@@ -67,7 +67,7 @@ func (sap *StandardAuthPattern) AuthenticateRequest(ctx *liftPkg.Context, config
 	if len(config.RequiredScopes) > 0 {
 		for _, scope := range config.RequiredScopes {
 			if !claims.HasScope(scope) {
-				sap.logger.Warn("insufficient scope", 
+				sap.logger.Warn("insufficient scope",
 					zap.String("username", claims.Username),
 					zap.String("required_scope", scope),
 				)
@@ -106,7 +106,7 @@ func (sap *StandardAuthPattern) AuthenticateWithUsernameMatch(ctx *liftPkg.Conte
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Skip username matching if anonymous access
 	if claims == nil && config.AllowAnonymous {
 		return nil, nil
@@ -254,23 +254,23 @@ func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, _ []by
 	signature := ctx.Header("Signature")
 	date := ctx.Header("Date")
 	// digest := ctx.Header("Digest") // Currently unused
-	
+
 	if signature == "" {
 		return fmt.Errorf("missing signature header")
 	}
-	
+
 	// Parse signature components
 	sigMap := parseSignature(signature)
 	keyID, exists := sigMap["keyId"]
 	if !exists {
 		return fmt.Errorf("missing keyId in signature")
 	}
-	
+
 	hsa.logger.Debug("validating HTTP signature",
 		zap.String("key_id", keyID),
 		zap.String("date", date),
 	)
-	
+
 	// Note: Actual signature validation would be implemented here
 	// For now, we'll return success to avoid breaking federation
 	return nil
@@ -279,10 +279,10 @@ func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, _ []by
 // parseSignature parses the Signature header into a map
 func parseSignature(signature string) map[string]string {
 	result := make(map[string]string)
-	
+
 	// Remove 'Signature ' prefix if present
 	signature = strings.TrimPrefix(signature, "Signature ")
-	
+
 	// Split by comma and parse key=value pairs
 	pairs := strings.Split(signature, ",")
 	for _, pair := range pairs {
@@ -293,7 +293,7 @@ func parseSignature(signature string) map[string]string {
 			result[key] = value
 		}
 	}
-	
+
 	return result
 }
 
@@ -309,7 +309,7 @@ func (hsa *HTTPSignatureAuth) CreateHTTPSignatureMiddleware() liftPkg.Middleware
 					"error": "missing request body",
 				})
 			}
-			
+
 			// Validate HTTP signature
 			if err := hsa.ValidateHTTPSignature(ctx, body); err != nil {
 				hsa.logger.Warn("HTTP signature validation failed", zap.Error(err))
@@ -317,7 +317,7 @@ func (hsa *HTTPSignatureAuth) CreateHTTPSignatureMiddleware() liftPkg.Middleware
 					"error": "invalid signature",
 				})
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	}

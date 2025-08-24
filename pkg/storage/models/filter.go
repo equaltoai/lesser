@@ -12,17 +12,17 @@ type Filter struct {
 	SK string `dynamorm:"sk"` // FILTER#filterID
 
 	// Filter fields
-	ID           string     `json:"id"`            // Unique filter ID
-	Username     string     `json:"username"`      // Owner of the filter
-	Title        string     `json:"title"`         // Human-readable title
-	Context        []string   `json:"context"`         // Where to apply: home, notifications, public, thread, account
-	FilterAction   string     `json:"filter_action"`   // Action to take: warn, hide, blur, silence, limit_reach
-	Severity       string     `json:"severity"`        // Filter severity: low, medium, high
-	MatchMode      string     `json:"match_mode"`      // Matching mode: keyword, regex, semantic, exact
-	CaseSensitive  bool       `json:"case_sensitive"`  // Case-sensitive matching
-	ExpiresAt      *time.Time `json:"expires_at"`      // Optional expiration
-	CreatedAt    time.Time  `json:"created_at"`    // Creation timestamp
-	UpdatedAt    time.Time  `json:"updated_at"`    // Last update timestamp
+	ID            string     `json:"id"`             // Unique filter ID
+	Username      string     `json:"username"`       // Owner of the filter
+	Title         string     `json:"title"`          // Human-readable title
+	Context       []string   `json:"context"`        // Where to apply: home, notifications, public, thread, account
+	FilterAction  string     `json:"filter_action"`  // Action to take: warn, hide, blur, silence, limit_reach
+	Severity      string     `json:"severity"`       // Filter severity: low, medium, high
+	MatchMode     string     `json:"match_mode"`     // Matching mode: keyword, regex, semantic, exact
+	CaseSensitive bool       `json:"case_sensitive"` // Case-sensitive matching
+	ExpiresAt     *time.Time `json:"expires_at"`     // Optional expiration
+	CreatedAt     time.Time  `json:"created_at"`     // Creation timestamp
+	UpdatedAt     time.Time  `json:"updated_at"`     // Last update timestamp
 }
 
 // TableName returns the DynamoDB table name
@@ -69,14 +69,14 @@ type FilterKeyword struct {
 	SK string `dynamorm:"sk"` // KEYWORD#keywordID
 
 	// Keyword fields
-	ID            string    `json:"id"`             // Unique keyword ID
-	FilterID      string    `json:"filter_id"`      // Parent filter ID
-	Keyword       string    `json:"keyword"`        // The keyword to filter
-	WholeWord     bool      `json:"whole_word"`     // Match whole word only
-	IsRegex       bool      `json:"is_regex"`       // Whether keyword is a regex pattern
-	MatchWeight   float64   `json:"match_weight"`   // Weight for scoring matches (0.0-1.0)
-	ContextTypes  []string  `json:"context_types"`  // Specific contexts where this keyword applies
-	CreatedAt     time.Time `json:"created_at"`     // Creation timestamp
+	ID           string    `json:"id"`            // Unique keyword ID
+	FilterID     string    `json:"filter_id"`     // Parent filter ID
+	Keyword      string    `json:"keyword"`       // The keyword to filter
+	WholeWord    bool      `json:"whole_word"`    // Match whole word only
+	IsRegex      bool      `json:"is_regex"`      // Whether keyword is a regex pattern
+	MatchWeight  float64   `json:"match_weight"`  // Weight for scoring matches (0.0-1.0)
+	ContextTypes []string  `json:"context_types"` // Specific contexts where this keyword applies
+	CreatedAt    time.Time `json:"created_at"`    // Creation timestamp
 }
 
 // TableName returns the DynamoDB table name

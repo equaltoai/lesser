@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // MarkerRepository implements marker operations using DynamORM with BaseRepository
@@ -39,7 +39,7 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 	// Get current marker to check version (matches legacy behavior exactly)
 	existingMarkers, err := r.GetMarkers(ctx, username, []string{timeline})
 	if err != nil {
-		r.BaseRepository.logger.Error("failed to get existing marker", zap.Error(err))
+		r.logger.Error("failed to get existing marker", zap.Error(err))
 		// Continue anyway, might be first marker (matches legacy behavior)
 	}
 
@@ -66,7 +66,7 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 		return fmt.Errorf("%w: %w", ErrMarkerSaveFailed, err)
 	}
 
-	r.BaseRepository.logger.Debug("saved marker",
+	r.logger.Debug("saved marker",
 		zap.String("username", username),
 		zap.String("timeline", timeline),
 		zap.String("last_read_id", lastReadID),
@@ -91,7 +91,7 @@ func (r *MarkerRepository) GetMarkers(ctx context.Context, username string, time
 			Username: username,
 			Timeline: timeline,
 		}
-		queryModel.UpdateKeys()
+		_ = queryModel.UpdateKeys() // Ignore error as this is internal model operation
 
 		var markerModel models.Marker
 		err := r.Get(ctx, queryModel.PK, queryModel.SK, &markerModel)

@@ -86,7 +86,7 @@ func (s *StatusTrend) UpdateKeys() error {
 	if s.TTL == 0 {
 		s.TTL = s.UpdatedAt.Add(7 * 24 * time.Hour).Unix()
 	}
-	
+
 	return nil
 }
 
@@ -124,7 +124,7 @@ func (l *LinkTrend) UpdateKeys() error {
 	if l.TTL == 0 {
 		l.TTL = l.UpdatedAt.Add(7 * 24 * time.Hour).Unix()
 	}
-	
+
 	return nil
 }
 

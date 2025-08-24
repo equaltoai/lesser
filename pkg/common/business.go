@@ -34,10 +34,10 @@ type EventEmitter interface {
 
 // BusinessLogicContext provides context for business operations
 type BusinessLogicContext struct {
-	UserID      string
-	Username    string
-	DomainName  string
-	Logger      *zap.Logger
+	UserID       string
+	Username     string
+	DomainName   string
+	Logger       *zap.Logger
 	EventEmitter EventEmitter
 }
 
@@ -51,8 +51,8 @@ type ValidationRules struct {
 
 // CommandValidationResult represents the result of command validation
 type CommandValidationResult struct {
-	IsValid bool
-	Errors  []string
+	IsValid  bool
+	Errors   []string
 	Warnings []string
 }
 
@@ -61,7 +61,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 	if data == nil {
 		return ErrDataCannotBeNil
 	}
-	
+
 	// Basic validation - check for required fields if data is a map
 	if dataMap, ok := data.(map[string]interface{}); ok {
 		for _, required := range rules.Required {
@@ -69,7 +69,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 				return fmt.Errorf("%w: %s", ErrRequiredFieldMissing, required)
 			}
 		}
-		
+
 		// Check max length constraints
 		for field, maxLen := range rules.MaxLen {
 			if value, exists := dataMap[field]; exists {
@@ -78,8 +78,8 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 				}
 			}
 		}
-		
-		// Check min length constraints  
+
+		// Check min length constraints
 		for field, minLen := range rules.MinLen {
 			if value, exists := dataMap[field]; exists {
 				if strValue, ok := value.(string); ok && len(strValue) < minLen {
@@ -88,7 +88,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -133,9 +133,9 @@ func EmitBusinessEvent(_ context.Context, eventType, objectType, objectID, actor
 // EmitEntityCreatedEvents creates standard creation events
 func EmitEntityCreatedEvents(ctx context.Context, entityType, entityID, actorID string, entity interface{}) []*StreamingEvent {
 	events := make([]*StreamingEvent, 0, 2)
-	
+
 	// Primary creation event
-	events = append(events, EmitBusinessEvent(ctx, 
+	events = append(events, EmitBusinessEvent(ctx,
 		fmt.Sprintf("%s.created", entityType),
 		entityType,
 		entityID,
@@ -153,7 +153,7 @@ func EmitEntityCreatedEvents(ctx context.Context, entityType, entityID, actorID 
 		entityID,
 		actorID,
 		map[string]interface{}{
-			"entity": entity,
+			"entity":     entity,
 			"visibility": "public",
 		},
 	))
@@ -164,7 +164,7 @@ func EmitEntityCreatedEvents(ctx context.Context, entityType, entityID, actorID 
 // EmitEntityUpdatedEvents creates standard update events
 func EmitEntityUpdatedEvents(ctx context.Context, entityType, entityID, actorID string, entity interface{}, changes map[string]interface{}) []*StreamingEvent {
 	events := make([]*StreamingEvent, 0, 1)
-	
+
 	events = append(events, EmitBusinessEvent(ctx,
 		fmt.Sprintf("%s.updated", entityType),
 		entityType,
@@ -183,7 +183,7 @@ func EmitEntityUpdatedEvents(ctx context.Context, entityType, entityID, actorID 
 // EmitEntityDeletedEvents creates standard deletion events
 func EmitEntityDeletedEvents(ctx context.Context, entityType, entityID, actorID string) []*StreamingEvent {
 	events := make([]*StreamingEvent, 0, 1)
-	
+
 	events = append(events, EmitBusinessEvent(ctx,
 		fmt.Sprintf("%s.deleted", entityType),
 		entityType,
@@ -202,9 +202,9 @@ func EmitEntityDeletedEvents(ctx context.Context, entityType, entityID, actorID 
 
 // ContentValidationRules defines rules for content validation
 type ContentValidationRules struct {
-	MaxLength    int
-	MinLength    int
-	AllowedTypes []string
+	MaxLength      int
+	MinLength      int
+	AllowedTypes   []string
 	RequiredFields []string
 	ForbiddenWords []string
 }
@@ -293,11 +293,11 @@ func (q *QuotaValidator) ValidateQuota(_ context.Context, actorID, actionType st
 	if actorID == "" {
 		return ErrActorIDRequiredForQuotaValidation
 	}
-	
+
 	if actionType == "" {
 		return ErrActionTypeRequiredForQuotaValidation
 	}
-	
+
 	// For now, implement basic throttling based on configured limits
 	// In a real system, this would check against storage for current usage
 	switch actionType {
@@ -315,7 +315,7 @@ func (q *QuotaValidator) ValidateQuota(_ context.Context, actorID, actionType st
 			_ = q.MaxActionsPerDay // Placeholder to avoid empty block
 		}
 	}
-	
+
 	return nil
 }
 
@@ -347,26 +347,26 @@ func RecordBusinessMetric(_ context.Context, metricType, _ string, actorID strin
 	if metricType == "" {
 		return ErrMetricTypeRequired
 	}
-	
+
 	if actorID == "" {
 		return ErrActorIDRequiredForMetrics
 	}
-	
+
 	// The actual implementation would use the existing observability.MetricsCollector
 	// This function provides a standardized interface to record business metrics
 	// that will be sent to CloudWatch via the existing infrastructure
-	
+
 	// The metrics would be recorded with appropriate dimensions:
 	// - EntityType (note, actor, relationship, etc.)
 	// - ActorID (for user-specific metrics)
 	// - MetricType (creation, engagement, etc.)
-	
+
 	// Example of how this integrates with the existing system:
 	// collector := observability.NewMetricsCollector(client, namespace, logger)
-	// collector.RecordMetric(metricType, 1.0, types.StandardUnitCount, 
+	// collector.RecordMetric(metricType, 1.0, types.StandardUnitCount,
 	//     types.Dimension{Name: aws.String("EntityType"), Value: aws.String(entityType)},
 	//     types.Dimension{Name: aws.String("ActorID"), Value: aws.String(actorID)})
-	
+
 	// For now, validate inputs and return success - the actual recording
 	// happens through the service layer's analytics integration
 	return nil
@@ -433,19 +433,19 @@ func ValidateResourceAccess(_ context.Context, actorID, resourceID, resourceType
 	if actorID == "" {
 		return fmt.Errorf("%w: %s", ErrAuthenticationRequiredForAccess, resourceType)
 	}
-	
+
 	if resourceID == "" {
 		return ErrResourceIDRequiredForAccessValidation
 	}
-	
+
 	if resourceType == "" {
 		return ErrResourceTypeRequiredForAccessValidation
 	}
-	
+
 	// Use existing validation patterns from the codebase
 	// The actual access control is implemented in the service layer
 	// through the auth.AuthService and its integration with storage
-	
+
 	// Basic access level validation
 	switch requiredAccess {
 	case AccessNone:

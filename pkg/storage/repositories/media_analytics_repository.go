@@ -35,7 +35,7 @@ func NewMediaAnalyticsRepositoryWithCostTracking(db core.DB, tableName string, l
 func (r *MediaAnalyticsRepository) RecordMediaAnalytics(ctx context.Context, analytics *models.MediaAnalytics) error {
 	// Ensure keys are properly initialized
 	if analytics.PK == "" || analytics.SK == "" {
-		analytics.UpdateKeys()
+		_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 	}
 
 	// Use BaseRepository.Create for standardized creation with cost tracking
@@ -130,7 +130,7 @@ func (r *MediaAnalyticsRepository) GetMediaAnalyticsByVariant(ctx context.Contex
 // UpdateMediaAnalytics updates an existing media analytics record with engagement metrics
 func (r *MediaAnalyticsRepository) UpdateMediaAnalytics(ctx context.Context, analytics *models.MediaAnalytics) error {
 	// Ensure keys are properly initialized
-	analytics.UpdateKeys()
+	_ = analytics.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Use BaseRepository.Update for standardized updates with cost tracking
 	err := r.Update(ctx, analytics)
@@ -247,10 +247,10 @@ func (r *MediaAnalyticsRepository) RecordMediaView(ctx context.Context, mediaID,
 	analytics.SetGeneralEvent("media_view", mediaID, userID)
 	analytics.Duration = duration.Seconds()
 	analytics.Quality = quality
-	
+
 	// Add viewer to quality distribution for real-time metrics
 	analytics.AddQualityViewer(quality)
-	
+
 	return r.RecordMediaAnalytics(ctx, analytics)
 }
 
@@ -259,12 +259,12 @@ func (r *MediaAnalyticsRepository) CalculatePopularityMetrics(ctx context.Contex
 	if days <= 0 {
 		days = 7 // Default to last 7 days
 	}
-	
+
 	metrics := make(map[string]interface{})
 	totalViews := int64(0)
 	totalSessions := int64(0)
 	qualityDistribution := make(map[string]int)
-	
+
 	// Calculate metrics for each day in the range
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i).Format(common.DateFormat)
@@ -273,7 +273,7 @@ func (r *MediaAnalyticsRepository) CalculatePopularityMetrics(ctx context.Contex
 			r.logger.Warn("Failed to get metrics for date", zap.String("date", date), zap.Error(err))
 			continue
 		}
-		
+
 		if views, ok := dayMetrics["total_views"].(int64); ok {
 			totalViews += views
 		}
@@ -286,17 +286,17 @@ func (r *MediaAnalyticsRepository) CalculatePopularityMetrics(ctx context.Contex
 			}
 		}
 	}
-	
+
 	// Calculate popularity score (simplified algorithm)
 	popularityScore := float64(totalViews)*0.7 + float64(totalSessions)*0.3
-	
+
 	metrics["media_id"] = mediaID
 	metrics["total_views"] = totalViews
 	metrics["total_sessions"] = totalSessions
 	metrics["popularity_score"] = popularityScore
 	metrics["quality_distribution"] = qualityDistribution
 	metrics["days_analyzed"] = days
-	
+
 	return metrics, nil
 }
 
@@ -306,16 +306,16 @@ func (r *MediaAnalyticsRepository) GetMediaMetricsForDate(ctx context.Context, m
 	if err != nil {
 		return nil, err
 	}
-	
+
 	metrics := map[string]interface{}{
-		"total_views":         int64(0),
-		"streaming_sessions":  int64(0),
+		"total_views":          int64(0),
+		"streaming_sessions":   int64(0),
 		"quality_distribution": make(map[string]int),
-		"total_bandwidth":     int64(0),
+		"total_bandwidth":      int64(0),
 	}
-	
+
 	qualityDist := make(map[string]int)
-	
+
 	for _, analytics := range analyticsList {
 		if analytics.MediaID == mediaID {
 			if analytics.EventType == "media_view" {
@@ -323,13 +323,13 @@ func (r *MediaAnalyticsRepository) GetMediaMetricsForDate(ctx context.Context, m
 			}
 			metrics["streaming_sessions"] = metrics["streaming_sessions"].(int64) + int64(analytics.StreamingSessions)
 			metrics["total_bandwidth"] = metrics["total_bandwidth"].(int64) + analytics.TotalBandwidthBytes
-			
+
 			for quality, count := range analytics.QualityDistribution {
 				qualityDist[quality] += count
 			}
 		}
 	}
-	
+
 	metrics["quality_distribution"] = qualityDist
 	return metrics, nil
 }
@@ -337,23 +337,23 @@ func (r *MediaAnalyticsRepository) GetMediaMetricsForDate(ctx context.Context, m
 // GenerateAnalyticsReport generates comprehensive analytics report with business intelligence
 func (r *MediaAnalyticsRepository) GenerateAnalyticsReport(ctx context.Context, startDate, endDate string) (map[string]interface{}, error) {
 	report := make(map[string]interface{})
-	
+
 	start, err := time.Parse(common.DateFormat, startDate)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "start date validation")
 	}
-	
+
 	end, err := time.Parse(common.DateFormat, endDate)
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "end date validation")
 	}
-	
+
 	totalCost := int64(0)
 	totalBandwidth := int64(0)
 	totalSessions := int64(0)
 	codecDistribution := make(map[string]int64)
 	resolutionDistribution := make(map[string]int64)
-	
+
 	// Iterate through each date in the range
 	for d := start; d.Before(end) || d.Equal(end); d = d.AddDate(0, 0, 1) {
 		date := d.Format(common.DateFormat)
@@ -362,19 +362,19 @@ func (r *MediaAnalyticsRepository) GenerateAnalyticsReport(ctx context.Context, 
 			r.logger.Warn("Failed to get analytics for date", zap.String("date", date), zap.Error(err))
 			continue
 		}
-		
+
 		for _, analytics := range dayAnalytics {
 			totalCost += analytics.TotalVariantCost
 			totalBandwidth += analytics.TotalBandwidthBytes
 			totalSessions += int64(analytics.StreamingSessions)
-			
+
 			for _, variantCost := range analytics.VariantCosts {
 				codecDistribution[variantCost.Codec] += variantCost.DeliveryCount
 				resolutionDistribution[variantCost.Resolution] += variantCost.DeliveryCount
 			}
 		}
 	}
-	
+
 	report["start_date"] = startDate
 	report["end_date"] = endDate
 	report["total_cost_microdollars"] = totalCost
@@ -382,7 +382,7 @@ func (r *MediaAnalyticsRepository) GenerateAnalyticsReport(ctx context.Context, 
 	report["total_streaming_sessions"] = totalSessions
 	report["codec_distribution"] = codecDistribution
 	report["resolution_distribution"] = resolutionDistribution
-	
+
 	// Calculate efficiency metrics
 	if totalSessions > 0 {
 		report["cost_per_session"] = float64(totalCost) / float64(totalSessions)
@@ -390,7 +390,7 @@ func (r *MediaAnalyticsRepository) GenerateAnalyticsReport(ctx context.Context, 
 	if totalBandwidth > 0 {
 		report["cost_per_gb"] = float64(totalCost) / (float64(totalBandwidth) / (1024 * 1024 * 1024))
 	}
-	
+
 	return report, nil
 }
 
@@ -399,7 +399,7 @@ func (r *MediaAnalyticsRepository) TrackUserBehavior(ctx context.Context, userID
 	// Create analytics record for user behavior tracking
 	analytics := &models.MediaAnalytics{}
 	analytics.SetGeneralEvent("user_behavior", "", userID)
-	
+
 	// Extract behavior patterns from behaviorData
 	if mediaID, ok := behaviorData["media_id"].(string); ok {
 		analytics.MediaID = mediaID
@@ -411,7 +411,7 @@ func (r *MediaAnalyticsRepository) TrackUserBehavior(ctx context.Context, userID
 	if duration, ok := behaviorData["session_duration"].(float64); ok {
 		analytics.Duration = duration
 	}
-	
+
 	return r.RecordMediaAnalytics(ctx, analytics)
 }
 
@@ -422,33 +422,33 @@ func (r *MediaAnalyticsRepository) GetContentRecommendations(ctx context.Context
 	if err != nil {
 		return nil, ErrorHandler.HandleQueryError(err, EntityMedia, "user behavior history")
 	}
-	
+
 	// Analyze user preferences
 	preferences := r.analyzeUserPreferences(userBehavior)
-	
+
 	// Get trending content that matches user preferences
 	recommendations := make([]map[string]interface{}, 0, limit)
-	
+
 	// Simple recommendation algorithm - in production would use ML models
 	for i := 0; i < limit && i < 10; i++ { // Cap at 10 for now
 		recommendation := map[string]interface{}{
-			"media_id":     fmt.Sprintf("recommended_media_%d", i+1),
-			"score":        preferences["popularity_weight"].(float64) * float64(10-i),
-			"reason":       "Based on your viewing history and trending content",
-			"quality":      preferences["preferred_quality"],
-			"codec":        preferences["preferred_codec"],
-			"resolution":   preferences["preferred_resolution"],
+			"media_id":   fmt.Sprintf("recommended_media_%d", i+1),
+			"score":      preferences["popularity_weight"].(float64) * float64(10-i),
+			"reason":     "Based on your viewing history and trending content",
+			"quality":    preferences["preferred_quality"],
+			"codec":      preferences["preferred_codec"],
+			"resolution": preferences["preferred_resolution"],
 		}
 		recommendations = append(recommendations, recommendation)
 	}
-	
+
 	return recommendations, nil
 }
 
 // getUserBehaviorHistory gets user's behavior history for recommendation analysis
 func (r *MediaAnalyticsRepository) getUserBehaviorHistory(ctx context.Context, userID string, days int) ([]*models.MediaAnalytics, error) {
 	var userAnalytics []*models.MediaAnalytics
-	
+
 	// Query user behavior records from the last N days
 	for i := 0; i < days; i++ {
 		date := time.Now().AddDate(0, 0, -i).Format(common.DateFormat)
@@ -456,7 +456,7 @@ func (r *MediaAnalyticsRepository) getUserBehaviorHistory(ctx context.Context, u
 		if err != nil {
 			continue // Skip days with errors
 		}
-		
+
 		// Filter for this user's analytics
 		for _, analytics := range dayAnalytics {
 			if analytics.UserID == userID {
@@ -464,37 +464,37 @@ func (r *MediaAnalyticsRepository) getUserBehaviorHistory(ctx context.Context, u
 			}
 		}
 	}
-	
+
 	return userAnalytics, nil
 }
 
 // analyzeUserPreferences analyzes user behavior to determine preferences
 func (r *MediaAnalyticsRepository) analyzeUserPreferences(userBehavior []*models.MediaAnalytics) map[string]interface{} {
 	preferences := make(map[string]interface{})
-	
+
 	qualityCounts := make(map[string]int)
 	codecCounts := make(map[string]int)
 	resolutionCounts := make(map[string]int)
 	totalViews := len(userBehavior)
-	
+
 	for _, analytics := range userBehavior {
 		if analytics.Quality != "" {
 			qualityCounts[analytics.Quality]++
 		}
-		
+
 		for _, variantCost := range analytics.VariantCosts {
 			codecCounts[variantCost.Codec]++
 			resolutionCounts[variantCost.Resolution]++
 		}
 	}
-	
+
 	// Find preferred quality, codec, resolution
 	preferences["preferred_quality"] = findMostFrequent(qualityCounts)
 	preferences["preferred_codec"] = findMostFrequent(codecCounts)
 	preferences["preferred_resolution"] = findMostFrequent(resolutionCounts)
 	preferences["total_views"] = totalViews
 	preferences["popularity_weight"] = 0.8 // Weight for trending content
-	
+
 	return preferences
 }
 
@@ -502,14 +502,14 @@ func (r *MediaAnalyticsRepository) analyzeUserPreferences(userBehavior []*models
 func findMostFrequent(counts map[string]int) string {
 	maxCount := 0
 	mostFrequent := ""
-	
+
 	for item, count := range counts {
 		if count > maxCount {
 			maxCount = count
 			mostFrequent = item
 		}
 	}
-	
+
 	return mostFrequent
 }
 

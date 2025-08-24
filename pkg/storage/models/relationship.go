@@ -40,14 +40,18 @@ func (r *RelationshipRecord) BeforeCreate() error {
 	// Keys are set by the repository methods
 	r.CreatedAt = time.Now()
 	r.UpdatedAt = time.Now()
-	r.UpdateKeys()
+	if err := r.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	return nil
 }
 
 // BeforeUpdate updates timestamps
 func (r *RelationshipRecord) BeforeUpdate() error {
 	r.UpdatedAt = time.Now()
-	r.UpdateKeys()
+	if err := r.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 	return nil
 }
 

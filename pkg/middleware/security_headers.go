@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // SecurityHeadersConfig defines configuration for security headers

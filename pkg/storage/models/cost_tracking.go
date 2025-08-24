@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-
 // DynamoDBCostRecord represents detailed cost tracking data from DynamoDB operations
 type DynamoDBCostRecord struct {
 	// Primary key - using operation type as partition key with timestamp sort key
@@ -380,7 +379,6 @@ func isValidOperationType(opType string) bool {
 	}
 	return validTypes[opType]
 }
-
 
 // DynamoDBCostRecordBuilder helps create cost tracking records
 type DynamoDBCostRecordBuilder struct {

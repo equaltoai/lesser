@@ -91,30 +91,30 @@ func (b *ActivityBuilder) Build() *activitypub.Activity {
 	if err := common.ValidateRequiredParam("Type", b.activity.Type); err != nil {
 		b.activity.Type = activityTypeCreate
 	}
-	
+
 	if err := common.ValidateRequiredParam("ID", b.activity.ID); err != nil {
 		b.activity.ID = b.GenerateID("activities")
 	}
-	
+
 	if err := common.ValidateRequiredParam("Actor", b.activity.Actor); err != nil {
 		b.activity.Actor = fmt.Sprintf("https://%s/users/testuser", b.domain)
 	}
-	
+
 	if b.activity.Published == nil {
 		timestamp := b.GenerateTimestamp()
 		b.activity.Published = &timestamp
 	}
-	
+
 	if b.activity.Context == nil {
 		b.activity.Context = []string{"https://www.w3.org/ns/activitystreams"}
 	}
-	
+
 	// Create a copy to return
 	result := *b.activity
-	
+
 	// Reset for next build
 	b.Reset()
-	
+
 	return &result
 }
 

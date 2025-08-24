@@ -34,8 +34,8 @@ func (h *Handler) handleRelationshipsLogic(ctx *lift.Context, username string) e
 	for _, accountID := range accountIDs {
 		// Skip invalid IDs
 		if err := common.ValidateAccountParamID(accountID); err != nil {
-			h.logger.Debug("invalid account ID in relationship request", 
-				zap.String("account_id", accountID), 
+			h.logger.Debug("invalid account ID in relationship request",
+				zap.String("account_id", accountID),
 				zap.Error(err))
 			continue
 		}

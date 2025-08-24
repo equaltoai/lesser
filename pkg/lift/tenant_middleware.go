@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pay-theory/lift/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/pay-theory/lift/pkg/lift"
 )
 
 // TenantMiddleware creates middleware for multi-tenant support following Lift patterns

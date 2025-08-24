@@ -92,7 +92,7 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Get individual repositories from the repository storage
 	actorRepo := repos.Actor()
 	activityRepo := repos.Activity()
-	
+
 	// Create federation-specific repositories manually until they're added to core interface
 	federationActivityRepo := repositories.NewFederationActivityRepository(
 		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
@@ -598,10 +598,10 @@ func (op *OutboxProcessor) HandleOutboxPost(ctx *lift.Context) error {
 
 	// Generate activity ID if not provided
 	if err := common.ValidateRequiredParam("activity.ID", activity.ID); err != nil {
-		activity.ID = fmt.Sprintf("%s/activities/%s-%d-%s", 
-			actor.ID, 
-			strings.ToLower(activity.Type), 
-			time.Now().Unix(), 
+		activity.ID = fmt.Sprintf("%s/activities/%s-%d-%s",
+			actor.ID,
+			strings.ToLower(activity.Type),
+			time.Now().Unix(),
 			generateRandomStringOutbox())
 	}
 
@@ -864,7 +864,6 @@ func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, e
 
 	return nil, ErrInvalidToken
 }
-
 
 func main() {
 	processor, err := NewOutboxProcessor()

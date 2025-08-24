@@ -11,10 +11,10 @@ var (
 
 // Repository and data access errors
 var (
-	ErrGetNote           = errors.New("failed to get note")
-	ErrGetVotes          = errors.New("failed to get votes")
+	ErrGetNote            = errors.New("failed to get note")
+	ErrGetVotes           = errors.New("failed to get votes")
 	ErrUpdateNoteAnalysis = errors.New("failed to update note analysis")
-	ErrUpdateNoteScore   = errors.New("failed to update note score")
+	ErrUpdateNoteScore    = errors.New("failed to update note score")
 )
 
 // AWS service errors

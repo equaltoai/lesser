@@ -16,7 +16,7 @@ const (
 
 // RelationshipPaginationConfig holds configuration for paginated relationship queries
 type RelationshipPaginationConfig struct {
-	IndexName   string // "" for main table, "GSI1", "GSI5", etc. for GSIs  
+	IndexName   string // "" for main table, "GSI1", "GSI5", etc. for GSIs
 	PKFormat    string // Format string for partition key, e.g. "ACTOR#%s#BLOCKS"
 	SKField     string // Field name for sort key in cursor, e.g. "SK" or "GSI1SK"
 	ActorField  string // "Actor" or "Object" - which field to extract for result
@@ -57,7 +57,7 @@ func buildRelationshipQuery(
 	config RelationshipPaginationConfig,
 ) (core.Query, error) {
 	var query core.Query
-	
+
 	switch config.ModelType {
 	case modelTypeBlock:
 		query = db.WithContext(ctx).Model(&models.Block{})
@@ -190,7 +190,7 @@ func extractMuteResults(items []models.Mute, actorField string) []string {
 	return results
 }
 
-// getPaginatedBlockList is a helper for block relationship pagination  
+// getPaginatedBlockList is a helper for block relationship pagination
 func getPaginatedBlockList(
 	ctx context.Context,
 	db core.DB,

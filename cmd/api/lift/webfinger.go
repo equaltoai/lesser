@@ -45,7 +45,7 @@ func (h *Handler) HandleWebFingerLift(ctx *lift.Context) error {
 
 	// Validate webfinger resource format
 	if err := common.ValidateWebfingerResource(resource); err != nil {
-		h.logger.Warn("invalid webfinger resource format", 
+		h.logger.Warn("invalid webfinger resource format",
 			zap.String("resource", resource),
 			zap.Error(err))
 		return common.RespondBadRequest(ctx, err.Error())

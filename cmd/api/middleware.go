@@ -97,7 +97,7 @@ func createCORSMiddleware() lift.Middleware {
 			ctx.Response.Header("X-Content-Type-Options", "nosniff")
 			ctx.Response.Header("X-XSS-Protection", "1; mode=block")
 			ctx.Response.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-			
+
 			// Content Security Policy - strict but allows Mastodon client functionality
 			csp := "default-src 'self'; " +
 				"script-src 'self' 'unsafe-inline'; " +
@@ -134,7 +134,7 @@ func createCostTrackingMiddleware(logger *zap.Logger) lift.Middleware {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			// Initialize unified cost tracking system
 			unifiedTracker := cost.NewUnifiedTracker(nil, logger, ctx.GetUserID(), ctx.GetRequestID())
-			
+
 			// Store the unified tracker in context for all cost tracking
 			ctx.Set("cost_tracker", unifiedTracker)
 			ctx.Set("unified_cost_tracker", unifiedTracker)
@@ -285,4 +285,3 @@ func ModeratorOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
 func ViewerOrHigherMiddleware(repos core.RepositoryStorage) lift.Middleware {
 	return createRBACMiddleware(PermissionViewer, repos)
 }
-

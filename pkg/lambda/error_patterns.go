@@ -25,12 +25,12 @@ func NewErrorPattern(logger *zap.Logger) *ErrorPattern {
 
 // StandardErrorResponse represents the standard error response format
 type StandardErrorResponse struct {
-	Error      string                 `json:"error"`
-	Message    string                 `json:"message,omitempty"`
-	Details    map[string]interface{} `json:"details,omitempty"`
-	Code       string                 `json:"code,omitempty"`
-	RequestID  string                 `json:"request_id,omitempty"`
-	Timestamp  string                 `json:"timestamp,omitempty"`
+	Error     string                 `json:"error"`
+	Message   string                 `json:"message,omitempty"`
+	Details   map[string]interface{} `json:"details,omitempty"`
+	Code      string                 `json:"code,omitempty"`
+	RequestID string                 `json:"request_id,omitempty"`
+	Timestamp string                 `json:"timestamp,omitempty"`
 }
 
 // CreateErrorHandlingMiddleware creates standardized error handling middleware
@@ -50,7 +50,7 @@ func (ep *ErrorPattern) CreateErrorHandlingMiddleware() liftPkg.Middleware {
 // handleError processes errors and returns standardized error responses
 func (ep *ErrorPattern) handleError(ctx *liftPkg.Context, err error) error {
 	requestID := ctx.GetRequestID()
-	
+
 	// Handle Lift errors (already formatted)
 	if liftErr, ok := err.(*liftPkg.LiftError); ok {
 		ep.logError(requestID, liftErr.StatusCode, liftErr.Message, liftErr)
@@ -81,49 +81,49 @@ func (ep *ErrorPattern) categorizeError(err error) (statusCode int, errorCode st
 	errMsgLower := strings.ToLower(errMsg)
 
 	// Authentication errors
-	if strings.Contains(errMsgLower, "unauthorized") || 
-	   strings.Contains(errMsgLower, "invalid token") ||
-	   strings.Contains(errMsgLower, "authentication required") {
+	if strings.Contains(errMsgLower, "unauthorized") ||
+		strings.Contains(errMsgLower, "invalid token") ||
+		strings.Contains(errMsgLower, "authentication required") {
 		return http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required"
 	}
 
 	// Authorization errors
 	if strings.Contains(errMsgLower, "forbidden") ||
-	   strings.Contains(errMsgLower, "insufficient") ||
-	   strings.Contains(errMsgLower, "access denied") {
+		strings.Contains(errMsgLower, "insufficient") ||
+		strings.Contains(errMsgLower, "access denied") {
 		return http.StatusForbidden, "FORBIDDEN", "Access denied"
 	}
 
 	// Validation errors
 	if strings.Contains(errMsgLower, "invalid") ||
-	   strings.Contains(errMsgLower, "required") ||
-	   strings.Contains(errMsgLower, "validation") ||
-	   strings.Contains(errMsgLower, "bad request") {
+		strings.Contains(errMsgLower, "required") ||
+		strings.Contains(errMsgLower, "validation") ||
+		strings.Contains(errMsgLower, "bad request") {
 		return http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request data"
 	}
 
 	// Not found errors
 	if strings.Contains(errMsgLower, "not found") ||
-	   strings.Contains(errMsgLower, "does not exist") {
+		strings.Contains(errMsgLower, "does not exist") {
 		return http.StatusNotFound, "NOT_FOUND", "Resource not found"
 	}
 
 	// Conflict errors
 	if strings.Contains(errMsgLower, "conflict") ||
-	   strings.Contains(errMsgLower, "already exists") ||
-	   strings.Contains(errMsgLower, "duplicate") {
+		strings.Contains(errMsgLower, "already exists") ||
+		strings.Contains(errMsgLower, "duplicate") {
 		return http.StatusConflict, "CONFLICT", "Resource conflict"
 	}
 
 	// Rate limiting errors
 	if strings.Contains(errMsgLower, "rate limit") ||
-	   strings.Contains(errMsgLower, "too many requests") {
+		strings.Contains(errMsgLower, "too many requests") {
 		return http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests"
 	}
 
 	// Timeout errors
 	if strings.Contains(errMsgLower, "timeout") ||
-	   strings.Contains(errMsgLower, "deadline exceeded") {
+		strings.Contains(errMsgLower, "deadline exceeded") {
 		return http.StatusRequestTimeout, "TIMEOUT", "Request timeout"
 	}
 
@@ -158,7 +158,7 @@ func (ep *ErrorPattern) HandleValidationError(ctx *liftPkg.Context, field string
 		Code:      "VALIDATION_ERROR",
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
-			"field": field,
+			"field":              field,
 			"validation_message": message,
 		},
 	}
@@ -324,9 +324,9 @@ type ActivityPubErrorResponse struct {
 func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, statusCode int, errorType string, summary string) error {
 	// Check if client accepts ActivityPub content type
 	acceptHeader := ctx.Header("Accept")
-	if strings.Contains(acceptHeader, "application/activity+json") || 
-	   strings.Contains(acceptHeader, "application/ld+json") {
-		
+	if strings.Contains(acceptHeader, "application/activity+json") ||
+		strings.Contains(acceptHeader, "application/ld+json") {
+
 		// Return ActivityPub-formatted error
 		errorResponse := ActivityPubErrorResponse{
 			Type:    errorType,

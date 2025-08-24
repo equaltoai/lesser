@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -133,13 +132,13 @@ func (r *BookmarkRepository) GetBookmark(ctx context.Context, username, objectID
 // GetUserBookmarks retrieves all bookmarks for a user with pagination
 func (r *BookmarkRepository) GetUserBookmarks(ctx context.Context, username string, limit int, cursor string) ([]*models.Bookmark, string, error) {
 	pk := fmt.Sprintf("BOOKMARK#%s", username)
-	
+
 	opts := BasePaginationOptions{
 		Limit:  limit,
 		Cursor: cursor,
 		Order:  "DESC", // Most recent first
 	}
-	
+
 	result, err := r.FindWithPagination(ctx, pk, opts)
 	if err != nil {
 		r.logger.Error("failed to get user bookmarks",
@@ -150,9 +149,7 @@ func (r *BookmarkRepository) GetUserBookmarks(ctx context.Context, username stri
 
 	// Convert to pointer slice
 	bookmarkPtrs := make([]*models.Bookmark, len(result.Items))
-	for i := range result.Items {
-		bookmarkPtrs[i] = result.Items[i]
-	}
+	copy(bookmarkPtrs, result.Items)
 
 	return bookmarkPtrs, result.NextCursor, nil
 }
@@ -268,8 +265,8 @@ func (r *BookmarkRepository) CascadeDeleteUserBookmarks(ctx context.Context, use
 }
 
 // CascadeDeleteObjectBookmarks deletes all bookmarks for an object (when object is deleted)
-func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(ctx context.Context, objectID string) error {
-	// Since bookmark keys are BOOKMARK#{username} / timestamp#{objectID}, 
+func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(_ context.Context, objectID string) error {
+	// Since bookmark keys are BOOKMARK#{username} / timestamp#{objectID},
 	// we need to scan for bookmarks containing the objectID
 	// This is less efficient than a GSI but works with current schema
 
@@ -287,12 +284,3 @@ func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(ctx context.Context, o
 	return nil
 }
 
-// Helper method to extract objectID from SK
-func extractObjectIDFromSK(sk string) string {
-	// SK format: timestamp#objectID
-	parts := strings.Split(sk, "#")
-	if len(parts) >= 2 {
-		return strings.Join(parts[1:], "#") // rejoin in case objectID contains #
-	}
-	return ""
-}

@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // MetricsRepository handles metrics persistence
 type MetricsRepository struct {
 	*BaseRepository[*models.Metrics]
@@ -70,25 +69,8 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 		}
 	}
 
-	// Convert to []any for DynamORM batch operations
-	items := make([]any, len(metricsList))
-	for i, m := range metricsList {
-		items[i] = m
-	}
-
-	// Use DynamORM's batch create functionality
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).BatchCreate(items)
-	if err != nil {
-		r.logger.Error("batch create failed",
-			zap.Int("count", len(metricsList)),
-			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, "metrics", "batch")
-	}
-
-	r.logger.Debug("batch created metrics",
-		zap.Int("count", len(metricsList)))
-
-	return nil
+	// Use the shared BatchCreateHelper
+	return r.BatchCreateHelper(ctx, metricsList, "metrics")
 }
 
 // Get retrieves a metrics record by ID and type
@@ -116,7 +98,7 @@ func (r *MetricsRepository) ListByType(ctx context.Context, metricType string, s
 	startSK := fmt.Sprintf("ts#%s", startTime.Format("20060102150405"))
 	endSK := fmt.Sprintf("ts#%s", endTime.Format("20060102150405"))
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
+	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "=", pk).
 		Where("SK", ">=", startSK).
 		Where("SK", "<=", endSK).
@@ -139,7 +121,7 @@ func (r *MetricsRepository) ListByService(ctx context.Context, service string, s
 	startSK := startTime.Format(time.RFC3339)
 	endSK := endTime.Format(time.RFC3339)
 
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
+	query := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Index("service-index").
 		Where("GSI1PK", "=", fmt.Sprintf("METRICS_SVC#%s", service)).
 		Where("GSI1SK", ">=", startSK).
@@ -209,25 +191,22 @@ func (r *MetricsRepository) UpdateAggregated(ctx context.Context, aggregated *mo
 
 // ListAggregatedByPeriod lists aggregated metrics for a period
 func (r *MetricsRepository) ListAggregatedByPeriod(ctx context.Context, period, metricType string, startTime, endTime time.Time, limit int) ([]*models.AggregatedMetrics, error) {
-	var aggregatedList []*models.AggregatedMetrics
-
-	pk := fmt.Sprintf("metrics_agg#%s#%s", period, metricType)
-	startSK := fmt.Sprintf("window#%s", startTime.Format(time.RFC3339))
-	endSK := fmt.Sprintf("window#%s", endTime.Format(time.RFC3339))
-
-	query := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
-		Where("PK", "=", pk).
-		Where("SK", ">=", startSK).
-		Where("SK", "<=", endSK).
-		OrderBy("SK", "DESC").
-		Limit(limit)
-
-	err := query.All(&aggregatedList)
-	if err != nil {
-		return nil, MapErrorWithContext(err, "failed to list aggregated metrics")
+	config := AggregatedQueryConfig{
+		PKPrefix:    "metrics_agg",
+		LogContext:  "metrics",
+		ErrorPrefix: "failed to list aggregated metrics",
 	}
 
-	return aggregatedList, nil
+	return ListAggregatedByPeriod[*models.AggregatedMetrics](
+		ctx,
+		r.aggregatedRepo.db,
+		config,
+		period,
+		metricType,
+		startTime,
+		endTime,
+		limit,
+	)
 }
 
 // GetServiceStats calculates statistics for a service
@@ -438,7 +417,7 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 
 	// Query for old aggregated metrics using aggregate-index
 	var oldMetrics []models.AggregatedMetrics
-	
+
 	// We need to query by period prefix since we can't easily do time-based filtering in DynamoDB
 	// This is a limitation but necessary to avoid expensive scans
 	err := r.aggregatedRepo.db.WithContext(ctx).Model(&models.AggregatedMetrics{}).
@@ -446,7 +425,7 @@ func (r *MetricsRepository) cleanupAggregatedMetricsByPeriod(ctx context.Context
 		Where("GSI2PK", "begins_with", fmt.Sprintf("METRICS_AGG#%s#", period)).
 		Where("GSI2SK", "<", cutoffTime.Format("2006-01-02T15:04:05Z")).
 		All(&oldMetrics)
-	
+
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "aggregated metrics", "cleanup")
 	}
@@ -476,13 +455,13 @@ func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime ti
 	// Query for old raw metrics - this is more challenging with single table design
 	// We'll need to scan through metric types and clean based on timestamp
 	var oldMetrics []models.Metrics
-	
+
 	// Use a broad query and filter in application code
 	// This is not ideal but necessary with DynamoDB's query limitations
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.Metrics{}).
+	err := r.db.WithContext(ctx).Model(&models.Metrics{}).
 		Where("PK", "begins_with", "metrics#").
 		All(&oldMetrics)
-	
+
 	if err != nil {
 		return 0, ErrorHandler.HandleQueryError(err, "metrics", "cleanup")
 	}
@@ -490,7 +469,7 @@ func (r *MetricsRepository) cleanupRawMetrics(ctx context.Context, cutoffTime ti
 	// Filter and delete old metrics
 	for _, metric := range oldMetrics {
 		if metric.Timestamp.Before(cutoffTime) {
-			err := r.BaseRepository.Delete(ctx, metric.PK, metric.SK)
+			err := r.Delete(ctx, metric.PK, metric.SK)
 			if err != nil {
 				r.logger.Warn("failed to delete raw metric",
 					zap.String("pk", metric.PK),
@@ -592,7 +571,7 @@ func (r *MetricRecordRepository) queryMetricsByTimeRange(ctx context.Context, pk
 	startSK := fmt.Sprintf("TIMESTAMP#%s", startTime.Format(time.RFC3339))
 	endSK := fmt.Sprintf("TIMESTAMP#%s", endTime.Format(time.RFC3339))
 
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	err := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index(indexName).
 		Where(pkField, "=", pkValue).
 		Where(skField, ">=", startSK).
@@ -635,7 +614,7 @@ func (r *MetricRecordRepository) GetMetricsByDate(ctx context.Context, date time
 	gsi3pk := fmt.Sprintf("DATE#%s", date.Format(common.DateFormat))
 
 	// Build the query
-	query := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).
+	query := r.db.WithContext(ctx).Model(&models.MetricRecord{}).
 		Index("date-index").
 		Where("GSI3PK", "=", gsi3pk)
 
@@ -704,23 +683,8 @@ func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, r
 		}
 	}
 
-	// Convert to []any for DynamORM batch operations
-	items := make([]any, len(records))
-	for i, record := range records {
-		items[i] = record
-	}
-
-	// Use DynamORM's batch create functionality
-	err := r.BaseRepository.db.WithContext(ctx).Model(&models.MetricRecord{}).BatchCreate(items)
-	if err != nil {
-		r.logger.Error("batch create failed",
-			zap.Int("count", len(records)),
-			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, "metric record", "batch")
-	}
-
-	r.logger.Debug("batch created metric records", zap.Int("count", len(records)))
-	return nil
+	// Use the shared BatchCreateHelper
+	return r.BatchCreateHelper(ctx, records, "metric record")
 }
 
 // GetMetricRecord retrieves a single metric record by its keys

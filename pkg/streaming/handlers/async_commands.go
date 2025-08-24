@@ -27,14 +27,14 @@ type BulkService interface {
 	BulkFollow(ctx context.Context, cmd *bulk.FollowCommand) (*bulk.OperationResult, error)
 	BulkDeleteStatuses(ctx context.Context, cmd *bulk.DeleteStatusesCommand) (*bulk.OperationResult, error)
 	GetOperation(ctx context.Context, query *bulk.GetOperationQuery) (*bulk.OperationResult, error)
-	
+
 	// Bulk Content Management Operations
 	BulkDelete(ctx context.Context, cmd *bulk.DeleteCommand) (*bulk.OperationResult, error)
 	BulkArchive(ctx context.Context, cmd *bulk.ArchiveCommand) (*bulk.OperationResult, error)
 	BulkRestore(ctx context.Context, cmd *bulk.RestoreCommand) (*bulk.OperationResult, error)
 	BulkExport(ctx context.Context, cmd *bulk.ExportCommand) (*bulk.OperationResult, error)
 	BulkListMembers(ctx context.Context, cmd *bulk.ListMembersCommand) (*bulk.OperationResult, error)
-	
+
 	// Bulk Moderation Operations
 	BulkUnblock(ctx context.Context, cmd *bulk.UnblockCommand) (*bulk.OperationResult, error)
 	BulkMute(ctx context.Context, cmd *bulk.MuteCommand) (*bulk.OperationResult, error)
@@ -55,11 +55,11 @@ type ImportExportService interface {
 // AsyncCommandHandler handles WebSocket commands for async operations (bulk ops, import/export)
 type AsyncCommandHandler struct {
 	*streaming.BaseCommandHandler
-	bulkService         BulkService
-	importExportService ImportExportService
+	bulkService          BulkService
+	importExportService  ImportExportService
 	relationshipsService *relationships.Service
-	publisher           streaming.Publisher
-	logger              *zap.Logger
+	publisher            streaming.Publisher
+	logger               *zap.Logger
 }
 
 // NewAsyncCommandHandler creates a new async command handler
@@ -290,7 +290,7 @@ func (ach *AsyncCommandHandler) handleGetBulkOperation(ctx context.Context, conn
 			return ach.bulkService.GetOperation(ctx, query)
 		},
 	}
-	
+
 	return ach.ExecuteStandardCommandFlow(ctx, conn, cmd, config)
 }
 
@@ -656,7 +656,7 @@ func (ach *AsyncCommandHandler) handleCreateImport(ctx context.Context, conn *st
 	format := ach.GetString(cmd.Payload, "format", "")
 	fileURL := ach.GetString(cmd.Payload, "file_url", "")
 	mergeStrategy := ach.GetString(cmd.Payload, "merge_strategy", "")
-	
+
 	// Get optional options
 	optionsInterface, hasOptions := cmd.Payload["options"]
 	options := make(map[string]string)
@@ -753,13 +753,13 @@ func (ach *AsyncCommandHandler) handleGetImport(ctx context.Context, conn *strea
 
 	// Return import details
 	data := map[string]interface{}{
-		"import_id": result.Import.ID,
-		"type":      result.Import.Type,
-		"status":    result.Import.Status,
-		"mode":      result.Import.Mode,
-		"processed": result.Processed,
-		"skipped":   result.Skipped,
-		"failed":    result.Failed,
+		"import_id":  result.Import.ID,
+		"type":       result.Import.Type,
+		"status":     result.Import.Status,
+		"mode":       result.Import.Mode,
+		"processed":  result.Processed,
+		"skipped":    result.Skipped,
+		"failed":     result.Failed,
 		"created_at": result.Import.CreatedAt,
 		"updated_at": result.Import.UpdatedAt,
 	}
@@ -856,7 +856,7 @@ func (ach *AsyncCommandHandler) processBulkRelationshipOperation(
 		// Process batch
 		for j := i; j < end; j++ {
 			accountID := accountIDs[j]
-			
+
 			// Execute operation
 			err := processAccount(accountID)
 			if err != nil {
@@ -906,7 +906,6 @@ func (ach *AsyncCommandHandler) processBulkUnmute(ctx context.Context, conn *str
 		return err
 	})
 }
-
 
 // ===== Helper Functions for Progress Updates =====
 
@@ -973,8 +972,8 @@ func (ach *AsyncCommandHandler) handleBulkDelete(ctx context.Context, conn *stre
 
 // handleBulkContentOperation handles bulk content operations (archive/restore) with shared logic
 func (ach *AsyncCommandHandler) handleBulkContentOperation(
-	ctx context.Context, 
-	conn *streaming.ConnectionInfo, 
+	ctx context.Context,
+	conn *streaming.ConnectionInfo,
 	cmd *streaming.Command,
 	operationType string,
 	operationFunc func(context.Context, interface{}) (*bulk.OperationResult, error),

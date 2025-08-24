@@ -404,12 +404,12 @@ func init() {
 		ServiceName: "moderation-processor",
 		LambdaType:  common.LambdaTypeProcessor,
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(storageCore.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
@@ -456,11 +456,11 @@ func initAdvancedModerationEngine() {
 	// Initialize AWS clients if not disabled
 	var comprehendClient *comprehend.Client
 	var rekognitionClient *rekognition.Client
-	
+
 	if !lambdaCtx.Config.DisableAWSModeration {
 		// Use the AWS config from lambdaCtx
 		awsCfg := lambdaCtx.AWSServices.Config
-		
+
 		// Initialize Comprehend client if not disabled
 		if !lambdaCtx.Config.DisableComprehend {
 			comprehendClient = comprehend.NewFromConfig(awsCfg)
@@ -468,7 +468,7 @@ func initAdvancedModerationEngine() {
 		} else {
 			lambdaCtx.Logger.Info("AWS Comprehend disabled by configuration")
 		}
-		
+
 		// Initialize Rekognition client if not disabled
 		if !lambdaCtx.Config.DisableRekognition {
 			rekognitionClient = rekognition.NewFromConfig(awsCfg)
@@ -480,13 +480,13 @@ func initAdvancedModerationEngine() {
 
 	// Create moderation configuration
 	modConfig := advanced.DefaultModerationConfig()
-	
+
 	// Adjust configuration based on available services
 	if comprehendClient == nil {
 		modConfig.EnableTextAnalysis = true // Will use basic text analysis
 	}
 	if rekognitionClient == nil {
-		modConfig.EnableImageAnalysis = true // Will use basic image analysis
+		modConfig.EnableImageAnalysis = true  // Will use basic image analysis
 		modConfig.EnableVideoAnalysis = false // No basic video analysis yet
 	}
 
@@ -497,7 +497,7 @@ func initAdvancedModerationEngine() {
 	patternRepoAdapter := &patternRepositoryAdapter{
 		repo: patternRepo,
 	}
-	
+
 	// Create the advanced moderation engine
 	advancedEngine = advanced.NewEngineWithMode(advanced.EngineOptions{
 		Mode:              mode,
@@ -1572,10 +1572,10 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 
 	// 1. Update visibility for all statuses by this user
 	statusUpdates := map[string]interface{}{
-		"moderated":     true,
-		"moderated_at":  time.Now().Format(time.RFC3339),
-		"visibility":    "unlisted", // For silencing
-		"searchable":    false,
+		"moderated":    true,
+		"moderated_at": time.Now().Format(time.RFC3339),
+		"visibility":   "unlisted", // For silencing
+		"searchable":   false,
 	}
 
 	// For suspension, make content completely private
@@ -1693,13 +1693,13 @@ func (mp *ModerationProcessor) sendFederationDeletion(ctx context.Context, objec
 
 	// 2. Create Delete activity
 	deleteActivity := map[string]interface{}{
-		"@context": "https://www.w3.org/ns/activitystreams",
-		"type":     "Delete",
-		"actor":    lambdaCtx.Config.BaseURL() + "/actor/system", // System actor for moderation
-		"object":   objectID,
+		"@context":  "https://www.w3.org/ns/activitystreams",
+		"type":      "Delete",
+		"actor":     lambdaCtx.Config.BaseURL() + "/actor/system", // System actor for moderation
+		"object":    objectID,
 		"published": time.Now().UTC().Format(time.RFC3339),
-		"to":       []string{"https://www.w3.org/ns/activitystreams#Public"},
-		"reason":   "Content removed by moderation",
+		"to":        []string{"https://www.w3.org/ns/activitystreams#Public"},
+		"reason":    "Content removed by moderation",
 	}
 
 	// 3. Queue for federation delivery (would use outbox processor in production)
@@ -1858,7 +1858,7 @@ func (ms *ModeratorSelector) sortModeratorsByScore(moderators []struct {
 // hasHandledCategory checks if a moderator has experience with a specific category
 func (ms *ModeratorSelector) hasHandledCategory(username, category string) bool {
 	ctx := context.Background()
-	
+
 	// Admin users are assumed to have handled all categories
 	if ms.isAdminUser(ctx, username) {
 		return true
@@ -2107,7 +2107,6 @@ func main() {
 	})
 }
 
-
 // patternRepositoryAdapter adapts repositories.PatternRepository to advanced.PatternRepository interface
 type patternRepositoryAdapter struct {
 	repo *repositories.PatternRepository
@@ -2162,7 +2161,7 @@ func (a *patternRepositoryAdapter) GetPattern(ctx context.Context, patternID str
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert from models.ModerationPattern to advanced.ModerationPattern
 	return &advanced.ModerationPattern{
 		ID:          modelPattern.PatternID,
@@ -2192,7 +2191,7 @@ func (a *patternRepositoryAdapter) GetPatterns(ctx context.Context, filter advan
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert from models.ModerationPattern to advanced.ModerationPattern
 	var patterns []*advanced.ModerationPattern
 	for _, mp := range modelPatterns {
@@ -2212,7 +2211,7 @@ func (a *patternRepositoryAdapter) GetPatterns(ctx context.Context, filter advan
 			LastHit:     mp.LastHit,
 		})
 	}
-	
+
 	return patterns, nil
 }
 
@@ -2227,7 +2226,7 @@ func (a *patternRepositoryAdapter) LoadActivePatterns(ctx context.Context) ([]*a
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert from models.ModerationPattern to advanced.ModerationPattern
 	var patterns []*advanced.ModerationPattern
 	for _, mp := range modelPatterns {
@@ -2247,6 +2246,6 @@ func (a *patternRepositoryAdapter) LoadActivePatterns(ctx context.Context) ([]*a
 			LastHit:     mp.LastHit,
 		})
 	}
-	
+
 	return patterns, nil
 }

@@ -17,17 +17,17 @@ import (
 
 // MainConfig defines configuration for standardized Lambda main function
 type MainConfig struct {
-	ServiceName    string
-	LambdaType     common.LambdaType
-	EnableDebug    bool
-	EnableMetrics  bool
-	EnableCORS     bool
+	ServiceName     string
+	LambdaType      common.LambdaType
+	EnableDebug     bool
+	EnableMetrics   bool
+	EnableCORS      bool
 	EnableRateLimit bool
-	Timeout        time.Duration
-	
+	Timeout         time.Duration
+
 	// Custom initialization functions
-	InitCustomServices  func(*common.LambdaContext) error
-	ConfigureRoutes     func(*liftPkg.App, *common.LambdaContext) error
+	InitCustomServices     func(*common.LambdaContext) error
+	ConfigureRoutes        func(*liftPkg.App, *common.LambdaContext) error
 	CreateCustomMiddleware func(*common.LambdaContext) []liftPkg.Middleware
 }
 
@@ -228,7 +228,7 @@ func createLoggingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
-			
+
 			logger.Info("request completed",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.String("method", ctx.Request.Method),
@@ -236,7 +236,7 @@ func createLoggingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 				zap.Duration("duration", time.Since(start)),
 				zap.Bool("success", err == nil),
 			)
-			
+
 			return err
 		})
 	}
@@ -249,11 +249,11 @@ func createCORSMiddleware() liftPkg.Middleware {
 			ctx.Response.Header("Access-Control-Allow-Origin", "*")
 			ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
 			ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept")
-			
+
 			if ctx.Request.Method == "OPTIONS" {
 				return ctx.Status(200).Text("")
 			}
-			
+
 			return next.Handle(ctx)
 		})
 	}
@@ -264,14 +264,14 @@ func createCostTrackingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
-			
+
 			// Basic cost tracking - can be enhanced with pkg/cost integration
 			duration := time.Since(start)
 			logger.Debug("request cost tracking",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.Duration("duration", duration),
 			)
-			
+
 			return err
 		})
 	}
@@ -291,7 +291,7 @@ func createEMFMetricsMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Middlew
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
-			
+
 			// Basic EMF metrics - can be enhanced
 			if lambdaCtx.EMFMetrics != nil {
 				if emfMetrics, ok := lambdaCtx.EMFMetrics.(EMFMetricsInterface); ok {
@@ -303,7 +303,7 @@ func createEMFMetricsMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Middlew
 					}
 				}
 			}
-			
+
 			return err
 		})
 	}
@@ -314,14 +314,14 @@ func createLatencyTrackingMiddleware(lambdaCtx *common.LambdaContext) liftPkg.Mi
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
 			err := next.Handle(ctx)
-			
+
 			// Record latency metrics
 			duration := time.Since(start)
 			lambdaCtx.Logger.Debug("request latency",
 				zap.String("request_id", ctx.GetRequestID()),
 				zap.Duration("duration", duration),
 			)
-			
+
 			return err
 		})
 	}

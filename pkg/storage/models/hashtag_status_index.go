@@ -59,7 +59,7 @@ func (hsi *HashtagStatusIndex) UpdateKeys() error {
 	// GSI2 for visibility filtering
 	hsi.GSI2PK = fmt.Sprintf("HASHTAG_VIS#%s#%s", tagLower, hsi.Visibility)
 	hsi.GSI2SK = fmt.Sprintf("TIMELINE#%s", timestampDesc)
-	
+
 	return nil
 }
 

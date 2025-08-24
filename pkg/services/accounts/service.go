@@ -32,22 +32,22 @@ var (
 	ErrUpdaterIDRequired = errors.New("updater_id is required")
 
 	// Account operations
-	ErrGetAccount                    = errors.New("failed to get account")
-	ErrUpdateProfile                 = errors.New("failed to update profile")
-	ErrStoreAccount                  = errors.New("failed to store account")
-	ErrGetPreferences                = errors.New("failed to get preferences")
-	ErrUpdatePreferences             = errors.New("failed to update preferences")
-	ErrAccountNotFound               = errors.New("account not found")
-	ErrSearchAccounts                = errors.New("failed to search accounts")
-	ErrProfileFieldNameEmpty         = errors.New("profile field name cannot be empty")
-	ErrProfileFieldNameTooLong       = errors.New("profile field name too long (max 255 characters)")
-	ErrProfileFieldValueTooLong      = errors.New("profile field value too long (max 255 characters)")
-	ErrInvalidExpandMediaSetting     = errors.New("invalid expand media setting")
-	ErrInvalidTimelineOrder          = errors.New("invalid timeline order")
-	ErrAccountNoActivityPubActor     = errors.New("account has no ActivityPub actor")
+	ErrGetAccount                = errors.New("failed to get account")
+	ErrUpdateProfile             = errors.New("failed to update profile")
+	ErrStoreAccount              = errors.New("failed to store account")
+	ErrGetPreferences            = errors.New("failed to get preferences")
+	ErrUpdatePreferences         = errors.New("failed to update preferences")
+	ErrAccountNotFound           = errors.New("account not found")
+	ErrSearchAccounts            = errors.New("failed to search accounts")
+	ErrProfileFieldNameEmpty     = errors.New("profile field name cannot be empty")
+	ErrProfileFieldNameTooLong   = errors.New("profile field name too long (max 255 characters)")
+	ErrProfileFieldValueTooLong  = errors.New("profile field value too long (max 255 characters)")
+	ErrInvalidExpandMediaSetting = errors.New("invalid expand media setting")
+	ErrInvalidTimelineOrder      = errors.New("invalid timeline order")
+	ErrAccountNoActivityPubActor = errors.New("account has no ActivityPub actor")
 
 	// Actor operations
-	ErrGetActor           = errors.New("failed to get actor")
+	ErrGetActor             = errors.New("failed to get actor")
 	ErrGetFollowersAccounts = errors.New("failed to get followers")
 	ErrGetFollowingList     = errors.New("failed to get following list")
 	ErrGetViewerActor       = errors.New("failed to get viewer actor")
@@ -60,32 +60,32 @@ var (
 	// Account relationships
 	ErrTargetAccountNotFound = errors.New("target account not found")
 	ErrAccountAlreadyPinned  = errors.New("account already pinned")
-	ErrPinAccount           = errors.New("failed to pin account")
-	ErrUnpinAccount         = errors.New("failed to unpin account")
-	ErrGetAccountPins       = errors.New("failed to get account pins")
-	ErrSetAccountNote       = errors.New("failed to set account note")
-	ErrRemoveFollower       = errors.New("failed to remove follower")
+	ErrPinAccount            = errors.New("failed to pin account")
+	ErrUnpinAccount          = errors.New("failed to unpin account")
+	ErrGetAccountPins        = errors.New("failed to get account pins")
+	ErrSetAccountNote        = errors.New("failed to set account note")
+	ErrRemoveFollower        = errors.New("failed to remove follower")
 
 	// Account creation
-	ErrEmailRequired           = errors.New("email is required")
-	ErrMustAgreeToTerms        = errors.New("must agree to terms of service")
-	ErrUsernameAlreadyTaken    = errors.New("username already taken")
-	ErrGenerateKeypair         = errors.New("failed to generate keypair")
-	ErrEncodePublicKey         = errors.New("failed to encode public key")
-	ErrHashPassword            = errors.New("failed to hash password")
-	ErrCreateAccount           = errors.New("failed to create account")
+	ErrEmailRequired              = errors.New("email is required")
+	ErrMustAgreeToTerms           = errors.New("must agree to terms of service")
+	ErrUsernameAlreadyTaken       = errors.New("username already taken")
+	ErrGenerateKeypair            = errors.New("failed to generate keypair")
+	ErrEncodePublicKey            = errors.New("failed to encode public key")
+	ErrHashPassword               = errors.New("failed to hash password")
+	ErrCreateAccount              = errors.New("failed to create account")
 	ErrCryptoServiceNotConfigured = errors.New("crypto service not configured")
 	ErrAuthServiceNotConfigured   = errors.New("auth service not configured")
 	ErrStorageNotAvailable        = errors.New("storage not available")
 
 	// User operations
-	ErrCheckAccountPinned         = errors.New("failed to check if account is pinned")
-	ErrGetUser                   = errors.New("failed to get user")
-	ErrGetUserPreferences        = errors.New("failed to get user preferences")
-	ErrCheckDomainBlockedByUser  = errors.New("failed to check if domain is blocked by user")
-	ErrGetFieldVerification      = errors.New("failed to get field verification")
-	ErrGetAccountNote            = errors.New("failed to get account note")
-	ErrUserRepositoryNotAvailable = errors.New("user repository not available")
+	ErrCheckAccountPinned                = errors.New("failed to check if account is pinned")
+	ErrGetUser                           = errors.New("failed to get user")
+	ErrGetUserPreferences                = errors.New("failed to get user preferences")
+	ErrCheckDomainBlockedByUser          = errors.New("failed to check if domain is blocked by user")
+	ErrGetFieldVerification              = errors.New("failed to get field verification")
+	ErrGetAccountNote                    = errors.New("failed to get account note")
+	ErrUserRepositoryNotAvailable        = errors.New("user repository not available")
 	ErrDomainBlockRepositoryNotAvailable = errors.New("domain block repository not available")
 	ErrAccountRepositoryNotAvailable     = errors.New("account repository not available")
 
@@ -105,14 +105,14 @@ const (
 
 // Service provides account operations
 type Service struct {
-	storage          core.RepositoryStorage
-	publisher        streaming.Publisher
-	logger           *zap.Logger
-	domainName       string
-	federation       FederationService // Interface to be defined
-	crypto           CryptoService     // Interface for crypto operations
-	auth             AuthService       // Interface for auth operations
-	
+	storage    core.RepositoryStorage
+	publisher  streaming.Publisher
+	logger     *zap.Logger
+	domainName string
+	federation FederationService // Interface to be defined
+	crypto     CryptoService     // Interface for crypto operations
+	auth       AuthService       // Interface for auth operations
+
 	// Business logic frameworks for semantic consolidation
 	businessLogic    *common.BusinessLogicService
 	activityPubLogic *common.ActivityPubBusinessLogic
@@ -156,14 +156,14 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 			Payload:   event.Metadata,
 		}
 	}
-	
+
 	// Emit using the publisher
 	for _, event := range streamingEvents {
 		if err := e.publisher.PublishToStream(ctx, event.Stream, event); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -808,9 +808,9 @@ func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage
 	// Use centralized business logic for event creation
 	businessEvents := common.EmitEntityUpdatedEvents(ctx, "account", account.User.Username, account.User.Username, account, map[string]interface{}{
 		"profile_fields": account.User.Fields,
-		"last_updated":  time.Now(),
+		"last_updated":   time.Now(),
 	})
-	
+
 	// Convert to streaming events and emit
 	var streamingEvents []*streaming.Event
 	for _, businessEvent := range businessEvents {
@@ -820,14 +820,14 @@ func (s *Service) emitAccountUpdatedEvents(ctx context.Context, account *storage
 			Timestamp: businessEvent.Timestamp,
 			Payload:   businessEvent.Metadata,
 		}
-		
+
 		// Emit to user's stream
 		if err := s.publisher.PublishToUser(ctx, account.User.Username, streamingEvent); err != nil {
 			s.logger.Error("failed to publish account update to user stream", zap.Error(err))
 		} else {
 			streamingEvents = append(streamingEvents, streamingEvent)
 		}
-		
+
 		// Also emit to followers' streams
 		followersEvent := *streamingEvent
 		followersEvent.Stream = fmt.Sprintf("followers:%s", account.User.Username)
@@ -1587,19 +1587,19 @@ func (s *Service) getFollowingPageData(ctx context.Context, query *GetActivityPu
 // convertUsernamesToActorIDs converts a list of usernames to ActivityPub actor IDs
 func (s *Service) convertUsernamesToActorIDs(ctx context.Context, usernames []string, logContext string) []any {
 	orderedItems := make([]any, 0, len(usernames))
-	
+
 	for _, username := range usernames {
 		account, err := s.storage.Account().GetAccount(ctx, username)
 		if err != nil {
-			s.logger.Warn("failed to get account details", 
-				zap.String("username", username), 
+			s.logger.Warn("failed to get account details",
+				zap.String("username", username),
 				zap.String("context", logContext),
 				zap.Error(err))
 			continue
 		}
 		orderedItems = append(orderedItems, account.Actor.ID)
 	}
-	
+
 	return orderedItems
 }
 
@@ -2338,7 +2338,7 @@ func (s *Service) checkBlocking(ctx context.Context, relationshipRepo *repositor
 	if relationshipRepo == nil {
 		return false
 	}
-	
+
 	// Check if blockerID has blocked blockedID
 	blocked, err := relationshipRepo.IsBlocked(ctx, blockerID, blockedID)
 	if err != nil {
@@ -2349,7 +2349,7 @@ func (s *Service) checkBlocking(ctx context.Context, relationshipRepo *repositor
 			zap.Error(err))
 		return false
 	}
-	
+
 	return blocked
 }
 
@@ -2360,7 +2360,7 @@ func (s *Service) getAccountRelationship(ctx context.Context, username, targetAc
 	}
 
 	relationshipData := s.buildRelationshipData(ctx, username, targetAccount)
-	
+
 	return map[string]any{
 		"id":                   targetAccount,
 		"following":            relationshipData.Following,
@@ -2379,16 +2379,16 @@ func (s *Service) getAccountRelationship(ctx context.Context, username, targetAc
 
 // relationshipData holds all relationship status information
 type relationshipData struct {
-	Following            bool
-	FollowedBy           bool
-	Blocking             bool
-	BlockedBy            bool
-	Muting               bool
-	MutingNotifications  bool
-	Requested            bool
-	DomainBlocking       bool
-	Endorsed             bool
-	AccountNote          string
+	Following           bool
+	FollowedBy          bool
+	Blocking            bool
+	BlockedBy           bool
+	Muting              bool
+	MutingNotifications bool
+	Requested           bool
+	DomainBlocking      bool
+	Endorsed            bool
+	AccountNote         string
 }
 
 // validateRelationshipStorage checks if storage and relationship repo are available
@@ -2405,25 +2405,25 @@ func (s *Service) validateRelationshipStorage() error {
 // buildRelationshipData collects all relationship information
 func (s *Service) buildRelationshipData(ctx context.Context, username, targetAccount string) *relationshipData {
 	data := &relationshipData{}
-	
+
 	relationshipRepo := s.storage.Relationship()
-	
+
 	// Basic relationship checks
 	data.Following = s.checkFollowingStatus(ctx, relationshipRepo, username, targetAccount)
 	data.FollowedBy = s.checkFollowingStatus(ctx, relationshipRepo, targetAccount, username)
 	data.Blocking = s.checkBlocking(ctx, relationshipRepo, username, targetAccount)
 	data.BlockedBy = s.checkBlocking(ctx, relationshipRepo, targetAccount, username)
-	
+
 	// Muting checks
 	data.Muting = s.checkMutingStatus(ctx, relationshipRepo, username, targetAccount)
 	data.MutingNotifications = s.checkMutingNotifications(ctx, relationshipRepo, username, targetAccount, data.Muting)
-	
+
 	// Additional relationship status
 	data.Requested = s.checkFollowRequest(ctx, relationshipRepo, username, targetAccount)
 	data.DomainBlocking = s.checkDomainBlocking(ctx, username, targetAccount)
 	data.Endorsed = s.checkEndorsementStatus(ctx, username, targetAccount)
 	data.AccountNote = s.getAccountNoteText(ctx, username, targetAccount)
-	
+
 	return data
 }
 
@@ -2458,12 +2458,12 @@ func (s *Service) checkMutingNotifications(ctx context.Context, repo *repositori
 	if !isMuting {
 		return false
 	}
-	
+
 	muteDetails, err := repo.GetMute(ctx, username, targetAccount)
 	if err != nil || muteDetails == nil {
 		return false
 	}
-	
+
 	return muteDetails.HideNotifications || !muteDetails.Notifications
 }
 
@@ -2482,12 +2482,12 @@ func (s *Service) checkDomainBlocking(ctx context.Context, username, targetAccou
 	if err := common.ValidateRequiredParam("domain", domain); err != nil {
 		return false
 	}
-	
+
 	accountRepo := s.storage.Account()
 	if accountRepo == nil {
 		return false
 	}
-	
+
 	domainBlocking, err := accountRepo.IsBlockedDomain(ctx, username, domain)
 	if err != nil {
 		return false
@@ -2500,12 +2500,12 @@ func (s *Service) extractDomainFromAccount(account string) string {
 	if !strings.Contains(account, "@") {
 		return ""
 	}
-	
+
 	parts := strings.Split(account, "@")
 	if len(parts) <= 1 {
 		return ""
 	}
-	
+
 	return parts[len(parts)-1]
 }
 
@@ -2515,18 +2515,18 @@ func (s *Service) checkEndorsementStatus(ctx context.Context, username, targetAc
 	if userRepo == nil {
 		return false
 	}
-	
+
 	pins, err := userRepo.GetAccountPins(ctx, username)
 	if err != nil {
 		return false
 	}
-	
+
 	for _, pin := range pins {
 		if pin.PinnedActorID == targetAccount {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -2536,11 +2536,11 @@ func (s *Service) getAccountNoteText(ctx context.Context, username, targetAccoun
 	if userRepo == nil {
 		return ""
 	}
-	
+
 	note, err := userRepo.GetAccountNote(ctx, username, targetAccount)
 	if err != nil || note == nil {
 		return ""
 	}
-	
+
 	return note.Note
 }

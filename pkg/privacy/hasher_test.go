@@ -12,17 +12,17 @@ func TestGenerateMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateMasterKey failed: %v", err)
 	}
-	
+
 	if len(key) != 64 {
 		t.Errorf("Expected key length 64, got %d", len(key))
 	}
-	
+
 	// Generate another key and ensure they're different
 	key2, err := GenerateMasterKey()
 	if err != nil {
 		t.Fatalf("GenerateMasterKey failed: %v", err)
 	}
-	
+
 	if string(key) == string(key2) {
 		t.Error("Generated keys should be different")
 	}
@@ -33,13 +33,13 @@ func TestGenerateMasterKeyBase64(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateMasterKeyBase64 failed: %v", err)
 	}
-	
+
 	// Decode to verify it's valid base64
 	decoded, err := base64.StdEncoding.DecodeString(keyStr)
 	if err != nil {
 		t.Errorf("Generated key is not valid base64: %v", err)
 	}
-	
+
 	if len(decoded) != 64 {
 		t.Errorf("Expected decoded key length 64, got %d", len(decoded))
 	}
@@ -49,26 +49,26 @@ func TestNewHasher(t *testing.T) {
 	// Test with valid config
 	config := DefaultConfig()
 	config.MasterKey = make([]byte, 64)
-	
+
 	hasher, err := NewHasher(config)
 	if err != nil {
 		t.Fatalf("NewHasher failed: %v", err)
 	}
-	
+
 	if hasher == nil {
 		t.Error("Expected non-nil hasher")
 	}
-	
+
 	// Test with nil config (should use default)
 	_, err = NewHasher(nil)
 	if err == nil {
 		t.Error("Expected error with nil config (no master key)")
 	}
-	
+
 	// Test with short master key
 	shortConfig := DefaultConfig()
 	shortConfig.MasterKey = make([]byte, 16) // Too short
-	
+
 	_, err = NewHasher(shortConfig)
 	if err == nil {
 		t.Error("Expected error with short master key")
@@ -82,27 +82,27 @@ func TestNewHasherFromMasterKey(t *testing.T) {
 		keyBytes[i] = byte(i)
 	}
 	base64Key := base64.StdEncoding.EncodeToString(keyBytes)
-	
+
 	hasher, err := NewHasherFromMasterKey(base64Key)
 	if err != nil {
 		t.Fatalf("NewHasherFromMasterKey failed: %v", err)
 	}
-	
+
 	if hasher == nil {
 		t.Error("Expected non-nil hasher")
 	}
-	
+
 	// Test with raw string
 	rawKey := "this_is_a_very_long_key_for_testing_purposes_that_is_at_least_64_chars"
 	hasher2, err := NewHasherFromMasterKey(rawKey)
 	if err != nil {
 		t.Fatalf("NewHasherFromMasterKey with raw key failed: %v", err)
 	}
-	
+
 	if hasher2 == nil {
 		t.Error("Expected non-nil hasher")
 	}
-	
+
 	// Verify the hashers work independently
 	result1, _ := hasher.HashIP("192.168.1.1")
 	result2, _ := hasher2.HashIP("192.168.1.1")
@@ -114,7 +114,7 @@ func TestNewHasherFromMasterKey(t *testing.T) {
 
 func TestHashFull(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	testCases := []struct {
 		data     string
 		dataType DataType
@@ -125,29 +125,29 @@ func TestHashFull(t *testing.T) {
 		{"sensitive data", DataTypePII},
 		{"generic data", DataTypeGeneric},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(string(tc.dataType), func(t *testing.T) {
 			hash1, err := hasher.Hash(tc.data, tc.dataType)
 			if err != nil {
 				t.Fatalf("Hash failed: %v", err)
 			}
-			
+
 			// Hash should be deterministic
 			hash2, err := hasher.Hash(tc.data, tc.dataType)
 			if err != nil {
 				t.Fatalf("Hash failed: %v", err)
 			}
-			
+
 			if hash1 != hash2 {
 				t.Error("Hash should be deterministic")
 			}
-			
+
 			// Hash should not be the original data
 			if hash1 == tc.data {
 				t.Error("Hash should not equal original data")
 			}
-			
+
 			// Hash should start with the expected prefix
 			expectedPrefix := "full_" + string(tc.dataType) + "_"
 			if !strings.HasPrefix(hash1, expectedPrefix) {
@@ -159,7 +159,7 @@ func TestHashFull(t *testing.T) {
 
 func TestHashIP(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	testCases := []struct {
 		name         string
 		ip           string
@@ -174,12 +174,12 @@ func TestHashIP(t *testing.T) {
 		{"Invalid IP", "not.an.ip", LevelPartial, false},
 		{"Empty IP", "", LevelPartial, false},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Update hasher config for this test
 			hasher.config.IPLevel = tc.privacyLevel
-			
+
 			result, err := hasher.HashIP(tc.ip)
 			if tc.expectError && err == nil {
 				t.Error("Expected error but got none")
@@ -187,14 +187,14 @@ func TestHashIP(t *testing.T) {
 			if !tc.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
-			
+
 			if tc.ip == "" {
 				if result != "" {
 					t.Error("Empty IP should return empty result")
 				}
 				return
 			}
-			
+
 			switch tc.privacyLevel {
 			case LevelNone:
 				if result != tc.ip {
@@ -220,7 +220,7 @@ func TestHashIP(t *testing.T) {
 
 func TestHashEmail(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	testCases := []struct {
 		name         string
 		email        string
@@ -232,23 +232,23 @@ func TestHashEmail(t *testing.T) {
 		{"Invalid Email", "not-an-email", LevelPartial},
 		{"Empty Email", "", LevelPartial},
 	}
-	
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			hasher.config.EmailLevel = tc.privacyLevel
-			
+
 			result, err := hasher.HashEmail(tc.email)
 			if err != nil {
 				t.Fatalf("HashEmail failed: %v", err)
 			}
-			
+
 			if tc.email == "" {
 				if result != "" {
 					t.Error("Empty email should return empty result")
 				}
 				return
 			}
-			
+
 			switch tc.privacyLevel {
 			case LevelNone:
 				if result != tc.email {
@@ -271,23 +271,23 @@ func TestHashEmail(t *testing.T) {
 
 func TestHashUsername(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	username := "testuser"
 	result, err := hasher.HashUsername(username)
 	if err != nil {
 		t.Fatalf("HashUsername failed: %v", err)
 	}
-	
+
 	if result == username {
 		t.Error("Hashed username should not equal original")
 	}
-	
+
 	// Should be deterministic
 	result2, err := hasher.HashUsername(username)
 	if err != nil {
 		t.Fatalf("HashUsername failed: %v", err)
 	}
-	
+
 	if result != result2 {
 		t.Error("Username hashing should be deterministic")
 	}
@@ -295,23 +295,23 @@ func TestHashUsername(t *testing.T) {
 
 func TestHashPII(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	pii := "John Doe"
 	result, err := hasher.HashPII(pii)
 	if err != nil {
 		t.Fatalf("HashPII failed: %v", err)
 	}
-	
+
 	if result == pii {
 		t.Error("Hashed PII should not equal original")
 	}
-	
+
 	// Should be deterministic
 	result2, err := hasher.HashPII(pii)
 	if err != nil {
 		t.Fatalf("HashPII failed: %v", err)
 	}
-	
+
 	if result != result2 {
 		t.Error("PII hashing should be deterministic")
 	}
@@ -319,29 +319,29 @@ func TestHashPII(t *testing.T) {
 
 func TestVerifyHash(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	data := "test data"
 	hash, err := hasher.Hash(data, DataTypeGeneric)
 	if err != nil {
 		t.Fatalf("Hash failed: %v", err)
 	}
-	
+
 	// Verify correct hash
 	valid, err := hasher.VerifyHash(data, hash, DataTypeGeneric)
 	if err != nil {
 		t.Fatalf("VerifyHash failed: %v", err)
 	}
-	
+
 	if !valid {
 		t.Error("Hash verification should succeed for correct data")
 	}
-	
+
 	// Verify incorrect hash
 	valid, err = hasher.VerifyHash("wrong data", hash, DataTypeGeneric)
 	if err != nil {
 		t.Fatalf("VerifyHash failed: %v", err)
 	}
-	
+
 	if valid {
 		t.Error("Hash verification should fail for incorrect data")
 	}
@@ -349,13 +349,13 @@ func TestVerifyHash(t *testing.T) {
 
 func TestConfigSecurity(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	// GetConfig should not expose the master key
 	config := hasher.GetConfig()
 	if config.MasterKey != nil {
 		t.Error("GetConfig should not expose master key")
 	}
-	
+
 	// Other fields should be preserved
 	if config.IPLevel == "" {
 		t.Error("GetConfig should preserve privacy levels")
@@ -364,14 +364,14 @@ func TestConfigSecurity(t *testing.T) {
 
 func TestContextKeyDerivation(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	// Different data types should produce different hashes for the same data
 	data := "test data"
-	
+
 	hashIP, _ := hasher.Hash(data, DataTypeIP)
 	hashEmail, _ := hasher.Hash(data, DataTypeEmail)
 	hashUsername, _ := hasher.Hash(data, DataTypeUsername)
-	
+
 	if hashIP == hashEmail || hashIP == hashUsername || hashEmail == hashUsername {
 		t.Error("Different data types should produce different hashes")
 	}
@@ -379,25 +379,25 @@ func TestContextKeyDerivation(t *testing.T) {
 
 func TestTimingAttackResistance(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	data := "test data"
 	hash, _ := hasher.Hash(data, DataTypeGeneric)
-	
+
 	// This is a basic test - in practice, timing attack resistance
 	// would need more sophisticated testing
 	start := time.Now()
 	hasher.VerifyHash(data, hash, DataTypeGeneric)
 	correctTime := time.Since(start)
-	
+
 	start = time.Now()
 	hasher.VerifyHash("wrong", hash, DataTypeGeneric)
 	incorrectTime := time.Since(start)
-	
+
 	// Times should be similar (within an order of magnitude)
 	// This is a crude test but better than nothing
 	ratio := float64(correctTime) / float64(incorrectTime)
 	if ratio > 10 || ratio < 0.1 {
-		t.Logf("Timing difference may indicate vulnerability: correct=%v, incorrect=%v", 
+		t.Logf("Timing difference may indicate vulnerability: correct=%v, incorrect=%v",
 			correctTime, incorrectTime)
 		// Don't fail the test as timing can vary, but log the concern
 	}
@@ -408,15 +408,15 @@ func TestErrorHandling(t *testing.T) {
 	config := DefaultConfig()
 	config.MasterKey = make([]byte, 64)
 	config.Argon2Memory = 0 // Invalid
-	
+
 	_, err := NewHasher(config)
 	if err == nil {
 		t.Error("Expected error with invalid Argon2 memory")
 	}
-	
+
 	config.Argon2Memory = 1024
 	config.Argon2Time = 0 // Invalid
-	
+
 	_, err = NewHasher(config)
 	if err == nil {
 		t.Error("Expected error with invalid Argon2 time")
@@ -425,7 +425,7 @@ func TestErrorHandling(t *testing.T) {
 
 func TestEmptyDataHandling(t *testing.T) {
 	hasher := createTestHasher(t)
-	
+
 	// Test empty strings
 	result, err := hasher.Hash("", DataTypeGeneric)
 	if err != nil {
@@ -434,7 +434,7 @@ func TestEmptyDataHandling(t *testing.T) {
 	if result != "" {
 		t.Error("Empty string should return empty result")
 	}
-	
+
 	result, err = hasher.HashIP("")
 	if err != nil {
 		t.Errorf("HashIP should handle empty string: %v", err)
@@ -452,12 +452,12 @@ func createTestHasher(t *testing.T) *Hasher {
 	for i := range config.MasterKey {
 		config.MasterKey[i] = byte(i % 256)
 	}
-	
+
 	hasher, err := NewHasher(config)
 	if err != nil {
 		t.Fatalf("Failed to create test hasher: %v", err)
 	}
-	
+
 	return hasher
 }
 
@@ -465,7 +465,7 @@ func createTestHasher(t *testing.T) *Hasher {
 func BenchmarkHashIP(b *testing.B) {
 	hasher := createBenchHasher(b)
 	ip := "192.168.1.100"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := hasher.HashIP(ip)
@@ -478,7 +478,7 @@ func BenchmarkHashIP(b *testing.B) {
 func BenchmarkHashEmail(b *testing.B) {
 	hasher := createBenchHasher(b)
 	email := "user@example.com"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := hasher.HashEmail(email)
@@ -491,7 +491,7 @@ func BenchmarkHashEmail(b *testing.B) {
 func BenchmarkHashFull(b *testing.B) {
 	hasher := createBenchHasher(b)
 	data := "test data for hashing"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_, err := hasher.Hash(data, DataTypeGeneric)
@@ -507,16 +507,16 @@ func createBenchHasher(b *testing.B) *Hasher {
 	for i := range config.MasterKey {
 		config.MasterKey[i] = byte(i % 256)
 	}
-	
+
 	// Use faster parameters for benchmarking
 	config.Argon2Memory = 4 * 1024
 	config.Argon2Time = 1
 	config.Argon2Threads = 1
-	
+
 	hasher, err := NewHasher(config)
 	if err != nil {
 		b.Fatalf("Failed to create bench hasher: %v", err)
 	}
-	
+
 	return hasher
 }

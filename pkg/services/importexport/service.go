@@ -488,7 +488,7 @@ func (s *Service) CancelExport(ctx context.Context, cmd *CancelExportCommand) (*
 			},
 			Timestamp: time.Now(),
 		}
-		
+
 		err = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		if err != nil {
 			s.logger.Warn("failed to publish export cancellation event",
@@ -562,7 +562,7 @@ func (s *Service) CreateImport(ctx context.Context, cmd *CreateImportCommand) (*
 			},
 			Timestamp: time.Now(),
 		}
-		
+
 		err = s.publisher.PublishToUser(ctx, cmd.Username, &event)
 		if err != nil {
 			s.logger.Warn("failed to publish import creation event",

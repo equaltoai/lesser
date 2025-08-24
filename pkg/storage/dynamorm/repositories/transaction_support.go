@@ -350,12 +350,12 @@ func (tc *TransactionContext) GetOperationCount() int {
 func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, followerID, followeeID string) error {
 	return r.tm.ExecuteTransaction(ctx, func(txCtx *TransactionContext) error {
 		now := time.Now()
-		
+
 		// 1. Create follow relationship using NewFollow constructor
 		activityID := fmt.Sprintf("follow-%s-%s-%d", followerID, followeeID, now.Unix())
 		follow := models.NewFollow(followerID, followeeID, activityID)
 		follow.Accept() // Mark as accepted immediately for direct follows
-		
+
 		if err := txCtx.Put(follow); err != nil {
 			return fmt.Errorf("failed to create follow relationship: %w", err)
 		}
@@ -368,7 +368,7 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 		followerActor.SK = "PROFILE"
 		followerActor.FollowingCount++
 		followerActor.UpdatedAt = now
-		
+
 		if err := txCtx.Update(followerActor); err != nil {
 			return fmt.Errorf("failed to update follower's following count: %w", err)
 		}
@@ -381,7 +381,7 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 		followeeActor.SK = "PROFILE"
 		followeeActor.FollowerCount++
 		followeeActor.UpdatedAt = now
-		
+
 		if err := txCtx.Update(followeeActor); err != nil {
 			return fmt.Errorf("failed to update followee's follower count: %w", err)
 		}
@@ -403,7 +403,7 @@ func (r *TransactionalRepository) FollowUserTransactional(ctx context.Context, f
 		// Set up keys manually
 		notification.PK = fmt.Sprintf("NOTIF#%s", followeeID)
 		notification.SK = fmt.Sprintf("%s#%s", now.Format("2006-01-02T15:04:05.000Z"), notificationID)
-		
+
 		if err := txCtx.Put(notification); err != nil {
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
@@ -587,20 +587,20 @@ func isRetryableError(err error) bool {
 	}
 
 	errorStr := strings.ToLower(err.Error())
-	
+
 	// DynamoDB-specific retryable errors
 	retryablePatterns := []string{
 		"throttlingexception",
 		"throttled",
 		"throttle",
 		"provisionedthroughputexceededexception",
-		"serviceexception", 
+		"serviceexception",
 		"internalservererror",
 		"temporaryerror",
 		"temporary error",
 		"timeout",
 		"connection reset",
-		"connection refused", 
+		"connection refused",
 		"network error",
 		"transactionconflictexception",
 		"conditionalcheckfailedexception", // Can be retryable in some cases
@@ -637,7 +637,7 @@ func isRetryableError(err error) bool {
 	// Check for specific AWS error codes that are retryable
 	awsRetryableCodes := []string{
 		"throttling",
-		"requesttimeout", 
+		"requesttimeout",
 		"requesttimewaitstate",
 		"provisionedthroughputexceeded",
 		"serviceunavailable",
@@ -657,7 +657,7 @@ func isRetryableError(err error) bool {
 	// Check for HTTP status codes that indicate retryable errors
 	httpRetryablePatterns := []string{
 		"429", // Too Many Requests
-		"500", // Internal Server Error  
+		"500", // Internal Server Error
 		"502", // Bad Gateway
 		"503", // Service Unavailable
 		"504", // Gateway Timeout

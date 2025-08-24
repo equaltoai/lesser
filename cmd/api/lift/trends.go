@@ -262,7 +262,7 @@ func (h *Handler) HandleGetTrendingTagsV2Lift(ctx *lift.Context) error {
 	}, h.convertHashtagsToV2Format)
 }
 
-// HandleGetTrendingStatusesV2Lift handles GET /api/v2/trends/statuses  
+// HandleGetTrendingStatusesV2Lift handles GET /api/v2/trends/statuses
 // Returns trending statuses with enhanced metrics
 func (h *Handler) HandleGetTrendingStatusesV2Lift(ctx *lift.Context) error {
 	// Initialize trend service if not already initialized

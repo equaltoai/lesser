@@ -25,8 +25,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -66,7 +66,6 @@ type DateRange struct {
 	Start time.Time `json:"start"`
 	End   time.Time `json:"end"`
 }
-
 
 func main() {
 	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
@@ -116,7 +115,7 @@ func main() {
 
 	lambda.Start(func(ctx context.Context, event events.SQSEvent) error {
 		liftCtx := &lift.Context{
-			Request: &lift.Request{},
+			Request:   &lift.Request{},
 			RequestID: fmt.Sprintf("export-%d", time.Now().UnixNano()),
 		}
 		return processor.HandleSQSWithContext(ctx, liftCtx, event)
@@ -310,7 +309,7 @@ func (ep *ExportProcessor) processExportJob(ctx context.Context, event ExportGen
 
 	default:
 		ep.logger.Error("unsupported export format", zap.String("format", event.Format))
-	return ErrUnsupportedExportFormat
+		return ErrUnsupportedExportFormat
 	}
 
 	if err != nil {
@@ -1466,7 +1465,7 @@ func (ep *ExportProcessor) fetchUserMedia(ctx context.Context, username string) 
 		if mediaItem == nil {
 			continue
 		}
-		
+
 		// Convert models.Media to map[string]any for export compatibility
 		mediaMap := map[string]any{
 			"ID":          mediaItem.MediaID,

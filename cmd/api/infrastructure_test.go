@@ -255,7 +255,7 @@ func TestMainFunctionIntegration(t *testing.T) {
 		assert.NotNil(t, logger, "logger should be initialized")
 		assert.NotNil(t, liftHandler, "lift handler should be initialized")
 		assert.NotNil(t, authService, "auth service should be initialized")
-		
+
 		// Observability services might be nil if DISABLE_METRICS is set
 		// These are conditional based on environment variables
 		if emfMetrics != nil {

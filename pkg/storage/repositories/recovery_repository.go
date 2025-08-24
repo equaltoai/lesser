@@ -149,7 +149,7 @@ func (r *RecoveryRepository) StoreRecoveryRequest(ctx context.Context, request *
 	}
 
 	// Update keys (this will set PK, SK, GSI keys, and TTL)
-	model.UpdateKeys()
+	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
 	// Create the recovery request
 	if err := r.db.WithContext(ctx).Model(model).Create(); err != nil {

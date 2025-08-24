@@ -33,7 +33,9 @@ func (p *AccountPin) BeforeCreate() error {
 	}
 
 	// Update keys
-	p.UpdateKeys()
+	if err := p.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return nil
 }
@@ -86,7 +88,9 @@ func (n *AccountNote) BeforeCreate() error {
 	}
 
 	// Update keys
-	n.UpdateKeys()
+	if err := n.UpdateKeys(); err != nil {
+		return fmt.Errorf("failed to update keys: %w", err)
+	}
 
 	return nil
 }

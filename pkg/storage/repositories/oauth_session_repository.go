@@ -2,10 +2,10 @@ package repositories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
-	"errors"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -66,7 +66,7 @@ func (r *OAuthSessionRepository) GetOAuthSession(ctx context.Context, sessionID 
 // GetOAuthSessionByState retrieves an OAuth session by OAuth state parameter
 func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, state string) (*models.OAuthAuthSession, error) {
 	var sessions []models.OAuthAuthSession
-	
+
 	err := r.GetDB().WithContext(ctx).Model(&models.OAuthAuthSession{}).
 		Index("state-index").
 		Where("GSI2PK", "=", fmt.Sprintf("OAUTH_STATE#%s", state)).
@@ -75,7 +75,7 @@ func (r *OAuthSessionRepository) GetOAuthSessionByState(ctx context.Context, sta
 	if err != nil || len(sessions) == 0 {
 		return nil, ErrorHandler.HandleGetError(errors.New("OAuth session not found for state"), EntityOAuthState, state)
 	}
-	
+
 	session := &sessions[0]
 
 	// Check if session is expired
@@ -199,10 +199,10 @@ func (r *OAuthSessionRepository) SetOAuthSessionFlowStep(ctx context.Context, se
 }
 
 // CleanupExpiredOAuthSessions removes expired OAuth sessions (to be called by cleanup job)
-func (r *OAuthSessionRepository) CleanupExpiredOAuthSessions(_ context.Context, limit int) (int, error) {
+func (r *OAuthSessionRepository) CleanupExpiredOAuthSessions(_ context.Context, _ int) (int, error) {
 	// DynamoDB TTL will automatically handle cleanup, but we can implement
 	// manual cleanup for immediate removal if needed
-	
+
 	// For now, just return 0 since TTL handles cleanup
 	// In a production system, you might scan for expired sessions and delete them
 	return 0, nil

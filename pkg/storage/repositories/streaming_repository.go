@@ -14,6 +14,11 @@ import (
 	"go.uber.org/zap"
 )
 
+// Streaming status constants
+const (
+	StatusCurrent = "CURRENT"
+)
+
 // DeviceProvider interface for getting user devices
 type DeviceProvider interface {
 	GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error)
@@ -45,7 +50,7 @@ func NewStreamingRepositoryWithCostTracking(db core.DB, tableName string, logger
 func (r *StreamingRepository) GetStreamingPreferences(ctx context.Context, username string) (*storage.StreamingPreferences, error) {
 	model := &models.StreamingPreferences{}
 	pk := fmt.Sprintf("STREAMING_PREFS#%s", username)
-	sk := "CURRENT"
+	sk := StatusCurrent
 
 	err := r.Get(ctx, pk, sk, model)
 	if err != nil {
@@ -106,6 +111,8 @@ func (r *StreamingRepository) UpdateStreamingPreferences(ctx context.Context, pr
 		// Log error but don't fail the update - matching legacy behavior
 		// Note: BaseRepository doesn't expose logger directly, so we use a simple approach
 		// In production, consider adding a GetLogger() method to BaseRepository
+		// For now, we silently continue as intended by legacy behavior
+		_ = err // acknowledge error but continue execution
 	}
 
 	return nil
@@ -136,7 +143,7 @@ func (r *StreamingRepository) GetStreamingPreferencesByDevice(ctx context.Contex
 	deviceModel := &models.StreamingPreferences{}
 	pk := fmt.Sprintf("STREAMING_PREFS#%s", username)
 	sk := fmt.Sprintf("DEVICE#%s", deviceID)
-	
+
 	err = r.Get(ctx, pk, sk, deviceModel)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -175,7 +182,7 @@ func (r *StreamingRepository) UpdateDeviceStreamingPreferences(ctx context.Conte
 func (r *StreamingRepository) GetStreamingPreferenceHistory(ctx context.Context, username string, limit int) ([]*storage.StreamingPreferences, error) {
 	pk := fmt.Sprintf("STREAMING_PREFS#%s", username)
 	skPrefix := "VERSION#"
-	
+
 	if limit <= 0 {
 		limit = 50 // Default limit
 	}
@@ -225,6 +232,8 @@ func (r *StreamingRepository) SyncStreamingPreferences(ctx context.Context, user
 			// Log error but continue with other devices - matching legacy behavior
 			// Note: BaseRepository doesn't expose logger directly
 			// In production, consider adding a GetLogger() method to BaseRepository
+			// Continue processing other devices despite individual failures
+			_ = err // acknowledge error but continue processing
 		}
 	}
 

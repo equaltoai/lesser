@@ -4,28 +4,28 @@ import "errors"
 
 // Error constants for account operations
 var (
-	ErrInvalidActorIDFormat           = errors.New("invalid actor ID format")
-	ErrUnableToParseRequestBody       = errors.New("unable to parse request body")
-	ErrMissingBoundaryInContentType   = errors.New("missing boundary in content type")
-	ErrInvalidContentType             = errors.New("invalid content type")
-	ErrUnsupportedCollectionType      = errors.New("unsupported collection type")
+	ErrInvalidActorIDFormat         = errors.New("invalid actor ID format")
+	ErrUnableToParseRequestBody     = errors.New("unable to parse request body")
+	ErrMissingBoundaryInContentType = errors.New("missing boundary in content type")
+	ErrInvalidContentType           = errors.New("invalid content type")
+	ErrUnsupportedCollectionType    = errors.New("unsupported collection type")
 )
 
 // Error constants for helper operations
 var (
-	ErrInvalidAccountURL              = errors.New("invalid account URL")
-	ErrRemoteAccountsNotSupported     = errors.New("remote accounts not yet supported")
-	ErrHelperUnauthorized             = errors.New("unauthorized")
-	ErrHelperInsufficientScope        = errors.New("insufficient scope")
-	ErrInvalidAccountID               = errors.New("invalid account ID")
-	ErrFailedToInitializeAuthService  = errors.New("failed to initialize auth service")
+	ErrInvalidAccountURL             = errors.New("invalid account URL")
+	ErrRemoteAccountsNotSupported    = errors.New("remote accounts not yet supported")
+	ErrHelperUnauthorized            = errors.New("unauthorized")
+	ErrHelperInsufficientScope       = errors.New("insufficient scope")
+	ErrInvalidAccountID              = errors.New("invalid account ID")
+	ErrFailedToInitializeAuthService = errors.New("failed to initialize auth service")
 )
 
 // Error constants for import operations
 var (
-	ErrInvalidImportType    = errors.New("invalid import type")
-	ErrInvalidImportMode    = errors.New("mode must be 'merge' or 'overwrite'")
-	ErrUnsupportedFileFormat = errors.New("unsupported file format")
+	ErrInvalidImportType             = errors.New("invalid import type")
+	ErrInvalidImportMode             = errors.New("mode must be 'merge' or 'overwrite'")
+	ErrUnsupportedFileFormat         = errors.New("unsupported file format")
 	ErrJobQueueServiceCreationFailed = errors.New("failed to create job queue service")
 )
 
@@ -46,20 +46,20 @@ var (
 
 // Error constants for search operations
 var (
-	ErrSearchFailed                     = errors.New("search failed")
-	ErrPrivacyAwareSearchFailed         = errors.New("privacy-aware search failed")
-	ErrStatusSearchFailed               = errors.New("status search failed")
-	ErrPrivacyAwareStatusSearchFailed   = errors.New("privacy-aware status search failed")
+	ErrSearchFailed                   = errors.New("search failed")
+	ErrPrivacyAwareSearchFailed       = errors.New("privacy-aware search failed")
+	ErrStatusSearchFailed             = errors.New("status search failed")
+	ErrPrivacyAwareStatusSearchFailed = errors.New("privacy-aware status search failed")
 )
 
 // Error constants for OAuth operations
 var (
-	ErrFailedToGenerateTokens    = errors.New("failed to generate tokens")
+	ErrFailedToGenerateTokens       = errors.New("failed to generate tokens")
 	ErrFailedToValidateRefreshToken = errors.New("failed to validate refresh token")
-	ErrFailedToGenerateNewTokens = errors.New("failed to generate new tokens")
+	ErrFailedToGenerateNewTokens    = errors.New("failed to generate new tokens")
 	ErrFailedToStoreNewRefreshToken = errors.New("failed to store new refresh token")
-	ErrFailedToCreateOAuthSession = errors.New("failed to create OAuth session")
-	ErrFailedToCreateUserSession = errors.New("failed to create user session")
+	ErrFailedToCreateOAuthSession   = errors.New("failed to create OAuth session")
+	ErrFailedToCreateUserSession    = errors.New("failed to create user session")
 )
 
 // Error constants for VAPID key operations

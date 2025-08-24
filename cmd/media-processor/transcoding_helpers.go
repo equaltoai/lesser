@@ -100,7 +100,7 @@ func (mp *MediaProcessor) trackTranscodingCosts(ctx context.Context, metrics *Tr
 	}
 
 	const formatUnknown = "unknown"
-	
+
 	// NEW: Create enhanced MediaAnalytics with variant-level cost tracking
 	if mp.mediaAnalyticsRepo != nil {
 		analytics := &models.MediaAnalytics{}

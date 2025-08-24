@@ -189,51 +189,51 @@ func (b *ActorBuilder) Build() *activitypub.Actor {
 	if err := common.ValidateRequiredParam("b.actor.ID", b.actor.ID); err != nil {
 		b.actor.ID = b.GenerateID("users")
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.PreferredUsername", b.actor.PreferredUsername); err != nil {
 		b.actor.PreferredUsername = fmt.Sprintf("user%d", b.sequence)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.Name", b.actor.Name); err != nil {
 		b.actor.Name = fmt.Sprintf("Test User %d", b.sequence)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.Inbox", b.actor.Inbox); err != nil {
 		b.actor.Inbox = fmt.Sprintf("%s/inbox", b.actor.ID)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.Outbox", b.actor.Outbox); err != nil {
 		b.actor.Outbox = fmt.Sprintf("%s/outbox", b.actor.ID)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.Followers", b.actor.Followers); err != nil {
 		b.actor.Followers = fmt.Sprintf("%s/followers", b.actor.ID)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.Following", b.actor.Following); err != nil {
 		b.actor.Following = fmt.Sprintf("%s/following", b.actor.ID)
 	}
-	
+
 	if err := common.ValidateRequiredParam("b.actor.URL", b.actor.URL); err != nil {
 		b.actor.URL = fmt.Sprintf("https://%s/@%s", b.domain, b.actor.PreferredUsername)
 	}
-	
+
 	if b.actor.Published == nil {
 		timestamp := b.GenerateTimestamp()
 		b.actor.Published = &timestamp
 	}
-	
+
 	if b.actor.PublicKey == nil {
 		// Generate a dummy public key
 		b.WithPublicKey("-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA...\n-----END PUBLIC KEY-----")
 	}
-	
+
 	// Create a copy to return
 	result := *b.actor
-	
+
 	// Reset for next build
 	b.Reset()
-	
+
 	return &result
 }
 

@@ -53,49 +53,49 @@ type StreamingCloudWatchMetrics struct {
 
 // QualityMetric represents metrics for a specific streaming quality
 type QualityMetric struct {
-	Quality           string  `json:"quality"`             // 480p, 720p, 1080p, 4k
-	ViewerCount       int64   `json:"viewer_count"`        // Current viewers at this quality
-	ViewerPercentage  float64 `json:"viewer_percentage"`   // Percentage of total viewers
-	BufferingRate     float64 `json:"buffering_rate"`      // Buffering events per viewer per hour
-	AverageLatencyMs  int64   `json:"average_latency_ms"`  // Average response time for this quality
-	ErrorRate         float64 `json:"error_rate"`          // Error rate for this quality
+	Quality            string  `json:"quality"`             // 480p, 720p, 1080p, 4k
+	ViewerCount        int64   `json:"viewer_count"`        // Current viewers at this quality
+	ViewerPercentage   float64 `json:"viewer_percentage"`   // Percentage of total viewers
+	BufferingRate      float64 `json:"buffering_rate"`      // Buffering events per viewer per hour
+	AverageLatencyMs   int64   `json:"average_latency_ms"`  // Average response time for this quality
+	ErrorRate          float64 `json:"error_rate"`          // Error rate for this quality
 	BitrateUtilization float64 `json:"bitrate_utilization"` // Actual vs target bitrate
-	StartupTimeMs     int64   `json:"startup_time_ms"`     // Time to first frame
+	StartupTimeMs      int64   `json:"startup_time_ms"`     // Time to first frame
 }
 
 // GeographicMetric represents metrics for a specific geographic region
 type GeographicMetric struct {
-	Region            string  `json:"region"`              // US, EU, AS, etc.
-	ViewerCount       int64   `json:"viewer_count"`        // Viewers in this region
-	ViewerPercentage  float64 `json:"viewer_percentage"`   // Percentage of total viewers
-	AverageLatencyMs  int64   `json:"average_latency_ms"`  // CDN latency for this region
-	PreferredQuality  string  `json:"preferred_quality"`   // Most popular quality in this region
-	CacheHitRate      float64 `json:"cache_hit_rate"`      // CDN cache performance
+	Region             string  `json:"region"`               // US, EU, AS, etc.
+	ViewerCount        int64   `json:"viewer_count"`         // Viewers in this region
+	ViewerPercentage   float64 `json:"viewer_percentage"`    // Percentage of total viewers
+	AverageLatencyMs   int64   `json:"average_latency_ms"`   // CDN latency for this region
+	PreferredQuality   string  `json:"preferred_quality"`    // Most popular quality in this region
+	CacheHitRate       float64 `json:"cache_hit_rate"`       // CDN cache performance
 	BandwidthUsageMbps float64 `json:"bandwidth_usage_mbps"` // Average bandwidth usage
 }
 
 // ConcurrentViewerMetrics represents concurrent viewing statistics
 type ConcurrentViewerMetrics struct {
-	CurrentViewers    int64     `json:"current_viewers"`     // Real-time viewer count
-	PeakViewers       int64     `json:"peak_viewers"`        // Peak viewers in last 24h
-	PeakViewerTime    time.Time `json:"peak_viewer_time"`    // When peak occurred
-	AverageViewers    int64     `json:"average_viewers"`     // Average over measurement period
-	ViewerGrowthRate  float64   `json:"viewer_growth_rate"`  // Percentage change in viewers
-	SessionDuration   float64   `json:"session_duration"`    // Average session length in minutes
-	NewViewers        int64     `json:"new_viewers"`         // New viewers in last hour
-	ReturningViewers  int64     `json:"returning_viewers"`   // Returning viewers in last hour
+	CurrentViewers   int64     `json:"current_viewers"`    // Real-time viewer count
+	PeakViewers      int64     `json:"peak_viewers"`       // Peak viewers in last 24h
+	PeakViewerTime   time.Time `json:"peak_viewer_time"`   // When peak occurred
+	AverageViewers   int64     `json:"average_viewers"`    // Average over measurement period
+	ViewerGrowthRate float64   `json:"viewer_growth_rate"` // Percentage change in viewers
+	SessionDuration  float64   `json:"session_duration"`   // Average session length in minutes
+	NewViewers       int64     `json:"new_viewers"`        // New viewers in last hour
+	ReturningViewers int64     `json:"returning_viewers"`  // Returning viewers in last hour
 }
 
 // StreamingPerformanceMetrics represents overall streaming performance
 type StreamingPerformanceMetrics struct {
-	OverallLatencyMs    int64   `json:"overall_latency_ms"`     // Overall CDN latency
-	OverallErrorRate    float64 `json:"overall_error_rate"`     // Overall error rate across all qualities
+	OverallLatencyMs     int64   `json:"overall_latency_ms"`     // Overall CDN latency
+	OverallErrorRate     float64 `json:"overall_error_rate"`     // Overall error rate across all qualities
 	OverallBufferingRate float64 `json:"overall_buffering_rate"` // Overall buffering rate
-	ThroughputMbps      float64 `json:"throughput_mbps"`        // Current throughput
-	CDNHitRate          float64 `json:"cdn_hit_rate"`           // Overall CDN cache hit rate
-	EdgeLocations       int     `json:"edge_locations"`         // Number of active edge locations
-	AutoQualityEvents   int64   `json:"auto_quality_events"`    // Number of quality switches in last hour
-	StartupLatencyMs    int64   `json:"startup_latency_ms"`     // Average startup latency across all qualities
+	ThroughputMbps       float64 `json:"throughput_mbps"`        // Current throughput
+	CDNHitRate           float64 `json:"cdn_hit_rate"`           // Overall CDN cache hit rate
+	EdgeLocations        int     `json:"edge_locations"`         // Number of active edge locations
+	AutoQualityEvents    int64   `json:"auto_quality_events"`    // Number of quality switches in last hour
+	StartupLatencyMs     int64   `json:"startup_latency_ms"`     // Average startup latency across all qualities
 }
 
 // UpdateKeys sets the GSI keys based on the current values
@@ -138,7 +138,7 @@ func (s *StreamingCloudWatchMetrics) SetQualityBreakdown(mediaID string, metrics
 	s.CacheExpiry = time.Now().Add(5 * time.Minute)
 	s.TTL = time.Now().Add(24 * time.Hour).Unix()
 
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetGeographicData configures this record for geographic distribution metrics
@@ -159,7 +159,7 @@ func (s *StreamingCloudWatchMetrics) SetGeographicData(mediaID string, metrics m
 	s.CacheExpiry = time.Now().Add(10 * time.Minute)
 	s.TTL = time.Now().Add(24 * time.Hour).Unix()
 
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetConcurrentViewers configures this record for concurrent viewer metrics
@@ -180,7 +180,7 @@ func (s *StreamingCloudWatchMetrics) SetConcurrentViewers(mediaID string, metric
 	s.CacheExpiry = time.Now().Add(1 * time.Minute)
 	s.TTL = time.Now().Add(6 * time.Hour).Unix()
 
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetPerformanceMetrics configures this record for performance metrics
@@ -201,7 +201,7 @@ func (s *StreamingCloudWatchMetrics) SetPerformanceMetrics(mediaID string, metri
 	s.CacheExpiry = time.Now().Add(2 * time.Minute)
 	s.TTL = time.Now().Add(12 * time.Hour).Unix()
 
-	s.UpdateKeys()
+	_ = s.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // IsExpired checks if the cached data has expired
@@ -225,9 +225,9 @@ func (s *StreamingCloudWatchMetrics) GetBestQuality() string {
 
 	for quality, metrics := range s.QualityMetrics {
 		// Score based on low buffering rate, low latency, and high viewer percentage
-		score := (1.0 - metrics.BufferingRate) * 0.4 + // 40% weight on low buffering
-			(1.0 - float64(metrics.AverageLatencyMs)/1000.0) * 0.3 + // 30% weight on low latency
-			metrics.ViewerPercentage * 0.3 // 30% weight on popularity
+		score := (1.0-metrics.BufferingRate)*0.4 + // 40% weight on low buffering
+			(1.0-float64(metrics.AverageLatencyMs)/1000.0)*0.3 + // 30% weight on low latency
+			metrics.ViewerPercentage*0.3 // 30% weight on popularity
 
 		if score > bestScore {
 			bestScore = score

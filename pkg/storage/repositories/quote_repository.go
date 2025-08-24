@@ -122,7 +122,7 @@ func (r *QuoteRepository) DeleteQuoteRelationship(ctx context.Context, quoteStat
 }
 
 // getQuotesByGSI is a generic helper for querying quotes by GSI
-func (r *QuoteRepository) getQuotesByGSI(ctx context.Context, gsiKey, gsiValue string, opts interfaces.PaginationOptions, errorContext string) (*interfaces.PaginatedResult[*models.QuoteRelationship], error) {
+func (r *QuoteRepository) getQuotesByGSI(ctx context.Context, gsiKey, gsiValue string, opts interfaces.PaginationOptions, _ string) (*interfaces.PaginatedResult[*models.QuoteRelationship], error) {
 	db := r.relationshipRepo.GetDB()
 	query := db.WithContext(ctx).Model(&models.QuoteRelationship{}).
 		Where(gsiKey, "=", gsiValue).

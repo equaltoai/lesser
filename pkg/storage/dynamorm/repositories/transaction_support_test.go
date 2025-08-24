@@ -210,7 +210,7 @@ func TestConditionalCreate(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.NoError(t, err) // Transactions now implemented
+	assert.NoError(t, err)                        // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 
@@ -226,7 +226,7 @@ func TestConditionalUpdate(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.NoError(t, err) // Transactions now implemented
+	assert.NoError(t, err)                        // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 
@@ -242,7 +242,7 @@ func TestConditionalDelete(t *testing.T) {
 
 	// Should fail with placeholder error but increment operation count
 	assert.Error(t, err)
-	assert.NoError(t, err) // Transactions now implemented
+	assert.NoError(t, err)                        // Transactions now implemented
 	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
 }
 

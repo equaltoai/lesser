@@ -8,8 +8,8 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
-	"go.uber.org/zap"
 	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
+	"go.uber.org/zap"
 )
 
 // FederationCostRepository handles federation cost tracking operations using DynamORM with BaseRepository
@@ -33,7 +33,7 @@ func NewFederationCostRepositoryWithCostTracking(baseRepo *BaseRepository[*model
 	baseRepo.SetRepoName("federation_cost")
 	budgetRepo.SetCostService(costService)
 	budgetRepo.SetRepoName("federation_budget")
-	
+
 	return &FederationCostRepository{
 		BaseRepository: baseRepo,
 		budgetRepo:     budgetRepo,

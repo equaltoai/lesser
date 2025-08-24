@@ -44,27 +44,27 @@ type FederationRouteMetrics struct {
 	Port              int    `json:"port"`               // Target port
 
 	// Performance metrics (aggregated for the time period)
-	TotalAttempts        int64   `json:"total_attempts"`        // Total delivery attempts
-	SuccessfulAttempts   int64   `json:"successful_attempts"`   // Successful deliveries
-	FailedAttempts       int64   `json:"failed_attempts"`       // Failed deliveries
-	SuccessRate          float64 `json:"success_rate"`          // Success percentage
-	AvgLatencyMs         int64   `json:"avg_latency_ms"`        // Average response time
-	MedianLatencyMs      int64   `json:"median_latency_ms"`     // Median response time
-	P95LatencyMs         int64   `json:"p95_latency_ms"`        // 95th percentile latency
-	P99LatencyMs         int64   `json:"p99_latency_ms"`        // 99th percentile latency
-	MinLatencyMs         int64   `json:"min_latency_ms"`        // Fastest response
-	MaxLatencyMs         int64   `json:"max_latency_ms"`        // Slowest response
-	TimeoutCount         int64   `json:"timeout_count"`         // Number of timeouts
-	TimeoutRate          float64 `json:"timeout_rate"`          // Timeout percentage
+	TotalAttempts      int64   `json:"total_attempts"`      // Total delivery attempts
+	SuccessfulAttempts int64   `json:"successful_attempts"` // Successful deliveries
+	FailedAttempts     int64   `json:"failed_attempts"`     // Failed deliveries
+	SuccessRate        float64 `json:"success_rate"`        // Success percentage
+	AvgLatencyMs       int64   `json:"avg_latency_ms"`      // Average response time
+	MedianLatencyMs    int64   `json:"median_latency_ms"`   // Median response time
+	P95LatencyMs       int64   `json:"p95_latency_ms"`      // 95th percentile latency
+	P99LatencyMs       int64   `json:"p99_latency_ms"`      // 99th percentile latency
+	MinLatencyMs       int64   `json:"min_latency_ms"`      // Fastest response
+	MaxLatencyMs       int64   `json:"max_latency_ms"`      // Slowest response
+	TimeoutCount       int64   `json:"timeout_count"`       // Number of timeouts
+	TimeoutRate        float64 `json:"timeout_rate"`        // Timeout percentage
 
 	// Error tracking
-	ErrorBreakdown       map[string]int64 `json:"error_breakdown"`       // Error code -> count
-	ConsecutiveFailures  int64            `json:"consecutive_failures"`  // Current failure streak
-	MaxConsecutiveFails  int64            `json:"max_consecutive_fails"` // Longest failure streak
-	LastErrorCode        string           `json:"last_error_code"`       // Most recent error
-	LastErrorMessage     string           `json:"last_error_message"`    // Most recent error message
-	LastErrorTime        *time.Time       `json:"last_error_time"`       // When last error occurred
-	RecoveryTime         *time.Time       `json:"recovery_time"`         // When route recovered
+	ErrorBreakdown      map[string]int64 `json:"error_breakdown"`       // Error code -> count
+	ConsecutiveFailures int64            `json:"consecutive_failures"`  // Current failure streak
+	MaxConsecutiveFails int64            `json:"max_consecutive_fails"` // Longest failure streak
+	LastErrorCode       string           `json:"last_error_code"`       // Most recent error
+	LastErrorMessage    string           `json:"last_error_message"`    // Most recent error message
+	LastErrorTime       *time.Time       `json:"last_error_time"`       // When last error occurred
+	RecoveryTime        *time.Time       `json:"recovery_time"`         // When route recovered
 
 	// Cost metrics (aggregated)
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"` // Total cost for this route
@@ -74,11 +74,11 @@ type FederationRouteMetrics struct {
 	AvgPayloadSize      int64   `json:"avg_payload_size"`       // Average payload size
 
 	// Retry analysis
-	TotalRetries        int64   `json:"total_retries"`        // Total retry attempts
-	AvgRetriesPerFail   float64 `json:"avg_retries_per_fail"` // Average retries before giving up
-	RetrySuccessRate    float64 `json:"retry_success_rate"`   // Success rate of retries
-	AvgRetryDelayMs     int64   `json:"avg_retry_delay_ms"`   // Average delay between retries
-	RetryBackoffFactor  float64 `json:"retry_backoff_factor"` // Exponential backoff factor
+	TotalRetries       int64   `json:"total_retries"`        // Total retry attempts
+	AvgRetriesPerFail  float64 `json:"avg_retries_per_fail"` // Average retries before giving up
+	RetrySuccessRate   float64 `json:"retry_success_rate"`   // Success rate of retries
+	AvgRetryDelayMs    int64   `json:"avg_retry_delay_ms"`   // Average delay between retries
+	RetryBackoffFactor float64 `json:"retry_backoff_factor"` // Exponential backoff factor
 
 	// Circuit breaker state
 	CircuitBreakerState string     `json:"circuit_breaker_state"` // closed, open, half_open
@@ -86,20 +86,20 @@ type FederationRouteMetrics struct {
 	NextRetryTime       *time.Time `json:"next_retry_time"`       // When to try again if open
 
 	// Health scoring
-	HealthScore        float64   `json:"health_score"`        // Overall route health (0.0-1.0)
-	ReliabilityScore   float64   `json:"reliability_score"`   // Reliability metric
-	PerformanceScore   float64   `json:"performance_score"`   // Speed metric
-	StabilityScore     float64   `json:"stability_score"`     // Consistency metric
-	HealthHistory      []float64 `json:"health_history"`      // Historical health scores
-	LastHealthCheck    time.Time `json:"last_health_check"`   // When health was last calculated
-	HealthTrend        string    `json:"health_trend"`        // improving, stable, degrading
+	HealthScore      float64   `json:"health_score"`      // Overall route health (0.0-1.0)
+	ReliabilityScore float64   `json:"reliability_score"` // Reliability metric
+	PerformanceScore float64   `json:"performance_score"` // Speed metric
+	StabilityScore   float64   `json:"stability_score"`   // Consistency metric
+	HealthHistory    []float64 `json:"health_history"`    // Historical health scores
+	LastHealthCheck  time.Time `json:"last_health_check"` // When health was last calculated
+	HealthTrend      string    `json:"health_trend"`      // improving, stable, degrading
 
 	// Load balancing metrics
-	CurrentWeight      float64 `json:"current_weight"`      // Current load balancing weight
-	OptimalWeight      float64 `json:"optimal_weight"`      // Calculated optimal weight
-	WeightAdjustments  int     `json:"weight_adjustments"`  // Number of weight changes
-	LastWeightChange   *time.Time `json:"last_weight_change"` // When weight was last adjusted
-	LoadBalancingScore float64 `json:"load_balancing_score"` // Effectiveness score
+	CurrentWeight      float64    `json:"current_weight"`       // Current load balancing weight
+	OptimalWeight      float64    `json:"optimal_weight"`       // Calculated optimal weight
+	WeightAdjustments  int        `json:"weight_adjustments"`   // Number of weight changes
+	LastWeightChange   *time.Time `json:"last_weight_change"`   // When weight was last adjusted
+	LoadBalancingScore float64    `json:"load_balancing_score"` // Effectiveness score
 
 	// Geographic and network info
 	DataCenter     string `json:"data_center"`     // Which DC the route goes through
@@ -227,7 +227,7 @@ func (f *FederationRouteMetrics) calculateDerivedMetrics() {
 	// Calculate cost efficiency score
 	if f.AvgLatencyMs > 0 && f.AvgCostPerDelivery > 0 {
 		// Lower cost and lower latency = higher efficiency
-		costFactor := 1.0 / (float64(f.AvgCostPerDelivery)/1000000.0 + 1.0)  // Normalize cost
+		costFactor := 1.0 / (float64(f.AvgCostPerDelivery)/1000000.0 + 1.0) // Normalize cost
 		speedFactor := 1.0 / (float64(f.AvgLatencyMs)/100.0 + 1.0)          // Normalize latency
 		f.CostEfficiencyScore = (costFactor + speedFactor) / 2.0 * f.SuccessRate / 100.0
 	}
@@ -260,9 +260,9 @@ func (f *FederationRouteMetrics) calculateHealthScores() {
 
 	// Overall health score (weighted average)
 	weights := map[string]float64{
-		"reliability":  0.5,
-		"performance":  0.3,
-		"stability":    0.2,
+		"reliability": 0.5,
+		"performance": 0.3,
+		"stability":   0.2,
 	}
 	f.HealthScore = f.ReliabilityScore*weights["reliability"] +
 		f.PerformanceScore*weights["performance"] +
@@ -295,11 +295,11 @@ func (f *FederationRouteMetrics) determineHealthTrend() {
 	}
 
 	recent := f.HealthHistory[len(f.HealthHistory)-recentCount:]
-	
+
 	// Simple linear regression on recent health scores
 	n := float64(len(recent))
 	var sumX, sumY, sumXY, sumX2 float64
-	
+
 	for i, score := range recent {
 		x := float64(i)
 		sumX += x
@@ -312,7 +312,7 @@ func (f *FederationRouteMetrics) determineHealthTrend() {
 	denominator := n*sumX2 - sumX*sumX
 	if denominator != 0 {
 		slope := (n*sumXY - sumX*sumY) / denominator
-		
+
 		if slope > 0.02 {
 			f.HealthTrend = "improving"
 		} else if slope < -0.02 {
@@ -332,7 +332,7 @@ func (f *FederationRouteMetrics) AddDeliveryAttempt(success bool, latencyMs int6
 		f.SuccessfulAttempts++
 		f.LastSuccess = time.Now()
 		f.ConsecutiveFailures = 0
-		
+
 		// Update recovery time if we were in a failure state
 		if f.CircuitBreakerState == CircuitBreakerStateOpen {
 			now := time.Now()
@@ -343,11 +343,11 @@ func (f *FederationRouteMetrics) AddDeliveryAttempt(success bool, latencyMs int6
 	} else {
 		f.FailedAttempts++
 		f.ConsecutiveFailures++
-		
+
 		if f.ConsecutiveFailures > f.MaxConsecutiveFails {
 			f.MaxConsecutiveFails = f.ConsecutiveFailures
 		}
-		
+
 		// Update error tracking
 		if errorCode != "" {
 			if f.ErrorBreakdown == nil {
@@ -359,7 +359,7 @@ func (f *FederationRouteMetrics) AddDeliveryAttempt(success bool, latencyMs int6
 			now := time.Now()
 			f.LastErrorTime = &now
 		}
-		
+
 		// Update circuit breaker state
 		f.updateCircuitBreakerState()
 	}
@@ -407,7 +407,7 @@ func (f *FederationRouteMetrics) updateLatencyStats(latencyMs int64) {
 // updateCircuitBreakerState manages circuit breaker logic
 func (f *FederationRouteMetrics) updateCircuitBreakerState() {
 	now := time.Now()
-	
+
 	switch f.CircuitBreakerState {
 	case CircuitBreakerStateClosed, "":
 		// Move to open if too many consecutive failures
@@ -418,14 +418,14 @@ func (f *FederationRouteMetrics) updateCircuitBreakerState() {
 			nextRetry := now.Add(1 * time.Minute)
 			f.NextRetryTime = &nextRetry
 		}
-		
+
 	case "open":
 		// Check if it's time to try again
 		if f.NextRetryTime != nil && now.After(*f.NextRetryTime) {
 			f.CircuitBreakerState = "half_open"
 			f.StateChangeTime = &now
 		}
-		
+
 	case "half_open":
 		// In half-open state, a single success closes the circuit
 		// A failure opens it again (handled in AddDeliveryAttempt)
@@ -436,7 +436,7 @@ func (f *FederationRouteMetrics) updateCircuitBreakerState() {
 // AddRetryAttempt records a retry attempt
 func (f *FederationRouteMetrics) AddRetryAttempt(delayMs int64) {
 	f.TotalRetries++
-	
+
 	// Update average retry delay
 	if f.AvgRetryDelayMs == 0 {
 		f.AvgRetryDelayMs = delayMs
@@ -451,24 +451,24 @@ func (f *FederationRouteMetrics) IsHealthy() bool {
 	if f.CircuitBreakerState == CircuitBreakerStateOpen {
 		return false
 	}
-	
+
 	return f.HealthScore >= 0.7 && f.SuccessRate >= 90.0
 }
 
 // GetRouteSummary returns a summary of route performance
 func (f *FederationRouteMetrics) GetRouteSummary() map[string]interface{} {
 	return map[string]interface{}{
-		"route_id":            f.RouteID,
-		"destination_domain":  f.DestinationDomain,
-		"route_type":          f.RouteType,
-		"health_score":        f.HealthScore,
-		"success_rate":        f.SuccessRate,
-		"avg_latency_ms":      f.AvgLatencyMs,
-		"total_attempts":      f.TotalAttempts,
-		"circuit_breaker":     f.CircuitBreakerState,
-		"cost_efficiency":     f.CostEfficiencyScore,
-		"health_trend":        f.HealthTrend,
-		"is_healthy":          f.IsHealthy(),
+		"route_id":           f.RouteID,
+		"destination_domain": f.DestinationDomain,
+		"route_type":         f.RouteType,
+		"health_score":       f.HealthScore,
+		"success_rate":       f.SuccessRate,
+		"avg_latency_ms":     f.AvgLatencyMs,
+		"total_attempts":     f.TotalAttempts,
+		"circuit_breaker":    f.CircuitBreakerState,
+		"cost_efficiency":    f.CostEfficiencyScore,
+		"health_trend":       f.HealthTrend,
+		"is_healthy":         f.IsHealthy(),
 	}
 }
 
@@ -567,22 +567,22 @@ type FederationRouteAggregation struct {
 	// Aggregation metadata
 	RouteID           string    `json:"route_id"`
 	DestinationDomain string    `json:"destination_domain"`
-	Period            string    `json:"period"`      // hour, day, week, month
+	Period            string    `json:"period"` // hour, day, week, month
 	PeriodStart       time.Time `json:"period_start"`
 	PeriodEnd         time.Time `json:"period_end"`
 
 	// Aggregated performance metrics
-	AvgHealthScore      float64 `json:"avg_health_score"`
-	MinHealthScore      float64 `json:"min_health_score"`
-	MaxHealthScore      float64 `json:"max_health_score"`
-	HealthScoreStdDev   float64 `json:"health_score_std_dev"`
-	TotalAttempts       int64   `json:"total_attempts"`
-	TotalSuccesses      int64   `json:"total_successes"`
-	OverallSuccessRate  float64 `json:"overall_success_rate"`
-	AvgLatencyMs        int64   `json:"avg_latency_ms"`
-	MedianLatencyMs     int64   `json:"median_latency_ms"`
-	P95LatencyMs        int64   `json:"p95_latency_ms"`
-	LatencyStdDev       float64 `json:"latency_std_dev"`
+	AvgHealthScore     float64 `json:"avg_health_score"`
+	MinHealthScore     float64 `json:"min_health_score"`
+	MaxHealthScore     float64 `json:"max_health_score"`
+	HealthScoreStdDev  float64 `json:"health_score_std_dev"`
+	TotalAttempts      int64   `json:"total_attempts"`
+	TotalSuccesses     int64   `json:"total_successes"`
+	OverallSuccessRate float64 `json:"overall_success_rate"`
+	AvgLatencyMs       int64   `json:"avg_latency_ms"`
+	MedianLatencyMs    int64   `json:"median_latency_ms"`
+	P95LatencyMs       int64   `json:"p95_latency_ms"`
+	LatencyStdDev      float64 `json:"latency_std_dev"`
 
 	// Cost aggregations
 	TotalCostMicroCents int64   `json:"total_cost_micro_cents"`
@@ -590,25 +590,25 @@ type FederationRouteAggregation struct {
 	CostEfficiencyScore float64 `json:"cost_efficiency_score"`
 
 	// Reliability metrics
-	UptimePercentage        float64 `json:"uptime_percentage"`
-	DowntimeMinutes         int64   `json:"downtime_minutes"`
-	MTBF                    float64 `json:"mtbf"`  // Mean Time Between Failures (hours)
-	MTTR                    float64 `json:"mttr"`  // Mean Time To Recovery (minutes)
-	MaxConsecutiveFailures  int64   `json:"max_consecutive_failures"`
-	CircuitBreakerTrips     int64   `json:"circuit_breaker_trips"`
+	UptimePercentage       float64 `json:"uptime_percentage"`
+	DowntimeMinutes        int64   `json:"downtime_minutes"`
+	MTBF                   float64 `json:"mtbf"` // Mean Time Between Failures (hours)
+	MTTR                   float64 `json:"mttr"` // Mean Time To Recovery (minutes)
+	MaxConsecutiveFailures int64   `json:"max_consecutive_failures"`
+	CircuitBreakerTrips    int64   `json:"circuit_breaker_trips"`
 
 	// Ranking and comparison
-	PerformanceRank   int     `json:"performance_rank"`   // Rank among all routes for this domain
-	ReliabilityRank   int     `json:"reliability_rank"`   // Rank based on reliability
-	CostEfficiencyRank int    `json:"cost_efficiency_rank"` // Rank based on cost efficiency
-	OverallRank       int     `json:"overall_rank"`       // Overall ranking
-	PercentileScore   float64 `json:"percentile_score"`   // Percentile among all routes
+	PerformanceRank    int     `json:"performance_rank"`     // Rank among all routes for this domain
+	ReliabilityRank    int     `json:"reliability_rank"`     // Rank based on reliability
+	CostEfficiencyRank int     `json:"cost_efficiency_rank"` // Rank based on cost efficiency
+	OverallRank        int     `json:"overall_rank"`         // Overall ranking
+	PercentileScore    float64 `json:"percentile_score"`     // Percentile among all routes
 
 	// Trend analysis
-	PerformanceTrend    string  `json:"performance_trend"`    // improving, stable, degrading
-	ReliabilityTrend    string  `json:"reliability_trend"`    // improving, stable, degrading
-	CostTrend          string  `json:"cost_trend"`           // improving, stable, degrading
-	TrendConfidence    float64 `json:"trend_confidence"`     // Statistical confidence in trends
+	PerformanceTrend string  `json:"performance_trend"` // improving, stable, degrading
+	ReliabilityTrend string  `json:"reliability_trend"` // improving, stable, degrading
+	CostTrend        string  `json:"cost_trend"`        // improving, stable, degrading
+	TrendConfidence  float64 `json:"trend_confidence"`  // Statistical confidence in trends
 
 	// Top error codes and frequencies
 	TopErrors []ErrorFrequency `json:"top_errors"`
@@ -623,8 +623,8 @@ type FederationRouteAggregation struct {
 
 // ErrorFrequency represents error frequency data
 type ErrorFrequency struct {
-	ErrorCode string `json:"error_code"`
-	Count     int64  `json:"count"`
+	ErrorCode  string  `json:"error_code"`
+	Count      int64   `json:"count"`
 	Percentage float64 `json:"percentage"`
 }
 
@@ -685,7 +685,7 @@ func (f *FederationRouteAggregation) GetRouteComparisonMetrics() map[string]inte
 		"overall_rank":         f.OverallRank,
 		"percentile_score":     f.PercentileScore,
 		"performance_trend":    f.PerformanceTrend,
-		"mtbf_hours":          f.MTBF,
-		"mttr_minutes":        f.MTTR,
+		"mtbf_hours":           f.MTBF,
+		"mttr_minutes":         f.MTTR,
 	}
 }

@@ -959,8 +959,6 @@ func (bd *BatchDeleter) logFinalFailure(maxRetries int, totalItems int, lastResu
 	}
 }
 
-
-
 // isRetryableError determines if an error is retryable for delete operations
 func (bd *BatchDeleter) isRetryableError(err error) bool {
 	if err == nil {
@@ -986,7 +984,6 @@ func (bd *BatchDeleter) isRetryableError(err error) bool {
 
 	return false
 }
-
 
 // Convenience functions for easy usage
 

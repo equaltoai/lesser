@@ -20,20 +20,20 @@ import (
 
 // Handler contains dependencies for Lift handlers
 type Handler struct {
-	cfg               *config.Config
-	repos             core.RepositoryStorage
-	logger            *zap.Logger
-	authMiddleware    lift.Middleware
-	converter         mastodon.Converter
-	businessLogic     services.BusinessLogicService
-	authService       services.AuthenticationService
-	registry          *services.Registry
-	streamQueue       streaming.StreamQueueService
-	
+	cfg            *config.Config
+	repos          core.RepositoryStorage
+	logger         *zap.Logger
+	authMiddleware lift.Middleware
+	converter      mastodon.Converter
+	businessLogic  services.BusinessLogicService
+	authService    services.AuthenticationService
+	registry       *services.Registry
+	streamQueue    streaming.StreamQueueService
+
 	// Additional business logic frameworks for enhanced semantic consolidation
-	commonBusinessLogic    *common.BusinessLogicService
-	activityPubLogic       *common.ActivityPubBusinessLogic
-	mastodonLogic          *common.MastodonBusinessLogic
+	commonBusinessLogic *common.BusinessLogicService
+	activityPubLogic    *common.ActivityPubBusinessLogic
+	mastodonLogic       *common.MastodonBusinessLogic
 }
 
 // streamingEventEmitter adapts streaming.StreamQueueService to common.EventEmitter interface
@@ -50,7 +50,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -58,7 +58,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware lift.Middleware, streamQueue streaming.StreamQueueService) *Handler {
 	// Create emoji repository
 	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), logger)
-	
+
 	// Create converter with emoji repository access
 	converter := mastodon.NewConverterWithEmojis(cfg.BaseURL(), emojiRepo)
 

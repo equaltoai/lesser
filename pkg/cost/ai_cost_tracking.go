@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AIServiceWithCostTracking wraps AIService with comprehensive cost tracking
@@ -70,7 +70,10 @@ func (s *AIServiceWithCostTracking) GenerateEmbeddingWithCostTracking(ctx contex
 	costData.TotalCostMicros = estimatedCostMicros
 
 	// Update cost tracking keys
-	costData.UpdateKeys()
+	if err := costData.UpdateKeys(); err != nil {
+		s.logger.Error("failed to update cost tracking keys", zap.Error(err))
+		return embedding, costData, err
+	}
 
 	s.logger.Debug("embedding_generation_tracked",
 		zap.String("user_id", userID),
@@ -151,7 +154,10 @@ func (s *AIServiceWithCostTracking) SemanticSearchWithCostTracking(ctx context.C
 		costData.CostPerResult = costData.TotalCostMicros / int64(len(results))
 	}
 
-	costData.UpdateKeys()
+	if err := costData.UpdateKeys(); err != nil {
+		s.logger.Error("failed to update search cost tracking keys", zap.Error(err))
+		return queryEmbedding, results, costData, err
+	}
 
 	s.logger.Info("semantic_search_completed",
 		zap.String("user_id", userID),
@@ -219,7 +225,10 @@ func (s *AIServiceWithCostTracking) AnalyzeContentWithCostTracking(ctx context.C
 		costData.ResultCount = 1 // Successfully analyzed content
 	}
 
-	costData.UpdateKeys()
+	if err := costData.UpdateKeys(); err != nil {
+		s.logger.Error("failed to update AI content analysis cost tracking keys", zap.Error(err))
+		return analysis, costData, err
+	}
 
 	s.logger.Debug("ai_content_analysis_tracked",
 		zap.String("user_id", userID),
@@ -348,7 +357,10 @@ func (s *AIServiceWithCostTracking) BulkEmbeddingGenerationWithCostTracking(ctx 
 		s.trackBedrockCost(costData.TotalCostMicros)
 	}
 
-	costData.UpdateKeys()
+	if err := costData.UpdateKeys(); err != nil {
+		s.logger.Error("failed to update bulk embedding cost tracking keys", zap.Error(err))
+		return embeddings, costData, err
+	}
 
 	s.logger.Info("bulk_embedding_generation_completed",
 		zap.String("user_id", userID),

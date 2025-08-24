@@ -138,7 +138,7 @@ func (m *MediaAnalytics) SetManifestGeneration(mediaID, format string, duration 
 	// Set TTL to 30 days
 	m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix()
 
-	m.UpdateKeys()
+	_ = m.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetQualityChange configures this record for quality change tracking
@@ -160,7 +160,7 @@ func (m *MediaAnalytics) SetQualityChange(mediaID, userID, _, newQuality string)
 	// Set TTL to 7 days
 	m.TTL = time.Now().Add(7 * 24 * time.Hour).Unix()
 
-	m.UpdateKeys()
+	_ = m.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // SetGeneralEvent configures this record for general media events
@@ -186,7 +186,7 @@ func (m *MediaAnalytics) SetGeneralEvent(eventType, mediaID, userID string) {
 		m.TTL = time.Now().Add(30 * 24 * time.Hour).Unix() // 30 days
 	}
 
-	m.UpdateKeys()
+	_ = m.UpdateKeys() // Ignore error as this is internal model operation
 }
 
 // initializeMaps initializes all maps for variant tracking

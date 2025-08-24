@@ -16,6 +16,42 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
+// FilterItem defines the interface for filter-related items that can be created
+type FilterItem interface {
+	*models.FilterKeyword | *models.FilterStatus
+}
+
+// FilterItemCreatable defines the common interface for creatable filter items
+type FilterItemCreatable interface {
+	GetID() string
+	SetID(string)
+	SetCreatedAt(time.Time)
+	UpdateKeys() error
+}
+
+// Ensure models implement the interface (compile-time check)
+var (
+	_ FilterItemCreatable = (*filterKeywordAdapter)(nil)
+	_ FilterItemCreatable = (*filterStatusAdapter)(nil)
+)
+
+// Adapter structs to implement the common interface
+type filterKeywordAdapter struct {
+	*models.FilterKeyword
+}
+
+func (a *filterKeywordAdapter) GetID() string            { return a.ID }
+func (a *filterKeywordAdapter) SetID(id string)          { a.ID = id }
+func (a *filterKeywordAdapter) SetCreatedAt(t time.Time) { a.CreatedAt = t }
+
+type filterStatusAdapter struct {
+	*models.FilterStatus
+}
+
+func (a *filterStatusAdapter) GetID() string            { return a.ID }
+func (a *filterStatusAdapter) SetID(id string)          { a.ID = id }
+func (a *filterStatusAdapter) SetCreatedAt(t time.Time) { a.CreatedAt = t }
+
 // FilterRepository handles user content filtering operations using DynamORM
 type FilterRepository struct {
 	*BaseRepository[*models.Filter]
@@ -50,7 +86,7 @@ func (r *FilterRepository) CreateFilter(ctx context.Context, filter *models.Filt
 	}
 
 	// Create the filter using BaseRepository
-	if err := r.BaseRepository.Create(ctx, filter); err != nil {
+	if err := r.Create(ctx, filter); err != nil {
 		r.logger.Error("Failed to create filter",
 			zap.Error(err),
 			zap.String("filter_id", filter.ID),
@@ -100,7 +136,7 @@ func (r *FilterRepository) UpdateFilter(ctx context.Context, filter *models.Filt
 		return ErrorHandler.HandleUpdateError(err, EntityFilter, "keys")
 	}
 
-	if err := r.BaseRepository.Update(ctx, filter); err != nil {
+	if err := r.Update(ctx, filter); err != nil {
 		r.logger.Error("Failed to update filter",
 			zap.Error(err),
 			zap.String("filter_id", filter.ID))
@@ -151,7 +187,7 @@ func (r *FilterRepository) DeleteFilter(ctx context.Context, filterID string) er
 	}
 
 	// Delete the filter itself
-	if err := r.BaseRepository.Delete(ctx, filter.PK, filter.SK); err != nil {
+	if err := r.Delete(ctx, filter.PK, filter.SK); err != nil {
 		r.logger.Error("Failed to delete filter",
 			zap.Error(err),
 			zap.String("filter_id", filterID),
@@ -224,82 +260,133 @@ func (r *FilterRepository) GetActiveFilters(ctx context.Context, username string
 	return activeFilters, nil
 }
 
-// AddFilterKeyword adds a new keyword to a filter
-func (r *FilterRepository) AddFilterKeyword(ctx context.Context, keyword *models.FilterKeyword) error {
+// createFilterItem is a helper for creating filter items (keywords, statuses)
+func (r *FilterRepository) createFilterItem(ctx context.Context, item interface{}, adapter FilterItemCreatable, entityType string, logFields []zap.Field) error {
 	// Generate UUID if not provided
-	if keyword.ID == "" {
-		keyword.ID = uuid.New().String()
+	if adapter.GetID() == "" {
+		adapter.SetID(uuid.New().String())
 	}
 
 	// Set CreatedAt
-	keyword.CreatedAt = time.Now()
+	adapter.SetCreatedAt(time.Now())
 
 	// Update keys
-	if err := keyword.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityFilterKeyword, "keys")
+	if err := adapter.UpdateKeys(); err != nil {
+		return ErrorHandler.HandleUpdateError(err, entityType, "keys")
 	}
 
-	// Create the keyword using BaseRepository pattern
-	if err := r.db.WithContext(ctx).Model(keyword).Create(); err != nil {
-		r.logger.Error("Failed to add filter keyword",
-			zap.Error(err),
-			zap.String("filter_id", keyword.FilterID),
-			zap.String("keyword", keyword.Keyword))
-		return ErrorHandler.HandleCreateError(err, EntityFilterKeyword, keyword.ID)
+	// Create the item using DynamORM
+	if err := r.db.WithContext(ctx).Model(item).Create(); err != nil {
+		errorFields := append(logFields, zap.Error(err))
+		r.logger.Error("Failed to add "+entityType, errorFields...)
+		return ErrorHandler.HandleCreateError(err, entityType, adapter.GetID())
 	}
 
-	r.logger.Debug("Added filter keyword",
+	// Success logging
+	r.logger.Debug("Added "+entityType, logFields...)
+
+	return nil
+}
+
+// AddFilterKeyword adds a new keyword to a filter
+func (r *FilterRepository) AddFilterKeyword(ctx context.Context, keyword *models.FilterKeyword) error {
+	adapter := &filterKeywordAdapter{FilterKeyword: keyword}
+	logFields := []zap.Field{
 		zap.String("filter_id", keyword.FilterID),
 		zap.String("keyword_id", keyword.ID),
-		zap.String("keyword", keyword.Keyword))
+		zap.String("keyword", keyword.Keyword),
+	}
+	return r.createFilterItem(ctx, keyword, adapter, EntityFilterKeyword, logFields)
+}
+
+// FilterItemDeletable defines the common interface for deletable filter items
+type FilterItemDeletable interface {
+	GetPK() string
+	GetSK() string
+	GetFilterID() string
+	GetItemID() string
+}
+
+// filterKeywordDeletable adapter
+type filterKeywordDeletable struct {
+	*models.FilterKeyword
+}
+
+func (a *filterKeywordDeletable) GetPK() string       { return a.PK }
+func (a *filterKeywordDeletable) GetSK() string       { return a.SK }
+func (a *filterKeywordDeletable) GetFilterID() string { return a.FilterID }
+func (a *filterKeywordDeletable) GetItemID() string   { return a.ID }
+
+// filterStatusDeletable adapter
+type filterStatusDeletable struct {
+	*models.FilterStatus
+}
+
+func (a *filterStatusDeletable) GetPK() string       { return a.PK }
+func (a *filterStatusDeletable) GetSK() string       { return a.SK }
+func (a *filterStatusDeletable) GetFilterID() string { return a.FilterID }
+func (a *filterStatusDeletable) GetItemID() string   { return a.ID }
+
+// removeFilterItem is a helper for removing filter items (keywords, statuses)
+func (r *FilterRepository) removeFilterItem(ctx context.Context, itemID, skPattern, entityType string, model interface{}, findItemFunc func(interface{}) (FilterItemDeletable, bool)) error {
+	// First find the item
+	var items interface{}
+	switch model.(type) {
+	case *models.FilterKeyword:
+		var keywords []*models.FilterKeyword
+		items = &keywords
+	case *models.FilterStatus:
+		var statuses []*models.FilterStatus
+		items = &statuses
+	}
+
+	err := r.db.WithContext(ctx).Model(model).
+		Where("SK", "=", fmt.Sprintf(skPattern, itemID)).
+		Limit(10).
+		All(items)
+
+	if err != nil {
+		return ErrorHandler.HandleQueryError(err, entityType, "deletion")
+	}
+
+	// Find the target item using the provided function
+	targetItem, found := findItemFunc(items)
+	if !found {
+		return ErrorHandler.HandleGetError(storage.ErrNotFound, entityType, itemID)
+	}
+
+	// Delete the item
+	err = r.db.WithContext(ctx).Model(model).
+		Where("PK", "=", targetItem.GetPK()).
+		Where("SK", "=", targetItem.GetSK()).
+		Delete()
+
+	if err != nil {
+		r.logger.Error("Failed to delete "+entityType,
+			zap.Error(err),
+			zap.String("item_id", itemID))
+		return ErrorHandler.HandleDeleteError(err, entityType, itemID)
+	}
+
+	r.logger.Debug("Deleted "+entityType,
+		zap.String("item_id", itemID),
+		zap.String("filter_id", targetItem.GetFilterID()))
 
 	return nil
 }
 
 // RemoveFilterKeyword removes a filter keyword
 func (r *FilterRepository) RemoveFilterKeyword(ctx context.Context, keywordID string) error {
-	// First find the keyword to get its FilterID
-	var keywords []*models.FilterKeyword
-
-	err := r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
-		Where("SK", "=", fmt.Sprintf("KEYWORD#%s", keywordID)).
-		Limit(10).
-		All(&keywords)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityFilterKeyword, "deletion")
-	}
-
-	var targetKeyword *models.FilterKeyword
-	for _, keyword := range keywords {
-		if keyword.ID == keywordID {
-			targetKeyword = keyword
-			break
-		}
-	}
-
-	if targetKeyword == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilterKeyword, keywordID)
-	}
-
-	// Delete the keyword
-	err = r.db.WithContext(ctx).Model(&models.FilterKeyword{}).
-		Where("PK", "=", targetKeyword.PK).
-		Where("SK", "=", targetKeyword.SK).
-		Delete()
-
-	if err != nil {
-		r.logger.Error("Failed to delete filter keyword",
-			zap.Error(err),
-			zap.String("keyword_id", keywordID))
-		return ErrorHandler.HandleDeleteError(err, EntityFilterKeyword, keywordID)
-	}
-
-	r.logger.Debug("Deleted filter keyword",
-		zap.String("keyword_id", keywordID),
-		zap.String("filter_id", targetKeyword.FilterID))
-
-	return nil
+	return r.removeFilterItem(ctx, keywordID, "KEYWORD#%s", EntityFilterKeyword, &models.FilterKeyword{},
+		func(items interface{}) (FilterItemDeletable, bool) {
+			keywords := items.(*[]*models.FilterKeyword)
+			for _, keyword := range *keywords {
+				if keyword.ID == keywordID {
+					return &filterKeywordDeletable{FilterKeyword: keyword}, true
+				}
+			}
+			return nil, false
+		})
 }
 
 // GetFilterKeywords retrieves all keywords for a filter
@@ -321,80 +408,27 @@ func (r *FilterRepository) GetFilterKeywords(ctx context.Context, filterID strin
 
 // AddFilterStatus adds a new status to a filter
 func (r *FilterRepository) AddFilterStatus(ctx context.Context, filterStatus *models.FilterStatus) error {
-	// Generate UUID if not provided
-	if filterStatus.ID == "" {
-		filterStatus.ID = uuid.New().String()
-	}
-
-	// Set CreatedAt
-	filterStatus.CreatedAt = time.Now()
-
-	// Update keys
-	if err := filterStatus.UpdateKeys(); err != nil {
-		return ErrorHandler.HandleUpdateError(err, EntityFilterStatus, "keys")
-	}
-
-	// Create the status using BaseRepository pattern
-	if err := r.db.WithContext(ctx).Model(filterStatus).Create(); err != nil {
-		r.logger.Error("Failed to add filter status",
-			zap.Error(err),
-			zap.String("filter_id", filterStatus.FilterID),
-			zap.String("status_id", filterStatus.StatusID))
-		return ErrorHandler.HandleCreateError(err, EntityFilterStatus, filterStatus.ID)
-	}
-
-	r.logger.Debug("Added filter status",
+	adapter := &filterStatusAdapter{FilterStatus: filterStatus}
+	logFields := []zap.Field{
 		zap.String("filter_id", filterStatus.FilterID),
 		zap.String("filter_status_id", filterStatus.ID),
-		zap.String("status_id", filterStatus.StatusID))
-
-	return nil
+		zap.String("status_id", filterStatus.StatusID),
+	}
+	return r.createFilterItem(ctx, filterStatus, adapter, EntityFilterStatus, logFields)
 }
 
 // RemoveFilterStatus removes a filter status by its ID
 func (r *FilterRepository) RemoveFilterStatus(ctx context.Context, filterStatusID string) error {
-	// First find the status to get its FilterID
-	var statuses []*models.FilterStatus
-
-	err := r.db.WithContext(ctx).Model(&models.FilterStatus{}).
-		Where("SK", "=", fmt.Sprintf("STATUS#%s", filterStatusID)).
-		Limit(10).
-		All(&statuses)
-
-	if err != nil {
-		return ErrorHandler.HandleQueryError(err, EntityFilterStatus, "deletion")
-	}
-
-	var targetStatus *models.FilterStatus
-	for _, status := range statuses {
-		if status.StatusID == filterStatusID {
-			targetStatus = status
-			break
-		}
-	}
-
-	if targetStatus == nil {
-		return ErrorHandler.HandleGetError(storage.ErrNotFound, EntityFilterStatus, filterStatusID)
-	}
-
-	// Delete the status
-	err = r.db.WithContext(ctx).Model(&models.FilterStatus{}).
-		Where("PK", "=", targetStatus.PK).
-		Where("SK", "=", targetStatus.SK).
-		Delete()
-
-	if err != nil {
-		r.logger.Error("Failed to delete filter status",
-			zap.Error(err),
-			zap.String("status_id", filterStatusID))
-		return ErrorHandler.HandleDeleteError(err, EntityFilterStatus, filterStatusID)
-	}
-
-	r.logger.Debug("Deleted filter status",
-		zap.String("status_id", filterStatusID),
-		zap.String("filter_id", targetStatus.FilterID))
-
-	return nil
+	return r.removeFilterItem(ctx, filterStatusID, "STATUS#%s", EntityFilterStatus, &models.FilterStatus{},
+		func(items interface{}) (FilterItemDeletable, bool) {
+			statuses := items.(*[]*models.FilterStatus)
+			for _, status := range *statuses {
+				if status.StatusID == filterStatusID {
+					return &filterStatusDeletable{FilterStatus: status}, true
+				}
+			}
+			return nil, false
+		})
 }
 
 // GetFilterStatuses retrieves all statuses for a filter

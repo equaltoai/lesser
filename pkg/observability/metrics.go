@@ -20,9 +20,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"go.uber.org/zap"
 )
 
 // MetricsCollector aggregates and publishes custom metrics
@@ -327,10 +327,10 @@ func calculateStats(values []float64) (sum, minVal, maxVal float64) {
 func calculateCPUUtilization() float64 {
 	// In AWS Lambda, true CPU utilization is not directly available
 	// Use a composite metric based on runtime stats as a proxy
-	
+
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
-	
+
 	// Normalize metrics to 0-1 range and combine them
 	goroutineLoad := mathMin(float64(runtime.NumGoroutine())/1000.0, 1.0) // Cap at 1000 goroutines = 100%
 	gcLoad := mathMin(memStats.GCCPUFraction, 1.0)                        // GC CPU fraction
@@ -338,7 +338,7 @@ func calculateCPUUtilization() float64 {
 	if memStats.HeapSys > 0 {
 		heapLoad = mathMin(float64(memStats.HeapInuse)/float64(memStats.HeapSys), 1.0)
 	}
-	
+
 	// Weighted combination: GC 50%, goroutines 30%, memory 20%
 	utilization := (gcLoad * 0.5) + (goroutineLoad * 0.3) + (heapLoad * 0.2)
 	return utilization

@@ -114,7 +114,7 @@ func (a *AuthAuditLog) UpdateKeys() error {
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = time.Now().UTC()
 	}
-	
+
 	return nil
 }
 

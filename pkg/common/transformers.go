@@ -37,7 +37,7 @@ type TransformationStep[T any] struct {
 // TransformationPipeline provides a framework for chaining transformations
 type TransformationPipeline[TSource, TTarget any] struct {
 	steps   []TransformationStep[any] //nolint:unused // Framework pattern - will be used when pipeline is implemented
-	logger  *zap.Logger              //nolint:unused // Framework pattern - will be used when pipeline is implemented
+	logger  *zap.Logger               //nolint:unused // Framework pattern - will be used when pipeline is implemented
 	metrics *TransformationMetrics    //nolint:unused // Framework pattern - will be used when pipeline is implemented
 }
 
@@ -52,12 +52,12 @@ type TransformationMetrics struct {
 
 // TransformationCache provides caching for expensive transformations
 type TransformationCache[TSource, TTarget any] struct {
-	cache    sync.Map
-	ttl      time.Duration
-	maxSize  int
-	keyFunc  func(TSource) string
-	logger   *zap.Logger
-	hitCount int64
+	cache     sync.Map
+	ttl       time.Duration
+	maxSize   int
+	keyFunc   func(TSource) string
+	logger    *zap.Logger
+	hitCount  int64
 	missCount int64
 }
 
@@ -85,14 +85,14 @@ type TransformationContext struct {
 
 // TransformationError provides detailed error information for failed transformations
 type TransformationError struct {
-	Step      string
+	Step       string
 	SourceType string
 	TargetType string
-	Cause     error
+	Cause      error
 }
 
 func (e TransformationError) Error() string {
-	return fmt.Sprintf("transformation failed at step '%s' (%s -> %s): %v", 
+	return fmt.Sprintf("transformation failed at step '%s' (%s -> %s): %v",
 		e.Step, e.SourceType, e.TargetType, e.Cause)
 }
 
@@ -117,7 +117,7 @@ func NewBaseTransformer[TSource, TTarget any](
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	
+
 	return &BaseTransformer[TSource, TTarget]{
 		name:        name,
 		transformFn: transformFn,
@@ -128,7 +128,7 @@ func NewBaseTransformer[TSource, TTarget any](
 // Transform executes the transformation function
 func (bt *BaseTransformer[TSource, TTarget]) Transform(ctx context.Context, source TSource) (TTarget, error) {
 	var zero TTarget
-	
+
 	if bt.transformFn == nil {
 		return zero, TransformationError{
 			Step:       bt.name,
@@ -206,7 +206,7 @@ func NewBatchTransformer[TSource, TTarget any](
 
 // TransformBatch processes multiple items efficiently
 func (bt *BatchTransformerImpl[TSource, TTarget]) TransformBatch(
-	ctx context.Context, 
+	ctx context.Context,
 	sources []TSource,
 ) ([]TTarget, error) {
 	if len(sources) == 0 {
@@ -220,7 +220,7 @@ func (bt *BatchTransformerImpl[TSource, TTarget]) TransformBatch(
 
 	// Fall back to individual transformations
 	results := make([]TTarget, 0, len(sources))
-	
+
 	if bt.concurrent && len(sources) > 5 {
 		return bt.transformConcurrently(ctx, sources)
 	}
@@ -292,7 +292,7 @@ func NewTransformationCache[TSource, TTarget any](
 // Get retrieves a cached transformation result
 func (tc *TransformationCache[TSource, TTarget]) Get(source TSource) (TTarget, bool) {
 	var zero TTarget
-	
+
 	if tc.keyFunc == nil {
 		return zero, false
 	}
@@ -306,12 +306,12 @@ func (tc *TransformationCache[TSource, TTarget]) Get(source TSource) (TTarget, b
 				tc.missCount++
 				return zero, false
 			}
-			
+
 			tc.hitCount++
 			return entry.Value, true
 		}
 	}
-	
+
 	tc.missCount++
 	return zero, false
 }
@@ -327,7 +327,7 @@ func (tc *TransformationCache[TSource, TTarget]) Set(source TSource, target TTar
 		Value:     target,
 		CreatedAt: time.Now(),
 	}
-	
+
 	tc.cache.Store(key, entry)
 }
 
@@ -344,11 +344,11 @@ func (tc *TransformationCache[TSource, TTarget]) Stats() (hits, misses int64, hi
 	hits = tc.hitCount
 	misses = tc.missCount
 	total := hits + misses
-	
+
 	if total > 0 {
 		hitRate = float64(hits) / float64(total)
 	}
-	
+
 	return hits, misses, hitRate
 }
 
@@ -379,7 +379,7 @@ func (tr *TransformationRegistry) Register(name string, transformer interface{})
 
 	tr.transformers[name] = transformer
 	tr.logger.Debug("transformer registered", zap.String("name", name))
-	
+
 	return nil
 }
 
@@ -401,7 +401,7 @@ func (tr *TransformationRegistry) List() []string {
 	for name := range tr.transformers {
 		names = append(names, name)
 	}
-	
+
 	return names
 }
 
@@ -415,7 +415,7 @@ func (tr *TransformationRegistry) Unregister(name string) bool {
 		tr.logger.Debug("transformer unregistered", zap.String("name", name))
 		return true
 	}
-	
+
 	return false
 }
 
@@ -463,11 +463,11 @@ func ValidatingTransformer[TSource, TTarget any](
 		"validating_transformer",
 		func(ctx context.Context, source TSource) (TTarget, error) {
 			var zero TTarget
-			
+
 			if err := validator(source); err != nil {
 				return zero, fmt.Errorf("validation failed: %w", err)
 			}
-			
+
 			return transformer.Transform(ctx, source)
 		},
 		nil,
@@ -495,7 +495,7 @@ func NewConditionalTransformer[TSource, TTarget any](
 
 // CanTransform checks if the transformation should be applied
 func (ct *ConditionalTransformerImpl[TSource, TTarget]) CanTransform(
-	ctx context.Context, 
+	ctx context.Context,
 	source TSource,
 ) bool {
 	if ct.conditionFn == nil {
@@ -506,11 +506,11 @@ func (ct *ConditionalTransformerImpl[TSource, TTarget]) CanTransform(
 
 // Transform only executes if the condition is met
 func (ct *ConditionalTransformerImpl[TSource, TTarget]) Transform(
-	ctx context.Context, 
+	ctx context.Context,
 	source TSource,
 ) (TTarget, error) {
 	var zero TTarget
-	
+
 	if !ct.CanTransform(ctx, source) {
 		return zero, TransformationError{
 			Step:       ct.name,
@@ -519,7 +519,7 @@ func (ct *ConditionalTransformerImpl[TSource, TTarget]) Transform(
 			Cause:      ErrTransformationConditionNotMet,
 		}
 	}
-	
+
 	return ct.BaseTransformer.Transform(ctx, source)
 }
 
@@ -530,7 +530,7 @@ func MemoizedTransformer[TSource, TTarget any](
 	ttl time.Duration,
 ) Transformer[TSource, TTarget] {
 	cache := NewTransformationCache[TSource, TTarget](ttl, 1000, keyFunc, nil)
-	
+
 	return NewBaseTransformer(
 		"memoized_transformer",
 		func(ctx context.Context, source TSource) (TTarget, error) {
@@ -538,13 +538,13 @@ func MemoizedTransformer[TSource, TTarget any](
 			if cached, found := cache.Get(source); found {
 				return cached, nil
 			}
-			
+
 			// Transform and cache result
 			result, err := transformer.Transform(ctx, source)
 			if err != nil {
 				return result, err
 			}
-			
+
 			cache.Set(source, result)
 			return result, nil
 		},
@@ -561,11 +561,11 @@ func NewTransformationMetrics() *TransformationMetrics {
 func (tm *TransformationMetrics) RecordTransformation(duration time.Duration, success bool) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	tm.transformCount++
 	tm.totalDuration += duration
 	tm.lastTransformTime = time.Now()
-	
+
 	if !success {
 		tm.errorCount++
 	}
@@ -575,15 +575,15 @@ func (tm *TransformationMetrics) RecordTransformation(duration time.Duration, su
 func (tm *TransformationMetrics) GetStats() (count, errors int64, avgDuration time.Duration, errorRate float64) {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
-	
+
 	count = tm.transformCount
 	errors = tm.errorCount
-	
+
 	if count > 0 {
 		avgDuration = tm.totalDuration / time.Duration(count)
 		errorRate = float64(errors) / float64(count)
 	}
-	
+
 	return count, errors, avgDuration, errorRate
 }
 
@@ -591,7 +591,7 @@ func (tm *TransformationMetrics) GetStats() (count, errors int64, avgDuration ti
 func (tm *TransformationMetrics) Reset() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
-	
+
 	tm.transformCount = 0
 	tm.errorCount = 0
 	tm.totalDuration = 0

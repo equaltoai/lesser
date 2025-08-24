@@ -36,7 +36,7 @@ func getStatusInteractionConfig(interactionType statusInteractionType) statusInt
 		}
 	case statusReblogs:
 		return statusInteractionConfig{
-			endpoint:    "reblogged_by", 
+			endpoint:    "reblogged_by",
 			errorAction: "get reblogs",
 		}
 	default:
@@ -78,7 +78,7 @@ func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType st
 			if strings.Contains(err.Error(), "not found") {
 				return common.RespondNotFound(ctx, "status not found")
 			}
-			return common.RespondInternalServerError(ctx, "failed to " + config.errorAction)
+			return common.RespondInternalServerError(ctx, "failed to "+config.errorAction)
 		}
 
 		// Convert storage accounts to API accounts
@@ -103,7 +103,7 @@ func (h *Handler) handleStatusInteractions(ctx *lift.Context, interactionType st
 			if strings.Contains(err.Error(), "not found") {
 				return common.RespondNotFound(ctx, "status not found")
 			}
-			return common.RespondInternalServerError(ctx, "failed to " + config.errorAction)
+			return common.RespondInternalServerError(ctx, "failed to "+config.errorAction)
 		}
 
 		// Convert storage accounts to API accounts

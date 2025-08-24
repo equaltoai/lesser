@@ -13,7 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 // ActivityPubObject represents a generic ActivityPub object interface
 type ActivityPubObject interface {
 	GetID() string
@@ -23,7 +22,7 @@ type ActivityPubObject interface {
 	GetPublished() time.Time
 }
 
-// ActivityPubActor represents a generic ActivityPub actor interface  
+// ActivityPubActor represents a generic ActivityPub actor interface
 type ActivityPubActor interface {
 	GetID() string
 	GetType() string
@@ -35,23 +34,23 @@ type ActivityPubActor interface {
 
 // FederationConfig configures federation behavior
 type FederationConfig struct {
-	Domain          string
-	PrivateKeyPath  string
-	PublicKeyPath   string
-	UserAgent       string
-	MaxRetries      int
-	RetryDelay      time.Duration
-	RequestTimeout  time.Duration
+	Domain         string
+	PrivateKeyPath string
+	PublicKeyPath  string
+	UserAgent      string
+	MaxRetries     int
+	RetryDelay     time.Duration
+	RequestTimeout time.Duration
 }
 
 // ActivityPubValidationRules defines validation rules for ActivityPub objects
 type ActivityPubValidationRules struct {
-	RequireHTTPS        bool
-	AllowedDomains      []string
-	BlockedDomains      []string
-	MaxObjectSize       int64
-	RequireSignature    bool
-	ValidActivityTypes  []string
+	RequireHTTPS       bool
+	AllowedDomains     []string
+	BlockedDomains     []string
+	MaxObjectSize      int64
+	RequireSignature   bool
+	ValidActivityTypes []string
 }
 
 // ActivityPubBusinessLogic provides centralized ActivityPub business operations
@@ -116,7 +115,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 	return nil
 }
 
-// 2. Activity Type Validation Pattern  
+// 2. Activity Type Validation Pattern
 // Found in: inbox, outbox, activity processing
 
 // ValidateActivityType validates ActivityPub activity types
@@ -269,11 +268,11 @@ type DeliveryTarget struct {
 
 // FederationDeliveryConfig configures federation delivery behavior
 type FederationDeliveryConfig struct {
-	MaxRetries      int
-	RetryDelay      time.Duration
-	RequestTimeout  time.Duration
-	MaxConcurrency  int
-	SignRequests    bool
+	MaxRetries     int
+	RetryDelay     time.Duration
+	RequestTimeout time.Duration
+	MaxConcurrency int
+	SignRequests   bool
 }
 
 // CalculateDeliveryTargets calculates delivery targets for an ActivityPub activity
@@ -359,7 +358,7 @@ func ParseHTTPSignature(signatureHeader string) (*HTTPSignatureInfo, error) {
 	}
 
 	info := &HTTPSignatureInfo{}
-	
+
 	// Parse signature components
 	// This is a simplified parser - in reality you'd need a more robust implementation
 	parts := strings.Split(signatureHeader, ",")
@@ -396,24 +395,24 @@ func ParseHTTPSignature(signatureHeader string) (*HTTPSignatureInfo, error) {
 
 // ActivityPubCollection represents a paginated ActivityPub collection
 type ActivityPubCollection struct {
-	Context      interface{} `json:"@context"`
-	ID           string      `json:"id"`
-	Type         string      `json:"type"`
-	TotalItems   int         `json:"totalItems"`
-	First        string      `json:"first,omitempty"`
-	Last         string      `json:"last,omitempty"`
+	Context      interface{}   `json:"@context"`
+	ID           string        `json:"id"`
+	Type         string        `json:"type"`
+	TotalItems   int           `json:"totalItems"`
+	First        string        `json:"first,omitempty"`
+	Last         string        `json:"last,omitempty"`
 	Items        []interface{} `json:"items,omitempty"`
 	OrderedItems []interface{} `json:"orderedItems,omitempty"`
 }
 
 // ActivityPubCollectionPage represents a page in an ActivityPub collection
 type ActivityPubCollectionPage struct {
-	Context      interface{} `json:"@context"`
-	ID           string      `json:"id"`
-	Type         string      `json:"type"`
-	PartOf       string      `json:"partOf"`
-	Next         string      `json:"next,omitempty"`
-	Prev         string      `json:"prev,omitempty"`
+	Context      interface{}   `json:"@context"`
+	ID           string        `json:"id"`
+	Type         string        `json:"type"`
+	PartOf       string        `json:"partOf"`
+	Next         string        `json:"next,omitempty"`
+	Prev         string        `json:"prev,omitempty"`
 	Items        []interface{} `json:"items,omitempty"`
 	OrderedItems []interface{} `json:"orderedItems,omitempty"`
 }
@@ -459,11 +458,11 @@ func CreateActivityPubCollectionPage(id, pageType, partOf string, items []interf
 
 // ActivityPubError represents an ActivityPub-specific error
 type ActivityPubError struct {
-	Type      string `json:"type"`
-	Message   string `json:"message"`
-	ActorID   string `json:"actor,omitempty"`
-	ObjectID  string `json:"object,omitempty"`
-	Temporary bool   `json:"temporary"`
+	Type       string        `json:"type"`
+	Message    string        `json:"message"`
+	ActorID    string        `json:"actor,omitempty"`
+	ObjectID   string        `json:"object,omitempty"`
+	Temporary  bool          `json:"temporary"`
 	RetryAfter time.Duration `json:"retry_after,omitempty"`
 }
 
@@ -579,7 +578,7 @@ func (ap *ActivityPubBusinessLogic) executeWithRetry(ctx context.Context, operat
 			ap.recordSuccessMetrics(ctx, operation, attempt)
 			return nil
 		}
-		
+
 		if shouldRetry := ap.handleExecutionError(ctx, operation, err, attempt, maxRetries); !shouldRetry {
 			return err
 		}
@@ -609,7 +608,7 @@ func (ap *ActivityPubBusinessLogic) handleExecutionError(ctx context.Context, op
 	if fedErr, ok := err.(ActivityPubError); ok {
 		return ap.handleFederationError(ctx, operation, fedErr, attempt, maxRetries)
 	}
-	
+
 	// Non-federation error - don't retry
 	ap.recordErrorMetrics(ctx, operation, attempt)
 	return false
@@ -624,7 +623,7 @@ func (ap *ActivityPubBusinessLogic) handleFederationError(ctx context.Context, o
 
 	retryDelay := ap.calculateRetryDelay(fedErr, attempt)
 	ap.logRetryAttempt(fedErr, attempt, retryDelay)
-	
+
 	return ap.waitForRetry(ctx, retryDelay)
 }
 

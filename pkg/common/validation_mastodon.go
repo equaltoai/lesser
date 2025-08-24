@@ -13,16 +13,16 @@ import (
 var (
 	// StatusIDPattern validates Mastodon status IDs (numeric or alphanumeric)
 	MastodonStatusIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-]+$`)
-	
+
 	// AccountIDPattern validates Mastodon account IDs
 	MastodonAccountIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_\-\.@:\/]+$`)
-	
+
 	// HashtagPattern validates hashtag format
 	HashtagPattern = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-	
+
 	// LanguageCodePattern validates ISO 639-1 language codes
 	LanguageCodePattern = regexp.MustCompile(`^[a-z]{2}$`)
-	
+
 	// MimeTypePattern validates basic MIME type format
 	MimeTypePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_]*\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-\^_.]*$`)
 )
@@ -33,37 +33,37 @@ const (
 	MaxStatusLength     = 500
 	MaxStatusSpoiler    = 200
 	MaxStatusAttachment = 4
-	
+
 	// Account limits
 	MaxDisplayNameLength = 30
 	MaxBioLength         = 500
 	MaxFieldNameLength   = 255
 	MaxFieldValueLength  = 255
 	MaxAccountFields     = 4
-	
+
 	// Media limits
 	MaxMediaDescLength = 1500
 	MaxMediaFileSize   = 100 * 1024 * 1024 // 100MB
-	
+
 	// Filter limits
 	MaxFilterTitleLength   = 200
 	MaxFilterKeywordLength = 500
 	MaxFilterKeywords      = 50
-	
+
 	// Poll limits
-	MaxPollOptions     = 4
+	MaxPollOptions      = 4
 	MaxPollOptionLength = 50
-	MinPollDuration    = 5 * 60       // 5 minutes
-	MaxPollDuration    = 30 * 24 * 60 * 60 // 30 days
-	
+	MinPollDuration     = 5 * 60            // 5 minutes
+	MaxPollDuration     = 30 * 24 * 60 * 60 // 30 days
+
 	// List limits
 	MaxListTitleLength = 100
 	MaxListAccounts    = 500
-	
+
 	// Application limits
-	MaxAppNameLength = 100
+	MaxAppNameLength    = 100
 	MaxAppWebsiteLength = 2000
-	MaxAppScopesLength = 500
+	MaxAppScopesLength  = 500
 )
 
 // ValidVisibilityLevels defines the valid Mastodon visibility levels
@@ -87,22 +87,22 @@ func ValidateStatusParams(params map[string]interface{}) error {
 	if err := validateStatusBasicFields(params); err != nil {
 		return err
 	}
-	
+
 	// Validate status metadata and settings
 	if err := validateStatusMetadata(params); err != nil {
 		return err
 	}
-	
+
 	// Validate timing and scheduling
 	if err := validateStatusTiming(params); err != nil {
 		return err
 	}
-	
+
 	// Ensure either content or media is provided
 	if err := validateStatusContentRequirement(params); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -116,21 +116,21 @@ func validateStatusBasicFields(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate media_ids
 	if mediaIDs, exists := params["media_ids"]; exists {
 		if err := ValidateMediaIDs(mediaIDs); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate poll options
 	if pollOptions, exists := params["poll"]; exists {
 		if err := ValidatePollParams(pollOptions); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate in_reply_to_id
 	if replyToID, exists := params["in_reply_to_id"]; exists {
 		if replyStr, ok := replyToID.(string); ok && replyStr != "" {
@@ -139,7 +139,7 @@ func validateStatusBasicFields(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -151,7 +151,7 @@ func validateStatusMetadata(params map[string]interface{}) error {
 			return ValidationError{Field: "sensitive", Message: "must be a boolean"}
 		}
 	}
-	
+
 	// Validate spoiler_text
 	if spoilerText, exists := params["spoiler_text"]; exists {
 		if spoilerStr, ok := spoilerText.(string); ok {
@@ -160,7 +160,7 @@ func validateStatusMetadata(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate visibility
 	if visibility, exists := params["visibility"]; exists {
 		if visStr, ok := visibility.(string); ok {
@@ -169,7 +169,7 @@ func validateStatusMetadata(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate language
 	if language, exists := params["language"]; exists {
 		if langStr, ok := language.(string); ok && langStr != "" {
@@ -178,7 +178,7 @@ func validateStatusMetadata(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -192,7 +192,7 @@ func validateStatusTiming(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -200,11 +200,11 @@ func validateStatusTiming(params map[string]interface{}) error {
 func validateStatusContentRequirement(params map[string]interface{}) error {
 	hasContent := hasStatusContent(params)
 	hasMedia := hasStatusMedia(params)
-	
+
 	if !hasContent && !hasMedia {
 		return ValidationError{Field: "status", Message: "status content or media attachments required"}
 	}
-	
+
 	return nil
 }
 
@@ -234,24 +234,24 @@ func ValidateAccountParams(params map[string]interface{}) error {
 	if err := validateAccountStringFields(params); err != nil {
 		return err
 	}
-	
+
 	// Validate media fields
 	if err := validateAccountMediaFields(params); err != nil {
 		return err
 	}
-	
+
 	// Validate boolean fields
 	if err := validateAccountBooleanFields(params); err != nil {
 		return err
 	}
-	
+
 	// Validate fields_attributes
 	if fieldsAttr, exists := params["fields_attributes"]; exists {
 		if err := ValidateAccountFields(fieldsAttr); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -261,12 +261,12 @@ func validateAccountStringFields(params map[string]interface{}) error {
 	if err := validateOptionalStringField(params, "display_name", ValidateDisplayName); err != nil {
 		return err
 	}
-	
+
 	// Validate note (bio)
 	if err := validateOptionalStringField(params, "note", ValidateAccountBio); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -276,25 +276,25 @@ func validateAccountMediaFields(params map[string]interface{}) error {
 	if err := validateOptionalMediaField(params, "avatar"); err != nil {
 		return err
 	}
-	
+
 	// Validate header
 	if err := validateOptionalMediaField(params, "header"); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
 // validateAccountBooleanFields validates boolean account fields
 func validateAccountBooleanFields(params map[string]interface{}) error {
 	boolFields := []string{"locked", "bot", "discoverable"}
-	
+
 	for _, field := range boolFields {
 		if err := validateOptionalBooleanField(params, field); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -342,7 +342,7 @@ func ValidateFilterParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "title", Message: "is required"}
 	}
-	
+
 	// Validate context
 	if context, exists := params["context"]; exists {
 		if err := ValidateFilterContextParam(context); err != nil {
@@ -351,7 +351,7 @@ func ValidateFilterParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "context", Message: "is required"}
 	}
-	
+
 	// Validate filter_action
 	if filterAction, exists := params["filter_action"]; exists {
 		if actionStr, ok := filterAction.(string); ok {
@@ -360,21 +360,21 @@ func ValidateFilterParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate expires_in
 	if expiresIn, exists := params["expires_in"]; exists {
 		if err := ValidateFilterExpiration(expiresIn); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate keywords_attributes
 	if keywordsAttr, exists := params["keywords_attributes"]; exists {
 		if err := ValidateFilterKeywords(keywordsAttr); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -392,7 +392,7 @@ func ValidateMediaParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "file", Message: "is required"}
 	}
-	
+
 	// Validate description
 	if description, exists := params["description"]; exists {
 		if descStr, ok := description.(string); ok {
@@ -401,7 +401,7 @@ func ValidateMediaParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate focus (for images)
 	if focus, exists := params["focus"]; exists {
 		if focusStr, ok := focus.(string); ok {
@@ -410,7 +410,7 @@ func ValidateMediaParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -428,14 +428,14 @@ func ValidateReportParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "account_id", Message: "is required"}
 	}
-	
+
 	// Validate status_ids
 	if statusIDs, exists := params["status_ids"]; exists {
 		if err := ValidateReportStatusIDs(statusIDs); err != nil {
 			return err
 		}
 	}
-	
+
 	// Validate comment
 	if comment, exists := params["comment"]; exists {
 		if commentStr, ok := comment.(string); ok {
@@ -444,7 +444,7 @@ func ValidateReportParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate category
 	if category, exists := params["category"]; exists {
 		if categoryStr, ok := category.(string); ok {
@@ -453,14 +453,14 @@ func ValidateReportParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate forward (boolean)
 	if forward, exists := params["forward"]; exists {
 		if _, ok := forward.(bool); !ok {
 			return ValidationError{Field: "forward", Message: "must be a boolean"}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -478,7 +478,7 @@ func ValidateListParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "title", Message: "is required"}
 	}
-	
+
 	// Validate replies_policy
 	if repliesPolicy, exists := params["replies_policy"]; exists {
 		if policyStr, ok := repliesPolicy.(string); ok {
@@ -487,7 +487,7 @@ func ValidateListParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -505,7 +505,7 @@ func ValidateApplicationParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "client_name", Message: "is required"}
 	}
-	
+
 	// Validate redirect_uris
 	if redirectURIs, exists := params["redirect_uris"]; exists {
 		if urisStr, ok := redirectURIs.(string); ok {
@@ -518,7 +518,7 @@ func ValidateApplicationParams(params map[string]interface{}) error {
 	} else {
 		return ValidationError{Field: "redirect_uris", Message: "is required"}
 	}
-	
+
 	// Validate scopes
 	if scopes, exists := params["scopes"]; exists {
 		if scopesStr, ok := scopes.(string); ok {
@@ -527,7 +527,7 @@ func ValidateApplicationParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	// Validate website
 	if website, exists := params["website"]; exists {
 		if websiteStr, ok := website.(string); ok && websiteStr != "" {
@@ -536,7 +536,7 @@ func ValidateApplicationParams(params map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -547,15 +547,15 @@ func ValidateMastodonStatusID(statusID string) error {
 	if statusID == "" {
 		return ValidationError{Field: "status_id", Message: "cannot be empty"}
 	}
-	
+
 	if len(statusID) > 100 {
 		return ValidationError{Field: "status_id", Message: "cannot be longer than 100 characters"}
 	}
-	
+
 	if !MastodonStatusIDPattern.MatchString(statusID) {
 		return ValidationError{Field: "status_id", Message: "invalid format"}
 	}
-	
+
 	return nil
 }
 
@@ -564,18 +564,17 @@ func ValidateMastodonAccountID(accountID string) error {
 	if accountID == "" {
 		return ValidationError{Field: "account_id", Message: "cannot be empty"}
 	}
-	
+
 	if len(accountID) > 500 {
 		return ValidationError{Field: "account_id", Message: "cannot be longer than 500 characters"}
 	}
-	
+
 	if !MastodonAccountIDPattern.MatchString(accountID) {
 		return ValidationError{Field: "account_id", Message: "invalid format"}
 	}
-	
+
 	return nil
 }
-
 
 // ValidateAccountFields validates account profile fields
 func ValidateAccountFields(fields interface{}) error {
@@ -583,14 +582,14 @@ func ValidateAccountFields(fields interface{}) error {
 	if !ok {
 		return ValidationError{Field: "fields_attributes", Message: "must be an array"}
 	}
-	
+
 	if len(fieldsArray) > MaxAccountFields {
 		return ValidationError{
 			Field:   "fields_attributes",
 			Message: fmt.Sprintf("cannot have more than %d fields", MaxAccountFields),
 		}
 	}
-	
+
 	for i, field := range fieldsArray {
 		fieldObj, ok := field.(map[string]interface{})
 		if !ok {
@@ -599,7 +598,7 @@ func ValidateAccountFields(fields interface{}) error {
 				Message: "must be an object",
 			}
 		}
-		
+
 		// Validate name
 		if name, exists := fieldObj["name"]; exists {
 			if nameStr, ok := name.(string); ok {
@@ -611,7 +610,7 @@ func ValidateAccountFields(fields interface{}) error {
 				}
 			}
 		}
-		
+
 		// Validate value
 		if value, exists := fieldObj["value"]; exists {
 			if valueStr, ok := value.(string); ok {
@@ -624,7 +623,7 @@ func ValidateAccountFields(fields interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -634,14 +633,14 @@ func ValidateMediaIDs(mediaIDs interface{}) error {
 	if !ok {
 		return ValidationError{Field: "media_ids", Message: "must be an array"}
 	}
-	
+
 	if len(idsArray) > MaxStatusAttachment {
 		return ValidationError{
 			Field:   "media_ids",
 			Message: fmt.Sprintf("cannot have more than %d attachments", MaxStatusAttachment),
 		}
 	}
-	
+
 	for i, id := range idsArray {
 		if idStr, ok := id.(string); ok {
 			if err := ValidateAlphanumericID("media_id", idStr); err != nil {
@@ -657,7 +656,7 @@ func ValidateMediaIDs(mediaIDs interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -669,7 +668,7 @@ func ValidateMediaDescription(description string) error {
 			Message: fmt.Sprintf("cannot be longer than %d characters", MaxMediaDescLength),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -678,27 +677,27 @@ func ValidateMediaFocus(focus string) error {
 	if focus == "" {
 		return nil
 	}
-	
+
 	// Focus should be in format "x,y" where x and y are floats between -1 and 1
 	parts := strings.Split(focus, ",")
 	if len(parts) != 2 {
 		return ValidationError{Field: "focus", Message: "must be in format 'x,y'"}
 	}
-	
+
 	for i, part := range parts {
 		value, err := strconv.ParseFloat(strings.TrimSpace(part), 64)
 		if err != nil {
 			return ValidationError{Field: "focus", Message: "coordinates must be numbers"}
 		}
-		
+
 		if value < -1.0 || value > 1.0 {
 			return ValidationError{Field: "focus", Message: "coordinates must be between -1 and 1"}
 		}
-		
+
 		// Store back normalized value
 		parts[i] = fmt.Sprintf("%.2f", value)
 	}
-	
+
 	return nil
 }
 
@@ -707,7 +706,7 @@ func ValidateMediaFile(fileData, fieldName string) error {
 	if fileData == "" {
 		return ValidationError{Field: fieldName, Message: "cannot be empty"}
 	}
-	
+
 	// Basic validation - in real implementation would check file headers, size, etc.
 	if len(fileData) > MaxMediaFileSize {
 		return ValidationError{
@@ -715,7 +714,7 @@ func ValidateMediaFile(fileData, fieldName string) error {
 			Message: fmt.Sprintf("file too large (max %d bytes)", MaxMediaFileSize),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -725,17 +724,17 @@ func ValidatePollParams(poll interface{}) error {
 	if !ok {
 		return ValidationError{Field: "poll", Message: "must be an object"}
 	}
-	
+
 	// Validate required fields
 	if err := validatePollRequiredFields(pollObj); err != nil {
 		return err
 	}
-	
+
 	// Validate optional boolean fields
 	if err := validatePollOptionalFields(pollObj); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -745,12 +744,12 @@ func validatePollRequiredFields(pollObj map[string]interface{}) error {
 	if err := validatePollOptions(pollObj); err != nil {
 		return err
 	}
-	
+
 	// Validate expires_in
 	if err := validatePollExpiration(pollObj); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -760,20 +759,20 @@ func validatePollOptions(pollObj map[string]interface{}) error {
 	if !exists {
 		return ValidationError{Field: "poll.options", Message: "is required"}
 	}
-	
+
 	optionsArray, ok := options.([]interface{})
 	if !ok {
 		return ValidationError{Field: "poll.options", Message: "must be an array"}
 	}
-	
+
 	if err := validatePollOptionsCount(optionsArray); err != nil {
 		return err
 	}
-	
+
 	if err := validatePollOptionsContent(optionsArray); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
@@ -782,14 +781,14 @@ func validatePollOptionsCount(optionsArray []interface{}) error {
 	if len(optionsArray) < 2 {
 		return ValidationError{Field: "poll.options", Message: "must have at least 2 options"}
 	}
-	
+
 	if len(optionsArray) > MaxPollOptions {
 		return ValidationError{
 			Field:   "poll.options",
 			Message: fmt.Sprintf("cannot have more than %d options", MaxPollOptions),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -803,14 +802,14 @@ func validatePollOptionsContent(optionsArray []interface{}) error {
 				Message: "must be a string",
 			}
 		}
-		
+
 		if optionStr == "" {
 			return ValidationError{
 				Field:   fmt.Sprintf("poll.options[%d]", i),
 				Message: "cannot be empty",
 			}
 		}
-		
+
 		if len(optionStr) > MaxPollOptionLength {
 			return ValidationError{
 				Field:   fmt.Sprintf("poll.options[%d]", i),
@@ -818,7 +817,7 @@ func validatePollOptionsContent(optionsArray []interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -828,12 +827,12 @@ func validatePollExpiration(pollObj map[string]interface{}) error {
 	if !exists {
 		return ValidationError{Field: "poll.expires_in", Message: "is required"}
 	}
-	
+
 	expiresNum, ok := expiresIn.(float64)
 	if !ok {
 		return ValidationError{Field: "poll.expires_in", Message: "must be a number"}
 	}
-	
+
 	duration := int(expiresNum)
 	if duration < MinPollDuration {
 		return ValidationError{
@@ -841,21 +840,21 @@ func validatePollExpiration(pollObj map[string]interface{}) error {
 			Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration),
 		}
 	}
-	
+
 	if duration > MaxPollDuration {
 		return ValidationError{
 			Field:   "poll.expires_in",
 			Message: fmt.Sprintf("cannot be more than %d seconds", MaxPollDuration),
 		}
 	}
-	
+
 	return nil
 }
 
 // validatePollOptionalFields validates optional poll fields
 func validatePollOptionalFields(pollObj map[string]interface{}) error {
 	optionalBoolFields := []string{"multiple", "hide_totals"}
-	
+
 	for _, fieldName := range optionalBoolFields {
 		if value, exists := pollObj[fieldName]; exists {
 			if _, ok := value.(bool); !ok {
@@ -863,7 +862,7 @@ func validatePollOptionalFields(pollObj map[string]interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -875,7 +874,7 @@ func ValidateSpoilerText(spoilerText string) error {
 			Message: fmt.Sprintf("cannot be longer than %d characters", MaxStatusSpoiler),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -884,23 +883,23 @@ func ValidateScheduledTime(scheduledAt string) error {
 	if scheduledAt == "" {
 		return nil
 	}
-	
+
 	scheduledTime, err := time.Parse(time.RFC3339, scheduledAt)
 	if err != nil {
 		return ValidationError{Field: "scheduled_at", Message: "must be a valid RFC3339 timestamp"}
 	}
-	
+
 	// Must be in the future
 	if scheduledTime.Before(time.Now()) {
 		return ValidationError{Field: "scheduled_at", Message: "must be in the future"}
 	}
-	
+
 	// Cannot be more than 1 year in the future
 	maxFuture := time.Now().Add(365 * 24 * time.Hour)
 	if scheduledTime.After(maxFuture) {
 		return ValidationError{Field: "scheduled_at", Message: "cannot be more than 1 year in the future"}
 	}
-	
+
 	return nil
 }
 
@@ -910,11 +909,11 @@ func ValidateFilterContextParam(context interface{}) error {
 	if !ok {
 		return ValidationError{Field: "context", Message: "must be an array"}
 	}
-	
+
 	if len(contextArray) == 0 {
 		return ValidationError{Field: "context", Message: "must have at least one context"}
 	}
-	
+
 	for i, ctx := range contextArray {
 		if ctxStr, ok := ctx.(string); ok {
 			found := false
@@ -924,7 +923,7 @@ func ValidateFilterContextParam(context interface{}) error {
 					break
 				}
 			}
-			
+
 			if !found {
 				return ValidationError{
 					Field:   fmt.Sprintf("context[%d]", i),
@@ -938,7 +937,7 @@ func ValidateFilterContextParam(context interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -949,7 +948,7 @@ func ValidateFilterExpiration(expiresIn interface{}) error {
 		if duration < 0 {
 			return ValidationError{Field: "expires_in", Message: "cannot be negative"}
 		}
-		
+
 		// Max expiration of 1 year
 		maxExpiration := 365 * 24 * 60 * 60 // 1 year in seconds
 		if duration > maxExpiration {
@@ -958,7 +957,7 @@ func ValidateFilterExpiration(expiresIn interface{}) error {
 	} else {
 		return ValidationError{Field: "expires_in", Message: "must be a number"}
 	}
-	
+
 	return nil
 }
 
@@ -968,14 +967,14 @@ func ValidateFilterKeywords(keywords interface{}) error {
 	if !ok {
 		return ValidationError{Field: "keywords_attributes", Message: "must be an array"}
 	}
-	
+
 	if len(keywordsArray) > MaxFilterKeywords {
 		return ValidationError{
 			Field:   "keywords_attributes",
 			Message: fmt.Sprintf("cannot have more than %d keywords", MaxFilterKeywords),
 		}
 	}
-	
+
 	for i, keyword := range keywordsArray {
 		keywordObj, ok := keyword.(map[string]interface{})
 		if !ok {
@@ -984,7 +983,7 @@ func ValidateFilterKeywords(keywords interface{}) error {
 				Message: "must be an object",
 			}
 		}
-		
+
 		// Validate keyword text
 		if keywordText, exists := keywordObj["keyword"]; exists {
 			if keywordStr, ok := keywordText.(string); ok {
@@ -1001,7 +1000,7 @@ func ValidateFilterKeywords(keywords interface{}) error {
 				}
 			}
 		}
-		
+
 		// Validate whole_word (optional boolean)
 		if wholeWord, exists := keywordObj["whole_word"]; exists {
 			if _, ok := wholeWord.(bool); !ok {
@@ -1012,7 +1011,7 @@ func ValidateFilterKeywords(keywords interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1022,11 +1021,11 @@ func ValidateReportStatusIDs(statusIDs interface{}) error {
 	if !ok {
 		return ValidationError{Field: "status_ids", Message: "must be an array"}
 	}
-	
+
 	if len(idsArray) > 20 {
 		return ValidationError{Field: "status_ids", Message: "cannot report more than 20 statuses"}
 	}
-	
+
 	for i, id := range idsArray {
 		if idStr, ok := id.(string); ok {
 			if err := ValidateMastodonStatusID(idStr); err != nil {
@@ -1042,7 +1041,7 @@ func ValidateReportStatusIDs(statusIDs interface{}) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1051,7 +1050,7 @@ func ValidateReportComment(comment string) error {
 	if len(comment) > 1000 {
 		return ValidationError{Field: "comment", Message: "cannot be longer than 1000 characters"}
 	}
-	
+
 	return nil
 }
 
@@ -1062,7 +1061,7 @@ func ValidateReportCategory(category string) error {
 			return nil
 		}
 	}
-	
+
 	return ValidationError{
 		Field:   "category",
 		Message: fmt.Sprintf("must be one of: %s", strings.Join(ValidReportCategories, ", ")),
@@ -1074,27 +1073,27 @@ func ValidateListTitle(title string) error {
 	if title == "" {
 		return ValidationError{Field: "title", Message: "cannot be empty"}
 	}
-	
+
 	if len(title) > MaxListTitleLength {
 		return ValidationError{
 			Field:   "title",
 			Message: fmt.Sprintf("cannot be longer than %d characters", MaxListTitleLength),
 		}
 	}
-	
+
 	return nil
 }
 
 // ValidateListRepliesPolicy validates list replies policy
 func ValidateListRepliesPolicy(policy string) error {
 	validPolicies := []string{"followed", "list", "none"}
-	
+
 	for _, validPolicy := range validPolicies {
 		if policy == validPolicy {
 			return nil
 		}
 	}
-	
+
 	return ValidationError{
 		Field:   "replies_policy",
 		Message: fmt.Sprintf("must be one of: %s", strings.Join(validPolicies, ", ")),
@@ -1106,14 +1105,14 @@ func ValidateApplicationName(name string) error {
 	if name == "" {
 		return ValidationError{Field: "client_name", Message: "cannot be empty"}
 	}
-	
+
 	if len(name) > MaxAppNameLength {
 		return ValidationError{
 			Field:   "client_name",
 			Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppNameLength),
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1122,20 +1121,20 @@ func ValidateRedirectURIs(uris string) error {
 	if uris == "" {
 		return ValidationError{Field: "redirect_uris", Message: "cannot be empty"}
 	}
-	
+
 	// Split URIs by newlines or spaces
 	uriList := strings.Fields(strings.ReplaceAll(uris, "\n", " "))
-	
+
 	for _, uri := range uriList {
 		if uri == "urn:ietf:wg:oauth:2.0:oob" {
 			continue // Special OAuth out-of-band URI
 		}
-		
+
 		if err := ValidateURL(uri, "redirect_uri"); err != nil {
 			return ValidationError{Field: "redirect_uris", Message: fmt.Sprintf("invalid URI: %s", uri)}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1147,23 +1146,23 @@ func ValidateApplicationScopes(scopes string) error {
 			Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppScopesLength),
 		}
 	}
-	
+
 	// Validate individual scopes
 	scopeList := strings.Fields(scopes)
 	validScopes := []string{"read", "write", "follow", "push", "admin"}
-	
+
 	for _, scope := range scopeList {
 		// Allow hierarchical scopes like "read:accounts"
 		baseScope := strings.Split(scope, ":")[0]
 		found := false
-		
+
 		for _, validScope := range validScopes {
 			if baseScope == validScope {
 				found = true
 				break
 			}
 		}
-		
+
 		if !found {
 			return ValidationError{
 				Field:   "scopes",
@@ -1171,7 +1170,7 @@ func ValidateApplicationScopes(scopes string) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1180,26 +1179,26 @@ func ValidateMastodonMimeType(mimeType string) error {
 	if mimeType == "" {
 		return ValidationError{Field: "mime_type", Message: "cannot be empty"}
 	}
-	
+
 	// Parse MIME type
 	mediaType, _, err := mime.ParseMediaType(mimeType)
 	if err != nil {
 		return ValidationError{Field: "mime_type", Message: "invalid MIME type format"}
 	}
-	
+
 	// Validate against allowed media types
 	allowedTypes := []string{
 		"image/jpeg", "image/png", "image/gif", "image/webp",
 		"video/mp4", "video/webm", "video/quicktime",
 		"audio/mpeg", "audio/ogg", "audio/wav", "audio/flac",
 	}
-	
+
 	for _, allowedType := range allowedTypes {
 		if mediaType == allowedType {
 			return nil
 		}
 	}
-	
+
 	return ValidationError{
 		Field:   "mime_type",
 		Message: fmt.Sprintf("unsupported media type: %s", mediaType),
@@ -1211,18 +1210,18 @@ func ValidateHashtag(hashtag string) error {
 	if hashtag == "" {
 		return ValidationError{Field: "hashtag", Message: "cannot be empty"}
 	}
-	
+
 	// Remove # if present
 	tag := strings.TrimPrefix(hashtag, "#")
-	
+
 	if len(tag) > 100 {
 		return ValidationError{Field: "hashtag", Message: "cannot be longer than 100 characters"}
 	}
-	
+
 	if !HashtagPattern.MatchString(tag) {
 		return ValidationError{Field: "hashtag", Message: "can only contain letters, numbers, and underscores"}
 	}
-	
+
 	return nil
 }
 
@@ -1232,30 +1231,30 @@ func ValidateMastodonTimeline(params map[string]interface{}) error {
 	if err := validateTimelineIDs(params); err != nil {
 		return err
 	}
-	
+
 	// Validate limit parameter
 	if err := validateTimelineLimit(params); err != nil {
 		return err
 	}
-	
+
 	// Validate boolean parameters
 	if err := validateTimelineBooleans(params); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 
 // validateTimelineIDs validates timeline ID parameters (max_id, since_id, min_id)
 func validateTimelineIDs(params map[string]interface{}) error {
 	idFields := []string{"max_id", "since_id", "min_id"}
-	
+
 	for _, fieldName := range idFields {
 		if err := validateOptionalStatusIDField(params, fieldName); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1265,12 +1264,12 @@ func validateTimelineLimit(params map[string]interface{}) error {
 	if !exists {
 		return nil
 	}
-	
+
 	limitNum, ok := limit.(float64)
 	if !ok {
 		return ValidationError{Field: "limit", Message: "must be a number"}
 	}
-	
+
 	limitInt := int(limitNum)
 	return ValidateLimit(limitInt, 80)
 }
@@ -1286,15 +1285,15 @@ func validateOptionalStatusIDField(params map[string]interface{}, fieldName stri
 	if !exists {
 		return nil
 	}
-	
+
 	valueStr, ok := value.(string)
 	if !ok || valueStr == "" {
 		return nil
 	}
-	
+
 	if err := ValidateMastodonStatusID(valueStr); err != nil {
 		return ValidationError{Field: fieldName, Message: err.Error()}
 	}
-	
+
 	return nil
 }

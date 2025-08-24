@@ -227,7 +227,7 @@ func (ap *ActivityProcessor) HandleStream(ctx context.Context, event events.Dyna
 	// Return error if there are retryable errors (this will cause Lambda to retry)
 	retryableErrors := len(errorList) - len(deadLetterRecords)
 	if retryableErrors > 0 {
-		ap.logger.Error("batch has retryable errors", 
+		ap.logger.Error("batch has retryable errors",
 			zap.Int("retryable_errors", retryableErrors),
 			zap.Int("total_records", len(event.Records)))
 		return ErrBatchRetryableErrors
@@ -1676,7 +1676,7 @@ func (ap *ActivityProcessor) validateAndProcessRemoteObject(obj any, expectedURL
 	}
 
 	if id != expectedURL {
-		ap.logger.Error("object ID mismatch", 
+		ap.logger.Error("object ID mismatch",
 			zap.String("expected", expectedURL),
 			zap.String("got", id))
 		return nil, ErrObjectIDMismatch

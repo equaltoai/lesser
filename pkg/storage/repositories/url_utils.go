@@ -62,11 +62,11 @@ var urlShorteners = []string{
 
 // ActivityPub URL patterns
 var activityPubPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`^https?://([^/]+)/users/([a-zA-Z0-9_.-]+)/?$`),     // Mastodon style
-	regexp.MustCompile(`^https?://([^/]+)/@([a-zA-Z0-9_.-]+)/?$`),          // Mastodon @username
-	regexp.MustCompile(`^https?://([^/]+)/u/([a-zA-Z0-9_.-]+)/?$`),         // Pleroma style
-	regexp.MustCompile(`^https?://([^/]+)/profile/([a-zA-Z0-9_.-]+)/?$`),   // Generic profile
-	regexp.MustCompile(`^https?://([^/]+)/actors/([a-zA-Z0-9_.-]+)/?$`),    // ActivityPub actors
+	regexp.MustCompile(`^https?://([^/]+)/users/([a-zA-Z0-9_.-]+)/?$`),   // Mastodon style
+	regexp.MustCompile(`^https?://([^/]+)/@([a-zA-Z0-9_.-]+)/?$`),        // Mastodon @username
+	regexp.MustCompile(`^https?://([^/]+)/u/([a-zA-Z0-9_.-]+)/?$`),       // Pleroma style
+	regexp.MustCompile(`^https?://([^/]+)/profile/([a-zA-Z0-9_.-]+)/?$`), // Generic profile
+	regexp.MustCompile(`^https?://([^/]+)/actors/([a-zA-Z0-9_.-]+)/?$`),  // ActivityPub actors
 }
 
 // ExtractAndValidateURL performs comprehensive URL extraction and validation
@@ -145,15 +145,15 @@ func (uv *URLValidator) ExtractAndValidateURL(_ context.Context, rawURL string) 
 func (uv *URLValidator) normalizeURL(rawURL string) string {
 	// Remove common prefixes that aren't protocols
 	rawURL = strings.TrimSpace(rawURL)
-	
+
 	// Check if it looks like a valid URL at all (basic validation)
 	if len(rawURL) == 0 || (!strings.Contains(rawURL, ".") && !strings.HasPrefix(rawURL, "http")) {
 		return rawURL // Return as-is for invalid inputs
 	}
-	
+
 	// Remove www. prefix before adding protocol
 	rawURL = strings.TrimPrefix(rawURL, "www.")
-	
+
 	// Add https if no protocol specified
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
 		rawURL = "https://" + rawURL
@@ -169,7 +169,7 @@ func (uv *URLValidator) normalizeURL(rawURL string) string {
 func (uv *URLValidator) isShortened(domain string) bool {
 	domain = strings.ToLower(domain)
 	domain = strings.TrimPrefix(domain, "www.")
-	
+
 	for _, shortener := range urlShorteners {
 		if domain == shortener {
 			return true
@@ -181,7 +181,7 @@ func (uv *URLValidator) isShortened(domain string) bool {
 // validateDomain performs domain-level validation
 func (uv *URLValidator) validateDomain(result *URLExtractionResult) {
 	domain := strings.ToLower(result.Domain)
-	
+
 	// Check for suspicious patterns
 	if strings.Contains(domain, "bit.ly") || strings.Contains(domain, "tinyurl") {
 		result.ValidationTags = append(result.ValidationTags, "url_shortener")
@@ -208,12 +208,12 @@ func (uv *URLValidator) extractSocialProfile(result *URLExtractionResult, normal
 		if matches := pattern.FindStringSubmatch(normalizedURL); matches != nil {
 			result.IsSocial = true
 			result.ProfileType = platform
-			
+
 			// Extract username (usually the last capture group)
 			if len(matches) > 1 {
 				result.Username = matches[len(matches)-1]
 			}
-			
+
 			// Add platform-specific metadata
 			switch platform {
 			case "twitter":
@@ -229,7 +229,7 @@ func (uv *URLValidator) extractSocialProfile(result *URLExtractionResult, normal
 				result.Metadata["platform_name"] = "GitHub"
 				result.Metadata["profile_url_template"] = "https://github.com/{username}"
 			}
-			
+
 			result.ValidationTags = append(result.ValidationTags, fmt.Sprintf("social_%s", platform))
 			return // Found a match, no need to check ActivityPub patterns
 		}
@@ -242,7 +242,7 @@ func (uv *URLValidator) extractActivityPubUsername(result *URLExtractionResult, 
 	if result.IsSocial {
 		return
 	}
-	
+
 	for _, pattern := range activityPubPatterns {
 		if matches := pattern.FindStringSubmatch(normalizedURL); matches != nil {
 			if len(matches) >= 3 {
@@ -262,15 +262,15 @@ func (uv *URLValidator) addValidationTags(result *URLExtractionResult) {
 	if !result.IsSecure {
 		result.ValidationTags = append(result.ValidationTags, "insecure_http")
 	}
-	
+
 	if result.IsSocial {
 		result.ValidationTags = append(result.ValidationTags, "social_media")
 	}
-	
+
 	if result.Username != "" {
 		result.ValidationTags = append(result.ValidationTags, "has_username")
 	}
-	
+
 	// Check URL length
 	if err := common.ValidateStringLength("original_url", result.OriginalURL, 0, 500); err != nil {
 		result.ValidationTags = append(result.ValidationTags, "long_url")
@@ -280,7 +280,7 @@ func (uv *URLValidator) addValidationTags(result *URLExtractionResult) {
 // ExtractProfileURLs extracts and validates URLs from user profile fields
 func (uv *URLValidator) ExtractProfileURLs(ctx context.Context, fields []map[string]string) ([]*URLExtractionResult, error) {
 	var results []*URLExtractionResult
-	
+
 	for _, field := range fields {
 		value, exists := field["value"]
 		if !exists {
@@ -289,7 +289,7 @@ func (uv *URLValidator) ExtractProfileURLs(ctx context.Context, fields []map[str
 		if err := common.ValidateRequiredParam("field_value", value); err != nil {
 			continue
 		}
-		
+
 		// Look for URLs in the field value
 		urls := uv.extractURLsFromText(value)
 		for _, urlStr := range urls {
@@ -298,7 +298,7 @@ func (uv *URLValidator) ExtractProfileURLs(ctx context.Context, fields []map[str
 				uv.logger.Error("failed to validate profile URL", zap.String("url", urlStr), zap.Error(err))
 				continue
 			}
-			
+
 			if result.IsValid {
 				// Add field context
 				if name, nameExists := field["name"]; nameExists {
@@ -308,24 +308,24 @@ func (uv *URLValidator) ExtractProfileURLs(ctx context.Context, fields []map[str
 			}
 		}
 	}
-	
+
 	return results, nil
 }
 
 // extractURLsFromText finds URLs in a text string
 func (uv *URLValidator) extractURLsFromText(text string) []string {
-	// URL regex pattern 
+	// URL regex pattern
 	urlRegex := regexp.MustCompile(`https?://[^\s<>"{}|\\^` + "`" + `\[\]]+`)
 	matches := urlRegex.FindAllString(text, -1)
-	
+
 	// Also look for domains without protocol - be selective
 	domainRegex := regexp.MustCompile(`\b(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s<>"{}|\\^` + "`" + `\[\]]*)?`)
 	domainMatches := domainRegex.FindAllString(text, -1)
-	
+
 	// Clean and deduplicate
 	urlMap := make(map[string]bool)
 	var urls []string
-	
+
 	// Process full HTTP URLs first
 	for _, match := range matches {
 		// Clean trailing punctuation
@@ -335,40 +335,40 @@ func (uv *URLValidator) extractURLsFromText(text string) []string {
 			urlMap[cleanMatch] = true
 		}
 	}
-	
+
 	// Process domain-only matches
 	for _, match := range domainMatches {
 		// Skip if it's already a URL
 		if strings.HasPrefix(match, "http") {
 			continue
 		}
-		
+
 		// Clean trailing punctuation from domain matches too
 		cleanMatch := strings.TrimRight(match, "!.,;:)\"'")
-		
+
 		// Basic domain validation
 		if len(cleanMatch) < 4 || !strings.Contains(cleanMatch, ".") {
 			continue
 		}
-		
+
 		// Check if it looks like a real domain
 		parts := strings.Split(cleanMatch, ".")
 		if len(parts) < 2 || len(parts[len(parts)-1]) < 2 {
 			continue
 		}
-		
+
 		// Avoid obviously invalid domains
 		if cleanMatch == "localhost" || strings.Contains(cleanMatch, " ") {
 			continue
 		}
-		
+
 		fullURL := "https://" + cleanMatch
 		if !urlMap[fullURL] && !urlMap[cleanMatch] {
 			urls = append(urls, fullURL)
 			urlMap[fullURL] = true
 		}
 	}
-	
+
 	return urls
 }
 
@@ -414,7 +414,7 @@ func (uv *URLValidator) extractUsernameFromPath(path string) string {
 		regexp.MustCompile(`/@([a-zA-Z0-9_.-]+)`),
 		regexp.MustCompile(`/profile/([a-zA-Z0-9_.-]+)`),
 		regexp.MustCompile(`/([a-zA-Z0-9_.-]+)/status/`), // Twitter-like status URLs
-		regexp.MustCompile(`/([a-zA-Z0-9_.-]+)/?$`), // Username at end of path
+		regexp.MustCompile(`/([a-zA-Z0-9_.-]+)/?$`),      // Username at end of path
 	}
 
 	for _, pattern := range patterns {
@@ -436,7 +436,7 @@ func (uv *URLValidator) ValidateAndNormalizeProfileURLs(ctx context.Context, fie
 
 	for _, field := range fields {
 		normalizedField := make(map[string]string)
-		
+
 		// Copy all existing fields
 		for k, v := range field {
 			normalizedField[k] = v
@@ -455,7 +455,7 @@ func (uv *URLValidator) ValidateAndNormalizeProfileURLs(ctx context.Context, fie
 					warnings = append(warnings, fmt.Sprintf("Failed to validate URL in field '%s': %v", field["name"], err))
 				} else if result.IsValid {
 					normalizedField["value"] = result.NormalizedURL
-					
+
 					// Add warnings for suspicious URLs
 					for _, tag := range result.ValidationTags {
 						switch tag {

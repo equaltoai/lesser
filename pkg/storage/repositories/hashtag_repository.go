@@ -161,7 +161,7 @@ func (r *HashtagRepository) IndexHashtag(ctx context.Context, hashtag string, st
 	now := time.Now()
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	pk := fmt.Sprintf("HASHTAG#%s", tagLower)
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	// First, try to get existing metadata
 	var existingHashtag models.Hashtag
@@ -333,7 +333,7 @@ func (r *HashtagRepository) truncateContent(content string, maxLength int) strin
 func (r *HashtagRepository) GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error) {
 	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
 	pk := fmt.Sprintf("HASHTAG#%s", tagLower)
-	sk := "METADATA"
+	sk := models.SKMetadata
 
 	var hashtagModel models.Hashtag
 	err := r.Get(ctx, pk, sk, &hashtagModel)
@@ -372,7 +372,7 @@ func (r *HashtagRepository) GetHashtagUsageHistory(ctx context.Context, hashtag 
 		pk := fmt.Sprintf("HASHTAG#%s", tagLower)
 		startSK := fmt.Sprintf("USAGE#%d", dayStart.Unix())
 		endSK := fmt.Sprintf("USAGE#%d", dayEnd.Unix())
-		
+
 		count, err := r.Count(ctx, pk)
 		if err == nil {
 			// This is a simplified count - in production you'd want to use QueryBetween
@@ -860,12 +860,12 @@ func (r *HashtagRepository) DeleteOldHashtagTrends(ctx context.Context, before t
 	// Delete old records using consolidated batch method
 	modelTypes := []string{"hashtag_trend", "trending_hashtag", "hashtag_usage"}
 	counts := make([]int, len(modelTypes))
-	
+
 	for i, modelType := range modelTypes {
 		count, err := r.deleteOldHashtagRecordsBatch(ctx, before, modelType)
 		if err != nil {
-			r.logger.Error("failed to delete records", 
-				zap.String("model_type", modelType), 
+			r.logger.Error("failed to delete records",
+				zap.String("model_type", modelType),
 				zap.Error(err))
 		} else {
 			mu.Lock()
@@ -892,7 +892,7 @@ func (r *HashtagRepository) queryHashtagMetadataByDateRange(ctx context.Context,
 	}
 
 	query := r.db.WithContext(ctx).Model(&models.Hashtag{}).
-		Filter("SK", "=", "METADATA")
+		Filter("SK", "=", models.SKMetadata)
 
 	if startTime != nil {
 		query = query.Filter("LastUsed", ">=", startTime.Format(time.RFC3339))
@@ -931,7 +931,7 @@ func (r *HashtagRepository) convertHashtagsToTrendingHashtags(hashtagModels []*m
 	return result
 }
 
-// GetRecentHashtags returns hashtags that have been recently used  
+// GetRecentHashtags returns hashtags that have been recently used
 func (r *HashtagRepository) GetRecentHashtags(ctx context.Context, since time.Time, limit int) ([]*storage.TrendingHashtag, error) {
 	hashtagModels, err := r.queryHashtagMetadataByDateRange(ctx, &since, nil, limit)
 	if err != nil {
@@ -1041,7 +1041,7 @@ func (r *HashtagRepository) deleteOldHashtagRecordsBatch(ctx context.Context, be
 			FilterField: "UpdatedAt",
 		},
 		"trending_hashtag": {
-			ModelType:   "trending_hashtag", 
+			ModelType:   "trending_hashtag",
 			ErrorPrefix: "trending hashtag records",
 			BatchSize:   25,
 			QueryLimit:  100,
@@ -1049,21 +1049,20 @@ func (r *HashtagRepository) deleteOldHashtagRecordsBatch(ctx context.Context, be
 		},
 		"hashtag_usage": {
 			ModelType:   "hashtag_usage",
-			ErrorPrefix: "hashtag usage records", 
+			ErrorPrefix: "hashtag usage records",
 			BatchSize:   25,
 			QueryLimit:  200, // Larger limit for usage cleanup
 			FilterField: "UsedAt",
 		},
 	}
-	
+
 	config, exists := configs[modelType]
 	if !exists {
 		return 0, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "unknown model type")
 	}
-	
+
 	return deleteOldRecordsBatch(ctx, r.db, r.logger, before, config)
 }
-
 
 // GetHashtagsByTimeRange retrieves hashtags within a specific time range
 func (r *HashtagRepository) GetHashtagsByTimeRange(ctx context.Context, startTime, endTime time.Time, limit int) ([]*storage.TrendingHashtag, error) {

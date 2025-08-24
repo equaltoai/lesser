@@ -39,21 +39,21 @@ type FederationTracker struct {
 func init() {
 	// Standardized Lambda initialization for federation-tracker function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
-		ServiceName: "federation-tracker", // federation-tracker
+		ServiceName: "federation-tracker",       // federation-tracker
 		LambdaType:  common.LambdaTypeProcessor, // These are background processing functions
 	})
-	
+
 	// Automatic dependency injection
 	cfg = lambdaCtx.Config
 	logger = lambdaCtx.Logger
 	repos = lambdaCtx.Repos.(core.RepositoryStorage)
-	
+
 	// Initialize with processor-specific defaults
 	err := lambdaCtx.InitializeWithDefaults()
 	if err != nil {
 		logger.Warn("failed to initialize with defaults", zap.Error(err))
 	}
-	
+
 	// Function-specific initialization only
 	// Initialize DynamORM with Lambda optimizations
 	db, err = dynamorm.NewLambdaOptimizedClient(context.Background(), cfg.Region)

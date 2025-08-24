@@ -32,11 +32,11 @@ func (h *Handler) HandleCreateQuotePostLift(ctx *lift.Context) error {
 
 	// Parse request body
 	var params struct {
-		Status     string `json:"status"`
-		Visibility string `json:"visibility"`
+		Status      string `json:"status"`
+		Visibility  string `json:"visibility"`
 		SpoilerText string `json:"spoiler_text"`
-		Sensitive  bool   `json:"sensitive"`
-		Language   string `json:"language"`
+		Sensitive   bool   `json:"sensitive"`
+		Language    string `json:"language"`
 	}
 
 	if err := ctx.ParseRequest(&params); err != nil {
@@ -326,7 +326,7 @@ func (h *Handler) createQuotePost(_ *lift.Context, username string, _ interface{
 	// 2. Create the quote relationship
 	// 3. Update counters and notifications
 	// 4. Handle federation
-	
+
 	now := time.Now()
 	quotePost := map[string]interface{}{
 		"id":         fmt.Sprintf("quote_%d", now.Unix()),
@@ -338,7 +338,7 @@ func (h *Handler) createQuotePost(_ *lift.Context, username string, _ interface{
 			// Original status data would go here
 		},
 	}
-	
+
 	return quotePost, nil
 }
 

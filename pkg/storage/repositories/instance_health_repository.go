@@ -7,12 +7,12 @@ import (
 	"sort"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamoerrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/cost"
 )
 
 // InstanceHealthRepository handles health check data using BaseRepository with DynamORM
@@ -95,7 +95,7 @@ func (r *InstanceHealthRepository) SaveHealthChecks(ctx context.Context, healthC
 		if health.Timestamp.IsZero() {
 			health.Timestamp = time.Now().UTC()
 		}
-		
+
 		// Track health status for batch monitoring
 		if health.IsCritical() {
 			criticalCount++
@@ -151,7 +151,7 @@ func (r *InstanceHealthRepository) GetLatestHealthCheck(ctx context.Context, dom
 	}
 
 	health := healthChecks[0]
-	
+
 	// Log health status for monitoring
 	healthScore := health.GetHealthScore()
 	r.logger.Debug("Retrieved latest health check",
@@ -202,7 +202,7 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 		healthyCount := 0
 		criticalCount := 0
 		totalScore := 0.0
-		
+
 		for _, health := range healthChecks {
 			if health.IsHealthy() {
 				healthyCount++
@@ -212,18 +212,18 @@ func (r *InstanceHealthRepository) GetHealthHistory(ctx context.Context, domain 
 			}
 			totalScore += health.GetHealthScore()
 		}
-		
+
 		avgScore := totalScore / float64(len(healthChecks))
 		healthPercentage := float64(healthyCount) / float64(len(healthChecks)) * 100
 		criticalPercentage := float64(criticalCount) / float64(len(healthChecks)) * 100
-		
+
 		r.logger.Debug("Health history trend analysis",
 			zap.String("domain", domain),
 			zap.Int("total_checks", len(healthChecks)),
 			zap.Float64("avg_health_score", avgScore),
 			zap.Float64("healthy_percentage", healthPercentage),
 			zap.Float64("critical_percentage", criticalPercentage))
-		
+
 		// Alert if domain shows concerning trends
 		if criticalPercentage > 25.0 {
 			r.logger.Warn("Domain showing concerning health trends",
@@ -258,11 +258,11 @@ func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context,
 
 	// Prioritize domains based on health status for monitoring efficiency
 	type domainPriority struct {
-		domain      string
-		healthScore float64
+		domain       string
+		healthScore  float64
 		availability float64
 	}
-	
+
 	domainPriorities := make([]domainPriority, 0, len(summaries))
 	for _, summary := range summaries {
 		domainPriorities = append(domainPriorities, domainPriority{
@@ -271,7 +271,7 @@ func (r *InstanceHealthRepository) GetDomainsForHealthCheck(ctx context.Context,
 			availability: summary.Availability,
 		})
 	}
-	
+
 	// Sort by health score (lowest first) to prioritize problematic instances
 	sort.Slice(domainPriorities, func(i, j int) bool {
 		return domainPriorities[i].healthScore < domainPriorities[j].healthScore
@@ -372,7 +372,7 @@ func (r *InstanceHealthRepository) GetHealthSummary(ctx context.Context, domain 
 
 	pk := fmt.Sprintf("INSTANCE#%s", domain)
 	sk := fmt.Sprintf("SUMMARY#%s", windowStr)
-	
+
 	var summary models.InstanceHealthSummary
 	err := r.summaryRepo.Get(ctx, pk, sk, &summary)
 	if err != nil {
@@ -564,7 +564,7 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 
 	for i, instance := range unhealthyInstances {
 		unhealthyDomains[i] = instance.domain
-		
+
 		// Count different types of health issues
 		if instance.healthScore < 50.0 {
 			criticalCount++
@@ -575,7 +575,7 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 		if instance.errorRate > 0.10 {
 			highErrorRateCount++
 		}
-		
+
 		// Log individual unhealthy instances for monitoring
 		r.logger.Warn("Unhealthy instance detected",
 			zap.String("domain", instance.domain),
@@ -598,15 +598,15 @@ func (r *InstanceHealthRepository) GetUnhealthyInstances(ctx context.Context, th
 		if criticalCount > 0 {
 			r.logger.Error("Critical instances require immediate attention",
 				zap.Int("critical_count", criticalCount),
-				zap.Strings("critical_domains", unhealthyDomains[:min(criticalCount, 10)])) // Limit to first 10 for logging
+				zap.Strings("critical_domains", unhealthyDomains[:minIntForHealth(criticalCount, 10)])) // Limit to first 10 for logging
 		}
 	}
 
 	return unhealthyDomains, nil
 }
 
-// min helper function
-func min(a, b int) int {
+// minIntForHealth helper function specific to instance health
+func minIntForHealth(a, b int) int {
 	if a < b {
 		return a
 	}
