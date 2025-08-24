@@ -15,7 +15,7 @@ import (
 
 func TestNewTimelineRepository(t *testing.T) {
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(nil, "test-table", logger)
+	repo := NewTimelineRepository(nil, "test-table", logger, nil)
 
 	assert.NotNil(t, repo)
 	assert.Nil(t, repo.db)
@@ -27,7 +27,7 @@ func TestGetConversations(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	ctx := context.Background()
 	username := "testuser"
@@ -89,7 +89,7 @@ func TestRemoveFromTimelines(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	ctx := context.Background()
 	objectID := "post123"
@@ -137,7 +137,7 @@ func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	timeline := &models.Timeline{
 		TimelineType: "HOME",
@@ -170,7 +170,7 @@ func TestCreateTimelineEntry_ValidEntry(t *testing.T) {
 func TestCreateTimelineEntries_EmptySlice(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	err := repo.CreateTimelineEntries(context.Background(), []*models.Timeline{})
 
@@ -181,7 +181,7 @@ func TestCreateTimelineEntries_ValidEntries(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	entries := []*models.Timeline{
 		{
@@ -229,7 +229,7 @@ func TestGetHomeTimeline_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -255,7 +255,7 @@ func TestGetPublicTimeline_LocalFlag(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations for local timeline
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
@@ -291,7 +291,7 @@ func TestGetListTimeline_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -315,7 +315,7 @@ func TestGetDirectTimeline_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -338,7 +338,7 @@ func TestGetHashtagTimeline_LocalFlag(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations for local hashtag timeline
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery).Once()
@@ -372,7 +372,7 @@ func TestGetTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -397,7 +397,7 @@ func TestGetTimelineEntriesByActor_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -422,7 +422,7 @@ func TestGetTimelineEntriesByVisibility_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations - assuming it uses GSI3 for visibility
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -447,7 +447,7 @@ func TestGetTimelineEntriesByLanguage_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations - assuming it uses GSI4 for language
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -471,7 +471,7 @@ func TestGetTimelineEntry_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	now := time.Now()
 
@@ -495,7 +495,7 @@ func TestUpdateTimelineEntry_ValidEntry(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	timeline := &models.Timeline{
 		TimelineType: "HOME",
@@ -529,7 +529,7 @@ func TestDeleteTimelineEntry_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	now := time.Now()
 	pk := "timeline#HOME#alice"
@@ -552,7 +552,7 @@ func TestDeleteTimelineEntriesByPost_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations for query (matches GetTimelineEntriesByPost)
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -576,7 +576,7 @@ func TestDeleteExpiredTimelineEntries_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	before := time.Now().Add(-24 * time.Hour)
 
@@ -599,7 +599,7 @@ func TestCountTimelineEntries_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	// Set up expectations
 	mockDB.On("Model", &models.Timeline{}).Return(mockQuery)
@@ -620,7 +620,7 @@ func TestGetTimelineEntriesInRange_Parameters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	start := time.Now().Add(-2 * time.Hour)
 	end := time.Now().Add(-1 * time.Hour)
@@ -648,7 +648,7 @@ func TestGetTimelineEntriesWithFilters_AllFilters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	filters := TimelineFilters{
 		OnlyMedia:      true,
@@ -687,7 +687,7 @@ func TestGetTimelineEntriesWithFilters_NoFilters(t *testing.T) {
 	mockDB := new(mocks.MockDB)
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(mockDB, "test-table", logger)
+	repo := NewTimelineRepository(mockDB, "test-table", logger, nil)
 
 	filters := TimelineFilters{} // Empty filters
 
@@ -729,7 +729,7 @@ func TestTimelineFilters_Struct(t *testing.T) {
 func TestTimelineRepository_MethodSignatures(t *testing.T) {
 	// Test that all methods have the expected signatures
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(nil, "test-table", logger)
+	repo := NewTimelineRepository(nil, "test-table", logger, nil)
 
 	// Verify repository was created
 	assert.NotNil(t, repo)
@@ -744,7 +744,7 @@ func TestTimelineRepository_EdgeCases(t *testing.T) {
 	// This test verifies the repository's behavior with edge cases
 	// Since we can't call methods on a nil DB, we'll just verify the repository structure
 	logger := zap.NewNop()
-	repo := NewTimelineRepository(nil, "test-table", logger)
+	repo := NewTimelineRepository(nil, "test-table", logger, nil)
 
 	// Verify repository was created
 	assert.NotNil(t, repo)

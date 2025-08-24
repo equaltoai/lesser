@@ -109,10 +109,10 @@ func init() {
 	}
 
 	userRepo := repositories.NewUserRepository(db, tableName, logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, logger, nil)
 
 	// Initialize WebSocket cost tracking
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger)
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, logger, nil)
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, logger)
 
 	// Initialize service registry

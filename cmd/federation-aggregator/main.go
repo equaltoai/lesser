@@ -84,7 +84,7 @@ type DomainStat struct {
 
 // NewFederationAggregatorProcessor creates a new federation aggregator processor
 func NewFederationAggregatorProcessor(db dynamormCore.DB, tableName string, lambdaCtx *common.LambdaContext) *FederationAggregatorProcessor {
-	federationActivityRepository := repositories.NewFederationActivityRepository(db, tableName, lambdaCtx.Logger)
+	federationActivityRepository := repositories.NewFederationActivityRepository(db, tableName, lambdaCtx.Logger, nil)
 
 	return &FederationAggregatorProcessor{
 		db:                           db,

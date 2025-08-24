@@ -18,22 +18,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// RelayRepository implements relay operations using DynamORM with BaseRepository pattern
+// RelayRepository implements relay operations using enhanced patterns
 type RelayRepository struct {
-	*BaseRepository[*models.Relay]
+	*EnhancedBaseRepository[*models.Relay]
 }
 
-// NewRelayRepository creates a new relay repository
-func NewRelayRepository(db core.DB, tableName string, logger *zap.Logger) *RelayRepository {
+// NewRelayRepository creates a new relay repository with enhanced functionality
+func NewRelayRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelayRepository {
+	// Create enhanced repository optimized for relay operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Relay](db, tableName, logger, costService, "RelayRepository", "relay")
+	
+	// Set up enhanced services for relay operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relay data cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &RelayRepository{
-		BaseRepository: NewBaseRepository[*models.Relay](db, tableName, logger),
-	}
-}
-
-// NewRelayRepositoryWithCostTracking creates a new relay repository with cost tracking
-func NewRelayRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelayRepository {
-	return &RelayRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Relay](db, tableName, logger, costService, "relay"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -81,7 +83,7 @@ func (r *RelayRepository) StoreRelayInfo(ctx context.Context, relay *storage.Rel
 	}
 
 	// Use BaseRepository Create method
-	err := r.Create(ctx, model)
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		logger.Error("failed to store relay info", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "relay", relay.URL)
@@ -238,7 +240,7 @@ func (r *RelayRepository) UpdateRelayStatus(ctx context.Context, relayURL string
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.Create(ctx, &model)
+	err = r.ValidateAndCreate(ctx, &model)
 
 	if err != nil {
 		logger.Error("failed to update relay status", zap.Error(err))
@@ -288,7 +290,7 @@ func (r *RelayRepository) UpdateRelayState(ctx context.Context, relayURL string,
 	model.LastSeenAt = time.Now()
 
 	// Use BaseRepository Create method which will handle UpdateKeys and Put operation
-	err = r.Create(ctx, &model)
+	err = r.ValidateAndCreate(ctx, &model)
 	if err != nil {
 		logger.Error("failed to update relay state", zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "relay", relayURL)

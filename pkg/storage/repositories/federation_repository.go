@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	appConfig "github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -26,26 +27,33 @@ import (
 
 // Additional status constants for federation
 const (
-	StatusInactive    = "inactive"
-	ConnectionTypeAll = "all"
+	StatusInactive = "inactive"
 )
 
-// FederationRepository implements federation tracking operations using DynamORM
+// FederationRepository implements federation tracking operations using enhanced DynamORM patterns
 type FederationRepository struct {
-	*BaseRepository[*models.FederationCostActivity]
+	*EnhancedBaseRepository[*models.FederationCostActivity]
 	db     core.DB
 	logger *zap.Logger
 	cfg    *appConfig.Config
 }
 
-// NewFederationRepository creates a new federation repository
-func NewFederationRepository(db core.DB, logger *zap.Logger, cfg *appConfig.Config) *FederationRepository {
+// NewFederationRepository creates a new federation repository with enhanced functionality
+func NewFederationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService, cfg *appConfig.Config) *FederationRepository {
+	// Create enhanced repository optimized for federation operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.FederationCostActivity](db, tableName, logger, costService, "FederationRepository", "federation")
+	
+	// Set up enhanced services for federation operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Instance-level permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Federation data cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for federation events
+	
 	return &FederationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.FederationCostActivity](
-			db, storage.MainTableName, logger, nil, "FederationRepository"),
-		db:     db,
-		logger: logger,
-		cfg:    cfg,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		cfg:                    cfg,
 	}
 }
 
@@ -289,8 +297,8 @@ func (r *FederationRepository) RecordFederationActivity(ctx context.Context, act
 		Timestamp:    activity.Timestamp,
 	}
 
-	// Store the activity using BaseRepository
-	err := r.Create(ctx, fedActivity)
+	// Store the activity using enhanced validation and creation
+	err := r.ValidateAndCreate(ctx, fedActivity)
 	if err != nil {
 		r.logger.Error("Failed to record federation activity",
 			zap.String("domain", activity.Domain),

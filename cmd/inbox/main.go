@@ -277,11 +277,11 @@ func initializeRepositories(repoFactory storageCore.RepositoryStorage, coreDB dy
 	}
 
 	// Initialize legacy repositories that don't use factory pattern yet
-	repos.socialRepo = repositories.NewSocialRepository(coreDB, logger)
-	repos.federationActivityRepo = repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger)
+	repos.socialRepo = repositories.NewSocialRepository(coreDB, cfg.DynamoTableName, logger, nil)
+	repos.federationActivityRepo = repositories.NewFederationActivityRepository(coreDB, cfg.DynamoTableName, logger, nil)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](coreDB, cfg.DynamoTableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](coreDB, cfg.DynamoTableName, logger)
-	repos.federationCostRepo = repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
+	repos.federationCostRepo = repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
 
 	return repos
 }

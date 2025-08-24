@@ -17,7 +17,7 @@ func TestNotificationRepository_EmailPreferencesAlwaysFalse(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 
-	repo := NewNotificationRepository(mockDB, "test-table", logger)
+	repo := NewNotificationRepository(mockDB, "test-table", logger, nil)
 
 	// Setup mock to simulate finding existing preferences with email enabled
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -46,7 +46,7 @@ func TestNotificationRepository_UpdatePreferencesIgnoresEmail(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 
-	repo := NewNotificationRepository(mockDB, "test-table", logger)
+	repo := NewNotificationRepository(mockDB, "test-table", logger, nil)
 
 	// Setup mock for update operation
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -82,7 +82,7 @@ func TestNotificationRepository_SetEmailPreferenceIgnored(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 
-	repo := NewNotificationRepository(mockDB, "test-table", logger)
+	repo := NewNotificationRepository(mockDB, "test-table", logger, nil)
 
 	// Setup mock for getting existing preferences
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)
@@ -115,7 +115,7 @@ func TestNotificationRepository_SetOtherPreferencesWork(t *testing.T) {
 	mockQuery := new(mocks.MockQuery)
 	logger := zap.NewNop()
 
-	repo := NewNotificationRepository(mockDB, "test-table", logger)
+	repo := NewNotificationRepository(mockDB, "test-table", logger, nil)
 
 	// Setup mock for getting existing preferences and updating
 	mockDB.On("WithContext", mock.Anything).Return(mockDB)

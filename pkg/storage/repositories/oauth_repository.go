@@ -13,20 +13,28 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// OAuthRepository handles OAuth-related storage operations using BaseRepository pattern
+// OAuthRepository handles OAuth-related storage operations using enhanced DynamORM patterns
 type OAuthRepository struct {
-	*BaseRepository[*models.OAuthClient]
+	*EnhancedBaseRepository[*models.OAuthClient]
 	db     core.DB
 	logger *zap.Logger
 }
 
-// NewOAuthRepository creates a new OAuth repository with BaseRepository integration
+// NewOAuthRepository creates a new OAuth repository with enhanced functionality
 func NewOAuthRepository(db core.DB, logger *zap.Logger) *OAuthRepository {
+	// Create enhanced repository optimized for OAuth operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.OAuthClient](db, models.MainTableName, logger, nil, "OAuthRepository", "oauth_client")
+	
+	// Set up enhanced services for OAuth operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for OAuth security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // OAuth clients cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for OAuth security events
+	
 	return &OAuthRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.OAuthClient](
-			db, models.MainTableName, logger, nil, "OAuthRepository"),
-		db:     db,
-		logger: logger,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
 	}
 }
 

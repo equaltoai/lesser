@@ -24,25 +24,26 @@ type DeviceProvider interface {
 	GetUserDevices(ctx context.Context, username string) ([]*storage.Device, error)
 }
 
-// StreamingRepository implements the streaming preferences repository using BaseRepository pattern
+// StreamingRepository implements the streaming preferences repository using enhanced patterns
 type StreamingRepository struct {
-	*BaseRepository[*models.StreamingPreferences]
+	*EnhancedBaseRepository[*models.StreamingPreferences]
 	deviceProvider DeviceProvider
 }
 
-// NewStreamingRepository creates a new StreamingRepository
-func NewStreamingRepository(db core.DB, tableName string, logger *zap.Logger, deviceProvider DeviceProvider) *StreamingRepository {
+// NewStreamingRepository creates a new StreamingRepository with enhanced functionality
+func NewStreamingRepository(db core.DB, tableName string, logger *zap.Logger, deviceProvider DeviceProvider, costService *cost.TrackingService) *StreamingRepository {
+	// Create enhanced repository optimized for streaming operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.StreamingPreferences](db, tableName, logger, costService, "StreamingRepository", "streaming")
+	
+	// Set up enhanced services for streaming operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Streaming preferences heavily cached
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for streaming events
+	
 	return &StreamingRepository{
-		BaseRepository: NewBaseRepository[*models.StreamingPreferences](db, tableName, logger),
-		deviceProvider: deviceProvider,
-	}
-}
-
-// NewStreamingRepositoryWithCostTracking creates a new StreamingRepository with cost tracking
-func NewStreamingRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, deviceProvider DeviceProvider, costService *cost.TrackingService) *StreamingRepository {
-	return &StreamingRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.StreamingPreferences](db, tableName, logger, costService, "streaming"),
-		deviceProvider: deviceProvider,
+		EnhancedBaseRepository: enhancedRepo,
+		deviceProvider:         deviceProvider,
 	}
 }
 
@@ -123,7 +124,7 @@ func (r *StreamingRepository) storePreferenceVersion(ctx context.Context, prefs 
 	model := r.storageTypeToModel(prefs)
 	model.SetVersionedPreference() // This sets TTL to 30 days
 
-	err := r.Create(ctx, model)
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "streaming preferences version", prefs.Username)
 	}
@@ -170,7 +171,7 @@ func (r *StreamingRepository) UpdateDeviceStreamingPreferences(ctx context.Conte
 	model := r.storageTypeToModel(prefs)
 	model.SetDevicePreference(deviceID)
 
-	err := r.Create(ctx, model)
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleUpdateError(err, "device streaming preferences", fmt.Sprintf("%s:%s", prefs.Username, deviceID))
 	}

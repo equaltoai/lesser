@@ -11,24 +11,27 @@ import (
 	"go.uber.org/zap"
 )
 
-// FederationActivityRepository handles federation activity persistence
+// FederationActivityRepository handles federation activity persistence using enhanced patterns
 type FederationActivityRepository struct {
-	*BaseRepository[*models.FederationActivity]
+	*EnhancedBaseRepository[*models.FederationActivity]
 }
 
-// NewFederationActivityRepository creates a new federation activity repository
-func NewFederationActivityRepository(db core.DB, tableName string, logger *zap.Logger) *FederationActivityRepository {
+// NewFederationActivityRepository creates a new federation activity repository with enhanced functionality
+func NewFederationActivityRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FederationActivityRepository {
+	// Create enhanced repository optimized for federation activity operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.FederationActivity](db, tableName, logger, costService, "FederationActivityRepository", "federation_activity")
+	
+	// Set up enhanced services for federation activity operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Federation protocol permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache recent activities
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for federation events
+	
 	return &FederationActivityRepository{
-		BaseRepository: NewBaseRepository[*models.FederationActivity](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// NewFederationActivityRepositoryWithCostTracking creates a new federation activity repository with cost tracking
-func NewFederationActivityRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FederationActivityRepository {
-	return &FederationActivityRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.FederationActivity](db, tableName, logger, costService, "federation_activity"),
-	}
-}
 
 // RecordFederationActivity creates a new federation activity with ActivityPub protocol logging
 func (r *FederationActivityRepository) RecordFederationActivity(ctx context.Context, activity *models.FederationActivity) error {
@@ -44,8 +47,8 @@ func (r *FederationActivityRepository) RecordFederationActivity(ctx context.Cont
 		zap.String("activity_type", activity.ActivityType),
 		zap.String("actor_id", activity.ActorID))
 
-	// Use BaseRepository.Create for CRUD operation
-	err := r.Create(ctx, activity)
+	// Use enhanced validation and creation
+	err := r.ValidateAndCreate(ctx, activity)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to record federation activity")
 	}

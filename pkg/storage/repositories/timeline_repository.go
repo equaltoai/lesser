@@ -7,21 +7,30 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// TimelineRepository handles timeline operations using DynamORM with BaseRepository consolidation
+// TimelineRepository handles timeline operations using enhanced DynamORM patterns
 type TimelineRepository struct {
-	*BaseRepository[*models.Timeline]
+	*EnhancedBaseRepository[*models.Timeline]
 }
 
-// NewTimelineRepository creates a new timeline repository with BaseRepository pattern
-func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger) *TimelineRepository {
+// NewTimelineRepository creates a new timeline repository with enhanced functionality
+func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TimelineRepository {
+	// Create enhanced repository optimized for timeline operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Timeline](db, tableName, logger, costService, "TimelineRepository", "timeline")
+	
+	// Set up enhanced services for timeline operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Timeline entries cached for fast retrieval
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for timeline update events
+	
 	return &TimelineRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Timeline](
-			db, tableName, logger, nil, "TimelineRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -31,7 +40,16 @@ func (r *TimelineRepository) CreateTimelineEntry(ctx context.Context, entry *mod
 		return ErrorHandler.HandleCreateError(err, EntityTimelineEntry, "prepare creation")
 	}
 
-	return r.Create(ctx, entry)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, entry); err != nil {
+		r.logger.Error("failed to create timeline entry with enhanced validation",
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
+		return err
+	}
+	
+	return nil
 }
 
 // CreateTimelineEntries creates multiple timeline entries in batch using BaseRepository

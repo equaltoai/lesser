@@ -16,30 +16,33 @@ import (
 	"go.uber.org/zap"
 )
 
-// FederationInstanceRepository handles federation instance operations using BaseRepository patterns
+// FederationInstanceRepository handles federation instance operations using enhanced repository patterns
 type FederationInstanceRepository struct {
-	*BaseRepository[*models.FederationInstanceRegistry]
+	*EnhancedBaseRepository[*models.FederationInstanceRegistry]
 }
 
-// NewFederationInstanceRepository creates a new federation instance repository
-func NewFederationInstanceRepository(db core.DB, logger *zap.Logger) *FederationInstanceRepository {
+// NewFederationInstanceRepository creates a new federation instance repository with enhanced functionality
+func NewFederationInstanceRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FederationInstanceRepository {
+	// Create enhanced repository optimized for federation instance operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.FederationInstanceRegistry](db, tableName, logger, costService, "FederationInstanceRepository", "federation_instance")
+	
+	// Set up enhanced services for federation instance operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Instance registry permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache instance data for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Federation registry events
+	
 	return &FederationInstanceRepository{
-		BaseRepository: NewBaseRepository[*models.FederationInstanceRegistry](db, "FederationInstances", logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// NewFederationInstanceRepositoryWithCostTracking creates a new federation instance repository with cost tracking
-func NewFederationInstanceRepositoryWithCostTracking(db core.DB, logger *zap.Logger, costService *cost.TrackingService) *FederationInstanceRepository {
-	return &FederationInstanceRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.FederationInstanceRegistry](db, "FederationInstances", logger, costService, "federation_instance"),
-	}
-}
 
 // CreateInstance registers a new federated instance
 func (r *FederationInstanceRepository) CreateInstance(ctx context.Context, instance *types.Instance) error {
 	model := r.toModel(instance)
 
-	err := r.Create(ctx, model)
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "federation instance", "create")
 	}

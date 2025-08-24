@@ -122,6 +122,7 @@ func NewMetricsStreamProcessor(repos core.RepositoryStorage, logger *zap.Logger)
 			repos.GetDB(),
 			repos.GetTableName(),
 			logger,
+			nil,
 		),
 		costCalculator: &CostCalculator{
 			// AWS On-Demand pricing (as of 2024, in microcents)

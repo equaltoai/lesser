@@ -15,34 +15,38 @@ import (
 	"go.uber.org/zap"
 )
 
-// WebSocketCostRepository handles WebSocket cost tracking persistence using BaseRepository
+// WebSocketCostRepository handles WebSocket cost tracking persistence using enhanced patterns
 type WebSocketCostRepository struct {
-	*BaseRepository[*models.WebSocketCostRecord]
-	budgetRepo      *BaseRepository[*models.WebSocketCostBudget]
-	aggregationRepo *BaseRepository[*models.WebSocketCostAggregation]
+	*EnhancedBaseRepository[*models.WebSocketCostRecord]
+	budgetRepo      *EnhancedBaseRepository[*models.WebSocketCostBudget]
+	aggregationRepo *EnhancedBaseRepository[*models.WebSocketCostAggregation]
 }
 
-// NewWebSocketCostRepository creates a new WebSocket cost tracking repository
-func NewWebSocketCostRepository(db core.DB, tableName string, logger *zap.Logger) *WebSocketCostRepository {
-	baseRepo := NewBaseRepository[*models.WebSocketCostRecord](db, tableName, logger)
-	budgetRepo := NewBaseRepository[*models.WebSocketCostBudget](db, tableName, logger)
-	aggregationRepo := NewBaseRepository[*models.WebSocketCostAggregation](db, tableName, logger)
+// NewWebSocketCostRepository creates a new WebSocket cost tracking repository with enhanced functionality
+func NewWebSocketCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WebSocketCostRepository {
+	// Create enhanced repositories for WebSocket cost components
+	baseRepo := NewEnhancedBaseRepository[*models.WebSocketCostRecord](db, tableName, logger, costService, "WebSocketCostRepository", "websocketcost")
+	baseRepo.SetValidationService(NewDefaultValidationService())
+	baseRepo.SetPermissionService(NewDefaultPermissionService())
+	baseRepo.SetCachingService(NewInMemoryCachingService())
+	baseRepo.SetEventService(NewDefaultEventService())
+	
+	budgetRepo := NewEnhancedBaseRepository[*models.WebSocketCostBudget](db, tableName, logger, costService, "WebSocketBudgetRepository", "websocketbudget")
+	budgetRepo.SetValidationService(NewDefaultValidationService())
+	budgetRepo.SetPermissionService(NewDefaultPermissionService())
+	budgetRepo.SetCachingService(NewInMemoryCachingService())
+	budgetRepo.SetEventService(NewDefaultEventService())
+	
+	aggregationRepo := NewEnhancedBaseRepository[*models.WebSocketCostAggregation](db, tableName, logger, costService, "WebSocketAggregationRepository", "websocketaggregation")
+	aggregationRepo.SetValidationService(NewDefaultValidationService())
+	aggregationRepo.SetPermissionService(NewDefaultPermissionService())
+	aggregationRepo.SetCachingService(NewInMemoryCachingService())
+	aggregationRepo.SetEventService(NewDefaultEventService())
+	
 	return &WebSocketCostRepository{
-		BaseRepository:  baseRepo,
-		budgetRepo:      budgetRepo,
-		aggregationRepo: aggregationRepo,
-	}
-}
-
-// NewWebSocketCostRepositoryWithCostTracking creates a new WebSocket cost tracking repository with cost tracking
-func NewWebSocketCostRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WebSocketCostRepository {
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.WebSocketCostRecord](db, tableName, logger, costService, "websocket_cost")
-	budgetRepo := NewBaseRepositoryWithCostTracking[*models.WebSocketCostBudget](db, tableName, logger, costService, "websocket_budget")
-	aggregationRepo := NewBaseRepositoryWithCostTracking[*models.WebSocketCostAggregation](db, tableName, logger, costService, "websocket_aggregation")
-	return &WebSocketCostRepository{
-		BaseRepository:  baseRepo,
-		budgetRepo:      budgetRepo,
-		aggregationRepo: aggregationRepo,
+		EnhancedBaseRepository: baseRepo,
+		budgetRepo:             budgetRepo,
+		aggregationRepo:        aggregationRepo,
 	}
 }
 
@@ -54,7 +58,7 @@ func (r *WebSocketCostRepository) CreateRecord(ctx context.Context, record *mode
 	}
 
 	// Create using BaseRepository
-	err := r.Create(ctx, record)
+	err := r.ValidateAndCreate(ctx, record)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create WebSocket cost tracking")
 	}
@@ -526,7 +530,7 @@ func (r *WebSocketCostRepository) CreateBudget(ctx context.Context, budget *mode
 	}
 
 	// Create using budgetRepo BaseRepository
-	err := r.budgetRepo.Create(ctx, budget)
+	err := r.budgetRepo.ValidateAndCreate(ctx, budget)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create WebSocket cost budget")
 	}
@@ -673,7 +677,7 @@ func (r *WebSocketCostRepository) CreateAggregation(ctx context.Context, aggrega
 	}
 
 	// Create using aggregationRepo BaseRepository
-	err := r.aggregationRepo.Create(ctx, aggregation)
+	err := r.aggregationRepo.ValidateAndCreate(ctx, aggregation)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create WebSocket cost aggregation")
 	}

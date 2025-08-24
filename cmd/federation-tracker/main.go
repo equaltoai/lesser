@@ -62,7 +62,7 @@ func init() {
 	}
 
 	// Initialize repository
-	federationActivityRepository = repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger)
+	federationActivityRepository = repositories.NewFederationActivityRepository(db, cfg.DynamoTableName, logger, nil)
 }
 
 func main() {

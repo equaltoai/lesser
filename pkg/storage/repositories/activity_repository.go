@@ -17,24 +17,27 @@ import (
 	"go.uber.org/zap"
 )
 
-// ActivityRepository implements activity operations using BaseRepository pattern
+// ActivityRepository implements activity operations using enhanced repository patterns
 type ActivityRepository struct {
-	*BaseRepository[*models.Activity]
+	*EnhancedBaseRepository[*models.Activity]
 }
 
-// NewActivityRepository creates a new activity repository
-func NewActivityRepository(db core.DB, tableName string, logger *zap.Logger) *ActivityRepository {
+// NewActivityRepository creates a new activity repository with enhanced functionality
+func NewActivityRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActivityRepository {
+	// Create enhanced repository optimized for ActivityPub operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Activity](db, tableName, logger, costService, "ActivityRepository", "activity")
+	
+	// Set up enhanced services for ActivityPub operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // ActivityPub protocol permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache recent activities
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for ActivityPub federation
+	
 	return &ActivityRepository{
-		BaseRepository: NewBaseRepository[*models.Activity](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// NewActivityRepositoryWithCostTracking creates a new activity repository with cost tracking
-func NewActivityRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActivityRepository {
-	return &ActivityRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Activity](db, tableName, logger, costService, "activity"),
-	}
-}
 
 // CreateActivity stores an activity in the database - matches legacy implementation
 func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {
@@ -65,8 +68,8 @@ func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activ
 		record.GSI1SK = timestamp
 	}
 
-	// Store using BaseRepository
-	if err := r.Create(ctx, record); err != nil {
+	// Store using enhanced validation and creation
+	if err := r.ValidateAndCreate(ctx, record); err != nil {
 		return ErrorHandler.HandleCreateError(err, "activity", activity.ID)
 	}
 

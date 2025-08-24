@@ -164,7 +164,7 @@ func init() {
 
 	// Initialize repositories
 	importRepo := repositories.NewImportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
-	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 
 	// Get configuration from centralized config
 	bucketName := lambdaCtx.Config.S3BucketName

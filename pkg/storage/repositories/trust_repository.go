@@ -15,33 +15,43 @@ import (
 	"github.com/equaltoai/lesser/pkg/trust"
 )
 
-// TrustRepository handles trust-related operations using BaseRepository pattern
+// TrustRepository handles trust-related operations using enhanced repository patterns
 type TrustRepository struct {
-	*BaseRepository[*models.TrustRelationship]
-	scoreRepo  *BaseRepository[*models.TrustScore]
-	updateRepo *BaseRepository[*models.TrustUpdate]
+	*EnhancedBaseRepository[*models.TrustRelationship]
+	scoreRepo  *EnhancedBaseRepository[*models.TrustScore]
+	updateRepo *EnhancedBaseRepository[*models.TrustUpdate]
 	logger     *zap.Logger
 }
 
-// NewTrustRepository creates a new trust repository with BaseRepository pattern
-func NewTrustRepository(db core.DB, tableName string, logger *zap.Logger) *TrustRepository {
+// NewTrustRepository creates a new trust repository with enhanced functionality
+func NewTrustRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrustRepository {
+	// Create enhanced repositories for trust operations
+	trustRepo := NewEnhancedBaseRepository[*models.TrustRelationship](db, tableName, logger, costService, "TrustRepository", "trust")
+	trustRepo.SetValidationService(NewDefaultValidationService())
+	trustRepo.SetPermissionService(NewDefaultPermissionService()) // Trust relationship permissions
+	trustRepo.SetCachingService(NewInMemoryCachingService()) // Cache trust data
+	trustRepo.SetEventService(NewDefaultEventService()) // Trust relationship events
+	
+	scoreRepo := NewEnhancedBaseRepository[*models.TrustScore](db, tableName, logger, costService, "TrustRepository.Score", "trust_score")
+	scoreRepo.SetValidationService(NewDefaultValidationService())
+	scoreRepo.SetPermissionService(NewDefaultPermissionService())
+	scoreRepo.SetCachingService(NewInMemoryCachingService()) // Cache trust scores
+	scoreRepo.SetEventService(NewDefaultEventService())
+	
+	updateRepo := NewEnhancedBaseRepository[*models.TrustUpdate](db, tableName, logger, costService, "TrustRepository.Update", "trust_update")
+	updateRepo.SetValidationService(NewDefaultValidationService())
+	updateRepo.SetPermissionService(NewDefaultPermissionService())
+	updateRepo.SetCachingService(NewInMemoryCachingService())
+	updateRepo.SetEventService(NewDefaultEventService())
+	
 	return &TrustRepository{
-		BaseRepository: NewBaseRepository[*models.TrustRelationship](db, tableName, logger),
-		scoreRepo:      NewBaseRepository[*models.TrustScore](db, tableName, logger),
-		updateRepo:     NewBaseRepository[*models.TrustUpdate](db, tableName, logger),
-		logger:         logger,
+		EnhancedBaseRepository: trustRepo,
+		scoreRepo:              scoreRepo,
+		updateRepo:             updateRepo,
+		logger:                 logger,
 	}
 }
 
-// NewTrustRepositoryWithCostTracking creates a new trust repository with cost tracking
-func NewTrustRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrustRepository {
-	return &TrustRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.TrustRelationship](db, tableName, logger, costService, "trust"),
-		scoreRepo:      NewBaseRepositoryWithCostTracking[*models.TrustScore](db, tableName, logger, costService, "trust_score"),
-		updateRepo:     NewBaseRepositoryWithCostTracking[*models.TrustUpdate](db, tableName, logger, costService, "trust_update"),
-		logger:         logger,
-	}
-}
 
 // convertToModelEvidence converts storage.TrustEvidence to models.TrustEvidence
 // Since storage.TrustEvidence is an alias for models.TrustEvidence, no conversion needed
@@ -79,8 +89,8 @@ func (r *TrustRepository) CreateTrustRelationship(ctx context.Context, relations
 		TTL:        relationship.TTL,
 	}
 
-	// Use BaseRepository Create method
-	if err := r.Create(ctx, model); err != nil {
+	// Use enhanced validation and creation
+	if err := r.ValidateAndCreate(ctx, model); err != nil {
 		r.logger.Error("failed to create trust relationship", zap.Error(err),
 			zap.String("truster", relationship.TrusterID),
 			zap.String("trustee", relationship.TrusteeID),
@@ -257,7 +267,7 @@ func (r *TrustRepository) UpdateTrustScore(ctx context.Context, score *storage.T
 		CacheTTL:        score.CacheTTL,
 	}
 
-	return r.scoreRepo.Create(ctx, model)
+	return r.scoreRepo.ValidateAndCreate(ctx, model)
 }
 
 // RecordTrustUpdate records a trust score update event
@@ -275,7 +285,7 @@ func (r *TrustRepository) RecordTrustUpdate(ctx context.Context, update *storage
 		Timestamp: update.Timestamp,
 	}
 
-	return r.updateRepo.Create(ctx, model)
+	return r.updateRepo.ValidateAndCreate(ctx, model)
 }
 
 // GetAllTrustRelationships retrieves all trust relationships for admin visualization

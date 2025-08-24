@@ -36,15 +36,15 @@ type ModerationMetricsRepository interface {
 	GetAggregatedStats(ctx context.Context, timeRange models.ModerationMetricsTimeRange) (*models.ModerationMetricsStats, error)
 }
 
-// moderationMetricsRepository implements moderation metrics operations using BaseRepository patterns
+// moderationMetricsRepository implements moderation metrics operations using enhanced patterns
 type moderationMetricsRepository struct {
-	// Embed BaseRepository for different model types - we'll use ModerationMetricsEntry as the primary type
-	*BaseRepository[*models.ModerationMetricsEntry]
+	// Embed EnhancedBaseRepository for different model types - we'll use ModerationMetricsEntry as the primary type
+	*EnhancedBaseRepository[*models.ModerationMetricsEntry]
 
-	// Additional repositories for other model types
-	falsePositiveRepo  *BaseRepository[*models.ModerationFalsePositive]
-	decisionSampleRepo *BaseRepository[*models.ModerationDecisionSample]
-	patternStatsRepo   *BaseRepository[*models.ModerationPatternStats]
+	// Additional enhanced repositories for other model types
+	falsePositiveRepo  *EnhancedBaseRepository[*models.ModerationFalsePositive]
+	decisionSampleRepo *EnhancedBaseRepository[*models.ModerationDecisionSample]
+	patternStatsRepo   *EnhancedBaseRepository[*models.ModerationPatternStats]
 }
 
 // NewModerationMetricsRepository creates a new moderation metrics repository with optional cost tracking
@@ -73,27 +73,43 @@ func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsReposi
 		panic("NewModerationMetricsRepository: invalid number of arguments")
 	}
 
-	// Create repositories with or without cost tracking
-	if costService != nil {
-		return &moderationMetricsRepository{
-			BaseRepository:     NewBaseRepositoryWithCostTracking[*models.ModerationMetricsEntry](db, tableName, logger, costService, "moderation_metrics"),
-			falsePositiveRepo:  NewBaseRepositoryWithCostTracking[*models.ModerationFalsePositive](db, tableName, logger, costService, "false_positive"),
-			decisionSampleRepo: NewBaseRepositoryWithCostTracking[*models.ModerationDecisionSample](db, tableName, logger, costService, "decision_sample"),
-			patternStatsRepo:   NewBaseRepositoryWithCostTracking[*models.ModerationPatternStats](db, tableName, logger, costService, "pattern_stats"),
-		}
-	}
+	// Create enhanced repositories for moderation metrics operations
+	metricsRepo := NewEnhancedBaseRepository[*models.ModerationMetricsEntry](db, tableName, logger, costService, "ModerationMetricsRepository", "moderationmetrics")
+	metricsRepo.SetValidationService(NewDefaultValidationService())
+	metricsRepo.SetPermissionService(NewDefaultPermissionService())
+	metricsRepo.SetCachingService(NewInMemoryCachingService())
+	metricsRepo.SetEventService(NewDefaultEventService())
+	
+	falsePositiveRepo := NewEnhancedBaseRepository[*models.ModerationFalsePositive](db, tableName, logger, costService, "ModerationFalsePositiveRepository", "moderationfalsepositive")
+	falsePositiveRepo.SetValidationService(NewDefaultValidationService())
+	falsePositiveRepo.SetPermissionService(NewDefaultPermissionService())
+	falsePositiveRepo.SetCachingService(NewInMemoryCachingService())
+	falsePositiveRepo.SetEventService(NewDefaultEventService())
+	
+	decisionSampleRepo := NewEnhancedBaseRepository[*models.ModerationDecisionSample](db, tableName, logger, costService, "ModerationDecisionSampleRepository", "moderationdecisionsample")
+	decisionSampleRepo.SetValidationService(NewDefaultValidationService())
+	decisionSampleRepo.SetPermissionService(NewDefaultPermissionService())
+	decisionSampleRepo.SetCachingService(NewInMemoryCachingService())
+	decisionSampleRepo.SetEventService(NewDefaultEventService())
+	
+	patternStatsRepo := NewEnhancedBaseRepository[*models.ModerationPatternStats](db, tableName, logger, costService, "ModerationPatternStatsRepository", "moderationpatternstats")
+	patternStatsRepo.SetValidationService(NewDefaultValidationService())
+	patternStatsRepo.SetPermissionService(NewDefaultPermissionService())
+	patternStatsRepo.SetCachingService(NewInMemoryCachingService())
+	patternStatsRepo.SetEventService(NewDefaultEventService())
+	
 	return &moderationMetricsRepository{
-		BaseRepository:     NewBaseRepository[*models.ModerationMetricsEntry](db, tableName, logger),
-		falsePositiveRepo:  NewBaseRepository[*models.ModerationFalsePositive](db, tableName, logger),
-		decisionSampleRepo: NewBaseRepository[*models.ModerationDecisionSample](db, tableName, logger),
-		patternStatsRepo:   NewBaseRepository[*models.ModerationPatternStats](db, tableName, logger),
+		EnhancedBaseRepository: metricsRepo,
+		falsePositiveRepo:      falsePositiveRepo,
+		decisionSampleRepo:     decisionSampleRepo,
+		patternStatsRepo:       patternStatsRepo,
 	}
 }
 
 // RecordMetricsEntry records a single metrics entry
 func (r *moderationMetricsRepository) RecordMetricsEntry(ctx context.Context, entry *models.ModerationMetricsEntry) error {
 	entry.CreatedAt = time.Now()
-	return r.Create(ctx, entry)
+	return r.ValidateAndCreate(ctx, entry)
 }
 
 // RecordMetricsEntries records multiple metrics entries in batch
@@ -113,7 +129,7 @@ func (r *moderationMetricsRepository) RecordMetricsEntries(ctx context.Context, 
 // RecordFalsePositive records a false positive using dedicated repository
 func (r *moderationMetricsRepository) RecordFalsePositive(ctx context.Context, fp *models.ModerationFalsePositive) error {
 	fp.Timestamp = time.Now()
-	return r.falsePositiveRepo.Create(ctx, fp)
+	return r.falsePositiveRepo.ValidateAndCreate(ctx, fp)
 }
 
 // GetFalsePositives retrieves false positives within a time range
@@ -138,7 +154,7 @@ func (r *moderationMetricsRepository) GetFalsePositives(ctx context.Context, tim
 // RecordDecisionSample records a decision sample using dedicated repository
 func (r *moderationMetricsRepository) RecordDecisionSample(ctx context.Context, sample *models.ModerationDecisionSample) error {
 	sample.Timestamp = time.Now()
-	return r.decisionSampleRepo.Create(ctx, sample)
+	return r.decisionSampleRepo.ValidateAndCreate(ctx, sample)
 }
 
 // GetDecisionSamples retrieves decision samples within a time range
@@ -226,7 +242,7 @@ func (r *moderationMetricsRepository) IncrementPatternHit(ctx context.Context, p
 			CreatedAt:   time.Now(),
 		}
 
-		return r.patternStatsRepo.Create(ctx, stats)
+		return r.patternStatsRepo.ValidateAndCreate(ctx, stats)
 	}
 	// Update existing record using BaseRepository
 	existing.HitCount++

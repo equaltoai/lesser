@@ -114,6 +114,7 @@ func init() {
 		db,
 		tableName,
 		logger,
+		nil,
 	)
 
 	processor = &CostAggregator{

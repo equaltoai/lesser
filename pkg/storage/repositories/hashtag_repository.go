@@ -16,9 +16,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// HashtagRepository implements hashtag-related database operations using DynamORM with BaseRepository
+// HashtagRepository implements hashtag-related database operations using enhanced DynamORM patterns
 type HashtagRepository struct {
-	*BaseRepository[*models.Hashtag]
+	*EnhancedBaseRepository[*models.Hashtag]
 	domain             string
 	trendingCalculator *TrendingCalculator
 	trendingEngine     *TrendingEngine
@@ -140,11 +140,20 @@ func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, doma
 		},
 	}
 
+	// Create enhanced repository optimized for hashtag operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Hashtag](db, tableName, logger, nil, "HashtagRepository", "hashtag")
+	
+	// Set up enhanced services for hashtag operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Hashtags cached for trending performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for trending and discovery events
+	
 	return &HashtagRepository{
-		BaseRepository:     NewBaseRepositoryWithCostTracking[*models.Hashtag](db, tableName, logger, nil, "HashtagRepository"),
-		domain:             domain,
-		trendingCalculator: NewTrendingCalculator(config, logger),
-		trendingEngine:     NewTrendingEngine(db, logger),
+		EnhancedBaseRepository: enhancedRepo,
+		domain:                 domain,
+		trendingCalculator:     NewTrendingCalculator(config, logger),
+		trendingEngine:         NewTrendingEngine(db, logger),
 	}
 }
 
@@ -190,9 +199,14 @@ func (r *HashtagRepository) IndexHashtag(ctx context.Context, hashtag string, st
 		CreatedAt:  now,
 	}
 
-	// Create or update the hashtag metadata using BaseRepository
-	err = r.Create(ctx, hashtagMetadata)
+	// Create or update the hashtag metadata using enhanced validation
+	err = r.ValidateAndCreate(ctx, hashtagMetadata)
 	if err != nil {
+		r.logger.Error("failed to create hashtag with enhanced validation",
+			zap.String("hashtag", tagLower),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "hashtag", tagLower)
 	}
 

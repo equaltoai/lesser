@@ -33,7 +33,7 @@ type SearchIndexer struct {
 
 // NewSearchIndexer creates a new search indexer instance
 func NewSearchIndexer(db core.DB, tableName string) *SearchIndexer {
-	costRepo := repositories.NewSearchCostRepository(db, lambdaCtx.Logger)
+	costRepo := repositories.NewSearchCostRepository(db, tableName, lambdaCtx.Logger, nil)
 
 	// Create unified tracker for centralized cost tracking
 	unifiedTracker := cost.NewRepositoryTracker(nil, lambdaCtx.Logger, "SearchIndexer", "", "")

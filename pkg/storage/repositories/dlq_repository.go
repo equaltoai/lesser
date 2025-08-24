@@ -24,23 +24,30 @@ const (
 	DLQStatusAbandoned    = "abandoned"
 )
 
-// DLQRepository handles dead letter queue message operations using BaseRepository with DLQ-specific business logic
+// DLQRepository handles dead letter queue message operations using enhanced patterns
 type DLQRepository struct {
-	*BaseRepository[*models.DLQMessage]
+	*EnhancedBaseRepository[*models.DLQMessage]
 }
 
-// NewDLQRepository creates a new DLQ repository with cost tracking
+// NewDLQRepository creates a new DLQ repository with enhanced functionality
 func NewDLQRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DLQRepository {
+	// Create enhanced repository optimized for DLQ operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.DLQMessage](db, tableName, logger, costService, "DLQRepository", "dlq")
+	
+	// Set up enhanced services for DLQ operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // DLQ messages cached for retry logic
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for DLQ monitoring
+	
 	return &DLQRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.DLQMessage](db, tableName, logger, costService, "dlq_repository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// NewDLQRepositorySimple creates a new DLQ repository without cost tracking
+// NewDLQRepositorySimple creates a new DLQ repository without cost tracking (backward compatibility)
 func NewDLQRepositorySimple(db core.DB, tableName string, logger *zap.Logger) *DLQRepository {
-	return &DLQRepository{
-		BaseRepository: NewBaseRepository[*models.DLQMessage](db, tableName, logger),
-	}
+	return NewDLQRepository(db, tableName, logger, nil)
 }
 
 // CreateDLQMessage creates a new DLQ message using BaseRepository
@@ -49,8 +56,8 @@ func (r *DLQRepository) CreateDLQMessage(ctx context.Context, message *models.DL
 		return ErrorHandler.HandleCreateError(err, "dlq", "message preparation")
 	}
 
-	// Delegate to BaseRepository for CRUD operation
-	err := r.Create(ctx, message)
+	// Use enhanced repository for validation and creation
+	err := r.ValidateAndCreate(ctx, message)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "dlq", message.ID)
 	}

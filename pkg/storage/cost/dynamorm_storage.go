@@ -23,7 +23,7 @@ type DynamORMStorage struct {
 // NewDynamORMStorage creates a new DynamORM-based cost storage instance
 func NewDynamORMStorage(db core.DB, tableName string, logger *zap.Logger) *DynamORMStorage {
 	return &DynamORMStorage{
-		repo:   repositories.NewTrackingRepository(db, tableName, logger),
+		repo:   repositories.NewTrackingRepository(db, tableName, logger, nil),
 		logger: logger,
 	}
 }

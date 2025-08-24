@@ -21,7 +21,7 @@ func ExampleRouteManagerIntegration(db core.DB, tableName string, logger *zap.Lo
 	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
-	federationCostRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
+	federationCostRepo := repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
 
 	// Create a mock federation instance repository for the example
 	instanceRepo := &MockFederationInstanceRepository{

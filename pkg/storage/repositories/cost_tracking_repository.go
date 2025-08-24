@@ -21,31 +21,33 @@ import (
 
 // TrackingRepository handles cost tracking persistence
 type TrackingRepository struct {
-	*BaseRepository[*models.DynamoDBCostRecord]
+	*EnhancedBaseRepository[*models.DynamoDBCostRecord]
 }
 
-// NewTrackingRepository creates a new cost tracking repository
-func NewTrackingRepository(db core.DB, tableName string, logger *zap.Logger) *TrackingRepository {
-	return &TrackingRepository{
-		BaseRepository: NewBaseRepository[*models.DynamoDBCostRecord](db, tableName, logger),
-	}
-}
+// NewTrackingRepository creates a new cost tracking repository with enhanced functionality
+func NewTrackingRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrackingRepository {
+	// Create enhanced repository optimized for cost tracking operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.DynamoDBCostRecord](db, tableName, logger, costService, "TrackingRepository", "costtracking")
+	
+	// Set up enhanced services for cost tracking operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for cost tracking events
 
-// NewTrackingRepositoryWithCostTracking creates a new cost tracking repository with cost tracking service
-func NewTrackingRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrackingRepository {
 	return &TrackingRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.DynamoDBCostRecord](db, tableName, logger, costService, "TrackingRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // Create creates a new cost tracking record
 func (r *TrackingRepository) Create(ctx context.Context, tracking *models.DynamoDBCostRecord) error {
-	return r.BaseRepository.Create(ctx, tracking)
+	return r.ValidateAndCreate(ctx, tracking)
 }
 
-// BatchCreate creates multiple cost tracking records efficiently using DynamORM BatchCreate
+// BatchCreate creates multiple cost tracking records efficiently using enhanced validation
 func (r *TrackingRepository) BatchCreate(ctx context.Context, trackingList []*models.DynamoDBCostRecord) error {
-	return r.BaseRepository.BatchCreate(ctx, trackingList)
+	return r.ValidateAndBatchCreate(ctx, trackingList)
 }
 
 // Get retrieves a cost tracking record by operation type, timestamp and ID

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
@@ -15,23 +16,39 @@ import (
 
 // MetricsRepository handles metrics persistence
 type MetricsRepository struct {
-	*BaseRepository[*models.Metrics]
-	aggregatedRepo *BaseRepository[*models.AggregatedMetrics]
+	*EnhancedBaseRepository[*models.Metrics]
+	aggregatedRepo *EnhancedBaseRepository[*models.AggregatedMetrics]
 	logger         *zap.Logger
 }
 
 // MetricRecordRepository handles new reporting table schema with extensive indexing
 type MetricRecordRepository struct {
-	*BaseRepository[*models.MetricRecord]
+	*EnhancedBaseRepository[*models.MetricRecord]
 	logger *zap.Logger
 }
 
-// NewMetricsRepository creates a new metrics repository
-func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger) *MetricsRepository {
+// NewMetricsRepository creates a new metrics repository with enhanced functionality
+func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MetricsRepository {
+	// Create enhanced repository optimized for metrics operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Metrics](db, tableName, logger, costService, "MetricsRepository", "metrics")
+	
+	// Set up enhanced services for metrics operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Metrics cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for metrics events
+	
+	// Create aggregated metrics repository
+	aggregatedRepo := NewEnhancedBaseRepository[*models.AggregatedMetrics](db, tableName, logger, costService, "AggregatedMetricsRepository", "aggregatedmetrics")
+	aggregatedRepo.SetValidationService(NewDefaultValidationService())
+	aggregatedRepo.SetPermissionService(NewDefaultPermissionService())
+	aggregatedRepo.SetCachingService(NewInMemoryCachingService())
+	aggregatedRepo.SetEventService(NewDefaultEventService())
+
 	return &MetricsRepository{
-		BaseRepository: NewBaseRepository[*models.Metrics](db, tableName, logger),
-		aggregatedRepo: NewBaseRepository[*models.AggregatedMetrics](db, tableName, logger),
-		logger:         logger,
+		EnhancedBaseRepository: enhancedRepo,
+		aggregatedRepo:         aggregatedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -42,8 +59,8 @@ func (r *MetricsRepository) Create(ctx context.Context, metrics *models.Metrics)
 		return ErrorHandler.HandleCreateError(err, "metrics", "validation")
 	}
 
-	// Use BaseRepository Create method
-	err := r.BaseRepository.Create(ctx, metrics)
+	// Use enhanced repository for validation and creation
+	err := r.ValidateAndCreate(ctx, metrics)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create metrics")
 	}
@@ -69,8 +86,8 @@ func (r *MetricsRepository) BatchCreate(ctx context.Context, metricsList []*mode
 		}
 	}
 
-	// Use the shared BatchCreateHelper
-	return r.BatchCreateHelper(ctx, metricsList, "metrics")
+	// Use enhanced batch create with validation
+	return r.ValidateAndBatchCreate(ctx, metricsList)
 }
 
 // Get retrieves a metrics record by ID and type
@@ -159,8 +176,8 @@ func (r *MetricsRepository) CreateAggregated(ctx context.Context, aggregated *mo
 		return ErrorHandler.HandleCreateError(err, "aggregated metrics", "validation")
 	}
 
-	// Use aggregated repository Create method
-	err := r.aggregatedRepo.Create(ctx, aggregated)
+	// Use enhanced repository for validation and creation
+	err := r.aggregatedRepo.ValidateAndCreate(ctx, aggregated)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create aggregated metrics")
 	}
@@ -555,11 +572,20 @@ func calculateStandardDeviation(values []float64, mean float64) float64 {
 	return math.Sqrt(variance)
 }
 
-// NewMetricRecordRepository creates a new metric record repository following BaseRepository pattern
-func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger) *MetricRecordRepository {
+// NewMetricRecordRepository creates a new metric record repository with enhanced functionality
+func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MetricRecordRepository {
+	// Create enhanced repository optimized for metric record operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.MetricRecord](db, tableName, logger, costService, "MetricRecordRepository", "metricrecord")
+	
+	// Set up enhanced services for metric record operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+
 	return &MetricRecordRepository{
-		BaseRepository: NewBaseRepository[*models.MetricRecord](db, tableName, logger),
-		logger:         logger,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -683,8 +709,8 @@ func (r *MetricRecordRepository) BatchCreateMetricRecords(ctx context.Context, r
 		}
 	}
 
-	// Use the shared BatchCreateHelper
-	return r.BatchCreateHelper(ctx, records, "metric record")
+	// Use enhanced batch create with validation
+	return r.ValidateAndBatchCreate(ctx, records)
 }
 
 // GetMetricRecord retrieves a single metric record by its keys

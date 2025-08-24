@@ -17,29 +17,26 @@ import (
 	"go.uber.org/zap"
 )
 
-// ConversationRepository handles conversation-related database operations
+// ConversationRepository handles conversation-related database operations using enhanced patterns
 type ConversationRepository struct {
-	*BaseRepository[*models.Conversation]
+	*EnhancedBaseRepository[*models.Conversation]
 	logger *zap.Logger
 }
 
-// NewConversationRepository creates a new conversation repository
-func NewConversationRepository(db core.DB, logger *zap.Logger) *ConversationRepository {
+// NewConversationRepository creates a new conversation repository with enhanced functionality and cost tracking
+func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ConversationRepository {
+	// Create enhanced repository optimized for conversation operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Conversation](db, tableName, logger, costService, "ConversationRepository", "conversation")
+	
+	// Set up enhanced services for conversation operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Conversations cached for message threading
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for conversation events
+	
 	return &ConversationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Conversation](
-			db, "Conversations", logger, nil, "conversation",
-		),
-		logger: logger,
-	}
-}
-
-// NewConversationRepositoryWithCostTracking creates a new conversation repository with cost tracking
-func NewConversationRepositoryWithCostTracking(db core.DB, logger *zap.Logger, costService *cost.TrackingService) *ConversationRepository {
-	return &ConversationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Conversation](
-			db, "Conversations", logger, costService, "conversation",
-		),
-		logger: logger,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -70,8 +67,8 @@ func (r *ConversationRepository) CreateConversation(ctx context.Context, convers
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}
 
-	// Create main conversation record using BaseRepository
-	if err := r.Create(ctx, conversation); err != nil {
+	// Create main conversation record using enhanced validation and creation
+	if err := r.ValidateAndCreate(ctx, conversation); err != nil {
 		log.Error("failed to create conversation", zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityConversation, conversation.ID)
 	}

@@ -7,26 +7,35 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// NotificationCostRepository handles notification cost tracking operations
+// NotificationCostRepository handles notification cost tracking operations using enhanced patterns
 type NotificationCostRepository struct {
-	*BaseRepository[*models.NotificationCostTracking]
+	*EnhancedBaseRepository[*models.NotificationCostTracking]
 	logger     *zap.Logger
 	costHelper *CostTrackingQueryHelper
 }
 
-// NewNotificationCostRepository creates a new notification cost repository
-func NewNotificationCostRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationCostRepository {
-	baseRepo := NewBaseRepository[*models.NotificationCostTracking](db, tableName, logger)
+// NewNotificationCostRepository creates a new notification cost repository with enhanced functionality
+func NewNotificationCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationCostRepository {
+	// Create enhanced repository optimized for notification cost operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.NotificationCostTracking](db, tableName, logger, costService, "NotificationCostRepository", "notificationcost")
+	
+	// Set up enhanced services for notification cost operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
+	
 	return &NotificationCostRepository{
-		BaseRepository: baseRepo,
-		logger:         logger,
-		costHelper:     NewCostTrackingQueryHelper(db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
+		costHelper:             NewCostTrackingQueryHelper(db, tableName, logger),
 	}
 }
 
@@ -36,7 +45,7 @@ func (r *NotificationCostRepository) CreateCostTracking(ctx context.Context, tra
 		return ErrorHandler.HandleCreateError(err, "notification cost", "preparation")
 	}
 
-	err := r.Create(ctx, tracking)
+	err := r.ValidateAndCreate(ctx, tracking)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "notification cost", tracking.ID)
 	}

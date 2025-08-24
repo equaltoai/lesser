@@ -24,34 +24,37 @@ const (
 	DefaultIdleThreshold = time.Minute * 30
 )
 
-// StreamingConnectionRepository handles WebSocket connections using DynamORM
+// StreamingConnectionRepository handles WebSocket connections using enhanced patterns
 type StreamingConnectionRepository struct {
-	*BaseRepository[*models.WebSocketConnection]
-	subscriptionRepo  *BaseRepository[*models.WebSocketSubscription]
+	*EnhancedBaseRepository[*models.WebSocketConnection]
+	subscriptionRepo  *EnhancedBaseRepository[*models.WebSocketSubscription]
 	subscriptionDB    core.DB
 	subscriptionTable string
 	logger            *zap.Logger
 }
 
-// NewStreamingConnectionRepository creates a new repository instance
-func NewStreamingConnectionRepository(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger) *StreamingConnectionRepository {
+// NewStreamingConnectionRepository creates a new streaming connection repository with enhanced functionality
+func NewStreamingConnectionRepository(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger, costService *cost.TrackingService) *StreamingConnectionRepository {
+	// Create enhanced repository for WebSocket connections
+	connectionRepo := NewEnhancedBaseRepository[*models.WebSocketConnection](db, tableName, logger, costService, "StreamingConnectionRepository", "streamingconnection")
+	connectionRepo.SetValidationService(NewDefaultValidationService())
+	connectionRepo.SetPermissionService(NewDefaultPermissionService())
+	connectionRepo.SetCachingService(NewInMemoryCachingService()) // Connections cached for real-time performance
+	connectionRepo.SetEventService(NewDefaultEventService())
+	
+	// Create enhanced repository for subscriptions
+	subscriptionRepo := NewEnhancedBaseRepository[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger, costService, "WebSocketSubscriptionRepository", "websocketsubscription")
+	subscriptionRepo.SetValidationService(NewDefaultValidationService())
+	subscriptionRepo.SetPermissionService(NewDefaultPermissionService())
+	subscriptionRepo.SetCachingService(NewInMemoryCachingService())
+	subscriptionRepo.SetEventService(NewDefaultEventService())
+	
 	return &StreamingConnectionRepository{
-		BaseRepository:    NewBaseRepository[*models.WebSocketConnection](db, tableName, logger),
-		subscriptionRepo:  NewBaseRepository[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger),
-		subscriptionDB:    subscriptionDB,
-		subscriptionTable: subscriptionTable,
-		logger:            logger,
-	}
-}
-
-// NewStreamingConnectionRepositoryWithCostTracking creates a new repository instance with cost tracking
-func NewStreamingConnectionRepositoryWithCostTracking(db core.DB, tableName string, subscriptionDB core.DB, subscriptionTable string, logger *zap.Logger, costService *cost.TrackingService) *StreamingConnectionRepository {
-	return &StreamingConnectionRepository{
-		BaseRepository:    NewBaseRepositoryWithCostTracking[*models.WebSocketConnection](db, tableName, logger, costService, "StreamingConnection"),
-		subscriptionRepo:  NewBaseRepositoryWithCostTracking[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger, costService, "WebSocketSubscription"),
-		subscriptionDB:    subscriptionDB,
-		subscriptionTable: subscriptionTable,
-		logger:            logger,
+		EnhancedBaseRepository: connectionRepo,
+		subscriptionRepo:       subscriptionRepo,
+		subscriptionDB:         subscriptionDB,
+		subscriptionTable:      subscriptionTable,
+		logger:                 logger,
 	}
 }
 
@@ -88,7 +91,7 @@ func (r *StreamingConnectionRepository) WriteConnection(ctx context.Context, con
 	}
 
 	// Use BaseRepository Create method
-	if err := r.Create(ctx, connection); err != nil {
+	if err := r.ValidateAndCreate(ctx, connection); err != nil {
 		return ErrorHandler.HandleCreateError(err, "streaming connection", connectionID)
 	}
 
@@ -177,7 +180,7 @@ func (r *StreamingConnectionRepository) WriteSubscription(ctx context.Context, c
 	}
 
 	// Use subscription BaseRepository Create method
-	if err := r.subscriptionRepo.Create(ctx, subscription); err != nil {
+	if err := r.subscriptionRepo.ValidateAndCreate(ctx, subscription); err != nil {
 		return ErrorHandler.HandleCreateError(err, "websocket subscription", connectionID)
 	}
 

@@ -14,15 +14,24 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// MediaMetadataRepository handles media metadata operations using BaseRepository
+// MediaMetadataRepository handles media metadata operations using enhanced DynamORM patterns
 type MediaMetadataRepository struct {
-	*BaseRepository[*models.MediaMetadata]
+	*EnhancedBaseRepository[*models.MediaMetadata]
 }
 
-// NewMediaMetadataRepository creates a new media metadata repository with cost tracking
+// NewMediaMetadataRepository creates a new media metadata repository with enhanced functionality and cost tracking
 func NewMediaMetadataRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaMetadataRepository {
+	// Create enhanced repository for media metadata operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.MediaMetadata](db, tableName, logger, costService, "MediaMetadataRepository", "media_metadata")
+	
+	// Set up enhanced services for media metadata operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache media metadata for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &MediaMetadataRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.MediaMetadata](db, tableName, logger, costService, "media_metadata"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -36,7 +45,7 @@ func (r *MediaMetadataRepository) CreateMediaMetadata(ctx context.Context, metad
 		return fmt.Errorf("%w for creation: %w", ErrMediaMetadataPrepareFailed, err)
 	}
 
-	return r.Create(ctx, metadata)
+	return r.ValidateAndCreate(ctx, metadata)
 }
 
 // GetMediaMetadata retrieves media metadata by media ID

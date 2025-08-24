@@ -12,37 +12,52 @@ import (
 	"go.uber.org/zap"
 )
 
-// FederationCostRepository handles federation cost tracking operations using DynamORM with BaseRepository
+// FederationCostRepository handles federation cost tracking operations using enhanced DynamORM patterns
 type FederationCostRepository struct {
-	*BaseRepository[*models.FederationCostTracking]
-	budgetRepo *BaseRepository[*models.FederationBudget]
+	*EnhancedBaseRepository[*models.FederationCostTracking]
+	budgetRepo *EnhancedBaseRepository[*models.FederationBudget]
 }
 
-// NewFederationCostRepository creates a new federation cost repository
-func NewFederationCostRepository(baseRepo *BaseRepository[*models.FederationCostTracking], budgetRepo *BaseRepository[*models.FederationBudget]) *FederationCostRepository {
+// NewFederationCostRepository creates a new federation cost repository with enhanced functionality
+func NewFederationCostRepository(enhancedRepo *EnhancedBaseRepository[*models.FederationCostTracking], budgetRepo *EnhancedBaseRepository[*models.FederationBudget]) *FederationCostRepository {
 	return &FederationCostRepository{
-		BaseRepository: baseRepo,
-		budgetRepo:     budgetRepo,
+		EnhancedBaseRepository: enhancedRepo,
+		budgetRepo:             budgetRepo,
 	}
 }
 
-// NewFederationCostRepositoryWithCostTracking creates a new federation cost repository with integrated cost tracking
-func NewFederationCostRepositoryWithCostTracking(baseRepo *BaseRepository[*models.FederationCostTracking], budgetRepo *BaseRepository[*models.FederationBudget], costService *cost.TrackingService) *FederationCostRepository {
-	// Set cost service on base repositories
-	baseRepo.SetCostService(costService)
-	baseRepo.SetRepoName("federation_cost")
-	budgetRepo.SetCostService(costService)
-	budgetRepo.SetRepoName("federation_budget")
+// NewFederationCostRepositoryFromBase creates a federation cost repository from BaseRepository instances (compatibility)
+func NewFederationCostRepositoryFromBase(baseRepo *BaseRepository[*models.FederationCostTracking], budgetRepo *BaseRepository[*models.FederationBudget], costService *cost.TrackingService) *FederationCostRepository {
+	// Convert base repositories to enhanced repositories
+	enhancedMain := convertBaseToEnhanced(baseRepo, costService, "FederationCostRepository", "federation_cost")
+	enhancedBudget := convertBaseToEnhanced(budgetRepo, costService, "FederationCostRepository.Budget", "federation_budget")
 
 	return &FederationCostRepository{
-		BaseRepository: baseRepo,
-		budgetRepo:     budgetRepo,
+		EnhancedBaseRepository: enhancedMain,
+		budgetRepo:             enhancedBudget,
 	}
 }
 
-// RecordFederationCost records a federation cost tracking entry using BaseRepository
+
+// convertBaseToEnhanced converts a BaseRepository to EnhancedBaseRepository (helper function)
+func convertBaseToEnhanced[T BaseModel](baseRepo *BaseRepository[T], costService *cost.TrackingService, repoName, entityType string) *EnhancedBaseRepository[T] {
+	enhancedRepo := &EnhancedBaseRepository[T]{
+		BaseRepository: baseRepo,
+		entityName:     entityType,
+	}
+	
+	// Set up enhanced services
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
+	return enhancedRepo
+}
+
+// RecordFederationCost records a federation cost tracking entry using enhanced patterns
 func (r *FederationCostRepository) RecordFederationCost(ctx context.Context, cost *models.FederationCostTracking) error {
-	err := r.Create(ctx, cost)
+	err := r.ValidateAndCreate(ctx, cost)
 	if err != nil {
 		r.logger.Error("Failed to record federation cost",
 			zap.String("domain", cost.Domain),
@@ -192,7 +207,7 @@ func (r *FederationCostRepository) GetDailyCostSummary(ctx context.Context, doma
 
 // CreateOrUpdateBudget creates or updates a federation budget for a domain using BaseRepository
 func (r *FederationCostRepository) CreateOrUpdateBudget(ctx context.Context, budget *models.FederationBudget) error {
-	err := r.budgetRepo.Create(ctx, budget)
+	err := r.budgetRepo.ValidateAndCreate(ctx, budget)
 	if err != nil {
 		r.logger.Error("Failed to create/update federation budget",
 			zap.String("domain", budget.Domain),

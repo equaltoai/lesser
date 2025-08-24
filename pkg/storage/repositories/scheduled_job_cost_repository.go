@@ -7,23 +7,32 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// ScheduledJobCostRepository handles scheduled job cost tracking persistence
+// ScheduledJobCostRepository handles scheduled job cost tracking persistence using enhanced patterns
 type ScheduledJobCostRepository struct {
-	*BaseRepository[*models.ScheduledJobCostRecord]
+	*EnhancedBaseRepository[*models.ScheduledJobCostRecord]
 	logger *zap.Logger
 }
 
-// NewScheduledJobCostRepository creates a new scheduled job cost repository
-func NewScheduledJobCostRepository(db core.DB, tableName string, logger *zap.Logger) *ScheduledJobCostRepository {
-	baseRepo := NewBaseRepository[*models.ScheduledJobCostRecord](db, tableName, logger)
+// NewScheduledJobCostRepository creates a new scheduled job cost repository with enhanced functionality
+func NewScheduledJobCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledJobCostRepository {
+	// Create enhanced repository optimized for scheduled job cost operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.ScheduledJobCostRecord](db, tableName, logger, costService, "ScheduledJobCostRepository", "scheduledjobcost")
+	
+	// Set up enhanced services for scheduled job cost operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for job cost monitoring
+	
 	return &ScheduledJobCostRepository{
-		BaseRepository: baseRepo,
-		logger:         logger,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -34,8 +43,8 @@ func (r *ScheduledJobCostRepository) Create(ctx context.Context, record *models.
 		return fmt.Errorf("%w: %w", ErrScheduledJobCostBeforeCreateFailed, err)
 	}
 
-	// Create the scheduled job cost record using BaseRepository
-	err := r.BaseRepository.Create(ctx, record)
+	// Create the scheduled job cost record using enhanced repository
+	err := r.ValidateAndCreate(ctx, record)
 	if err != nil {
 		return MapErrorWithContext(err, "failed to create scheduled job cost record")
 	}

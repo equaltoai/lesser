@@ -14,49 +14,70 @@ import (
 	"go.uber.org/zap"
 )
 
-// LikeRepository implements like operations using DynamORM with BaseRepository
+// LikeRepository implements like operations using enhanced DynamORM patterns
 type LikeRepository struct {
-	*BaseRepository[*models.Like]
+	*EnhancedBaseRepository[*models.Like]
 }
 
-// NewLikeRepository creates a new like repository
+// NewLikeRepository creates a new like repository with enhanced functionality
 func NewLikeRepository(db core.DB, tableName string, logger *zap.Logger) *LikeRepository {
+	// Create enhanced repository optimized for like operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Like](db, tableName, logger, nil, "LikeRepository", "like")
+	
+	// Set up enhanced services for like operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Likes are frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for notifications
+	
 	return &LikeRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Like](
-			db, tableName, logger, nil, "LikeRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // NewLikeRepositoryWithCostTracking creates a new like repository with cost tracking
 func NewLikeRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *LikeRepository {
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.Like](db, tableName, logger, costService, "LikeRepository", "like")
+	
+	// Set up enhanced services for like operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Likes are frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for notifications
+	
 	return &LikeRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Like](
-			db, tableName, logger, costService, "LikeRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// CreateLike creates a new like
+// CreateLike creates a new like with enhanced validation and event emission
 func (r *LikeRepository) CreateLike(ctx context.Context, actor, object, statusAuthorID string) (*models.Like, error) {
 	like := models.NewLike(actor, object, statusAuthorID)
 
-	if err := r.Create(ctx, like); err != nil {
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, like); err != nil {
 		// Check if it's a duplicate key error (already liked)
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("like already exists",
 				zap.String("actor", actor),
 				zap.String("object", object),
-				zap.String("status_author_id", statusAuthorID))
+				zap.String("status_author_id", statusAuthorID),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
 			return like, nil
 		}
-		r.logger.Error("failed to create like",
+		r.logger.Error("failed to create like with enhanced validation",
 			zap.String("actor", actor),
 			zap.String("object", object),
 			zap.String("status_author_id", statusAuthorID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleCreateError(err, "like", fmt.Sprintf("%s:%s", actor, object))
 	}
 
-	r.logger.Info("created like",
+	r.logger.Info("created like with enhanced patterns",
 		zap.String("like_id", like.ID),
 		zap.String("actor", actor),
 		zap.String("object", object),

@@ -92,8 +92,8 @@ func init() {
 		subscriptionsTable = "lesser-streaming-subscriptions"
 	}
 
-	costRepo := repositories.NewWebSocketCostRepository(db, tableName, lambdaCtx.Logger)
-	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, lambdaCtx.Logger)
+	costRepo := repositories.NewWebSocketCostRepository(db, tableName, lambdaCtx.Logger, nil)
+	connectionRepo := repositories.NewStreamingConnectionRepository(db, connectionsTable, db, subscriptionsTable, lambdaCtx.Logger, nil)
 	costTracker := repositories.NewWebSocketCostTracker(costRepo, lambdaCtx.Logger)
 
 	// Initialize AWS SDK config for SNS

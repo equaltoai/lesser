@@ -15,34 +15,34 @@ import (
 	"go.uber.org/zap"
 )
 
-// WalletRepository implements wallet authentication storage operations using BaseRepository pattern
+// WalletRepository implements wallet authentication storage operations using enhanced patterns
 type WalletRepository struct {
-	*BaseRepository[*models.WalletChallenge] // Primary model for BaseRepository operations
+	*EnhancedBaseRepository[*models.WalletChallenge] // Primary model for EnhancedBaseRepository operations
 	// For wallet credentials, we'll use the DB directly since we need multiple model types
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-// NewWalletRepository creates a new wallet repository with BaseRepository integration
-func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger) *WalletRepository {
+// NewWalletRepository creates a new wallet repository with enhanced functionality
+func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WalletRepository {
+	// Create enhanced repository optimized for wallet operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.WalletChallenge](db, tableName, logger, costService, "WalletRepository", "wallet")
+	
+	// Set up enhanced services for wallet operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Wallet challenges cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for security monitoring
+	
 	return &WalletRepository{
-		BaseRepository: NewBaseRepository[*models.WalletChallenge](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 		db:             db,
 		tableName:      tableName,
 		logger:         logger,
 	}
 }
 
-// NewWalletRepositoryWithCostTracking creates a wallet repository with cost tracking
-func NewWalletRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WalletRepository {
-	return &WalletRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WalletChallenge](db, tableName, logger, costService, "wallet"),
-		db:             db,
-		tableName:      tableName,
-		logger:         logger,
-	}
-}
 
 // Wallet challenge operations
 

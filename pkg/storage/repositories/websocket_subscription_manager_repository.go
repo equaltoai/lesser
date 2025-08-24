@@ -6,20 +6,30 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// WebSocketSubscriptionManagerRepository handles WebSocket event subscriptions using BaseRepository
+// WebSocketSubscriptionManagerRepository handles WebSocket event subscriptions using enhanced patterns
 type WebSocketSubscriptionManagerRepository struct {
-	*BaseRepository[*models.WebSocketEventConnection]
+	*EnhancedBaseRepository[*models.WebSocketEventConnection]
 }
 
-// NewWebSocketSubscriptionManagerRepository creates a new repository instance
-func NewWebSocketSubscriptionManagerRepository(db core.DB, tableName string, logger *zap.Logger) *WebSocketSubscriptionManagerRepository {
+// NewWebSocketSubscriptionManagerRepository creates a new repository instance with enhanced functionality
+func NewWebSocketSubscriptionManagerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WebSocketSubscriptionManagerRepository {
+	// Create enhanced repository optimized for WebSocket subscription operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.WebSocketEventConnection](db, tableName, logger, costService, "WebSocketSubscriptionManagerRepository", "websocketsubscriptionmanager")
+	
+	// Set up enhanced services for WebSocket subscription operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Subscriptions cached for real-time performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &WebSocketSubscriptionManagerRepository{
-		BaseRepository: NewBaseRepository[*models.WebSocketEventConnection](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -33,7 +43,7 @@ func (r *WebSocketSubscriptionManagerRepository) HandleConnect(ctx context.Conte
 		TTL:          time.Now().Add(24 * time.Hour).Unix(), // Expire after 24 hours
 	}
 
-	err := r.Create(ctx, connection)
+	err := r.ValidateAndCreate(ctx, connection)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "websocket connection", connectionID)
 	}

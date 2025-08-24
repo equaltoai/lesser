@@ -94,10 +94,10 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 
 	// Create federation-specific repositories manually until they're added to core interface
 	federationActivityRepo := repositories.NewFederationActivityRepository(
-		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
+		repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger, nil)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](repos.GetDB(), repos.GetTableName(), lambdaCtx.Logger)
-	federationCostRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
+	federationCostRepo := repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
 
 	// Extract federation services from Lambda context
 	federationService, ok := lambdaCtx.DeliveryService.(*federation.DeliveryService)
