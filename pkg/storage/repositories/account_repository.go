@@ -26,8 +26,8 @@ import (
 // AccountRepository unifies User and Actor operations into a single repository
 // This represents the complete account entity with both authentication and federation aspects
 type AccountRepository struct {
-	// Use BaseRepository for User model as primary
-	*BaseRepository[*models.User]
+	// Use EnhancedBaseRepository for comprehensive functionality
+	*EnhancedBaseRepository[*models.User]
 	db        core.DB
 	logger    *zap.Logger
 	tableName string
@@ -40,28 +40,41 @@ type AccountRepository struct {
 
 // NewAccountRepository creates a new unified account repository
 func NewAccountRepository(db core.DB, tableName string, domain string, logger *zap.Logger) *AccountRepository {
-	// Use cost tracking version of BaseRepository
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, nil, "AccountRepository")
+	// Use enhanced base repository with validation and permissions
+	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, nil, "AccountRepository", "account")
+	
+	// Set up default services
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
 
 	return &AccountRepository{
-		BaseRepository: baseRepo,
-		db:             db,
-		logger:         logger,
-		tableName:      tableName,
-		domain:         domain,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		tableName:              tableName,
+		domain:                 domain,
 	}
 }
 
 // NewAccountRepositoryWithCostTracking creates a new account repository with cost tracking
 func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain string, logger *zap.Logger, costService *cost.TrackingService) *AccountRepository {
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, costService, "AccountRepository")
+	// Use enhanced base repository with full service integration
+	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, costService, "AccountRepository", "account")
+	
+	// Set up enhanced services
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
 
 	return &AccountRepository{
-		BaseRepository: baseRepo,
-		db:             db,
-		logger:         logger,
-		tableName:      tableName,
-		domain:         domain,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		tableName:              tableName,
+		domain:                 domain,
 	}
 }
 
@@ -77,7 +90,7 @@ func (r *AccountRepository) SetStorage(_ interface{}) {
 
 // ===== Core Account Operations =====
 
-// CreateAccount creates both User and Actor entities atomically
+// CreateAccount creates both User and Actor entities atomically using enhanced patterns
 // This ensures consistency between authentication and federation data
 func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.Account) error {
 	if account == nil || account.User == nil {
@@ -87,12 +100,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	user := account.User
 	actor := account.Actor
 
-	// Validate inputs
-	if err := common.ValidateRequiredParam("username", user.Username); err != nil {
-		return common.ValidationError{Field: "username", Message: "username is required"}
-	}
-
-	// Create User model
+	// Create User model with enhanced validation and defaults
 	userModel := &models.User{
 		Username:        user.Username,
 		Email:           user.Email,
@@ -108,8 +116,36 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 		UpdatedAt:       user.UpdatedAt,
 	}
 
-	// Set defaults
-	if err := common.ValidateRequiredParam("role", userModel.Role); err != nil {
+	// Set defaults using enhanced patterns
+	r.setUserDefaults(userModel)
+
+	// Use enhanced validation and creation with event emission
+	if err := r.ValidateAndCreate(ctx, userModel); err != nil {
+		if dynamormErrors.IsConditionFailed(err) {
+			return common.ConflictError{Resource: "user", Message: fmt.Sprintf("user %s already exists", user.Username)}
+		}
+		return err
+	}
+
+	// Create Actor if provided (with rollback on failure)
+	if actor != nil {
+		if err := r.createActorWithRollback(ctx, actor, userModel); err != nil {
+			return err
+		}
+	}
+
+	r.logger.Info("created account with enhanced validation",
+		zap.String("username", user.Username),
+		zap.Bool("with_actor", actor != nil),
+		zap.Bool("validation_enabled", r.HasValidation()),
+		zap.Bool("events_enabled", r.HasEvents()))
+
+	return nil
+}
+
+// setUserDefaults sets default values for user model using enhanced patterns
+func (r *AccountRepository) setUserDefaults(userModel *models.User) {
+	if userModel.Role == "" {
 		userModel.Role = "user"
 	}
 	if userModel.CreatedAt.IsZero() {
@@ -118,33 +154,29 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	if userModel.UpdatedAt.IsZero() {
 		userModel.UpdatedAt = userModel.CreatedAt
 	}
+}
 
-	// Create user using BaseRepository
-	if err := r.Create(ctx, userModel); err != nil {
-		if dynamormErrors.IsConditionFailed(err) {
-			return common.ConflictError{Resource: "user", Message: fmt.Sprintf("user %s already exists", user.Username)}
-		}
-		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
+// createActorWithRollback creates an actor with automatic user rollback on failure  
+func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor interface{}, userModel *models.User) error {
+	// Generate a default private key if none provided
+	privateKey := "" // In real implementation, you'd generate a key
+	
+	// Type assert the actor to the expected type
+	actorPtr, ok := actor.(*activitypub.Actor)
+	if !ok {
+		return common.ValidationError{Field: "actor", Message: "invalid actor type"}
 	}
-
-	// Create Actor if provided
-	if actor != nil {
-		// Generate a default private key if none provided
-		privateKey := "" // In real implementation, you'd generate a key
-		if err := r.createActor(ctx, actor, privateKey); err != nil {
-			// Rollback user creation (best effort)
-			pk := fmt.Sprintf("USER#%s", user.Username)
-			if delErr := r.Delete(ctx, pk, models.SKMetadata); delErr != nil {
-				r.logger.Warn("failed to rollback user creation after actor failure", zap.Error(delErr))
-			}
-			return ErrorHandler.HandleCreateError(err, EntityActor, user.Username)
+	
+	if err := r.createActor(ctx, actorPtr, privateKey); err != nil {
+		// Enhanced rollback with proper validation and event emission
+		pk := fmt.Sprintf("USER#%s", userModel.Username)
+		if delErr := r.ValidateAndDelete(ctx, pk, models.SKMetadata); delErr != nil {
+			r.logger.Warn("failed to rollback user creation after actor failure", 
+				zap.Error(delErr),
+				zap.String("username", userModel.Username))
 		}
+		return ErrorHandler.HandleCreateError(err, EntityActor, userModel.Username)
 	}
-
-	r.logger.Info("created account",
-		zap.String("username", user.Username),
-		zap.Bool("with_actor", actor != nil))
-
 	return nil
 }
 
@@ -233,7 +265,7 @@ func (r *AccountRepository) GetUser(ctx context.Context, username string) (*stor
 func (r *AccountRepository) GetUserByEmail(ctx context.Context, email string) (*storage.User, error) {
 	var user models.User
 
-	// Use GSI key utility for consistent key generation
+	// Use existing utility for consistent key generation
 	emailKey := Utils.GSI.EmailIndexKey(email)
 
 	err := r.db.WithContext(ctx).Model(&user).
@@ -281,11 +313,11 @@ func (r *AccountRepository) GetActor(ctx context.Context, username string) (*act
 	var actorModel models.Actor
 
 	// Use key utilities for consistent key generation
-	pk := Utils.Keys.ActorKey(username)
+	pk := fmt.Sprintf(models.KeyPatternActor, username)
 
 	err := r.db.WithContext(ctx).Model(&actorModel).
 		Where("PK", "=", pk).
-		Where("SK", "=", SKProfile).
+		Where("SK", "=", models.SKProfile).
 		First(&actorModel)
 
 	if err != nil {
@@ -348,11 +380,11 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 // deleteActor deletes an actor (internal helper)
 func (r *AccountRepository) deleteActor(ctx context.Context, username string) error {
 	// Use key utilities for consistent key generation
-	pk := Utils.Keys.ActorKey(username)
+	pk := fmt.Sprintf(models.KeyPatternActor, username)
 
 	err := r.db.WithContext(ctx).Model(&models.Actor{}).
 		Where("PK", "=", pk).
-		Where("SK", "=", SKProfile).
+		Where("SK", "=", models.SKProfile).
 		Delete()
 
 	// Use error utility for consistent error handling (delete doesn't fail on not found)
@@ -364,11 +396,11 @@ func (r *AccountRepository) GetActorPrivateKey(ctx context.Context, username str
 	var actorModel models.Actor
 
 	// Use key utilities for consistent key generation
-	pk := Utils.Keys.ActorKey(username)
+	pk := fmt.Sprintf(models.KeyPatternActor, username)
 
 	err := r.db.WithContext(ctx).Model(&actorModel).
 		Where("PK", "=", pk).
-		Where("SK", "=", SKProfile).
+		Where("SK", "=", models.SKProfile).
 		Select("PrivateKey").
 		First(&actorModel)
 
@@ -413,7 +445,7 @@ func (r *AccountRepository) modelToStorageUser(model *models.User) *storage.User
 func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[string]interface{}) error {
 	for key, value := range updates {
 		switch key {
-		case AccountStatusEmail:
+		case "email":
 			if v, ok := value.(string); ok {
 				user.Email = v
 			}
@@ -429,7 +461,7 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 			if v, ok := value.(bool); ok {
 				user.Approved = v
 			}
-		case AccountStatusSuspended:
+		case "suspended":
 			if v, ok := value.(bool); ok {
 				user.Suspended = v
 			}
@@ -715,7 +747,7 @@ func (r *AccountRepository) ApproveAccount(ctx context.Context, username string)
 // SuspendAccount suspends a user account with a reason
 func (r *AccountRepository) SuspendAccount(ctx context.Context, username string, reason string) error {
 	updates := map[string]interface{}{
-		AccountStatusSuspended: true,
+		"suspended": true,
 	}
 	if reason != "" {
 		updates["suspension_reason"] = reason
@@ -726,7 +758,7 @@ func (r *AccountRepository) SuspendAccount(ctx context.Context, username string,
 // UnsuspendAccount removes suspension from a user account
 func (r *AccountRepository) UnsuspendAccount(ctx context.Context, username string) error {
 	updates := map[string]interface{}{
-		AccountStatusSuspended: false,
+		"suspended": false,
 		"suspension_reason":    "",
 	}
 	return r.UpdateUser(ctx, username, updates)
@@ -804,10 +836,10 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 
 	// Convert storage.User to updates map
 	updates := map[string]interface{}{
-		AccountStatusEmail:     account.User.Email,
+		"email":     account.User.Email,
 		"display_name":         account.User.DisplayName,
 		"approved":             account.User.Approved,
-		AccountStatusSuspended: account.User.Suspended,
+		"suspended": account.User.Suspended,
 		"silenced":             account.User.Silenced,
 		"role":                 account.User.Role,
 		"locale":               account.User.Locale,
