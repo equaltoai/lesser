@@ -15,21 +15,23 @@ import (
 
 // EnhancedPatternRepository handles enhanced moderation pattern storage operations
 type EnhancedPatternRepository struct {
-	*BaseRepository[*models.EnhancedModerationPattern]
+	*EnhancedBaseRepository[*models.EnhancedModerationPattern]
 	// Additional fields for pattern-specific operations
 }
 
-// NewEnhancedPatternRepository creates a new enhanced pattern repository
-func NewEnhancedPatternRepository(db core.DB, tableName string, logger *zap.Logger) *EnhancedPatternRepository {
+// NewEnhancedPatternRepository creates a new enhanced pattern repository with enhanced functionality
+func NewEnhancedPatternRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *EnhancedPatternRepository {
+	// Create enhanced repository optimized for enhanced pattern operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.EnhancedModerationPattern](db, tableName, logger, costService, "EnhancedPatternRepository", "enhanced_pattern")
+	
+	// Set up enhanced services for pattern operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Patterns cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Pattern change events
+	
 	return &EnhancedPatternRepository{
-		BaseRepository: NewBaseRepository[*models.EnhancedModerationPattern](db, tableName, logger),
-	}
-}
-
-// NewEnhancedPatternRepositoryWithCostTracking creates a new enhanced pattern repository with cost tracking
-func NewEnhancedPatternRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *EnhancedPatternRepository {
-	return &EnhancedPatternRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.EnhancedModerationPattern](db, tableName, logger, costService, "enhanced_pattern"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -54,7 +56,7 @@ func (r *EnhancedPatternRepository) CreatePattern(ctx context.Context, pattern *
 	pattern.CalculateEffectiveness()
 
 	// Use BaseRepository Create method
-	err := r.Create(ctx, pattern)
+	err := r.ValidateAndCreate(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternCreateFailed, err)
 	}
@@ -93,7 +95,7 @@ func (r *EnhancedPatternRepository) UpdatePattern(ctx context.Context, pattern *
 	pattern.CalculateEffectiveness()
 
 	// Use BaseRepository Update method
-	err := r.Update(ctx, pattern)
+	err := r.ValidateAndUpdate(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternUpdateFailed, err)
 	}
@@ -117,7 +119,7 @@ func (r *EnhancedPatternRepository) DeletePattern(ctx context.Context, patternID
 	pattern.UpdatedAt = time.Now()
 
 	// Use BaseRepository Update method for soft delete
-	err = r.Update(ctx, pattern)
+	err = r.ValidateAndUpdate(ctx, pattern)
 	if err != nil {
 		return fmt.Errorf("%w: %w", storage.ErrPatternDeleteFailed, err)
 	}

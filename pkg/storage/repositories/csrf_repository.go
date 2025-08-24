@@ -12,26 +12,27 @@ import (
 	"go.uber.org/zap"
 )
 
-// CSRFRepository handles CSRF token operations using DynamORM with BaseRepository
+// CSRFRepository handles CSRF token operations using enhanced security patterns
 type CSRFRepository struct {
-	*BaseRepository[*models.CSRFToken]
+	*EnhancedBaseRepository[*models.CSRFToken]
 	// Keep reference to db for complex GSI queries that BaseRepository doesn't handle
 	db core.DB
 }
 
-// NewCSRFRepository creates a new CSRFRepository with BaseRepository
-func NewCSRFRepository(db core.DB, tableName string, logger *zap.Logger) *CSRFRepository {
+// NewCSRFRepository creates a new CSRFRepository with enhanced security features
+func NewCSRFRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CSRFRepository {
+	// Create enhanced repository optimized for CSRF operations - SECURITY CRITICAL
+	enhancedRepo := NewEnhancedBaseRepository[*models.CSRFToken](db, tableName, logger, costService, "CSRFRepository", "csrf")
+	
+	// Set up enhanced services for CSRF operations - SECURITY CRITICAL
+	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical CSRF validation
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())   // Standard permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // CSRF tokens cached briefly
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
+	
 	return &CSRFRepository{
-		BaseRepository: NewBaseRepository[*models.CSRFToken](db, tableName, logger),
-		db:             db,
-	}
-}
-
-// NewCSRFRepositoryWithCostTracking creates a new CSRFRepository with cost tracking
-func NewCSRFRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CSRFRepository {
-	return &CSRFRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CSRFToken](db, tableName, logger, costService, "csrf"),
-		db:             db,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                    db,
 	}
 }
 
@@ -63,8 +64,8 @@ func (r *CSRFRepository) Store(ctx context.Context, token string, userID string,
 		Used:      false,
 	}
 
-	// Use BaseRepository.Create() instead of direct DB call
-	err = r.Create(ctx, csrfToken)
+	// Use Enhanced BaseRepository with security validation
+	err = r.ValidateAndCreate(ctx, csrfToken)
 	if err != nil {
 		// Check if it's a duplicate token error by trying to get it
 		if _, _, _, valid, getErr := r.Get(ctx, token); getErr == nil && valid {
@@ -90,8 +91,8 @@ func (r *CSRFRepository) Get(ctx context.Context, token string) (string, string,
 	var csrfToken models.CSRFToken
 	pk := fmt.Sprintf("CSRF#%s", token)
 
-	// Use BaseRepository.Get() instead of direct DB call
-	err := r.BaseRepository.Get(ctx, pk, "TOKEN", &csrfToken)
+	// Use Enhanced BaseRepository.Get() for security validation
+	err := r.EnhancedBaseRepository.Get(ctx, pk, "TOKEN", &csrfToken)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Return values that indicate invalid token (matches legacy)
@@ -126,8 +127,8 @@ func (r *CSRFRepository) Get(ctx context.Context, token string) (string, string,
 func (r *CSRFRepository) Delete(ctx context.Context, token string) error {
 	pk := fmt.Sprintf("CSRF#%s", token)
 
-	// Use BaseRepository.Delete() instead of direct DB call
-	err := r.BaseRepository.Delete(ctx, pk, "TOKEN")
+	// Use Enhanced BaseRepository for validated deletion
+	err := r.ValidateAndDelete(ctx, pk, "TOKEN")
 	if err != nil {
 		r.logger.Error("failed to delete CSRF token",
 			zap.String("token", token),
@@ -182,7 +183,7 @@ func (r *CSRFRepository) ValidateAndConsume(ctx context.Context, token string, u
 	// Mark as used and save using BaseRepository.Create (upsert semantics)
 	csrfToken.MarkAsUsed()
 
-	err = r.Create(ctx, &csrfToken)
+	err = r.ValidateAndUpdate(ctx, &csrfToken)
 	if err != nil {
 		r.logger.Error("failed to mark CSRF token as used",
 			zap.String("token", token),
@@ -257,8 +258,8 @@ func (r *CSRFRepository) CleanupUserTokens(ctx context.Context, userID string) e
 	// CRITICAL: Delete expired or used tokens to prevent DoS
 	for _, token := range tokens {
 		if token.Used || token.ExpiresAt <= now {
-			// Use BaseRepository.Delete() instead of direct DB call
-			err := r.BaseRepository.Delete(ctx, token.PK, token.SK)
+			// Use Enhanced BaseRepository for validated deletion
+			err := r.ValidateAndDelete(ctx, token.PK, token.SK)
 			if err != nil {
 				r.logger.Error("failed to delete token during cleanup",
 					zap.String("userID", userID),

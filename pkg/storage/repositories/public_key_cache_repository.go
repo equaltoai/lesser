@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamormerrors "github.com/pay-theory/dynamorm/pkg/errors"
@@ -13,13 +14,22 @@ import (
 
 // PublicKeyCacheRepository handles caching of public keys for HTTP signature verification
 type PublicKeyCacheRepository struct {
-	*BaseRepository[*models.PublicKeyCache]
+	*EnhancedBaseRepository[*models.PublicKeyCache]
 }
 
-// NewPublicKeyCacheRepository creates a new public key cache repository
-func NewPublicKeyCacheRepository(db core.DB, tableName string, logger *zap.Logger) *PublicKeyCacheRepository {
+// NewPublicKeyCacheRepository creates a new public key cache repository with enhanced functionality
+func NewPublicKeyCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PublicKeyCacheRepository {
+	// Create enhanced repository optimized for public key cache operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.PublicKeyCache](db, tableName, logger, costService, "PublicKeyCacheRepository", "public_key_cache")
+	
+	// Set up enhanced services for public key cache operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Keys cached in memory
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Key cache events
+	
 	return &PublicKeyCacheRepository{
-		BaseRepository: NewBaseRepository[*models.PublicKeyCache](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -57,7 +67,7 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 		go func() {
 			deleteCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			if err := r.Delete(deleteCtx, cache.PK, cache.SK); err != nil {
+			if err := r.ValidateAndDelete(deleteCtx, cache.PK, cache.SK); err != nil {
 				r.logger.Warn("failed to delete expired cache entry",
 					zap.Error(err),
 					zap.String("actor_url", actorURL))
@@ -77,7 +87,7 @@ func (r *PublicKeyCacheRepository) GetByActorURL(ctx context.Context, actorURL s
 func (r *PublicKeyCacheRepository) Store(ctx context.Context, actorURL, keyID, publicKeyPEM, algorithm string) (*models.PublicKeyCache, error) {
 	cache := models.NewPublicKeyCache(actorURL, keyID, publicKeyPEM, algorithm)
 
-	err := r.Create(ctx, cache)
+	err := r.ValidateAndCreate(ctx, cache)
 	if err != nil {
 		r.logger.Error("failed to store public key cache",
 			zap.Error(err),
@@ -206,7 +216,7 @@ func (r *PublicKeyCacheRepository) InvalidateCache(ctx context.Context, actorURL
 		return ErrorHandler.HandleUpdateError(err, EntityPublicKeyCache, actorURL)
 	}
 
-	err := r.Delete(ctx, cache.PK, cache.SK)
+	err := r.ValidateAndDelete(ctx, cache.PK, cache.SK)
 	if err != nil && !dynamormerrors.IsNotFound(err) {
 		r.logger.Error("failed to invalidate cache",
 			zap.Error(err),

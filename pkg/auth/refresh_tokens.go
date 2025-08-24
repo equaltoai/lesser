@@ -31,7 +31,7 @@ type RefreshTokenStore struct {
 // NewRefreshTokenStore creates a new refresh token store
 func NewRefreshTokenStore(db core.DB) *RefreshTokenStore {
 	return &RefreshTokenStore{
-		repo:   repositories.NewAuthRefreshTokenRepository(db),
+		repo:   repositories.NewAuthRefreshTokenRepository(db, "auth_tokens", common.Logger(), nil),
 		logger: common.Logger(),
 	}
 }

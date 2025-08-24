@@ -127,7 +127,7 @@ func NewEngine(
 	reputationScorer := NewReputationScorer(nil, tableName, logger, config)
 
 	// Create threat intelligence repository and component
-	threatRepo := repositories.NewThreatIntelRepository(dynamoRM, tableName, logger)
+	threatRepo := repositories.NewThreatIntelRepository(dynamoRM, tableName, logger, nil)
 	threatIntel := NewThreatIntelligence(threatRepo, logger)
 
 	decisionEngine := NewDecisionEngine(config, logger, reputationScorer)

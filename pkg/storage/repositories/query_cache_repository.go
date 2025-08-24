@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation/types"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -14,19 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
-// QueryCacheRepository handles query cache operations
+// QueryCacheRepository handles query cache operations using enhanced patterns
 type QueryCacheRepository struct {
-	*BaseRepository[*models.QueryCacheEntry]
+	*EnhancedBaseRepository[*models.QueryCacheEntry]
 	instanceRepo *FederationInstanceRepository
 	routeRepo    *RouteOptimizerRepository
 }
 
-// NewQueryCacheRepository creates a new query cache repository
-func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, instanceRepo *FederationInstanceRepository, routeRepo *RouteOptimizerRepository) *QueryCacheRepository {
+// NewQueryCacheRepository creates a new query cache repository with enhanced functionality
+func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService, instanceRepo *FederationInstanceRepository, routeRepo *RouteOptimizerRepository) *QueryCacheRepository {
+	// Create enhanced repository optimized for query cache operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.QueryCacheEntry](db, tableName, logger, costService, "QueryCacheRepository", "query_cache")
+	
+	// Set up enhanced services for query cache operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Query cache cached in memory
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Cache events
+	
 	return &QueryCacheRepository{
-		BaseRepository: NewBaseRepository[*models.QueryCacheEntry](db, tableName, logger),
-		instanceRepo:   instanceRepo,
-		routeRepo:      routeRepo,
+		EnhancedBaseRepository: enhancedRepo,
+		instanceRepo:          instanceRepo,
+		routeRepo:             routeRepo,
 	}
 }
 

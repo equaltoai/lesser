@@ -90,7 +90,7 @@ func NewServerlessHealthChecker(db core.DB, tableName string, logger *zap.Logger
 	}
 
 	return &ServerlessHealthChecker{
-		healthRepo: repositories.NewInstanceHealthRepository(db, tableName, logger),
+		healthRepo: repositories.NewInstanceHealthRepository(db, tableName, logger, nil),
 		logger:     logger,
 		httpClient: client,
 		config:     config,

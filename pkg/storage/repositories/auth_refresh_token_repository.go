@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -14,23 +15,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// AuthRefreshTokenRepository handles auth refresh tokens with advanced security
+// AuthRefreshTokenRepository handles auth refresh tokens with enhanced security features
 type AuthRefreshTokenRepository struct {
-	*BaseRepository[*models.AuthRefreshToken]
+	*EnhancedBaseRepository[*models.AuthRefreshToken]
 }
 
-// NewAuthRefreshTokenRepository creates a new auth refresh token repository
-func NewAuthRefreshTokenRepository(db core.DB) *AuthRefreshTokenRepository {
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.AuthRefreshToken](
-		db,
-		models.MainTableName,
-		common.Logger(),
-		nil, // Cost service can be nil for now
-		"auth_refresh_token",
-	)
-
+// NewAuthRefreshTokenRepository creates a new auth refresh token repository with enhanced security
+func NewAuthRefreshTokenRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuthRefreshTokenRepository {
+	// Create enhanced repository optimized for auth token operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.AuthRefreshToken](db, tableName, logger, costService, "AuthRefreshTokenRepository", "auth_token")
+	
+	// Set up enhanced services for auth token operations - SECURITY CRITICAL
+	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical token validation
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())      // Auth-specific permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // Short-term token caching
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
+	
 	return &AuthRefreshTokenRepository{
-		BaseRepository: baseRepo,
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -59,8 +61,8 @@ func (r *AuthRefreshTokenRepository) CreateRefreshToken(ctx context.Context, use
 		IPAddress:  ipAddress,
 	}
 
-	// Create the token using BaseRepository
-	err := r.Create(ctx, token)
+	// Create the token using Enhanced BaseRepository with security validation
+	err := r.ValidateAndCreate(ctx, token)
 	if err != nil {
 		return nil, ErrorHandler.HandleCreateError(err, EntityRefreshToken, token.Token)
 	}

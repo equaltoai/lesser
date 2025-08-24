@@ -15,22 +15,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// AIRepository handles AI analysis data persistence with BaseRepository integration
+// AIRepository handles AI analysis data persistence with enhanced repository integration
 type AIRepository struct {
-	*BaseRepository[*models.AIAnalysis]
+	*EnhancedBaseRepository[*models.AIAnalysis]
 }
 
-// NewAIRepository creates a new AI repository with cost tracking
-func NewAIRepository(db core.DB, tableName string, logger *zap.Logger) *AIRepository {
+// NewAIRepository creates a new AI repository with enhanced functionality
+func NewAIRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AIRepository {
+	// Create enhanced repository optimized for AI operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.AIAnalysis](db, tableName, logger, costService, "AIRepository", "ai")
+	
+	// Set up enhanced services for AI operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // AI analyses cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for AI usage tracking
+	
 	return &AIRepository{
-		BaseRepository: NewBaseRepository[*models.AIAnalysis](db, tableName, logger),
-	}
-}
-
-// NewAIRepositoryWithCostTracking creates a new AI repository with cost tracking
-func NewAIRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AIRepository {
-	return &AIRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.AIAnalysis](db, tableName, logger, costService, "ai_repository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -39,8 +41,8 @@ func (r *AIRepository) SaveAnalysis(ctx context.Context, analysis *ai.AIAnalysis
 	// Convert to DynamORM model with AI-specific logic
 	model := r.convertToModel(analysis)
 
-	// Use BaseRepository for actual storage
-	err := r.Create(ctx, model)
+	// Use Enhanced BaseRepository for actual storage
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "ai analysis", analysis.ID)
 	}

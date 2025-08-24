@@ -14,22 +14,24 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// AlertRepository provides CRUD operations for alerts using DynamORM
+// AlertRepository provides CRUD operations for alerts using enhanced repository patterns
 type AlertRepository struct {
-	*BaseRepository[*models.Alert]
+	*EnhancedBaseRepository[*models.Alert]
 }
 
-// NewAlertRepository creates a new alert repository
-func NewAlertRepository(db core.DB, tableName string, logger *zap.Logger) *AlertRepository {
+// NewAlertRepository creates a new alert repository with enhanced functionality
+func NewAlertRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AlertRepository {
+	// Create enhanced repository optimized for alert operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Alert](db, tableName, logger, costService, "AlertRepository", "alert")
+	
+	// Set up enhanced services for alert operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Alerts cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for alert notifications
+	
 	return &AlertRepository{
-		BaseRepository: NewBaseRepository[*models.Alert](db, tableName, logger),
-	}
-}
-
-// NewAlertRepositoryWithCostTracking creates a new alert repository with cost tracking
-func NewAlertRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AlertRepository {
-	return &AlertRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Alert](db, tableName, logger, costService, "alert"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -48,7 +50,7 @@ func (r *AlertRepository) CreateAlert(ctx context.Context, alert *models.Alert) 
 		alert.FiredAt = time.Now()
 	}
 
-	return r.Create(ctx, alert)
+	return r.ValidateAndCreate(ctx, alert)
 }
 
 // GetByID retrieves an alert by its ID
@@ -71,14 +73,14 @@ func (r *AlertRepository) GetByID(ctx context.Context, alertID string) (*models.
 // Update updates an existing alert
 func (r *AlertRepository) Update(ctx context.Context, alert *models.Alert) error {
 	alert.UpdatedAt = time.Now()
-	return r.BaseRepository.Update(ctx, alert)
+	return r.ValidateAndUpdate(ctx, alert)
 }
 
 // Delete deletes an alert
 func (r *AlertRepository) Delete(ctx context.Context, alertID string) error {
 	pk := fmt.Sprintf("ALERT#%s", alertID)
 	sk := models.SKMetadata
-	return r.BaseRepository.Delete(ctx, pk, sk)
+	return r.ValidateAndDelete(ctx, pk, sk)
 }
 
 // GetActiveAlerts retrieves all currently active (firing) alerts

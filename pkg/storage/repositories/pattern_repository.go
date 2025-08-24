@@ -12,22 +12,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// PatternRepository handles moderation pattern storage operations
+// PatternRepository handles moderation pattern storage operations using enhanced patterns
 type PatternRepository struct {
-	*BaseRepository[*models.ModerationPattern]
+	*EnhancedBaseRepository[*models.ModerationPattern]
 }
 
-// NewPatternRepository creates a new pattern repository
-func NewPatternRepository(db core.DB, tableName string, logger *zap.Logger) *PatternRepository {
+// NewPatternRepository creates a new pattern repository with enhanced functionality
+func NewPatternRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PatternRepository {
+	// Create enhanced repository optimized for moderation patterns
+	enhancedRepo := NewEnhancedBaseRepository[*models.ModerationPattern](db, tableName, logger, costService, "PatternRepository", "pattern")
+	
+	// Set up enhanced services for pattern operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Patterns cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Pattern change events
+	
 	return &PatternRepository{
-		BaseRepository: NewBaseRepository[*models.ModerationPattern](db, tableName, logger),
-	}
-}
-
-// NewPatternRepositoryWithCostTracking creates a new pattern repository with cost tracking
-func NewPatternRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PatternRepository {
-	return &PatternRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ModerationPattern](db, tableName, logger, costService, "pattern"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
