@@ -1,157 +1,396 @@
+// Package main implements activity processor error handlers.
 package main
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Stream processing errors
-var (
-	ErrBatchRetryableErrors = errors.New("batch has retryable errors")
-	ErrMissingNewImage      = errors.New("no new image in record")
-	ErrMissingOldImage      = errors.New("no old image in remove record")
-)
+// Stream processing errors - now using centralized Lambda domain functions
+//nolint:unused
+func batchRetryableErrors(errorCount int) *errors.AppError {
+	return errors.BatchHasRetryableErrors(errorCount)
+}
 
-// Activity processing errors
-var (
-	ErrMissingAnnounceObjectID = errors.New("no object ID in Announce activity")
-)
+//nolint:unused
+func missingNewImage(recordID string) *errors.AppError {
+	return errors.StreamNewImageMissing(recordID)
+}
 
-// Object validation errors
-var (
-	ErrObjectNotMap          = errors.New("object is not a map[string]any")
-	ErrMissingObjectID       = errors.New("object missing or invalid 'id' field")
-	ErrObjectIDMismatch      = errors.New("object ID mismatch")
-	ErrMissingObjectType     = errors.New("object missing or invalid 'type' field")
-	ErrMissingAttributedTo   = errors.New("object missing 'attributedTo' field")
-	ErrMissingMediaURL       = errors.New("media object missing 'url' field")
-	ErrMissingEventStartTime = errors.New("event object missing 'startTime' field")
-)
+//nolint:unused
+func missingOldImage(recordID string) *errors.AppError {
+	return errors.StreamOldImageMissing(recordID)
+}
 
-// Timeline processing errors
-var (
-	ErrTimelineRemovalFailed = errors.New("failed to remove from timeline types")
-)
+// Activity processing errors - using Federation domain functions
+//nolint:unused
+func missingAnnounceObjectID() *errors.AppError {
+	return errors.ObjectMissingField("object")
+}
 
-// Activity processing workflow errors
-var (
-	ErrEntityTypeExtraction       = errors.New("entity type extraction failed")
-	ErrActivityRecordUnmarshaling = errors.New("activity record unmarshaling failed")
-	ErrActivityParsing            = errors.New("activity parsing failed")
-	ErrUnknownActivityDirection   = errors.New("unknown activity direction")
-)
+// Object validation errors - using Federation domain functions
+//nolint:unused
+func objectNotMap() *errors.AppError {
+	return errors.ObjectInvalidField("type", "object is not a map[string]any")
+}
 
-// Follow activity errors
-var (
-	ErrFollowRelationshipCreation = errors.New("follow relationship creation failed")
-)
+//nolint:unused
+func missingObjectID() *errors.AppError {
+	return errors.ObjectMissingField("id")
+}
 
-// Accept/Reject activity errors
-var (
-	ErrRelationshipStatusUpdate     = errors.New("relationship status update failed")
-	ErrRejectedRelationshipDeletion = errors.New("rejected relationship deletion failed")
-)
+//nolint:unused
+func objectIDMismatch() *errors.AppError {
+	return errors.ObjectInvalidField("id", "object ID mismatch")
+}
 
-// Create activity errors
-var (
-	ErrNoteExtraction          = errors.New("note extraction failed")
-	ErrStatusCreation          = errors.New("status creation failed")
-	ErrObjectStorage           = errors.New("object storage failed")
-	ErrUnsupportedObjectType   = errors.New("unsupported object type")
-	ErrTimelineEntriesCreation = errors.New("timeline entries creation failed")
-)
+//nolint:unused
+func missingObjectType() *errors.AppError {
+	return errors.ObjectMissingField("type")
+}
 
-// Delete activity errors
-var (
-	ErrTombstoneCreation = errors.New("tombstone creation failed")
-)
+//nolint:unused
+func missingAttributedTo() *errors.AppError {
+	return errors.ObjectMissingField("attributedTo")
+}
 
-// Like activity errors
-var (
-	ErrLikeRecordCreation = errors.New("like record creation failed")
-)
+//nolint:unused
+func missingMediaURL() *errors.AppError {
+	return errors.ObjectMissingField("url")
+}
 
-// Announce activity errors
-var (
-	ErrAnnounceRecordCreation = errors.New("announce record creation failed")
-	ErrOriginalActivityFetch  = errors.New("original activity fetch failed")
-)
+//nolint:unused
+func missingEventStartTime() *errors.AppError {
+	return errors.ObjectMissingField("startTime")
+}
 
-// Undo activity errors
-var (
-	ErrActivityNotFoundLocally        = errors.New("activity not found locally")
-	ErrFollowRelationshipDeletion     = errors.New("follow relationship deletion failed")
-	ErrCreatedObjectDeletion          = errors.New("created object deletion failed")
-	ErrObjectHistoryRetrieval         = errors.New("object history retrieval failed")
-	ErrNoHistoryFound                 = errors.New("no history found")
-	ErrPreviousStateNotAvailable      = errors.New("previous state not available")
-	ErrObjectReversion                = errors.New("object reversion failed")
-	ErrTombstoneStatusCheck           = errors.New("tombstone status check failed")
-	ErrObjectNotDeleted               = errors.New("object not deleted")
-	ErrTombstoneRetrieval             = errors.New("tombstone retrieval failed")
-	ErrObjectHistoryRestoration       = errors.New("object history restoration failed")
-	ErrObjectRestoration              = errors.New("object restoration failed")
-	ErrFlagsRetrieval                 = errors.New("flags retrieval failed")
-	ErrFlagRecordDeletion             = errors.New("flag record deletion failed")
-	ErrUsernameExtractionFromActorURI = errors.New("username extraction from actor URI failed")
-	ErrMovedToFieldClearing           = errors.New("movedTo field clearing failed")
-)
+// Timeline processing errors - using Lambda domain functions
+//nolint:unused
+func timelineRemovalFailed(actorID string, err error) *errors.AppError {
+	return errors.TimelineRemovalFailed(actorID, err)
+}
 
-// Undo generic activity errors
-var (
-	ErrObjectIDExtractionFromActivity = errors.New("object ID extraction from activity failed")
-	ErrUndoActivityMissingActor       = errors.New("undo activity missing actor")
-)
+// Create activity errors - using Lambda domain functions
+//nolint:unused
+func timelineEntriesCreationFailed(err error) *errors.AppError {
+	return errors.TimelineEntriesCreationFailed(err)
+}
 
-// Add/Remove activity errors
-var (
-	ErrTargetListRetrieval             = errors.New("target list retrieval failed")
-	ErrListOperation                   = errors.New("list operation failed")
-	ErrActivityMissingTargetCollection = errors.New("activity missing target collection")
-	ErrObjectExtractionFromActivity    = errors.New("object extraction from activity failed")
-	ErrNoObjectsFoundInActivity        = errors.New("no objects found in activity")
-)
+// Stream record processing errors - using Lambda and Federation domain functions
+//nolint:unused
+func streamRecordUnmarshalNewFailed(recordID string, err error) *errors.AppError {
+	return errors.StreamUnmarshalFailed(recordID, "new", err)
+}
 
-// Block activity errors
-var (
-	ErrBlockRelationshipCreation = errors.New("block relationship creation failed")
-)
+//nolint:unused
+func streamRecordUnmarshalOldFailed(recordID string, err error) *errors.AppError {
+	return errors.StreamUnmarshalFailed(recordID, "old", err)
+}
 
-// Flag activity errors
-var (
-	ErrFlagRecordCreation = errors.New("flag record creation failed")
-)
+//nolint:unused
+func activityParsingFailedDetailed(activityType string, err error) *errors.AppError {
+	return errors.ActivityParsingFailed(activityType, err)
+}
 
-// Move activity errors
-var (
-	ErrUsernameExtractionFromOldActorURI = errors.New("username extraction from old actor URI failed")
-	ErrMovedToFieldUpdate                = errors.New("movedTo field update failed")
-)
+//nolint:unused
+func activityObjectProcessingFailed(activityType string, err error) *errors.AppError {
+	return errors.ActivityObjectProcessingFailed(activityType, err)
+}
 
-// Undo activity-specific record deletion errors
-var (
-	ErrTargetIDExtractionFromActivity = errors.New("target ID extraction from activity failed")
-	ErrActivityRecordDeletion         = errors.New("activity record deletion failed")
-)
+//nolint:unused
+func noteMarshalingFailed(err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed("Note", err)
+}
 
-// Timeline processing errors
-var (
-	ErrUsernameExtractionFromActorID = errors.New("username extraction from actor ID failed")
-	ErrFollowersRetrieval            = errors.New("followers retrieval failed")
-)
+//nolint:unused
+func noteUnmarshalingFailed(err error) *errors.AppError {
+	return errors.ObjectUnmarshalingFailed("Note", err)
+}
 
-// Stream record processing errors
-var (
-	ErrStreamRecordUnmarshalNew = errors.New("failed to unmarshal new image")
-	ErrStreamRecordUnmarshalOld = errors.New("failed to unmarshal old image")
-	ErrActivityParsingFailed    = errors.New("failed to parse activity")
-	ErrActivityObjectProcessing = errors.New("failed to process activity object")
-	ErrNoteMarshaling           = errors.New("failed to marshal note")
-	ErrNoteUnmarshaling         = errors.New("failed to unmarshal note")
-	ErrTimelineEntriesWrite     = errors.New("failed to write timeline entries")
-	ErrActorRetrieval           = errors.New("failed to get actor")
-	ErrFollowersQuerying        = errors.New("failed to query followers")
-	ErrObjectValidation         = errors.New("validation failed")
-	ErrRemoteObjectFetch        = errors.New("failed after attempts")
-	ErrObjectMarshaling         = errors.New("failed to marshal object")
-	ErrObjectUnmarshalingToNote = errors.New("failed to unmarshal to Note")
-	ErrDLQRecordCreation        = errors.New("failed to create DLQ record")
-	ErrTombstoneCreationFailed  = errors.New("failed to create tombstone")
-)
+//nolint:unused
+func timelineEntriesWriteFailed(err error) *errors.AppError {
+	return errors.TimelineEntriesWriteFailed(err)
+}
+
+//nolint:unused
+func actorRetrievalFailed(actorID string, err error) *errors.AppError {
+	return errors.ActorFetchFailed(actorID, err)
+}
+
+//nolint:unused
+func followersQueryingFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("followers querying", err)
+}
+
+//nolint:unused
+func remoteObjectFetchFailed(url string, err error) *errors.AppError {
+	return errors.RemoteFetchFailed(url, err)
+}
+
+//nolint:unused
+func objectMarshalingFailed(objectType string, err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed(objectType, err)
+}
+
+//nolint:unused
+func objectUnmarshalingToNoteFailed(err error) *errors.AppError {
+	return errors.ObjectUnmarshalingFailed("Note", err)
+}
+
+//nolint:unused
+func dlqRecordCreationFailed(messageID string, err error) *errors.AppError {
+	return errors.DLQMessageSendFailed(messageID, err)
+}
+
+//nolint:unused
+func tombstoneCreationFailedStream(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("tombstone creation", err)
+}
+
+// Activity workflow errors - using Lambda domain functions
+//nolint:unused
+func entityTypeExtractionFailed() *errors.AppError {
+	return errors.EntityTypeExtractionFailed(nil)
+}
+
+//nolint:unused
+func activityRecordUnmarshalingFailed(err error) *errors.AppError {
+	return errors.ActivityRecordUnmarshalFailed(err)
+}
+
+//nolint:unused
+func activityParsingFailed(activityType string, err error) *errors.AppError {
+	return errors.ActivityParsingFailed(activityType, err)
+}
+
+//nolint:unused
+func unknownActivityDirection(direction string) *errors.AppError {
+	return errors.ActivityDirectionUnknown(direction)
+}
+
+// Follow activity errors - using Lambda domain functions
+//nolint:unused
+func followRelationshipCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("follow relationship creation", err)
+}
+
+// Accept/Reject activity errors - using Lambda domain functions
+//nolint:unused
+func relationshipStatusUpdateFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("relationship status update", err)
+}
+
+//nolint:unused
+func rejectedRelationshipDeletionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("rejected relationship deletion", err)
+}
+
+// Create activity errors - using Lambda domain functions
+//nolint:unused
+func noteExtractionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("note extraction", err)
+}
+
+//nolint:unused
+func statusCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("status creation", err)
+}
+
+//nolint:unused
+func objectStorageFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("object storage", err)
+}
+
+//nolint:unused
+func unsupportedObjectType(objectType string) *errors.AppError {
+	return errors.ActivityTypeUnsupported(objectType)
+}
+
+// Delete activity errors - using Lambda domain functions
+//nolint:unused
+func tombstoneCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("tombstone creation", err)
+}
+
+// Like activity errors - using Lambda domain functions
+//nolint:unused
+func likeRecordCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("like record creation", err)
+}
+
+// Announce activity errors - using Lambda and Federation domain functions
+//nolint:unused
+func announceRecordCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("announce record creation", err)
+}
+
+//nolint:unused
+func originalActivityFetchFailed(url string, err error) *errors.AppError {
+	return errors.RemoteFetchFailed(url, err)
+}
+
+// Undo activity errors - using Lambda and Federation domain functions
+//nolint:unused
+func activityNotFoundLocally(activityID string) *errors.AppError {
+	return errors.UndoObjectNotFound(activityID)
+}
+
+//nolint:unused
+func followRelationshipDeletionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("follow relationship deletion", err)
+}
+
+//nolint:unused
+func createdObjectDeletionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("created object deletion", err)
+}
+
+//nolint:unused
+func objectHistoryRetrievalFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("object history retrieval", err)
+}
+
+//nolint:unused
+func noHistoryFound(objectID string) *errors.AppError {
+	return errors.WorkflowStepFailed("no history found for object", nil).WithMetadata("object_id", objectID)
+}
+
+//nolint:unused
+func previousStateNotAvailable(objectID string) *errors.AppError {
+	return errors.WorkflowStepFailed("previous state not available", nil).WithMetadata("object_id", objectID)
+}
+
+//nolint:unused
+func objectReversionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("object reversion", err)
+}
+
+//nolint:unused
+func tombstoneStatusCheckFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("tombstone status check", err)
+}
+
+//nolint:unused
+func objectNotDeleted(objectID string) *errors.AppError {
+	return errors.WorkflowStepFailed("object not deleted", nil).WithMetadata("object_id", objectID)
+}
+
+//nolint:unused
+func tombstoneRetrievalFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("tombstone retrieval", err)
+}
+
+//nolint:unused
+func objectHistoryRestorationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("object history restoration", err)
+}
+
+//nolint:unused
+func objectRestorationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("object restoration", err)
+}
+
+//nolint:unused
+func flagsRetrievalFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("flags retrieval", err)
+}
+
+//nolint:unused
+func flagRecordDeletionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("flag record deletion", err)
+}
+
+//nolint:unused
+func usernameExtractionFromActorURIFailed(uri string) *errors.AppError {
+	return errors.ActorURIInvalid(uri)
+}
+
+//nolint:unused
+func movedToFieldClearingFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("movedTo field clearing", err)
+}
+
+// Undo generic activity errors - using Federation domain functions
+//nolint:unused
+func objectIDExtractionFromActivityFailed() *errors.AppError {
+	return errors.ActivityMissingField("object")
+}
+
+//nolint:unused
+func undoActivityMissingActor() *errors.AppError {
+	return errors.ActivityMissingField("actor")
+}
+
+// Add/Remove activity errors - using Lambda and Federation domain functions
+//nolint:unused
+func targetListRetrievalFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("target list retrieval", err)
+}
+
+//nolint:unused
+func listOperationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("list operation", err)
+}
+
+//nolint:unused
+func activityMissingTargetCollection() *errors.AppError {
+	return errors.ActivityMissingField("target")
+}
+
+//nolint:unused
+func objectExtractionFromActivityFailed() *errors.AppError {
+	return errors.ActivityMissingField("object")
+}
+
+//nolint:unused
+func noObjectsFoundInActivity() *errors.AppError {
+	return errors.ActivityInvalidField("object", "no objects found in activity")
+}
+
+// Block activity errors - using Lambda domain functions
+//nolint:unused
+func blockRelationshipCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("block relationship creation", err)
+}
+
+// Flag activity errors - using Lambda domain functions
+//nolint:unused
+func flagRecordCreationFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("flag record creation", err)
+}
+
+// Move activity errors - using Federation and Lambda domain functions
+//nolint:unused
+func usernameExtractionFromOldActorURIFailed(uri string) *errors.AppError {
+	return errors.ActorURIInvalid(uri)
+}
+
+//nolint:unused
+func movedToFieldUpdateFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("movedTo field update", err)
+}
+
+// Undo activity-specific record deletion errors - using Federation and Lambda domain functions
+//nolint:unused
+func targetIDExtractionFromActivityFailed() *errors.AppError {
+	return errors.ActivityMissingField("target")
+}
+
+//nolint:unused
+func activityRecordDeletionFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("activity record deletion", err)
+}
+
+// Timeline processing errors - using Federation and Lambda domain functions
+//nolint:unused
+func usernameExtractionFromActorIDFailed(actorID string) *errors.AppError {
+	return errors.ActorURIInvalid(actorID)
+}
+
+//nolint:unused
+func followersRetrievalFailed(err error) *errors.AppError {
+	return errors.WorkflowStepFailed("followers retrieval", err)
+}
+
+// Object processing errors - using Lambda domain functions
+//nolint:unused
+func objectValidationFailed(objectType, reason string) *errors.AppError {
+	return errors.ObjectValidationFailed(objectType, reason)
+}

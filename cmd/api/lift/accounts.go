@@ -181,7 +181,7 @@ func (h *Handler) handleBase64Decoding(bodyBytes []byte) ([]byte, error) {
 
 	// Neither base64 nor raw multipart
 	h.logger.Error("unable to parse request body", zap.String("body_preview", preview[:mathMin(50, len(preview))]))
-	return nil, ErrUnableToParseRequestBody
+	return nil, unableToParseRequestBody()
 }
 
 // extractBoundary extracts the boundary from content type header
@@ -189,12 +189,12 @@ func (h *Handler) extractBoundary(contentType string) (string, error) {
 	_, params, err := mime.ParseMediaType(contentType)
 	if err != nil {
 		h.logger.Error("failed to parse content type", zap.String("content_type", contentType), zap.Error(err))
-		return "", errors.Join(ErrInvalidContentType, err)
+		return "", errors.Join(invalidContentType(), err)
 	}
 
 	boundary := params["boundary"]
 	if err := common.ValidateRequiredParam("boundary", boundary); err != nil {
-		return "", ErrMissingBoundaryInContentType
+		return "", missingBoundaryInContentType()
 	}
 
 	return boundary, nil
@@ -811,7 +811,7 @@ func (h *Handler) getCollectionData(ctx *lift.Context, actor *activitypub.Actor,
 		return h.getFollowingData(ctx, actor.PreferredUsername, cursor, limit)
 	default:
 		h.logger.Error("unsupported collection type requested", zap.String("collection_type", collectionType))
-		return nil, "", ErrUnsupportedCollectionType
+		return nil, "", unsupportedCollectionType()
 	}
 }
 

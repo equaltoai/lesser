@@ -322,7 +322,7 @@ func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string
 	// Create job queue service with config
 	jobQueue, err := services.NewJobQueueService(h.cfg, h.logger)
 	if err != nil {
-		return errors.Join(ErrFailedToCreateJobQueueService, err)
+		return errors.Join(failedToCreateJobQueueService(), err)
 	}
 
 	// Convert DateRange to service format
@@ -330,11 +330,11 @@ func (h *Handler) queueExportJobSQS(ctx *lift.Context, exportID, username string
 	if req.DateRange != nil {
 		startTime, err := time.Parse(common.DateFormat, req.DateRange.Start)
 		if err != nil {
-			return errors.Join(ErrInvalidStartDate, err)
+			return errors.Join(invalidStartDate(), err)
 		}
 		endTime, err := time.Parse(common.DateFormat, req.DateRange.End)
 		if err != nil {
-			return errors.Join(ErrInvalidEndDate, err)
+			return errors.Join(invalidEndDate(), err)
 		}
 		dateRange = &services.ExportDateRange{
 			Start: startTime,

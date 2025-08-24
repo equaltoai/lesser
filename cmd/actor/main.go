@@ -14,10 +14,11 @@ This service handles federation requests from other ActivityPub servers.
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
+	
+	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"strings"
 	"time"
 
@@ -114,7 +115,7 @@ func (h *Handler) HandleActorProfile(ctx *lift.Context) error {
 			zap.Error(err),
 			zap.String("username", username),
 			zap.Any("request_id", requestID))
-		return errors.Join(ErrActorRetrieval, err)
+		return appErrors.FailedToGet("actor", err)
 	}
 
 	// Content negotiation

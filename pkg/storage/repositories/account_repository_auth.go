@@ -122,10 +122,7 @@ func (r *AccountRepository) CreatePasswordResetToken(ctx context.Context, userna
 	}
 
 	if user.Email != email {
-		return "", common.ValidationError{
-			Field:   "email",
-			Message: "email does not match account",
-		}
+		return "", common.ValidationError{Field: "email", Message: "email does not match account"}
 	}
 
 	// Generate token

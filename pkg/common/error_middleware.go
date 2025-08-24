@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -72,42 +73,44 @@ func ErrorHandlingMiddleware(config ErrorMiddlewareConfig) lift.Middleware {
 
 // handleRequestError processes errors from request handlers using centralized patterns
 func handleRequestError(ctx *lift.Context, err error, config ErrorMiddlewareConfig) {
-	// Check if it's already an AppError with proper handling
-	if appErr, ok := err.(AppError); ok {
+	// Check if it's already a centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
 		handleAppError(ctx, appErr, config)
 		return
 	}
 
-	// Check for common error patterns and convert to appropriate responses
+	// Check for common error patterns and convert to centralized AppError
+	var appErr *errors.AppError
 	switch {
 	case IsNotFound(err):
-		_ = RespondNotFound(ctx)
+		appErr = errors.NotFound("resource")
 	case IsValidation(err):
-		_ = RespondValidationError(ctx, err)
+		appErr = errors.ValidationFailed("input", err.Error())
 	case IsAuthentication(err):
-		_ = RespondUnauthorized(ctx, err.Error())
+		appErr = errors.Unauthorized(err.Error())
 	case IsAuthorization(err):
-		_ = RespondForbidden(ctx, err.Error())
+		appErr = errors.Forbidden(err.Error())
 	case IsConflict(err):
-		_ = RespondConflict(ctx, err.Error())
+		appErr = errors.NewAppError(errors.CodeConflict, errors.CategoryBusiness, err.Error())
 	case IsFederation(err):
-		_ = RespondServiceUnavailable(ctx, "federation")
+		appErr = errors.NewFederationInternalError(errors.CodeExternalServiceUnavailable, "Federation service unavailable", err)
 	default:
-		// Unknown error - wrap as internal and handle safely
-		appErr := ErrInternal(err)
-		handleAppError(ctx, appErr, config)
+		// Unknown error - wrap as internal
+		appErr = errors.InternalWithCause(err, "An error occurred processing your request")
 	}
+	
+	handleAppError(ctx, appErr, config)
 }
 
 // handleAppError processes AppError instances with safe user message handling
-func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareConfig) {
+func handleAppError(ctx *lift.Context, appErr *errors.AppError, config ErrorMiddlewareConfig) {
 	// Log the internal error details
 	logFields := []zap.Field{
 		zap.String("service", config.ServiceName),
-		zap.String("error_code", appErr.Code),
+		zap.String("error_code", string(appErr.Code)),
 		zap.String("path", ctx.Request.Path),
 		zap.String("method", ctx.Request.Method),
-		zap.Int("status_code", appErr.StatusCode),
+		zap.Int("status_code", appErr.HTTPStatusCode),
 	}
 
 	// Add user context if available
@@ -120,7 +123,13 @@ func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareCo
 	}
 
 	// Log internal error (truncated if too long)
-	internalMsg := appErr.InternalError.Error()
+	internalMsg := ""
+	if appErr.InternalError != nil {
+		internalMsg = appErr.InternalError.Error()
+	} else if appErr.InternalMessage != "" {
+		internalMsg = appErr.InternalMessage
+	}
+	
 	if config.MaxErrorLogLength > 0 && len(internalMsg) > config.MaxErrorLogLength {
 		internalMsg = internalMsg[:config.MaxErrorLogLength] + "... (truncated)"
 	}
@@ -135,9 +144,9 @@ func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareCo
 
 	// Log at appropriate level based on status code
 	switch {
-	case appErr.StatusCode >= 500:
+	case appErr.HTTPStatusCode >= 500:
 		config.Logger.Error("server error", logFields...)
-	case appErr.StatusCode >= 400:
+	case appErr.HTTPStatusCode >= 400:
 		config.Logger.Warn("client error", logFields...)
 	default:
 		config.Logger.Info("handled error", logFields...)
@@ -149,21 +158,23 @@ func handleAppError(ctx *lift.Context, appErr AppError, config ErrorMiddlewareCo
 	}
 
 	// Return safe response to client
-	_ = ctx.Status(appErr.StatusCode).JSON(StandardErrorResponse{
-		Error: appErr.UserMessage,
-		Code:  appErr.Code,
+	_ = ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{
+		Error: appErr.Message,
+		Code:  string(appErr.Code),
 	})
 }
 
 // emitErrorMetrics emits error metrics for monitoring and alerting
-func emitErrorMetrics(appErr AppError, config ErrorMiddlewareConfig) {
+func emitErrorMetrics(appErr *errors.AppError, config ErrorMiddlewareConfig) {
 	// This would integrate with your metrics system (EMF, CloudWatch, etc.)
 	// For now, we'll log structured metrics that can be picked up by log processors
 	config.Logger.Info("error_metric",
 		zap.String("metric_type", "error_count"),
 		zap.String("service", config.ServiceName),
-		zap.String("error_code", appErr.Code),
-		zap.Int("status_code", appErr.StatusCode),
+		zap.String("error_code", string(appErr.Code)),
+		zap.String("error_category", string(appErr.Category)),
+		zap.Int("status_code", appErr.HTTPStatusCode),
+		zap.Bool("retryable", appErr.Retryable),
 		zap.Time("timestamp", time.Now()),
 		zap.String("metric_namespace", "lesser/errors"))
 }

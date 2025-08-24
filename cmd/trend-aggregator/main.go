@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -11,11 +10,11 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
-
 // TrendAggregatorHandler implements ScheduledEventHandler for trend aggregation
 type TrendAggregatorHandler struct {
 	db           core.DB
@@ -113,7 +112,7 @@ func (h *TrendAggregatorHandler) aggregateHashtagTrends(ctx context.Context, sin
 	// 1. Get recent hashtag usage from repository
 	hashtags, err := h.trendingRepo.GetRecentHashtags(ctx, since, 1000)
 	if err != nil {
-		return 0, errors.Join(ErrHashtagRetrieval, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get recent hashtags")
 	}
 
 	h.logger.Debug("retrieved recent hashtags for aggregation",
@@ -196,7 +195,7 @@ func (h *TrendAggregatorHandler) aggregateStatusTrends(ctx context.Context, sinc
 	// 1. Get recent statuses with engagement from repository
 	statuses, err := h.trendingRepo.GetRecentStatusesWithEngagement(ctx, since, 1000)
 	if err != nil {
-		return 0, errors.Join(ErrStatusRetrieval, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get recent statuses")
 	}
 
 	h.logger.Debug("retrieved recent statuses for aggregation",
@@ -260,7 +259,7 @@ func (h *TrendAggregatorHandler) aggregateLinkTrends(ctx context.Context, since 
 	// 1. Get recent links from repository
 	links, err := h.trendingRepo.GetRecentLinks(ctx, since, 1000)
 	if err != nil {
-		return 0, errors.Join(ErrLinkRetrieval, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get recent links")
 	}
 
 	h.logger.Debug("retrieved recent links for aggregation",

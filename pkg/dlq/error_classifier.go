@@ -3,8 +3,9 @@ package dlq
 
 import (
 	"encoding/json"
-	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
+
+	"github.com/equaltoai/lesser/pkg/errors"
 )
 
 // Processor name constants
@@ -205,7 +206,7 @@ func (ec *ErrorClassifier) ClassifyError(messageBody, service string) *ErrorInfo
 	if pattern, exists := ec.patterns[errorInfo.ErrorType]; exists {
 		errorInfo.IsPermanent = pattern.IsPermanent
 		errorInfo.Priority = pattern.Priority
-		if err := common.ValidateRequiredParam("errorInfo.FailureReason", errorInfo.FailureReason); err != nil {
+		if errorInfo.FailureReason == "" {
 			errorInfo.FailureReason = pattern.FailureReason
 		}
 	}
@@ -285,7 +286,7 @@ func (ec *ErrorClassifier) extractFromText(messageBody string) *ErrorInfo {
 		inStack := false
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
-			if err := common.ValidateRequiredParam("line", line); err != nil {
+			if line == "" {
 				continue
 			}
 
@@ -505,6 +506,87 @@ type ErrorTrendAnalysis struct {
 	PermanentErrorRate float64        `json:"permanent_error_rate"`
 	TransientErrorRate float64        `json:"transient_error_rate"`
 	PriorityBreakdown  map[string]int `json:"priority_breakdown"`
+}
+
+// CreateAppError creates an AppError from classified DLQ error information
+func (ec *ErrorClassifier) CreateAppError(messageBody, service string) *errors.AppError {
+	errorInfo := ec.ClassifyError(messageBody, service)
+	
+	// Map error types to appropriate error codes and categories
+	code, category := ec.mapErrorTypeToCodeCategory(errorInfo.ErrorType)
+	
+	appErr := errors.NewAppError(code, category, errorInfo.FailureReason).
+		WithMetadata("service", service).
+		WithMetadata("error_type", errorInfo.ErrorType).
+		WithMetadata("priority", errorInfo.Priority).
+		WithMetadata("category", errorInfo.Category).
+		WithInternalMessage(errorInfo.ErrorMessage)
+	
+	if errorInfo.StackTrace != "" {
+		appErr = appErr.WithMetadata("stack_trace", errorInfo.StackTrace)
+	}
+	
+	if !errorInfo.IsPermanent {
+		appErr = appErr.AsRetryable()
+	}
+	
+	return appErr
+}
+
+// mapErrorTypeToCodeCategory maps DLQ error types to centralized error codes and categories
+func (ec *ErrorClassifier) mapErrorTypeToCodeCategory(errorType string) (errors.ErrorCode, errors.ErrorCategory) {
+	switch errorType {
+	case "validation_error":
+		return errors.CodeValidationFailed, errors.CategoryValidation
+	case "auth_error":
+		return errors.CodeAuthFailed, errors.CategoryAuth
+	case "not_found_error":
+		return errors.CodeNotFound, errors.CategoryAPI
+	case "network_error":
+		return errors.CodeExternalServiceTimeout, errors.CategoryExternal
+	case "rate_limit_error":
+		return errors.CodeRateLimited, errors.CategoryAPI
+	case "service_unavailable":
+		return errors.CodeExternalServiceUnavailable, errors.CategoryExternal
+	case "database_error":
+		return errors.CodeDatabaseConnection, errors.CategoryStorage
+	case "resource_error":
+		return errors.CodeLambdaMemoryExceeded, errors.CategoryLambda
+	case "serialization_error":
+		return errors.CodeEventProcessingFailed, errors.CategoryLambda
+	case "business_logic_error":
+		return errors.CodeBusinessRuleViolated, errors.CategoryBusiness
+	case "federation_error":
+		return errors.CodeDeliveryFailed, errors.CategoryFederation
+	case "timeout_error":
+		return errors.CodeTimeout, errors.CategoryLambda
+	case "user_not_found":
+		return errors.CodeNotFound, errors.CategoryAuth
+	case "invalid_email":
+		return errors.CodeInvalidFormat, errors.CategoryValidation
+	case "push_subscription_error":
+		return errors.CodeDeliveryFailed, errors.CategoryExternal
+	case "signature_verification_error":
+		return errors.CodeSignatureVerifyFailed, errors.CategoryFederation
+	case "actor_not_found":
+		return errors.CodeActorNotFound, errors.CategoryFederation
+	case "unsupported_media_format":
+		return errors.CodeUnsupportedMediaType, errors.CategoryMedia
+	case "media_too_large":
+		return errors.CodeMediaTooLarge, errors.CategoryMedia
+	case "media_fetch_error":
+		return errors.CodeMediaUploadFailed, errors.CategoryMedia
+	case "webfinger_error":
+		return errors.CodeRemoteFetchFailed, errors.CategoryFederation
+	case "inbox_unreachable":
+		return errors.CodeDeliveryFailed, errors.CategoryFederation
+	case "index_full_error":
+		return errors.CodeStorageQuotaExceeded, errors.CategoryStorage
+	case "embedding_error":
+		return errors.CodeEventProcessingFailed, errors.CategoryLambda
+	default:
+		return errors.CodeSQSProcessingFailed, errors.CategoryLambda
+	}
 }
 
 // Helper functions for pattern matching

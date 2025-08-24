@@ -66,7 +66,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 	if dataMap, ok := data.(map[string]interface{}); ok {
 		for _, required := range rules.Required {
 			if value, exists := dataMap[required]; !exists || value == nil || value == "" {
-				return fmt.Errorf("%w: %s", ErrRequiredFieldMissing, required)
+				return fmt.Errorf("required field missing: %s", required)
 			}
 		}
 
@@ -74,7 +74,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 		for field, maxLen := range rules.MaxLen {
 			if value, exists := dataMap[field]; exists {
 				if strValue, ok := value.(string); ok && len(strValue) > maxLen {
-					return fmt.Errorf("%w: %s exceeds %d characters", ErrFieldExceedsMaxLength, field, maxLen)
+					return fmt.Errorf("field %s exceeds %d characters", field, maxLen)
 				}
 			}
 		}
@@ -83,7 +83,7 @@ func ValidateStruct(data interface{}, rules ValidationRules) error {
 		for field, minLen := range rules.MinLen {
 			if value, exists := dataMap[field]; exists {
 				if strValue, ok := value.(string); ok && len(strValue) < minLen {
-					return fmt.Errorf("%w: %s below %d characters", ErrFieldBelowMinLength, field, minLen)
+					return fmt.Errorf("field %s below %d characters", field, minLen)
 				}
 			}
 		}
@@ -212,18 +212,18 @@ type ContentValidationRules struct {
 // ValidateBusinessContent validates content against business rules
 func ValidateBusinessContent(content string, rules ContentValidationRules) error {
 	if len(content) > rules.MaxLength {
-		return fmt.Errorf("%w: %d characters", ErrContentExceedsMaxLength, rules.MaxLength)
+		return fmt.Errorf("content exceeds maximum length: %d characters", rules.MaxLength)
 	}
 
 	if len(content) < rules.MinLength {
-		return fmt.Errorf("%w: %d characters", ErrContentBelowMinLength, rules.MinLength)
+		return fmt.Errorf("content below minimum length: %d characters", rules.MinLength)
 	}
 
 	// Check for forbidden words
 	contentLower := strings.ToLower(content)
 	for _, word := range rules.ForbiddenWords {
 		if strings.Contains(contentLower, strings.ToLower(word)) {
-			return fmt.Errorf("%w: %s", ErrContentContainsForbiddenWord, word)
+			return fmt.Errorf("content contains forbidden word: %s", word)
 		}
 	}
 
@@ -236,11 +236,11 @@ func ValidateBusinessContent(content string, rules ContentValidationRules) error
 // ValidateUserRelationship validates relationships between users
 func ValidateUserRelationship(_ context.Context, actorID, targetID string, relationshipType string) error {
 	if actorID == targetID {
-		return fmt.Errorf("%w: %s", ErrCannotPerformOperationOnSelf, relationshipType)
+		return fmt.Errorf("cannot perform operation on self: %s", relationshipType)
 	}
 
 	if actorID == "" || targetID == "" {
-		return fmt.Errorf("%w: %s", ErrActorAndTargetIDsRequired, relationshipType)
+		return fmt.Errorf("both actor and target IDs are required for operation: %s", relationshipType)
 	}
 
 	return nil
@@ -275,7 +275,7 @@ func ValidateBusinessVisibility(visibility VisibilityLevel, _ string) error {
 		}
 	}
 
-	return fmt.Errorf("%w: %s", ErrInvalidVisibilityLevel, visibility)
+	return fmt.Errorf("invalid visibility level: %s", visibility)
 }
 
 // 6. Rate Limiting and Quota Pattern
@@ -401,7 +401,7 @@ func ValidateStateTransition(currentState, newState EntityState, entityType stri
 
 	validNext, exists := validTransitions[currentState]
 	if !exists {
-		return fmt.Errorf("%w: %s", ErrInvalidCurrentState, currentState)
+		return fmt.Errorf("invalid current state: %s", currentState)
 	}
 
 	for _, valid := range validNext {
@@ -410,7 +410,7 @@ func ValidateStateTransition(currentState, newState EntityState, entityType stri
 		}
 	}
 
-	return fmt.Errorf("%w: from %s to %s for %s", ErrInvalidStateTransition, currentState, newState, entityType)
+	return fmt.Errorf("invalid state transition from %s to %s for %s", currentState, newState, entityType)
 }
 
 // 10. Resource Access Control Pattern
@@ -431,7 +431,7 @@ const (
 func ValidateResourceAccess(_ context.Context, actorID, resourceID, resourceType string, requiredAccess AccessLevel) error {
 	// Validate inputs first
 	if actorID == "" {
-		return fmt.Errorf("%w: %s", ErrAuthenticationRequiredForAccess, resourceType)
+		return ErrAuthenticationRequiredForAccess
 	}
 
 	if resourceID == "" {
@@ -456,7 +456,7 @@ func ValidateResourceAccess(_ context.Context, actorID, resourceID, resourceType
 		// which are handled by the service layer's auth integration
 		return nil
 	default:
-		return fmt.Errorf("%w: %s", ErrInvalidAccessLevel, requiredAccess)
+		return fmt.Errorf("invalid access level: %s", requiredAccess)
 	}
 }
 
@@ -483,12 +483,12 @@ func NewBusinessLogicService(logger *zap.Logger, eventEmitter EventEmitter, doma
 func (s *BusinessLogicService) ExecuteBusinessOperation(ctx context.Context, operation BusinessOperation) error {
 	// 1. Validate operation
 	if err := operation.Validate(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrOperationValidationFailed, err)
+		return fmt.Errorf("operation validation failed: %w", err)
 	}
 
 	// 2. Execute operation
 	if err := operation.Execute(ctx); err != nil {
-		return fmt.Errorf("%w: %w", ErrOperationExecutionFailed, err)
+		return fmt.Errorf("operation execution failed: %w", err)
 	}
 
 	// 3. Emit events

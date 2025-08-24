@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -134,7 +135,7 @@ func (bt *BaseTransformer[TSource, TTarget]) Transform(ctx context.Context, sour
 			Step:       bt.name,
 			SourceType: fmt.Sprintf("%T", source),
 			TargetType: fmt.Sprintf("%T", zero),
-			Cause:      ErrTransformFunctionNotSet,
+			Cause:      errors.TransformFunctionNotSet(),
 		}
 	}
 

@@ -6,7 +6,6 @@ import (
 	"crypto"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +18,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/errors"
 	costpkg "github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/httpclient"
@@ -151,7 +151,7 @@ func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}
 	if repoFactory != nil && db != nil {
 		coreDB, ok := db.(dynamormCore.DB)
 		if !ok {
-			return nil, nil, ErrDynamoDBInterface
+			return nil, nil, dynamoDBInterfaceError()
 		}
 		return repoFactory, coreDB, nil
 	}
@@ -161,13 +161,13 @@ func initializeStorage(repoFactory storageCore.RepositoryStorage, db interface{}
 	// Initialize storage manually
 	manualDB, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		return nil, nil, errors.Join(ErrDynamORMInit, err)
+		return nil, nil, dynamORMInitError()
 	}
 
 	// Initialize repository factory
 	manualRepoFactory, err := factory.NewRepositoryFactory(manualDB, cfg.DynamoTableName, logger)
 	if err != nil {
-		return nil, nil, errors.Join(ErrRepositoryFactoryInit, err)
+		return nil, nil, repositoryFactoryInitError()
 	}
 
 	return manualRepoFactory, manualDB, nil
@@ -1003,7 +1003,7 @@ func (ih *InboxHandler) verifyAuthentication(ctx *lift.Context, req *InboxReques
 
 		// Map authentication errors to appropriate HTTP status codes
 		switch err.(type) {
-		case common.AuthenticationError:
+		case *errors.AppError:
 			ih.logger.Warn("signature verification failed - authentication error",
 				zap.String("actor", req.Activity.Actor),
 				zap.Error(err),
@@ -1115,16 +1115,16 @@ func (ih *InboxHandler) validateAddressingAndPrivacy(_ *lift.Context, req *Inbox
 func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ *activitypub.Actor) error {
 	// Validate all addressing fields using ActivityPub validators
 	if err := common.ValidateActivityPubAddressing(activity.To, "to"); err != nil {
-		return errors.Join(ErrDMToAddressing, err)
+		return dmToAddressingError()
 	}
 	if err := common.ValidateActivityPubAddressing(activity.CC, "cc"); err != nil {
-		return errors.Join(ErrDMCcAddressing, err)
+		return dmCcAddressingError()
 	}
 	if err := common.ValidateActivityPubAddressing(activity.BTo, "bto"); err != nil {
-		return errors.Join(ErrDMBtoAddressing, err)
+		return dmBtoAddressingError()
 	}
 	if err := common.ValidateActivityPubAddressing(activity.BCC, "bcc"); err != nil {
-		return errors.Join(ErrDMBccAddressing, err)
+		return dmBccAddressingError()
 	}
 
 	// Ensure direct messages don't leak to public timelines
@@ -1134,7 +1134,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	allAddresses := append(append(append(activity.To, activity.CC...), activity.BTo...), activity.BCC...)
 	for _, addr := range allAddresses {
 		if addr == publicAddr {
-			return ErrDMPublicAddress
+			return dmPublicAddressError()
 		}
 	}
 
@@ -1143,7 +1143,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	for _, addr := range allAddresses {
 		// Validate each recipient URL format
 		if err := common.ValidateActivityPubURL(addr, "recipient"); err != nil {
-			return errors.Join(ErrDMRecipientURL, err)
+			return dmRecipientURLError()
 		}
 
 		// Check if it's a specific actor (not a collection)
@@ -1153,7 +1153,7 @@ func (ih *InboxHandler) validateDirectMessage(activity *activitypub.Activity, _ 
 	}
 
 	if !hasSpecificRecipient {
-		return ErrDMNoRecipients
+		return dmNoRecipientsError()
 	}
 
 	return nil
@@ -1472,7 +1472,7 @@ func (ih *InboxHandler) verifyRequest(ctx *lift.Context, publicKey crypto.Public
 	// Convert Lift request to http.Request for signature verification
 	req, err := ih.convertLiftRequest(ctx, body)
 	if err != nil {
-		return errors.Join(ErrRequestConversion, err)
+		return requestConversionError()
 	}
 
 	return federation.VerifyHTTPSignature(req, publicKey)
@@ -1546,7 +1546,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	// Create request with ActivityPub Accept header
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, actorURL, nil)
 	if err != nil {
-		return nil, errors.Join(ErrCreateRequest, err)
+		return nil, createRequestError()
 	}
 
 	req.Header.Set("Accept", "application/activity+json, application/ld+json")
@@ -1555,7 +1555,7 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 	// Make request
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, errors.Join(ErrFetchActor, err)
+		return nil, fetchActorError()
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -1569,24 +1569,24 @@ func (ih *InboxHandler) fetchActorPublicKey(ctx context.Context, actorURL string
 			zap.String("url", actorURL),
 			zap.Int("status", resp.StatusCode),
 			zap.String("body", string(body)))
-		return nil, ErrActorResponse
+		return nil, actorResponseError()
 	}
 
 	// Parse actor
 	var actor activitypub.Actor
 	if err := common.ParseHTTPResponse(resp.Body, &actor); err != nil {
-		return nil, errors.Join(ErrParseActor, err)
+		return nil, parseActorError()
 	}
 
 	// Extract public key
 	if actor.PublicKey == nil || common.ValidateRequiredParam("publicKeyPem", actor.PublicKey.PublicKeyPem) != nil {
-		return nil, ErrNoPublicKey
+		return nil, noPublicKeyError()
 	}
 
 	// Parse PEM-encoded public key
 	publicKey, err := federation.ParsePublicKeyPEM([]byte(actor.PublicKey.PublicKeyPem))
 	if err != nil {
-		return nil, errors.Join(ErrParsePublicKey, err)
+		return nil, parsePublicKeyError()
 	}
 
 	log.Debug("fetched actor public key",
@@ -1846,12 +1846,12 @@ func (ih *InboxHandler) processRejectByEmbeddedObject(ctx context.Context, activ
 		// Convert to Follow activity
 		objJSON, err := json.Marshal(obj)
 		if err != nil {
-			return errors.Join(ErrMarshalFollow, err)
+			return marshalFollowError()
 		}
 
 		var followActivity activitypub.Activity
 		if err := common.ParseActivityPubObject(objJSON, &followActivity); err != nil {
-			return errors.Join(ErrParseFollow, err)
+			return parseFollowError()
 		}
 
 		return ih.processRejectFollow(ctx, activity, targetActor, &followActivity)
@@ -2182,7 +2182,7 @@ func (ih *InboxHandler) processRemoteCreateActivity(ctx context.Context, activit
 		// Validate ActivityPub Note object
 		if err := common.ValidateActivityPubNote(objMap); err != nil {
 			log.Warn("invalid note object in create activity", zap.Error(err))
-			return errors.Join(ErrInvalidNote, err)
+			return invalidNoteError()
 		}
 
 		// Convert to Note object
@@ -2408,7 +2408,7 @@ func (ih *InboxHandler) processLikeActivity(ctx context.Context, activity *activ
 			zap.String("actor", activity.Actor),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return errors.Join(ErrCreateLike, err)
+		return createLikeError()
 	}
 
 	// Send notification if this is a local object
@@ -2509,7 +2509,7 @@ func (ih *InboxHandler) processAnnounceActivity(ctx context.Context, activity *a
 			zap.String("actor", activity.Actor),
 			zap.String("object", objectID),
 			zap.Error(err))
-		return errors.Join(ErrCreateAnnounce, err)
+		return createAnnounceError()
 	}
 
 	// Send notification if this is a local object
@@ -2646,7 +2646,7 @@ func (ih *InboxHandler) processUndoBlock(ctx context.Context, undoActivity *acti
 		log.Warn("unauthorized undo block attempt",
 			zap.String("original_blocker", blockActivity.Actor),
 			zap.String("undo_actor", undoActivity.Actor))
-		return ErrUnauthorizedBlockUndo
+		return unauthorizedBlockUndoError()
 	}
 
 	// Remove the block relationship
@@ -2655,7 +2655,7 @@ func (ih *InboxHandler) processUndoBlock(ctx context.Context, undoActivity *acti
 			zap.String("blocker", blockerActorID),
 			zap.String("blocked", blockedActorID),
 			zap.Error(err))
-		return errors.Join(ErrDeleteBlock, err)
+		return deleteBlockError()
 	}
 
 	log.Info("successfully processed undo block activity",
@@ -2699,7 +2699,7 @@ func (ih *InboxHandler) processBlockActivity(ctx context.Context, activity *acti
 			zap.String("blocker", blockerActorID),
 			zap.String("blocked", blockedActorID),
 			zap.Error(err))
-		return errors.Join(ErrCreateBlock, err)
+		return createBlockError()
 	}
 
 	// Remove any existing follow relationships in both directions
@@ -2786,12 +2786,12 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 	// Validate required fields
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("add activity missing target collection")
-		return ErrAddNoTarget
+		return addNoTargetError()
 	}
 
 	if activity.Object == nil {
 		log.Warn("add activity missing object")
-		return ErrAddNoObject
+		return addNoObjectError()
 	}
 
 	// Extract object ID to add
@@ -2807,7 +2807,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("add activity object has no ID")
-		return ErrAddObjectNoID
+		return addObjectNoIDError()
 	}
 
 	// Extract collection type from target URL
@@ -2816,7 +2816,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 		log.Warn("failed to extract collection type from target",
 			zap.String("target", activity.Target),
 			zap.Error(err))
-		return errors.Join(ErrInvalidCollectionTarget, err)
+		return invalidCollectionTargetError()
 	}
 
 	// Verify authorization - only the collection owner can add items
@@ -2825,7 +2825,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 			zap.String("actor", activity.Actor),
 			zap.String("collection", collectionType),
 			zap.Error(err))
-		return errors.Join(ErrUnauthorizedAdd, err)
+		return unauthorizedAddError()
 	}
 
 	// Determine object type (for metadata)
@@ -2853,7 +2853,7 @@ func (ih *InboxHandler) processAddActivity(ctx context.Context, activity *activi
 			zap.String("collection", collectionType),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrAddItemFailed, err)
+		return addItemFailedError()
 	}
 
 	// Update collection counters if needed
@@ -2882,12 +2882,12 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 	// Validate required fields
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("remove activity missing target collection")
-		return ErrRemoveNoTarget
+		return removeNoTargetError()
 	}
 
 	if activity.Object == nil {
 		log.Warn("remove activity missing object")
-		return ErrRemoveNoObject
+		return removeNoObjectError()
 	}
 
 	// Extract object ID to remove
@@ -2903,7 +2903,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
 		log.Warn("remove activity object has no ID")
-		return ErrRemoveObjectNoID
+		return removeObjectNoIDError()
 	}
 
 	// Extract collection type from target URL
@@ -2912,7 +2912,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 		log.Warn("failed to extract collection type from target",
 			zap.String("target", activity.Target),
 			zap.Error(err))
-		return errors.Join(ErrInvalidCollectionTarget, err)
+		return invalidCollectionTargetError()
 	}
 
 	// Verify authorization - only the collection owner can remove items
@@ -2921,7 +2921,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 			zap.String("actor", activity.Actor),
 			zap.String("collection", collectionType),
 			zap.Error(err))
-		return errors.Join(ErrUnauthorizedRemove, err)
+		return unauthorizedRemoveError()
 	}
 
 	log.Info("removing item from collection",
@@ -2943,7 +2943,7 @@ func (ih *InboxHandler) processRemoveActivity(ctx context.Context, activity *act
 			zap.String("collection", collectionType),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrRemoveItemFailed, err)
+		return removeItemFailedError()
 	}
 
 	// Update collection counters if needed
@@ -2969,12 +2969,12 @@ func (ih *InboxHandler) extractCollectionType(targetURL string) (string, error) 
 	// - https://example.com/users/alice/likes -> "likes"
 
 	if err := common.ValidateRequiredParam("targetURL", targetURL); err != nil {
-		return "", ErrTargetURLEmpty
+		return "", targetURLEmptyError()
 	}
 
 	parts := strings.Split(targetURL, "/")
 	if len(parts) < 2 {
-		return "", ErrTargetURLFormat
+		return "", targetURLFormatError()
 	}
 
 	// Get the last part of the URL as collection type
@@ -3014,12 +3014,12 @@ func (ih *InboxHandler) processFlagActivity(ctx context.Context, activity *activ
 	flaggedObjects, err := ih.extractFlaggedObjects(activity)
 	if err != nil {
 		log.Warn("failed to extract flagged objects", zap.Error(err))
-		return errors.Join(ErrInvalidFlag, err)
+		return invalidFlagError()
 	}
 
 	if err := common.ValidateSliceNotEmpty("flaggedObjects", flaggedObjects); err != nil {
 		log.Warn("flag activity contains no flagged objects")
-		return ErrFlagNoObjects
+		return flagNoObjectsError()
 	}
 
 	// Create moderation flag record using legacy storage type
@@ -3035,7 +3035,7 @@ func (ih *InboxHandler) processFlagActivity(ctx context.Context, activity *activ
 	// Store the flag
 	if err := ih.storageAdapter.Moderation().CreateFlag(ctx, flag); err != nil {
 		log.Error("failed to store moderation flag", zap.Error(err))
-		return errors.Join(ErrStoreModerationFlag, err)
+		return storeModerationFlagError()
 	}
 
 	// Optionally trigger automated moderation analysis
@@ -3066,7 +3066,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Validate required fields for Move activity
 	if err := common.ValidateRequiredParam("activityTarget", activity.Target); err != nil {
 		log.Warn("move activity missing target")
-		return ErrMoveNoTarget
+		return moveNoTargetError()
 	}
 
 	// The actor field is the old account, target is the new account
@@ -3076,7 +3076,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Validate that the move is properly authorized
 	if err := ih.validateMoveAuthorization(ctx, oldAccountID, newAccountID, activity); err != nil {
 		log.Warn("move activity authorization failed", zap.Error(err))
-		return errors.Join(ErrMoveAuthorization, err)
+		return moveAuthorizationError()
 	}
 
 	// Create migration record
@@ -3094,7 +3094,7 @@ func (ih *InboxHandler) processMoveActivity(ctx context.Context, activity *activ
 	// Store the migration
 	if err := ih.storageAdapter.GetDB().WithContext(ctx).Model(migration).Create(); err != nil {
 		log.Error("failed to store account migration", zap.Error(err))
-		return errors.Join(ErrStoreMigration, err)
+		return storeMigrationError()
 	}
 
 	// Update local followers to follow the new account
@@ -3151,7 +3151,7 @@ func (ih *InboxHandler) extractFlaggedObjects(activity *activitypub.Activity) ([
 			flaggedObjects = append(flaggedObjects, id)
 		}
 	default:
-		return nil, ErrUnsupportedFlagObject
+		return nil, unsupportedFlagObjectError()
 	}
 
 	return flaggedObjects, nil
@@ -3203,7 +3203,7 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 	newUsername := ih.extractHandleFromActorID(newAccountID)
 	if err := common.ValidateRequiredParam("newUsername", newUsername); err != nil {
 		log.Error("failed to extract username from new account ID", zap.String("new_account_id", newAccountID))
-		return ErrExtractUsername
+		return extractUsernameError()
 	}
 
 	// Check if the new account has the old account in its alsoKnownAs field
@@ -3214,7 +3214,7 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 			zap.String("new_username", newUsername),
 			zap.String("old_account_id", oldAccountID),
 			zap.Error(err))
-		return errors.Join(ErrVerifyMoveAuth, err)
+		return verifyMoveAuthError()
 	}
 
 	if !hasAlsoKnownAs {
@@ -3222,7 +3222,7 @@ func (ih *InboxHandler) validateMoveAuthorization(ctx context.Context, oldAccoun
 			zap.String("old_account", oldAccountID),
 			zap.String("new_account", newAccountID),
 			zap.String("new_username", newUsername))
-		return ErrMoveNotAuthorized
+		return moveNotAuthorizedError()
 	}
 
 	log.Info("move authorization validated - alsoKnownAs confirmation found",
@@ -3336,7 +3336,7 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	// Target format: https://domain.com/users/username/collection
 	targetParts := strings.Split(activity.Target, "/")
 	if len(targetParts) < 4 {
-		return ErrDetermineCollectionOwner
+		return determineCollectionOwnerError()
 	}
 
 	var collectionOwnerUsername string
@@ -3348,7 +3348,7 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	}
 
 	if err := common.ValidateRequiredParam("collectionOwnerUsername", collectionOwnerUsername); err != nil {
-		return ErrExtractCollectionOwner
+		return extractCollectionOwnerError()
 	}
 
 	// For local collections, check if the actor matches the target actor
@@ -3367,11 +3367,11 @@ func (ih *InboxHandler) verifyCollectionAuthorization(_ context.Context, activit
 	if collectionType == "featured" {
 		// Only the actor themselves can manage their featured posts
 		if activity.Actor != targetActor.ID {
-			return ErrUnauthorizedCollection
+			return unauthorizedCollectionError()
 		}
 	}
 
-	return ErrUnauthorizedCollectionModify
+	return unauthorizedCollectionModifyError()
 }
 
 // updateCollectionCounters updates metadata counters for collections
@@ -3418,7 +3418,7 @@ func (ih *InboxHandler) checkBlockStatus(ctx context.Context, actor1, actor2 str
 		log.Info("activity blocked due to block relationship",
 			zap.String("actor1", actor1),
 			zap.String("actor2", actor2))
-		return ErrActivityBlocked
+		return activityBlockedError()
 	}
 
 	return nil
@@ -3438,12 +3438,12 @@ func (ih *InboxHandler) verifyUpdateAuthorization(_ context.Context, activity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
-		return ErrDetermineObjectOwner
+		return determineObjectOwnerError()
 	}
 
 	// Only the object owner can update it
 	if activity.Actor != objectOwner {
-		return ErrUnauthorizedUpdate
+		return unauthorizedUpdateError()
 	}
 
 	return nil
@@ -3459,11 +3459,11 @@ func (ih *InboxHandler) storeEditHistory(ctx context.Context, objectID string, e
 	// Serialize the existing object to JSON then deserialize to map
 	objectJSON, err := json.Marshal(existingObject)
 	if err != nil {
-		return errors.Join(ErrSerializeObject, err)
+		return serializeObjectError()
 	}
 
 	if err := json.Unmarshal(objectJSON, &previousState); err != nil {
-		return errors.Join(ErrDeserializeObject, err)
+		return deserializeObjectError()
 	}
 
 	// Get the current version number (start from version 1 for first edit)
@@ -3488,7 +3488,7 @@ func (ih *InboxHandler) storeEditHistory(ctx context.Context, objectID string, e
 
 	// Store the history
 	if err := ih.objectRepository.CreateUpdateHistory(ctx, updateHistory); err != nil {
-		return errors.Join(ErrCreateUpdateHistory, err)
+		return createUpdateHistoryError()
 	}
 
 	log.Debug("stored edit history",
@@ -3518,7 +3518,7 @@ func (ih *InboxHandler) extractDeleteTarget(activity *activitypub.Activity) (str
 		// Object is typed
 		objectID = obj.ID
 	default:
-		return "", nil, ErrUnsupportedDeleteObject
+		return "", nil, unsupportedDeleteObjectError()
 	}
 
 	return objectID, originalObject, nil
@@ -3538,12 +3538,12 @@ func (ih *InboxHandler) verifyDeleteAuthorization(_ context.Context, activity *a
 	}
 
 	if err := common.ValidateRequiredParam("objectOwner", objectOwner); err != nil {
-		return ErrDetermineObjectOwner
+		return determineObjectOwnerError()
 	}
 
 	// Only the object owner can delete it
 	if activity.Actor != objectOwner {
-		return ErrUnauthorizedDelete
+		return unauthorizedDeleteError()
 	}
 
 	return nil
@@ -3591,7 +3591,7 @@ func (ih *InboxHandler) cascadeDeleteLikes(ctx context.Context, objectID string)
 	// Get all likes for this object
 	likes, _, err := ih.likeRepository.GetObjectLikes(ctx, objectID, 1000, "")
 	if err != nil {
-		return errors.Join(ErrGetObjectLikes, err)
+		return getObjectLikesError()
 	}
 
 	// Delete each like
@@ -3646,7 +3646,7 @@ func (ih *InboxHandler) cascadeDeleteReplies(ctx context.Context, objectID strin
 	// Get replies to this object
 	replies, _, err := ih.objectRepository.GetReplies(ctx, objectID, 1000, "")
 	if err != nil {
-		return errors.Join(ErrGetReplies, err)
+		return getRepliesError()
 	}
 
 	// For ActivityPub compliance, we typically don't cascade delete replies
@@ -3712,7 +3712,7 @@ func (ih *InboxHandler) createDeleteTombstone(ctx context.Context, objectID stri
 			zap.String("object_id", objectID),
 			zap.String("deleted_by", deleteActivity.Actor),
 			zap.Error(err))
-		return errors.Join(ErrCreateTombstone, err)
+		return createTombstoneError()
 	}
 
 	// Also create ActivityPub-compliant tombstone object for federation compatibility

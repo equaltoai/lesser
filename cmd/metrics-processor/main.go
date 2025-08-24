@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	appErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -245,7 +245,7 @@ func (p *MetricsStreamProcessor) processDataChange(ctx context.Context, record *
 	// Store in reporting table (optimized for analytics)
 	if err := p.reportingRepo.CreateMetricRecord(ctx, metricRecord); err != nil {
 		p.logger.Error("failed to store metric record", zap.Error(err))
-		return errors.Join(ErrStoreMetricRecord, err)
+		return appErrors.FailedToStore("metric_record", err)
 	}
 
 	// Trigger real-time updates to all 6 subscription types

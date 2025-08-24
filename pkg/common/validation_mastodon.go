@@ -584,19 +584,13 @@ func ValidateAccountFields(fields interface{}) error {
 	}
 
 	if len(fieldsArray) > MaxAccountFields {
-		return ValidationError{
-			Field:   "fields_attributes",
-			Message: fmt.Sprintf("cannot have more than %d fields", MaxAccountFields),
-		}
+		return ValidationError{Field: "fields_attributes", Message: fmt.Sprintf("cannot have more than %d fields", MaxAccountFields)}
 	}
 
 	for i, field := range fieldsArray {
 		fieldObj, ok := field.(map[string]interface{})
 		if !ok {
-			return ValidationError{
-				Field:   fmt.Sprintf("fields_attributes[%d]", i),
-				Message: "must be an object",
-			}
+			return ValidationError{Field: fmt.Sprintf("fields_attributes[%d]", i), Message: "must be an object"}
 		}
 
 		// Validate name
@@ -635,10 +629,7 @@ func ValidateMediaIDs(mediaIDs interface{}) error {
 	}
 
 	if len(idsArray) > MaxStatusAttachment {
-		return ValidationError{
-			Field:   "media_ids",
-			Message: fmt.Sprintf("cannot have more than %d attachments", MaxStatusAttachment),
-		}
+		return ValidationError{Field: "media_ids", Message: fmt.Sprintf("cannot have more than %d attachments", MaxStatusAttachment)}
 	}
 
 	for i, id := range idsArray {
@@ -663,10 +654,7 @@ func ValidateMediaIDs(mediaIDs interface{}) error {
 // ValidateMediaDescription validates media attachment descriptions
 func ValidateMediaDescription(description string) error {
 	if len(description) > MaxMediaDescLength {
-		return ValidationError{
-			Field:   "description",
-			Message: fmt.Sprintf("cannot be longer than %d characters", MaxMediaDescLength),
-		}
+		return ValidationError{Field: "description", Message: fmt.Sprintf("cannot be longer than %d characters", MaxMediaDescLength)}
 	}
 
 	return nil
@@ -709,10 +697,7 @@ func ValidateMediaFile(fileData, fieldName string) error {
 
 	// Basic validation - in real implementation would check file headers, size, etc.
 	if len(fileData) > MaxMediaFileSize {
-		return ValidationError{
-			Field:   fieldName,
-			Message: fmt.Sprintf("file too large (max %d bytes)", MaxMediaFileSize),
-		}
+		return ValidationError{Field: fieldName, Message: fmt.Sprintf("file too large (max %d bytes)", MaxMediaFileSize)}
 	}
 
 	return nil
@@ -783,10 +768,7 @@ func validatePollOptionsCount(optionsArray []interface{}) error {
 	}
 
 	if len(optionsArray) > MaxPollOptions {
-		return ValidationError{
-			Field:   "poll.options",
-			Message: fmt.Sprintf("cannot have more than %d options", MaxPollOptions),
-		}
+		return ValidationError{Field: "poll.options", Message: fmt.Sprintf("cannot have more than %d options", MaxPollOptions)}
 	}
 
 	return nil
@@ -835,17 +817,11 @@ func validatePollExpiration(pollObj map[string]interface{}) error {
 
 	duration := int(expiresNum)
 	if duration < MinPollDuration {
-		return ValidationError{
-			Field:   "poll.expires_in",
-			Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration),
-		}
+		return ValidationError{Field: "poll.expires_in", Message: fmt.Sprintf("must be at least %d seconds", MinPollDuration)}
 	}
 
 	if duration > MaxPollDuration {
-		return ValidationError{
-			Field:   "poll.expires_in",
-			Message: fmt.Sprintf("cannot be more than %d seconds", MaxPollDuration),
-		}
+		return ValidationError{Field: "poll.expires_in", Message: fmt.Sprintf("cannot be more than %d seconds", MaxPollDuration)}
 	}
 
 	return nil
@@ -869,10 +845,7 @@ func validatePollOptionalFields(pollObj map[string]interface{}) error {
 // ValidateSpoilerText validates content warning text
 func ValidateSpoilerText(spoilerText string) error {
 	if len(spoilerText) > MaxStatusSpoiler {
-		return ValidationError{
-			Field:   "spoiler_text",
-			Message: fmt.Sprintf("cannot be longer than %d characters", MaxStatusSpoiler),
-		}
+		return ValidationError{Field: "spoiler_text", Message: fmt.Sprintf("cannot be longer than %d characters", MaxStatusSpoiler)}
 	}
 
 	return nil
@@ -969,10 +942,7 @@ func ValidateFilterKeywords(keywords interface{}) error {
 	}
 
 	if len(keywordsArray) > MaxFilterKeywords {
-		return ValidationError{
-			Field:   "keywords_attributes",
-			Message: fmt.Sprintf("cannot have more than %d keywords", MaxFilterKeywords),
-		}
+		return ValidationError{Field: "keywords_attributes", Message: fmt.Sprintf("cannot have more than %d keywords", MaxFilterKeywords)}
 	}
 
 	for i, keyword := range keywordsArray {
@@ -1062,10 +1032,7 @@ func ValidateReportCategory(category string) error {
 		}
 	}
 
-	return ValidationError{
-		Field:   "category",
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(ValidReportCategories, ", ")),
-	}
+	return ValidationError{Field: "category", Message: fmt.Sprintf("must be one of: %s", strings.Join(ValidReportCategories, ", "))}
 }
 
 // ValidateListTitle validates list title
@@ -1075,10 +1042,7 @@ func ValidateListTitle(title string) error {
 	}
 
 	if len(title) > MaxListTitleLength {
-		return ValidationError{
-			Field:   "title",
-			Message: fmt.Sprintf("cannot be longer than %d characters", MaxListTitleLength),
-		}
+		return ValidationError{Field: "title", Message: fmt.Sprintf("cannot be longer than %d characters", MaxListTitleLength)}
 	}
 
 	return nil
@@ -1094,10 +1058,7 @@ func ValidateListRepliesPolicy(policy string) error {
 		}
 	}
 
-	return ValidationError{
-		Field:   "replies_policy",
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(validPolicies, ", ")),
-	}
+	return ValidationError{Field: "replies_policy", Message: fmt.Sprintf("must be one of: %s", strings.Join(validPolicies, ", "))}
 }
 
 // ValidateApplicationName validates application name
@@ -1107,10 +1068,7 @@ func ValidateApplicationName(name string) error {
 	}
 
 	if len(name) > MaxAppNameLength {
-		return ValidationError{
-			Field:   "client_name",
-			Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppNameLength),
-		}
+		return ValidationError{Field: "client_name", Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppNameLength)}
 	}
 
 	return nil
@@ -1141,10 +1099,7 @@ func ValidateRedirectURIs(uris string) error {
 // ValidateApplicationScopes validates OAuth application scopes
 func ValidateApplicationScopes(scopes string) error {
 	if len(scopes) > MaxAppScopesLength {
-		return ValidationError{
-			Field:   "scopes",
-			Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppScopesLength),
-		}
+		return ValidationError{Field: "scopes", Message: fmt.Sprintf("cannot be longer than %d characters", MaxAppScopesLength)}
 	}
 
 	// Validate individual scopes
@@ -1164,10 +1119,7 @@ func ValidateApplicationScopes(scopes string) error {
 		}
 
 		if !found {
-			return ValidationError{
-				Field:   "scopes",
-				Message: fmt.Sprintf("invalid scope: %s", scope),
-			}
+			return ValidationError{Field: "scopes", Message: fmt.Sprintf("invalid scope: %s", scope)}
 		}
 	}
 
@@ -1199,10 +1151,7 @@ func ValidateMastodonMimeType(mimeType string) error {
 		}
 	}
 
-	return ValidationError{
-		Field:   "mime_type",
-		Message: fmt.Sprintf("unsupported media type: %s", mediaType),
-	}
+	return ValidationError{Field: "mime_type", Message: fmt.Sprintf("unsupported media type: %s", mediaType)}
 }
 
 // ValidateHashtag validates hashtag format for Mastodon

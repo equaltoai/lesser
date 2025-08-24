@@ -1,71 +1,258 @@
 package main
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for media processor
-var (
-	// Configuration errors
-	ErrMediaConvertRoleNotConfigured = errors.New("MediaConvert role not configured")
+// Configuration error functions
 
-	// AWS service errors
-	ErrAWSConfigLoad     = errors.New("failed to load AWS config")
-	ErrS3GetObject       = errors.New("failed to get object from S3")
-	ErrS3ReadObject      = errors.New("failed to read S3 object")
-	ErrS3UploadVideo     = errors.New("failed to upload video")
-	ErrS3UploadOriginal  = errors.New("failed to upload original")
-	ErrS3KeySanitization = errors.New("failed to sanitize S3 key")
+// MediaConvertRoleNotConfigured creates an error indicating MediaConvert role is not configured.
+func MediaConvertRoleNotConfigured() *errors.AppError {
+	return errors.ServiceInitializationFailed("MediaConvert", nil).WithMetadata("reason", "role_not_configured")
+}
 
-	// Job processing errors
-	ErrJobGet           = errors.New("failed to get job")
-	ErrJobUpdateStatus  = errors.New("failed to update job status")
-	ErrJobUpdateWarning = errors.New("failed to get job for budget warning")
+// AWS service error functions
 
-	// Media processing errors
-	ErrMediaDownload     = errors.New("failed to download original")
-	ErrMediaRecordUpdate = errors.New("failed to update media record")
-	ErrImageProcessing   = errors.New("failed to process image")
-	ErrVideoValidation   = errors.New("cannot validate video duration")
-	ErrAudioMetadataRead = errors.New("failed to read audio metadata")
+// AWSConfigLoadFailed creates an error indicating AWS configuration loading failed.
+func AWSConfigLoadFailed(err error) *errors.AppError {
+	return errors.ServiceInitializationFailed("AWS", err)
+}
 
-	// File validation errors
-	ErrEmptyFile                   = errors.New("file data is empty")
-	ErrFileTypeNotAllowed          = errors.New("file type not allowed")
-	ErrUnsupportedMediaType        = errors.New("unsupported media type")
-	ErrUnknownFileType             = errors.New("unknown file type")
-	ErrFileTooLarge                = errors.New("file too large")
-	ErrVideoDurationExceeded       = errors.New("video duration exceeds user limit")
-	ErrUnsupportedMediaTypeForUser = errors.New("unsupported media type")
-	ErrFileSizeExceedsUserLimit    = errors.New("file size exceeds user limit")
-	ErrFileValidationFailed        = errors.New("file validation failed")
-	ErrInvalidMimeTypeFormat       = errors.New("invalid MIME type format")
-	ErrDetectedMimeTypeInvalid     = errors.New("detected MIME type is invalid")
+// S3GetObjectFailed creates an error indicating S3 object retrieval failed.
+func S3GetObjectFailed(err error) *errors.AppError {
+	return errors.GetFailed("S3Object", err)
+}
 
-	// Audio processing errors
-	ErrUnableToDetermineAudioDuration = errors.New("unable to determine audio duration")
+// S3ReadObjectFailed creates an error indicating S3 object reading failed.
+func S3ReadObjectFailed(err error) *errors.AppError {
+	return errors.GetFailed("S3ObjectData", err)
+}
 
-	// S3 key validation errors
-	ErrInvalidUsernameForS3Key = errors.New("invalid username for S3 key")
-	ErrInvalidMediaIDForS3Key  = errors.New("invalid media ID for S3 key")
-	ErrInvalidFilenameForS3Key = errors.New("invalid filename for S3 key")
+// S3UploadVideoFailed creates an error indicating video upload to S3 failed.
+func S3UploadVideoFailed(err error) *errors.AppError {
+	return errors.CreateFailed("S3Video", err)
+}
 
-	// MIME type validation errors
-	ErrMimeTypeMismatch = errors.New("claimed MIME type does not match detected type")
+// S3UploadOriginalFailed creates an error indicating original file upload to S3 failed.
+func S3UploadOriginalFailed(err error) *errors.AppError {
+	return errors.CreateFailed("S3Original", err)
+}
 
-	// Budget and cost errors
-	ErrBudgetExceeded = errors.New("budget exceeded")
+// S3KeySanitizationFailed creates an error indicating S3 key sanitization failed.
+func S3KeySanitizationFailed(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewStorageInternalError(errors.CodeInvalidInput, "S3 key sanitization failed", err)
+	}
+	return errors.InvalidInput("s3_key", "sanitization failed")
+}
 
-	// Additional specific media processing errors
-	ErrUnsupportedMediaTypeProcessing = errors.New("unsupported media type for processing")
-	ErrFileTooLargeForType            = errors.New("file too large for type")
-	ErrMimeTypeMismatchDetailed       = errors.New("claimed MIME type does not match detected type")
-	ErrUnknownFileTypeForProcessing   = errors.New("unknown file type for processing")
-	ErrFileSizeExceedsLimit           = errors.New("file size exceeds limit")
-	ErrVideoDurationTooLong           = errors.New("video duration too long")
-	ErrUnsupportedForUser             = errors.New("unsupported for user")
-	ErrBudgetExceededForJob           = errors.New("budget exceeded for job")
+// Job processing error functions
 
-	// Transcoding helper errors
-	ErrEnhancedMediaConvertJobCreation = errors.New("failed to create enhanced MediaConvert job")
-	ErrS3KeySanitizationAudio          = errors.New("failed to sanitize S3 key")
-	ErrAudioUpload                     = errors.New("failed to upload audio")
-)
+// JobGetFailed creates an error indicating job retrieval failed.
+func JobGetFailed(err error) *errors.AppError {
+	return errors.GetFailed("MediaJob", err)
+}
+
+// JobUpdateStatusFailed creates an error indicating job status update failed.
+func JobUpdateStatusFailed(err error) *errors.AppError {
+	return errors.UpdateFailed("MediaJob", err)
+}
+
+// JobUpdateWarningFailed creates an error indicating job update for budget warning failed.
+func JobUpdateWarningFailed(err error) *errors.AppError {
+	return errors.UpdateFailed("MediaJobWarning", err)
+}
+
+// Media processing error functions
+
+// MediaDownloadFailed creates an error indicating media download failed.
+func MediaDownloadFailed(err error) *errors.AppError {
+	return errors.MediaProcessingFailed("download", err)
+}
+
+// MediaRecordUpdateFailed creates an error indicating media record update failed.
+func MediaRecordUpdateFailed(err error) *errors.AppError {
+	return errors.UpdateFailed("MediaRecord", err)
+}
+
+// ImageProcessingFailed creates an error indicating image processing failed.
+func ImageProcessingFailed(err error) *errors.AppError {
+	return errors.MediaProcessingFailed("image", err)
+}
+
+// VideoValidationFailed creates an error indicating video duration validation failed.
+func VideoValidationFailed(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewValidationErrorWithCode(errors.CodeInvalidFormat, "video_duration", "Video duration validation failed")
+	}
+	return errors.VideoInvalidFormat("duration validation failed")
+}
+
+// AudioMetadataReadFailed creates an error indicating audio metadata reading failed.
+func AudioMetadataReadFailed(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewValidationErrorWithCode(errors.CodeInvalidFormat, "audio_metadata", "Audio metadata read failed")
+	}
+	return errors.AudioInvalidFormat("metadata read failed")
+}
+
+// File validation error functions
+
+// EmptyFileError creates an error indicating file data is empty.
+func EmptyFileError() *errors.AppError {
+	return errors.ContentEmpty("file")
+}
+
+// FileTypeNotAllowedError creates an error indicating file type is not allowed.
+func FileTypeNotAllowedError(mimeType string) *errors.AppError {
+	return errors.MediaInvalidMimeType(mimeType, []string{"image/*", "video/*", "audio/*"})
+}
+
+// UnsupportedMediaTypeError creates an error indicating unsupported media type.
+func UnsupportedMediaTypeError(mediaType string) *errors.AppError {
+	return errors.MediaInvalidMimeType(mediaType, []string{"image", "video", "audio"})
+}
+
+// UnknownFileTypeError creates an error indicating unknown file type.
+func UnknownFileTypeError(fileType string) *errors.AppError {
+	return errors.MediaInvalidMimeType(fileType, []string{"detectable media types"})
+}
+
+// FileTooLargeError creates an error indicating file is too large.
+func FileTooLargeError(size, maxSize int64) *errors.AppError {
+	return errors.MediaFileTooLarge(size, maxSize)
+}
+
+// VideoDurationExceededError creates an error indicating video duration exceeds user limit.
+func VideoDurationExceededError(duration, maxDuration int) *errors.AppError {
+	return errors.ValueOutOfRange("video_duration", 0, maxDuration, duration)
+}
+
+// UnsupportedMediaTypeForUserError creates an error indicating unsupported media type for user.
+func UnsupportedMediaTypeForUserError(mediaType string) *errors.AppError {
+	return errors.MediaInvalidMimeType(mediaType, []string{"user-allowed types"})
+}
+
+// FileSizeExceedsUserLimitError creates an error indicating file size exceeds user limit.
+func FileSizeExceedsUserLimitError(size, userMaxSize int64) *errors.AppError {
+	return errors.MediaFileTooLarge(size, userMaxSize)
+}
+
+// FileValidationFailedError creates an error indicating file validation failed.
+func FileValidationFailedError(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewValidationErrorWithCode(errors.CodeValidationFailed, "file", "File validation failed")
+	}
+	return errors.NewValidationError("file", "File validation failed")
+}
+
+// InvalidMimeTypeFormatError creates an error indicating invalid MIME type format.
+func InvalidMimeTypeFormatError(mimeType string) *errors.AppError {
+	return errors.InvalidFormat("mime_type", "type/subtype").WithMetadata("invalid_mime_type", mimeType)
+}
+
+// DetectedMimeTypeInvalidError creates an error indicating detected MIME type is invalid.
+func DetectedMimeTypeInvalidError(mimeType string) *errors.AppError {
+	return errors.MediaInvalidMimeType(mimeType, []string{"detectable types"})
+}
+
+// Audio processing error functions
+
+// UnableToDetermineAudioDurationError creates an error indicating unable to determine audio duration.
+func UnableToDetermineAudioDurationError(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewValidationErrorWithCode(errors.CodeInvalidFormat, "audio_duration", "Unable to determine audio duration")
+	}
+	return errors.AudioInvalidFormat("duration extraction failed")
+}
+
+// S3 key validation error functions
+
+// InvalidUsernameForS3KeyError creates an error indicating invalid username for S3 key.
+func InvalidUsernameForS3KeyError(username string) *errors.AppError {
+	return errors.InvalidCharacters("username", "alphanumeric and underscore only").WithMetadata("invalid_username", username)
+}
+
+// InvalidMediaIDForS3KeyError creates an error indicating invalid media ID for S3 key.
+func InvalidMediaIDForS3KeyError(mediaID string) *errors.AppError {
+	return errors.InvalidCharacters("media_id", "alphanumeric and hyphens only").WithMetadata("invalid_media_id", mediaID)
+}
+
+// InvalidFilenameForS3KeyError creates an error indicating invalid filename for S3 key.
+func InvalidFilenameForS3KeyError(filename string) *errors.AppError {
+	return errors.InvalidCharacters("filename", "safe filename characters only").WithMetadata("invalid_filename", filename)
+}
+
+// MIME type validation error functions
+
+// MimeTypeMismatchError creates an error indicating claimed MIME type does not match detected type.
+func MimeTypeMismatchError(claimed, detected string) *errors.AppError {
+	return errors.InvalidValue("mime_type", []string{detected}, claimed)
+}
+
+// Budget and cost error functions
+
+// BudgetExceededError creates an error indicating budget was exceeded.
+func BudgetExceededError(cost, budget int64) *errors.AppError {
+	return errors.CostLimitExceeded("media_processing", float64(cost)/1000000.0).WithMetadata("budget_micros", budget)
+}
+
+// Additional specific media processing error functions
+
+// UnsupportedMediaTypeProcessingError creates an error indicating unsupported media type for processing.
+func UnsupportedMediaTypeProcessingError(mediaType string) *errors.AppError {
+	return errors.MediaProcessingFailed(mediaType, nil)
+}
+
+// FileTooLargeForTypeError creates an error indicating file is too large for its type.
+func FileTooLargeForTypeError(size, maxSize int64, fileType string) *errors.AppError {
+	return errors.MediaFileTooLarge(size, maxSize).WithMetadata("file_type", fileType)
+}
+
+// MimeTypeMismatchDetailedError creates an error indicating claimed MIME type does not match detected type with details.
+func MimeTypeMismatchDetailedError(claimed, detected string) *errors.AppError {
+	return errors.InvalidValue("mime_type", []string{detected}, claimed).WithMetadata("detailed", true)
+}
+
+// UnknownFileTypeForProcessingError creates an error indicating unknown file type for processing.
+func UnknownFileTypeForProcessingError(fileType string) *errors.AppError {
+	return errors.MediaProcessingFailed(fileType, nil).WithMetadata("reason", "unknown_type")
+}
+
+// FileSizeExceedsLimitError creates an error indicating file size exceeds limit.
+func FileSizeExceedsLimitError(size, limit int64) *errors.AppError {
+	return errors.MediaFileTooLarge(size, limit)
+}
+
+// VideoDurationTooLongError creates an error indicating video duration is too long.
+func VideoDurationTooLongError(duration, maxDuration int) *errors.AppError {
+	return errors.ValueOutOfRange("video_duration", 0, maxDuration, duration)
+}
+
+// UnsupportedForUserError creates an error indicating operation is unsupported for user.
+func UnsupportedForUserError(operation string) *errors.AppError {
+	return errors.OperationNotAllowed(operation).WithMetadata("reason", "user_restrictions")
+}
+
+// BudgetExceededForJobError creates an error indicating budget was exceeded for job.
+func BudgetExceededForJobError(jobID string, cost, budget int64) *errors.AppError {
+	return errors.CostLimitExceeded("media_job", float64(cost)/1000000.0).WithMetadata("job_id", jobID).WithMetadata("budget_micros", budget)
+}
+
+// Transcoding helper error functions
+
+// EnhancedMediaConvertJobCreationFailed creates an error indicating enhanced MediaConvert job creation failed.
+func EnhancedMediaConvertJobCreationFailed(err error) *errors.AppError {
+	return errors.ExternalServiceUnavailable("MediaConvert", err)
+}
+
+// S3KeySanitizationAudioFailed creates an error indicating S3 key sanitization for audio failed.
+func S3KeySanitizationAudioFailed(err error) *errors.AppError {
+	if err != nil {
+		return errors.NewStorageInternalError(errors.CodeInvalidInput, "S3 key sanitization for audio failed", err)
+	}
+	return errors.InvalidInput("s3_key", "audio sanitization failed")
+}
+
+// AudioUploadFailed creates an error indicating audio upload failed.
+func AudioUploadFailed(err error) *errors.AppError {
+	return errors.CreateFailed("S3Audio", err)
+}

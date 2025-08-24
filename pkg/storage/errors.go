@@ -1,66 +1,67 @@
 package storage
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Common storage errors
+// Legacy error variables for backwards compatibility  
+// These are now wrappers around the centralized error system
 var (
 	// ErrNotFound is returned when a requested item doesn't exist
-	ErrNotFound = errors.New("item not found")
+	ErrNotFound = errors.NotFound("item")
 
 	// ErrAlreadyExists is returned when trying to create an item that already exists
-	ErrAlreadyExists = errors.New("item already exists")
+	ErrAlreadyExists = errors.AlreadyExists("item")
 
 	// ErrInvalidInput is returned when input validation fails
-	ErrInvalidInput = errors.New("invalid input")
+	ErrInvalidInput = errors.ValidationFailedWithField("invalid input")
 
 	// ErrUnauthorized is returned when an operation is not authorized
-	ErrUnauthorized = errors.New("unauthorized")
+	ErrUnauthorized = errors.AccessDenied("")
 
 	// ErrRateLimited is returned when rate limit is exceeded
-	ErrRateLimited = errors.New("rate limit exceeded")
+	ErrRateLimited = errors.RateLimitExceededGeneric("")
 
 	// ErrInvalidRefreshToken is returned when a refresh token is invalid
-	ErrInvalidRefreshToken = errors.New("invalid refresh token")
+	ErrInvalidRefreshToken = errors.RefreshTokenInvalid()
 
 	// ErrExpiredRefreshToken is returned when a refresh token has expired
-	ErrExpiredRefreshToken = errors.New("refresh token expired")
+	ErrExpiredRefreshToken = errors.RefreshTokenExpired()
 
 	// ErrTokenReuse is returned when refresh token reuse is detected (security breach)
-	ErrTokenReuse = errors.New("refresh token reuse detected")
+	ErrTokenReuse = errors.TokenReuse()
 
 	// User Media Config errors
-	ErrInvalidPlanTier            = errors.New("invalid plan tier")
-	ErrInvalidFileSize            = errors.New("invalid file size configuration")
-	ErrFileSizeTooLarge           = errors.New("file size exceeds limits")
-	ErrVideoDurationInvalid       = errors.New("invalid video duration")
-	ErrUploadLimitsInvalid        = errors.New("invalid upload limits")
-	ErrBudgetLimitsInvalid        = errors.New("invalid budget limits")
-	ErrModerationThresholdInvalid = errors.New("invalid moderation threshold")
-	ErrInvalidQualitySetting      = errors.New("invalid quality setting")
-	ErrPlanUpgradeFailed          = errors.New("plan upgrade failed")
-	ErrUserIDRequired             = errors.New("user ID is required")
+	ErrInvalidPlanTier            = errors.InvalidPlanTier()
+	ErrInvalidFileSize            = errors.InvalidFileSize()
+	ErrFileSizeTooLarge           = errors.FileSizeExceedsLimit(0, 0)
+	ErrVideoDurationInvalid       = errors.VideoDurationInvalid()
+	ErrUploadLimitsInvalid        = errors.UploadLimitsInvalid()
+	ErrBudgetLimitsInvalid        = errors.BudgetLimitsInvalid()
+	ErrModerationThresholdInvalid = errors.ModerationThresholdInvalid()
+	ErrInvalidQualitySetting      = errors.InvalidQualitySetting()
+	ErrPlanUpgradeFailed          = errors.PlanUpgradeFailed(nil)
+	ErrUserIDRequired             = errors.UserIDRequired()
 
 	// Enhanced Pattern Repository specific errors
-	ErrPatternNotFound               = errors.New("enhanced moderation pattern not found")
-	ErrPatternSaveFailed             = errors.New("failed to save enhanced moderation pattern")
-	ErrPatternCreateFailed           = errors.New("failed to create enhanced moderation pattern")
-	ErrPatternUpdateFailed           = errors.New("failed to update enhanced moderation pattern")
-	ErrPatternDeleteFailed           = errors.New("failed to delete enhanced moderation pattern")
-	ErrPatternQueryFailed            = errors.New("failed to query enhanced moderation patterns")
-	ErrPatternCacheNotFound          = errors.New("pattern cache entry not found")
-	ErrPatternCacheCreateFailed      = errors.New("failed to create pattern cache entry")
-	ErrPatternCacheUpdateFailed      = errors.New("failed to update pattern cache entry")
-	ErrPatternMetricsCreateFailed    = errors.New("failed to create pattern performance metrics")
-	ErrPatternMetricsUpdateFailed    = errors.New("failed to update pattern performance metrics")
-	ErrPatternTestResultCreateFailed = errors.New("failed to create pattern test result")
-	ErrPatternTestResultQueryFailed  = errors.New("failed to query pattern test results")
-	ErrPatternTestResultNotFound     = errors.New("pattern test result not found")
-	ErrPatternMetricsQueryFailed     = errors.New("failed to query pattern performance metrics")
-	ErrPatternAnalysisFailed         = errors.New("pattern analysis failed")
-	ErrPatternValidationFailed       = errors.New("pattern validation failed")
-	ErrDatabaseConnectionFailed      = errors.New("database connection failed")
-	ErrNilPattern                    = errors.New("pattern cannot be nil")
-	ErrNilPatternCache               = errors.New("pattern cache cannot be nil")
-	ErrNilPatternMetric              = errors.New("pattern metric cannot be nil")
-	ErrNilPatternTestResult          = errors.New("pattern test result cannot be nil")
+	ErrPatternNotFound               = errors.PatternNotFound()
+	ErrPatternSaveFailed             = errors.PatternSaveFailed(nil)
+	ErrPatternCreateFailed           = errors.PatternCreateFailed(nil)
+	ErrPatternUpdateFailed           = errors.PatternUpdateFailed(nil)
+	ErrPatternDeleteFailed           = errors.PatternDeleteFailed(nil)
+	ErrPatternQueryFailed            = errors.PatternQueryFailed(nil)
+	ErrPatternCacheNotFound          = errors.PatternCacheNotFound()
+	ErrPatternCacheCreateFailed      = errors.PatternCacheCreateFailed(nil)
+	ErrPatternCacheUpdateFailed      = errors.PatternCacheUpdateFailed(nil)
+	ErrPatternMetricsCreateFailed    = errors.PatternMetricsCreateFailed(nil)
+	ErrPatternMetricsUpdateFailed    = errors.PatternMetricsUpdateFailed(nil)
+	ErrPatternTestResultCreateFailed = errors.PatternTestResultCreateFailed(nil)
+	ErrPatternTestResultQueryFailed  = errors.PatternTestResultQueryFailed(nil)
+	ErrPatternTestResultNotFound     = errors.PatternTestResultNotFound()
+	ErrPatternMetricsQueryFailed     = errors.PatternMetricsQueryFailed(nil)
+	ErrPatternAnalysisFailed         = errors.PatternAnalysisFailed(nil)
+	ErrPatternValidationFailed       = errors.PatternValidationFailed("")
+	ErrDatabaseConnectionFailed      = errors.DatabaseConnectionFailed(nil)
+	ErrNilPattern                    = errors.NilPattern()
+	ErrNilPatternCache               = errors.NilPatternCache()
+	ErrNilPatternMetric              = errors.NilPatternMetric()
+	ErrNilPatternTestResult          = errors.NilPatternTestResult()
 )

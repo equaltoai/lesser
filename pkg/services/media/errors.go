@@ -1,60 +1,60 @@
 package media
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
 // Media service specific errors
 var (
 	// ErrMediaNotFound is returned when media is not found
-	ErrMediaNotFound = errors.New("media not found")
+	ErrMediaNotFound = errors.NewAppError(errors.CodeNotFound, errors.CategoryMedia, "media not found")
 
 	// ErrMediaCreateFailed is returned when media creation fails
-	ErrMediaCreateFailed = errors.New("failed to create media")
+	ErrMediaCreateFailed = errors.FailedToCreate("media", nil)
 
 	// ErrMediaUpdateFailed is returned when media update fails
-	ErrMediaUpdateFailed = errors.New("failed to update media")
+	ErrMediaUpdateFailed = errors.FailedToUpdate("media", nil)
 
 	// ErrMediaDeleteFailed is returned when media deletion fails
-	ErrMediaDeleteFailed = errors.New("failed to delete media")
+	ErrMediaDeleteFailed = errors.FailedToDelete("media", nil)
 
 	// ErrMediaAccessDenied is returned when media access is denied
-	ErrMediaAccessDenied = errors.New("media access denied")
+	ErrMediaAccessDenied = errors.AccessDeniedForResource("media", "unknown")
 
 	// ErrMediaProcessingFailed is returned when media processing fails
-	ErrMediaProcessingFailed = errors.New("media processing failed")
+	ErrMediaProcessingFailed = errors.ProcessingFailed("media processing", nil)
 
 	// ErrDatabaseOperation is returned when database operations fail
-	ErrDatabaseOperation = errors.New("database error")
+	ErrDatabaseOperation = errors.NewStorageError(errors.CodeInternal, "database error")
 
 	// ErrMediaStorageFailed is returned when media storage fails
-	ErrMediaStorageFailed = errors.New("failed to store media record")
+	ErrMediaStorageFailed = errors.FailedToStore("media record", nil)
 
 	// ErrMediaRetrievalFailed is returned when media retrieval fails
-	ErrMediaRetrievalFailed = errors.New("failed to get media")
+	ErrMediaRetrievalFailed = errors.FailedToGet("media", nil)
 
 	// ErrMediaFileDataRequired is returned when file data is required but missing
-	ErrMediaFileDataRequired = errors.New("file data is required")
+	ErrMediaFileDataRequired = errors.NewValidationError("file_data", "required")
 
 	// ErrMediaFileTooLarge is returned when file size exceeds maximum limit
-	ErrMediaFileTooLarge = errors.New("file size too large")
+	ErrMediaFileTooLarge = errors.NewValidationError("file_size", "too large")
 
 	// ErrMediaUnsupportedType is returned when content type is not supported
-	ErrMediaUnsupportedType = errors.New("unsupported content type")
+	ErrMediaUnsupportedType = errors.ContentTypeNotAllowed("unknown")
 
 	// ErrMediaFileExtensionMismatch is returned when file extension doesn't match content type
-	ErrMediaFileExtensionMismatch = errors.New("file extension does not match content type")
+	ErrMediaFileExtensionMismatch = errors.NewValidationError("file_extension", "does not match content type")
 
 	// ErrMediaNotReady is returned when media is not ready for viewing
-	ErrMediaNotReady = errors.New("media not ready for viewing")
+	ErrMediaNotReady = errors.MediaAttachmentNotReady("unknown")
 
 	// ErrMediaProcessingQueueFailed is returned when media processing queue operation fails
-	ErrMediaProcessingQueueFailed = errors.New("media processing queue failed")
+	ErrMediaProcessingQueueFailed = errors.ProcessingFailed("media processing queue", nil)
 
 	// ErrMediaNotReadyForStreaming is returned when media is not ready for streaming
-	ErrMediaNotReadyForStreaming = errors.New("media not ready for streaming")
+	ErrMediaNotReadyForStreaming = errors.NewValidationError("media_streaming", "not ready for streaming")
 
 	// ErrMediaValidationFailed is returned when media validation fails
-	ErrMediaValidationFailed = errors.New("media validation failed")
+	ErrMediaValidationFailed = errors.MediaAttachmentValidationFailed("unknown reason")
 
 	// ErrMediaUnauthorizedAccess is returned when user is not authorized to access/modify media
-	ErrMediaUnauthorizedAccess = errors.New("unauthorized media access")
+	ErrMediaUnauthorizedAccess = errors.InsufficientPermissions("media access")
 )

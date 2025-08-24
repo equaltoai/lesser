@@ -1,45 +1,45 @@
 package ai
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// AI processing errors
+// AI processing errors - consolidated to use centralized error system
 var (
 	// ErrContentExtractionFailed is returned when content extraction from stream fails
-	ErrContentExtractionFailed = errors.New("failed to extract content")
+	ErrContentExtractionFailed = errors.ProcessingFailed("content extraction", nil)
 
 	// ErrAnalysisFailed is returned when AI content analysis fails
-	ErrAnalysisFailed = errors.New("failed to analyze content")
+	ErrAnalysisFailed = errors.ProcessingFailed("AI content analysis", nil)
 
 	// ErrAnalysisSaveFailed is returned when saving AI analysis fails
-	ErrAnalysisSaveFailed = errors.New("failed to save analysis")
+	ErrAnalysisSaveFailed = errors.FailedToSave("AI analysis", nil)
 
 	// ErrStreamUnmarshalFailed is returned when unmarshaling stream data fails
-	ErrStreamUnmarshalFailed = errors.New("failed to unmarshal stream image")
+	ErrStreamUnmarshalFailed = errors.UnmarshalingFailed("stream image", nil)
 
 	// ErrInvalidObjectPK is returned when object primary key is invalid
-	ErrInvalidObjectPK = errors.New("invalid object PK")
+	ErrInvalidObjectPK = errors.IDInvalidFormat("object")
 
 	// ErrNotAnalyzableType is returned when object type cannot be analyzed
-	ErrNotAnalyzableType = errors.New("not an analyzable type")
+	ErrNotAnalyzableType = errors.InvalidValue("object_type", []string{"image", "video", "audio", "text"}, "")
 
 	// ErrNoJSONFoundInResponse is returned when no JSON is found in AI model response
-	ErrNoJSONFoundInResponse = errors.New("no JSON found in response")
+	ErrNoJSONFoundInResponse = errors.ParsingFailed("JSON in AI response", nil)
 
 	// ErrLocalNetworkAccess is returned when attempting to access local networks
-	ErrLocalNetworkAccess = errors.New("access to local networks not allowed")
+	ErrLocalNetworkAccess = errors.URLHostNotAllowed("", "local network")
 
 	// ErrInvalidURLScheme is returned when URL has an invalid scheme
-	ErrInvalidURLScheme = errors.New("invalid URL scheme")
+	ErrInvalidURLScheme = errors.URLSchemeNotAllowed("", "")
 
 	// ErrImageDownloadHTTP is returned when image download fails with HTTP error
-	ErrImageDownloadHTTP = errors.New("failed to download image")
+	ErrImageDownloadHTTP = errors.NetworkError("image download", nil)
 
 	// ErrInvalidEmbeddingResponse is returned when embedding response format is invalid
-	ErrInvalidEmbeddingResponse = errors.New("invalid embedding response format")
+	ErrInvalidEmbeddingResponse = errors.ParsingFailed("embedding response", nil)
 
 	// ErrGetAnalysisDeprecated is returned when deprecated GetAnalysis method is called
-	ErrGetAnalysisDeprecated = errors.New("GetAnalysis is deprecated - use service layer")
+	ErrGetAnalysisDeprecated = errors.ProcessingFailed("GetAnalysis is deprecated", nil)
 
 	// ErrGetAnalysisStatsDeprecated is returned when deprecated GetAnalysisStats method is called
-	ErrGetAnalysisStatsDeprecated = errors.New("GetAnalysisStats is deprecated - use service layer")
+	ErrGetAnalysisStatsDeprecated = errors.ProcessingFailed("GetAnalysisStats is deprecated", nil)
 )

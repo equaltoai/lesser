@@ -4,13 +4,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -204,7 +204,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 	// Get service stats for the period
 	stats, err := ma.metricsRepository.GetServiceStats(ctx, service, metricType, startTime, endTime)
 	if err != nil {
-		return errors.Join(ErrServiceStatsRetrieval, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get service stats")
 	}
 
 	if stats.Count == 0 {
@@ -216,7 +216,7 @@ func (ma *MetricsAggregator) aggregateMetrics(ctx context.Context, service, metr
 
 	// Perform aggregation using the repository
 	if err := ma.metricsRepository.Aggregate(ctx, metricType, period, startTime, endTime); err != nil {
-		return errors.Join(ErrMetricsAggregation, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to aggregate metrics")
 	}
 
 	ma.logger.Info("aggregated metrics",
@@ -305,7 +305,7 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 	var metric models.Metrics
 
 	if err := stream.UnmarshalItem(record, &metric); err != nil {
-		return nil, errors.Join(ErrStreamRecordUnmarshal, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal metric from stream record")
 	}
 
 	// Basic validation with structured logging
@@ -313,13 +313,13 @@ func (ma *MetricsAggregator) extractMetricFromRecord(record events.DynamoDBEvent
 		ma.logger.Error("missing required metric type",
 			zap.String("type", metric.Type),
 			zap.String("service", metric.Service))
-		return nil, ErrMissingRequiredFields
+		return nil, pkgErrors.MetricsAggregatorMissingRequiredFields()
 	}
 	if err := common.ValidateRequiredParam("metric.Service", metric.Service); err != nil {
 		ma.logger.Error("missing required metric service",
 			zap.String("type", metric.Type),
 			zap.String("service", metric.Service))
-		return nil, ErrMissingRequiredFields
+		return nil, pkgErrors.MetricsAggregatorMissingRequiredFields()
 	}
 
 	return &metric, nil
@@ -377,7 +377,7 @@ func (ma *MetricsAggregator) cleanupMetricsByGranularity(ctx context.Context, gr
 			zap.String("granularity", granularity),
 			zap.Time("cutoff_time", cutoffTime),
 			zap.Error(err))
-		return 0, errors.Join(ErrMetricsCleanup, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to cleanup metrics")
 	}
 
 	ma.logger.Info("Cleanup operation completed successfully",

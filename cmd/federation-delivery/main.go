@@ -19,7 +19,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,6 +34,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -266,7 +266,7 @@ func (p *FederationDeliveryProcessor) handleDeliveryMessage(ctx *lift.Context, m
 		p.logger.Error("failed to parse message body",
 			zap.String("message_id", message.MessageId),
 			zap.Error(err))
-		return errors.Join(ErrInvalidMessageBody, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeBadRequest, pkgErrors.CategoryLambda, "Invalid message body format")
 	}
 
 	p.logger.Info("processing federation delivery",
@@ -297,7 +297,7 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 		logger.Error("signing actor not found",
 			zap.String("signing_actor_id", msg.SigningActorID),
 			zap.Error(err))
-		return ErrSigningActorMissing
+		return pkgErrors.FederationDeliverySigningActorMissing()
 	}
 
 	targetDomain := extractDomainFromURL(msg.TargetInbox)
@@ -387,7 +387,7 @@ func (p *FederationDeliveryProcessor) processDeliveryMessage(ctx context.Context
 				zap.String("delivery_id", msg.DeliveryID),
 				zap.Int("total_attempts", msg.RetryCount+1),
 				zap.String("error_type", errorType))
-			return ErrDeliveryMaxAttemptsExceeded
+			return pkgErrors.FederationDeliveryMaxAttemptsExceeded()
 		}
 
 		// This is a temporary error - schedule retry
@@ -480,7 +480,7 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 		p.logger.Error("failed to marshal message for requeue",
 			zap.String("delivery_id", msg.DeliveryID),
 			zap.Error(err))
-		return ErrMessageMarshalFailure
+		return pkgErrors.FederationDeliveryMessageMarshalFailure()
 	}
 
 	// Calculate delay seconds (SQS DelaySeconds max is 900 seconds / 15 minutes)
@@ -520,7 +520,7 @@ func (p *FederationDeliveryProcessor) requeueDelivery(ctx context.Context, msg *
 			zap.String("delivery_id", msg.DeliveryID),
 			zap.Int("delay_minutes", delayMinutes),
 			zap.Error(err))
-		return ErrMessageRequeueFailure
+		return pkgErrors.FederationDeliveryMessageRequeueFailure()
 	}
 
 	p.logger.Info("message requeued with delay",

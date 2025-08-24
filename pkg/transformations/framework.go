@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/cmd/api/models"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 )
 
 // Transformer interface for data transformations
@@ -26,7 +27,7 @@ type BaseTransformer[TSource, TTarget any] struct {
 func (bt *BaseTransformer[TSource, TTarget]) Transform(ctx context.Context, source TSource) (TTarget, error) {
 	if bt.TransformFunc == nil {
 		var zero TTarget
-		return zero, ErrTransformFunctionNotSet
+		return zero, errors.TransformFunctionNotSet()
 	}
 	return bt.TransformFunc(ctx, source)
 }
@@ -41,7 +42,7 @@ func (bt *BaseTransformer[TSource, TTarget]) TransformList(ctx context.Context, 
 	for _, source := range sources {
 		transformed, err := bt.Transform(ctx, source)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", ErrTransformItemFailed, err)
+			return nil, errors.TransformItemFailed(err)
 		}
 		results = append(results, transformed)
 	}

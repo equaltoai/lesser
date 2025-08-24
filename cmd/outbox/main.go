@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -80,13 +79,13 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Initialize federation-specific services
 	options := common.DefaultLambdaInitOptions(common.LambdaTypeFederation)
 	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		return nil, errors.Join(ErrLambdaServicesInitialization, err)
+		return nil, lambdaServicesInitializationFailed()
 	}
 
 	// Extract initialized services with type safety
 	repos, ok := lambdaCtx.Repos.(core.RepositoryStorage)
 	if !ok {
-		return nil, ErrRepositoryStorageFromContext
+		return nil, repositoryStorageFromContextFailed()
 	}
 
 	// Get individual repositories from the repository storage
@@ -103,12 +102,12 @@ func NewOutboxProcessor() (*OutboxProcessor, error) {
 	// Extract federation services from Lambda context
 	federationService, ok := lambdaCtx.DeliveryService.(*federation.DeliveryService)
 	if !ok {
-		return nil, ErrFederationServiceFromContext
+		return nil, federationServiceFromContextFailed()
 	}
 
 	costCalculator, ok := lambdaCtx.CostCalculator.(*federation.CostCalculator)
 	if !ok {
-		return nil, ErrCostCalculatorFromContext
+		return nil, costCalculatorFromContextFailed()
 	}
 
 	return &OutboxProcessor{
@@ -221,7 +220,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 			zap.String("message_id", msg.MessageId),
 			zap.Error(err),
 		)
-		return errors.Join(ErrInvalidMessageFormat, err)
+		return invalidMessageFormat()
 	}
 
 	// Extract domain from target inbox
@@ -236,13 +235,13 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 	// Validate required fields
 	if deliveryMsg.Activity == nil {
-		return ErrMissingActivityInMessage
+		return missingActivityInMessage()
 	}
 	if deliveryMsg.Actor == nil {
-		return ErrMissingActorInMessage
+		return missingActorInMessage()
 	}
 	if err := common.ValidateRequiredParam("targetInbox", deliveryMsg.TargetInbox); err != nil {
-		return ErrMissingTargetInbox
+		return missingTargetInbox()
 	}
 
 	op.logger.Info("processing federation delivery",
@@ -296,7 +295,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 			}
 		}()
 
-		return ErrDeliveryBudgetLimitExceeded
+		return deliveryBudgetLimitExceeded()
 	}
 
 	// Attempt delivery with retry logic
@@ -315,7 +314,7 @@ func (op *OutboxProcessor) processMessage(ctx *lift.Context, msg events.SQSMessa
 
 	// Return error for temporary failures to trigger SQS retry
 	if !result.Success && !op.isPermanentError(result.StatusCode) {
-		return ErrDeliveryRetryableFailure
+		return deliveryRetryableFailure(err)
 	}
 
 	return nil
@@ -451,7 +450,7 @@ func (op *OutboxProcessor) trackDeliveryStatus(ctx context.Context, msg Activity
 			zap.String("activity_id", msg.Activity.ID),
 			zap.Error(err),
 		)
-		return errors.Join(ErrFederationDeliveryStatusRecord, err)
+		return federationDeliveryStatusRecordFailed()
 	}
 
 	op.logger.Info("federation delivery status recorded",
@@ -850,25 +849,25 @@ func (op *OutboxProcessor) validateJWTToken(tokenString string) (*auth.Claims, e
 
 	token, err := jwt.ParseWithClaims(tokenString, &auth.Claims{}, func(token *jwt.Token) (any, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, ErrUnexpectedJWTSigningMethod
+			return nil, unexpectedJWTSigningMethod()
 		}
 		return []byte(cfg.JWTSecret), nil
 	})
 	if err != nil {
-		return nil, errors.Join(ErrJWTTokenParsing, err)
+		return nil, jwtTokenParsingFailed(err)
 	}
 
 	if claims, ok := token.Claims.(*auth.Claims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, ErrInvalidToken
+	return nil, invalidToken()
 }
 
 func main() {
 	processor, err := NewOutboxProcessor()
 	if err != nil {
-		panic(errors.Join(ErrOutboxProcessorInitialization, err))
+		panic(outboxProcessorInitializationFailed())
 	}
 
 	app := lift.New()

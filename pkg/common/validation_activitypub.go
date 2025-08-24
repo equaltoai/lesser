@@ -76,10 +76,7 @@ func validateActorRequiredFields(actor map[string]interface{}) error {
 		return ValidationError{Field: "type", Message: "is required for ActivityPub actors"}
 	}
 	if !ActorTypePattern.MatchString(actorType) {
-		return ValidationError{
-			Field:   "type",
-			Message: "must be one of: Person, Service, Group, Organization, Application",
-		}
+		return ValidationError{Field: "type", Message: "must be one of: Person, Service, Group, Organization, Application"}
 	}
 
 	// Validate required preferredUsername
@@ -179,10 +176,7 @@ func ValidateActivityPubActivity(activity map[string]interface{}) error {
 	}
 
 	if !ActivityTypePattern.MatchString(activityType) {
-		return ValidationError{
-			Field:   "type",
-			Message: "must be a valid ActivityPub activity type",
-		}
+		return ValidationError{Field: "type", Message: "must be a valid ActivityPub activity type"}
 	}
 
 	// Validate required actor field
@@ -408,20 +402,14 @@ func ValidateActivityPubUsername(username string) error {
 	// ActivityPub usernames should be alphanumeric with limited special chars
 	usernamePattern := regexp.MustCompile(`^[a-zA-Z0-9_\-\.]+$`)
 	if !usernamePattern.MatchString(username) {
-		return ValidationError{
-			Field:   "preferredUsername",
-			Message: "can only contain letters, numbers, underscores, hyphens, and dots",
-		}
+		return ValidationError{Field: "preferredUsername", Message: "can only contain letters, numbers, underscores, hyphens, and dots"}
 	}
 
 	// Cannot start or end with special characters
 	if strings.HasPrefix(username, ".") || strings.HasSuffix(username, ".") ||
 		strings.HasPrefix(username, "-") || strings.HasSuffix(username, "-") ||
 		strings.HasPrefix(username, "_") || strings.HasSuffix(username, "_") {
-		return ValidationError{
-			Field:   "preferredUsername",
-			Message: "cannot start or end with special characters",
-		}
+		return ValidationError{Field: "preferredUsername", Message: "cannot start or end with special characters"}
 	}
 
 	return nil
@@ -479,10 +467,7 @@ func ValidateActivityPubAddressing(addressing interface{}, fieldName string) err
 					return err
 				}
 			} else {
-				return ValidationError{
-					Field:   fmt.Sprintf("%s[%d]", fieldName, i),
-					Message: "must be a string URL",
-				}
+				return ValidationError{Field: fmt.Sprintf("%s[%d]", fieldName, i), Message: "must be a string URL"}
 			}
 		}
 		return nil
@@ -557,28 +542,19 @@ func ValidateActivityPubAttachments(attachments interface{}, fieldName string) e
 	for i, attachment := range attachArray {
 		attachObj, ok := attachment.(map[string]interface{})
 		if !ok {
-			return ValidationError{
-				Field:   fmt.Sprintf("%s[%d]", fieldName, i),
-				Message: "must be an object",
-			}
+			return ValidationError{Field: fmt.Sprintf("%s[%d]", fieldName, i), Message: "must be an object"}
 		}
 
 		// Validate attachment type
 		attachType, ok := attachObj["type"].(string)
 		if !ok || attachType == "" {
-			return ValidationError{
-				Field:   fmt.Sprintf("%s[%d].type", fieldName, i),
-				Message: "is required",
-			}
+			return ValidationError{Field: fmt.Sprintf("%s[%d].type", fieldName, i), Message: "is required"}
 		}
 
 		// Validate attachment URL
 		attachURL, ok := attachObj["url"].(string)
 		if !ok || attachURL == "" {
-			return ValidationError{
-				Field:   fmt.Sprintf("%s[%d].url", fieldName, i),
-				Message: "is required",
-			}
+			return ValidationError{Field: fmt.Sprintf("%s[%d].url", fieldName, i), Message: "is required"}
 		}
 
 		if err := ValidateActivityPubURL(attachURL, fmt.Sprintf("%s[%d].url", fieldName, i)); err != nil {
@@ -603,19 +579,13 @@ func ValidateActivityPubTags(tags interface{}, fieldName string) error {
 	for i, tag := range tagArray {
 		tagObj, ok := tag.(map[string]interface{})
 		if !ok {
-			return ValidationError{
-				Field:   fmt.Sprintf("%s[%d]", fieldName, i),
-				Message: "must be an object",
-			}
+			return ValidationError{Field: fmt.Sprintf("%s[%d]", fieldName, i), Message: "must be an object"}
 		}
 
 		// Validate tag type
 		tagType, ok := tagObj["type"].(string)
 		if !ok {
-			return ValidationError{
-				Field:   fmt.Sprintf("%s[%d].type", fieldName, i),
-				Message: "is required",
-			}
+			return ValidationError{Field: fmt.Sprintf("%s[%d].type", fieldName, i), Message: "is required"}
 		}
 
 		// Validate based on tag type
@@ -714,10 +684,7 @@ func ValidateActivityPubSignature(signature string) error {
 	requiredParams := []string{"keyId", "algorithm", "headers", "signature"}
 	for _, param := range requiredParams {
 		if _, exists := params[param]; !exists {
-			return ValidationError{
-				Field:   "signature",
-				Message: fmt.Sprintf("missing required parameter: %s", param),
-			}
+			return ValidationError{Field: "signature", Message: fmt.Sprintf("missing required parameter: %s", param)}
 		}
 	}
 
@@ -745,10 +712,7 @@ func ValidateActivityPubContentType(contentType string) error {
 		}
 	}
 
-	return ValidationError{
-		Field:   "content-type",
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(ActivityPubMimeTypes, ", ")),
-	}
+	return ValidationError{Field: "content-type", Message: fmt.Sprintf("must be one of: %s", strings.Join(ActivityPubMimeTypes, ", "))}
 }
 
 // ValidateActivityPubJSON validates that a string contains valid ActivityPub JSON

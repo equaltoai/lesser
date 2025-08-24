@@ -113,22 +113,22 @@ type StatusValidationRules struct {
 func (m *MastodonBusinessLogic) ValidateStatusContent(content string, mediaCount int, pollOptions int) error {
 	// Content length validation
 	if len(content) > m.config.MaxStatusLength {
-		return fmt.Errorf("%w of %d characters", ErrStatusContentTooLong, m.config.MaxStatusLength)
+		return fmt.Errorf("status content exceeds maximum length of %d characters", m.config.MaxStatusLength)
 	}
 
 	// Require content if no media
 	if len(strings.TrimSpace(content)) == 0 && mediaCount == 0 {
-		return ErrStatusMustHaveContent
+		return fmt.Errorf("status must have content or media attachments")
 	}
 
 	// Media validation
 	if mediaCount > 4 { // Mastodon standard
-		return ErrStatusTooManyMedia
+		return fmt.Errorf("status cannot have more than 4 media attachments")
 	}
 
 	// Poll validation
 	if pollOptions > m.config.MaxPollOptions {
-		return fmt.Errorf("%w %d", ErrStatusTooManyPollOptions, m.config.MaxPollOptions)
+		return fmt.Errorf("poll cannot have more than %d options", m.config.MaxPollOptions)
 	}
 
 	return nil
@@ -140,7 +140,7 @@ func (m *MastodonBusinessLogic) ValidateStatusContent(content string, mediaCount
 // ValidateDisplayName validates account display name
 func (m *MastodonBusinessLogic) ValidateDisplayName(displayName string) error {
 	if len(displayName) > m.config.MaxDisplayName {
-		return fmt.Errorf("%w of %d characters", ErrDisplayNameTooLong, m.config.MaxDisplayName)
+		return fmt.Errorf("display name exceeds maximum length of %d characters", m.config.MaxDisplayName)
 	}
 	return nil
 }
@@ -148,28 +148,28 @@ func (m *MastodonBusinessLogic) ValidateDisplayName(displayName string) error {
 // ValidateMastodonUsername validates Mastodon-compatible usernames
 func ValidateMastodonUsername(username string) error {
 	if username == "" {
-		return ErrUsernameEmpty
+		return fmt.Errorf("username cannot be empty")
 	}
 
 	// Mastodon username pattern: alphanumeric + underscore, no consecutive underscores
 	pattern := regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 	if !pattern.MatchString(username) {
-		return ErrUsernameInvalidCharacters
+		return fmt.Errorf("username can only contain letters, numbers, and underscores")
 	}
 
 	// No consecutive underscores
 	if strings.Contains(username, "__") {
-		return ErrUsernameConsecutiveUnderscores
+		return fmt.Errorf("username cannot contain consecutive underscores")
 	}
 
 	// Length constraints
 	if len(username) < 1 || len(username) > 30 {
-		return ErrUsernameInvalidLength
+		return fmt.Errorf("username must be between 1 and 30 characters")
 	}
 
 	// Cannot start or end with underscore
 	if strings.HasPrefix(username, "_") || strings.HasSuffix(username, "_") {
-		return ErrUsernameInvalidFormat
+		return fmt.Errorf("username cannot start or end with underscore")
 	}
 
 	return nil
@@ -178,7 +178,7 @@ func ValidateMastodonUsername(username string) error {
 // ValidateBio validates account bio/note
 func (m *MastodonBusinessLogic) ValidateBio(bio string) error {
 	if len(bio) > m.config.MaxBioLength {
-		return fmt.Errorf("%w of %d characters", ErrBioTooLong, m.config.MaxBioLength)
+		return fmt.Errorf("bio exceeds maximum length of %d characters", m.config.MaxBioLength)
 	}
 	return nil
 }
@@ -207,11 +207,11 @@ func (m *MastodonBusinessLogic) ValidateMediaUpload(data []byte, mimeType string
 	switch mediaType {
 	case MediaTypeVideo, MediaTypeGIF:
 		if size > m.config.VideoUploadLimit {
-			return fmt.Errorf("%w of %d bytes", ErrVideoFileTooLarge, m.config.VideoUploadLimit)
+			return fmt.Errorf("video file size exceeds limit of %d bytes", m.config.VideoUploadLimit)
 		}
 	default:
 		if size > m.config.MediaUploadLimit {
-			return fmt.Errorf("%w of %d bytes", ErrMediaFileTooLarge, m.config.MediaUploadLimit)
+			return fmt.Errorf("media file size exceeds limit of %d bytes", m.config.MediaUploadLimit)
 		}
 	}
 
@@ -219,15 +219,15 @@ func (m *MastodonBusinessLogic) ValidateMediaUpload(data []byte, mimeType string
 	switch mediaType {
 	case MediaTypeImage:
 		if !strings.HasPrefix(mimeType, "image/") {
-			return fmt.Errorf("%w: %s", ErrInvalidImageMimeType, mimeType)
+			return fmt.Errorf("invalid image MIME type: %s", mimeType)
 		}
 	case MediaTypeVideo:
 		if !strings.HasPrefix(mimeType, "video/") {
-			return fmt.Errorf("%w: %s", ErrInvalidVideoMimeType, mimeType)
+			return fmt.Errorf("invalid video MIME type: %s", mimeType)
 		}
 	case MediaTypeAudio:
 		if !strings.HasPrefix(mimeType, "audio/") {
-			return fmt.Errorf("%w: %s", ErrInvalidAudioMimeType, mimeType)
+			return fmt.Errorf("invalid audio MIME type: %s", mimeType)
 		}
 	}
 
@@ -261,11 +261,11 @@ const (
 // ValidateMastodonFilterKeyword validates filter keyword patterns
 func ValidateMastodonFilterKeyword(keyword string) error {
 	if keyword == "" {
-		return ErrFilterKeywordEmpty
+		return fmt.Errorf("filter keyword cannot be empty")
 	}
 
 	if len(keyword) > 40 { // Mastodon limit
-		return fmt.Errorf("%w of 40 characters", ErrFilterKeywordTooLong)
+		return fmt.Errorf("filter keyword exceeds maximum length of 40 characters")
 	}
 
 	return nil
@@ -283,31 +283,31 @@ type PollOption struct {
 // ValidatePollOptions validates poll creation
 func (m *MastodonBusinessLogic) ValidatePollOptions(options []PollOption, expiresIn int) error {
 	if len(options) < 2 {
-		return ErrPollTooFewOptions
+		return fmt.Errorf("poll must have at least 2 options")
 	}
 
 	if len(options) > m.config.MaxPollOptions {
-		return fmt.Errorf("%w %d", ErrPollTooManyOptions, m.config.MaxPollOptions)
+		return fmt.Errorf("poll cannot have more than %d options", m.config.MaxPollOptions)
 	}
 
 	// Validate option titles
 	for i, option := range options {
 		if option.Title == "" {
-			return fmt.Errorf("%w %d", ErrPollOptionEmpty, i+1)
+			return fmt.Errorf("poll option %d cannot be empty", i+1)
 		}
 		if len(option.Title) > 50 { // Mastodon limit
-			return fmt.Errorf("%w %d of 50 characters", ErrPollOptionTooLong, i+1)
+			return fmt.Errorf("poll option %d exceeds maximum length of 50 characters", i+1)
 		}
 	}
 
 	// Validate expiry
 	if expiresIn <= 0 {
-		return ErrPollExpiryInvalid
+		return fmt.Errorf("poll expiry must be positive")
 	}
 
 	maxExpiry := int(m.config.MaxPollExpiry.Seconds())
 	if expiresIn > maxExpiry {
-		return fmt.Errorf("%w %d seconds", ErrPollExpiryTooLong, maxExpiry)
+		return fmt.Errorf("poll expiry cannot exceed maximum of %d seconds", maxExpiry)
 	}
 
 	return nil
@@ -348,7 +348,7 @@ func ValidateNotificationType(notificationType string) error {
 		}
 	}
 
-	return fmt.Errorf("%w: %s", ErrInvalidNotificationType, notificationType)
+	return fmt.Errorf("invalid notification type: %s", notificationType)
 }
 
 // 8. Scope Validation Pattern
@@ -391,7 +391,7 @@ func ValidateMastodonOAuthScopes(scopes string) ([]string, error) {
 		}
 
 		if !validScopeMap[scope] {
-			return nil, fmt.Errorf("%w: %s", ErrInvalidOAuthScope, scope)
+			return nil, fmt.Errorf("invalid OAuth scope: %s", scope)
 		}
 
 		validScopes = append(validScopes, scope)
@@ -440,7 +440,7 @@ func ValidateMastodonID(id string) error {
 
 	// Mastodon IDs are typically numeric strings
 	if _, err := strconv.ParseUint(id, 10, 64); err != nil {
-		return fmt.Errorf("%w: %s", ErrInvalidIDFormat, id)
+		return fmt.Errorf("invalid ID format: %s", id)
 	}
 
 	return nil
@@ -490,7 +490,7 @@ type MastodonOperation interface {
 func (m *MastodonBusinessLogic) ExecuteMastodonAPIOperation(ctx context.Context, operation MastodonOperation) (interface{}, error) {
 	// 1. Validate operation
 	if err := operation.Validate(ctx); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrMastodonOperationValidationFailed, err)
+		return nil, fmt.Errorf("mastodon operation validation failed: %w", err)
 	}
 
 	// 2. Execute operation
@@ -499,7 +499,7 @@ func (m *MastodonBusinessLogic) ExecuteMastodonAPIOperation(ctx context.Context,
 			// Log metrics recording failure but don't fail the operation
 			zap.L().Error("Failed to record failure metrics", zap.Error(metricErr))
 		}
-		return nil, fmt.Errorf("%w: %w", ErrMastodonOperationExecutionFailed, err)
+		return nil, fmt.Errorf("mastodon operation execution failed: %w", err)
 	}
 
 	// 3. Get response
@@ -536,7 +536,7 @@ func ParseMastodonTimestamp(timestamp string) (time.Time, error) {
 		}
 	}
 
-	return time.Time{}, fmt.Errorf("%w: %s", ErrInvalidTimestampFormat, timestamp)
+	return time.Time{}, fmt.Errorf("invalid timestamp format: %s", timestamp)
 }
 
 // SanitizeHTML removes or escapes HTML content for Mastodon API responses

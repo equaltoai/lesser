@@ -1185,13 +1185,13 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Generate ECDSA P-256 key pair
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToGenerateVAPIDPrivateKey, err)
+		return nil, errors.Join(failedToGenerateVAPIDPrivateKey(), err)
 	}
 
 	// Convert to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
-		return nil, errors.Join(ErrFailedToConvertToECDHKey, err)
+		return nil, errors.Join(failedToConvertToECDHKey(), err)
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 	publicKeyBase64 := base64.RawURLEncoding.EncodeToString(publicKeyBytes)
@@ -1223,7 +1223,7 @@ func (h *Handler) generateAndStoreVAPIDKeys(ctx context.Context) (*storage.VAPID
 	// Store the keys
 	err = h.repos.PushSubscription().SetVAPIDKeys(ctx, vapidKeys)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToStoreVAPIDKeys, err)
+		return nil, errors.Join(failedToStoreVAPIDKeys(), err)
 	}
 
 	h.logger.Info("successfully generated and stored new VAPID keys",

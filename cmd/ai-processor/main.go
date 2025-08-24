@@ -7,24 +7,21 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-
 	"github.com/equaltoai/lesser/pkg/ai"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	aiService "github.com/equaltoai/lesser/pkg/services/ai"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 )
-
 // AIProcessor handles AI-based content analysis for posts and media in the system.
 // It integrates with AWS Bedrock to perform toxicity detection, spam filtering,
 // and automated moderation decisions based on configurable thresholds.
@@ -71,13 +68,13 @@ func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context,
 	// Extract content from the stream record
 	content, err := ap.extractContent(record)
 	if err != nil {
-		return errors.Join(ErrContentExtractionFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to extract content from stream record")
 	}
 
 	// Perform AI analysis using the analyzer (AWS services)
 	analysis, err := ap.aiAnalyzer.AnalyzeContent(ctx, content)
 	if err != nil {
-		return errors.Join(ErrAnalysisFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "AI analysis failed")
 	}
 
 	// Store analysis and publish events using the service layer
@@ -87,7 +84,7 @@ func (ap *AIProcessor) processRecord(ctx context.Context, liftCtx *lift.Context,
 	}
 	_, err = ap.aiService.SaveAnalysis(ctx, saveCmd)
 	if err != nil {
-		return errors.Join(ErrAnalysisSaveFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to save AI analysis")
 	}
 
 	// Handle moderation action if needed
@@ -144,7 +141,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 	}
 
 	if err := stream.UnmarshalItem(record, &item); err != nil {
-		return nil, errors.Join(ErrStreamUnmarshalFailed, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal stream record")
 	}
 
 	// Extract object ID from PK
@@ -155,7 +152,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 		ap.logger.Error("invalid object primary key format",
 			zap.String("pk", item.PK),
 		)
-		return nil, ErrInvalidObjectPK
+		return nil, pkgErrors.AIProcessorInvalidObjectPK()
 	}
 
 	// Skip if not an analyzable type
@@ -164,7 +161,7 @@ func (ap *AIProcessor) extractContent(record events.DynamoDBEventRecord) (*ai.Co
 			zap.String("type", item.Type),
 			zap.String("object_id", objectID),
 		)
-		return nil, ErrNotAnalyzableType
+		return nil, pkgErrors.AIProcessorNotAnalyzableType()
 	}
 
 	// Extract media URLs from attachments

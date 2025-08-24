@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -149,7 +148,7 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	// Extract entity type from PK
 	entityType, err := stream.GetEventType(record)
 	if err != nil {
-		return errors.Join(ErrEntityTypeExtraction, err)
+		return entityTypeExtractionFailed()
 	}
 
 	// Only process activity records
@@ -160,13 +159,13 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	// Unmarshal the activity record
 	var activityRecord ActivityRecord
 	if err := stream.UnmarshalItem(record, &activityRecord); err != nil {
-		return errors.Join(ErrActivityRecordUnmarshaling, err)
+		return activityRecordUnmarshalingFailed(err)
 	}
 
 	// Parse the activity
 	activity, err := activitypub.ParseActivity([]byte(activityRecord.Activity))
 	if err != nil {
-		return errors.Join(ErrActivityParsing, err)
+		return activityParsingFailed("unknown", err)
 	}
 
 	// Determine direction (inbox or outbox)
@@ -182,7 +181,7 @@ func (h *ActivityHandler) processRecord(ctx context.Context, record events.Dynam
 	case OutboxDirection:
 		return h.processOutboxActivity(ctx, activity, activityRecord.Username)
 	default:
-		return ErrUnknownActivityDirection
+		return unknownActivityDirection(string(direction))
 	}
 }
 
@@ -330,7 +329,7 @@ func (h *ActivityHandler) processFollowActivity(ctx context.Context, activity *a
 			zap.String("following", targetUsername),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrFollowRelationshipCreation, err)
+		return followRelationshipCreationFailed(err)
 	}
 
 	// Create follow notification for the target user
@@ -429,7 +428,7 @@ func (h *ActivityHandler) processAcceptActivity(ctx context.Context, activity *a
 			zap.String("accepter", accepter),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrRelationshipStatusUpdate, err)
+		return relationshipStatusUpdateFailed(err)
 	}
 
 	// Create notification for the follower that their follow request was accepted
@@ -474,7 +473,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to extract Note from Create activity",
 			zap.Error(err),
 			zap.String("activity_id", activity.ID))
-		return errors.Join(ErrNoteExtraction, err)
+		return noteExtractionFailed(err)
 	}
 
 	// Create addressing validator for visibility processing
@@ -492,7 +491,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to create status from Note",
 			zap.Error(err),
 			zap.String("activity_id", activity.ID))
-		return errors.Join(ErrStatusCreation, err)
+		return statusCreationFailed(err)
 	}
 
 	// Store the status/object
@@ -500,7 +499,7 @@ func (h *ActivityHandler) processCreateActivity(ctx context.Context, activity *a
 		h.Logger.Error("failed to store Note object",
 			zap.Error(err),
 			zap.String("status_id", status.StatusID))
-		return errors.Join(ErrObjectStorage, err)
+		return objectStorageFailed(err)
 	}
 
 	// Add to appropriate timelines based on visibility
@@ -574,7 +573,7 @@ func (h *ActivityHandler) extractNoteFromActivity(activity *activitypub.Activity
 		// Convert map to Note
 		return h.mapToNote(obj)
 	default:
-		return nil, ErrUnsupportedObjectType
+		return nil, unsupportedObjectType("unknown")
 	}
 }
 
@@ -766,7 +765,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 				zap.String("status_id", status.StatusID),
 				zap.Int("entries_count", len(timelineEntries)),
 				zap.Error(err))
-			return errors.Join(ErrTimelineEntriesCreation, err)
+			return timelineEntriesCreationFailed(err)
 		}
 
 		h.Logger.Info("Successfully added status to timelines",
@@ -865,7 +864,7 @@ func (h *ActivityHandler) processRejectActivity(ctx context.Context, activity *a
 			zap.String("rejecter", rejecter),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrRejectedRelationshipDeletion, err)
+		return rejectedRelationshipDeletionFailed(err)
 	}
 
 	// Optional: Create notification for the follower that their follow request was rejected
@@ -996,7 +995,7 @@ func (h *ActivityHandler) processDeleteActivity(ctx context.Context, activity *a
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrTombstoneCreation, err)
+		return tombstoneCreationFailed(err)
 	}
 
 	// Perform cascade deletion (remove from timelines, notifications, etc.)
@@ -1128,7 +1127,7 @@ func (h *ActivityHandler) processLikeActivity(ctx context.Context, activity *act
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrLikeRecordCreation, err)
+		return likeRecordCreationFailed(err)
 	}
 
 	// Create notification for the object owner
@@ -1204,7 +1203,7 @@ func (h *ActivityHandler) processAnnounceActivity(ctx context.Context, activity 
 			zap.String("object_id", objectID),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrAnnounceRecordCreation, err)
+		return announceRecordCreationFailed(err)
 	}
 
 	// Create notification for the object owner
@@ -1234,14 +1233,12 @@ func (h *ActivityHandler) processUndoActivity(ctx context.Context, activity *act
 	switch obj := activity.Object.(type) {
 	case string:
 		// Object is just an ID - fetch the full activity
-		originalActivity, err := h.getActivityByID(ctx, obj)
-		if err != nil {
-			h.Logger.Error("Failed to fetch original activity for undo",
-				zap.String("activity_id", obj),
-				zap.Error(err))
-			return errors.Join(ErrOriginalActivityFetch, err)
-		}
-		undoTarget = originalActivity
+		_, err := h.getActivityByID(ctx, obj)
+		// This function currently always returns an error as it's not fully implemented
+		h.Logger.Error("Failed to fetch original activity for undo",
+			zap.String("activity_id", obj),
+			zap.Error(err))
+		return originalActivityFetchFailed(obj, err)
 	case map[string]interface{}:
 		undoTarget = obj
 	default:
@@ -1321,7 +1318,7 @@ func (h *ActivityHandler) getActivityByID(_ context.Context, activityID string) 
 
 	// For now, return an error indicating the activity wasn't found locally
 	// In a full implementation, this would check local storage and potentially fetch from remote
-	return nil, ErrActivityNotFoundLocally
+	return nil, activityNotFoundLocally(activityID)
 }
 
 // extractActivityType extracts the type field from an activity object
@@ -1396,7 +1393,7 @@ func (h *ActivityHandler) processUndoFollow(ctx context.Context, undoActivity *a
 			zap.String("follower", undoActivity.Actor),
 			zap.String("followee", targetActor),
 			zap.Error(err))
-		return errors.Join(ErrFollowRelationshipDeletion, err)
+		return followRelationshipDeletionFailed(err)
 	}
 
 	h.Logger.Info("Successfully processed Undo Follow",
@@ -1458,7 +1455,7 @@ func (h *ActivityHandler) processUndoCreate(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrCreatedObjectDeletion, err)
+		return createdObjectDeletionFailed(err)
 	}
 
 	h.Logger.Info("Successfully processed Undo Create",
@@ -1500,14 +1497,14 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrObjectHistoryRetrieval, err)
+		return objectHistoryRetrievalFailed(err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("history", history); err != nil {
 		h.Logger.Warn("no history found for object, cannot undo update",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return ErrNoHistoryFound
+		return noHistoryFound(objectID)
 	}
 
 	// Get the most recent previous version (first in sorted list)
@@ -1516,7 +1513,7 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 		h.Logger.Warn("previous state not available for undo",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return ErrPreviousStateNotAvailable
+		return previousStateNotAvailable(objectID)
 	}
 
 	// Update the object to the previous version
@@ -1525,7 +1522,7 @@ func (h *ActivityHandler) processUndoUpdate(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrObjectReversion, err)
+		return objectReversionFailed(err)
 	}
 
 	h.Logger.Info("successfully reverted object to previous version",
@@ -1568,14 +1565,14 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrTombstoneStatusCheck, err)
+		return tombstoneStatusCheckFailed(err)
 	}
 
 	if !tombstoned {
 		h.Logger.Warn("object is not deleted, cannot undo delete",
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID))
-		return ErrObjectNotDeleted
+		return objectNotDeleted(objectID)
 	}
 
 	// Get the tombstone to find deletion info
@@ -1585,7 +1582,7 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrTombstoneRetrieval, err)
+		return tombstoneRetrievalFailed(err)
 	}
 
 	// Get object history to find the last version before deletion
@@ -1595,7 +1592,7 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrObjectHistoryRestoration, err)
+		return objectHistoryRestorationFailed(err)
 	}
 
 	// Get the most recent version before deletion
@@ -1613,7 +1610,7 @@ func (h *ActivityHandler) processUndoDelete(ctx context.Context, undoActivity *a
 			zap.String("actor", actorURI),
 			zap.String("object_id", objectID),
 			zap.Error(err))
-		return errors.Join(ErrObjectRestoration, err)
+		return objectRestorationFailed(err)
 	}
 
 	h.Logger.Info("successfully restored deleted object",
@@ -1690,7 +1687,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 		h.Logger.Error("Failed to retrieve flags for object",
 			zap.String("flagged_object_id", flaggedObjectID),
 			zap.Error(err))
-		return errors.Join(ErrFlagsRetrieval, err)
+		return flagsRetrievalFailed(err)
 	}
 
 	// Find flag created by this actor
@@ -1717,7 +1714,7 @@ func (h *ActivityHandler) processUndoFlag(ctx context.Context, undoActivity *act
 			zap.String("flagged_object_id", flaggedObjectID),
 			zap.String("flag_id", targetFlagID),
 			zap.Error(err))
-		return errors.Join(ErrFlagRecordDeletion, err)
+		return flagRecordDeletionFailed(err)
 	}
 
 	// Create a moderation event for the flag withdrawal
@@ -1780,7 +1777,7 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 	// Extract username from actor URI for repository operations
 	username := h.extractUsernameFromActorURI(actorURI)
 	if err := common.ValidateRequiredParam("username", username); err != nil {
-		return ErrUsernameExtractionFromActorURI
+		return usernameExtractionFromActorURIFailed(actorURI)
 	}
 
 	h.Logger.Info("processing undo move operation",
@@ -1793,7 +1790,7 @@ func (h *ActivityHandler) processUndoMove(ctx context.Context, undoActivity *act
 		h.Logger.Error("failed to clear movedTo field",
 			zap.String("username", username),
 			zap.Error(err))
-		return errors.Join(ErrMovedToFieldClearing, err)
+		return movedToFieldClearingFailed(err)
 	}
 
 	// 2. Remove the moved-to target from alsoKnownAs field on the target actor
@@ -1882,12 +1879,12 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 	}
 
 	if err := common.ValidateRequiredParam("objectID", objectID); err != nil {
-		return ErrObjectIDExtractionFromActivity
+		return objectIDExtractionFromActivityFailed()
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return ErrUndoActivityMissingActor
+		return undoActivityMissingActor()
 	}
 
 	// Extract target collection from the original activity
@@ -1915,7 +1912,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 			zap.String("activity_id", undoActivity.ID),
 			zap.String("activity_type", activityType),
 			zap.Error(err))
-		return errors.Join(ErrTargetListRetrieval, err)
+		return targetListRetrievalFailed(err)
 	}
 
 	// Check if actor has permission (must be list owner)
@@ -1958,7 +1955,7 @@ func (h *ActivityHandler) processUndoListActivity(ctx context.Context, undoActiv
 			zap.String("activity_type", activityType),
 			zap.String("action", action),
 			zap.Error(opErr))
-		return errors.Join(ErrListOperation, opErr)
+		return listOperationFailed(opErr)
 	}
 
 	h.Logger.Info("Successfully processed Undo",
@@ -2038,7 +2035,7 @@ func (h *ActivityHandler) processBlockActivity(ctx context.Context, activity *ac
 			zap.String("blocked", blockedActor),
 			zap.String("activity_id", activity.ID),
 			zap.Error(err))
-		return errors.Join(ErrBlockRelationshipCreation, err)
+		return blockRelationshipCreationFailed(err)
 	}
 
 	// Remove any existing follow relationships in both directions
@@ -2135,7 +2132,7 @@ func (h *ActivityHandler) processFlagActivity(ctx context.Context, activity *act
 				zap.String("activity_id", activity.ID),
 				zap.String("actor", activity.Actor),
 				zap.String("flagged_object", objectID))
-			return errors.Join(ErrFlagRecordCreation, err)
+			return flagRecordCreationFailed(err)
 		}
 
 		h.Logger.Info("Created flag record",
@@ -2201,7 +2198,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 	// Extract username from old account ID
 	oldUsername := h.extractUsernameFromActorURI(oldAccountID)
 	if err := common.ValidateRequiredParam("oldUsername", oldUsername); err != nil {
-		return ErrUsernameExtractionFromOldActorURI
+		return usernameExtractionFromOldActorURIFailed(activity.Actor)
 	}
 
 	// Update the old actor's movedTo field
@@ -2210,7 +2207,7 @@ func (h *ActivityHandler) processMoveActivity(ctx context.Context, activity *act
 			zap.String("old_username", oldUsername),
 			zap.String("new_account_id", newAccountID),
 			zap.Error(err))
-		return errors.Join(ErrMovedToFieldUpdate, err)
+		return movedToFieldUpdateFailed(err)
 	}
 
 	// Update the new actor's alsoKnownAs field to include the old account
@@ -2275,7 +2272,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 		h.Logger.Error("List activity missing target collection",
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType))
-		return ErrActivityMissingTargetCollection
+		return activityMissingTargetCollection()
 	}
 
 	// Extract the objects being processed
@@ -2305,11 +2302,11 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType),
 			zap.Any("object", activity.Object))
-		return ErrObjectExtractionFromActivity
+		return objectExtractionFromActivityFailed()
 	}
 
 	if err := common.ValidateSliceNotEmpty("objectIDs", objectIDs); err != nil {
-		return ErrNoObjectsFoundInActivity
+		return noObjectsFoundInActivity()
 	}
 
 	// Extract list ID from target
@@ -2330,7 +2327,7 @@ func (h *ActivityHandler) processListActivity(ctx context.Context, activity *act
 			zap.String("activity_id", activity.ID),
 			zap.String("activity_type", activityType),
 			zap.Error(err))
-		return errors.Join(ErrTargetListRetrieval, err)
+		return targetListRetrievalFailed(err)
 	}
 
 	// Check if actor has permission (must be list owner)
@@ -2572,12 +2569,12 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 	}
 
 	if err := common.ValidateRequiredParam("extractedID", extractedID); err != nil {
-		return ErrTargetIDExtractionFromActivity
+		return targetIDExtractionFromActivityFailed()
 	}
 
 	actorURI := undoActivity.Actor
 	if err := common.ValidateRequiredParam("actorURI", actorURI); err != nil {
-		return ErrUndoActivityMissingActor
+		return undoActivityMissingActor()
 	}
 
 	// Call the specific delete function
@@ -2586,7 +2583,7 @@ func (h *ActivityHandler) processUndoWithObjectExtraction(
 			zap.String("actor", actorURI),
 			zap.String("target_id", extractedID),
 			zap.Error(err))
-		return errors.Join(ErrActivityRecordDeletion, err)
+		return activityRecordDeletionFailed(err)
 	}
 
 	h.Logger.Info(fmt.Sprintf("Successfully processed Undo %s", cases.Title(language.English).String(activityType)),
@@ -2684,7 +2681,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 	// Extract username from actor ID for follower lookup
 	actorUsername := h.extractUsernameFromActorURI(actorID)
 	if err := common.ValidateRequiredParam("actorUsername", actorUsername); err != nil {
-		return ErrUsernameExtractionFromActorID
+		return usernameExtractionFromActorIDFailed(actorID)
 	}
 
 	h.Logger.Debug("Starting follower timeline distribution",
@@ -2697,7 +2694,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 		h.Logger.Error("Failed to get followers for timeline distribution",
 			zap.String("actor_username", actorUsername),
 			zap.Error(err))
-		return errors.Join(ErrFollowersRetrieval, err)
+		return followersRetrievalFailed(err)
 	}
 
 	// Create timeline entries for all followers
@@ -2743,7 +2740,7 @@ func (h *ActivityHandler) distributeToFollowersTimeline(ctx context.Context, sta
 				zap.String("post_id", postID),
 				zap.Int("entry_count", len(timelineEntries)),
 				zap.Error(err))
-			return errors.Join(ErrTimelineEntriesCreation, err)
+			return timelineEntriesCreationFailed(err)
 		}
 
 		h.Logger.Info("Distributed status to follower timelines",

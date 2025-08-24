@@ -4,10 +4,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -150,7 +149,7 @@ func (p *FederationAggregatorProcessor) processSQSMessage(ctx context.Context, r
 	// Try to parse as AggregationEvent
 	var aggEvent AggregationEvent
 	if err := json.Unmarshal([]byte(record.Body), &aggEvent); err != nil {
-		return errors.Join(ErrAggregationEventUnmarshal, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal aggregation event")
 	}
 
 	return p.handleAggregationEvent(ctx, aggEvent)
@@ -242,7 +241,7 @@ func (p *FederationAggregatorProcessor) handleCloudWatchEvent(ctx context.Contex
 	// Initialize AWS clients
 	if err := p.initializeAWSClients(ctx); err != nil {
 		p.logger.Error("failed to initialize AWS clients", zap.Error(err))
-		return errors.Join(ErrAWSClientsInit, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to initialize AWS clients")
 	}
 
 	p.logger.Info("Processing CloudWatch scheduled event",
@@ -298,7 +297,7 @@ func (p *FederationAggregatorProcessor) handleAggregationEvent(ctx context.Conte
 
 	// Store aggregation
 	if err := p.storeAggregation(ctx, aggregation); err != nil {
-		return errors.Join(ErrAggregationStore, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store aggregation")
 	}
 
 	p.logger.Info("Federation aggregation completed",
@@ -326,7 +325,7 @@ func (p *FederationAggregatorProcessor) storeAggregation(_ context.Context, agg 
 		agg.UpdatedAt = time.Now()
 		err = p.db.Model(agg).Update()
 		if err != nil {
-			return errors.Join(ErrAggregationStore, err)
+			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store aggregation")
 		}
 	}
 	return nil
@@ -342,7 +341,7 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
-		return errors.Join(ErrAggregationEventMarshal, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to marshal aggregation event")
 	}
 
 	// Option 1: Use SQS for async processing (preferred for resilience)
@@ -388,14 +387,14 @@ func (p *FederationAggregatorProcessor) triggerAggregation(ctx context.Context, 
 			zap.Error(err),
 			zap.NamedError("sqs_error", sqsErr),
 		)
-		return errors.Join(ErrLambdaInvocationFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to invoke lambda and send SQS message")
 	}
 
 	if lambdaResult.FunctionError != nil {
 		p.logger.Error("lambda function error",
 			zap.String("function_error", *lambdaResult.FunctionError),
 		)
-		return ErrLambdaFunctionError
+		return pkgErrors.FederationAggregatorLambdaFunctionError()
 	}
 
 	p.logger.Info("Successfully triggered aggregation via direct Lambda invocation",
@@ -435,7 +434,7 @@ func (p *FederationAggregatorProcessor) getFilteredActivities(ctx context.Contex
 	// Get all federation activities for the time period
 	activities, err := p.federationActivityRepository.GetRecentActivities(ctx, event.StartTime, 10000)
 	if err != nil {
-		return nil, errors.Join(ErrFederationActivitiesGet, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get federation activities")
 	}
 
 	// Filter activities by end time

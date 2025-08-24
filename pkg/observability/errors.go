@@ -1,16 +1,17 @@
 // Package observability provides error constants for the observability package
 package observability
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for alerting system
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
 	// ErrLoggerRequired indicates that a logger instance is required
-	ErrLoggerRequired = errors.New("logger is required")
+	ErrLoggerRequired = errors.LoggerRequired()
 
 	// ErrDatabaseRequired indicates that a database connection is required
-	ErrDatabaseRequired = errors.New("database connection is required")
+	ErrDatabaseRequired = errors.DatabaseRequired()
 
 	// ErrSNSPublishFailed indicates that publishing to SNS failed
-	ErrSNSPublishFailed = errors.New("failed to publish to SNS")
+	ErrSNSPublishFailed = errors.SNSPublishFailed(nil)
 )

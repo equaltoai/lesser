@@ -1,16 +1,16 @@
 package lift
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
+	liftErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
-// Base error constants
+// Base error constants - convert to centralized system
 var (
-	ErrTenantContextRequired = errors.New("tenant context required")
+	ErrTenantContextRequired = liftErrors.NewValidationError("tenant_context", "required")
 )
 
 // Domain-specific error constructors using Lift patterns
@@ -126,12 +126,12 @@ func TimeoutError(operation string) *lift.LiftError {
 	).WithDetail("operation", operation)
 }
 
-// Testing-specific error constants
+// Testing-specific error constants - converted to centralized system
 var (
-	ErrTestSetupFailed          = errors.New("test setup failed")
-	ErrIntegrationTestFailed    = errors.New("integration test execution failed")
-	ErrTestValidationFailed     = errors.New("test validation failed")
-	ErrTestCleanupFailed        = errors.New("test cleanup failed")
-	ErrTestExpectedSuccess      = errors.New("expected success response")
-	ErrTestUnexpectedStatusCode = errors.New("unexpected status code")
+	ErrTestSetupFailed          = liftErrors.ProcessingFailed("test setup", nil)
+	ErrIntegrationTestFailed    = liftErrors.ProcessingFailed("integration test execution", nil)
+	ErrTestValidationFailed     = liftErrors.ValidationFailedWithField("test")
+	ErrTestCleanupFailed        = liftErrors.ProcessingFailed("test cleanup", nil)
+	ErrTestExpectedSuccess      = liftErrors.NewValidationError("test_response", "expected success response")
+	ErrTestUnexpectedStatusCode = liftErrors.NewValidationError("status_code", "unexpected")
 )

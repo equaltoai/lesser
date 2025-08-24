@@ -571,7 +571,7 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 	if len(parts) < 2 {
 		mpLogger := lambdaCtx.Logger.With(zap.String("pk", pk))
 		mpLogger.Error("invalid review PK format")
-		return ErrInvalidReviewPKFormat
+		return ErrInvalidReviewPKFormat(pk)
 	}
 	eventID := parts[1]
 
@@ -581,7 +581,7 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 	if len(reviewerParts) < 2 {
 		mpLogger := lambdaCtx.Logger.With(zap.String("sk", sk))
 		mpLogger.Error("invalid review SK format")
-		return ErrInvalidReviewSKFormat
+		return ErrInvalidReviewSKFormat(sk)
 	}
 	reviewerID := reviewerParts[1]
 
@@ -593,7 +593,7 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 	// Get the review details
 	review, err := getReviewFromRecord(record)
 	if err != nil {
-		return errors.Join(ErrFailedToExtractReview, err)
+		return ErrFailedToExtractReview(err)
 	}
 
 	// Process the review and check for consensus
@@ -622,7 +622,7 @@ func (mp *ModerationProcessor) handleNewReview(ctx context.Context, record event
 func (mp *ModerationProcessor) handleNewEvent(ctx context.Context, record events.DynamoDBEventRecord) error {
 	event, err := getEventFromRecord(record)
 	if err != nil {
-		return errors.Join(ErrFailedToExtractEvent, err)
+		return ErrFailedToExtractEvent(err)
 	}
 
 	mp.logger.Info("New moderation event created",
@@ -650,7 +650,7 @@ func (mp *ModerationProcessor) handleNewEvent(ctx context.Context, record events
 func (mp *ModerationProcessor) handleDecision(ctx context.Context, record events.DynamoDBEventRecord) error {
 	decision, err := getDecisionFromRecord(record)
 	if err != nil {
-		return errors.Join(ErrFailedToExtractDecision, err)
+		return ErrFailedToExtractDecision(err)
 	}
 
 	mp.logger.Info("Processing moderation decision",
@@ -700,7 +700,7 @@ func (mp *ModerationProcessor) handleDecision(ctx context.Context, record events
 			zap.String("object_id", decision.ObjectID),
 		)
 		mp.logger.Error("unknown action type", zap.String("action", string(decision.Action)))
-		enforcementError = ErrUnknownActionType
+		enforcementError = ErrUnknownActionType(string(decision.Action))
 	}
 
 	// Update enforcement status based on result
@@ -724,7 +724,7 @@ func getReviewFromRecord(record events.DynamoDBEventRecord) (*moderation.Review,
 	// Extract from NewImage
 	typeAttr, ok := record.Change.NewImage["Type"]
 	if !ok || getStringAttribute(typeAttr) != "REVIEW" {
-		return nil, ErrNotReviewRecord
+		return nil, ErrNotReviewRecord()
 	}
 
 	// Extract event ID from PK
@@ -776,7 +776,7 @@ func getEventFromRecord(record events.DynamoDBEventRecord) (*moderation.Moderati
 	// Extract from NewImage
 	typeAttr, ok := record.Change.NewImage["Type"]
 	if !ok || getStringAttribute(typeAttr) != "EVENT" {
-		return nil, ErrNotEventRecord
+		return nil, ErrNotEventRecord()
 	}
 
 	// Extract event ID from PK
@@ -832,7 +832,7 @@ func getDecisionFromRecord(record events.DynamoDBEventRecord) (*moderation.Moder
 	// Extract from NewImage
 	typeAttr, ok := record.Change.NewImage["Type"]
 	if !ok || getStringAttribute(typeAttr) != "DECISION" {
-		return nil, ErrNotDecisionRecord
+		return nil, ErrNotDecisionRecord()
 	}
 
 	// Extract object ID from PK
@@ -931,7 +931,7 @@ func (ms *ModeratorSelector) SelectModerators(ctx context.Context, event *modera
 	// Get all moderators and admins
 	moderators, err := ms.getAvailableModerators(ctx)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToGetAvailableModerators, err)
+		return nil, ErrFailedToGetAvailableModerators(err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
@@ -980,7 +980,7 @@ func (ms *ModeratorSelector) getAvailableModerators(ctx context.Context) ([]*sto
 	if len(moderatorErrs) == 2 {
 		if err := common.ValidateSliceNotEmpty("moderators", moderators); err != nil {
 			if err := common.ValidateSliceNotEmpty("admins", admins); err != nil {
-				return nil, ErrFailedToRetrieveModerators
+				return nil, ErrFailedToRetrieveModerators(errors.New("both moderator and admin queries failed"))
 			}
 		}
 	}
@@ -1290,13 +1290,13 @@ func (mp *ModerationProcessor) sendModeratorNotification(ctx context.Context, ev
 func (mp *ModerationProcessor) notifyFallbackAdmins(ctx context.Context, event *moderation.ModerationEvent) error {
 	admins, err := mp.userRepo.ListUsersByRole(ctx, adminRole)
 	if err != nil {
-		return errors.Join(ErrFailedToGetAdminList, err)
+		return ErrFailedToGetAdminList(err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("admins", admins); err != nil {
 		mp.logger.Error("no admins available for fallback notification",
 			zap.String("event_id", event.ID))
-		return ErrNoAdminsAvailableForFallback
+		return ErrNoAdminsAvailableForFallback()
 	}
 
 	for _, admin := range admins {
@@ -1408,13 +1408,13 @@ func (mp *ModerationProcessor) triggerAutomaticActions(ctx context.Context, even
 
 		storageReview := convertModerationToStorageReview(review)
 		if err := mp.moderationRepo.AddModerationReview(ctx, storageReview); err != nil {
-			return errors.Join(ErrFailedToAddAutomaticReview, err)
+			return ErrFailedToAddAutomaticReview(err)
 		}
 
 		// Process immediately to potentially trigger consensus
 		decision, err := mp.consensusEngine.ProcessReview(ctx, event.ID, review)
 		if err != nil {
-			return errors.Join(ErrFailedToProcessAutomaticReview, err)
+			return ErrFailedToProcessAutomaticReview(err)
 		}
 
 		if decision != nil {
@@ -1440,32 +1440,32 @@ func (mp *ModerationProcessor) enforceAccountAction(ctx context.Context, usernam
 	// 1. Update user account status
 	if err := mp.userRepo.UpdateUser(ctx, username, config.UserUpdates(reason)); err != nil {
 		mp.logger.Error(fmt.Sprintf("Failed to %s user account", config.ActionType), zap.Error(err))
-		errs = append(errs, errors.Join(ErrUserUpdateFailed, err))
+		errs = append(errs, ErrUserUpdateFailed(err))
 	}
 
 	// 2. Filter content from timelines
 	if err := mp.filterFromTimelines(ctx, username, config.TimelineAction); err != nil {
 		mp.logger.Error("Failed to filter from timelines", zap.Error(err))
-		errs = append(errs, errors.Join(ErrTimelineFilteringOp, err))
+		errs = append(errs, ErrTimelineFilteringOp(err))
 	}
 
 	// 3. Update search visibility
 	if err := mp.updateSearchVisibility(ctx, username, config.SearchAction); err != nil {
 		mp.logger.Error(fmt.Sprintf("Failed to %s", config.SearchErrorMsg), zap.Error(err))
 		mp.logger.Error("search operation failed", zap.String("action", config.SearchAction), zap.Error(err))
-		errs = append(errs, errors.Join(ErrSearchOperationFailed, err))
+		errs = append(errs, ErrSearchOperationFailed(err))
 	}
 
 	// 4. Apply federation constraints
 	if err := mp.applyFederationConstraints(ctx, username, config.FederationAction); err != nil {
 		mp.logger.Error(fmt.Sprintf("Failed to apply federation %s", config.FederationErrorMsg), zap.Error(err))
 		mp.logger.Error("federation operation failed", zap.String("operation", config.FederationErrorMsg), zap.Error(err))
-		errs = append(errs, errors.Join(ErrFederationOpFailed, err))
+		errs = append(errs, ErrFederationOpFailed(err))
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errs); err == nil {
 		mp.logger.Error("enforcement failed", zap.String("action_type", config.ActionType), zap.Any("errors", errs))
-		return ErrEnforcementFailed
+		return ErrEnforcementFailed(errors.New("multiple enforcement failures"))
 	}
 
 	return nil
@@ -1532,30 +1532,30 @@ func (mp *ModerationProcessor) enforceContentRemoval(ctx context.Context, object
 	// 1. Delete the object from primary storage
 	if err := mp.objectRepo.DeleteObject(ctx, objectID); err != nil {
 		mp.logger.Error("Failed to delete object", zap.Error(err))
-		errs = append(errs, errors.Join(ErrObjectDeletionFailed, err))
+		errs = append(errs, ErrObjectDeletionFailed(err))
 	}
 
 	// 2. Remove from timelines
 	if err := mp.removeFromTimelines(ctx, objectID); err != nil {
 		mp.logger.Error("Failed to remove from timelines", zap.Error(err))
-		errs = append(errs, errors.Join(ErrTimelineRemovalFailed, err))
+		errs = append(errs, ErrTimelineRemovalFailed(err))
 	}
 
 	// 3. Remove from search indexes
 	if err := mp.removeFromSearch(ctx, objectID); err != nil {
 		mp.logger.Error("Failed to remove from search", zap.Error(err))
-		errs = append(errs, errors.Join(ErrSearchRemovalFailed, err))
+		errs = append(errs, ErrSearchRemovalFailed(err))
 	}
 
 	// 4. Send deletion notices to federation
 	if err := mp.sendFederationDeletion(ctx, objectID); err != nil {
 		mp.logger.Error("Failed to send federation deletion", zap.Error(err))
-		errs = append(errs, errors.Join(ErrFederationDeletionFailed, err))
+		errs = append(errs, ErrFederationDeletionFailed(err))
 	}
 
 	if err := common.ValidateSliceNotEmpty("errors", errs); err == nil {
 		mp.logger.Error("content removal failed", zap.Any("errors", errs))
-		return ErrContentRemovalFailed
+		return ErrContentRemovalFailed(errors.New("multiple content removal failures"))
 	}
 
 	return nil
@@ -1599,7 +1599,7 @@ func (mp *ModerationProcessor) filterFromTimelines(ctx context.Context, username
 
 	if err := common.ValidateSliceNotEmpty("errors", errs); err == nil {
 		mp.logger.Error("timeline filtering failed", zap.Any("errors", errs))
-		return ErrTimelineFilteringFailed
+		return ErrTimelineFilteringFailed(errors.New("multiple timeline filtering failures"))
 	}
 
 	mp.logger.Info("Timeline filtering completed successfully",
@@ -2088,7 +2088,7 @@ func main() {
 			lambdaCtx.Logger.Error("failed to process records",
 				zap.Int("failed_records", len(errs)),
 				zap.Int("total_records", len(event.Records)))
-			err := ErrFailedToProcessRecords
+			err := ErrFailedToProcessRecords(fmt.Errorf("batch processing failed: %d records processed with errors", len(event.Records)))
 			lambdaCtx.Logger.Error("DynamoDB stream processing failed",
 				zap.String("request_id", requestID),
 				zap.Error(err),

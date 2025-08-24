@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -552,7 +551,7 @@ func (mp *MediaProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return errors.Join(ErrAWSConfigLoad, err)
+		return AWSConfigLoadFailed(err)
 	}
 
 	// Initialize S3 client
@@ -608,7 +607,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Get job details using DynamORM
 	job, err := mp.mediaRepo.GetMediaJob(ctx, event.JobID)
 	if err != nil {
-		return errors.Join(ErrJobGet, err)
+		return JobGetFailed(err)
 	}
 
 	// Check if job has already been processed (idempotency)
@@ -656,12 +655,12 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	// Download original file from S3
 	originalData, err := mp.downloadFromS3(ctx, job.S3Key)
 	if err != nil {
-		return errors.Join(ErrMediaDownload, err)
+		return MediaDownloadFailed(err)
 	}
 
 	// Validate file type and size against user's configuration
 	if err := mp.validateFileForUser(originalData, job.MimeType, userConfig, event.Username, event.MediaID); err != nil {
-		return errors.Join(ErrFileValidationFailed, err)
+		return FileValidationFailedError(err)
 	}
 
 	// Check user's remaining budget before processing
@@ -678,12 +677,12 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		// Fall back to basic upload only
 		result, err := mp.uploadOriginalOnly(ctx, originalData, event, job.MimeType)
 		if err != nil {
-			return errors.Join(ErrS3UploadOriginal, err)
+			return S3UploadOriginalFailed(err)
 		}
 
 		// Update media record and job
 		if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
-			return errors.Join(ErrMediaRecordUpdate, err)
+			return MediaRecordUpdateFailed(err)
 		}
 
 		resultsMap := map[string]any{
@@ -697,7 +696,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		}
 		job.SetCompleted(resultsMap)
 		if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
-			return errors.Join(ErrJobUpdateStatus, err)
+			return JobUpdateStatusFailed(err)
 		}
 
 		// Record successful completion with budget skip
@@ -737,7 +736,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 		mp.logger.Error("unsupported media type for processing",
 			zap.String("media_type", mediaType),
 			zap.String("job_id", event.JobID))
-		processingErr = ErrUnsupportedMediaType
+		processingErr = UnsupportedMediaTypeError(mediaType)
 	}
 
 	if processingErr != nil {
@@ -754,7 +753,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 
 	// Update media record with processing results
 	if err := mp.updateMediaRecord(ctx, event.MediaID, result); err != nil {
-		return errors.Join(ErrMediaRecordUpdate, err)
+		return MediaRecordUpdateFailed(err)
 	}
 
 	// Update job as completed
@@ -769,7 +768,7 @@ func (mp *MediaProcessor) processMediaJob(ctx context.Context, event MediaProces
 	}
 	job.SetCompleted(resultsMap)
 	if err := mp.mediaRepo.UpdateMediaJob(ctx, job); err != nil {
-		return errors.Join(ErrJobUpdateStatus, err)
+		return JobUpdateStatusFailed(err)
 	}
 
 	// Record successful processing completion
@@ -824,7 +823,7 @@ func (mp *MediaProcessor) processImage(ctx context.Context, data []byte, event M
 		return procErr
 	})
 	if err != nil {
-		return result, errors.Join(ErrImageProcessing, err)
+		return result, ImageProcessingFailed(err)
 	}
 
 	// Get original image info
@@ -994,7 +993,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	// 6. Upload original to S3 first
 	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, "original.mp4")
 	if err != nil {
-		return result, errors.Join(ErrS3KeySanitization, err)
+		return result, S3KeySanitizationFailed(err)
 	}
 
 	// Track S3 upload cost
@@ -1002,7 +1001,7 @@ func (mp *MediaProcessor) processVideo(ctx context.Context, data []byte, event M
 	jobMetrics.CostBreakdown["s3_upload"] = s3UploadCost
 
 	if err := mp.uploadToS3(ctx, s3Key, data, "video/mp4"); err != nil {
-		return result, errors.Join(ErrS3UploadVideo, err)
+		return result, S3UploadVideoFailed(err)
 	}
 
 	// Track S3 storage cost (monthly, prorated)
@@ -1085,7 +1084,7 @@ func (mp *MediaProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 
 	result, err := mp.s3Client.GetObject(ctx, input)
 	if err != nil {
-		return nil, errors.Join(ErrS3GetObject, err)
+		return nil, S3GetObjectFailed(err)
 	}
 	defer func() {
 		if err := result.Body.Close(); err != nil {
@@ -1098,7 +1097,7 @@ func (mp *MediaProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 	maxSize := int64(maxVideoSize) // 50MB is the largest allowed
 	data, err := common.ReadRequestBody(result.Body, maxSize)
 	if err != nil {
-		return nil, errors.Join(ErrS3ReadObject, err)
+		return nil, S3ReadObjectFailed(err)
 	}
 
 	return data, nil
@@ -1160,7 +1159,7 @@ func (mp *MediaProcessor) updateMediaRecord(ctx context.Context, mediaID string,
 
 	// Update the main media record
 	if err := mp.mediaRepo.UpdateMedia(ctx, media); err != nil {
-		return errors.Join(ErrMediaRecordUpdate, err)
+		return MediaRecordUpdateFailed(err)
 	}
 
 	// Create or update MediaMetadata record with processing results
@@ -1358,10 +1357,10 @@ func (mp *MediaProcessor) uploadOriginalOnly(ctx context.Context, data []byte, e
 	filename := "original" + ext
 	s3Key, err := sanitizeS3Key(event.Username, event.MediaID, filename)
 	if err != nil {
-		return result, errors.Join(ErrS3KeySanitization, err)
+		return result, S3KeySanitizationFailed(err)
 	}
 	if err := mp.uploadToS3(ctx, s3Key, data, mimeType); err != nil {
-		return result, errors.Join(ErrS3UploadOriginal, err)
+		return result, S3UploadOriginalFailed(err)
 	}
 
 	result.Sizes["original"] = SizeInfo{
@@ -1497,13 +1496,13 @@ func (mp *MediaProcessor) estimateTranscodingCosts(metrics *TranscodingJobMetric
 func validateFileType(data []byte, claimedMimeType string) error {
 	// Check size first to avoid processing huge files
 	if err := common.ValidateSliceNotEmpty("file_data", data); err != nil {
-		return ErrEmptyFile
+		return EmptyFileError()
 	}
 
 	// Validate claimed MIME type format if provided
 	if claimedMimeType != "" {
 		if err := common.ValidateMastodonMimeType(claimedMimeType); err != nil {
-			return errors.Join(ErrInvalidMimeTypeFormat, err)
+			return InvalidMimeTypeFormatError(claimedMimeType)
 		}
 	}
 
@@ -1517,21 +1516,21 @@ func validateFileType(data []byte, claimedMimeType string) error {
 
 	// Validate detected MIME type format
 	if err := common.ValidateMastodonMimeType(detectedType); err != nil {
-		return errors.Join(ErrDetectedMimeTypeInvalid, err)
+		return DetectedMimeTypeInvalidError(detectedType)
 	}
 
 	// Check if detected type is allowed
 	if !allowedMimeTypes[detectedType] {
 		// Log the detected type for debugging
 		// Note: logging should be done at call site with proper context
-		return ErrFileTypeNotAllowed
+		return FileTypeNotAllowedError(detectedType)
 	}
 
 	// Check if claimed type matches detected type
 	if claimedMimeType != "" && claimedMimeType != detectedType {
 		// Log MIME type mismatch details for debugging
 		// Note: logging should be done at call site with proper context
-		return ErrMimeTypeMismatch
+		return MimeTypeMismatchError(claimedMimeType, detectedType)
 	}
 
 	// Check file size limits based on type
@@ -1561,13 +1560,13 @@ func checkFileSizeLimit(data []byte, mimeType string) error {
 	default:
 		// Log unknown MIME type for debugging
 		// Note: logging should be done at call site with proper context
-		return ErrUnknownFileType
+		return UnknownFileTypeError(mimeType)
 	}
 
 	if size > maxSize {
 		// Log file size limit exceeded for debugging
 		// Note: logging should be done at call site with proper context
-		return ErrFileTooLarge
+		return FileTooLargeError(int64(size), int64(maxSize))
 	}
 
 	return nil
@@ -1578,7 +1577,7 @@ func extractAudioDuration(data []byte) (int, error) {
 	// Use dhowden/tag to parse audio metadata
 	metadata, err := tag.ReadFrom(bytes.NewReader(data))
 	if err != nil {
-		return 0, errors.Join(ErrAudioMetadataRead, err)
+		return 0, AudioMetadataReadFailed(err)
 	}
 
 	// Get track and disc information from metadata
@@ -1599,7 +1598,7 @@ func extractAudioDuration(data []byte) (int, error) {
 		}
 	}
 
-	return 0, ErrUnableToDetermineAudioDuration
+	return 0, UnableToDetermineAudioDurationError(nil)
 }
 
 // extractVideoMetadata extracts real video metadata from video data using MP4 atom parsing
@@ -1644,17 +1643,17 @@ func (mp *MediaProcessor) extractVideoMetadata(data []byte) (width, height, dura
 func sanitizeS3Key(username, mediaID, filename string) (string, error) {
 	// Validate username doesn't contain path traversal
 	if strings.Contains(username, "..") || strings.Contains(username, "/") {
-		return "", ErrInvalidUsernameForS3Key
+		return "", InvalidUsernameForS3KeyError(username)
 	}
 
 	// Validate mediaID
 	if strings.Contains(mediaID, "..") || strings.Contains(mediaID, "/") {
-		return "", ErrInvalidMediaIDForS3Key
+		return "", InvalidMediaIDForS3KeyError(mediaID)
 	}
 
 	// Validate filename
 	if strings.Contains(filename, "..") || strings.Contains(filename, "/") {
-		return "", ErrInvalidFilenameForS3Key
+		return "", InvalidFilenameForS3KeyError(filename)
 	}
 
 	// Construct safe S3 key
@@ -1697,7 +1696,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 					zap.String("mime_type", mimeType),
 					zap.String("username", username))
 				// Reject video if we cannot determine duration and user has limits
-				return errors.Join(ErrVideoValidation, err)
+				return VideoValidationFailed(err)
 			}
 
 			if actualDuration > config.MaxVideoDuration {
@@ -1706,7 +1705,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 					zap.Int("max_duration_seconds", config.MaxVideoDuration),
 					zap.String("username", username),
 					zap.String("media_id", mediaID))
-				return ErrVideoDurationExceeded
+				return VideoDurationExceededError(actualDuration, config.MaxVideoDuration)
 			}
 
 			mp.logger.Debug("video duration validation passed",
@@ -1721,7 +1720,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 			zap.String("mime_type", mimeType),
 			zap.String("username", username),
 			zap.String("media_id", mediaID))
-		return ErrUnsupportedMediaTypeForUser
+		return UnsupportedMediaTypeForUserError(mimeType)
 	}
 
 	if fileSize > userMaxSize {
@@ -1730,7 +1729,7 @@ func (mp *MediaProcessor) validateFileForUser(data []byte, mimeType string, conf
 			zap.Int64("user_max_size_bytes", userMaxSize),
 			zap.String("username", username),
 			zap.String("media_id", mediaID))
-		return ErrFileSizeExceedsUserLimit
+		return FileSizeExceedsUserLimitError(fileSize, userMaxSize)
 	}
 
 	mp.logger.Debug("file validation passed",
@@ -1897,7 +1896,7 @@ func (ct *MediaJobCostTracker) AddCost(category string, costMicros int64) error 
 			zap.Int64("budget_micros", ct.BudgetMicros),
 			zap.Float64("spent_dollars", float64(ct.TotalCostMicros)/1000000.0),
 			zap.Float64("budget_dollars", float64(ct.BudgetMicros)/1000000.0))
-		return ErrBudgetExceeded
+		return BudgetExceededError(ct.TotalCostMicros, ct.BudgetMicros)
 	}
 
 	return nil
@@ -1933,7 +1932,7 @@ func (ct *MediaJobCostTracker) checkBudgetWarnings() error {
 func (ct *MediaJobCostTracker) updateJobWithWarning(_ float64) error {
 	job, err := ct.mediaRepo.GetMediaJob(context.Background(), ct.JobID)
 	if err != nil {
-		return errors.Join(ErrJobUpdateWarning, err)
+		return JobUpdateWarningFailed(err)
 	}
 
 	// Add warning to job's cost information

@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/errors"
 )
 
 // Username validation patterns
@@ -128,9 +130,7 @@ func ValidateMultipleRequiredParams(params map[string]string) error {
 	}
 
 	if len(missing) > 0 {
-		return ValidationError{
-			Message: fmt.Sprintf("missing required parameters: %s", strings.Join(missing, ", ")),
-		}
+		return ValidationError{Field: "parameters", Message: fmt.Sprintf("missing required parameters: %s", strings.Join(missing, ", "))}
 	}
 
 	return nil
@@ -141,17 +141,11 @@ func ValidateStringLength(field, value string, minLen, maxLen int) error {
 	length := len(value)
 
 	if length < minLen {
-		return ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("must be at least %d characters long", minLen),
-		}
+		return ValidationError{Field: field, Message: fmt.Sprintf("must be at least %d characters long", minLen)}
 	}
 
 	if length > maxLen {
-		return ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("cannot be longer than %d characters", maxLen),
-		}
+		return ValidationError{Field: field, Message: fmt.Sprintf("cannot be longer than %d characters", maxLen)}
 	}
 
 	return nil
@@ -169,10 +163,7 @@ func ValidateEnum(field, value string, allowedValues []string) error {
 		}
 	}
 
-	return ValidationError{
-		Field:   field,
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedValues, ", ")),
-	}
+	return ValidationError{Field: field, Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedValues, ", "))}
 }
 
 // ParseAndValidateIntWithBounds parses a string to int and validates bounds
@@ -184,24 +175,15 @@ func ParseAndValidateIntWithBounds(field, value string, minValue, maxValue, defa
 
 	parsed, err := strconv.Atoi(value)
 	if err != nil {
-		return 0, ValidationError{
-			Field:   field,
-			Message: "must be a valid number",
-		}
+		return 0, ValidationError{Field: field, Message: "must be a valid number"}
 	}
 
 	if parsed <= minValue {
-		return 0, ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("must be greater than %d", minValue),
-		}
+		return 0, ValidationError{Field: field, Message: fmt.Sprintf("must be greater than %d", minValue)}
 	}
 
 	if parsed > maxValue {
-		return 0, ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("cannot be greater than %d", maxValue),
-		}
+		return 0, ValidationError{Field: field, Message: fmt.Sprintf("cannot be greater than %d", maxValue)}
 	}
 
 	return parsed, nil
@@ -658,7 +640,7 @@ func parseTimestampFormat(timestamp string) (interface{}, error) {
 		return true, nil
 	}
 
-	return nil, ErrInvalidTimestampFormat
+	return nil, errors.TimestampInvalidFormat(timestamp)
 }
 
 // ValidateURL validates URL formats used in repositories
@@ -707,10 +689,7 @@ func ValidateEnumField(value string, allowedValues []string, fieldName string) e
 		}
 	}
 
-	return ValidationError{
-		Field:   fieldName,
-		Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedValues, ", ")),
-	}
+	return ValidationError{Field: fieldName, Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedValues, ", "))}
 }
 
 // ValidateQueryLimit validates query limits with repository-specific maximums
@@ -720,10 +699,7 @@ func ValidateQueryLimit(limit int, maxLimit int, operationType string) error {
 	}
 
 	if limit > maxLimit {
-		return ValidationError{
-			Field:   "limit",
-			Message: fmt.Sprintf("cannot be greater than %d for %s operations", maxLimit, operationType),
-		}
+		return ValidationError{Field: "limit", Message: fmt.Sprintf("cannot be greater than %d for %s operations", maxLimit, operationType)}
 	}
 
 	return nil
@@ -736,10 +712,7 @@ func ValidateQueryOffset(offset int, maxOffset int) error {
 	}
 
 	if offset > maxOffset {
-		return ValidationError{
-			Field:   "offset",
-			Message: fmt.Sprintf("cannot be greater than %d", maxOffset),
-		}
+		return ValidationError{Field: "offset", Message: fmt.Sprintf("cannot be greater than %d", maxOffset)}
 	}
 
 	return nil
@@ -779,10 +752,7 @@ func ValidateSortParameters(sortBy, sortOrder string, allowedFields []string) er
 		}
 
 		if !found {
-			return ValidationError{
-				Field:   "sort_by",
-				Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedFields, ", ")),
-			}
+			return ValidationError{Field: "sort_by", Message: fmt.Sprintf("must be one of: %s", strings.Join(allowedFields, ", "))}
 		}
 	}
 
@@ -986,10 +956,7 @@ func ValidateRepositorySearchQuery(query string, minLength int) error {
 	normalizedQuery := strings.ToLower(strings.TrimSpace(query))
 
 	if len(normalizedQuery) < minLength {
-		return ValidationError{
-			Field:   "query",
-			Message: fmt.Sprintf("must be at least %d characters long", minLength),
-		}
+		return ValidationError{Field: "query", Message: fmt.Sprintf("must be at least %d characters long", minLength)}
 	}
 
 	if len(normalizedQuery) > 500 {
@@ -1068,10 +1035,7 @@ func ValidatePreferenceValue(key string, value interface{}) error {
 // ValidateFloatRange validates that a float value is within the specified range
 func ValidateFloatRange(field string, value, minValue, maxValue float64) error {
 	if value < minValue || value > maxValue {
-		return ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("must be between %.2f and %.2f", minValue, maxValue),
-		}
+		return ValidationError{Field: field, Message: fmt.Sprintf("must be between %.2f and %.2f", minValue, maxValue)}
 	}
 
 	return nil
@@ -1080,10 +1044,7 @@ func ValidateFloatRange(field string, value, minValue, maxValue float64) error {
 // ValidateIntRange validates that an int value is within the specified range
 func ValidateIntRange(field string, value, minValue, maxValue int) error {
 	if value < minValue || value > maxValue {
-		return ValidationError{
-			Field:   field,
-			Message: fmt.Sprintf("must be between %d and %d", minValue, maxValue),
-		}
+		return ValidationError{Field: field, Message: fmt.Sprintf("must be between %d and %d", minValue, maxValue)}
 	}
 
 	return nil

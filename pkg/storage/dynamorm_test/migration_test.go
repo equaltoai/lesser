@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -551,7 +551,7 @@ func TestEdgeCasesAndErrorScenarios(t *testing.T) {
 		err := repo.CreateUser(context.Background(), &storage.User{})
 
 		assert.Error(t, err)
-		assert.IsType(t, common.ValidationError{}, err)
+		assert.IsType(t, &errors.AppError{}, err)
 	})
 
 	t.Run("malformed keys", func(t *testing.T) {

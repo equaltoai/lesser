@@ -13,7 +13,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash"
 	"math/big"
@@ -126,7 +125,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	// Initialize storage independently to avoid import cycles
 	db, err := dynamorm.GetClient(context.Background())
 	if err != nil {
-		return nil, errors.Join(ErrDynamoDBInit, err)
+		return nil, ErrDynamoDBInit(err)
 	}
 
 	// Initialize repository factory
@@ -136,7 +135,7 @@ func NewPushDeliveryProcessor() (*PushDeliveryProcessor, error) {
 	}
 	repos, err := factory.NewRepositoryFactory(db, tableName, lambdaCtx.Logger)
 	if err != nil {
-		return nil, errors.Join(ErrRepositoryFactory, err)
+		return nil, ErrRepositoryFactory(err)
 	}
 
 	// Set storage in lambdaCtx for reference
@@ -225,7 +224,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 			zap.String("message_id", msg.MessageId),
 			zap.Error(err),
 		)
-		return errors.Join(ErrInvalidMessageFormat, err)
+		return ErrInvalidMessageFormat(err)
 	}
 
 	pdp.logger.Info("processing push notification",
@@ -250,7 +249,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 			zap.String("username", notification.Username),
 			zap.Error(err),
 		)
-		return errors.Join(ErrGetPushSubscriptions, err)
+		return ErrGetPushSubscriptions(err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("subscriptions", subscriptions); err != nil {
@@ -264,7 +263,7 @@ func (pdp *PushDeliveryProcessor) processMessage(ctx *lift.Context, msg events.S
 	vapidKeys, err := pdp.repos.PushSubscription().GetVAPIDKeys(ctx.Context)
 	if err != nil {
 		pdp.logger.Error("failed to get VAPID keys", zap.Error(err))
-		return errors.Join(ErrGetVAPIDKeys, err)
+		return ErrGetVAPIDKeys(err)
 	}
 
 	// Send to each subscription
@@ -341,7 +340,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		result.Status = PushStatusFailed
-		result.Error = errors.Join(ErrMarshalPayload, err)
+		result.Error = ErrMarshalPayload(err)
 		return result
 	}
 
@@ -349,7 +348,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	encryptedPayload, salt, serverPublicKey, err := pdp.encryptPayload(payloadBytes, subscription.P256dh, subscription.Auth)
 	if err != nil {
 		result.Status = PushStatusFailed
-		result.Error = errors.Join(ErrEncryptPayload, err)
+		result.Error = ErrEncryptPayload(err)
 		return result
 	}
 
@@ -357,7 +356,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	vapidJWT, err := pdp.createVAPIDJWT(subscription.Endpoint, vapidKeys.Subject, vapidKeys.PrivateKey)
 	if err != nil {
 		result.Status = PushStatusFailed
-		result.Error = errors.Join(ErrCreateVAPIDJWT, err)
+		result.Error = ErrCreateVAPIDJWT(err)
 		return result
 	}
 
@@ -365,7 +364,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	req, err := http.NewRequestWithContext(ctx, "POST", subscription.Endpoint, strings.NewReader(encryptedPayload))
 	if err != nil {
 		result.Status = PushStatusFailed
-		result.Error = errors.Join(ErrCreateRequest, err)
+		result.Error = ErrCreateRequest(err)
 		return result
 	}
 
@@ -380,7 +379,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 	resp, err := pdp.httpClient.Do(req)
 	if err != nil {
 		result.Status = PushStatusFailed
-		result.Error = errors.Join(ErrSendRequest, err)
+		result.Error = ErrSendRequest(err)
 		return result
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -410,7 +409,7 @@ func (pdp *PushDeliveryProcessor) sendWebPush(ctx context.Context, subscription 
 			)
 			result.Status = PushStatusFailed
 		}
-		result.Error = ErrPushServiceError
+		result.Error = ErrPushServiceError()
 		// Log the status code for debugging
 		pdp.logger.Error("push service error",
 			zap.String("subscription_id", subscription.ID),
@@ -531,7 +530,7 @@ func (pdp *PushDeliveryProcessor) createVAPIDJWT(endpoint, subject, privateKeyBa
 	// Parse the endpoint to get the audience
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		return "", errors.Join(ErrParseEndpoint, err)
+		return "", ErrParseEndpoint(err)
 	}
 	audience := fmt.Sprintf("%s://%s", u.Scheme, u.Host)
 
@@ -560,7 +559,7 @@ func (pdp *PushDeliveryProcessor) createVAPIDJWT(endpoint, subject, privateKeyBa
 	// Decode the private key
 	privateKeyBytes, err := base64.RawURLEncoding.DecodeString(privateKeyBase64)
 	if err != nil {
-		return "", errors.Join(ErrDecodePrivateKey, err)
+		return "", ErrDecodePrivateKey(err)
 	}
 
 	// Create ECDSA private key
@@ -578,7 +577,7 @@ func (pdp *PushDeliveryProcessor) createVAPIDJWT(endpoint, subject, privateKeyBa
 	hash := sha256.Sum256([]byte(message))
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash[:])
 	if err != nil {
-		return "", errors.Join(ErrSign, err)
+		return "", ErrSign(err)
 	}
 
 	// Encode signature in correct format (r || s)
@@ -599,42 +598,42 @@ func (pdp *PushDeliveryProcessor) encryptPayload(payload []byte, p256dhBase64, a
 	// Decode the client's public key and auth secret
 	clientPublicKeyBytes, err := base64.RawURLEncoding.DecodeString(p256dhBase64)
 	if err != nil {
-		return "", "", "", errors.Join(ErrDecodeP256dh, err)
+		return "", "", "", ErrDecodeP256dh(err)
 	}
 
 	authSecret, err := base64.RawURLEncoding.DecodeString(authBase64)
 	if err != nil {
-		return "", "", "", errors.Join(ErrDecodeAuth, err)
+		return "", "", "", ErrDecodeAuth(err)
 	}
 
 	// Generate server key pair
 	serverPrivateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", "", errors.Join(ErrGenerateServerKey, err)
+		return "", "", "", ErrGenerateServerKey(err)
 	}
 
 	// Convert server private key to ECDH and get public key bytes
 	serverECDHKey, err := serverPrivateKey.ECDH()
 	if err != nil {
-		return "", "", "", errors.Join(ErrConvertToECDH, err)
+		return "", "", "", ErrConvertToECDH(err)
 	}
 	serverPublicKeyBytes := serverECDHKey.PublicKey().Bytes()
 
 	// Convert client public key bytes to ECDH public key
 	clientECDHPublicKey, err := ecdh.P256().NewPublicKey(clientPublicKeyBytes)
 	if err != nil {
-		return "", "", "", errors.Join(ErrParseClientPublicKey, err)
+		return "", "", "", ErrParseClientPublicKey(err)
 	}
 	// Perform ECDH key exchange
 	sharedSecret, err := serverECDHKey.ECDH(clientECDHPublicKey)
 	if err != nil {
-		return "", "", "", errors.Join(ErrPerformECDH, err)
+		return "", "", "", ErrPerformECDH(err)
 	}
 
 	// Generate salt
 	salt := make([]byte, 16)
 	if _, err := rand.Read(salt); err != nil {
-		return "", "", "", errors.Join(ErrGenerateSalt, err)
+		return "", "", "", ErrGenerateSalt(err)
 	}
 
 	// Derive keys using HKDF
@@ -644,18 +643,18 @@ func (pdp *PushDeliveryProcessor) encryptPayload(payload []byte, p256dhBase64, a
 	// Generate a random nonce for each encryption
 	nonce := make([]byte, 12)
 	if _, err := rand.Read(nonce); err != nil {
-		return "", "", "", errors.Join(ErrGenerateNonce, err)
+		return "", "", "", ErrGenerateNonce(err)
 	}
 
 	// Encrypt the payload
 	block, err := aes.NewCipher(cek)
 	if err != nil {
-		return "", "", "", errors.Join(ErrCreateCipher, err)
+		return "", "", "", ErrCreateCipher(err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", "", "", errors.Join(ErrCreateGCM, err)
+		return "", "", "", ErrCreateGCM(err)
 	}
 
 	// Add padding
@@ -702,7 +701,7 @@ func buildInfo(typ string, clientPublicKey, serverPublicKey []byte) []byte {
 func main() {
 	processor, err := NewPushDeliveryProcessor()
 	if err != nil {
-		panic(errors.Join(ErrProcessorInitialization, err))
+		panic(ErrProcessorInitialization(err))
 	}
 
 	app := lift.New()

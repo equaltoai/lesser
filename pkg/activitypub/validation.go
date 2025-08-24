@@ -37,18 +37,12 @@ func init() {
 // ValidateActor validates an Actor object
 func ValidateActor(actor *Actor) error {
 	if actor == nil {
-		return common.ValidationError{
-			Field:   "actor",
-			Message: "cannot be nil",
-		}
+		return common.ValidationError{Field: "actor", Message: "cannot be nil"}
 	}
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("id", actor.ID); err != nil {
-		return common.ValidationError{
-			Field:   "id",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "id", Message: "required field missing"}
 	}
 
 	if err := ValidateURL(actor.ID, "id"); err != nil {
@@ -56,10 +50,7 @@ func ValidateActor(actor *Actor) error {
 	}
 
 	if err := common.ValidateRequiredParam("type", actor.Type); err != nil {
-		return common.ValidationError{
-			Field:   "type",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "type", Message: "required field missing"}
 	}
 
 	// Validate actor type
@@ -67,10 +58,7 @@ func ValidateActor(actor *Actor) error {
 	case PersonType, ServiceType, GroupType, OrganizationType, ApplicationType:
 		// Valid types
 	default:
-		return common.ValidationError{
-			Field:   "type",
-			Message: "invalid actor type",
-		}
+		return common.ValidationError{Field: "type", Message: "invalid actor type"}
 	}
 
 	if err := ValidateUsername(actor.PreferredUsername); err != nil {
@@ -88,17 +76,11 @@ func ValidateActor(actor *Actor) error {
 
 	// Validate optional fields if present
 	if actor.Name != "" && len(actor.Name) > maxDisplayNameLength {
-		return common.ValidationError{
-			Field:   "name",
-			Message: "too long (max 255 characters)",
-		}
+		return common.ValidationError{Field: "name", Message: "too long (max 255 characters)"}
 	}
 
 	if actor.Summary != "" && len(actor.Summary) > maxSummaryLength {
-		return common.ValidationError{
-			Field:   "summary",
-			Message: "too long (max 5000 characters)",
-		}
+		return common.ValidationError{Field: "summary", Message: "too long (max 5000 characters)"}
 	}
 
 	if actor.Following != "" {
@@ -119,18 +101,12 @@ func ValidateActor(actor *Actor) error {
 // ValidateActivity validates an Activity object
 func ValidateActivity(activity *Activity) error {
 	if activity == nil {
-		return common.ValidationError{
-			Field:   "activity",
-			Message: "cannot be nil",
-		}
+		return common.ValidationError{Field: "activity", Message: "cannot be nil"}
 	}
 
 	// Validate required fields
 	if err := common.ValidateRequiredParam("id", activity.ID); err != nil {
-		return common.ValidationError{
-			Field:   "id",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "id", Message: "required field missing"}
 	}
 
 	if err := ValidateURL(activity.ID, "id"); err != nil {
@@ -138,10 +114,7 @@ func ValidateActivity(activity *Activity) error {
 	}
 
 	if err := common.ValidateRequiredParam("type", activity.Type); err != nil {
-		return common.ValidationError{
-			Field:   "type",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "type", Message: "required field missing"}
 	}
 
 	// Validate activity type
@@ -150,17 +123,11 @@ func ValidateActivity(activity *Activity) error {
 		RejectType, LikeType, AnnounceType, UndoType, BlockType:
 		// Valid types
 	default:
-		return common.ValidationError{
-			Field:   "type",
-			Message: "invalid activity type: " + activity.Type,
-		}
+		return common.ValidationError{Field: "type", Message: "invalid activity type: " + activity.Type}
 	}
 
 	if err := common.ValidateRequiredParam("actor", activity.Actor); err != nil {
-		return common.ValidationError{
-			Field:   "actor",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "actor", Message: "required field missing"}
 	}
 
 	if err := ValidateURL(activity.Actor, "actor"); err != nil {
@@ -182,38 +149,23 @@ func ValidateActivity(activity *Activity) error {
 // ValidateNote validates a Note object
 func ValidateNote(note *Note) error {
 	if note == nil {
-		return common.ValidationError{
-			Field:   "note",
-			Message: "cannot be nil",
-		}
+		return common.ValidationError{Field: "note", Message: "cannot be nil"}
 	}
 
 	if note.Type != NoteType {
-		return common.ValidationError{
-			Field:   "type",
-			Message: "must be 'Note'",
-		}
+		return common.ValidationError{Field: "type", Message: "must be 'Note'"}
 	}
 
 	if err := common.ValidateRequiredParam("content", note.Content); err != nil {
-		return common.ValidationError{
-			Field:   "content",
-			Message: "cannot be empty",
-		}
+		return common.ValidationError{Field: "content", Message: "cannot be empty"}
 	}
 
 	if len(note.Content) > maxContentLength {
-		return common.ValidationError{
-			Field:   "content",
-			Message: "too long (max 100000 characters)",
-		}
+		return common.ValidationError{Field: "content", Message: "too long (max 100000 characters)"}
 	}
 
 	if err := common.ValidateRequiredParam("attributedTo", note.AttributedTo); err != nil {
-		return common.ValidationError{
-			Field:   "attributedTo",
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: "attributedTo", Message: "required field missing"}
 	}
 
 	if err := ValidateURL(note.AttributedTo, "attributedTo"); err != nil {
@@ -226,32 +178,20 @@ func ValidateNote(note *Note) error {
 // ValidateURL validates that a string is a valid URL
 func ValidateURL(urlStr string, fieldName string) error {
 	if err := common.ValidateRequiredParam(fieldName, urlStr); err != nil {
-		return common.ValidationError{
-			Field:   fieldName,
-			Message: "required field missing",
-		}
+		return common.ValidationError{Field: fieldName, Message: "required field missing"}
 	}
 
 	u, err := url.Parse(urlStr)
 	if err != nil {
-		return common.ValidationError{
-			Field:   fieldName,
-			Message: "invalid URL format",
-		}
+		return common.ValidationError{Field: fieldName, Message: "invalid URL format"}
 	}
 
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return common.ValidationError{
-			Field:   fieldName,
-			Message: "URL must use http or https scheme",
-		}
+		return common.ValidationError{Field: fieldName, Message: "URL must use http or https scheme"}
 	}
 
 	if err := common.ValidateRequiredParam("host", u.Host); err != nil {
-		return common.ValidationError{
-			Field:   fieldName,
-			Message: "URL must have a host",
-		}
+		return common.ValidationError{Field: fieldName, Message: "URL must have a host"}
 	}
 
 	return nil
@@ -267,10 +207,7 @@ func ValidateAddressing(addresses []string, fieldName string) error {
 
 		// Otherwise must be a valid URL
 		if err := ValidateURL(addr, fieldName); err != nil {
-			return common.ValidationError{
-				Field:   fieldName,
-				Message: "invalid address at index " + string(rune(i)),
-			}
+			return common.ValidationError{Field: fieldName, Message: "invalid address at index " + string(rune(i))}
 		}
 	}
 

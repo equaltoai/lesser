@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -31,6 +30,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
 // Visibility status constants
@@ -220,7 +220,7 @@ func (np *NoteProcessor) HandleStream(ctx context.Context, event events.DynamoDB
 			zap.Int("failed_records", len(errors)),
 			zap.Int("total_records", len(event.Records)),
 		)
-		return ErrPartialBatchFailure
+		return pkgErrors.NoteProcessorPartialBatchFailure()
 	}
 
 	return nil
@@ -238,7 +238,7 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 	// Get the note from DynamoDB using repository
 	note, err := np.communityNoteRepo.GetCommunityNote(ctx, noteID)
 	if err != nil {
-		return errors.Join(ErrGetNote, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get note")
 	}
 
 	np.logger.Info("processing new note",
@@ -268,13 +268,13 @@ func (np *NoteProcessor) processNewNoteByID(ctx context.Context, noteID string) 
 
 	// 5. Update note with analysis results (score will be updated by repository)
 	if err := np.updateNoteAnalysis(ctx, note, analysis, sourceQuality); err != nil {
-		return errors.Join(ErrUpdateNoteAnalysis, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to update note analysis")
 	}
 
 	// 6. Check visibility and update status
 	status := np.determineVisibilityStatus(initialScore)
 	if err := np.communityNoteRepo.UpdateCommunityNoteScore(ctx, note.ID, initialScore, status); err != nil {
-		return errors.Join(ErrUpdateNoteScore, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to update note score")
 	}
 
 	// 7. If visible, broadcast to WebSocket subscribers
@@ -659,7 +659,7 @@ func (np *NoteProcessor) analyzeContentWithCostTracking(ctx context.Context, not
 		LanguageCode: languageCode,
 	})
 	if err != nil {
-		return nil, errors.Join(ErrDetectSentiment, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to detect sentiment")
 	}
 
 	// Calculate sentiment score (0-1)
@@ -783,13 +783,13 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 	// Get the note
 	note, err := np.communityNoteRepo.GetCommunityNote(ctx, noteID)
 	if err != nil {
-		return errors.Join(ErrGetNote, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get note")
 	}
 
 	// Get all votes
 	votes, err := np.communityNoteRepo.GetCommunityNoteVotes(ctx, noteID)
 	if err != nil {
-		return errors.Join(ErrGetVotes, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get votes")
 	}
 
 	// Calculate new score
@@ -798,7 +798,7 @@ func (np *NoteProcessor) recalculateNoteScore(ctx context.Context, noteID string
 
 	// Update the note
 	if err := np.communityNoteRepo.UpdateCommunityNoteScore(ctx, noteID, newScore, newStatus); err != nil {
-		return errors.Join(ErrUpdateNoteScore, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to update note score")
 	}
 
 	// Update vote counts
@@ -1006,7 +1006,7 @@ func (np *NoteProcessor) updateNoteAnalysis(ctx context.Context, note *storage.C
 		sourceQuality,
 	)
 	if err != nil {
-		return errors.Join(ErrUpdateNoteAnalysis, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to update note analysis")
 	}
 
 	np.logger.Info("updated note AI analysis",

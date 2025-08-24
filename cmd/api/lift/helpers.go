@@ -87,7 +87,7 @@ func (h *Handler) authenticateRequestWithScope(ctx *lift.Context, requiredScope 
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
 	// Validate account ID format
 	if err := common.ValidateAccountID(accountID); err != nil {
-		return nil, errors.Join(ErrInvalidAccountID, err)
+		return nil, errors.Join(invalidAccountID(), err)
 	}
 
 	// Handle different account ID formats
@@ -100,10 +100,10 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 				username := parts[1]
 				return h.repos.Actor().GetActor(ctx, username)
 			}
-			return nil, ErrInvalidAccountURL
+			return nil, invalidAccountURL()
 		}
 		// Remote actor - not supported yet
-		return nil, ErrRemoteAccountsNotSupported
+		return nil, remoteAccountsNotSupported()
 	}
 
 	// Check if it's a numeric ID (Mastodon compatibility)
@@ -129,14 +129,14 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return "", ErrHelperUnauthorized
+		return "", helperUnauthorized()
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ErrHelperUnauthorized
+		return "", helperUnauthorized()
 	}
 
 	// Check scopes if provided
@@ -149,7 +149,7 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (
 			}
 		}
 		if !hasScope {
-			return "", ErrHelperInsufficientScope
+			return "", helperInsufficientScope()
 		}
 	}
 
@@ -177,7 +177,7 @@ func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []s
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return "", ErrHelperUnauthorized
+		return "", helperUnauthorized()
 	}
 
 	// Check scopes if provided
@@ -190,7 +190,7 @@ func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []s
 			}
 		}
 		if !hasScope {
-			return "", ErrHelperInsufficientScope
+			return "", helperInsufficientScope()
 		}
 	}
 
@@ -700,7 +700,7 @@ func (h *Handler) getAuthService() (*auth.AuthService, error) {
 	// The Handler struct's authService field is for the interface type
 	authSvc, err := auth.NewAuthService(h.cfg, h.repos)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToInitializeAuthService, err)
+		return nil, errors.Join(failedToInitializeAuthService(), err)
 	}
 	return authSvc, nil
 }
@@ -821,14 +821,14 @@ func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []str
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
-		return nil, ErrHelperUnauthorized
+		return nil, helperUnauthorized()
 	}
 
 	// Validate token
 	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
 	claims, err := oauthSvc.ValidateAccessToken(token)
 	if err != nil {
-		return nil, ErrHelperUnauthorized
+		return nil, helperUnauthorized()
 	}
 
 	// Check scopes if provided
@@ -841,7 +841,7 @@ func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []str
 			}
 		}
 		if !hasScope {
-			return nil, ErrHelperInsufficientScope
+			return nil, helperInsufficientScope()
 		}
 	}
 

@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
 // SearchIndexer handles search index operations for content
@@ -87,7 +87,7 @@ func (si *SearchIndexer) HandleStream(ctx *lift.Context, event events.DynamoDBEv
 			zap.Int("failed_records", len(errors)),
 			zap.Int("total_indexable_records", len(indexableRecords)),
 		)
-		return ErrPartialBatchFailure
+		return pkgErrors.SearchIndexerPartialBatchFailure()
 	}
 
 	return nil
@@ -146,7 +146,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	// Extract indexable content from the record
 	content, err := si.extractIndexableContent(record)
 	if err != nil {
-		return errors.Join(ErrExtractIndexableContent, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to extract indexable content")
 	}
 
 	// Initialize cost tracking for indexing operation
@@ -167,7 +167,7 @@ func (si *SearchIndexer) processRecord(ctx *lift.Context, record events.DynamoDB
 	if err := si.createSearchIndex(ctx, content); err != nil {
 		// Record failed indexing cost
 		si.recordIndexingCost(ctx, costData, startTime, 0, writeCount, err)
-		return errors.Join(ErrCreateSearchIndex, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create search index")
 	}
 
 	// Estimate write operations (main index + additional indexes)
@@ -217,7 +217,7 @@ func (si *SearchIndexer) extractIndexableContent(record events.DynamoDBEventReco
 	}
 
 	if err := stream.UnmarshalItem(record, &item); err != nil {
-		return nil, errors.Join(ErrUnmarshalStreamImage, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal stream image")
 	}
 
 	// Extract ID from PK
@@ -311,7 +311,7 @@ func (si *SearchIndexer) createSearchIndex(ctx *lift.Context, content *Indexable
 
 	// Store the search index record using Lift context
 	if err := si.db.WithContext(ctx).Model(&searchRecord).Create(); err != nil {
-		return errors.Join(ErrStoreSearchIndex, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to store search index")
 	}
 
 	// Create additional indexes for common search patterns
@@ -348,7 +348,7 @@ func (si *SearchIndexer) createAdditionalIndexes(ctx *lift.Context, content *Ind
 		}
 
 		if err := si.db.WithContext(ctx).Model(&actorIndex).Create(); err != nil {
-			return errors.Join(ErrCreateActorSearchIndex, err)
+			return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create actor search index")
 		}
 	}
 

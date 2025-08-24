@@ -1,119 +1,119 @@
 package moderation
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
 // Error constants for moderation package
 
 // Pattern validation errors
 var (
-	ErrInvalidPattern      = errors.New("invalid pattern")
-	ErrInvalidRegexPattern = errors.New("invalid regex pattern")
-	ErrInvalidPatternType  = errors.New("invalid pattern type")
-	ErrInvalidSeverity     = errors.New("invalid severity")
+	ErrInvalidPattern      = errors.PatternValidationFailed("invalid pattern")
+	ErrInvalidRegexPattern = errors.PatternValidationFailed("invalid regex pattern")
+	ErrInvalidPatternType  = errors.PatternValidationFailed("invalid pattern type")
+	ErrInvalidSeverity     = errors.NewValidationError("severity", "invalid")
 )
 
 // Pattern retrieval errors
 var (
-	ErrFailedToGetPatterns         = errors.New("failed to get patterns")
-	ErrFailedToGetPattern          = errors.New("failed to get pattern")
-	ErrFailedToGetEnhancedPatterns = errors.New("failed to get enhanced patterns")
+	ErrFailedToGetPatterns         = errors.PatternQueryFailed(nil)
+	ErrFailedToGetPattern          = errors.FailedToGet("pattern", nil)
+	ErrFailedToGetEnhancedPatterns = errors.FailedToGet("enhanced patterns", nil)
 )
 
 // Enhanced pattern functionality errors
 var (
-	ErrEnhancedPatternsNotAvailable          = errors.New("enhanced patterns not available")
-	ErrEnhancedPatternValidationNotAvailable = errors.New("enhanced pattern validation not available")
-	ErrEnhancedPatternStatisticsNotAvailable = errors.New("enhanced pattern statistics not available")
+	ErrEnhancedPatternsNotAvailable          = errors.ServiceUnavailable("enhanced patterns")
+	ErrEnhancedPatternValidationNotAvailable = errors.ServiceUnavailable("enhanced pattern validation")
+	ErrEnhancedPatternStatisticsNotAvailable = errors.ServiceUnavailable("enhanced pattern statistics")
 )
 
 // Pattern validation errors
 var (
-	ErrPatternValidationFailed = errors.New("pattern validation failed")
+	ErrPatternValidationFailed = errors.PatternValidationFailed("unknown reason")
 )
 
 // Enhanced pattern matching errors - URL patterns
 var (
-	ErrUnsupportedURLPatternType = errors.New("unsupported URL pattern type")
-	ErrUnsupportedIPPatternType  = errors.New("unsupported IP pattern type")
-	ErrUnsupportedPatternType    = errors.New("unsupported pattern type")
+	ErrUnsupportedURLPatternType = errors.NewValidationError("validation", "unsupported URL pattern type")
+	ErrUnsupportedIPPatternType  = errors.NewValidationError("validation", "unsupported IP pattern type")
+	ErrUnsupportedPatternType    = errors.NewValidationError("validation", "unsupported pattern type")
 
 	// URL processing errors
-	ErrFailedToNormalizeURL     = errors.New("failed to normalize URL")
-	ErrFailedToParseURL         = errors.New("failed to parse URL")
-	ErrInvalidIPAddress         = errors.New("invalid IP address")
-	ErrFailedToNormalizePattern = errors.New("failed to normalize pattern")
+	ErrFailedToNormalizeURL     = errors.NewValidationError("validation", "failed to normalize URL")
+	ErrFailedToParseURL         = errors.NewValidationError("validation", "failed to parse URL")
+	ErrInvalidIPAddress         = errors.NewValidationError("validation", "invalid IP address")
+	ErrFailedToNormalizePattern = errors.NewValidationError("validation", "failed to normalize pattern")
 
 	// Domain pattern errors
-	ErrInvalidDomainPattern       = errors.New("invalid domain pattern")
-	ErrFailedToCompileDomainRegex = errors.New("failed to compile domain regex")
-	ErrInvalidURLInDomainPattern  = errors.New("invalid URL in domain pattern")
-	ErrInvalidHostPortFormat      = errors.New("invalid host:port format")
-	ErrInvalidCharacterInDomain   = errors.New("invalid character in domain")
-	ErrDomainPartHyphenRule       = errors.New("domain part cannot start or end with hyphen")
+	ErrInvalidDomainPattern       = errors.NewValidationError("validation", "invalid domain pattern")
+	ErrFailedToCompileDomainRegex = errors.NewValidationError("validation", "failed to compile domain regex")
+	ErrInvalidURLInDomainPattern  = errors.NewValidationError("validation", "invalid URL in domain pattern")
+	ErrInvalidHostPortFormat      = errors.NewValidationError("validation", "invalid host:port format")
+	ErrInvalidCharacterInDomain   = errors.NewValidationError("validation", "invalid character in domain")
+	ErrDomainPartHyphenRule       = errors.NewValidationError("validation", "domain part cannot start or end with hyphen")
 
 	// Pattern compilation errors
-	ErrFailedToCompileSubdomainRegex = errors.New("failed to compile subdomain regex")
-	ErrFailedToCompilePathRegex      = errors.New("failed to compile path regex")
-	ErrFailedToCompileQueryRegex     = errors.New("failed to compile query regex")
-	ErrFailedToCompileURLRegex       = errors.New("failed to compile URL regex")
-	ErrFailedToCompileIPRegex        = errors.New("failed to compile IP regex")
+	ErrFailedToCompileSubdomainRegex = errors.NewValidationError("validation", "failed to compile subdomain regex")
+	ErrFailedToCompilePathRegex      = errors.NewValidationError("validation", "failed to compile path regex")
+	ErrFailedToCompileQueryRegex     = errors.NewValidationError("validation", "failed to compile query regex")
+	ErrFailedToCompileURLRegex       = errors.NewValidationError("validation", "failed to compile URL regex")
+	ErrFailedToCompileIPRegex        = errors.NewValidationError("validation", "failed to compile IP regex")
 
 	// IP pattern errors
-	ErrInvalidCIDRBlock          = errors.New("invalid CIDR block")
-	ErrInvalidIPRangeFormat      = errors.New("invalid IP range format, expected start-end")
-	ErrInvalidIPAddressesInRange = errors.New("invalid IP addresses in range")
-	ErrIPRangeMixedVersions      = errors.New("IP range must use same IP version")
-	ErrInvalidIPRangeOrder       = errors.New("invalid IP range, start must be <= end")
+	ErrInvalidCIDRBlock          = errors.NewValidationError("validation", "invalid CIDR block")
+	ErrInvalidIPRangeFormat      = errors.NewValidationError("validation", "invalid IP range format, expected start-end")
+	ErrInvalidIPAddressesInRange = errors.NewValidationError("validation", "invalid IP addresses in range")
+	ErrIPRangeMixedVersions      = errors.NewValidationError("validation", "IP range must use same IP version")
+	ErrInvalidIPRangeOrder       = errors.NewValidationError("validation", "invalid IP range, start must be <= end")
 
 	// Security errors
-	ErrUnsafeRegexPattern = errors.New("potentially unsafe regex pattern detected")
-	ErrTooManyWildcards   = errors.New("too many wildcards in pattern")
+	ErrUnsafeRegexPattern = errors.NewValidationError("validation", "potentially unsafe regex pattern detected")
+	ErrTooManyWildcards   = errors.NewValidationError("validation", "too many wildcards in pattern")
 
 	// Path pattern errors
-	ErrPathMustStartWithSlash  = errors.New("path pattern must start with /")
-	ErrPathTraversalNotAllowed = errors.New("path traversal not allowed in patterns")
+	ErrPathMustStartWithSlash  = errors.NewValidationError("validation", "path pattern must start with /")
+	ErrPathTraversalNotAllowed = errors.NewValidationError("validation", "path traversal not allowed in patterns")
 
 	// Query pattern errors
-	ErrSpacesNotAllowedInQuery = errors.New("spaces not allowed in query patterns")
+	ErrSpacesNotAllowedInQuery = errors.NewValidationError("validation", "spaces not allowed in query patterns")
 )
 
 // Consensus-related errors
 var (
 	// Consensus validation errors
-	ErrInsufficientReviewers   = errors.New("insufficient reviewers")
-	ErrInsufficientTrustWeight = errors.New("insufficient trust weight")
-	ErrConsensusNotReached     = errors.New("insufficient consensus")
-	ErrInsufficientConsensus   = errors.New("insufficient consensus for critical action")
+	ErrInsufficientReviewers   = errors.NewValidationError("validation", "insufficient reviewers")
+	ErrInsufficientTrustWeight = errors.NewValidationError("validation", "insufficient trust weight")
+	ErrConsensusNotReached     = errors.NewValidationError("validation", "insufficient consensus")
+	ErrInsufficientConsensus   = errors.NewValidationError("validation", "insufficient consensus for critical action")
 
 	// Vote processing errors
-	ErrVoteProcessingFailed       = errors.New("failed to process vote")
-	ErrConsensusCalculationFailed = errors.New("consensus calculation failed")
+	ErrVoteProcessingFailed       = errors.NewValidationError("validation", "failed to process vote")
+	ErrConsensusCalculationFailed = errors.NewValidationError("validation", "consensus calculation failed")
 
 	// Storage operation errors for consensus
-	ErrModerationEventRetrievalFailed   = errors.New("failed to get moderation event")
-	ErrModerationReviewAddFailed        = errors.New("failed to add review")
-	ErrModerationReviewsRetrievalFailed = errors.New("failed to get reviews")
-	ErrModerationDecisionStorageFailed  = errors.New("failed to store decision")
-	ErrModerationQueueRetrievalFailed   = errors.New("failed to get moderation queue")
+	ErrModerationEventRetrievalFailed   = errors.NewValidationError("validation", "failed to get moderation event")
+	ErrModerationReviewAddFailed        = errors.NewValidationError("validation", "failed to add review")
+	ErrModerationReviewsRetrievalFailed = errors.NewValidationError("validation", "failed to get reviews")
+	ErrModerationDecisionStorageFailed  = errors.NewValidationError("validation", "failed to store decision")
+	ErrModerationQueueRetrievalFailed   = errors.NewValidationError("validation", "failed to get moderation queue")
 )
 
 // Core moderation errors
 var (
 	// Content moderation process errors
-	ErrPatternModerationFailed     = errors.New("pattern moderation failed")
-	ErrAIAnalysisFailed            = errors.New("AI analysis failed")
-	ErrTextAnalysisFailed          = errors.New("text analysis failed")
-	ErrImageAnalysisFailed         = errors.New("image analysis failed")
-	ErrModerationDecisionFailed    = errors.New("moderation decision failed")
-	ErrModerationSystemUnavailable = errors.New("moderation system unavailable")
+	ErrPatternModerationFailed     = errors.PatternAnalysisFailed(nil)
+	ErrAIAnalysisFailed            = errors.ProcessingFailed("AI analysis", nil)
+	ErrTextAnalysisFailed          = errors.ProcessingFailed("text analysis", nil)
+	ErrImageAnalysisFailed         = errors.ProcessingFailed("image analysis", nil)
+	ErrModerationDecisionFailed    = errors.ProcessingFailed("moderation decision", nil)
+	ErrModerationSystemUnavailable = errors.ServiceUnavailable("moderation system")
 
 	// Content assessment errors
-	ErrContentViolatesPolicy      = errors.New("content violates policy")
-	ErrInsufficientModerationData = errors.New("insufficient moderation data")
-	ErrModerationRuleNotFound     = errors.New("moderation rule not found")
+	ErrContentViolatesPolicy      = errors.ContentNotAllowed("unknown", "policy violation")
+	ErrInsufficientModerationData = errors.NewValidationError("moderation_data", "insufficient")
+	ErrModerationRuleNotFound     = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "moderation rule not found")
 
 	// Storage and persistence errors
-	ErrFailedToUpdateModerationDecision = errors.New("failed to update moderation decision")
-	ErrFailedToStoreModerationDecision  = errors.New("failed to store moderation decision")
-	ErrFailedToRetrieveModerationQueue  = errors.New("failed to retrieve moderation queue")
+	ErrFailedToUpdateModerationDecision = errors.FailedToUpdate("moderation decision", nil)
+	ErrFailedToStoreModerationDecision  = errors.FailedToStore("moderation decision", nil)
+	ErrFailedToRetrieveModerationQueue  = errors.FailedToGet("moderation queue", nil)
 )

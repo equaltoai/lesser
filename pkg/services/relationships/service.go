@@ -269,7 +269,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 
 	// Prevent self-follows
 	if cmd.FollowerID == cmd.FollowingID {
-		return nil, ErrCannotFollowSelfLocal
+		return nil, CannotFollowSelf()
 	}
 
 	// Check if users exist
@@ -306,7 +306,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 			Actor: followingActor,
 		}
 	} else {
-		return nil, ErrNoRepositoryOrStorageLocal
+		return nil, NoRepositoryOrStorage()
 	}
 
 	// Check if already following
@@ -336,7 +336,7 @@ func (s *Service) Follow(ctx context.Context, cmd *FollowCommand) (*FollowResult
 	}
 
 	if isBlocked {
-		return nil, ErrFollowWhileBlockedLocal
+		return nil, ErrFollowWhileBlocked
 	}
 
 	// Create follow request
@@ -498,7 +498,7 @@ func (s *Service) Block(ctx context.Context, cmd *BlockCommand) (*RelationshipRe
 
 	// Prevent self-blocks
 	if cmd.BlockerID == cmd.BlockedID {
-		return nil, ErrCannotBlockSelfLocal
+		return nil, CannotBlockSelf()
 	}
 
 	// Check if already blocked
@@ -610,7 +610,7 @@ func (s *Service) Mute(ctx context.Context, cmd *MuteCommand) (*RelationshipResu
 
 	// Prevent self-mutes
 	if cmd.MuterID == cmd.MutedID {
-		return nil, ErrCannotMuteSelfLocal
+		return nil, CannotMuteSelf()
 	}
 
 	// Check if already muted
@@ -879,12 +879,12 @@ func (s *Service) AddDomainBlock(ctx context.Context, cmd *AddDomainBlockCommand
 
 	// Get domain block repository from storage
 	if s.storage == nil {
-		return ErrStorageNotAvailableLocal
+		return StorageNotAvailable()
 	}
 
 	domainBlockRepo := s.storage.DomainBlock()
 	if domainBlockRepo == nil {
-		return ErrDomainBlockRepositoryNotAvailableLocal
+		return DomainBlockRepositoryNotAvailable()
 	}
 
 	// Add the domain block
@@ -913,12 +913,12 @@ func (s *Service) RemoveDomainBlock(ctx context.Context, cmd *RemoveDomainBlockC
 
 	// Get domain block repository from storage
 	if s.storage == nil {
-		return ErrStorageNotAvailableLocal
+		return StorageNotAvailable()
 	}
 
 	domainBlockRepo := s.storage.DomainBlock()
 	if domainBlockRepo == nil {
-		return ErrDomainBlockRepositoryNotAvailableLocal
+		return DomainBlockRepositoryNotAvailable()
 	}
 
 	// Remove the domain block
@@ -956,7 +956,7 @@ func (s *Service) executeRepositoryQueryGeneric(_ context.Context, params reposi
 
 	// Get repository from storage
 	if s.storage == nil {
-		return ErrStorageNotAvailableLocal
+		return StorageNotAvailable()
 	}
 
 	return nil
@@ -1003,12 +1003,12 @@ func (s *Service) GetMutedUsers(ctx context.Context, query *GetMutedUsersQuery) 
 
 	// Get social repository from storage
 	if s.storage == nil {
-		return nil, ErrStorageNotAvailableLocal
+		return nil, StorageNotAvailable()
 	}
 
 	socialRepo := s.storage.Social()
 	if socialRepo == nil {
-		return nil, ErrSocialRepositoryNotAvailableLocal
+		return nil, SocialRepositoryNotAvailable()
 	}
 
 	// Get muted users
@@ -1059,12 +1059,12 @@ func (s *Service) GetBlockedUsers(ctx context.Context, query *GetBlockedUsersQue
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, ErrStorageNotAvailableLocal
+		return nil, StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, ErrRepositoryNotAvailableLocal
+		return nil, RepositoryNotAvailable("general")
 	}
 
 	// Get blocked users
@@ -1116,12 +1116,12 @@ func (s *Service) getRelatedAccounts(ctx context.Context, username string, limit
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, "", ErrStorageNotAvailableLocal
+		return nil, "", StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, "", ErrRepositoryNotAvailableLocal
+		return nil, "", RepositoryNotAvailable("general")
 	}
 
 	// Get related user IDs based on relation type
@@ -1135,7 +1135,7 @@ func (s *Service) getRelatedAccounts(ctx context.Context, username string, limit
 	case "following":
 		relatedIDs, nextCursor, err = relationshipRepo.GetFollowing(ctx, username, limit, cursor)
 	default:
-		return nil, "", ErrUnsupportedRelationTypeLocal
+		return nil, "", ErrUnsupportedRelationType
 	}
 
 	if err != nil {
@@ -1268,12 +1268,12 @@ func (s *Service) AcceptFollowRequest(ctx context.Context, cmd *AcceptFollowRequ
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, ErrStorageNotAvailableLocal
+		return nil, StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, ErrRepositoryNotAvailableLocal
+		return nil, RepositoryNotAvailable("general")
 	}
 
 	// Check if the follow request exists
@@ -1350,12 +1350,12 @@ func (s *Service) RejectFollowRequest(ctx context.Context, cmd *RejectFollowRequ
 
 	// Get relationship repository from storage
 	if s.storage == nil {
-		return nil, ErrStorageNotAvailableLocal
+		return nil, StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return nil, ErrRepositoryNotAvailableLocal
+		return nil, RepositoryNotAvailable("general")
 	}
 
 	// Check if the follow request exists
@@ -1488,7 +1488,7 @@ func (s *Service) validateAcceptFollowRequestCommand(cmd *AcceptFollowRequestCom
 		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
-		return ErrCannotAcceptOwnFollowRequestLocal
+		return CannotAcceptOwnFollowRequest()
 	}
 	return nil
 }
@@ -1501,7 +1501,7 @@ func (s *Service) validateRejectFollowRequestCommand(cmd *RejectFollowRequestCom
 		return err
 	}
 	if cmd.RequesterID == cmd.FollowerID {
-		return ErrCannotRejectOwnFollowRequestLocal
+		return CannotRejectOwnFollowRequest()
 	}
 	return nil
 }
@@ -1571,10 +1571,10 @@ func (s *Service) validateGetRelationshipsQuery(query *GetRelationshipsQuery) er
 		return err
 	}
 	if err := common.ValidateSliceNotEmpty("query.TargetIDs", query.TargetIDs); err != nil {
-		return ErrTargetIDsEmptyLocal
+		return TargetIDsEmpty()
 	}
 	if len(query.TargetIDs) > 40 {
-		return ErrTooManyTargetIDsLocal
+		return TooManyTargetIDs(len(query.TargetIDs))
 	}
 	return nil
 }
@@ -1995,12 +1995,12 @@ func isLocalActor(actor *activitypub.Actor, domainName string) bool {
 func (s *Service) IsBlocked(ctx context.Context, blockerID, blockedID string) (bool, error) {
 	// Check block status through relationship repository
 	if s.storage == nil {
-		return false, ErrStorageNotAvailableLocal
+		return false, StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return false, ErrRepositoryNotAvailableLocal
+		return false, RepositoryNotAvailable("general")
 	}
 
 	isBlocked, err := relationshipRepo.IsBlocked(ctx, blockerID, blockedID)
@@ -2015,12 +2015,12 @@ func (s *Service) IsBlocked(ctx context.Context, blockerID, blockedID string) (b
 func (s *Service) CountFollowing(ctx context.Context, username string) (int64, error) {
 	// Count following through relationship repository
 	if s.storage == nil {
-		return 0, ErrStorageNotAvailableLocal
+		return 0, StorageNotAvailable()
 	}
 
 	relationshipRepo := s.storage.Relationship()
 	if relationshipRepo == nil {
-		return 0, ErrRepositoryNotAvailableLocal
+		return 0, RepositoryNotAvailable("general")
 	}
 
 	count, err := relationshipRepo.CountFollowing(ctx, username)
