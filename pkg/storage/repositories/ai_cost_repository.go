@@ -14,22 +14,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// AICostRepository implements AI cost tracking operations using BaseRepository pattern
+// AICostRepository implements AI cost tracking operations using enhanced patterns
 type AICostRepository struct {
-	*BaseRepository[*models.AICost]
+	*EnhancedBaseRepository[*models.AICost]
 }
 
-// NewAICostRepository creates a new AI cost repository
-func NewAICostRepository(db core.DB, tableName string, logger *zap.Logger) *AICostRepository {
+// NewAICostRepository creates a new AI cost repository with enhanced functionality
+func NewAICostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AICostRepository {
+	// Create enhanced repository optimized for AI cost operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.AICost](db, tableName, logger, costService, "AICostRepository", "aicost")
+	
+	// Set up enhanced services for AI cost operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // AI cost data cached for analytics
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
+	
 	return &AICostRepository{
-		BaseRepository: NewBaseRepository[*models.AICost](db, tableName, logger),
-	}
-}
-
-// NewAICostRepositoryWithCostTracking creates a new AI cost repository with cost tracking
-func NewAICostRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AICostRepository {
-	return &AICostRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.AICost](db, tableName, logger, costService, "AICostRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 

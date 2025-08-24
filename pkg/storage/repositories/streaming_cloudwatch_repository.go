@@ -3,20 +3,30 @@ package repositories
 import (
 	"context"
 
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 )
 
-// StreamingCloudWatchRepository handles streaming CloudWatch metrics caching
+// StreamingCloudWatchRepository handles streaming CloudWatch metrics caching using enhanced patterns
 type StreamingCloudWatchRepository struct {
-	*BaseRepository[*models.StreamingCloudWatchMetrics]
+	*EnhancedBaseRepository[*models.StreamingCloudWatchMetrics]
 }
 
-// NewStreamingCloudWatchRepository creates a new streaming CloudWatch repository
-func NewStreamingCloudWatchRepository(db core.DB, tableName string, logger *zap.Logger) *StreamingCloudWatchRepository {
+// NewStreamingCloudWatchRepository creates a new streaming CloudWatch repository with enhanced functionality
+func NewStreamingCloudWatchRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StreamingCloudWatchRepository {
+	// Create enhanced repository optimized for CloudWatch metrics operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.StreamingCloudWatchMetrics](db, tableName, logger, costService, "StreamingCloudWatchRepository", "streamingcloudwatch")
+	
+	// Set up enhanced services for CloudWatch metrics operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // CloudWatch metrics heavily cached
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &StreamingCloudWatchRepository{
-		BaseRepository: NewBaseRepository[*models.StreamingCloudWatchMetrics](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -33,7 +43,7 @@ func (r *StreamingCloudWatchRepository) CacheQualityBreakdown(ctx context.Contex
 	metrics := &models.StreamingCloudWatchMetrics{}
 	metrics.SetQualityBreakdown(mediaID, qualityMetrics)
 
-	return r.Create(ctx, metrics)
+	return r.ValidateAndCreate(ctx, metrics)
 }
 
 // GetGeographicData retrieves cached geographic distribution metrics

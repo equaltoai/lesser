@@ -16,27 +16,43 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
 
-// AuthRepository handles authentication-related storage operations
+// AuthRepository handles authentication-related storage operations using enhanced patterns
 type AuthRepository struct {
-	*BaseRepository[*models.WebAuthnCredential]
+	*EnhancedBaseRepository[*models.WebAuthnCredential]
 	// Auth-specific dependencies
 	costService *cost.TrackingService
 }
 
-// NewAuthRepository creates a new auth repository
+// NewAuthRepository creates a new auth repository with enhanced functionality
 func NewAuthRepository(db core.DB, tableName string, logger *zap.Logger) *AuthRepository {
+	// Create enhanced repository optimized for auth operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.WebAuthnCredential](db, tableName, logger, nil, "AuthRepository", "webauthn_credential")
+	
+	// Set up enhanced services for auth operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Auth credentials cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for security events
+	
 	return &AuthRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WebAuthnCredential](
-			db, tableName, logger, nil, "AuthRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // NewAuthRepositoryWithCostTracking creates a new auth repository with cost tracking
 func NewAuthRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuthRepository {
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.WebAuthnCredential](db, tableName, logger, costService, "AuthRepository", "webauthn_credential")
+	
+	// Set up enhanced services for auth operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Auth credentials cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for security events
+	
 	return &AuthRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.WebAuthnCredential](
-			db, tableName, logger, costService, "AuthRepository"),
-		costService: costService,
+		EnhancedBaseRepository: enhancedRepo,
+		costService:            costService,
 	}
 }
 

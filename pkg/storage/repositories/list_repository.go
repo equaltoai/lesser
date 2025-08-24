@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -14,20 +15,28 @@ import (
 	"go.uber.org/zap"
 )
 
-// ListRepository handles list-related database operations
+// ListRepository handles list-related database operations using enhanced patterns
 type ListRepository struct {
-	*BaseRepository[*models.List]
+	*EnhancedBaseRepository[*models.List]
 	// Helper for ListMember operations
-	memberRepo *BaseRepository[*models.ListMember]
+	memberRepo *EnhancedBaseRepository[*models.ListMember]
 }
 
-// NewListRepository creates a new list repository
-func NewListRepository(db core.DB, tableName string, logger *zap.Logger) *ListRepository {
+// NewListRepository creates a new list repository with enhanced functionality
+func NewListRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ListRepository {
+	// Create enhanced repository optimized for list operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.List](db, tableName, logger, costService, "ListRepository", "list")
+	
+	// Set up enhanced services for list operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Lists cached for timeline performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for list events
+	
 	return &ListRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.List](
-			db, tableName, logger, nil, "ListRepository"),
-		memberRepo: NewBaseRepositoryWithCostTracking[*models.ListMember](
-			db, tableName, logger, nil, "ListMemberRepository"),
+		EnhancedBaseRepository: enhancedRepo,
+		memberRepo: NewEnhancedBaseRepository[*models.ListMember](
+			db, tableName, logger, costService, "ListMemberRepository", "listmember"),
 	}
 }
 
@@ -46,8 +55,17 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 		list.ID = uuid.New().String()
 	}
 
-	// Use BaseRepository Create method
-	return r.Create(ctx, list)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, list); err != nil {
+		r.logger.Error("failed to create list with enhanced validation",
+			zap.String("list_id", list.ID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
+		return err
+	}
+	
+	return nil
 }
 
 // GetList retrieves a list by ID
@@ -307,8 +325,8 @@ func (r *ListRepository) AddListMember(ctx context.Context, listID, memberUserna
 		ListUsername: list.Username,
 	}
 
-	// Use BaseRepository Create method
-	return r.memberRepo.Create(ctx, member)
+	// Use enhanced repository for validation and creation
+	return r.memberRepo.ValidateAndCreate(ctx, member)
 }
 
 // RemoveListMember removes a member from a list
@@ -614,8 +632,8 @@ func (r *ListRepository) AddAccountsToList(ctx context.Context, listID string, a
 			ListUsername: list.Username,
 		}
 
-		// Use BaseRepository Create method
-		if err := r.memberRepo.Create(ctx, member); err != nil {
+		// Use enhanced repository for validation and creation
+		if err := r.memberRepo.ValidateAndCreate(ctx, member); err != nil {
 			r.logger.Error("failed to add account to list",
 				zap.String("list_id", listID),
 				zap.String("account_id", accountID),

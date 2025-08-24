@@ -13,37 +13,50 @@ import (
 	"go.uber.org/zap"
 )
 
-// AnnouncementRepository handles announcement operations using DynamORM with BaseRepository
+// AnnouncementRepository handles announcement operations using enhanced DynamORM patterns
 type AnnouncementRepository struct {
-	// Use BaseRepository for Announcement model
-	*BaseRepository[*models.Announcement]
+	// Use EnhancedBaseRepository for Announcement model
+	*EnhancedBaseRepository[*models.Announcement]
 	db        core.DB
 	logger    *zap.Logger
 	tableName string
 }
 
-// NewAnnouncementRepository creates a new announcement repository
+// NewAnnouncementRepository creates a new announcement repository with enhanced functionality
 func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger) *AnnouncementRepository {
-	// Use cost tracking version of BaseRepository
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, nil, "AnnouncementRepository")
-
+	// Create enhanced repository optimized for announcement operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Announcement](db, tableName, logger, nil, "AnnouncementRepository", "announcement")
+	
+	// Set up enhanced services for announcement operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only operations
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Announcements cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for admin notifications
+	
 	return &AnnouncementRepository{
-		BaseRepository: baseRepo,
-		db:             db,
-		logger:         logger,
-		tableName:      tableName,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		tableName:              tableName,
 	}
 }
 
 // NewAnnouncementRepositoryWithCostTracking creates a new announcement repository with cost tracking
 func NewAnnouncementRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AnnouncementRepository {
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.Announcement](db, tableName, logger, costService, "AnnouncementRepository")
-
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.Announcement](db, tableName, logger, costService, "AnnouncementRepository", "announcement")
+	
+	// Set up enhanced services for announcement operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only operations
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Announcements cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for admin notifications
+	
 	return &AnnouncementRepository{
-		BaseRepository: baseRepo,
-		db:             db,
-		logger:         logger,
-		tableName:      tableName,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		tableName:              tableName,
 	}
 }
 
@@ -177,11 +190,20 @@ func (r *AnnouncementRepository) CreateAnnouncement(ctx context.Context, announc
 	announcement.PublishedAt = modelAnnouncement.PublishedAt
 	announcement.UpdatedAt = modelAnnouncement.UpdatedAt
 
-	// Use BaseRepository Create method for cost tracking
-	err := r.Create(ctx, modelAnnouncement)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	err := r.ValidateAndCreate(ctx, modelAnnouncement)
 	if err != nil {
+		r.logger.Error("failed to create announcement with enhanced validation",
+			zap.String("announcement_id", announcement.ID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "announcement", announcement.ID)
 	}
+	
+	r.logger.Info("created announcement with enhanced patterns",
+		zap.String("announcement_id", announcement.ID),
+		zap.String("created_by", announcement.CreatedBy))
 
 	return nil
 }
@@ -412,14 +434,22 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 		return ErrorHandler.HandleUpdateError(err, "announcement", announcement.ID)
 	}
 
-	// Use BaseRepository Update method for cost tracking
-	err := r.Update(ctx, modelAnnouncement)
+	// Use enhanced validation and update with automatic permission checking and event emission
+	err := r.ValidateAndUpdate(ctx, modelAnnouncement)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return storage.ErrNotFound
 		}
+		r.logger.Error("failed to update announcement with enhanced validation",
+			zap.String("announcement_id", announcement.ID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "announcement", announcement.ID)
 	}
+	
+	r.logger.Info("updated announcement with enhanced patterns",
+		zap.String("announcement_id", announcement.ID))
 
 	return nil
 }

@@ -126,12 +126,12 @@ func NewActivityHandler(db core.DB, tableName string) *ActivityHandler {
 		Logger:           logger,
 		ObjectRepo:       repositories.NewObjectRepository(db, tableName, domain, logger),
 		ActorRepo:        repositories.NewActorRepository(db, tableName, logger),
-		TimelineRepo:     repositories.NewTimelineRepository(db, tableName, logger),
+		TimelineRepo:     repositories.NewTimelineRepository(db, tableName, logger, nil),
 		RelationshipRepo: repositories.NewRelationshipRepository(db, tableName, logger),
 		LikeRepo:         repositories.NewLikeRepository(db, tableName, logger),
-		SocialRepo:       repositories.NewSocialRepository(db, logger),
+		SocialRepo:       repositories.NewSocialRepository(db, tableName, logger, nil),
 		ModerationRepo:   repositories.NewModerationRepository(db, tableName, logger),
-		ListRepo:         repositories.NewListRepository(db, tableName, logger),
+		ListRepo:         repositories.NewListRepository(db, tableName, logger, nil),
 		RouteManager:     createRouteManager(db, tableName, logger),
 	}
 }
@@ -2542,7 +2542,7 @@ func (h *ActivityHandler) filterRemoteRecipients(recipients []string) []string {
 //
 //nolint:unused // false positive - function is used
 func (h *ActivityHandler) createNotificationRepo() *repositories.NotificationRepository {
-	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger)
+	return repositories.NewNotificationRepository(h.DB, h.TableName, h.Logger, nil)
 }
 
 // processUndoWithObjectExtraction handles the common pattern for Undo activities
@@ -2792,13 +2792,13 @@ func (h *ActivityHandler) extractListIDFromCollection(collectionURI string) stri
 // createRouteManager creates a federation route manager with the necessary dependencies
 func createRouteManager(db core.DB, tableName string, logger *zap.Logger) *routing.Manager {
 	// Create the necessary repositories
-	federationInstanceRepo := repositories.NewFederationInstanceRepository(db, logger)
+	federationInstanceRepo := repositories.NewFederationInstanceRepository(db, tableName, logger, nil)
 	circuitBreakerRepo := repositories.NewCircuitBreakerRepositoryBasic(db, tableName, logger)
 	routeOptimRepo := repositories.NewRouteOptimizerRepository(db, tableName, logger)
 	routingMetricsRepo := repositories.NewRoutingMetricsRepository(db, tableName, logger)
 	costTrackingBaseRepo := repositories.NewBaseRepository[*models.FederationCostTracking](db, tableName, logger)
 	budgetBaseRepo := repositories.NewBaseRepository[*models.FederationBudget](db, tableName, logger)
-	costTrackingRepo := repositories.NewFederationCostRepository(costTrackingBaseRepo, budgetBaseRepo)
+	costTrackingRepo := repositories.NewFederationCostRepositoryFromBase(costTrackingBaseRepo, budgetBaseRepo, nil)
 
 	// Create route manager with default config
 	config := &routing.ManagerConfig{

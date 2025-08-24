@@ -260,7 +260,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	userRepo := repositories.NewUserRepository(db, tableName, lambdaCtx.Logger)
 	actorRepo := repositories.NewActorRepository(db, tableName, lambdaCtx.Logger)
 	accountRepo := repositories.NewAccountRepository(db, tableName, domain, lambdaCtx.Logger)
-	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger)
+	statusRepo := repositories.NewStatusRepository(db, tableName, lambdaCtx.Logger, nil)
 
 	// Initialize API Gateway Management API client
 	apiClient := apigatewaymanagementapi.NewFromConfig(globalCfg, func(o *apigatewaymanagementapi.Options) {
@@ -268,7 +268,7 @@ func NewStreamRouterHandler() (*StreamRouterHandler, error) {
 	})
 
 	// Initialize streaming repository
-	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, db, subscriptionsTable, lambdaCtx.Logger)
+	streamingRepo := repositories.NewStreamingConnectionRepository(db, tableName, db, subscriptionsTable, lambdaCtx.Logger, nil)
 
 	// Create connection repository adapter
 	connRepoAdapter := &connectionRepositoryAdapter{

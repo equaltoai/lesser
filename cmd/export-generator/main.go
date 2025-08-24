@@ -91,7 +91,7 @@ func main() {
 	exportRepo := repositories.NewExportRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
 	// Initialize cost tracking repository
-	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	costTrackingRepo := repositories.NewTrackingRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 
 	// Create processor instance
 	processor = &ExportProcessor{

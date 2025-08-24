@@ -52,19 +52,26 @@ func (a *filterStatusAdapter) GetID() string            { return a.ID }
 func (a *filterStatusAdapter) SetID(id string)          { a.ID = id }
 func (a *filterStatusAdapter) SetCreatedAt(t time.Time) { a.CreatedAt = t }
 
-// FilterRepository handles user content filtering operations using DynamORM
+// FilterRepository handles user content filtering operations using enhanced DynamORM patterns
 type FilterRepository struct {
-	*BaseRepository[*models.Filter]
-	logger *zap.Logger
-	db     core.DB
+	*EnhancedBaseRepository[*models.Filter]
+	db core.DB
 }
 
-// NewFilterRepository creates a new FilterRepository
-func NewFilterRepository(db core.DB, logger *zap.Logger, costService *cost.TrackingService) *FilterRepository {
+// NewFilterRepository creates a new FilterRepository with enhanced functionality and cost tracking  
+func NewFilterRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FilterRepository {
+	// Create enhanced repository for filter operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Filter](db, tableName, logger, costService, "FilterRepository", "filter")
+	
+	// Set up enhanced services for filter operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache filters for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &FilterRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Filter](db, models.MainTableName, logger, costService, "filter"),
-		logger:         logger,
-		db:             db,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
 	}
 }
 
@@ -85,12 +92,8 @@ func (r *FilterRepository) CreateFilter(ctx context.Context, filter *models.Filt
 		return ErrorHandler.HandleUpdateError(err, EntityFilter, "keys")
 	}
 
-	// Create the filter using BaseRepository
-	if err := r.Create(ctx, filter); err != nil {
-		r.logger.Error("Failed to create filter",
-			zap.Error(err),
-			zap.String("filter_id", filter.ID),
-			zap.String("username", filter.Username))
+	// Create the filter using enhanced validation and creation
+	if err := r.ValidateAndCreate(ctx, filter); err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityFilter, filter.ID)
 	}
 

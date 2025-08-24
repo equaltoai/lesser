@@ -14,24 +14,40 @@ import (
 	"go.uber.org/zap"
 )
 
-// BookmarkRepository implements bookmark operations using DynamORM with BaseRepository
+// BookmarkRepository implements bookmark operations using enhanced DynamORM patterns
 type BookmarkRepository struct {
-	*BaseRepository[*models.Bookmark]
+	*EnhancedBaseRepository[*models.Bookmark]
 }
 
-// NewBookmarkRepository creates a new bookmark repository
+// NewBookmarkRepository creates a new bookmark repository with enhanced functionality
 func NewBookmarkRepository(db core.DB, tableName string, logger *zap.Logger) *BookmarkRepository {
+	// Create enhanced repository optimized for bookmark operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Bookmark](db, tableName, logger, nil, "BookmarkRepository", "bookmark")
+	
+	// Set up enhanced services for bookmark operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user notifications
+	
 	return &BookmarkRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Bookmark](
-			db, tableName, logger, nil, "BookmarkRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // NewBookmarkRepositoryWithCostTracking creates a new bookmark repository with cost tracking
 func NewBookmarkRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *BookmarkRepository {
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.Bookmark](db, tableName, logger, costService, "BookmarkRepository", "bookmark")
+	
+	// Set up enhanced services for bookmark operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user notifications
+	
 	return &BookmarkRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Bookmark](
-			db, tableName, logger, costService, "BookmarkRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -46,22 +62,28 @@ func (r *BookmarkRepository) CreateBookmark(ctx context.Context, username, objec
 		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, "key generation")
 	}
 
-	if err := r.Create(ctx, bookmark); err != nil {
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, bookmark); err != nil {
 		// Check if it's a duplicate key error (already bookmarked)
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("bookmark already exists",
 				zap.String("username", username),
-				zap.String("object_id", objectID))
+				zap.String("object_id", objectID),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
 			return bookmark, nil
 		}
-		r.logger.Error("failed to create bookmark",
+		r.logger.Error("failed to create bookmark with enhanced validation",
 			zap.String("username", username),
 			zap.String("object_id", objectID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
 			zap.Error(err))
 		return nil, ErrorHandler.HandleCreateError(err, EntityBookmark, objectID)
 	}
 
-	r.logger.Info("created bookmark",
+	r.logger.Info("created bookmark with enhanced patterns",
+		zap.String("bookmark_id", fmt.Sprintf("%s:%s", username, objectID)),
 		zap.String("username", username),
 		zap.String("object_id", objectID))
 

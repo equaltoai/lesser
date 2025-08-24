@@ -425,7 +425,7 @@ func init() {
 	// Initialize repositories
 	moderationRepo = repositories.NewModerationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 	userRepo = repositories.NewUserRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
-	notificationRepo = repositories.NewNotificationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
+	notificationRepo = repositories.NewNotificationRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger, nil)
 	objectRepo = repositories.NewObjectRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Config.Domain, lambdaCtx.Logger)
 	patternRepo = repositories.NewPatternRepository(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 

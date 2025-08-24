@@ -15,22 +15,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// NotificationRepository handles notification operations using DynamORM with BaseRepository
+// NotificationRepository handles notification operations using enhanced DynamORM patterns
 type NotificationRepository struct {
-	*BaseRepository[*models.Notification]
+	*EnhancedBaseRepository[*models.Notification]
 }
 
-// NewNotificationRepository creates a new notification repository with BaseRepository
-func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger) *NotificationRepository {
+// NewNotificationRepository creates a new notification repository with enhanced functionality and cost tracking
+func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
+	// Create enhanced repository optimized for notification operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Notification](db, tableName, logger, costService, "NotificationRepository", "notification")
+	
+	// Set up enhanced services for notification operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Notifications cached for real-time delivery
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for notification delivery events
+	
 	return &NotificationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Notification](db, tableName, logger, nil, "NotificationRepository"),
-	}
-}
-
-// NewNotificationRepositoryWithCostTracking creates a new notification repository with cost tracking
-func NewNotificationRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
-	return &NotificationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Notification](db, tableName, logger, costService, "NotificationRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -40,7 +42,21 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, notific
 		return ErrorHandler.HandleCreateError(err, EntityNotification, notification.ID)
 	}
 
-	return r.Create(ctx, notification)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, notification); err != nil {
+		r.logger.Error("failed to create notification with enhanced validation",
+			zap.String("notification_id", notification.ID),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
+		return err
+	}
+	
+	r.logger.Info("created notification with enhanced patterns",
+		zap.String("notification_id", notification.ID),
+		zap.String("type", notification.Type))
+	
+	return nil
 }
 
 // GetNotification retrieves a notification by ID using BaseRepository

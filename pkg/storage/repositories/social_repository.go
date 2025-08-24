@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -14,30 +15,67 @@ import (
 	"go.uber.org/zap"
 )
 
-// SocialRepository handles all social interaction operations
+// SocialRepository handles all social interaction operations using enhanced patterns
 type SocialRepository struct {
-	// Base repositories for different model types
-	blockRepo       *BaseRepository[*models.Block]
-	muteRepo        *BaseRepository[*models.Mute]
-	announceRepo    *BaseRepository[*models.Announce]
-	accountPinRepo  *BaseRepository[*models.AccountPin]
-	accountNoteRepo *BaseRepository[*models.AccountNote]
-	statusPinRepo   *BaseRepository[*models.StatusPin]
+	// Enhanced repositories for different model types with validation and events
+	blockRepo       *EnhancedBaseRepository[*models.Block]
+	muteRepo        *EnhancedBaseRepository[*models.Mute]
+	announceRepo    *EnhancedBaseRepository[*models.Announce]
+	accountPinRepo  *EnhancedBaseRepository[*models.AccountPin]
+	accountNoteRepo *EnhancedBaseRepository[*models.AccountNote]
+	statusPinRepo   *EnhancedBaseRepository[*models.StatusPin]
 
 	// Keep direct db access for complex queries
 	db     core.DB
 	logger *zap.Logger
 }
 
-// NewSocialRepository creates a new social repository
-func NewSocialRepository(db core.DB, logger *zap.Logger) *SocialRepository {
+// NewSocialRepository creates a new social repository with enhanced functionality
+func NewSocialRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SocialRepository {
+	// Create enhanced repositories with proper services configuration
+	blockRepo := NewEnhancedBaseRepository[*models.Block](db, tableName, logger, costService, "SocialRepository.Block", "block")
+	blockRepo.SetValidationService(NewDefaultValidationService())
+	blockRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation
+	blockRepo.SetCachingService(NewInMemoryCachingService()) // Block status checked frequently
+	blockRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
+	
+	muteRepo := NewEnhancedBaseRepository[*models.Mute](db, tableName, logger, costService, "SocialRepository.Mute", "mute")
+	muteRepo.SetValidationService(NewDefaultValidationService())
+	muteRepo.SetPermissionService(NewDefaultPermissionService())
+	muteRepo.SetCachingService(NewInMemoryCachingService()) // Mute status checked frequently
+	muteRepo.SetEventService(NewDefaultEventService())
+	
+	announceRepo := NewEnhancedBaseRepository[*models.Announce](db, tableName, logger, costService, "SocialRepository.Announce", "announce")
+	announceRepo.SetValidationService(NewDefaultValidationService())
+	announceRepo.SetPermissionService(NewDefaultPermissionService())
+	announceRepo.SetCachingService(NewInMemoryCachingService()) // Announce status cached
+	announceRepo.SetEventService(NewDefaultEventService()) // Federation events
+	
+	accountPinRepo := NewEnhancedBaseRepository[*models.AccountPin](db, tableName, logger, costService, "SocialRepository.AccountPin", "account_pin")
+	accountPinRepo.SetValidationService(NewDefaultValidationService())
+	accountPinRepo.SetPermissionService(NewDefaultPermissionService()) // User owns their pins
+	accountPinRepo.SetCachingService(NewInMemoryCachingService()) // Pin status cached
+	accountPinRepo.SetEventService(NewDefaultEventService())
+	
+	accountNoteRepo := NewEnhancedBaseRepository[*models.AccountNote](db, tableName, logger, costService, "SocialRepository.AccountNote", "account_note")
+	accountNoteRepo.SetValidationService(NewDefaultValidationService())
+	accountNoteRepo.SetPermissionService(NewDefaultPermissionService()) // Private notes
+	accountNoteRepo.SetCachingService(NewInMemoryCachingService())
+	accountNoteRepo.SetEventService(NewDefaultEventService())
+	
+	statusPinRepo := NewEnhancedBaseRepository[*models.StatusPin](db, tableName, logger, costService, "SocialRepository.StatusPin", "status_pin")
+	statusPinRepo.SetValidationService(NewDefaultValidationService())
+	statusPinRepo.SetPermissionService(NewDefaultPermissionService()) // User owns their pins
+	statusPinRepo.SetCachingService(NewInMemoryCachingService())
+	statusPinRepo.SetEventService(NewDefaultEventService())
+
 	return &SocialRepository{
-		blockRepo:       NewBaseRepository[*models.Block](db, "MainTable", logger),
-		muteRepo:        NewBaseRepository[*models.Mute](db, "MainTable", logger),
-		announceRepo:    NewBaseRepository[*models.Announce](db, "MainTable", logger),
-		accountPinRepo:  NewBaseRepository[*models.AccountPin](db, "MainTable", logger),
-		accountNoteRepo: NewBaseRepository[*models.AccountNote](db, "MainTable", logger),
-		statusPinRepo:   NewBaseRepository[*models.StatusPin](db, "MainTable", logger),
+		blockRepo:       blockRepo,
+		muteRepo:        muteRepo,
+		announceRepo:    announceRepo,
+		accountPinRepo:  accountPinRepo,
+		accountNoteRepo: accountNoteRepo,
+		statusPinRepo:   statusPinRepo,
 		db:              db,
 		logger:          logger,
 	}
@@ -61,8 +99,8 @@ func (r *SocialRepository) CreateBlock(ctx context.Context, block *storage.Block
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err := r.blockRepo.Create(ctx, model)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	err := r.blockRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Info("block already exists",
@@ -262,8 +300,8 @@ func (r *SocialRepository) CreateMute(ctx context.Context, mute *storage.Mute) e
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err := r.muteRepo.Create(ctx, model)
+	// Use enhanced validation and creation
+	err := r.muteRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			return ErrorHandler.HandleCreateError(err, EntityMute, "already exists")
@@ -403,8 +441,8 @@ func (r *SocialRepository) CreateAnnounce(ctx context.Context, announce *storage
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err := r.announceRepo.Create(ctx, model)
+	// Use enhanced validation and creation
+	err := r.announceRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			return ErrorHandler.HandleCreateError(err, EntityAnnounce, "already announced")
@@ -641,8 +679,8 @@ func (r *SocialRepository) CreateAccountPin(ctx context.Context, pin *storage.Ac
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err = r.accountPinRepo.Create(ctx, model)
+	// Use enhanced validation and creation
+	err = r.accountPinRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to create account pin", zap.Error(err))
 		return err
@@ -763,8 +801,8 @@ func (r *SocialRepository) CreateAccountNote(ctx context.Context, note *storage.
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err := r.accountNoteRepo.Create(ctx, model)
+	// Use enhanced validation and creation
+	err := r.accountNoteRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to create account note", zap.Error(err))
 		return err
@@ -789,8 +827,8 @@ func (r *SocialRepository) UpdateAccountNote(ctx context.Context, note *storage.
 	// Update keys
 	_ = model.UpdateKeys() // Ignore error as this is internal model operation
 
-	// Use BaseRepository Create method (overwrites existing in DynamoDB)
-	err := r.accountNoteRepo.Create(ctx, model)
+	// Use enhanced validation and creation (overwrites existing in DynamoDB)
+	err := r.accountNoteRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		r.logger.Error("failed to update account note", zap.Error(err))
 		return err
@@ -868,8 +906,8 @@ func (r *SocialRepository) CreateStatusPin(ctx context.Context, pin *storage.Sta
 		return err
 	}
 
-	// Use BaseRepository Create method
-	err = r.statusPinRepo.Create(ctx, model)
+	// Use enhanced validation and creation
+	err = r.statusPinRepo.ValidateAndCreate(ctx, model)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			return ErrorHandler.HandleCreateError(err, EntityStatusPin, "already exists")

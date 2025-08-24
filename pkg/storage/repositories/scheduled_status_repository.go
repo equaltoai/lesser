@@ -75,23 +75,25 @@ func (r *ScheduledStatusRepository) storageToModel(scheduled *storage.ScheduledS
 	return model
 }
 
-// ScheduledStatusRepository handles scheduled status operations using DynamORM
+// ScheduledStatusRepository handles scheduled status operations using enhanced DynamORM patterns
 type ScheduledStatusRepository struct {
-	*BaseRepository[*models.ScheduledStatus]
+	*EnhancedBaseRepository[*models.ScheduledStatus]
 	mediaRepo MediaRepositoryInterface // Add media repository dependency
 }
 
-// NewScheduledStatusRepository creates a new scheduled status repository
-func NewScheduledStatusRepository(db core.DB, tableName string, logger *zap.Logger) *ScheduledStatusRepository {
+// NewScheduledStatusRepository creates a new scheduled status repository with enhanced functionality and cost tracking
+func NewScheduledStatusRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledStatusRepository {
+	// Create enhanced repository for scheduled status operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.ScheduledStatus](db, tableName, logger, costService, "ScheduledStatusRepository", "scheduled_status")
+	
+	// Set up enhanced services for scheduled status operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache scheduled statuses
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &ScheduledStatusRepository{
-		BaseRepository: NewBaseRepository[*models.ScheduledStatus](db, tableName, logger),
-	}
-}
-
-// NewScheduledStatusRepositoryWithCostTracking creates a new scheduled status repository with cost tracking
-func NewScheduledStatusRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledStatusRepository {
-	return &ScheduledStatusRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ScheduledStatus](db, tableName, logger, costService, "ScheduledStatusRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -122,8 +124,8 @@ func (r *ScheduledStatusRepository) CreateScheduledStatus(ctx context.Context, s
 	// Create DynamORM model
 	scheduledModel := r.storageToModel(scheduled)
 
-	// Create the scheduled status using BaseRepository
-	err := r.Create(ctx, scheduledModel)
+	// Create the scheduled status using enhanced validation and creation
+	err := r.ValidateAndCreate(ctx, scheduledModel)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityScheduledStatus, scheduled.ID)
 	}

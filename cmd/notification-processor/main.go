@@ -130,11 +130,11 @@ func NewNotificationProcessor(lambdaCtx *common.LambdaContext) *NotificationProc
 		lambdaCtx.Logger.Fatal("failed to initialize DynamORM database", zap.Error(err))
 	}
 	// Initialize repositories
-	notificationRepo := repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger)
+	notificationRepo := repositories.NewNotificationRepository(db, cfg.DynamoTableName, logger, nil)
 	userRepo := repositories.NewUserRepository(db, cfg.DynamoTableName, logger)
-	costTrackingRepo := repositories.NewTrackingRepository(db, cfg.DynamoTableName, logger)
-	notificationCostRepo := repositories.NewNotificationCostRepository(db, cfg.DynamoTableName, logger)
-	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
+	costTrackingRepo := repositories.NewTrackingRepository(db, cfg.DynamoTableName, logger, nil)
+	notificationCostRepo := repositories.NewNotificationCostRepository(db, cfg.DynamoTableName, logger, nil)
+	webSocketSubscriptionRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger, nil)
 
 	// Get configuration from centralized config
 	appCfg := config.Get()

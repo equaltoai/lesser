@@ -29,32 +29,50 @@ type UserRepositoryDeps interface {
 	RemoveFollow(ctx context.Context, followerUsername, username string) error
 }
 
-// UserRepository implements user operations using BaseRepository[*models.User] pattern
+// UserRepository implements user operations using enhanced DynamORM patterns
 type UserRepository struct {
-	*BaseRepository[*models.User]
+	*EnhancedBaseRepository[*models.User]
 	deps         UserRepositoryDeps
 	urlValidator *URLValidator
 	logger       *zap.Logger // Keep reference for complex business logic
 	tableName    string      // Keep reference for cost tracking
 }
 
-// NewUserRepository creates a new user repository
+// NewUserRepository creates a new user repository with enhanced functionality
 func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRepository {
+	// Create enhanced repository optimized for user operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, nil, "UserRepository", "user")
+	
+	// Set up enhanced services for user operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Users frequently accessed
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user activity events
+	
 	return &UserRepository{
-		BaseRepository: NewBaseRepository[*models.User](db, tableName, logger),
-		urlValidator:   NewURLValidator(logger),
-		logger:         logger,
-		tableName:      tableName,
+		EnhancedBaseRepository: enhancedRepo,
+		urlValidator:           NewURLValidator(logger),
+		logger:                 logger,
+		tableName:              tableName,
 	}
 }
 
 // NewUserRepositoryWithCostTracking creates a new user repository with cost tracking
 func NewUserRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *UserRepository {
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, costService, "UserRepository", "user")
+	
+	// Set up enhanced services for user operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Users frequently accessed
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user activity events
+	
 	return &UserRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.User](db, tableName, logger, costService, "UserRepository"),
-		urlValidator:   NewURLValidator(logger),
-		logger:         logger,
-		tableName:      tableName,
+		EnhancedBaseRepository: enhancedRepo,
+		urlValidator:           NewURLValidator(logger),
+		logger:                 logger,
+		tableName:              tableName,
 	}
 }
 
@@ -84,17 +102,30 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 		RecoveryMethods: user.RecoveryMethods,
 	}
 
-	// Create the user using BaseRepository
-	err := r.Create(ctx, userModel)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	err := r.ValidateAndCreate(ctx, userModel)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
+			r.logger.Debug("user already exists",
+				zap.String("username", user.Username),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
 			return ErrorHandler.HandleCreateError(common.ConflictError{
 				Resource: "user",
 				Message:  fmt.Sprintf("user %s already exists", user.Username),
 			}, EntityUser, user.Username)
 		}
+		r.logger.Error("failed to create user with enhanced validation",
+			zap.String("username", user.Username),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
 	}
+	
+	r.logger.Info("created user with enhanced patterns",
+		zap.String("username", user.Username),
+		zap.String("role", user.Role))
 
 	// Update the original user with timestamps
 	user.CreatedAt = userModel.CreatedAt

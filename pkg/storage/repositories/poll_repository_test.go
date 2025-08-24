@@ -23,7 +23,7 @@ func (m *PollMockDB) WithContext(ctx context.Context) interface{} {
 
 func TestPollRepository_CreatePoll(t *testing.T) {
 	logger := zap.NewNop()
-	repo := NewPollRepository(nil, "test-table", logger)
+	repo := NewPollRepository(nil, "test-table", logger, nil)
 
 	poll := &storage.Poll{
 		StatusID:   "status123",
@@ -55,7 +55,7 @@ func TestPollRepository_CreatePoll(t *testing.T) {
 
 func TestPollRepository_VoteValidation(t *testing.T) {
 	logger := zap.NewNop()
-	repo := NewPollRepository(nil, "test-table", logger)
+	repo := NewPollRepository(nil, "test-table", logger, nil)
 
 	// Test choice validation
 	poll := &storage.Poll{

@@ -11,6 +11,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -28,18 +29,25 @@ type SearchRepositoryDeps interface {
 	GetFollowers(ctx context.Context, username string, limit int, cursor string) ([]string, string, error)
 }
 
-// SearchRepository implements search functionality using DynamORM with BaseRepository pattern
+// SearchRepository implements search functionality using enhanced DynamORM patterns
 type SearchRepository struct {
-	*BaseRepository[*models.SearchSuggestion]
+	*EnhancedBaseRepository[*models.SearchSuggestion]
 	deps SearchRepositoryDeps
 }
 
-// NewSearchRepository creates a new search repository
-func NewSearchRepository(db core.DB, logger *zap.Logger) *SearchRepository {
-	tableName := storage.DefaultTableName // Use the default table name
+// NewSearchRepository creates a new search repository with enhanced functionality
+func NewSearchRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SearchRepository {
+	// Create enhanced repository optimized for search operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.SearchSuggestion](db, tableName, logger, costService, "SearchRepository", "search_suggestion")
+	
+	// Set up enhanced services for search operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Search suggestions heavily cached
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for search analytics
+	
 	return &SearchRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.SearchSuggestion](
-			db, tableName, logger, nil, "SearchRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 

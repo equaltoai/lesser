@@ -25,27 +25,11 @@ type StatusRepository struct {
 }
 
 // NewStatusRepository creates a new status repository with enhanced functionality
-func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger) *StatusRepository {
-	// Create enhanced repository with full service integration
-	enhancedRepo := NewEnhancedBaseRepository[*models.Status](db, tableName, logger, nil, "StatusRepository", "status")
-	
-	// Set up enhanced services for status operations
-	enhancedRepo.SetValidationService(NewDefaultValidationService())
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
-	enhancedRepo.SetCachingService(NewInMemoryCachingService())
-	enhancedRepo.SetEventService(NewDefaultEventService())
-	
-	return &StatusRepository{
-		EnhancedBaseRepository: enhancedRepo,
-	}
-}
-
-// NewStatusRepositoryWithCostTracking creates a new status repository with cost tracking
-func NewStatusRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StatusRepository {
+func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StatusRepository {
 	// Create enhanced repository with cost tracking and full service integration
 	enhancedRepo := NewEnhancedBaseRepository[*models.Status](db, tableName, logger, costService, "StatusRepository", "status")
 	
-	// Set up enhanced services
+	// Set up enhanced services for status operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())

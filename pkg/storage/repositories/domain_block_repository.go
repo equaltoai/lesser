@@ -16,33 +16,49 @@ import (
 	"go.uber.org/zap"
 )
 
-// DomainBlockRepository implements domain block operations using DynamORM with BaseRepository pattern
+// DomainBlockRepository implements domain block operations using enhanced DynamORM patterns
 type DomainBlockRepository struct {
-	baseRepo  *BaseRepository[*models.UserDomainBlock] // BaseRepository for user domain blocks
+	*EnhancedBaseRepository[*models.UserDomainBlock] // Enhanced BaseRepository for user domain blocks
 	db        core.DB
 	tableName string
 	logger    *zap.Logger
 }
 
-// NewDomainBlockRepository creates a new domain block repository with BaseRepository integration
+// NewDomainBlockRepository creates a new domain block repository with enhanced functionality
 func NewDomainBlockRepository(db core.DB, tableName string, logger *zap.Logger) *DomainBlockRepository {
-	baseRepo := NewBaseRepository[*models.UserDomainBlock](db, tableName, logger)
+	// Create enhanced repository optimized for domain block operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.UserDomainBlock](db, tableName, logger, nil, "DomainBlockRepository", "domain_block")
+	
+	// Set up enhanced services for domain block operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Domain blocks cached for filtering
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
+	
 	return &DomainBlockRepository{
-		baseRepo:  baseRepo,
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		tableName:              tableName,
+		logger:                 logger,
 	}
 }
 
 // NewDomainBlockRepositoryWithCostTracking creates a new domain block repository with cost tracking
 func NewDomainBlockRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DomainBlockRepository {
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.UserDomainBlock](db, tableName, logger, costService, "DomainBlockRepository")
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.UserDomainBlock](db, tableName, logger, costService, "DomainBlockRepository", "domain_block")
+	
+	// Set up enhanced services for domain block operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Domain blocks cached for filtering
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
+	
 	return &DomainBlockRepository{
-		baseRepo:  baseRepo,
-		db:        db,
-		tableName: tableName,
-		logger:    logger,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		tableName:              tableName,
+		logger:                 logger,
 	}
 }
 
@@ -57,8 +73,8 @@ func (r *DomainBlockRepository) AddDomainBlock(ctx context.Context, username, do
 		return ErrorHandler.HandleCreateError(err, "domain block", domain)
 	}
 
-	// Use BaseRepository Create method which handles key updates automatically
-	err := r.baseRepo.Create(ctx, block)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	err := r.ValidateAndCreate(ctx, block)
 
 	if err != nil {
 		// Check if it's a duplicate (already exists)
@@ -82,8 +98,8 @@ func (r *DomainBlockRepository) RemoveDomainBlock(ctx context.Context, username,
 		return ErrorHandler.HandleDeleteError(err, "domain block", domain)
 	}
 
-	// Use BaseRepository Delete method with proper error handling
-	err := r.baseRepo.Delete(ctx, block.PK, block.SK)
+	// Use enhanced repository Delete method with proper error handling
+	err := r.Delete(ctx, block.PK, block.SK)
 
 	if err != nil {
 		// Handle not found gracefully (idempotent operation)
@@ -149,8 +165,8 @@ func (r *DomainBlockRepository) IsBlockedDomain(ctx context.Context, username, d
 	pk := fmt.Sprintf("USER#%s", username)
 	sk := fmt.Sprintf("DOMAIN_BLOCK#%s", normalizedDomain)
 
-	// Use BaseRepository Exists method for efficient checking
-	exists, err := r.baseRepo.Exists(ctx, pk, sk)
+	// Use enhanced repository Exists method for efficient checking
+	exists, err := r.Exists(ctx, pk, sk)
 	if err != nil {
 		r.logger.Error("failed to check if domain is blocked",
 			zap.String("username", username),

@@ -12,21 +12,31 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
 )
 
-// FeaturedTagRepository implements featured tag operations using BaseRepository
+// FeaturedTagRepository implements featured tag operations using enhanced DynamORM patterns
 type FeaturedTagRepository struct {
-	*BaseRepository[*models.FeaturedTag]
+	*EnhancedBaseRepository[*models.FeaturedTag]
 }
 
-// NewFeaturedTagRepository creates a new featured tag repository
-func NewFeaturedTagRepository(db core.DB, tableName string, logger *zap.Logger) *FeaturedTagRepository {
+// NewFeaturedTagRepository creates a new featured tag repository with enhanced functionality and cost tracking
+func NewFeaturedTagRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FeaturedTagRepository {
+	// Create enhanced repository for featured tag operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.FeaturedTag](db, tableName, logger, costService, "FeaturedTagRepository", "featured_tag")
+	
+	// Set up enhanced services for featured tag operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache featured tags for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &FeaturedTagRepository{
-		BaseRepository: NewBaseRepository[*models.FeaturedTag](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -69,7 +79,7 @@ func (r *FeaturedTagRepository) CreateFeaturedTag(ctx context.Context, tag *stor
 	}
 
 	// Create using BaseRepository
-	err = r.Create(ctx, featuredTagModel)
+	err = r.ValidateAndCreate(ctx, featuredTagModel)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, EntityFeaturedTag, tagName)
 	}

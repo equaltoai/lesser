@@ -16,25 +16,33 @@ import (
 	"go.uber.org/zap"
 )
 
-// PushSubscriptionRepository handles push subscription operations
+// PushSubscriptionRepository handles push subscription operations using enhanced DynamORM patterns
 type PushSubscriptionRepository struct {
-	*BaseRepository[*models.PushSubscription]
-	vapidRepo *BaseRepository[*models.VAPIDKeyRecord]
+	*EnhancedBaseRepository[*models.PushSubscription]
+	vapidRepo *EnhancedBaseRepository[*models.VAPIDKeyRecord]
 }
 
-// NewPushSubscriptionRepository creates a new push subscription repository
-func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger) *PushSubscriptionRepository {
+// NewPushSubscriptionRepository creates a new push subscription repository with enhanced functionality and cost tracking
+func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PushSubscriptionRepository {
+	// Create enhanced repository for push subscription operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.PushSubscription](db, tableName, logger, costService, "PushSubscriptionRepository", "push_subscription")
+	
+	// Set up enhanced services for push subscription operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache push subscriptions for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
+	// Create enhanced VAPID repo
+	vapidRepo := NewEnhancedBaseRepository[*models.VAPIDKeyRecord](db, tableName, logger, costService, "VAPIDRepository", "vapid_keys")
+	vapidRepo.SetValidationService(NewDefaultValidationService())
+	vapidRepo.SetPermissionService(NewDefaultPermissionService())
+	vapidRepo.SetCachingService(NewInMemoryCachingService())
+	vapidRepo.SetEventService(NewDefaultEventService())
+	
 	return &PushSubscriptionRepository{
-		BaseRepository: NewBaseRepository[*models.PushSubscription](db, tableName, logger),
-		vapidRepo:      NewBaseRepository[*models.VAPIDKeyRecord](db, tableName, logger),
-	}
-}
-
-// NewPushSubscriptionRepositoryWithCostTracking creates a new push subscription repository with cost tracking
-func NewPushSubscriptionRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PushSubscriptionRepository {
-	return &PushSubscriptionRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.PushSubscription](db, tableName, logger, costService, "push_subscription"),
-		vapidRepo:      NewBaseRepositoryWithCostTracking[*models.VAPIDKeyRecord](db, tableName, logger, costService, "vapid_keys"),
+		EnhancedBaseRepository: enhancedRepo,
+		vapidRepo:              vapidRepo,
 	}
 }
 
@@ -64,8 +72,8 @@ func (r *PushSubscriptionRepository) CreatePushSubscription(ctx context.Context,
 		UpdatedAt: subscription.UpdatedAt,
 	}
 
-	// Use BaseRepository Create method
-	err := r.Create(ctx, record)
+	// Use enhanced validation and creation
+	err := r.ValidateAndCreate(ctx, record)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "push subscription", username)
 	}

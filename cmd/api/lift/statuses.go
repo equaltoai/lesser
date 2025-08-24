@@ -1335,7 +1335,7 @@ func (h *Handler) deliverUpdateToRecipient(ctx context.Context, updateActivity *
 		zap.String("activity_id", updateActivity.ID))
 
 	// Create federation storage and delivery service
-	federationStorage := federation.NewDynamORMFederationStorage(h.repos.GetDB(), h.repos.GetTableName())
+	federationStorage := federation.NewDynamORMFederationStorage(h.repos.GetDB(), h.repos.GetTableName(), h.logger)
 	deliveryService := federation.NewDeliveryService(federationStorage, h.cfg)
 
 	// Set recipient in activity To field for delivery

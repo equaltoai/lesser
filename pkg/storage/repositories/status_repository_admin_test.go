@@ -136,7 +136,7 @@ func TestListStatusesForAdmin(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 			logger := zap.NewNop()
-			repo := NewStatusRepository(mockDB, "test-table", logger)
+			repo := NewStatusRepository(mockDB, "test-table", logger, nil)
 
 			tt.mockSetup(mockDB, mockQuery)
 
@@ -216,7 +216,7 @@ func TestCountStatusesForAdmin(t *testing.T) {
 			mockDB := new(mocks.MockDB)
 			mockQuery := new(mocks.MockQuery)
 			logger := zap.NewNop()
-			repo := NewStatusRepository(mockDB, "test-table", logger)
+			repo := NewStatusRepository(mockDB, "test-table", logger, nil)
 
 			tt.mockSetup(mockDB, mockQuery)
 

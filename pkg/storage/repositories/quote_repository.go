@@ -12,34 +12,39 @@ import (
 	"go.uber.org/zap"
 )
 
-// QuoteRepository implements quote operations using DynamORM with BaseRepository pattern
+// QuoteRepository implements quote operations using enhanced DynamORM patterns
 type QuoteRepository struct {
-	relationshipRepo *BaseRepository[*models.QuoteRelationship]
-	permissionsRepo  *BaseRepository[*models.QuotePermissions]
+	relationshipRepo *EnhancedBaseRepository[*models.QuoteRelationship]
+	permissionsRepo  *EnhancedBaseRepository[*models.QuotePermissions]
 	logger           *zap.Logger
 }
 
-// NewQuoteRepository creates a new quote repository
-func NewQuoteRepository(db core.DB, tableName string, logger *zap.Logger) *QuoteRepository {
+// NewQuoteRepository creates a new quote repository with enhanced functionality
+func NewQuoteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *QuoteRepository {
+	// Create enhanced repositories for quote operations
+	relationshipRepo := NewEnhancedBaseRepository[*models.QuoteRelationship](db, tableName, logger, costService, "QuoteRepository.Relationship", "quote_relationship")
+	relationshipRepo.SetValidationService(NewDefaultValidationService())
+	relationshipRepo.SetPermissionService(NewDefaultPermissionService()) // Quote permissions
+	relationshipRepo.SetCachingService(NewInMemoryCachingService()) // Cache quote relationships
+	relationshipRepo.SetEventService(NewDefaultEventService()) // Quote events
+	
+	permissionsRepo := NewEnhancedBaseRepository[*models.QuotePermissions](db, tableName, logger, costService, "QuoteRepository.Permissions", "quote_permissions")
+	permissionsRepo.SetValidationService(NewDefaultValidationService())
+	permissionsRepo.SetPermissionService(NewDefaultPermissionService()) // Permission validation
+	permissionsRepo.SetCachingService(NewInMemoryCachingService()) // Cache permissions
+	permissionsRepo.SetEventService(NewDefaultEventService())
+	
 	return &QuoteRepository{
-		relationshipRepo: NewBaseRepository[*models.QuoteRelationship](db, tableName, logger),
-		permissionsRepo:  NewBaseRepository[*models.QuotePermissions](db, tableName, logger),
+		relationshipRepo: relationshipRepo,
+		permissionsRepo:  permissionsRepo,
 		logger:           logger,
 	}
 }
 
-// NewQuoteRepositoryWithCostTracking creates a new quote repository with cost tracking
-func NewQuoteRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *QuoteRepository {
-	return &QuoteRepository{
-		relationshipRepo: NewBaseRepositoryWithCostTracking[*models.QuoteRelationship](db, tableName, logger, costService, "quote_relationship"),
-		permissionsRepo:  NewBaseRepositoryWithCostTracking[*models.QuotePermissions](db, tableName, logger, costService, "quote_permissions"),
-		logger:           logger,
-	}
-}
 
 // CreateQuoteRelationship creates a new quote relationship
 func (r *QuoteRepository) CreateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error {
-	err := r.relationshipRepo.Create(ctx, relationship)
+	err := r.relationshipRepo.ValidateAndCreate(ctx, relationship)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("quote relationship already exists",
@@ -175,7 +180,7 @@ func (r *QuoteRepository) GetQuotesByUser(ctx context.Context, userID string, op
 
 // CreateQuotePermissions creates new quote permissions for a user
 func (r *QuoteRepository) CreateQuotePermissions(ctx context.Context, permissions *models.QuotePermissions) error {
-	err := r.permissionsRepo.Create(ctx, permissions)
+	err := r.permissionsRepo.ValidateAndCreate(ctx, permissions)
 	if err != nil {
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("quote permissions already exist",

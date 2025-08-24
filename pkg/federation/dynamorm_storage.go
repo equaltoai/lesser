@@ -32,12 +32,13 @@ type DynamORMFederationStorage struct {
 func NewDynamORMFederationStorage(
 	db core.DB,
 	tableName string,
+	logger *zap.Logger,
 ) *DynamORMFederationStorage {
 	return &DynamORMFederationStorage{
 		db:                           db,
-		actorRepository:              repositories.NewActorRepository(db, tableName, nil),
-		federationActivityRepository: repositories.NewFederationActivityRepository(db, tableName, nil),
-		relationshipRepository:       repositories.NewRelationshipRepository(db, tableName, nil),
+		actorRepository:              repositories.NewActorRepository(db, tableName, logger),
+		federationActivityRepository: repositories.NewFederationActivityRepository(db, tableName, logger, nil),
+		relationshipRepository:       repositories.NewRelationshipRepository(db, tableName, logger),
 	}
 }
 

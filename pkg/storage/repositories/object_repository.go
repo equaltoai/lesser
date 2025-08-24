@@ -16,21 +16,30 @@ import (
 	"go.uber.org/zap"
 )
 
-// ObjectRepository implements object operations using DynamORM with BaseRepository pattern
+// ObjectRepository implements object operations using enhanced DynamORM patterns
 type ObjectRepository struct {
-	*BaseRepository[*models.Object]
+	*EnhancedBaseRepository[*models.Object]
 	domain      string
 	accountRepo *AccountRepository
 	queryUtils  *QueryUtils
 }
 
-// NewObjectRepository creates a new object repository
+// NewObjectRepository creates a new object repository with enhanced functionality
 func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logger) *ObjectRepository {
+	// Create enhanced repository optimized for object operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Object](db, tableName, logger, nil, "ObjectRepository", "object")
+	
+	// Set up enhanced services for object operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Objects cached for federation performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for ActivityPub events
+	
 	return &ObjectRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Object](db, tableName, logger, nil, "object"),
-		domain:         domain,
-		accountRepo:    NewAccountRepository(db, tableName, domain, logger),
-		queryUtils:     NewQueryUtils(db, logger),
+		EnhancedBaseRepository: enhancedRepo,
+		domain:                 domain,
+		accountRepo:            NewAccountRepository(db, tableName, domain, logger),
+		queryUtils:             NewQueryUtils(db, logger),
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -14,18 +15,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// EmojiRepository handles custom emoji operations using DynamORM
+// EmojiRepository handles custom emoji operations using enhanced DynamORM patterns
 type EmojiRepository struct {
-	*BaseRepository[*models.EmojiModel]
-	errorHandler *ErrorUtils
+	*EnhancedBaseRepository[*models.EmojiModel]
 }
 
-// NewEmojiRepository creates a new emoji repository
-func NewEmojiRepository(db core.DB, logger *zap.Logger) *EmojiRepository {
+// NewEmojiRepository creates a new emoji repository with enhanced functionality and cost tracking
+func NewEmojiRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *EmojiRepository {
+	// Create enhanced repository for emoji operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.EmojiModel](db, tableName, logger, costService, "EmojiRepository", "emoji")
+	
+	// Set up enhanced services for emoji operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache emojis for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &EmojiRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.EmojiModel](
-			db, models.MainTableName, logger, nil, "EmojiRepository"),
-		errorHandler: ErrorHandler,
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -76,8 +83,8 @@ func (r *EmojiRepository) CreateCustomEmoji(ctx context.Context, emoji *storage.
 		return storage.ErrAlreadyExists
 	}
 
-	// Create the emoji using BaseRepository
-	return r.Create(ctx, model)
+	// Create the emoji using enhanced validation and creation
+	return r.ValidateAndCreate(ctx, model)
 }
 
 // GetCustomEmoji retrieves a custom emoji by shortcode
@@ -504,7 +511,7 @@ func (r *EmojiRepository) queryEmojiGSI(ctx context.Context, indexName, pkField,
 			zap.String("pkField", pkField),
 			zap.String("pkValue", pkValue),
 			zap.Int("limit", limit))
-		return nil, r.errorHandler.HandleQueryError(err, EntityEmoji, fmt.Sprintf("GSI query %s", indexName))
+		return nil, ErrorHandler.HandleQueryError(err, EntityEmoji, fmt.Sprintf("GSI query %s", indexName))
 	}
 
 	// Track cost if cost service is available

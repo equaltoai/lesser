@@ -9,24 +9,33 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 	"go.uber.org/zap"
 )
 
-// SearchCostRepository manages search cost tracking and budgets
+// SearchCostRepository manages search cost tracking and budgets using enhanced patterns
 type SearchCostRepository struct {
-	*BaseRepository[*models.SearchCostTracking]
+	*EnhancedBaseRepository[*models.SearchCostTracking]
 	logger *zap.Logger
 }
 
-// NewSearchCostRepository creates a new search cost tracking repository
-func NewSearchCostRepository(db core.DB, logger *zap.Logger) *SearchCostRepository {
-	baseRepo := NewBaseRepository[*models.SearchCostTracking](db, "", logger)
+// NewSearchCostRepository creates a new search cost tracking repository with enhanced functionality
+func NewSearchCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SearchCostRepository {
+	// Create enhanced repository optimized for search cost operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.SearchCostTracking](db, tableName, logger, costService, "SearchCostRepository", "searchcost")
+	
+	// Set up enhanced services for search cost operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
+	
 	return &SearchCostRepository{
-		BaseRepository: baseRepo,
-		logger:         logger,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
 	}
 }
 
@@ -48,7 +57,7 @@ func (r *SearchCostRepository) RecordSearchCost(ctx context.Context, costData *m
 	}
 
 	// Store the cost tracking record using BaseRepository
-	err := r.Create(ctx, costData)
+	err := r.ValidateAndCreate(ctx, costData)
 	if err != nil {
 		r.logger.Error("failed to record search cost",
 			zap.String("user_id", costData.UserID),

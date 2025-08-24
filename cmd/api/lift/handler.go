@@ -57,7 +57,7 @@ func (e *streamingEventEmitter) EmitEvents(ctx context.Context, events []*common
 // NewHandler creates a new handler with dependencies
 func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Logger, authMiddleware lift.Middleware, streamQueue streaming.StreamQueueService) *Handler {
 	// Create emoji repository
-	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), logger)
+	emojiRepo := repositories.NewEmojiRepository(repos.GetDB(), cfg.DynamoTableName, logger, nil)
 
 	// Create converter with emoji repository access
 	converter := mastodon.NewConverterWithEmojis(cfg.BaseURL(), emojiRepo)

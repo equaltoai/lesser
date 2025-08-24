@@ -16,24 +16,27 @@ import (
 	"go.uber.org/zap"
 )
 
-// CommunityNoteRepository implements community note operations using BaseRepository with DynamORM
+// CommunityNoteRepository implements community note operations using enhanced repository patterns
 type CommunityNoteRepository struct {
-	*BaseRepository[*models.CommunityNote]
+	*EnhancedBaseRepository[*models.CommunityNote]
 }
 
-// NewCommunityNoteRepository creates a new community note repository with cost tracking
-func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger) *CommunityNoteRepository {
+// NewCommunityNoteRepository creates a new community note repository with enhanced functionality
+func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CommunityNoteRepository {
+	// Create enhanced repository optimized for community note operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.CommunityNote](db, tableName, logger, costService, "CommunityNoteRepository", "community_note")
+	
+	// Set up enhanced services for community moderation
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Community moderation permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache community notes for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Community moderation events
+	
 	return &CommunityNoteRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, nil, "community_note"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
-// NewCommunityNoteRepositoryWithCostTracking creates a new community note repository with integrated cost tracking
-func NewCommunityNoteRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CommunityNoteRepository {
-	return &CommunityNoteRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CommunityNote](db, tableName, logger, costService, "community_note"),
-	}
-}
 
 // GetUserVotingHistory retrieves a user's voting history for reputation calculation - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, userID string, limit int) ([]*storage.CommunityNoteVote, error) {
@@ -100,8 +103,8 @@ func (r *CommunityNoteRepository) CreateCommunityNote(ctx context.Context, note 
 		TTL:              now.Add(90 * 24 * time.Hour).Unix(), // 90 days TTL - preserve exact TTL
 	}
 
-	// Use BaseRepository Create method for consistent cost tracking
-	err := r.Create(ctx, model)
+	// Use enhanced validation and creation for community moderation
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
 		return ErrorHandler.HandleCreateError(err, "community note", note.ID)
 	}

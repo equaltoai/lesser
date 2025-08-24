@@ -13,20 +13,29 @@ import (
 	"go.uber.org/zap"
 )
 
-// BlockRepository implements block operations using BaseRepository and DynamORM
+// BlockRepository implements block operations using enhanced DynamORM patterns
 type BlockRepository struct {
-	*BaseRepository[*models.Block]
+	*EnhancedBaseRepository[*models.Block]
 	// Keep direct access to fields that domain methods need
 	logger *zap.Logger
 	db     core.DB
 }
 
-// NewBlockRepository creates a new block repository with cost tracking
+// NewBlockRepository creates a new block repository with enhanced functionality
 func NewBlockRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *BlockRepository {
+	// Create enhanced repository optimized for block operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Block](db, tableName, logger, costService, "BlockRepository", "block")
+	
+	// Set up enhanced services for block operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Block status frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
+	
 	return &BlockRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Block](db, tableName, logger, costService, "block"),
-		logger:         logger,
-		db:             db,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
+		db:                     db,
 	}
 }
 
@@ -49,23 +58,28 @@ func (r *BlockRepository) CreateBlock(ctx context.Context, blockerActor, blocked
 		return ErrorHandler.HandleCreateError(err, EntityBlock, "prepare block")
 	}
 
-	// Use BaseRepository Create method
-	if err := r.Create(ctx, block); err != nil {
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, block); err != nil {
 		// Check if it's a duplicate block
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("block relationship already exists",
 				zap.String("blocker", blockerActor),
-				zap.String("blocked", blockedActor))
+				zap.String("blocked", blockedActor),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
 			return nil // Idempotent - don't fail if block already exists
 		}
-		r.logger.Error("failed to create block",
+		r.logger.Error("failed to create block with enhanced validation",
 			zap.String("blocker", blockerActor),
 			zap.String("blocked", blockedActor),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityBlock, activityID)
 	}
 
-	r.logger.Info("created block relationship",
+	r.logger.Info("created block relationship with enhanced patterns",
+		zap.String("block_id", fmt.Sprintf("%s:%s", blockerActor, blockedActor)),
 		zap.String("blocker", blockerActor),
 		zap.String("blocked", blockedActor),
 		zap.String("activity_id", activityID))

@@ -1,209 +1,211 @@
 package graph
 
 import (
-	"errors"
 	"fmt"
+	
+	"github.com/equaltoai/lesser/pkg/errors"
 )
 
 // GraphQL resolver errors
 var (
 	// Authentication and authorization errors
-	ErrAuthenticationRequired  = errors.New("authentication required")
-	ErrAccessDenied            = errors.New("access denied")
-	ErrAdminPrivilegesRequired = errors.New("admin privileges required")
+	ErrAuthenticationRequired  = errors.NewAuthError(errors.CodeUnauthorized, "authentication required")
+	ErrAccessDenied            = errors.AccessDeniedForResource("resource", "unknown")
+	ErrAdminPrivilegesRequired = errors.InsufficientPermissions("admin operation")
 
 	// Validation errors
-	ErrEitherIDOrUsernameRequired = errors.New("either id or username must be provided")
-	ErrHashtagParameterRequired   = errors.New("hashtag parameter required for hashtag timeline")
-	ErrListIDParameterRequired    = errors.New("listId parameter required for list timeline")
-	ErrTrusteeIDRequired          = errors.New("trustee_id is required")
-	ErrObjectIDRequired           = errors.New("objectId is required")
-	ErrReasonRequired             = errors.New("reason is required")
-	ErrActorIDRequired            = errors.New("actorID is required")
-	ErrEmptyURL                   = errors.New("empty URL")
+	ErrEitherIDOrUsernameRequired = errors.NewValidationError("identifier", "either id or username must be provided")
+	ErrHashtagParameterRequired   = errors.NewValidationError("hashtag", "parameter required for hashtag timeline")
+	ErrListIDParameterRequired    = errors.NewValidationError("listId", "parameter required for list timeline")
+	ErrTrusteeIDRequired          = errors.NewValidationError("trustee_id", "required")
+	ErrObjectIDRequired           = errors.NewValidationError("objectId", "required")
+	ErrReasonRequired             = errors.NewValidationError("reason", "required")
+	ErrActorIDRequired            = errors.NewValidationError("actorID", "required")
+	ErrEmptyURL                   = errors.NewValidationError("url", "cannot be empty")
 
 	// Business logic validation errors
-	ErrTrustScoreRange      = errors.New("trust score must be between -1.0 and 1.0")
-	ErrCannotTrustYourself  = errors.New("cannot create trust relationship with yourself")
-	ErrScheduledTimeMinimum = errors.New("scheduled time must be at least 5 minutes in the future")
-	ErrScheduledTimeMaximum = errors.New("scheduled time cannot be more than 1 year in the future")
-	ErrAuthorsCannotVote    = errors.New("authors cannot vote on their own notes")
-	ErrOwnerOnlyOperation   = errors.New("you can only perform this operation on your own posts")
+	ErrTrustScoreRange      = errors.NewValidationError("trust_score", "must be between -1.0 and 1.0")
+	ErrCannotTrustYourself  = errors.OperationNotAllowedOnSelf("trust")
+	ErrScheduledTimeMinimum = errors.NewValidationError("scheduled_time", "must be at least 5 minutes in the future")
+	ErrScheduledTimeMaximum = errors.NewValidationError("scheduled_time", "cannot be more than 1 year in the future")
+	ErrAuthorsCannotVote    = errors.OperationNotAllowedOnSelf("vote on note")
+	ErrOwnerOnlyOperation   = errors.InsufficientPermissions("owner only operation")
 
 	// Timeline type errors
-	ErrUnsupportedTimelineType = errors.New("unsupported timeline type")
-	ErrAuthRequiredForHome     = errors.New("authentication required for home timeline")
-	ErrAuthRequiredForDirect   = errors.New("authentication required for direct timeline")
+	ErrUnsupportedTimelineType = errors.UnsupportedTimelineType("unknown")
+	ErrAuthRequiredForHome     = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for home timeline")
+	ErrAuthRequiredForDirect   = errors.NewAuthError(errors.CodeUnauthorized, "authentication required for direct timeline")
 
 	// Service unavailability errors
-	ErrEventBusUnavailable         = errors.New("event bus not available")
-	ErrInternalEventBusUnavailable = errors.New("internal event bus not available")
-	ErrModerationUnavailable       = errors.New("moderation service not available")
-	ErrAIServiceUnavailable        = errors.New("AI service not initialized")
-	ErrAnalyticsUnavailable        = errors.New("analytics service not available")
-	ErrMediaServiceUnavailable     = errors.New("media service not available")
-	ErrStorageUnavailable          = errors.New("storage not available")
-	ErrFederationUnavailable       = errors.New("federation service not available")
-	ErrCostTrackingUnavailable     = errors.New("cost tracking not available")
+	ErrEventBusUnavailable         = errors.ServiceUnavailable("event bus")
+	ErrInternalEventBusUnavailable = errors.EventBusNotInitialized()
+	ErrModerationUnavailable       = errors.ServiceUnavailable("moderation service")
+	ErrAIServiceUnavailable        = errors.ServiceNotAvailable("AI service")
+	ErrAnalyticsUnavailable        = errors.ServiceUnavailable("analytics service")
+	ErrMediaServiceUnavailable     = errors.ServiceUnavailable("media service")
+	ErrStorageUnavailable          = errors.ServiceUnavailable("storage")
+	ErrFederationUnavailable       = errors.ServiceUnavailable("federation service")
+	ErrCostTrackingUnavailable     = errors.ServiceUnavailable("cost tracking")
 
 	// Repository unavailability errors
-	ErrObjectRepositoryUnavailable     = errors.New("object repository not available")
-	ErrModerationRepositoryUnavailable = errors.New("moderation repository not available")
-	ErrStatusRepositoryUnavailable     = errors.New("status repository not available")
-	ErrAnalyticsRepositoryUnavailable  = errors.New("analytics repository not available")
-	ErrActorRepositoryUnavailable      = errors.New("actor repository not available")
-	ErrTrustRepositoryUnavailable      = errors.New("trust repository not available")
-	ErrFederationRepositoryUnavailable = errors.New("federation repository not available")
+	ErrObjectRepositoryUnavailable     = errors.RepositoryNotAvailable("object")
+	ErrModerationRepositoryUnavailable = errors.RepositoryNotAvailable("moderation")
+	ErrStatusRepositoryUnavailable     = errors.RepositoryNotAvailable("status")
+	ErrAnalyticsRepositoryUnavailable  = errors.RepositoryNotAvailable("analytics")
+	ErrActorRepositoryUnavailable      = errors.RepositoryNotAvailable("actor")
+	ErrTrustRepositoryUnavailable      = errors.RepositoryNotAvailable("trust")
+	ErrFederationRepositoryUnavailable = errors.RepositoryNotAvailable("federation")
 
 	// Not found errors
-	ErrObjectNotFound             = errors.New("object not found")
-	ErrCommunityNoteNotFound      = errors.New("community note not found")
-	ErrListNotFoundOrAccessDenied = errors.New("list not found or access denied")
-	ErrModerationPatternNotFound  = errors.New("moderation pattern not found")
+	ErrObjectNotFound             = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "object not found")
+	ErrCommunityNoteNotFound      = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "community note not found")
+	ErrListNotFoundOrAccessDenied = errors.NewAppError(errors.CodeNotFound, errors.CategoryAuth, "list not found or access denied")
+	ErrModerationPatternNotFound  = errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "moderation pattern not found")
 
 	// Format and parsing errors
-	ErrInvalidURLFormat             = errors.New("invalid URL format")
-	ErrInvalidMediaURLFormat        = errors.New("invalid media URL format")
-	ErrInvalidMediaURLSegments      = errors.New("invalid media URL format: not enough path segments")
-	ErrInvalidMediaURLMissingPrefix = errors.New("invalid media URL format: missing 'media' prefix")
-	ErrInvalidMediaURLMissingID     = errors.New("invalid media URL format: missing media ID")
-	ErrInvalidMediaIDFormat         = errors.New("invalid media ID format")
-	ErrInvalidTrustScoreKey         = errors.New("invalid trust score key format")
-	ErrNoDomainInURL                = errors.New("no domain found in URL")
+	ErrInvalidURLFormat             = errors.NewValidationError("url", "invalid format")
+	ErrInvalidMediaURLFormat        = errors.NewValidationError("media_url", "invalid format")
+	ErrInvalidMediaURLSegments      = errors.NewValidationError("media_url", "not enough path segments")
+	ErrInvalidMediaURLMissingPrefix = errors.NewValidationError("media_url", "missing 'media' prefix")
+	ErrInvalidMediaURLMissingID     = errors.NewValidationError("media_url", "missing media ID")
+	ErrInvalidMediaIDFormat         = errors.NewValidationError("media_id", "invalid format")
+	ErrInvalidTrustScoreKey         = errors.NewValidationError("trust_score_key", "invalid format")
+	ErrNoDomainInURL                = errors.NewValidationError("url", "no domain found")
 
 	// Content processing errors
-	ErrUnableToConvertObject      = errors.New("unable to convert object to GraphQL model")
-	ErrStatusIsNotNote            = errors.New("status is not a note")
-	ErrCannotDetermineOwnership   = errors.New("cannot determine status ownership")
-	ErrUnexpectedStatsType        = errors.New("unexpected stats type from AI service")
-	ErrCacheMiss                  = errors.New("cache miss")
-	ErrNoteCreationReturnedNoNote = errors.New("note creation returned no note")
+	ErrUnableToConvertObject      = errors.ProcessingFailed("object conversion", nil)
+	ErrStatusIsNotNote            = errors.NewValidationError("status_type", "is not a note")
+	ErrCannotDetermineOwnership   = errors.ProcessingFailed("ownership determination", nil)
+	ErrUnexpectedStatsType        = errors.NewValidationError("stats_type", "unexpected type from AI service")
+	ErrCacheMiss                  = errors.NewAppError(errors.CodeNotFound, errors.CategoryInternal, "cache miss")
+	ErrNoteCreationReturnedNoNote = errors.ProcessingFailed("note creation", nil)
 
 	// Federation errors
-	ErrFederationFetchRepliesUnavailable = errors.New("federation fetch replies not available")
+	ErrFederationFetchRepliesUnavailable = errors.ServiceUnavailable("federation fetch replies")
 
 	// Helper operation errors
-	ErrSocialActionFailed   = errors.New("failed to execute social action")
-	ErrSocialUndoFailed     = errors.New("failed to execute social undo action")
-	ErrListMembershipFailed = errors.New("failed to execute list membership operation")
-	ErrNoAccountsProcessed  = errors.New("failed to process any accounts")
-	ErrGetUpdatedListFailed = errors.New("failed to get updated list")
+	ErrSocialActionFailed   = errors.ProcessingFailed("social action", nil)
+	ErrSocialUndoFailed     = errors.ProcessingFailed("social undo action", nil)
+	ErrListMembershipFailed = errors.ProcessingFailed("list membership operation", nil)
+	ErrNoAccountsProcessed  = errors.ProcessingFailed("account processing", nil)
+	ErrGetUpdatedListFailed = errors.ProcessingFailed("get updated list", nil)
 
 	// Subscription manager errors
-	ErrSubscriptionManagerAlreadyRunning    = errors.New("subscription manager is already running")
-	ErrSubscriptionManagerNotRunning        = errors.New("subscription manager is not running")
-	ErrEventBusNotAvailableForTimeline      = errors.New("event bus is not available for timeline subscription")
-	ErrEventBusNotAvailableForNotifications = errors.New("event bus is not available for notification subscription")
-	ErrEventBusNotAvailableForCost          = errors.New("event bus is not available for cost update subscription")
-	ErrEventBusNotAvailableForModeration    = errors.New("event bus is not available for moderation subscription")
-	ErrEventBusNotAvailableForTrust         = errors.New("event bus is not available for trust subscription")
-	ErrEventBusNotAvailableForAI            = errors.New("event bus is not available for AI analysis subscription")
-	ErrEventBusNotAvailableForHashtag       = errors.New("event bus is not available for hashtag activity subscription")
-	ErrEventBusNotAvailableForQuote         = errors.New("event bus is not available for quote activity subscription")
-	ErrEventBusNotAvailableForMetrics       = errors.New("event bus is not available for metrics subscription")
-	ErrAtLeastOneHashtagRequired            = errors.New("at least one hashtag must be specified")
-	ErrNoteIDCannotBeEmpty                  = errors.New("noteID cannot be empty")
-	ErrUsernameCannotBeEmpty                = errors.New("username cannot be empty")
+	ErrSubscriptionManagerAlreadyRunning    = errors.InvalidStateForOperation("not running", "start subscription manager")
+	ErrSubscriptionManagerNotRunning        = errors.InvalidStateForOperation("running", "stop subscription manager")
+	ErrEventBusNotAvailableForTimeline      = errors.ServiceUnavailable("event bus for timeline subscription")
+	ErrEventBusNotAvailableForNotifications = errors.ServiceUnavailable("event bus for notification subscription")
+	ErrEventBusNotAvailableForCost          = errors.ServiceUnavailable("event bus for cost update subscription")
+	ErrEventBusNotAvailableForModeration    = errors.ServiceUnavailable("event bus for moderation subscription")
+	ErrEventBusNotAvailableForTrust         = errors.ServiceUnavailable("event bus for trust subscription")
+	ErrEventBusNotAvailableForAI            = errors.ServiceUnavailable("event bus for AI analysis subscription")
+	ErrEventBusNotAvailableForHashtag       = errors.ServiceUnavailable("event bus for hashtag activity subscription")
+	ErrEventBusNotAvailableForQuote         = errors.ServiceUnavailable("event bus for quote activity subscription")
+	ErrEventBusNotAvailableForMetrics       = errors.ServiceUnavailable("event bus for metrics subscription")
+	ErrAtLeastOneHashtagRequired            = errors.NewValidationError("hashtags", "at least one must be specified")
+	ErrNoteIDCannotBeEmpty                  = errors.NewValidationError("noteID", "cannot be empty")
+	ErrUsernameCannotBeEmpty                = errors.NewValidationError("username", "cannot be empty")
 
 	// Subscription factory errors
-	ErrEventBusSubscriptionFailed = errors.New("failed to subscribe to event bus")
+	ErrEventBusSubscriptionFailed = errors.EventBusSubscriptionFailed(nil)
 
 	// Pagination errors
-	ErrPaginationMixedParams = errors.New("cannot use first/after with last/before")
-	ErrFirstMustBePositive   = errors.New("first must be positive")
-	ErrLastMustBePositive    = errors.New("last must be positive")
-	ErrInvalidCursorFormat   = errors.New("invalid cursor format")
-	ErrInvalidCursorData     = errors.New("invalid cursor data")
-	ErrInvalidAfterCursor    = errors.New("invalid after cursor")
-	ErrInvalidBeforeCursor   = errors.New("invalid before cursor")
+	ErrPaginationMixedParams = errors.NewValidationError("pagination", "cannot use first/after with last/before")
+	ErrFirstMustBePositive   = errors.NewValidationError("first", "must be positive")
+	ErrLastMustBePositive    = errors.NewValidationError("last", "must be positive")
+	ErrInvalidCursorFormat   = errors.NewValidationError("cursor", "invalid format")
+	ErrInvalidCursorData     = errors.NewValidationError("cursor", "invalid data")
+	ErrInvalidAfterCursor    = errors.NewValidationError("after_cursor", "invalid")
+	ErrInvalidBeforeCursor   = errors.NewValidationError("before_cursor", "invalid")
 )
 
 // ErrModerationPatternNotFoundWithID returns an error for when a moderation pattern is not found with the given ID.
-func ErrModerationPatternNotFoundWithID(patternID string) error {
-	return errors.Join(ErrModerationPatternNotFound, errors.New(patternID))
+func ErrModerationPatternNotFoundWithID(patternID string) *errors.AppError {
+	return errors.NewAppError(errors.CodeNotFound, errors.CategoryBusiness, "moderation pattern not found").
+		WithMetadata("pattern_id", patternID)
 }
 
 // ErrUnsupportedTimelineTypeWithValue returns an error for unsupported timeline types with the specific value.
-func ErrUnsupportedTimelineTypeWithValue(timelineType interface{}) error {
-	return errors.Join(ErrUnsupportedTimelineType, fmt.Errorf("%v", timelineType))
+func ErrUnsupportedTimelineTypeWithValue(timelineType interface{}) *errors.AppError {
+	return errors.UnsupportedTimelineType(fmt.Sprintf("%v", timelineType))
 }
 
 // ErrInvalidURLFormatWithValue returns an error for invalid URL formats with the specific URL value.
-func ErrInvalidURLFormatWithValue(url string) error {
-	return errors.Join(ErrInvalidURLFormat, errors.New(url))
+func ErrInvalidURLFormatWithValue(url string) *errors.AppError {
+	return errors.NewValidationError("url", "invalid format").WithMetadata("url", url)
 }
 
 // ErrNoDomainFoundInURL returns an error when no domain is found in the given URL.
-func ErrNoDomainFoundInURL(url string) error {
-	return errors.Join(ErrNoDomainInURL, errors.New(url))
+func ErrNoDomainFoundInURL(url string) *errors.AppError {
+	return errors.NewValidationError("url", "no domain found").WithMetadata("url", url)
 }
 
 // ErrSocialActionFailedWithContext returns an error for when a social action fails with additional context.
-func ErrSocialActionFailedWithContext(actionName string, err error) error {
-	return errors.Join(fmt.Errorf("failed to %s object", actionName), err)
+func ErrSocialActionFailedWithContext(actionName string, err error) *errors.AppError {
+	return errors.ProcessingFailed("social action", err).WithMetadata("action", actionName)
 }
 
 // ErrSocialUndoFailedWithContext returns an error for when a social undo action fails with additional context.
-func ErrSocialUndoFailedWithContext(actionName string, err error) error {
-	return errors.Join(fmt.Errorf("failed to %s object", actionName), err)
+func ErrSocialUndoFailedWithContext(actionName string, err error) *errors.AppError {
+	return errors.ProcessingFailed("social undo action", err).WithMetadata("action", actionName)
 }
 
 // ErrListMembershipFailedWithAction returns an error for when list membership operations fail with a specific action.
-func ErrListMembershipFailedWithAction(actionName string) error {
-	return errors.Join(ErrListMembershipFailed, errors.New(actionName))
+func ErrListMembershipFailedWithAction(actionName string) *errors.AppError {
+	return errors.ProcessingFailed("list membership operation", nil).WithMetadata("action", actionName)
 }
 
 // ErrGetUpdatedListFailedWithContext returns an error for when getting an updated list fails with additional context.
-func ErrGetUpdatedListFailedWithContext(err error) error {
-	return errors.Join(errors.New("failed to get updated list"), err)
+func ErrGetUpdatedListFailedWithContext(err error) *errors.AppError {
+	return errors.ProcessingFailed("get updated list", err)
 }
 
 // ErrEventBusSubscriptionFailedWithContext returns an error for when event bus subscription fails with additional context.
-func ErrEventBusSubscriptionFailedWithContext(err error) error {
-	return errors.Join(errors.New("failed to subscribe to event bus"), err)
+func ErrEventBusSubscriptionFailedWithContext(err error) *errors.AppError {
+	return errors.EventBusSubscriptionFailed(err)
 }
 
 // ErrFailedToConvertItem returns an error for when item conversion fails at a specific index.
-func ErrFailedToConvertItem(itemIndex int, err error) error {
-	return errors.Join(fmt.Errorf("failed to convert item %d", itemIndex), err)
+func ErrFailedToConvertItem(itemIndex int, err error) *errors.AppError {
+	return errors.ProcessingFailed("item conversion", err).WithMetadata("item_index", itemIndex)
 }
 
 // ErrFailedToConvertNotification returns an error for when notification conversion fails at a specific index.
-func ErrFailedToConvertNotification(itemIndex int, err error) error {
-	return errors.Join(fmt.Errorf("failed to convert notification %d", itemIndex), err)
+func ErrFailedToConvertNotification(itemIndex int, err error) *errors.AppError {
+	return errors.ProcessingFailed("notification conversion", err).WithMetadata("item_index", itemIndex)
 }
 
 // ErrFailedToConvertHashtag returns an error for when hashtag conversion fails at a specific index.
-func ErrFailedToConvertHashtag(itemIndex int, err error) error {
-	return errors.Join(fmt.Errorf("failed to convert hashtag %d", itemIndex), err)
+func ErrFailedToConvertHashtag(itemIndex int, err error) *errors.AppError {
+	return errors.ProcessingFailed("hashtag conversion", err).WithMetadata("item_index", itemIndex)
 }
 
 // ErrFailedToConvertSeveredRelationship returns an error for when severed relationship conversion fails at a specific index.
-func ErrFailedToConvertSeveredRelationship(itemIndex int, err error) error {
-	return errors.Join(fmt.Errorf("failed to convert severed relationship %d", itemIndex), err)
+func ErrFailedToConvertSeveredRelationship(itemIndex int, err error) *errors.AppError {
+	return errors.ProcessingFailed("severed relationship conversion", err).WithMetadata("item_index", itemIndex)
 }
 
 // ErrFailedToConvertAffectedRelationship returns an error for when affected relationship conversion fails at a specific index.
-func ErrFailedToConvertAffectedRelationship(itemIndex int, err error) error {
-	return errors.Join(fmt.Errorf("failed to convert affected relationship %d", itemIndex), err)
+func ErrFailedToConvertAffectedRelationship(itemIndex int, err error) *errors.AppError {
+	return errors.ProcessingFailed("affected relationship conversion", err).WithMetadata("item_index", itemIndex)
 }
 
 // ErrInvalidCursorFormatWithContext returns an error for invalid cursor format with additional context.
-func ErrInvalidCursorFormatWithContext(err error) error {
-	return errors.Join(ErrInvalidCursorFormat, err)
+func ErrInvalidCursorFormatWithContext(err error) *errors.AppError {
+	return errors.NewValidationError("cursor", "invalid format").WithInternalError(err)
 }
 
 // ErrInvalidCursorDataWithContext returns an error for invalid cursor data with additional context.
-func ErrInvalidCursorDataWithContext(err error) error {
-	return errors.Join(ErrInvalidCursorData, err)
+func ErrInvalidCursorDataWithContext(err error) *errors.AppError {
+	return errors.NewValidationError("cursor", "invalid data").WithInternalError(err)
 }
 
 // ErrInvalidAfterCursorWithContext returns an error for invalid after cursor with additional context.
-func ErrInvalidAfterCursorWithContext(err error) error {
-	return errors.Join(ErrInvalidAfterCursor, err)
+func ErrInvalidAfterCursorWithContext(err error) *errors.AppError {
+	return errors.NewValidationError("after_cursor", "invalid").WithInternalError(err)
 }
 
 // ErrInvalidBeforeCursorWithContext returns an error for invalid before cursor with additional context.
-func ErrInvalidBeforeCursorWithContext(err error) error {
-	return errors.Join(ErrInvalidBeforeCursor, err)
+func ErrInvalidBeforeCursorWithContext(err error) *errors.AppError {
+	return errors.NewValidationError("before_cursor", "invalid").WithInternalError(err)
 }

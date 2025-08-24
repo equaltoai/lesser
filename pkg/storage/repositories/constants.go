@@ -34,6 +34,11 @@ const (
 	TypeFollowed = "followed"
 )
 
+// Connection type constants
+const (
+	ConnectionTypeAll = "all"
+)
+
 // Replies policy constants
 const (
 	RepliesPolicyList     = "list"

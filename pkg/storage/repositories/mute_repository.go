@@ -13,20 +13,29 @@ import (
 	"go.uber.org/zap"
 )
 
-// MuteRepository implements mute operations using BaseRepository and DynamORM
+// MuteRepository implements mute operations using enhanced DynamORM patterns
 type MuteRepository struct {
-	*BaseRepository[*models.Mute]
+	*EnhancedBaseRepository[*models.Mute]
 	// Keep direct access to fields that domain methods need
 	logger *zap.Logger
 	db     core.DB
 }
 
-// NewMuteRepository creates a new mute repository with cost tracking
+// NewMuteRepository creates a new mute repository with enhanced functionality
 func NewMuteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MuteRepository {
+	// Create enhanced repository optimized for mute operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Mute](db, tableName, logger, costService, "MuteRepository", "mute")
+	
+	// Set up enhanced services for mute operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Mute status frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation notifications
+	
 	return &MuteRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Mute](db, tableName, logger, costService, "mute"),
-		logger:         logger,
-		db:             db,
+		EnhancedBaseRepository: enhancedRepo,
+		logger:                 logger,
+		db:                     db,
 	}
 }
 
@@ -50,23 +59,28 @@ func (r *MuteRepository) CreateMute(ctx context.Context, muterActor, mutedActor,
 		return ErrorHandler.HandleCreateError(err, EntityMute, fmt.Sprintf("%s muting %s", muterActor, mutedActor))
 	}
 
-	// Use BaseRepository Create method
-	if err := r.Create(ctx, mute); err != nil {
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	if err := r.ValidateAndCreate(ctx, mute); err != nil {
 		// Check if it's a duplicate mute
 		if errors.IsConditionFailed(err) {
 			r.logger.Debug("mute relationship already exists",
 				zap.String("muter", muterActor),
-				zap.String("muted", mutedActor))
+				zap.String("muted", mutedActor),
+				zap.Bool("validation_enabled", r.HasValidation()),
+				zap.Bool("events_enabled", r.HasEvents()))
 			return nil // Idempotent - don't fail if mute already exists
 		}
-		r.logger.Error("failed to create mute",
+		r.logger.Error("failed to create mute with enhanced validation",
 			zap.String("muter", muterActor),
 			zap.String("muted", mutedActor),
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityMute, fmt.Sprintf("%s muting %s", muterActor, mutedActor))
 	}
 
-	r.logger.Info("created mute relationship",
+	r.logger.Info("created mute relationship with enhanced patterns",
+		zap.String("mute_id", fmt.Sprintf("%s:%s", muterActor, mutedActor)),
 		zap.String("muter", muterActor),
 		zap.String("muted", mutedActor),
 		zap.String("activity_id", activityID))

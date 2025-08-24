@@ -12,30 +12,37 @@ import (
 	"go.uber.org/zap"
 )
 
-// CircuitBreakerRepository handles circuit breaker state persistence with BaseRepository integration
+// CircuitBreakerRepository handles circuit breaker state persistence with enhanced patterns
 type CircuitBreakerRepository struct {
-	*BaseRepository[*models.CircuitBreakerState]
-	eventRepo *BaseRepository[*models.CircuitBreakerEvent]
+	*EnhancedBaseRepository[*models.CircuitBreakerState]
+	eventRepo *EnhancedBaseRepository[*models.CircuitBreakerEvent]
 }
 
-// NewCircuitBreakerRepository creates a new circuit breaker repository with cost tracking
+// NewCircuitBreakerRepository creates a new circuit breaker repository with enhanced functionality
 func NewCircuitBreakerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CircuitBreakerRepository {
+	// Create enhanced repository for circuit breaker state
+	enhancedRepo := NewEnhancedBaseRepository[*models.CircuitBreakerState](db, tableName, logger, costService, "CircuitBreakerRepository", "circuitbreaker")
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Circuit breaker state cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
+	// Create enhanced repository for circuit breaker events
+	eventRepo := NewEnhancedBaseRepository[*models.CircuitBreakerEvent](db, tableName, logger, costService, "CircuitBreakerEventRepository", "circuitbreakerevent")
+	eventRepo.SetValidationService(NewDefaultValidationService())
+	eventRepo.SetPermissionService(NewDefaultPermissionService())
+	eventRepo.SetCachingService(NewInMemoryCachingService())
+	eventRepo.SetEventService(NewDefaultEventService())
+	
 	return &CircuitBreakerRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.CircuitBreakerState](
-			db, tableName, logger, costService, "circuit_breaker_state",
-		),
-		eventRepo: NewBaseRepositoryWithCostTracking[*models.CircuitBreakerEvent](
-			db, tableName, logger, costService, "circuit_breaker_event",
-		),
+		EnhancedBaseRepository: enhancedRepo,
+		eventRepo:              eventRepo,
 	}
 }
 
-// NewCircuitBreakerRepositoryBasic creates a new circuit breaker repository without cost tracking
+// NewCircuitBreakerRepositoryBasic creates a new circuit breaker repository without cost tracking (backward compatibility)
 func NewCircuitBreakerRepositoryBasic(db core.DB, tableName string, logger *zap.Logger) *CircuitBreakerRepository {
-	return &CircuitBreakerRepository{
-		BaseRepository: NewBaseRepository[*models.CircuitBreakerState](db, tableName, logger),
-		eventRepo:      NewBaseRepository[*models.CircuitBreakerEvent](db, tableName, logger),
-	}
+	return NewCircuitBreakerRepository(db, tableName, logger, nil)
 }
 
 // GetCircuitState retrieves the current state of a circuit breaker for an instance
@@ -66,7 +73,7 @@ func (r *CircuitBreakerRepository) GetCircuitState(ctx context.Context, instance
 // CIRCUIT BREAKER RESILIENCE: Maintains atomic create/update semantics to prevent race conditions
 func (r *CircuitBreakerRepository) SaveCircuitState(ctx context.Context, state *models.CircuitBreakerState) error {
 	// Circuit breaker atomicity: Try create first, fallback to update
-	err := r.Create(ctx, state)
+	err := r.ValidateAndCreate(ctx, state)
 	if err != nil {
 		// If item already exists, update it atomically
 		if errors.IsConditionFailed(err) {
@@ -115,7 +122,7 @@ func (r *CircuitBreakerRepository) UpdateCircuitState(ctx context.Context, insta
 // RecordEvent records a circuit breaker event for debugging and monitoring
 // CIRCUIT BREAKER RESILIENCE: Non-blocking event recording for debugging/monitoring
 func (r *CircuitBreakerRepository) RecordEvent(ctx context.Context, event *models.CircuitBreakerEvent) error {
-	err := r.eventRepo.Create(ctx, event)
+	err := r.eventRepo.ValidateAndCreate(ctx, event)
 	if err != nil {
 		// Circuit breaker resilience: Event recording failure should not block main operations
 		r.eventRepo.logger.Warn("failed to record circuit breaker event",

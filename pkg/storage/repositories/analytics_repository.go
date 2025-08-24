@@ -29,9 +29,9 @@ const (
 	LinkTypeVideo = "video"
 )
 
-// TrendingRepository implements trending and analytics operations using DynamORM
+// TrendingRepository implements trending and analytics operations using enhanced patterns
 type TrendingRepository struct {
-	*BaseRepository[*models.TrendingHashtag]
+	*EnhancedBaseRepository[*models.TrendingHashtag]
 	db         core.DB
 	logger     *zap.Logger
 	domain     string
@@ -47,20 +47,27 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger, costService *cost.Tra
 		domain = DefaultDomain
 	}
 
-	// Create base repository for TrendingHashtag
-	baseRepo := NewBaseRepositoryWithCostTracking[*models.TrendingHashtag](
+	// Create enhanced repository optimized for trending and analytics operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.TrendingHashtag](
 		db,
 		cfg.DynamoTableName,
 		logger,
 		costService,
 		"TrendingRepository",
+		"trending",
 	)
+	
+	// Set up enhanced services for trending operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Trending data heavily cached
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for trend tracking
 
 	return &TrendingRepository{
-		BaseRepository: baseRepo,
-		db:             db,
-		logger:         logger,
-		domain:         domain,
+		EnhancedBaseRepository: enhancedRepo,
+		db:                     db,
+		logger:                 logger,
+		domain:                 domain,
 	}
 }
 
@@ -1529,8 +1536,8 @@ func (r *TrendingRepository) UpdateTrendingHashtag(ctx context.Context, hashtag 
 		TTL:       now.Add(30 * 24 * time.Hour).Unix(), // 30 days retention
 	}
 
-	// Use BaseRepository for TrendingHashtag creation
-	err := r.Create(ctx, trending)
+	// Use enhanced repository for validation and creation
+	err := r.ValidateAndCreate(ctx, trending)
 	if err != nil {
 		r.logger.Error("failed to update trending hashtag",
 			zap.String("hashtag", hashtag),

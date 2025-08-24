@@ -22,25 +22,26 @@ const (
 	FieldDescription = "description"
 )
 
-// MediaRepository handles media and media job operations using DynamORM with cost tracking
+// MediaRepository handles media and media job operations using enhanced DynamORM patterns
 type MediaRepository struct {
-	*BaseRepository[*models.Media]
+	*EnhancedBaseRepository[*models.Media]
 	deps map[string]interface{} // Dependencies for cross-repository operations
 }
 
-// NewMediaRepository creates a new MediaRepository
-func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger) *MediaRepository {
+// NewMediaRepository creates a new MediaRepository with enhanced functionality and cost tracking
+func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaRepository {
+	// Create enhanced repository optimized for media operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Media](db, tableName, logger, costService, "MediaRepository", "media")
+	
+	// Set up enhanced services for media operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Media metadata cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for media processing events
+	
 	return &MediaRepository{
-		BaseRepository: NewBaseRepository[*models.Media](db, tableName, logger),
-		deps:           make(map[string]interface{}),
-	}
-}
-
-// NewMediaRepositoryWithCostTracking creates a new MediaRepository with cost tracking
-func NewMediaRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaRepository {
-	return &MediaRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Media](db, tableName, logger, costService, "MediaRepository"),
-		deps:           make(map[string]interface{}),
+		EnhancedBaseRepository: enhancedRepo,
+		deps:                   make(map[string]interface{}),
 	}
 }
 

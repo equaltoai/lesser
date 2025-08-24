@@ -15,29 +15,33 @@ import (
 	"go.uber.org/zap"
 )
 
-// PollRepository implements the PollRepository interface using DynamORM with BaseRepository
+// PollRepository implements the PollRepository interface using enhanced DynamORM patterns
 type PollRepository struct {
-	*BaseRepository[*models.Poll]
-	voteRepo *BaseRepository[*models.PollVote]
+	*EnhancedBaseRepository[*models.Poll]
+	voteRepo *EnhancedBaseRepository[*models.PollVote]
 }
 
-// NewPollRepository creates a new PollRepository
-func NewPollRepository(db core.DB, tableName string, logger *zap.Logger) *PollRepository {
+// NewPollRepository creates a new PollRepository with enhanced functionality and cost tracking
+func NewPollRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PollRepository {
+	// Create enhanced repository optimized for poll operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Poll](db, tableName, logger, costService, "PollRepository", "poll")
+	
+	// Set up enhanced services for poll operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Polls cached for vote performance
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for poll notifications
+	
+	// Create enhanced vote repository
+	voteRepo := NewEnhancedBaseRepository[*models.PollVote](db, tableName, logger, costService, "PollVoteRepository", "poll_vote")
+	voteRepo.SetValidationService(NewDefaultValidationService())
+	voteRepo.SetPermissionService(NewDefaultPermissionService())
+	voteRepo.SetCachingService(NewInMemoryCachingService()) // Cache votes for performance
+	voteRepo.SetEventService(NewDefaultEventService())
+	
 	return &PollRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Poll](
-			db, tableName, logger, nil, "PollRepository"),
-		voteRepo: NewBaseRepositoryWithCostTracking[*models.PollVote](
-			db, tableName, logger, nil, "PollVoteRepository"),
-	}
-}
-
-// NewPollRepositoryWithCostTracking creates a new PollRepository with cost tracking
-func NewPollRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PollRepository {
-	return &PollRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Poll](
-			db, tableName, logger, costService, "PollRepository"),
-		voteRepo: NewBaseRepositoryWithCostTracking[*models.PollVote](
-			db, tableName, logger, costService, "PollVoteRepository"),
+		EnhancedBaseRepository: enhancedRepo,
+		voteRepo:               voteRepo,
 	}
 }
 
@@ -95,9 +99,13 @@ func (r *PollRepository) CreatePoll(ctx context.Context, poll *storage.Poll) err
 		Votes:       make(map[string][]int), // Initialize empty votes map
 	}
 
-	// Create using BaseRepository (handles key updates and cost tracking)
-	err := r.Create(ctx, model)
+	// Use enhanced validation and creation with automatic permission checking and event emission
+	err := r.ValidateAndCreate(ctx, model)
 	if err != nil {
+		log.Error("failed to create poll with enhanced validation",
+			zap.Bool("validation_enabled", r.HasValidation()),
+			zap.Bool("events_enabled", r.HasEvents()),
+			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "poll", poll.ID)
 	}
 

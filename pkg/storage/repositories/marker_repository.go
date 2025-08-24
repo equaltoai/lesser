@@ -15,22 +15,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// MarkerRepository implements marker operations using DynamORM with BaseRepository
+// MarkerRepository implements marker operations using enhanced DynamORM patterns
 type MarkerRepository struct {
-	*BaseRepository[*models.Marker]
+	*EnhancedBaseRepository[*models.Marker]
 }
 
-// NewMarkerRepository creates a new marker repository
-func NewMarkerRepository(db core.DB, tableName string, logger *zap.Logger) *MarkerRepository {
+// NewMarkerRepository creates a new marker repository with enhanced functionality and cost tracking
+func NewMarkerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MarkerRepository {
+	// Create enhanced repository for marker operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Marker](db, tableName, logger, costService, "MarkerRepository", "marker")
+	
+	// Set up enhanced services for marker operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache markers for fast retrieval
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &MarkerRepository{
-		BaseRepository: NewBaseRepository[*models.Marker](db, tableName, logger),
-	}
-}
-
-// NewMarkerRepositoryWithCostTracking creates a new marker repository with cost tracking
-func NewMarkerRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MarkerRepository {
-	return &MarkerRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Marker](db, tableName, logger, costService, "marker"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -60,8 +62,8 @@ func (r *MarkerRepository) SaveMarker(ctx context.Context, username, timeline st
 		UpdatedAt:  time.Now(), // Set explicitly to match legacy
 	}
 
-	// Save using BaseRepository - this will call UpdateKeys() and BeforeCreate hooks
-	err = r.Create(ctx, markerModel)
+	// Save using enhanced validation and creation - this will call UpdateKeys() and BeforeCreate hooks
+	err = r.ValidateAndCreate(ctx, markerModel)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrMarkerSaveFailed, err)
 	}

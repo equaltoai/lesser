@@ -30,8 +30,8 @@ type SearchServiceIntegration struct {
 // NewSearchServiceIntegration creates a fully integrated search service with cost tracking
 func NewSearchServiceIntegration(db core.DB, aiService *ai.AIService, requestID string, logger *zap.Logger) *SearchServiceIntegration {
 	// Create base repositories
-	searchRepo := NewSearchRepository(db, logger)
-	costRepo := NewSearchCostRepository(db, logger)
+	searchRepo := NewSearchRepository(db, "main_table", logger, nil)
+	costRepo := NewSearchCostRepository(db, "main_table", logger, nil)
 
 	// Create cost tracker for this request
 	costTracker := cost.NewWithRequest(requestID, "search_operation")

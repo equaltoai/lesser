@@ -19,16 +19,24 @@ import (
 	"go.uber.org/zap"
 )
 
-// ModerationRepository implements moderation operations using DynamORM with BaseRepository pattern
+// ModerationRepository implements moderation operations using enhanced DynamORM patterns
 type ModerationRepository struct {
-	*BaseRepository[*models.ModerationEvent]
+	*EnhancedBaseRepository[*models.ModerationEvent]
 }
 
-// NewModerationRepository creates a new moderation repository
+// NewModerationRepository creates a new moderation repository with enhanced functionality
 func NewModerationRepository(db core.DB, tableName string, logger *zap.Logger) *ModerationRepository {
+	// Create enhanced repository optimized for moderation operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.ModerationEvent](db, tableName, logger, nil, "ModerationRepository", "moderation_event")
+	
+	// Set up enhanced services for moderation operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Moderation decisions cached
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for moderation audit events
+	
 	return &ModerationRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.ModerationEvent](
-			db, tableName, logger, nil, "ModerationRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 

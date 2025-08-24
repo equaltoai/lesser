@@ -34,7 +34,7 @@ func NewProcessor(db core.DB, tableName string, logger *zap.Logger) *Processor {
 	return &Processor{
 		db:                db,
 		dlqRepo:           repositories.NewDLQRepositorySimple(db, tableName, logger),
-		costTrackingRepo:  repositories.NewTrackingRepository(db, tableName, logger),
+		costTrackingRepo:  repositories.NewTrackingRepository(db, tableName, logger, nil),
 		logger:            logger,
 		errorClassifier:   NewErrorClassifier(),
 		reprocessorClient: NewReprocessorClient(logger),

@@ -28,23 +28,41 @@ type ActorRepositoryDeps interface {
 	SetPreference(ctx context.Context, username, key string, value any) error
 }
 
-// ActorRepository implements actor operations using BaseRepository pattern
+// ActorRepository implements actor operations using enhanced DynamORM patterns
 type ActorRepository struct {
-	*BaseRepository[*models.Actor]
+	*EnhancedBaseRepository[*models.Actor]
 	deps ActorRepositoryDeps
 }
 
-// NewActorRepository creates a new actor repository
+// NewActorRepository creates a new actor repository with enhanced functionality
 func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *ActorRepository {
+	// Create enhanced repository optimized for actor operations
+	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, nil, "ActorRepository", "actor")
+	
+	// Set up enhanced services for actor operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for federation events
+	
 	return &ActorRepository{
-		BaseRepository: NewBaseRepository[*models.Actor](db, tableName, logger),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // NewActorRepositoryWithCostTracking creates a new actor repository with cost tracking
 func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActorRepository {
+	// Create enhanced repository with cost tracking
+	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, costService, "ActorRepository", "actor")
+	
+	// Set up enhanced services for actor operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
+	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for federation events
+	
 	return &ActorRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Actor](db, tableName, logger, costService, "ActorRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 

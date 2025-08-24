@@ -30,7 +30,7 @@ type MetricsAggregator struct {
 
 // NewMetricsAggregator creates a new metrics aggregator instance
 func NewMetricsAggregator(db core.DB, tableName string, logger *zap.Logger) *MetricsAggregator {
-	metricsRepository := repositories.NewMetricsRepository(db, tableName, logger)
+	metricsRepository := repositories.NewMetricsRepository(db, tableName, logger, nil)
 
 	return &MetricsAggregator{
 		db:                db,

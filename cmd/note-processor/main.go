@@ -114,10 +114,10 @@ func NewNoteProcessor(lambdaCtx *common.LambdaContext) *NoteProcessor {
 	}
 
 	// Initialize repositories
-	communityNoteRepo := repositories.NewCommunityNoteRepository(db, cfg.DynamoTableName, logger)
-	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger)
-	aiCostRepo := repositories.NewAICostRepository(db, cfg.DynamoTableName, logger)
-	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger)
+	communityNoteRepo := repositories.NewCommunityNoteRepository(db, cfg.DynamoTableName, logger, nil)
+	activityRepo := repositories.NewActivityRepository(db, cfg.DynamoTableName, logger, nil)
+	aiCostRepo := repositories.NewAICostRepository(db, cfg.DynamoTableName, logger, nil)
+	wsRepo := repositories.NewWebSocketSubscriptionManagerRepository(db, cfg.DynamoTableName, logger, nil)
 
 	// Use pre-initialized AWS clients
 	comprehendClient := lambdaCtx.AWSServices.Comprehend
