@@ -38,20 +38,19 @@ func NewFederationCostRepositoryFromBase(baseRepo *BaseRepository[*models.Federa
 	}
 }
 
-
 // convertBaseToEnhanced converts a BaseRepository to EnhancedBaseRepository (helper function)
 func convertBaseToEnhanced[T BaseModel](baseRepo *BaseRepository[T], costService *cost.TrackingService, repoName, entityType string) *EnhancedBaseRepository[T] {
 	enhancedRepo := &EnhancedBaseRepository[T]{
 		BaseRepository: baseRepo,
 		entityName:     entityType,
 	}
-	
+
 	// Set up enhanced services
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return enhancedRepo
 }
 

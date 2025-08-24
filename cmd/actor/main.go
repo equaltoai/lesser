@@ -17,10 +17,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	
-	appErrors "github.com/equaltoai/lesser/pkg/errors"
+
 	"strings"
 	"time"
+
+	appErrors "github.com/equaltoai/lesser/pkg/errors"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/equaltoai/lesser/pkg/activitypub"

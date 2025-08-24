@@ -80,13 +80,13 @@ func NewDeletedEvent(pk, sk string) Event {
 // EnhancedBaseRepository provides comprehensive CRUD + business logic patterns
 type EnhancedBaseRepository[T BaseModel] struct {
 	*BaseRepository[T] // Embed existing functionality
-	
+
 	// Enhanced services
 	validator   ValidationService
 	permissions PermissionService
 	caching     CachingService
 	events      EventService
-	
+
 	// Configuration
 	entityName string // Friendly name for this repository's entities
 }
@@ -101,7 +101,7 @@ func NewEnhancedBaseRepository[T BaseModel](
 	entityName string,
 ) *EnhancedBaseRepository[T] {
 	baseRepo := NewBaseRepositoryWithCostTracking[T](db, tableName, logger, costService, repoName)
-	
+
 	return &EnhancedBaseRepository[T]{
 		BaseRepository: baseRepo,
 		entityName:     entityName,
@@ -137,30 +137,30 @@ func (r *EnhancedBaseRepository[T]) ValidateAndCreate(ctx context.Context, model
 		if err := r.validator.ValidateRequiredFields(ctx, model); err != nil {
 			return errors.ValidationFailed("required fields", err.Error())
 		}
-		
+
 		// 2. Validate business rules
 		if err := r.validator.ValidateBusinessRules(ctx, model, "create"); err != nil {
 			return errors.ValidationFailed("business rules", err.Error())
 		}
 	}
-	
+
 	// 3. Check permissions
 	if err := r.checkCreatePermissions(ctx, model); err != nil {
 		return err
 	}
-	
+
 	// 4. Execute create with cost tracking
 	if err := r.Create(ctx, model); err != nil {
 		return err
 	}
-	
+
 	// 5. Emit creation event
 	if r.events != nil {
 		event := NewEvent("entity.created", r.entityName, model.GetPK(), "create", model)
 		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
 		_ = r.events.EmitAsync(ctx, event)
 	}
-	
+
 	return nil
 }
 
@@ -171,36 +171,36 @@ func (r *EnhancedBaseRepository[T]) ValidateAndUpdate(ctx context.Context, model
 		if err := r.validator.ValidateModel(ctx, model); err != nil {
 			return errors.ValidationFailed("model validation", err.Error())
 		}
-		
+
 		// 2. Validate business rules
 		if err := r.validator.ValidateBusinessRules(ctx, model, "update"); err != nil {
 			return errors.ValidationFailed("business rules", err.Error())
 		}
 	}
-	
+
 	// 3. Check permissions
 	if err := r.checkUpdatePermissions(ctx, model); err != nil {
 		return err
 	}
-	
+
 	// 4. Execute update
 	if err := r.Update(ctx, model); err != nil {
 		return err
 	}
-	
+
 	// 5. Emit update event
 	if r.events != nil {
 		event := NewEvent("entity.updated", r.entityName, model.GetPK(), "update", model)
 		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
 		_ = r.events.EmitAsync(ctx, event)
 	}
-	
+
 	// 6. Invalidate cache if caching is enabled
 	if r.caching != nil {
 		cacheKey := r.generateCacheKey("entity", model.GetPK(), model.GetSK())
 		_ = r.caching.Delete(ctx, cacheKey)
 	}
-	
+
 	return nil
 }
 
@@ -213,30 +213,30 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 			// Note: Need to implement IsItemNotFound check later
 			return err
 		}
-		
+
 		if err := r.checkDeletePermissions(ctx, model); err != nil {
 			return err
 		}
 	}
-	
+
 	// 2. Execute delete
 	if err := r.Delete(ctx, pk, sk); err != nil {
 		return err
 	}
-	
+
 	// 3. Emit delete event
 	if r.events != nil {
 		event := NewEvent("entity.deleted", r.entityName, pk, "delete", map[string]string{"pk": pk, "sk": sk})
 		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
 		_ = r.events.EmitAsync(ctx, event)
 	}
-	
+
 	// 4. Invalidate cache if caching is enabled
 	if r.caching != nil {
 		cacheKey := r.generateCacheKey("entity", pk, sk)
 		_ = r.caching.Delete(ctx, cacheKey)
 	}
-	
+
 	return nil
 }
 
@@ -245,7 +245,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 // FindWithCache retrieves entities with caching support
 func (r *EnhancedBaseRepository[T]) FindWithCache(ctx context.Context, pk string, cacheTTL time.Duration) ([]T, error) {
 	cacheKey := r.generateCacheKey("find", pk, "")
-	
+
 	// Try cache first if caching is enabled
 	if r.caching != nil {
 		var cached []T
@@ -253,13 +253,13 @@ func (r *EnhancedBaseRepository[T]) FindWithCache(ctx context.Context, pk string
 			return cached, nil
 		}
 	}
-	
+
 	// Execute query
 	results, err := r.FindByPK(ctx, pk)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Cache results if caching is enabled
 	if r.caching != nil && len(results) > 0 {
 		if cacheTTL == 0 {
@@ -267,26 +267,26 @@ func (r *EnhancedBaseRepository[T]) FindWithCache(ctx context.Context, pk string
 		}
 		_ = r.caching.Set(ctx, cacheKey, results, cacheTTL)
 	}
-	
+
 	return results, nil
 }
 
 // GetWithCache retrieves a single entity with caching support
 func (r *EnhancedBaseRepository[T]) GetWithCache(ctx context.Context, pk, sk string, result T, cacheTTL time.Duration) error {
 	cacheKey := r.generateCacheKey("get", pk, sk)
-	
+
 	// Try cache first if caching is enabled
 	if r.caching != nil {
 		if err := r.caching.Get(ctx, cacheKey, result); err == nil {
 			return nil
 		}
 	}
-	
+
 	// Execute get
 	if err := r.Get(ctx, pk, sk, result); err != nil {
 		return err
 	}
-	
+
 	// Cache result if caching is enabled
 	if r.caching != nil {
 		if cacheTTL == 0 {
@@ -294,7 +294,7 @@ func (r *EnhancedBaseRepository[T]) GetWithCache(ctx context.Context, pk, sk str
 		}
 		_ = r.caching.Set(ctx, cacheKey, result, cacheTTL)
 	}
-	
+
 	return nil
 }
 
@@ -320,14 +320,14 @@ func (r *EnhancedBaseRepository[T]) checkCreatePermissions(ctx context.Context, 
 	if r.permissions == nil {
 		return nil // No permission service configured
 	}
-	
+
 	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
 	actor := "unknown" // TODO: Implement GetActorFromContext
 	if actor == "unknown" {
 		// For now, skip authentication checks
 		return nil
 	}
-	
+
 	return r.permissions.CheckPermissions(ctx, actor, "create", model)
 }
 
@@ -335,14 +335,14 @@ func (r *EnhancedBaseRepository[T]) checkUpdatePermissions(ctx context.Context, 
 	if r.permissions == nil {
 		return nil
 	}
-	
+
 	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
 	actor := "unknown" // TODO: Implement GetActorFromContext
 	if actor == "unknown" {
 		// For now, skip authentication checks
 		return nil
 	}
-	
+
 	return r.permissions.CheckPermissions(ctx, actor, "update", model)
 }
 
@@ -350,14 +350,14 @@ func (r *EnhancedBaseRepository[T]) checkDeletePermissions(ctx context.Context, 
 	if r.permissions == nil {
 		return nil
 	}
-	
+
 	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
 	actor := "unknown" // TODO: Implement GetActorFromContext
 	if actor == "unknown" {
 		// For now, skip authentication checks
 		return nil
 	}
-	
+
 	return r.permissions.CheckPermissions(ctx, actor, "delete", model)
 }
 
@@ -377,29 +377,29 @@ func (r *EnhancedBaseRepository[T]) ValidateAndBatchCreate(ctx context.Context, 
 	if len(items) == 0 {
 		return nil
 	}
-	
+
 	// Validate all items first
 	for _, item := range items {
 		if r.validator != nil {
 			if err := r.validator.ValidateRequiredFields(ctx, item); err != nil {
 				return errors.ValidationFailed("batch required fields", err.Error())
 			}
-			
+
 			if err := r.validator.ValidateBusinessRules(ctx, item, "create"); err != nil {
 				return errors.ValidationFailed("batch business rules", err.Error())
 			}
 		}
-		
+
 		if err := r.checkCreatePermissions(ctx, item); err != nil {
 			return err
 		}
 	}
-	
+
 	// Create batch
 	if err := r.BatchCreate(ctx, items); err != nil {
 		return err
 	}
-	
+
 	// Emit events for all created items
 	if r.events != nil {
 		for _, item := range items {
@@ -408,7 +408,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndBatchCreate(ctx context.Context, 
 			_ = r.events.EmitAsync(ctx, event)
 		}
 	}
-	
+
 	return nil
 }
 

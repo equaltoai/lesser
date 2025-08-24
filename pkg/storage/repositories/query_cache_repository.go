@@ -26,17 +26,17 @@ type QueryCacheRepository struct {
 func NewQueryCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService, instanceRepo *FederationInstanceRepository, routeRepo *RouteOptimizerRepository) *QueryCacheRepository {
 	// Create enhanced repository optimized for query cache operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.QueryCacheEntry](db, tableName, logger, costService, "QueryCacheRepository", "query_cache")
-	
+
 	// Set up enhanced services for query cache operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Query cache cached in memory
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Cache events
-	
+
 	return &QueryCacheRepository{
 		EnhancedBaseRepository: enhancedRepo,
-		instanceRepo:          instanceRepo,
-		routeRepo:             routeRepo,
+		instanceRepo:           instanceRepo,
+		routeRepo:              routeRepo,
 	}
 }
 

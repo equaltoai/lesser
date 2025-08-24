@@ -3,10 +3,11 @@ package repositories
 import (
 	"encoding/base64"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/storage"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // KeyUtils provides utilities for generating consistent DynamoDB keys

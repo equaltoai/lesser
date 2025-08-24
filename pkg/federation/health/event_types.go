@@ -4,8 +4,9 @@ package health
 import (
 	"encoding/json"
 	"errors"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HealthCheckEvent represents an EventBridge event for triggering health checks

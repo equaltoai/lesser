@@ -119,14 +119,7 @@ func (cl *ConfigLoader) LoadHasherFromEnvironment() (*Hasher, error) {
 	return NewHasher(config)
 }
 
-
-
 // Legacy functions below are deprecated - they now use centralized config
-
-
-
-
-
 
 // GetEnvironmentDocumentation returns documentation for all privacy environment variables
 func (cl *ConfigLoader) GetEnvironmentDocumentation() string {

@@ -287,11 +287,11 @@ func WrapWithContext(err error, context string) *AppError {
 	if err == nil {
 		return nil
 	}
-	
+
 	if appErr, ok := AsAppError(err); ok {
 		return appErr.WithInternalMessage(context + ": " + appErr.InternalMessage)
 	}
-	
+
 	return InternalWithCause(err, context)
 }
 
@@ -316,11 +316,11 @@ func WrapWithResource(err error, resourceType, resourceID string) *AppError {
 func BusinessRuleViolated(rule string, context map[string]interface{}) *AppError {
 	appErr := NewAppError(CodeBusinessRuleViolated, CategoryBusiness, "Business rule violation").
 		WithMetadata("rule", rule)
-	
+
 	for k, v := range context {
 		appErr = appErr.WithMetadata(k, v)
 	}
-	
+
 	return appErr
 }
 
@@ -342,7 +342,7 @@ func MultipleErrors(errors []error, operation string) *AppError {
 	for i, err := range errors {
 		errorMessages[i] = err.Error()
 	}
-	
+
 	return NewAppError(CodeInternal, CategoryInternal, "Multiple errors occurred").
 		WithMetadata("operation", operation).
 		WithMetadata("errors", errorMessages).
@@ -408,7 +408,6 @@ func PublicKeyEncodingFailed(err error) *AppError {
 	return NewAppError(CodeInternal, CategoryAuth, "Failed to encode public key").WithInternalError(err)
 }
 
-
 // InvalidPrivateKeyType creates an error for invalid private key types.
 func InvalidPrivateKeyType() *AppError {
 	return NewAppError(CodeInvalidInput, CategoryAuth, "Expected *rsa.PrivateKey")
@@ -419,7 +418,6 @@ func KeyTypeUnsupported(keyType string) *AppError {
 	return NewAppError(CodeInvalidInput, CategoryAuth, "Unsupported key type").
 		WithMetadata("key_type", keyType)
 }
-
 
 // DomainHealthScoreRetrievalFailed creates an error for domain health score retrieval failures.
 func DomainHealthScoreRetrievalFailed(domain string, err error) *AppError {
@@ -750,7 +748,6 @@ func UserIDRequired() *AppError {
 
 // Pattern Repository error functions
 
-
 // PatternSaveFailed creates an error for pattern save failure.
 func PatternSaveFailed(err error) *AppError {
 	return FailedToSave("enhanced moderation pattern", err)
@@ -775,7 +772,6 @@ func PatternDeleteFailed(err error) *AppError {
 func PatternQueryFailed(err error) *AppError {
 	return FailedToQuery("enhanced moderation patterns", err)
 }
-
 
 // PatternCacheCreateFailed creates an error for pattern cache creation failure.
 func PatternCacheCreateFailed(err error) *AppError {
@@ -826,7 +822,6 @@ func PatternAnalysisFailed(err error) *AppError {
 func PatternValidationFailed(reason string) *AppError {
 	return ValidationFailedWithField("pattern validation: " + reason)
 }
-
 
 // NilPattern creates an error for nil pattern.
 func NilPattern() *AppError {

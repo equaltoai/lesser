@@ -28,13 +28,13 @@ type ObjectRepository struct {
 func NewObjectRepository(db core.DB, tableName, domain string, logger *zap.Logger) *ObjectRepository {
 	// Create enhanced repository optimized for object operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Object](db, tableName, logger, nil, "ObjectRepository", "object")
-	
+
 	// Set up enhanced services for object operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Objects cached for federation performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for ActivityPub events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for ActivityPub events
+
 	return &ObjectRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		domain:                 domain,

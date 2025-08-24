@@ -2,7 +2,7 @@ package graph
 
 import (
 	"fmt"
-	
+
 	"github.com/equaltoai/lesser/pkg/errors"
 )
 

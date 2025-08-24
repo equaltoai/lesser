@@ -413,13 +413,13 @@ func RespondGetError(ctx *lift.Context, resource string, err error) error {
 
 // Error type checking helpers - now using centralized error system
 func isConflictError(err error) bool {
-	return errors.HasCode(err, errors.CodeConflict) || 
-		   errors.HasCode(err, errors.CodeAlreadyExists)
+	return errors.HasCode(err, errors.CodeConflict) ||
+		errors.HasCode(err, errors.CodeAlreadyExists)
 }
 
 func isNotFoundError(err error) bool {
 	return errors.HasCode(err, errors.CodeNotFound) ||
-		   errors.HasCode(err, errors.CodeActorNotFound)
+		errors.HasCode(err, errors.CodeActorNotFound)
 }
 
 // Helper functions for common response patterns

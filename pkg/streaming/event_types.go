@@ -4,8 +4,9 @@ package streaming
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // EventType represents the type of internal event

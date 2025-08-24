@@ -46,7 +46,7 @@ func TestRateLimitRepository_CheckCommunityNoteRateLimit_WithinLimit(t *testing.
 	logger := zap.NewNop()
 
 	// Create repository with DynamORM
-	repo := NewRateLimitRepository(mockDB, "test-table", logger)
+	repo := NewRateLimitRepository(mockDB, "test-table", logger, nil)
 
 	// Mock the query to return 5 existing notes (under limit of 10)
 	notes := []models.CommunityNote{

@@ -38,13 +38,13 @@ type ActorRepository struct {
 func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *ActorRepository {
 	// Create enhanced repository optimized for actor operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, nil, "ActorRepository", "actor")
-	
+
 	// Set up enhanced services for actor operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for federation events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for federation events
+
 	return &ActorRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -54,13 +54,13 @@ func NewActorRepository(db core.DB, tableName string, logger *zap.Logger) *Actor
 func NewActorRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActorRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.Actor](db, tableName, logger, costService, "ActorRepository", "actor")
-	
+
 	// Set up enhanced services for actor operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Actors frequently accessed for federation
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for federation events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for federation events
+
 	return &ActorRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -26,14 +26,14 @@ func NewCircuitBreakerRepository(db core.DB, tableName string, logger *zap.Logge
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Circuit breaker state cached for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	// Create enhanced repository for circuit breaker events
 	eventRepo := NewEnhancedBaseRepository[*models.CircuitBreakerEvent](db, tableName, logger, costService, "CircuitBreakerEventRepository", "circuitbreakerevent")
 	eventRepo.SetValidationService(NewDefaultValidationService())
 	eventRepo.SetPermissionService(NewDefaultPermissionService())
 	eventRepo.SetCachingService(NewInMemoryCachingService())
 	eventRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &CircuitBreakerRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		eventRepo:              eventRepo,

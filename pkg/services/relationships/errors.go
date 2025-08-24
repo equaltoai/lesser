@@ -158,7 +158,7 @@ func FailedToCountFollowing(err error) *pkgerrors.AppError {
 	return pkgerrors.FailedToQuery("following count", err)
 }
 
-// ErrFollowRequestNotFound is specific to relationships - keep as local error  
+// ErrFollowRequestNotFound is specific to relationships - keep as local error
 var ErrFollowRequestNotFound = pkgerrors.NewAppError(pkgerrors.CodeNotFound, pkgerrors.CategoryBusiness, "follow request not found")
 
 // DomainBlockRepositoryNotAvailable returns an error when domain block repository is not available.
@@ -210,7 +210,7 @@ func FailedToGetPendingFollowRequests(err error) *pkgerrors.AppError {
 // Removed 50+ exact duplicate error variables that ended with "Local"
 // These duplicates included:
 // - All ErrFailedTo*Local variables (identical to their non-Local counterparts)
-// - All ErrCannot*SelfLocal variables (identical to their non-Local counterparts) 
+// - All ErrCannot*SelfLocal variables (identical to their non-Local counterparts)
 // - All storage/repository availability errors
 // Use the centralized error functions above instead
 

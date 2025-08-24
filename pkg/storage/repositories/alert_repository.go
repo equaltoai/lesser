@@ -23,13 +23,13 @@ type AlertRepository struct {
 func NewAlertRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AlertRepository {
 	// Create enhanced repository optimized for alert operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Alert](db, tableName, logger, costService, "AlertRepository", "alert")
-	
+
 	// Set up enhanced services for alert operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Alerts cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for alert notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for alert notifications
+
 	return &AlertRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -24,9 +24,9 @@ type RoutingMetricsRepository struct {
 // NewRoutingMetricsRepository creates a new routing metrics repository
 func NewRoutingMetricsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RoutingMetricsRepository {
 	routeRepo := NewEnhancedBaseRepository[*models.RouteMetricsWindow](db, tableName, logger, costService, "RoutingMetricsRepository", "route_metrics")
-	
+
 	globalRepo := NewEnhancedBaseRepository[*models.GlobalMetricsWindow](db, tableName, logger, costService, "GlobalMetricsRepository", "global_metrics")
-	
+
 	instanceRepo := NewEnhancedBaseRepository[*models.InstanceMetricsWindow](db, tableName, logger, costService, "InstanceMetricsRepository", "instance_metrics")
 
 	return &RoutingMetricsRepository{

@@ -22,13 +22,13 @@ type RecoveryRepository struct {
 func NewRecoveryRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RecoveryRepository {
 	// Create enhanced repository optimized for recovery operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.RecoveryRequest](db, tableName, logger, costService, "RecoveryRepository", "recovery")
-	
+
 	// Set up enhanced services for recovery operations - SECURITY CRITICAL
 	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical recovery validation
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())   // Standard permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // Recovery requests cached
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Standard permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Recovery requests cached
 	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
-	
+
 	return &RecoveryRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -4,6 +4,7 @@ package main
 import "github.com/equaltoai/lesser/pkg/errors"
 
 // Stream processing errors - now using centralized Lambda domain functions
+//
 //nolint:unused
 func batchRetryableErrors(errorCount int) *errors.AppError {
 	return errors.BatchHasRetryableErrors(errorCount)
@@ -20,12 +21,14 @@ func missingOldImage(recordID string) *errors.AppError {
 }
 
 // Activity processing errors - using Federation domain functions
+//
 //nolint:unused
 func missingAnnounceObjectID() *errors.AppError {
 	return errors.ObjectMissingField("object")
 }
 
 // Object validation errors - using Federation domain functions
+//
 //nolint:unused
 func objectNotMap() *errors.AppError {
 	return errors.ObjectInvalidField("type", "object is not a map[string]any")
@@ -62,18 +65,21 @@ func missingEventStartTime() *errors.AppError {
 }
 
 // Timeline processing errors - using Lambda domain functions
+//
 //nolint:unused
 func timelineRemovalFailed(actorID string, err error) *errors.AppError {
 	return errors.TimelineRemovalFailed(actorID, err)
 }
 
 // Create activity errors - using Lambda domain functions
+//
 //nolint:unused
 func timelineEntriesCreationFailed(err error) *errors.AppError {
 	return errors.TimelineEntriesCreationFailed(err)
 }
 
 // Stream record processing errors - using Lambda and Federation domain functions
+//
 //nolint:unused
 func streamRecordUnmarshalNewFailed(recordID string, err error) *errors.AppError {
 	return errors.StreamUnmarshalFailed(recordID, "new", err)
@@ -145,6 +151,7 @@ func tombstoneCreationFailedStream(err error) *errors.AppError {
 }
 
 // Activity workflow errors - using Lambda domain functions
+//
 //nolint:unused
 func entityTypeExtractionFailed() *errors.AppError {
 	return errors.EntityTypeExtractionFailed(nil)
@@ -166,12 +173,14 @@ func unknownActivityDirection(direction string) *errors.AppError {
 }
 
 // Follow activity errors - using Lambda domain functions
+//
 //nolint:unused
 func followRelationshipCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("follow relationship creation", err)
 }
 
 // Accept/Reject activity errors - using Lambda domain functions
+//
 //nolint:unused
 func relationshipStatusUpdateFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("relationship status update", err)
@@ -183,6 +192,7 @@ func rejectedRelationshipDeletionFailed(err error) *errors.AppError {
 }
 
 // Create activity errors - using Lambda domain functions
+//
 //nolint:unused
 func noteExtractionFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("note extraction", err)
@@ -204,18 +214,21 @@ func unsupportedObjectType(objectType string) *errors.AppError {
 }
 
 // Delete activity errors - using Lambda domain functions
+//
 //nolint:unused
 func tombstoneCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("tombstone creation", err)
 }
 
 // Like activity errors - using Lambda domain functions
+//
 //nolint:unused
 func likeRecordCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("like record creation", err)
 }
 
 // Announce activity errors - using Lambda and Federation domain functions
+//
 //nolint:unused
 func announceRecordCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("announce record creation", err)
@@ -227,6 +240,7 @@ func originalActivityFetchFailed(url string, err error) *errors.AppError {
 }
 
 // Undo activity errors - using Lambda and Federation domain functions
+//
 //nolint:unused
 func activityNotFoundLocally(activityID string) *errors.AppError {
 	return errors.UndoObjectNotFound(activityID)
@@ -308,6 +322,7 @@ func movedToFieldClearingFailed(err error) *errors.AppError {
 }
 
 // Undo generic activity errors - using Federation domain functions
+//
 //nolint:unused
 func objectIDExtractionFromActivityFailed() *errors.AppError {
 	return errors.ActivityMissingField("object")
@@ -319,6 +334,7 @@ func undoActivityMissingActor() *errors.AppError {
 }
 
 // Add/Remove activity errors - using Lambda and Federation domain functions
+//
 //nolint:unused
 func targetListRetrievalFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("target list retrieval", err)
@@ -345,18 +361,21 @@ func noObjectsFoundInActivity() *errors.AppError {
 }
 
 // Block activity errors - using Lambda domain functions
+//
 //nolint:unused
 func blockRelationshipCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("block relationship creation", err)
 }
 
 // Flag activity errors - using Lambda domain functions
+//
 //nolint:unused
 func flagRecordCreationFailed(err error) *errors.AppError {
 	return errors.WorkflowStepFailed("flag record creation", err)
 }
 
 // Move activity errors - using Federation and Lambda domain functions
+//
 //nolint:unused
 func usernameExtractionFromOldActorURIFailed(uri string) *errors.AppError {
 	return errors.ActorURIInvalid(uri)
@@ -368,6 +387,7 @@ func movedToFieldUpdateFailed(err error) *errors.AppError {
 }
 
 // Undo activity-specific record deletion errors - using Federation and Lambda domain functions
+//
 //nolint:unused
 func targetIDExtractionFromActivityFailed() *errors.AppError {
 	return errors.ActivityMissingField("target")
@@ -379,6 +399,7 @@ func activityRecordDeletionFailed(err error) *errors.AppError {
 }
 
 // Timeline processing errors - using Federation and Lambda domain functions
+//
 //nolint:unused
 func usernameExtractionFromActorIDFailed(actorID string) *errors.AppError {
 	return errors.ActorURIInvalid(actorID)
@@ -390,6 +411,7 @@ func followersRetrievalFailed(err error) *errors.AppError {
 }
 
 // Object processing errors - using Lambda domain functions
+//
 //nolint:unused
 func objectValidationFailed(objectType, reason string) *errors.AppError {
 	return errors.ObjectValidationFailed(objectType, reason)

@@ -24,13 +24,13 @@ type AuthRefreshTokenRepository struct {
 func NewAuthRefreshTokenRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuthRefreshTokenRepository {
 	// Create enhanced repository optimized for auth token operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.AuthRefreshToken](db, tableName, logger, costService, "AuthRefreshTokenRepository", "auth_token")
-	
+
 	// Set up enhanced services for auth token operations - SECURITY CRITICAL
 	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical token validation
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())      // Auth-specific permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // Short-term token caching
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Auth-specific permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Short-term token caching
 	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
-	
+
 	return &AuthRefreshTokenRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

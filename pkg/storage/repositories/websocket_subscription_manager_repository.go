@@ -21,13 +21,13 @@ type WebSocketSubscriptionManagerRepository struct {
 func NewWebSocketSubscriptionManagerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WebSocketSubscriptionManagerRepository {
 	// Create enhanced repository optimized for WebSocket subscription operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.WebSocketEventConnection](db, tableName, logger, costService, "WebSocketSubscriptionManagerRepository", "websocketsubscriptionmanager")
-	
+
 	// Set up enhanced services for WebSocket subscription operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Subscriptions cached for real-time performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &WebSocketSubscriptionManagerRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

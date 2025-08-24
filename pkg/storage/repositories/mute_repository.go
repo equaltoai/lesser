@@ -25,13 +25,13 @@ type MuteRepository struct {
 func NewMuteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MuteRepository {
 	// Create enhanced repository optimized for mute operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Mute](db, tableName, logger, costService, "MuteRepository", "mute")
-	
+
 	// Set up enhanced services for mute operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Mute status frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for moderation notifications
+
 	return &MuteRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

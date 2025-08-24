@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"io"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // VideoMetadata contains extracted video metadata from MP4/MOV files

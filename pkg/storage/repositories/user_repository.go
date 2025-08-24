@@ -42,13 +42,13 @@ type UserRepository struct {
 func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRepository {
 	// Create enhanced repository optimized for user operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, nil, "UserRepository", "user")
-	
+
 	// Set up enhanced services for user operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Users frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user activity events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user activity events
+
 	return &UserRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		urlValidator:           NewURLValidator(logger),
@@ -61,13 +61,13 @@ func NewUserRepository(db core.DB, tableName string, logger *zap.Logger) *UserRe
 func NewUserRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *UserRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, costService, "UserRepository", "user")
-	
+
 	// Set up enhanced services for user operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Users frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user activity events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user activity events
+
 	return &UserRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		urlValidator:           NewURLValidator(logger),
@@ -122,7 +122,7 @@ func (r *UserRepository) CreateUser(ctx context.Context, user *storage.User) err
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
 	}
-	
+
 	r.logger.Info("created user with enhanced patterns",
 		zap.String("username", user.Username),
 		zap.String("role", user.Role))

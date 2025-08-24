@@ -28,21 +28,20 @@ type WalletRepository struct {
 func NewWalletRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *WalletRepository {
 	// Create enhanced repository optimized for wallet operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.WalletChallenge](db, tableName, logger, costService, "WalletRepository", "wallet")
-	
+
 	// Set up enhanced services for wallet operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Wallet challenges cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for security monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for security monitoring
+
 	return &WalletRepository{
 		EnhancedBaseRepository: enhancedRepo,
-		db:             db,
-		tableName:      tableName,
-		logger:         logger,
+		db:                     db,
+		tableName:              tableName,
+		logger:                 logger,
 	}
 }
-
 
 // Wallet challenge operations
 

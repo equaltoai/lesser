@@ -4,8 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Announce represents a reblog/boost activity

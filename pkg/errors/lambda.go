@@ -180,7 +180,6 @@ func ActivityObjectProcessingFailed(activityType string, err error) *AppError {
 		WithMetadata("activity_type", activityType).AsRetryable()
 }
 
-
 // BatchHasRetryableErrors creates an error indicating a batch contains retryable errors.
 func BatchHasRetryableErrors(errorCount int) *AppError {
 	return NewLambdaError(CodeSQSProcessingFailed, "Batch contains retryable errors").

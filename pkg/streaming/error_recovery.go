@@ -244,11 +244,11 @@ func (erm *ErrorRecoveryManager) shouldAttemptRecovery(conn *models.WebSocketCon
 		permanentErrors := []string{
 			"authentication failed",
 			"unauthorized",
-			"forbidden", 
+			"forbidden",
 			"connection limit exceeded",
 			"rate limit exceeded",
 		}
-		
+
 		for _, permErr := range permanentErrors {
 			if len(errorStr) > len(permErr) && errorStr[:len(permErr)] == permErr {
 				return false

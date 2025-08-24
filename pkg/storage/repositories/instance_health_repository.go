@@ -25,10 +25,9 @@ type InstanceHealthRepository struct {
 func NewInstanceHealthRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceHealthRepository {
 	return &InstanceHealthRepository{
 		EnhancedBaseRepository: NewEnhancedBaseRepository[*models.InstanceHealth](db, tableName, logger, costService, "InstanceHealthRepository", "instance_health"),
-		summaryRepo:           NewEnhancedBaseRepository[*models.InstanceHealthSummary](db, tableName, logger, costService, "InstanceHealthSummaryRepository", "instance_health_summary"),
+		summaryRepo:            NewEnhancedBaseRepository[*models.InstanceHealthSummary](db, tableName, logger, costService, "InstanceHealthSummaryRepository", "instance_health_summary"),
 	}
 }
-
 
 // SaveHealthCheck stores a health check result with health validation and alerting logic
 func (r *InstanceHealthRepository) SaveHealthCheck(ctx context.Context, health *models.InstanceHealth) error {

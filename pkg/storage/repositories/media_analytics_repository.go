@@ -21,13 +21,13 @@ type MediaAnalyticsRepository struct {
 func NewMediaAnalyticsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaAnalyticsRepository {
 	// Create enhanced repository optimized for media analytics operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.MediaAnalytics](db, tableName, logger, costService, "MediaAnalyticsRepository", "media_analytics")
-	
+
 	// Set up enhanced services for media analytics operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Analytics cached for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Analytics events
-	
+
 	return &MediaAnalyticsRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

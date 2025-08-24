@@ -85,13 +85,13 @@ type ScheduledStatusRepository struct {
 func NewScheduledStatusRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledStatusRepository {
 	// Create enhanced repository for scheduled status operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.ScheduledStatus](db, tableName, logger, costService, "ScheduledStatusRepository", "scheduled_status")
-	
+
 	// Set up enhanced services for scheduled status operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache scheduled statuses
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &ScheduledStatusRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -617,10 +617,14 @@ var (
 	ErrProfileFieldNameEmpty = func() error { return errors.ContentValidationFailed("profile field name", "cannot be empty") }()
 
 	// ErrProfileFieldNameTooLong is returned when profile field name is too long
-	ErrProfileFieldNameTooLong = func() error { return errors.ContentValidationFailed("profile field name", "too long (max 255 characters)") }()
+	ErrProfileFieldNameTooLong = func() error {
+		return errors.ContentValidationFailed("profile field name", "too long (max 255 characters)")
+	}()
 
 	// ErrProfileFieldValueTooLong is returned when profile field value is too long
-	ErrProfileFieldValueTooLong = func() error { return errors.ContentValidationFailed("profile field value", "too long (max 255 characters)") }()
+	ErrProfileFieldValueTooLong = func() error {
+		return errors.ContentValidationFailed("profile field value", "too long (max 255 characters)")
+	}()
 
 	// ErrInvalidExpandMediaSetting is returned when expand media setting is invalid
 	ErrInvalidExpandMediaSetting = func() error { return errors.ExpandMediaSettingInvalid("") }()
@@ -839,7 +843,9 @@ var (
 	ErrCSVNoDataRows = func() error { return errors.CSVValidationFailed("CSV file has no data rows") }()
 
 	// ErrCSVHeaderMissingImportFields is returned when CSV header does not contain expected import fields
-	ErrCSVHeaderMissingImportFields = func() error { return errors.CSVValidationFailed("CSV header does not contain expected fields for import") }()
+	ErrCSVHeaderMissingImportFields = func() error {
+		return errors.CSVValidationFailed("CSV header does not contain expected fields for import")
+	}()
 
 	// Quote service errors
 	// ErrInvalidQuoteRequest is returned when quote request validation fails
@@ -1035,7 +1041,9 @@ var (
 	ErrMediaUnsupportedType = func() error { return errors.ContentTypeNotAllowed("") }()
 
 	// ErrMediaFileExtensionMismatch is returned when file extension doesn't match content type
-	ErrMediaFileExtensionMismatch = func() error { return errors.MediaAttachmentValidationFailed("file extension does not match content type") }()
+	ErrMediaFileExtensionMismatch = func() error {
+		return errors.MediaAttachmentValidationFailed("file extension does not match content type")
+	}()
 
 	// ErrMediaNotReady is returned when media is not ready for viewing
 	ErrMediaNotReady = func() error { return errors.MediaAttachmentNotReady("") }()
@@ -1293,7 +1301,9 @@ var (
 	ErrRecipientsRequired = func() error { return errors.RequiredFieldMissing("recipients") }()
 
 	// ErrContentTooLongConversation is returned when conversation content is too long
-	ErrContentTooLongConversation = func() error { return errors.ContentValidationFailed("conversation content", "too long (max 5000 characters)") }()
+	ErrContentTooLongConversation = func() error {
+		return errors.ContentValidationFailed("conversation content", "too long (max 5000 characters)")
+	}()
 
 	// ErrInvalidInReplyToIDConversation is returned when in_reply_to_id is invalid for conversation
 	ErrInvalidInReplyToIDConversation = func() error { return errors.ContentValidationFailed("in_reply_to_id", "invalid for conversation") }()

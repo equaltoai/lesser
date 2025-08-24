@@ -26,13 +26,13 @@ type AnnouncementRepository struct {
 func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger) *AnnouncementRepository {
 	// Create enhanced repository optimized for announcement operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Announcement](db, tableName, logger, nil, "AnnouncementRepository", "announcement")
-	
+
 	// Set up enhanced services for announcement operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only operations
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Announcements cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for admin notifications
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Announcements cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for admin notifications
+
 	return &AnnouncementRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,
@@ -45,13 +45,13 @@ func NewAnnouncementRepository(db core.DB, tableName string, logger *zap.Logger)
 func NewAnnouncementRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AnnouncementRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.Announcement](db, tableName, logger, costService, "AnnouncementRepository", "announcement")
-	
+
 	// Set up enhanced services for announcement operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only operations
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Announcements cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for admin notifications
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Announcements cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for admin notifications
+
 	return &AnnouncementRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,
@@ -200,7 +200,7 @@ func (r *AnnouncementRepository) CreateAnnouncement(ctx context.Context, announc
 			zap.Error(err))
 		return ErrorHandler.HandleCreateError(err, "announcement", announcement.ID)
 	}
-	
+
 	r.logger.Info("created announcement with enhanced patterns",
 		zap.String("announcement_id", announcement.ID),
 		zap.String("created_by", announcement.CreatedBy))
@@ -447,7 +447,7 @@ func (r *AnnouncementRepository) UpdateAnnouncement(ctx context.Context, announc
 			zap.Error(err))
 		return ErrorHandler.HandleUpdateError(err, "announcement", announcement.ID)
 	}
-	
+
 	r.logger.Info("updated announcement with enhanced patterns",
 		zap.String("announcement_id", announcement.ID))
 

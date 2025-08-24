@@ -29,13 +29,13 @@ type RelationshipRepository struct {
 func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger) *RelationshipRepository {
 	// Create enhanced repository with social-specific services
 	enhancedRepo := NewEnhancedBaseRepository[*models.RelationshipRecord](db, tableName, logger, nil, "RelationshipRepository", "relationship")
-	
+
 	// Set up enhanced services optimized for social relationships
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relationships are frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for federation events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for federation events
+
 	return &RelationshipRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		// Initialize repository dependencies
@@ -50,13 +50,13 @@ func NewRelationshipRepository(db core.DB, tableName string, logger *zap.Logger)
 func NewRelationshipRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelationshipRepository {
 	// Create enhanced repository with cost tracking and full service integration
 	enhancedRepo := NewEnhancedBaseRepository[*models.RelationshipRecord](db, tableName, logger, costService, "RelationshipRepository", "relationship")
-	
+
 	// Set up enhanced services optimized for social relationships with cost tracking
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relationships are frequently accessed
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for federation events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for federation events
+
 	return &RelationshipRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		// Initialize repository dependencies with cost tracking

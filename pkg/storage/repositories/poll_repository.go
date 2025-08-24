@@ -25,20 +25,20 @@ type PollRepository struct {
 func NewPollRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PollRepository {
 	// Create enhanced repository optimized for poll operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Poll](db, tableName, logger, costService, "PollRepository", "poll")
-	
+
 	// Set up enhanced services for poll operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Polls cached for vote performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for poll notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for poll notifications
+
 	// Create enhanced vote repository
 	voteRepo := NewEnhancedBaseRepository[*models.PollVote](db, tableName, logger, costService, "PollVoteRepository", "poll_vote")
 	voteRepo.SetValidationService(NewDefaultValidationService())
 	voteRepo.SetPermissionService(NewDefaultPermissionService())
 	voteRepo.SetCachingService(NewInMemoryCachingService()) // Cache votes for performance
 	voteRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &PollRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		voteRepo:               voteRepo,

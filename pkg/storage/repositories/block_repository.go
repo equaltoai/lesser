@@ -25,13 +25,13 @@ type BlockRepository struct {
 func NewBlockRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *BlockRepository {
 	// Create enhanced repository optimized for block operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Block](db, tableName, logger, costService, "BlockRepository", "block")
-	
+
 	// Set up enhanced services for block operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Block status frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Block status frequently checked
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for moderation events
+
 	return &BlockRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

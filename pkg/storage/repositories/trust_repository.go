@@ -29,21 +29,21 @@ func NewTrustRepository(db core.DB, tableName string, logger *zap.Logger, costSe
 	trustRepo := NewEnhancedBaseRepository[*models.TrustRelationship](db, tableName, logger, costService, "TrustRepository", "trust")
 	trustRepo.SetValidationService(NewDefaultValidationService())
 	trustRepo.SetPermissionService(NewDefaultPermissionService()) // Trust relationship permissions
-	trustRepo.SetCachingService(NewInMemoryCachingService()) // Cache trust data
-	trustRepo.SetEventService(NewDefaultEventService()) // Trust relationship events
-	
+	trustRepo.SetCachingService(NewInMemoryCachingService())      // Cache trust data
+	trustRepo.SetEventService(NewDefaultEventService())           // Trust relationship events
+
 	scoreRepo := NewEnhancedBaseRepository[*models.TrustScore](db, tableName, logger, costService, "TrustRepository.Score", "trust_score")
 	scoreRepo.SetValidationService(NewDefaultValidationService())
 	scoreRepo.SetPermissionService(NewDefaultPermissionService())
 	scoreRepo.SetCachingService(NewInMemoryCachingService()) // Cache trust scores
 	scoreRepo.SetEventService(NewDefaultEventService())
-	
+
 	updateRepo := NewEnhancedBaseRepository[*models.TrustUpdate](db, tableName, logger, costService, "TrustRepository.Update", "trust_update")
 	updateRepo.SetValidationService(NewDefaultValidationService())
 	updateRepo.SetPermissionService(NewDefaultPermissionService())
 	updateRepo.SetCachingService(NewInMemoryCachingService())
 	updateRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &TrustRepository{
 		EnhancedBaseRepository: trustRepo,
 		scoreRepo:              scoreRepo,
@@ -51,7 +51,6 @@ func NewTrustRepository(db core.DB, tableName string, logger *zap.Logger, costSe
 		logger:                 logger,
 	}
 }
-
 
 // convertToModelEvidence converts storage.TrustEvidence to models.TrustEvidence
 // Since storage.TrustEvidence is an alias for models.TrustEvidence, no conversion needed

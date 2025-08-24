@@ -451,7 +451,7 @@ func FederationErrorWithRemoteInfo(baseErr *AppError, remoteInstance, remoteActo
 
 // WrapRemoteError wraps an error with remote operation context and makes it retryable.
 func WrapRemoteError(err error, operation, remoteInstance string) *AppError {
-	return NewFederationInternalError(CodeRemoteFetchFailed, 
+	return NewFederationInternalError(CodeRemoteFetchFailed,
 		fmt.Sprintf("Remote %s failed", operation), err).
 		WithMetadata("remote_instance", remoteInstance).
 		AsRetryable()

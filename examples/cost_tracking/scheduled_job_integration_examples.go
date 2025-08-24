@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"go.uber.org/zap"
 )
 

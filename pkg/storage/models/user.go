@@ -2,9 +2,10 @@ package models
 
 import (
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"strings"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // User represents a user account stored in DynamoDB using DynamORM

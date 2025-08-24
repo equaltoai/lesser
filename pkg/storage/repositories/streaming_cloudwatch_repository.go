@@ -18,13 +18,13 @@ type StreamingCloudWatchRepository struct {
 func NewStreamingCloudWatchRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StreamingCloudWatchRepository {
 	// Create enhanced repository optimized for CloudWatch metrics operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.StreamingCloudWatchMetrics](db, tableName, logger, costService, "StreamingCloudWatchRepository", "streamingcloudwatch")
-	
+
 	// Set up enhanced services for CloudWatch metrics operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // CloudWatch metrics heavily cached
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &StreamingCloudWatchRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

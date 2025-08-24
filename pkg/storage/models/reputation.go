@@ -3,8 +3,9 @@ package models
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Reputation represents reputation data for an actor

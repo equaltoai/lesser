@@ -19,22 +19,22 @@ import (
 // DomainBlockRepository implements domain block operations using enhanced DynamORM patterns
 type DomainBlockRepository struct {
 	*EnhancedBaseRepository[*models.UserDomainBlock] // Enhanced BaseRepository for user domain blocks
-	db        core.DB
-	tableName string
-	logger    *zap.Logger
+	db                                               core.DB
+	tableName                                        string
+	logger                                           *zap.Logger
 }
 
 // NewDomainBlockRepository creates a new domain block repository with enhanced functionality
 func NewDomainBlockRepository(db core.DB, tableName string, logger *zap.Logger) *DomainBlockRepository {
 	// Create enhanced repository optimized for domain block operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.UserDomainBlock](db, tableName, logger, nil, "DomainBlockRepository", "domain_block")
-	
+
 	// Set up enhanced services for domain block operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Domain blocks cached for filtering
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Domain blocks cached for filtering
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for moderation events
+
 	return &DomainBlockRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,
@@ -47,13 +47,13 @@ func NewDomainBlockRepository(db core.DB, tableName string, logger *zap.Logger) 
 func NewDomainBlockRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DomainBlockRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.UserDomainBlock](db, tableName, logger, costService, "DomainBlockRepository", "domain_block")
-	
+
 	// Set up enhanced services for domain block operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation security
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Domain blocks cached for filtering
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Domain blocks cached for filtering
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for moderation events
+
 	return &DomainBlockRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,

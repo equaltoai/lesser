@@ -34,31 +34,31 @@ func NewRateLimitRepository(db core.DB, tableName string, logger *zap.Logger, co
 	loginAttempts.SetPermissionService(NewDefaultPermissionService())
 	loginAttempts.SetCachingService(NewInMemoryCachingService())
 	loginAttempts.SetEventService(NewDefaultEventService())
-	
+
 	rateLimitLockouts := NewEnhancedBaseRepository[*models.RateLimitLockout](db, tableName, logger, costService, "RateLimitLockoutRepository", "rate_limit_lockout")
 	rateLimitLockouts.SetValidationService(NewDefaultValidationService())
 	rateLimitLockouts.SetPermissionService(NewDefaultPermissionService())
 	rateLimitLockouts.SetCachingService(NewInMemoryCachingService())
 	rateLimitLockouts.SetEventService(NewDefaultEventService())
-	
+
 	apiRateLimits := NewEnhancedBaseRepository[*models.APIRateLimit](db, tableName, logger, costService, "APIRateLimitRepository", "api_rate_limit")
 	apiRateLimits.SetValidationService(NewDefaultValidationService())
 	apiRateLimits.SetPermissionService(NewDefaultPermissionService())
 	apiRateLimits.SetCachingService(NewInMemoryCachingService())
 	apiRateLimits.SetEventService(NewDefaultEventService())
-	
+
 	rateLimitViolations := NewEnhancedBaseRepository[*models.RateLimitViolation](db, tableName, logger, costService, "RateLimitViolationRepository", "rate_limit_violation")
 	rateLimitViolations.SetValidationService(NewDefaultValidationService())
 	rateLimitViolations.SetPermissionService(NewDefaultPermissionService())
 	rateLimitViolations.SetCachingService(NewInMemoryCachingService())
 	rateLimitViolations.SetEventService(NewDefaultEventService())
-	
+
 	communityNotes := NewEnhancedBaseRepository[*models.CommunityNote](db, tableName, logger, costService, "CommunityNoteRepository", "community_note")
 	communityNotes.SetValidationService(NewDefaultValidationService())
 	communityNotes.SetPermissionService(NewDefaultPermissionService())
 	communityNotes.SetCachingService(NewInMemoryCachingService())
 	communityNotes.SetEventService(NewDefaultEventService())
-	
+
 	return &RateLimitRepository{
 		loginAttempts:       loginAttempts,
 		rateLimitLockouts:   rateLimitLockouts,

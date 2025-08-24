@@ -645,7 +645,7 @@ func CSRFTokenAlreadyExists(token string) *errors.AppError {
 // CSRFTooManyTokens creates an error indicating too many active CSRF tokens for user.
 func CSRFTooManyTokens(userID string, count int) *errors.AppError {
 	return errors.TooManyItems(count, 10). // Assuming max 10 tokens per user
-		WithMetadata("user_id", userID)
+						WithMetadata("user_id", userID)
 }
 
 // Media metadata-specific errors
@@ -1102,11 +1102,11 @@ func IsRepositoryConflictError(err error) bool {
 // New code should use the function-based error creation from the centralized system.
 var (
 	// Account authentication errors
-	ErrAccountValidationFailed  = AccountValidationFailed("general validation failure")
-	ErrDeviceValidationFailed   = DeviceValidationFailed("general validation failure")
-	ErrSessionValidationFailed  = SessionValidationFailed("general validation failure")
-	ErrWebAuthnValidationFailed = WebAuthnValidationFailed("general validation failure")
-	ErrWalletValidationFailed   = WalletValidationFailed("general validation failure")
+	ErrAccountValidationFailed    = AccountValidationFailed("general validation failure")
+	ErrDeviceValidationFailed     = DeviceValidationFailed("general validation failure")
+	ErrSessionValidationFailed    = SessionValidationFailed("general validation failure")
+	ErrWebAuthnValidationFailed   = WebAuthnValidationFailed("general validation failure")
+	ErrWalletValidationFailed     = WalletValidationFailed("general validation failure")
 	ErrDeviceNotFound             = DeviceNotFound("unknown")
 	ErrWebAuthnCredentialNotFound = WebAuthnCredentialNotFound("unknown")
 
@@ -1127,12 +1127,12 @@ var (
 	ErrQueryValidationFailed    = QueryValidationFailed("unknown")
 
 	// Analytics errors
-	ErrInvalidHashtagTrendType = InvalidHashtagTrendType("unknown")
-	ErrInvalidStatusTrendType  = InvalidStatusTrendType("unknown")
-	ErrInvalidLinkTrendType    = InvalidLinkTrendType("unknown")
+	ErrInvalidHashtagTrendType      = InvalidHashtagTrendType("unknown")
+	ErrInvalidStatusTrendType       = InvalidStatusTrendType("unknown")
+	ErrInvalidLinkTrendType         = InvalidLinkTrendType("unknown")
 	ErrHashtagBatchUnknownModelType = HashtagBatchUnknownModelType("unknown")
-	ErrStatusRepoDependencyMissing = StatusRepoDependencyMissing()
-	ErrInvalidQueryParameters = InvalidQueryParameters("unknown")
+	ErrStatusRepoDependencyMissing  = StatusRepoDependencyMissing()
+	ErrInvalidQueryParameters       = InvalidQueryParameters("unknown")
 	ErrFailedIndexByEngagement      = FailedIndexByEngagement(nil)
 	ErrFailedRecordEngagement       = FailedRecordEngagement(nil)
 	ErrFailedGetEngagementMetrics   = FailedGetEngagementMetrics(nil)
@@ -1182,10 +1182,10 @@ var (
 	ErrFederationInstanceBatchUpdateUsageFailed       = FederationInstanceBatchUpdateUsageFailed(nil)
 	ErrFederationInstanceBatchUpdateUsageChunkFailed  = FederationInstanceBatchUpdateUsageChunkFailed(nil)
 	ErrFederationInstanceListFailed                   = FederationInstanceListFailed(nil)
-	ErrFederationInstanceCursorTooLong = FederationInstanceCursorTooLong(1025)
-	ErrFederationInstanceCursorInvalid = FederationInstanceCursorInvalid("unknown")
-	ErrFederationInstanceLimitNegative = FederationInstanceLimitNegative(-1)
-	ErrFederationInstanceLimitTooLarge = FederationInstanceLimitTooLarge(1001)
+	ErrFederationInstanceCursorTooLong                = FederationInstanceCursorTooLong(1025)
+	ErrFederationInstanceCursorInvalid                = FederationInstanceCursorInvalid("unknown")
+	ErrFederationInstanceLimitNegative                = FederationInstanceLimitNegative(-1)
+	ErrFederationInstanceLimitTooLarge                = FederationInstanceLimitTooLarge(1001)
 
 	// CSRF errors
 	ErrCSRFTokenInvalid       = CSRFTokenInvalid("unknown")
@@ -1210,14 +1210,14 @@ var (
 	ErrNotificationUnknownPreferenceType = NotificationUnknownPreferenceType("unknown")
 
 	// DNS cache errors
-	ErrDNSCacheEntryRequired = DNSCacheEntryRequired()
+	ErrDNSCacheEntryRequired    = DNSCacheEntryRequired()
 	ErrDNSCacheGetFailed        = DNSCacheGetFailed(nil)
 	ErrDNSCacheSetFailed        = DNSCacheSetFailed(nil)
 	ErrDNSCacheInvalidateFailed = DNSCacheInvalidateFailed(nil)
 
 	// Federation activity errors
 	ErrFederationActivityValidationFailed = FederationActivityValidationFailed("unknown")
-	ErrFederationActivityNotFound = FederationActivityNotFound("unknown")
+	ErrFederationActivityNotFound         = FederationActivityNotFound("unknown")
 
 	// Quote errors
 	ErrQuoteRelationshipCreateFailed = QuoteRelationshipCreateFailed(nil)
@@ -1254,7 +1254,7 @@ var (
 
 	// Relationship pagination errors
 	ErrRelationshipPaginationModelTypeUnsupported = RelationshipPaginationModelTypeUnsupported("unknown")
-	ErrRelationshipPaginationQueryFailed = RelationshipPaginationQueryFailed(nil)
+	ErrRelationshipPaginationQueryFailed          = RelationshipPaginationQueryFailed(nil)
 
 	// Relay errors
 	ErrRelayNotFound = RelayNotFound("unknown")
@@ -1271,17 +1271,17 @@ var (
 	ErrTimelineCountQueryFailed               = TimelineCountQueryFailed(nil)
 	ErrTimelineEntriesInRangeQueryFailed      = TimelineEntriesInRangeQueryFailed(nil)
 	ErrTimelineFilteredEntriesQueryFailed     = TimelineFilteredEntriesQueryFailed(nil)
-	ErrTestMockError = TestMockError()
+	ErrTestMockError                          = TestMockError()
 
 	// Streaming connection errors
-	ErrStreamingConnectionUserLimitReached   = StreamingConnectionUserLimitReached("unknown", 10)
-	ErrStreamingConnectionGlobalLimitReached = StreamingConnectionGlobalLimitReached(100)
+	ErrStreamingConnectionUserLimitReached    = StreamingConnectionUserLimitReached("unknown", 10)
+	ErrStreamingConnectionGlobalLimitReached  = StreamingConnectionGlobalLimitReached(100)
 	ErrStreamingConnectionMessageSizeExceeded = StreamingConnectionMessageSizeExceeded(1000, 500)
 	ErrStreamingConnectionRateLimitExceeded   = StreamingConnectionRateLimitExceeded("unknown")
-	ErrStreamingConnectionNotFound = StreamingConnectionNotFound("unknown")
+	ErrStreamingConnectionNotFound            = StreamingConnectionNotFound("unknown")
 
 	// Streaming preferences errors
-	ErrStreamingUsernameRequired     = StreamingUsernameRequired()
-	ErrStreamingDeviceParamsRequired = StreamingDeviceParamsRequired()
+	ErrStreamingUsernameRequired         = StreamingUsernameRequired()
+	ErrStreamingDeviceParamsRequired     = StreamingDeviceParamsRequired()
 	ErrStreamingConflictResolutionFailed = StreamingConflictResolutionFailed(nil)
 )

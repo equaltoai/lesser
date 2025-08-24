@@ -30,19 +30,19 @@ func NewWebSocketCostRepository(db core.DB, tableName string, logger *zap.Logger
 	baseRepo.SetPermissionService(NewDefaultPermissionService())
 	baseRepo.SetCachingService(NewInMemoryCachingService())
 	baseRepo.SetEventService(NewDefaultEventService())
-	
+
 	budgetRepo := NewEnhancedBaseRepository[*models.WebSocketCostBudget](db, tableName, logger, costService, "WebSocketBudgetRepository", "websocketbudget")
 	budgetRepo.SetValidationService(NewDefaultValidationService())
 	budgetRepo.SetPermissionService(NewDefaultPermissionService())
 	budgetRepo.SetCachingService(NewInMemoryCachingService())
 	budgetRepo.SetEventService(NewDefaultEventService())
-	
+
 	aggregationRepo := NewEnhancedBaseRepository[*models.WebSocketCostAggregation](db, tableName, logger, costService, "WebSocketAggregationRepository", "websocketaggregation")
 	aggregationRepo.SetValidationService(NewDefaultValidationService())
 	aggregationRepo.SetPermissionService(NewDefaultPermissionService())
 	aggregationRepo.SetCachingService(NewInMemoryCachingService())
 	aggregationRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &WebSocketCostRepository{
 		EnhancedBaseRepository: baseRepo,
 		budgetRepo:             budgetRepo,

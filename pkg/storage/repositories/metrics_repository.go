@@ -31,13 +31,13 @@ type MetricRecordRepository struct {
 func NewMetricsRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MetricsRepository {
 	// Create enhanced repository optimized for metrics operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Metrics](db, tableName, logger, costService, "MetricsRepository", "metrics")
-	
+
 	// Set up enhanced services for metrics operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Metrics cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for metrics events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for metrics events
+
 	// Create aggregated metrics repository
 	aggregatedRepo := NewEnhancedBaseRepository[*models.AggregatedMetrics](db, tableName, logger, costService, "AggregatedMetricsRepository", "aggregatedmetrics")
 	aggregatedRepo.SetValidationService(NewDefaultValidationService())
@@ -576,7 +576,7 @@ func calculateStandardDeviation(values []float64, mean float64) float64 {
 func NewMetricRecordRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MetricRecordRepository {
 	// Create enhanced repository optimized for metric record operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.MetricRecord](db, tableName, logger, costService, "MetricRecordRepository", "metricrecord")
-	
+
 	// Set up enhanced services for metric record operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())

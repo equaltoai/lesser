@@ -15,6 +15,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 )
+
 // TrendAggregatorHandler implements ScheduledEventHandler for trend aggregation
 type TrendAggregatorHandler struct {
 	db           core.DB

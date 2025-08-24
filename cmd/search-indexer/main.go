@@ -14,12 +14,12 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
-	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
 // SearchIndexer handles search index operations for content

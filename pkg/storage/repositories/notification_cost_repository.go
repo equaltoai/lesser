@@ -25,13 +25,13 @@ type NotificationCostRepository struct {
 func NewNotificationCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationCostRepository {
 	// Create enhanced repository optimized for notification cost operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.NotificationCostTracking](db, tableName, logger, costService, "NotificationCostRepository", "notificationcost")
-	
+
 	// Set up enhanced services for notification cost operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for cost monitoring
+
 	return &NotificationCostRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

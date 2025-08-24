@@ -98,7 +98,7 @@ func handleRequestError(ctx *lift.Context, err error, config ErrorMiddlewareConf
 		// Unknown error - wrap as internal
 		appErr = errors.InternalWithCause(err, "An error occurred processing your request")
 	}
-	
+
 	handleAppError(ctx, appErr, config)
 }
 
@@ -129,7 +129,7 @@ func handleAppError(ctx *lift.Context, appErr *errors.AppError, config ErrorMidd
 	} else if appErr.InternalMessage != "" {
 		internalMsg = appErr.InternalMessage
 	}
-	
+
 	if config.MaxErrorLogLength > 0 && len(internalMsg) > config.MaxErrorLogLength {
 		internalMsg = internalMsg[:config.MaxErrorLogLength] + "... (truncated)"
 	}

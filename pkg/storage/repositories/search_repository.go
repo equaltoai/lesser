@@ -39,13 +39,13 @@ type SearchRepository struct {
 func NewSearchRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SearchRepository {
 	// Create enhanced repository optimized for search operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.SearchSuggestion](db, tableName, logger, costService, "SearchRepository", "search_suggestion")
-	
+
 	// Set up enhanced services for search operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Search suggestions heavily cached
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for search analytics
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for search analytics
+
 	return &SearchRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

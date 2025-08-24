@@ -5,10 +5,11 @@ import (
 	"os"
 
 	"cdk/stacks"
+	"io/ioutil"
+
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/jsii-runtime-go"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
 )
 
 // Config represents the environment-specific configuration

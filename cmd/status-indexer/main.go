@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
 	"github.com/equaltoai/lesser/pkg/ai"
-	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	"github.com/google/uuid"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
+	"go.uber.org/zap"
 )
 
 // contextKey is a custom type for context keys to avoid collisions

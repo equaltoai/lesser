@@ -25,18 +25,17 @@ type FederationInstanceRepository struct {
 func NewFederationInstanceRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FederationInstanceRepository {
 	// Create enhanced repository optimized for federation instance operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.FederationInstanceRegistry](db, tableName, logger, costService, "FederationInstanceRepository", "federation_instance")
-	
+
 	// Set up enhanced services for federation instance operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Instance registry permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache instance data for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Federation registry events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Cache instance data for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Federation registry events
+
 	return &FederationInstanceRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
 }
-
 
 // CreateInstance registers a new federated instance
 func (r *FederationInstanceRepository) CreateInstance(ctx context.Context, instance *types.Instance) error {

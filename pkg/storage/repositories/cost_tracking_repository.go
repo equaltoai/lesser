@@ -28,12 +28,12 @@ type TrackingRepository struct {
 func NewTrackingRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TrackingRepository {
 	// Create enhanced repository optimized for cost tracking operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.DynamoDBCostRecord](db, tableName, logger, costService, "TrackingRepository", "costtracking")
-	
+
 	// Set up enhanced services for cost tracking operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for cost tracking events
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for cost tracking events
 
 	return &TrackingRepository{
 		EnhancedBaseRepository: enhancedRepo,

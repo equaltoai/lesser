@@ -24,13 +24,13 @@ type NotificationRepository struct {
 func NewNotificationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *NotificationRepository {
 	// Create enhanced repository optimized for notification operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Notification](db, tableName, logger, costService, "NotificationRepository", "notification")
-	
+
 	// Set up enhanced services for notification operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Notifications cached for real-time delivery
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for notification delivery events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for notification delivery events
+
 	return &NotificationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -51,11 +51,11 @@ func (r *NotificationRepository) CreateNotification(ctx context.Context, notific
 			zap.Error(err))
 		return err
 	}
-	
+
 	r.logger.Info("created notification with enhanced patterns",
 		zap.String("notification_id", notification.ID),
 		zap.String("type", notification.Type))
-	
+
 	return nil
 }
 

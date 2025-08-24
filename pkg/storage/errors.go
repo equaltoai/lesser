@@ -2,7 +2,7 @@ package storage
 
 import "github.com/equaltoai/lesser/pkg/errors"
 
-// Legacy error variables for backwards compatibility  
+// Legacy error variables for backwards compatibility
 // These are now wrappers around the centralized error system
 var (
 	// ErrNotFound is returned when a requested item doesn't exist

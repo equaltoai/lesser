@@ -25,22 +25,21 @@ func NewQuoteRepository(db core.DB, tableName string, logger *zap.Logger, costSe
 	relationshipRepo := NewEnhancedBaseRepository[*models.QuoteRelationship](db, tableName, logger, costService, "QuoteRepository.Relationship", "quote_relationship")
 	relationshipRepo.SetValidationService(NewDefaultValidationService())
 	relationshipRepo.SetPermissionService(NewDefaultPermissionService()) // Quote permissions
-	relationshipRepo.SetCachingService(NewInMemoryCachingService()) // Cache quote relationships
-	relationshipRepo.SetEventService(NewDefaultEventService()) // Quote events
-	
+	relationshipRepo.SetCachingService(NewInMemoryCachingService())      // Cache quote relationships
+	relationshipRepo.SetEventService(NewDefaultEventService())           // Quote events
+
 	permissionsRepo := NewEnhancedBaseRepository[*models.QuotePermissions](db, tableName, logger, costService, "QuoteRepository.Permissions", "quote_permissions")
 	permissionsRepo.SetValidationService(NewDefaultValidationService())
 	permissionsRepo.SetPermissionService(NewDefaultPermissionService()) // Permission validation
-	permissionsRepo.SetCachingService(NewInMemoryCachingService()) // Cache permissions
+	permissionsRepo.SetCachingService(NewInMemoryCachingService())      // Cache permissions
 	permissionsRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &QuoteRepository{
 		relationshipRepo: relationshipRepo,
 		permissionsRepo:  permissionsRepo,
 		logger:           logger,
 	}
 }
-
 
 // CreateQuoteRelationship creates a new quote relationship
 func (r *QuoteRepository) CreateQuoteRelationship(ctx context.Context, relationship *models.QuoteRelationship) error {
