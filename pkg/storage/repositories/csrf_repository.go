@@ -23,16 +23,16 @@ type CSRFRepository struct {
 func NewCSRFRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CSRFRepository {
 	// Create enhanced repository optimized for CSRF operations - SECURITY CRITICAL
 	enhancedRepo := NewEnhancedBaseRepository[*models.CSRFToken](db, tableName, logger, costService, "CSRFRepository", "csrf")
-	
+
 	// Set up enhanced services for CSRF operations - SECURITY CRITICAL
 	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Critical CSRF validation
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())   // Standard permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService())        // CSRF tokens cached briefly
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Standard permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // CSRF tokens cached briefly
 	enhancedRepo.SetEventService(NewDefaultEventService())           // Security event tracking
-	
+
 	return &CSRFRepository{
 		EnhancedBaseRepository: enhancedRepo,
-		db:                    db,
+		db:                     db,
 	}
 }
 

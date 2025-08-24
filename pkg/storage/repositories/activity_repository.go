@@ -26,18 +26,17 @@ type ActivityRepository struct {
 func NewActivityRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ActivityRepository {
 	// Create enhanced repository optimized for ActivityPub operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Activity](db, tableName, logger, costService, "ActivityRepository", "activity")
-	
+
 	// Set up enhanced services for ActivityPub operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // ActivityPub protocol permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache recent activities
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for ActivityPub federation
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Cache recent activities
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Critical for ActivityPub federation
+
 	return &ActivityRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
 }
-
 
 // CreateActivity stores an activity in the database - matches legacy implementation
 func (r *ActivityRepository) CreateActivity(ctx context.Context, activity *activitypub.Activity) error {

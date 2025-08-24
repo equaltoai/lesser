@@ -22,13 +22,13 @@ type ThreatIntelRepository struct {
 func NewThreatIntelRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ThreatIntelRepository {
 	// Create enhanced repository optimized for threat intel operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.ThreatIntel](db, tableName, logger, costService, "ThreatIntelRepository", "threat_intel")
-	
+
 	// Set up enhanced services for threat intel operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &ThreatIntelRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		queryUtils:             NewQueryUtils(db, logger),

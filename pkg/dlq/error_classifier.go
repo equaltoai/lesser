@@ -511,25 +511,25 @@ type ErrorTrendAnalysis struct {
 // CreateAppError creates an AppError from classified DLQ error information
 func (ec *ErrorClassifier) CreateAppError(messageBody, service string) *errors.AppError {
 	errorInfo := ec.ClassifyError(messageBody, service)
-	
+
 	// Map error types to appropriate error codes and categories
 	code, category := ec.mapErrorTypeToCodeCategory(errorInfo.ErrorType)
-	
+
 	appErr := errors.NewAppError(code, category, errorInfo.FailureReason).
 		WithMetadata("service", service).
 		WithMetadata("error_type", errorInfo.ErrorType).
 		WithMetadata("priority", errorInfo.Priority).
 		WithMetadata("category", errorInfo.Category).
 		WithInternalMessage(errorInfo.ErrorMessage)
-	
+
 	if errorInfo.StackTrace != "" {
 		appErr = appErr.WithMetadata("stack_trace", errorInfo.StackTrace)
 	}
-	
+
 	if !errorInfo.IsPermanent {
 		appErr = appErr.AsRetryable()
 	}
-	
+
 	return appErr
 }
 

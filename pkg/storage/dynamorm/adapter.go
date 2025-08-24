@@ -55,7 +55,6 @@ func NewStorageAdapter(repos core.RepositoryStorage) *StorageAdapter {
 // HELPER METHODS FOR DUPLICATION ELIMINATION
 // =======================================
 
-
 // executeRepositoryMethodWithFallback is a comprehensive generic helper that handles the common pattern
 // of trying a preferred method that returns []interface{} directly, then falling back to a typed method
 // with conversion. This eliminates all the duplicated adapter method patterns.

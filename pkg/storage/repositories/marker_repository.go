@@ -24,13 +24,13 @@ type MarkerRepository struct {
 func NewMarkerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MarkerRepository {
 	// Create enhanced repository for marker operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Marker](db, tableName, logger, costService, "MarkerRepository", "marker")
-	
+
 	// Set up enhanced services for marker operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache markers for fast retrieval
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &MarkerRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

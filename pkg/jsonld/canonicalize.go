@@ -5,11 +5,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // Canonicalizer implements JSON-LD canonicalization following URDNA2015 algorithm

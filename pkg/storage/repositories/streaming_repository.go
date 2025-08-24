@@ -34,13 +34,13 @@ type StreamingRepository struct {
 func NewStreamingRepository(db core.DB, tableName string, logger *zap.Logger, deviceProvider DeviceProvider, costService *cost.TrackingService) *StreamingRepository {
 	// Create enhanced repository optimized for streaming operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.StreamingPreferences](db, tableName, logger, costService, "StreamingRepository", "streaming")
-	
+
 	// Set up enhanced services for streaming operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Streaming preferences heavily cached
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for streaming events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for streaming events
+
 	return &StreamingRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		deviceProvider:         deviceProvider,

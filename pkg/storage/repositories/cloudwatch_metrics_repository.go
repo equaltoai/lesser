@@ -23,9 +23,9 @@ import (
 // BaseRepository integration demonstrates how DynamoDB caching could be added for performance optimization.
 type CloudWatchMetricsRepository struct {
 	*EnhancedBaseRepository[*models.CloudWatchMetrics]                    // Optional caching layer
-	client                                     *cloudwatch.Client // PRESERVE: CloudWatch AWS SDK for metrics collection
-	namespace                                  string             // PRESERVE: CloudWatch namespace
-	environment                                string             // PRESERVE: Environment for metrics filtering
+	client                                             *cloudwatch.Client // PRESERVE: CloudWatch AWS SDK for metrics collection
+	namespace                                          string             // PRESERVE: CloudWatch namespace
+	environment                                        string             // PRESERVE: Environment for metrics filtering
 }
 
 // CloudWatchMetrics represents metrics data from CloudWatch (PRESERVED - AWS monitoring integration)
@@ -64,17 +64,17 @@ func NewCloudWatchMetricsRepository(namespace, environment string, logger *zap.L
 		// Return repository with nil client - metrics will be disabled but won't crash
 		return &CloudWatchMetricsRepository{
 			EnhancedBaseRepository: nil,
-			client:                nil,
-			namespace:      namespace,
-			environment:    environment,
+			client:                 nil,
+			namespace:              namespace,
+			environment:            environment,
 		}
 	}
 
 	return &CloudWatchMetricsRepository{
 		EnhancedBaseRepository: nil, // Optional - only used if DynamoDB caching is enabled
-		client:                cloudwatch.NewFromConfig(cfg),
-		namespace:      namespace,
-		environment:    environment,
+		client:                 cloudwatch.NewFromConfig(cfg),
+		namespace:              namespace,
+		environment:            environment,
 	}
 }
 
@@ -86,9 +86,9 @@ func NewCloudWatchMetricsRepositoryWithCaching(awsConfig aws.Config, namespace, 
 
 	return &CloudWatchMetricsRepository{
 		EnhancedBaseRepository: nil, // Would set baseRepo here if caching was fully implemented
-		client:                cloudwatch.NewFromConfig(awsConfig),
-		namespace:      namespace,
-		environment:    environment,
+		client:                 cloudwatch.NewFromConfig(awsConfig),
+		namespace:              namespace,
+		environment:            environment,
 	}
 }
 

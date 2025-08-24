@@ -22,13 +22,13 @@ type OAuthSessionRepository struct {
 func NewOAuthSessionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *OAuthSessionRepository {
 	// Create enhanced repository optimized for OAuth session operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.OAuthAuthSession](db, tableName, logger, costService, "OAuthSessionRepository", "oauth_session")
-	
+
 	// Set up enhanced services for OAuth session operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // OAuth sessions cached
 	enhancedRepo.SetEventService(NewDefaultEventService())      // OAuth events
-	
+
 	return &OAuthSessionRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

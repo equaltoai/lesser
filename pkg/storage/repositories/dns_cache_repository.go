@@ -24,17 +24,17 @@ type DNSCacheRepository struct {
 func NewDNSCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DNSCacheRepository {
 	// Create enhanced repository optimized for DNS cache operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.DNSCache](db, tableName, logger, costService, "DNSCacheRepository", "dns_cache")
-	
+
 	// Set up enhanced services for DNS cache operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // DNS entries cached in memory
 	enhancedRepo.SetEventService(NewDefaultEventService())      // DNS resolution events
-	
+
 	return &DNSCacheRepository{
 		EnhancedBaseRepository: enhancedRepo,
-		logger:                logger,
-		db:                    db,
+		logger:                 logger,
+		db:                     db,
 	}
 }
 

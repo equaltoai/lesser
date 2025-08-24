@@ -24,13 +24,13 @@ type EmojiRepository struct {
 func NewEmojiRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *EmojiRepository {
 	// Create enhanced repository for emoji operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.EmojiModel](db, tableName, logger, costService, "EmojiRepository", "emoji")
-	
+
 	// Set up enhanced services for emoji operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache emojis for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &EmojiRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

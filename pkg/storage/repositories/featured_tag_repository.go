@@ -28,13 +28,13 @@ type FeaturedTagRepository struct {
 func NewFeaturedTagRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FeaturedTagRepository {
 	// Create enhanced repository for featured tag operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.FeaturedTag](db, tableName, logger, costService, "FeaturedTagRepository", "featured_tag")
-	
+
 	// Set up enhanced services for featured tag operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache featured tags for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &FeaturedTagRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

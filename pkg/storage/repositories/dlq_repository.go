@@ -33,13 +33,13 @@ type DLQRepository struct {
 func NewDLQRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *DLQRepository {
 	// Create enhanced repository optimized for DLQ operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.DLQMessage](db, tableName, logger, costService, "DLQRepository", "dlq")
-	
+
 	// Set up enhanced services for DLQ operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // DLQ messages cached for retry logic
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for DLQ monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for DLQ monitoring
+
 	return &DLQRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

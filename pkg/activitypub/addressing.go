@@ -2,9 +2,10 @@ package activitypub
 
 import (
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"net/url"
 	"strings"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // AddressingValidator provides validation for ActivityPub addressing fields

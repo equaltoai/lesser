@@ -2,11 +2,12 @@ package activitypub
 
 import (
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"net"
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 const (

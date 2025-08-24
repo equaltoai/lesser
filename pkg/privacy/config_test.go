@@ -147,7 +147,6 @@ func TestParsePrivacyLevel(t *testing.T) {
 	}
 }
 
-
 func TestConfigLoader_GetEnvironmentDocumentation(t *testing.T) {
 	loader := NewConfigLoader("PRIVACY")
 	docs := loader.GetEnvironmentDocumentation()

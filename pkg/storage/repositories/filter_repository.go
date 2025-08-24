@@ -58,17 +58,17 @@ type FilterRepository struct {
 	db core.DB
 }
 
-// NewFilterRepository creates a new FilterRepository with enhanced functionality and cost tracking  
+// NewFilterRepository creates a new FilterRepository with enhanced functionality and cost tracking
 func NewFilterRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FilterRepository {
 	// Create enhanced repository for filter operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Filter](db, tableName, logger, costService, "FilterRepository", "filter")
-	
+
 	// Set up enhanced services for filter operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache filters for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &FilterRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,

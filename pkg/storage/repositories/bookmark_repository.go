@@ -23,13 +23,13 @@ type BookmarkRepository struct {
 func NewBookmarkRepository(db core.DB, tableName string, logger *zap.Logger) *BookmarkRepository {
 	// Create enhanced repository optimized for bookmark operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Bookmark](db, tableName, logger, nil, "BookmarkRepository", "bookmark")
-	
+
 	// Set up enhanced services for bookmark operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user notifications
+
 	return &BookmarkRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -39,13 +39,13 @@ func NewBookmarkRepository(db core.DB, tableName string, logger *zap.Logger) *Bo
 func NewBookmarkRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *BookmarkRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.Bookmark](db, tableName, logger, costService, "BookmarkRepository", "bookmark")
-	
+
 	// Set up enhanced services for bookmark operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Bookmarks are frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for user notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for user notifications
+
 	return &BookmarkRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -305,4 +305,3 @@ func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(_ context.Context, obj
 
 	return nil
 }
-

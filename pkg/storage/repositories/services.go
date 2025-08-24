@@ -27,21 +27,21 @@ func (v *DefaultValidationService) ValidateModel(ctx context.Context, model Base
 	if model == nil {
 		return errors.ValidationFailed("model", "model is nil")
 	}
-	
+
 	// Validate that keys can be generated
 	if err := model.UpdateKeys(); err != nil {
 		return errors.ValidationFailed("key_generation", err.Error())
 	}
-	
+
 	// Validate PK and SK are not empty
 	if model.GetPK() == "" {
 		return errors.ValidationFailed("pk", "PK cannot be empty")
 	}
-	
+
 	if model.GetSK() == "" {
 		return errors.ValidationFailed("sk", "SK cannot be empty")
 	}
-	
+
 	return nil
 }
 
@@ -55,9 +55,9 @@ func (v *DefaultValidationService) ValidateBusinessRules(ctx context.Context, mo
 		}
 		val = val.Elem()
 	}
-	
+
 	typ := val.Type()
-	
+
 	// Check for business rule violations based on action
 	switch action {
 	case "create":
@@ -81,14 +81,14 @@ func (v *DefaultValidationService) ValidateRequiredFields(ctx context.Context, m
 		}
 		val = val.Elem()
 	}
-	
+
 	typ := val.Type()
-	
+
 	// Check each field for required validation
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
-		
+
 		// Check if field has required tag
 		if tag := fieldType.Tag.Get("validate"); tag != "" {
 			if strings.Contains(tag, "required") {
@@ -100,7 +100,7 @@ func (v *DefaultValidationService) ValidateRequiredFields(ctx context.Context, m
 				}
 			}
 		}
-		
+
 		// Check for common required patterns
 		if v.isCommonRequiredField(fieldType.Name) && v.isFieldEmpty(field) {
 			return errors.ValidationFailed(
@@ -109,7 +109,7 @@ func (v *DefaultValidationService) ValidateRequiredFields(ctx context.Context, m
 			)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -119,7 +119,7 @@ func (v *DefaultValidationService) validateCreateRules(ctx context.Context, val 
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
-		
+
 		// Check if this is a CreatedAt field that should be set
 		if strings.Contains(strings.ToLower(fieldType.Name), "createdat") && field.Kind() == reflect.Struct {
 			if field.Type() == reflect.TypeOf(time.Time{}) {
@@ -132,7 +132,7 @@ func (v *DefaultValidationService) validateCreateRules(ctx context.Context, val 
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -142,7 +142,7 @@ func (v *DefaultValidationService) validateUpdateRules(ctx context.Context, val 
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
 		fieldType := typ.Field(i)
-		
+
 		// Check if this is an UpdatedAt field that should be set
 		if strings.Contains(strings.ToLower(fieldType.Name), "updatedat") && field.Kind() == reflect.Struct {
 			if field.Type() == reflect.TypeOf(time.Time{}) {
@@ -155,7 +155,7 @@ func (v *DefaultValidationService) validateUpdateRules(ctx context.Context, val 
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -197,13 +197,13 @@ func (v *DefaultValidationService) isCommonRequiredField(fieldName string) bool 
 	commonRequired := []string{
 		"ID", "Id", "Username", "Email", "Name", "Title", "Type", "Status",
 	}
-	
+
 	for _, req := range commonRequired {
 		if fieldName == req {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -224,11 +224,11 @@ func (p *DefaultPermissionService) CheckPermissions(ctx context.Context, actor s
 	if actor == "" {
 		return errors.ValidationFailed("authentication", "authentication required")
 	}
-	
+
 	// Get resource information
 	resourceType := p.getResourceType(resource)
 	resourceID := resource.GetPK()
-	
+
 	// Check basic permissions based on action
 	switch action {
 	case "create":
@@ -249,15 +249,15 @@ func (p *DefaultPermissionService) HasPermission(ctx context.Context, actor stri
 	if actor == "" {
 		return false
 	}
-	
+
 	// Note: GetActorFromContext doesn't exist yet, so we'll use the actor parameter
 	actorInfo := actor
-	
+
 	// Check for admin permissions
 	if strings.Contains(strings.ToLower(actorInfo), "admin") {
 		return true // Admins have all permissions
 	}
-	
+
 	// Check for specific permission patterns
 	switch permission {
 	case "admin", "superuser":
@@ -293,12 +293,12 @@ func (p *DefaultPermissionService) checkUpdatePermission(ctx context.Context, ac
 	if p.isOwner(actor, resourceID) {
 		return nil
 	}
-	
+
 	// Check for admin permissions
 	if p.HasPermission(ctx, actor, "admin") {
 		return nil
 	}
-	
+
 	return errors.InsufficientPermissions(fmt.Sprintf("update %s %s", resourceType, resourceID))
 }
 
@@ -308,12 +308,12 @@ func (p *DefaultPermissionService) checkDeletePermission(ctx context.Context, ac
 	if p.isOwner(actor, resourceID) {
 		return nil
 	}
-	
+
 	// Check for admin permissions
 	if p.HasPermission(ctx, actor, "admin") {
 		return nil
 	}
-	
+
 	return errors.InsufficientPermissions(fmt.Sprintf("delete %s %s", resourceType, resourceID))
 }
 
@@ -323,7 +323,7 @@ func (p *DefaultPermissionService) checkGenericPermission(ctx context.Context, a
 	if p.HasPermission(ctx, actor, "admin") {
 		return nil
 	}
-	
+
 	return errors.InsufficientPermissions(fmt.Sprintf("%s %s %s", action, resourceType, resourceID))
 }
 
@@ -333,7 +333,7 @@ func (p *DefaultPermissionService) getResourceType(resource BaseModel) string {
 	if typ.Kind() == reflect.Ptr {
 		typ = typ.Elem()
 	}
-	
+
 	name := typ.Name()
 	// Convert CamelCase to lowercase
 	return strings.ToLower(name)
@@ -350,7 +350,7 @@ func (p *DefaultPermissionService) isOwner(actor string, resourceID string) bool
 
 // InMemoryCachingService provides a simple in-memory cache implementation
 type InMemoryCachingService struct {
-	cache map[string]cacheEntry
+	cache  map[string]cacheEntry
 	logger interface{} // Use interface to avoid import cycles
 }
 
@@ -372,23 +372,23 @@ func (c *InMemoryCachingService) Get(ctx context.Context, key string, dest inter
 	if !exists {
 		return errors.ItemNotFound("cache_entry")
 	}
-	
+
 	// Check if expired
 	if time.Now().After(entry.expiresAt) {
 		delete(c.cache, key)
 		return errors.ItemNotFound("cache_entry")
 	}
-	
+
 	// Copy the value to destination
 	// This is a simplified implementation
 	destVal := reflect.ValueOf(dest)
 	if destVal.Kind() != reflect.Ptr {
 		return errors.ValidationFailed("destination", "destination must be a pointer")
 	}
-	
+
 	sourceVal := reflect.ValueOf(entry.value)
 	destVal.Elem().Set(sourceVal)
-	
+
 	return nil
 }
 
@@ -475,7 +475,7 @@ func NewLogEventHandler() *LogEventHandler {
 // Handle logs the event
 func (h *LogEventHandler) Handle(ctx context.Context, event Event) error {
 	// In a real implementation, this would use proper logging
-	fmt.Printf("Event: %s.%s on %s/%s by %s\n", 
+	fmt.Printf("Event: %s.%s on %s/%s by %s\n",
 		event.Entity, event.Action, event.EntityID, event.Type, event.Actor)
 	return nil
 }

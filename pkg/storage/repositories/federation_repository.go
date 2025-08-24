@@ -42,13 +42,13 @@ type FederationRepository struct {
 func NewFederationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService, cfg *appConfig.Config) *FederationRepository {
 	// Create enhanced repository optimized for federation operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.FederationCostActivity](db, tableName, logger, costService, "FederationRepository", "federation")
-	
+
 	// Set up enhanced services for federation operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Instance-level permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Federation data cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for federation events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Federation data cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Critical for federation events
+
 	return &FederationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		db:                     db,

@@ -22,13 +22,13 @@ type AuditRepository struct {
 func NewAuditRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuditRepository {
 	// Create enhanced repository optimized for audit operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.AuthAuditLog](db, tableName, logger, costService, "AuditRepository", "audit")
-	
+
 	// Set up enhanced services for audit operations - SECURITY CRITICAL
 	enhancedRepo.SetValidationService(NewDefaultValidationService()) // Special security validation
-	enhancedRepo.SetPermissionService(NewDefaultPermissionService())    // Audit-specific permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService())       // Security logs cached briefly
-	enhancedRepo.SetEventService(NewDefaultEventService())          // Critical for security monitoring
-	
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Audit-specific permissions
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Security logs cached briefly
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Critical for security monitoring
+
 	return &AuditRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

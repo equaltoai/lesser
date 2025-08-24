@@ -27,13 +27,13 @@ type ConversationRepository struct {
 func NewConversationRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ConversationRepository {
 	// Create enhanced repository optimized for conversation operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Conversation](db, tableName, logger, costService, "ConversationRepository", "conversation")
-	
+
 	// Set up enhanced services for conversation operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Conversations cached for message threading
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for conversation events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for conversation events
+
 	return &ConversationRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

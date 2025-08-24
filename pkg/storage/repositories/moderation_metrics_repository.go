@@ -79,25 +79,25 @@ func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsReposi
 	metricsRepo.SetPermissionService(NewDefaultPermissionService())
 	metricsRepo.SetCachingService(NewInMemoryCachingService())
 	metricsRepo.SetEventService(NewDefaultEventService())
-	
+
 	falsePositiveRepo := NewEnhancedBaseRepository[*models.ModerationFalsePositive](db, tableName, logger, costService, "ModerationFalsePositiveRepository", "moderationfalsepositive")
 	falsePositiveRepo.SetValidationService(NewDefaultValidationService())
 	falsePositiveRepo.SetPermissionService(NewDefaultPermissionService())
 	falsePositiveRepo.SetCachingService(NewInMemoryCachingService())
 	falsePositiveRepo.SetEventService(NewDefaultEventService())
-	
+
 	decisionSampleRepo := NewEnhancedBaseRepository[*models.ModerationDecisionSample](db, tableName, logger, costService, "ModerationDecisionSampleRepository", "moderationdecisionsample")
 	decisionSampleRepo.SetValidationService(NewDefaultValidationService())
 	decisionSampleRepo.SetPermissionService(NewDefaultPermissionService())
 	decisionSampleRepo.SetCachingService(NewInMemoryCachingService())
 	decisionSampleRepo.SetEventService(NewDefaultEventService())
-	
+
 	patternStatsRepo := NewEnhancedBaseRepository[*models.ModerationPatternStats](db, tableName, logger, costService, "ModerationPatternStatsRepository", "moderationpatternstats")
 	patternStatsRepo.SetValidationService(NewDefaultValidationService())
 	patternStatsRepo.SetPermissionService(NewDefaultPermissionService())
 	patternStatsRepo.SetCachingService(NewInMemoryCachingService())
 	patternStatsRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &moderationMetricsRepository{
 		EnhancedBaseRepository: metricsRepo,
 		falsePositiveRepo:      falsePositiveRepo,

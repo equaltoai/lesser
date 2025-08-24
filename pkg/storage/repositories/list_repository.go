@@ -26,13 +26,13 @@ type ListRepository struct {
 func NewListRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ListRepository {
 	// Create enhanced repository optimized for list operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.List](db, tableName, logger, costService, "ListRepository", "list")
-	
+
 	// Set up enhanced services for list operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Lists cached for timeline performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for list events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for list events
+
 	return &ListRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		memberRepo: NewEnhancedBaseRepository[*models.ListMember](
@@ -64,7 +64,7 @@ func (r *ListRepository) CreateList(ctx context.Context, list *models.List) erro
 			zap.Error(err))
 		return err
 	}
-	
+
 	return nil
 }
 

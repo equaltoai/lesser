@@ -22,13 +22,13 @@ type TimelineRepository struct {
 func NewTimelineRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *TimelineRepository {
 	// Create enhanced repository optimized for timeline operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Timeline](db, tableName, logger, costService, "TimelineRepository", "timeline")
-	
+
 	// Set up enhanced services for timeline operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Timeline entries cached for fast retrieval
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for timeline update events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for timeline update events
+
 	return &TimelineRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -48,7 +48,7 @@ func (r *TimelineRepository) CreateTimelineEntry(ctx context.Context, entry *mod
 			zap.Error(err))
 		return err
 	}
-	
+
 	return nil
 }
 

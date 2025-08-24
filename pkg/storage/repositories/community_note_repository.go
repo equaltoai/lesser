@@ -25,18 +25,17 @@ type CommunityNoteRepository struct {
 func NewCommunityNoteRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *CommunityNoteRepository {
 	// Create enhanced repository optimized for community note operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.CommunityNote](db, tableName, logger, costService, "CommunityNoteRepository", "community_note")
-	
+
 	// Set up enhanced services for community moderation
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Community moderation permissions
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache community notes for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Community moderation events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Cache community notes for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Community moderation events
+
 	return &CommunityNoteRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
 }
-
 
 // GetUserVotingHistory retrieves a user's voting history for reputation calculation - COMMUNITY NOTES BUSINESS LOGIC
 func (r *CommunityNoteRepository) GetUserVotingHistory(ctx context.Context, userID string, limit int) ([]*storage.CommunityNoteVote, error) {

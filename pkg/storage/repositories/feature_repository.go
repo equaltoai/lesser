@@ -53,13 +53,13 @@ type FeatureRepository struct {
 func NewFeatureRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *FeatureRepository {
 	// Create enhanced repository optimized for feature flag operations
 	enhancedRepo := NewEnhancedBaseRepository[*Feature](db, tableName, logger, costService, "FeatureRepository", "feature")
-	
+
 	// Set up enhanced services for feature flag operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &FeatureRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

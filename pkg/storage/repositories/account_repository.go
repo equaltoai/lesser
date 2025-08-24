@@ -42,7 +42,7 @@ type AccountRepository struct {
 func NewAccountRepository(db core.DB, tableName string, domain string, logger *zap.Logger) *AccountRepository {
 	// Use enhanced base repository with validation and permissions
 	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, nil, "AccountRepository", "account")
-	
+
 	// Set up default services
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
@@ -62,7 +62,7 @@ func NewAccountRepository(db core.DB, tableName string, domain string, logger *z
 func NewAccountRepositoryWithCostTracking(db core.DB, tableName string, domain string, logger *zap.Logger, costService *cost.TrackingService) *AccountRepository {
 	// Use enhanced base repository with full service integration
 	enhancedRepo := NewEnhancedBaseRepository[*models.User](db, tableName, logger, costService, "AccountRepository", "account")
-	
+
 	// Set up enhanced services
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
@@ -156,22 +156,22 @@ func (r *AccountRepository) setUserDefaults(userModel *models.User) {
 	}
 }
 
-// createActorWithRollback creates an actor with automatic user rollback on failure  
+// createActorWithRollback creates an actor with automatic user rollback on failure
 func (r *AccountRepository) createActorWithRollback(ctx context.Context, actor interface{}, userModel *models.User) error {
 	// Generate a default private key if none provided
 	privateKey := "" // In real implementation, you'd generate a key
-	
+
 	// Type assert the actor to the expected type
 	actorPtr, ok := actor.(*activitypub.Actor)
 	if !ok {
 		return common.ValidationError{Field: "actor", Message: "invalid actor type"}
 	}
-	
+
 	if err := r.createActor(ctx, actorPtr, privateKey); err != nil {
 		// Enhanced rollback with proper validation and event emission
 		pk := fmt.Sprintf("USER#%s", userModel.Username)
 		if delErr := r.ValidateAndDelete(ctx, pk, models.SKMetadata); delErr != nil {
-			r.logger.Warn("failed to rollback user creation after actor failure", 
+			r.logger.Warn("failed to rollback user creation after actor failure",
 				zap.Error(delErr),
 				zap.String("username", userModel.Username))
 		}
@@ -758,8 +758,8 @@ func (r *AccountRepository) SuspendAccount(ctx context.Context, username string,
 // UnsuspendAccount removes suspension from a user account
 func (r *AccountRepository) UnsuspendAccount(ctx context.Context, username string) error {
 	updates := map[string]interface{}{
-		"suspended": false,
-		"suspension_reason":    "",
+		"suspended":         false,
+		"suspension_reason": "",
 	}
 	return r.UpdateUser(ctx, username, updates)
 }
@@ -836,13 +836,13 @@ func (r *AccountRepository) UpdateAccount(ctx context.Context, account *storage.
 
 	// Convert storage.User to updates map
 	updates := map[string]interface{}{
-		"email":     account.User.Email,
-		"display_name":         account.User.DisplayName,
-		"approved":             account.User.Approved,
-		"suspended": account.User.Suspended,
-		"silenced":             account.User.Silenced,
-		"role":                 account.User.Role,
-		"locale":               account.User.Locale,
+		"email":        account.User.Email,
+		"display_name": account.User.DisplayName,
+		"approved":     account.User.Approved,
+		"suspended":    account.User.Suspended,
+		"silenced":     account.User.Silenced,
+		"role":         account.User.Role,
+		"locale":       account.User.Locale,
 	}
 
 	// Only include password_hash if it's not empty

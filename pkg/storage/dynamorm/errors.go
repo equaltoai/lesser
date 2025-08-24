@@ -137,7 +137,7 @@ func MapErrorWithContext(err error, context string) error {
 	if appErr, ok := mappedErr.(*errors.AppError); ok {
 		return appErr.WithMetadata("context", context)
 	}
-	
+
 	return errors.NewStorageInternalError(errors.CodeInternal, context, mappedErr)
 }
 
@@ -210,7 +210,7 @@ func NewDetailedError(err error, operation, entityType, entityID, context string
 		WithMetadata("entity_type", entityType).
 		WithMetadata("entity_id", entityID).
 		WithMetadata("context", context)
-	
+
 	return appErr
 }
 

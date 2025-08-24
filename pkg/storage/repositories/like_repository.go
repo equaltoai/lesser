@@ -23,13 +23,13 @@ type LikeRepository struct {
 func NewLikeRepository(db core.DB, tableName string, logger *zap.Logger) *LikeRepository {
 	// Create enhanced repository optimized for like operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Like](db, tableName, logger, nil, "LikeRepository", "like")
-	
+
 	// Set up enhanced services for like operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Likes are frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for notifications
+
 	return &LikeRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -39,13 +39,13 @@ func NewLikeRepository(db core.DB, tableName string, logger *zap.Logger) *LikeRe
 func NewLikeRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *LikeRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.Like](db, tableName, logger, costService, "LikeRepository", "like")
-	
+
 	// Set up enhanced services for like operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Likes are frequently checked
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for notifications
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for notifications
+
 	return &LikeRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

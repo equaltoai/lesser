@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/pay-theory/lift/pkg/lift"
 	liftErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/pay-theory/lift/pkg/lift"
 )
 
 // Base error constants - convert to centralized system

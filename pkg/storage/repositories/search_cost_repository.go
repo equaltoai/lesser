@@ -26,13 +26,13 @@ type SearchCostRepository struct {
 func NewSearchCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *SearchCostRepository {
 	// Create enhanced repository optimized for search cost operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.SearchCostTracking](db, tableName, logger, costService, "SearchCostRepository", "searchcost")
-	
+
 	// Set up enhanced services for search cost operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for cost monitoring
+
 	return &SearchCostRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

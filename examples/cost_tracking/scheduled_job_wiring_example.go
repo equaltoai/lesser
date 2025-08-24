@@ -5,10 +5,10 @@ package examples
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/cost"
-	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"

@@ -2,8 +2,9 @@ package models
 
 import (
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // ConversationMute represents a muted conversation thread in DynamoDB

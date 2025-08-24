@@ -27,13 +27,13 @@ type RelayRepository struct {
 func NewRelayRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RelayRepository {
 	// Create enhanced repository optimized for relay operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Relay](db, tableName, logger, costService, "RelayRepository", "relay")
-	
+
 	// Set up enhanced services for relay operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Relay data cached for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &RelayRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -2,8 +2,9 @@ package models
 
 import (
 	"fmt"
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // TimelineEntry represents an entry in a user's timeline stored in DynamoDB

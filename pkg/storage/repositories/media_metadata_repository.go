@@ -23,13 +23,13 @@ type MediaMetadataRepository struct {
 func NewMediaMetadataRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaMetadataRepository {
 	// Create enhanced repository for media metadata operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.MediaMetadata](db, tableName, logger, costService, "MediaMetadataRepository", "media_metadata")
-	
+
 	// Set up enhanced services for media metadata operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache media metadata for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &MediaMetadataRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

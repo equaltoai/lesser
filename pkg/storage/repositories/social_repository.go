@@ -36,33 +36,33 @@ func NewSocialRepository(db core.DB, tableName string, logger *zap.Logger, costS
 	blockRepo := NewEnhancedBaseRepository[*models.Block](db, tableName, logger, costService, "SocialRepository.Block", "block")
 	blockRepo.SetValidationService(NewDefaultValidationService())
 	blockRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for moderation
-	blockRepo.SetCachingService(NewInMemoryCachingService()) // Block status checked frequently
-	blockRepo.SetEventService(NewDefaultEventService()) // Important for moderation events
-	
+	blockRepo.SetCachingService(NewInMemoryCachingService())      // Block status checked frequently
+	blockRepo.SetEventService(NewDefaultEventService())           // Important for moderation events
+
 	muteRepo := NewEnhancedBaseRepository[*models.Mute](db, tableName, logger, costService, "SocialRepository.Mute", "mute")
 	muteRepo.SetValidationService(NewDefaultValidationService())
 	muteRepo.SetPermissionService(NewDefaultPermissionService())
 	muteRepo.SetCachingService(NewInMemoryCachingService()) // Mute status checked frequently
 	muteRepo.SetEventService(NewDefaultEventService())
-	
+
 	announceRepo := NewEnhancedBaseRepository[*models.Announce](db, tableName, logger, costService, "SocialRepository.Announce", "announce")
 	announceRepo.SetValidationService(NewDefaultValidationService())
 	announceRepo.SetPermissionService(NewDefaultPermissionService())
 	announceRepo.SetCachingService(NewInMemoryCachingService()) // Announce status cached
-	announceRepo.SetEventService(NewDefaultEventService()) // Federation events
-	
+	announceRepo.SetEventService(NewDefaultEventService())      // Federation events
+
 	accountPinRepo := NewEnhancedBaseRepository[*models.AccountPin](db, tableName, logger, costService, "SocialRepository.AccountPin", "account_pin")
 	accountPinRepo.SetValidationService(NewDefaultValidationService())
 	accountPinRepo.SetPermissionService(NewDefaultPermissionService()) // User owns their pins
-	accountPinRepo.SetCachingService(NewInMemoryCachingService()) // Pin status cached
+	accountPinRepo.SetCachingService(NewInMemoryCachingService())      // Pin status cached
 	accountPinRepo.SetEventService(NewDefaultEventService())
-	
+
 	accountNoteRepo := NewEnhancedBaseRepository[*models.AccountNote](db, tableName, logger, costService, "SocialRepository.AccountNote", "account_note")
 	accountNoteRepo.SetValidationService(NewDefaultValidationService())
 	accountNoteRepo.SetPermissionService(NewDefaultPermissionService()) // Private notes
 	accountNoteRepo.SetCachingService(NewInMemoryCachingService())
 	accountNoteRepo.SetEventService(NewDefaultEventService())
-	
+
 	statusPinRepo := NewEnhancedBaseRepository[*models.StatusPin](db, tableName, logger, costService, "SocialRepository.StatusPin", "status_pin")
 	statusPinRepo.SetValidationService(NewDefaultValidationService())
 	statusPinRepo.SetPermissionService(NewDefaultPermissionService()) // User owns their pins

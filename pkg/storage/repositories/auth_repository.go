@@ -27,13 +27,13 @@ type AuthRepository struct {
 func NewAuthRepository(db core.DB, tableName string, logger *zap.Logger) *AuthRepository {
 	// Create enhanced repository optimized for auth operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.WebAuthnCredential](db, tableName, logger, nil, "AuthRepository", "webauthn_credential")
-	
+
 	// Set up enhanced services for auth operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for security
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Auth credentials cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for security events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Auth credentials cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for security events
+
 	return &AuthRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}
@@ -43,13 +43,13 @@ func NewAuthRepository(db core.DB, tableName string, logger *zap.Logger) *AuthRe
 func NewAuthRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AuthRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.WebAuthnCredential](db, tableName, logger, costService, "AuthRepository", "webauthn_credential")
-	
+
 	// Set up enhanced services for auth operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Critical for security
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Auth credentials cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for security events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Auth credentials cached for performance
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for security events
+
 	return &AuthRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		costService:            costService,

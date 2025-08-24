@@ -41,14 +41,14 @@ func NewStreamingConnectionRepository(db core.DB, tableName string, subscription
 	connectionRepo.SetPermissionService(NewDefaultPermissionService())
 	connectionRepo.SetCachingService(NewInMemoryCachingService()) // Connections cached for real-time performance
 	connectionRepo.SetEventService(NewDefaultEventService())
-	
+
 	// Create enhanced repository for subscriptions
 	subscriptionRepo := NewEnhancedBaseRepository[*models.WebSocketSubscription](subscriptionDB, subscriptionTable, logger, costService, "WebSocketSubscriptionRepository", "websocketsubscription")
 	subscriptionRepo.SetValidationService(NewDefaultValidationService())
 	subscriptionRepo.SetPermissionService(NewDefaultPermissionService())
 	subscriptionRepo.SetCachingService(NewInMemoryCachingService())
 	subscriptionRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &StreamingConnectionRepository{
 		EnhancedBaseRepository: connectionRepo,
 		subscriptionRepo:       subscriptionRepo,

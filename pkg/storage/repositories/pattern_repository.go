@@ -21,13 +21,13 @@ type PatternRepository struct {
 func NewPatternRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PatternRepository {
 	// Create enhanced repository optimized for moderation patterns
 	enhancedRepo := NewEnhancedBaseRepository[*models.ModerationPattern](db, tableName, logger, costService, "PatternRepository", "pattern")
-	
+
 	// Set up enhanced services for pattern operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Patterns cached for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Pattern change events
-	
+
 	return &PatternRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

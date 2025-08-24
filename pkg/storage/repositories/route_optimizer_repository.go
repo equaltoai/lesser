@@ -28,7 +28,7 @@ type RouteOptimizerRepository struct {
 func NewRouteOptimizerRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *RouteOptimizerRepository {
 	// Create enhanced repository optimized for route optimization operations
 	baseRepo := NewEnhancedBaseRepository[*models.RouteDeliveryResult](db, tableName, logger, costService, "RouteOptimizerRepository", "route_optimizer")
-	
+
 	// Set up enhanced services for route optimization operations
 	baseRepo.SetValidationService(NewDefaultValidationService())
 	baseRepo.SetPermissionService(NewDefaultPermissionService())

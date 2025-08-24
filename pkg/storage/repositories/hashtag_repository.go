@@ -142,13 +142,13 @@ func NewHashtagRepository(db core.DB, tableName string, logger *zap.Logger, doma
 
 	// Create enhanced repository optimized for hashtag operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Hashtag](db, tableName, logger, nil, "HashtagRepository", "hashtag")
-	
+
 	// Set up enhanced services for hashtag operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Hashtags cached for trending performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for trending and discovery events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for trending and discovery events
+
 	return &HashtagRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		domain:                 domain,

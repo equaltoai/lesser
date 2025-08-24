@@ -56,12 +56,12 @@ func NewTrendingRepository(db core.DB, logger *zap.Logger, costService *cost.Tra
 		"TrendingRepository",
 		"trending",
 	)
-	
+
 	// Set up enhanced services for trending operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Trending data heavily cached
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for trend tracking
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for trend tracking
 
 	return &TrendingRepository{
 		EnhancedBaseRepository: enhancedRepo,

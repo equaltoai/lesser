@@ -23,13 +23,13 @@ type ScheduledJobCostRepository struct {
 func NewScheduledJobCostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *ScheduledJobCostRepository {
 	// Create enhanced repository optimized for scheduled job cost operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.ScheduledJobCostRecord](db, tableName, logger, costService, "ScheduledJobCostRepository", "scheduledjobcost")
-	
+
 	// Set up enhanced services for scheduled job cost operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cost data cached for analytics
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for job cost monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for job cost monitoring
+
 	return &ScheduledJobCostRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		logger:                 logger,

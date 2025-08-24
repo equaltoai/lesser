@@ -26,20 +26,20 @@ type PushSubscriptionRepository struct {
 func NewPushSubscriptionRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PushSubscriptionRepository {
 	// Create enhanced repository for push subscription operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.PushSubscription](db, tableName, logger, costService, "PushSubscriptionRepository", "push_subscription")
-	
+
 	// Set up enhanced services for push subscription operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Cache push subscriptions for performance
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	// Create enhanced VAPID repo
 	vapidRepo := NewEnhancedBaseRepository[*models.VAPIDKeyRecord](db, tableName, logger, costService, "VAPIDRepository", "vapid_keys")
 	vapidRepo.SetValidationService(NewDefaultValidationService())
 	vapidRepo.SetPermissionService(NewDefaultPermissionService())
 	vapidRepo.SetCachingService(NewInMemoryCachingService())
 	vapidRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &PushSubscriptionRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		vapidRepo:              vapidRepo,

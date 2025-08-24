@@ -28,13 +28,13 @@ type StatusRepository struct {
 func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StatusRepository {
 	// Create enhanced repository with cost tracking and full service integration
 	enhancedRepo := NewEnhancedBaseRepository[*models.Status](db, tableName, logger, costService, "StatusRepository", "status")
-	
+
 	// Set up enhanced services for status operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService())
 	enhancedRepo.SetEventService(NewDefaultEventService())
-	
+
 	return &StatusRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

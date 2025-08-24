@@ -21,13 +21,13 @@ type PublicKeyCacheRepository struct {
 func NewPublicKeyCacheRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *PublicKeyCacheRepository {
 	// Create enhanced repository optimized for public key cache operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.PublicKeyCache](db, tableName, logger, costService, "PublicKeyCacheRepository", "public_key_cache")
-	
+
 	// Set up enhanced services for public key cache operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Keys cached in memory
 	enhancedRepo.SetEventService(NewDefaultEventService())      // Key cache events
-	
+
 	return &PublicKeyCacheRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

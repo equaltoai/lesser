@@ -30,13 +30,13 @@ type InstanceRepository struct {
 func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *InstanceRepository {
 	// Create enhanced repository optimized for instance operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.InstanceConfig](db, tableName, logger, nil, "InstanceRepository", "instance_config")
-	
+
 	// Set up enhanced services for instance operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only instance config
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Instance config cached heavily
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for instance change events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Instance config cached heavily
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for instance change events
+
 	return &InstanceRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		historyRepo:            NewBaseRepository[*models.InstanceHistory](db, tableName, logger),
@@ -50,13 +50,13 @@ func NewInstanceRepository(db core.DB, tableName string, logger *zap.Logger) *In
 func NewInstanceRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *InstanceRepository {
 	// Create enhanced repository with cost tracking
 	enhancedRepo := NewEnhancedBaseRepository[*models.InstanceConfig](db, tableName, logger, costService, "InstanceRepository", "instance_config")
-	
+
 	// Set up enhanced services for instance operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService()) // Admin-only instance config
-	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Instance config cached heavily
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for instance change events
-	
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())      // Instance config cached heavily
+	enhancedRepo.SetEventService(NewDefaultEventService())           // Important for instance change events
+
 	return &InstanceRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		historyRepo:            NewBaseRepositoryWithCostTracking[*models.InstanceHistory](db, tableName, logger, costService, "instance_history"),

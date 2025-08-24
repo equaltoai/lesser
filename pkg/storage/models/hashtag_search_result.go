@@ -1,8 +1,9 @@
 package models
 
 import (
-	"github.com/equaltoai/lesser/pkg/common"
 	"time"
+
+	"github.com/equaltoai/lesser/pkg/common"
 )
 
 // HashtagSearchResult represents a hashtag search result

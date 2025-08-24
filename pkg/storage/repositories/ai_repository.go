@@ -24,13 +24,13 @@ type AIRepository struct {
 func NewAIRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AIRepository {
 	// Create enhanced repository optimized for AI operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.AIAnalysis](db, tableName, logger, costService, "AIRepository", "ai")
-	
+
 	// Set up enhanced services for AI operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // AI analyses cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for AI usage tracking
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for AI usage tracking
+
 	return &AIRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

@@ -9,19 +9,21 @@ import (
 	"context"
 	"fmt"
 	"time"
+
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/equaltoai/lesser/pkg/ai"
+	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/config"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	aiService "github.com/equaltoai/lesser/pkg/services/ai"
+	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
+	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
-	"github.com/equaltoai/lesser/pkg/ai"
-	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
-	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
-	"github.com/equaltoai/lesser/pkg/storage/dynamorm/stream"
-	"github.com/equaltoai/lesser/pkg/common"
-	"github.com/equaltoai/lesser/pkg/config"
-	aiService "github.com/equaltoai/lesser/pkg/services/ai"
 )
+
 // AIProcessor handles AI-based content analysis for posts and media in the system.
 // It integrates with AWS Bedrock to perform toxicity detection, spam filtering,
 // and automated moderation decisions based on configurable thresholds.

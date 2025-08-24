@@ -23,13 +23,13 @@ type AICostRepository struct {
 func NewAICostRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *AICostRepository {
 	// Create enhanced repository optimized for AI cost operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.AICost](db, tableName, logger, costService, "AICostRepository", "aicost")
-	
+
 	// Set up enhanced services for AI cost operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // AI cost data cached for analytics
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Critical for cost monitoring
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Critical for cost monitoring
+
 	return &AICostRepository{
 		EnhancedBaseRepository: enhancedRepo,
 	}

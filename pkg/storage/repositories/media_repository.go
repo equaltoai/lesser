@@ -32,13 +32,13 @@ type MediaRepository struct {
 func NewMediaRepository(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *MediaRepository {
 	// Create enhanced repository optimized for media operations
 	enhancedRepo := NewEnhancedBaseRepository[*models.Media](db, tableName, logger, costService, "MediaRepository", "media")
-	
+
 	// Set up enhanced services for media operations
 	enhancedRepo.SetValidationService(NewDefaultValidationService())
 	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
 	enhancedRepo.SetCachingService(NewInMemoryCachingService()) // Media metadata cached for performance
-	enhancedRepo.SetEventService(NewDefaultEventService()) // Important for media processing events
-	
+	enhancedRepo.SetEventService(NewDefaultEventService())      // Important for media processing events
+
 	return &MediaRepository{
 		EnhancedBaseRepository: enhancedRepo,
 		deps:                   make(map[string]interface{}),
