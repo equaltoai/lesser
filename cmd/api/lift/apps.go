@@ -163,7 +163,7 @@ func (h *Handler) parseMultipartFormRequest(body, contentType string) (models.Ap
 	params, err := common.ParseMultipartForm(body, contentType)
 	if err != nil {
 		h.logger.Error("failed to parse multipart form", zap.Error(err))
-		return models.AppRegistrationRequest{}, errors.Join(ErrFailedToParseMultipartForm, err)
+		return models.AppRegistrationRequest{}, errors.Join(failedToParseMultipartForm(), err)
 	}
 
 	return h.buildRequestFromParams(params)
@@ -174,7 +174,7 @@ func (h *Handler) parseFormURLEncodedRequest(body string) (models.AppRegistratio
 	params, err := common.ParseFormURLEncoded(body)
 	if err != nil {
 		h.logger.Error("failed to parse form data", zap.Error(err))
-		return models.AppRegistrationRequest{}, errors.Join(ErrFailedToParseFormData, err)
+		return models.AppRegistrationRequest{}, errors.Join(failedToParseFormData(), err)
 	}
 
 	// Log parsed params for debugging
@@ -208,7 +208,7 @@ func (h *Handler) parseFallbackRequest(ctx *lift.Context, body string) (models.A
 	h.logger.Error("failed to parse request body",
 		zap.Error(formErr),
 		zap.String("body_preview", truncateStringLift(body, 200)))
-	return models.AppRegistrationRequest{}, ErrUnableToParseRequestBodyAsFormOrJSON
+	return models.AppRegistrationRequest{}, unableToParseRequestBodyAsFormOrJSON()
 }
 
 // buildRequestFromParams builds AppRegistrationRequest from parsed parameters
@@ -313,7 +313,7 @@ func (h *Handler) validateSingleRedirectURI(ctx *lift.Context, uri string) error
 	if !strings.Contains(uri, ":") {
 		h.logger.Info("validation failed: invalid redirect_uri format",
 			zap.String("uri", uri))
-		return h.respondUnprocessableEntity(ctx, ErrInvalidRedirectURIFormat.Error())
+		return h.respondUnprocessableEntity(ctx, invalidRedirectURIFormat().Error())
 	}
 
 	return nil

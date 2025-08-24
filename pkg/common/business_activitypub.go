@@ -94,7 +94,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 	if len(rules.BlockedDomains) > 0 {
 		for _, blocked := range rules.BlockedDomains {
 			if strings.Contains(domain, blocked) {
-				return fmt.Errorf("%w: %s", ErrActorDomainBlocked, domain)
+				return fmt.Errorf("actor domain is blocked: %s", domain)
 			}
 		}
 	}
@@ -108,7 +108,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 			}
 		}
 		if !allowed {
-			return fmt.Errorf("%w: %s", ErrActorDomainNotAllowed, domain)
+			return fmt.Errorf("actor domain not in allowed list: %s", domain)
 		}
 	}
 
@@ -130,7 +130,7 @@ func ValidateActivityType(activityType string, rules ActivityPubValidationRules)
 				return nil
 			}
 		}
-		return fmt.Errorf("%w: %s", ErrUnsupportedActivityType, activityType)
+		return fmt.Errorf("unsupported activity type: %s", activityType)
 	}
 
 	// Default allowed activity types
@@ -145,7 +145,7 @@ func ValidateActivityType(activityType string, rules ActivityPubValidationRules)
 		}
 	}
 
-	return fmt.Errorf("%w: %s", ErrUnsupportedActivityType, activityType)
+	return fmt.Errorf("unsupported activity type: %s", activityType)
 }
 
 // 3. Object ID Generation Pattern

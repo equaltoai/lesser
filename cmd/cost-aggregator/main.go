@@ -4,10 +4,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
@@ -20,6 +18,7 @@ import (
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	awsInit "github.com/equaltoai/lesser/pkg/aws"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -477,7 +476,7 @@ func (ca *CostAggregator) aggregateCosts(ctx context.Context, operationType, per
 
 	// Use repository's aggregation method
 	if err := ca.costTrackingRepository.Aggregate(ctx, operationType, period, startTime, endTime); err != nil {
-		return errors.Join(ErrAggregationFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to aggregate costs")
 	}
 
 	// Get the aggregated data to log summary
@@ -614,7 +613,7 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 
 	messageJSON, err := json.Marshal(message)
 	if err != nil {
-		return errors.Join(ErrSNSMessageMarshal, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to marshal SNS message")
 	}
 
 	// Send SNS message
@@ -637,7 +636,7 @@ func (ca *CostAggregator) sendSNSAlert(ctx context.Context, alert CostAlert) err
 
 	result, err := ca.awsServices.SNS.Publish(ctx, input)
 	if err != nil {
-		return errors.Join(ErrSNSPublish, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to publish SNS message")
 	}
 
 	ca.logger.Info("SNS alert sent successfully",
@@ -693,7 +692,7 @@ func (ca *CostAggregator) putCloudWatchMetric(ctx context.Context, alert CostAle
 
 	_, err := ca.awsServices.CloudWatch.PutMetricData(ctx, input)
 	if err != nil {
-		return errors.Join(ErrCloudWatchMetric, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to put CloudWatch metric")
 	}
 
 	ca.logger.Info("CloudWatch metrics published",
@@ -724,7 +723,7 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 	// Prepare the event payload
 	eventPayload, err := json.Marshal(event)
 	if err != nil {
-		return errors.Join(ErrEventMarshal, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to marshal aggregation event")
 	}
 
 	// Option 1: Use SQS for async processing (preferred for resilience)
@@ -774,13 +773,13 @@ func (ca *CostAggregator) triggerAggregation(ctx context.Context, event Aggregat
 		ca.logger.Error("lambda invocation failed after SQS failure",
 			zap.Error(err),
 			zap.NamedError("sqs_error", sqsErr))
-		return errors.Join(ErrLambdaInvoke, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to invoke lambda and send SQS message")
 	}
 
 	if lambdaResult.FunctionError != nil {
 		ca.logger.Error("lambda function execution error",
 			zap.String("function_error", *lambdaResult.FunctionError))
-		return ErrLambdaFunctionError
+		return pkgErrors.CostAggregatorLambdaFunctionError()
 	}
 
 	ca.logger.Info("Successfully triggered cost aggregation via direct Lambda invocation",

@@ -28,6 +28,7 @@ import (
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -220,7 +221,7 @@ func (sh *StreamingHandler) HandleWebSocketEvent(ctx *lift.Context) error {
 		return sh.handleMessage(ctx.Request.Context(), event)
 	default:
 		logger.Warn("unknown route key", zap.String("routeKey", event.RequestContext.RouteKey))
-		return lift.NewLiftError("UNKNOWN_ROUTE", ErrUnknownRoute.Error(), 400)
+		return lift.NewLiftError("UNKNOWN_ROUTE", pkgErrors.StreamingUnknownRoute().Error(), 400)
 	}
 }
 
@@ -353,14 +354,14 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 	var message StreamMessage
 	if err := common.ParseRequestBody([]byte(event.Body), &message); err != nil {
 		logger.Error("failed to parse message", zap.Error(err))
-		return sh.sendError(event.RequestContext.ConnectionID, ErrInvalidMessageFormat.Error())
+		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingInvalidMessageFormat().Error())
 	}
 
 	// Get connection details using DynamORM repository
 	connection, err := sh.connectionRepo.GetConnection(ctx, event.RequestContext.ConnectionID)
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
-		return sh.sendError(event.RequestContext.ConnectionID, ErrConnectionNotFound.Error())
+		return sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingConnectionNotFound().Error())
 	}
 
 	// Update last activity
@@ -381,7 +382,7 @@ func (sh *StreamingHandler) handleMessage(ctx context.Context, event events.APIG
 		err = sh.handleCommand(ctx, connection, message)
 	default:
 		logger.Warn("unknown message type", zap.String("type", message.Type))
-		err = sh.sendError(event.RequestContext.ConnectionID, ErrUnknownMessageType.Error())
+		err = sh.sendError(event.RequestContext.ConnectionID, pkgErrors.StreamingUnknownMessageType().Error())
 	}
 
 	// Track message processing cost
@@ -436,7 +437,7 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 
 	if !isValid {
 		logger.Error("invalid stream name", zap.String("stream", message.Stream))
-		return sh.sendError(connection.ConnectionID, ErrInvalidStream.Error())
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingInvalidStream().Error())
 	}
 
 	// Check authorization for stream
@@ -445,7 +446,7 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 		// These streams require authentication
 		if err := common.ValidateRequiredParam("user_id", connection.UserID); err != nil {
 			logger.Error("authentication required for stream", zap.String("stream", message.Stream))
-			return sh.sendError(connection.ConnectionID, ErrAuthenticationRequired.Error())
+			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingAuthenticationRequired().Error())
 		}
 	}
 
@@ -454,14 +455,14 @@ func (sh *StreamingHandler) handleSubscribe(ctx context.Context, connection *mod
 		connection.Streams = append(connection.Streams, message.Stream)
 		if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
 			logger.Error("failed to update connection streams", zap.Error(err))
-			return sh.sendError(connection.ConnectionID, ErrFailedToSubscribe.Error())
+			return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
 		}
 	}
 
 	// Store subscription using DynamORM repository
 	if err := sh.connectionRepo.WriteSubscription(ctx, connection.ConnectionID, connection.UserID, message.Stream); err != nil {
 		logger.Error("failed to write subscription", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, ErrFailedToSubscribe.Error())
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToSubscribe().Error())
 	}
 
 	// Send confirmation
@@ -500,7 +501,7 @@ func (sh *StreamingHandler) handleUnsubscribe(ctx context.Context, connection *m
 
 	if err := sh.connectionRepo.UpdateConnection(ctx, connection); err != nil {
 		logger.Error("failed to update connection streams", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, ErrFailedToUnsubscribe.Error())
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingFailedToUnsubscribe().Error())
 	}
 
 	// Remove subscription using DynamORM repository
@@ -554,7 +555,7 @@ func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *model
 	command, err := sh.parseCommand(message)
 	if err != nil {
 		logger.Error("failed to parse command", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, ErrInvalidCommandFormat.Error())
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingInvalidCommandFormat().Error())
 	}
 
 	// Create connection info for the command handler
@@ -570,7 +571,7 @@ func (sh *StreamingHandler) handleCommand(ctx context.Context, connection *model
 	response, err := sh.commandRouter.HandleCommand(ctx, connInfo, command)
 	if err != nil {
 		logger.Error("command execution failed", zap.Error(err))
-		return sh.sendError(connection.ConnectionID, ErrCommandExecutionFailed.Error())
+		return sh.sendError(connection.ConnectionID, pkgErrors.StreamingCommandExecutionFailed().Error())
 	}
 
 	// Send the response back to the client

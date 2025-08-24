@@ -192,7 +192,7 @@ func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearc
 				zap.Bool("following", params.followingOnly),
 				zap.String("searcher", authenticatedUser),
 				zap.Error(err))
-			return nil, errors.Join(ErrPrivacyAwareSearchFailed, err)
+			return nil, errors.Join(privacyAwareSearchFailed(), err)
 		}
 		return actors, nil
 	}
@@ -206,7 +206,7 @@ func (h *Handler) performAccountSearch(ctx context.Context, params *accountSearc
 			zap.Int("offset", params.offset),
 			zap.Bool("following", params.followingOnly),
 			zap.Error(err))
-		return nil, errors.Join(ErrSearchFailed, err)
+		return nil, errors.Join(searchFailed(), err)
 	}
 	return actors, nil
 }
@@ -453,7 +453,7 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 				zap.Int("limit", params.limit),
 				zap.String("searcher", authenticatedUser),
 				zap.Error(err))
-			return nil, errors.Join(ErrPrivacyAwareStatusSearchFailed, err)
+			return nil, errors.Join(privacyAwareStatusSearchFailed(), err)
 		}
 
 		// Convert pointer slice to value slice
@@ -473,7 +473,7 @@ func (h *Handler) performStatusSearch(ctx context.Context, params *statusSearchP
 			zap.String("query", params.query),
 			zap.Int("limit", params.limit),
 			zap.Error(err))
-		return nil, errors.Join(ErrStatusSearchFailed, err)
+		return nil, errors.Join(statusSearchFailed(), err)
 	}
 
 	// Convert pointer slice to value slice

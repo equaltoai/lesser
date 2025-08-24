@@ -1,56 +1,151 @@
 package main
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for stream-router
-var (
-	// Connection and subscription errors
-	ErrConnectionNotFound      = errors.New("connection not found")
-	ErrWebSocketEndpointNotSet = errors.New("WEBSOCKET_ENDPOINT environment variable not set")
-	ErrHandlerNotInitialized   = errors.New("handler not initialized")
+// Stream router error functions using centralized error system
 
-	// Processing errors
-	ErrAllRecordsFailedProcessing = errors.New("all records failed processing")
-	ErrBroadcastToAllFollowers    = errors.New("failed to broadcast to all followers")
-	ErrSendToAllConnections       = errors.New("failed to send to all connections")
+// Connection and subscription errors
 
-	// Data validation errors
-	ErrNotificationMissingUsername = errors.New("notification missing recipient username")
-	ErrAccountMissingID            = errors.New("account missing ID")
-	ErrUsernameCannotBeEmpty       = errors.New("username cannot be empty")
-	ErrCouldNotExtractUsername     = errors.New("could not extract username from account ID")
+// ConnectionNotFound creates an error indicating a WebSocket connection was not found.
+func ConnectionNotFound() *errors.AppError {
+	return errors.NewLambdaError(errors.CodeNotFound, "connection not found")
+}
 
-	// Event processing errors
-	ErrUnknownEventName = errors.New("unknown event name")
+// WebSocketEndpointNotSet creates an error indicating the WEBSOCKET_ENDPOINT environment variable is not configured.
+func WebSocketEndpointNotSet() *errors.AppError {
+	return errors.EnvironmentVariableMissing("WEBSOCKET_ENDPOINT")
+}
 
-	// Stream subscription errors
-	ErrFailedToGetSubscriptionsForStream = errors.New("failed to get subscriptions for stream")
-	ErrFailedToQueryConnection           = errors.New("failed to query connection")
+// HandlerNotInitialized creates an error indicating the stream router handler has not been initialized.
+func HandlerNotInitialized() *errors.AppError {
+	return errors.ServiceInitializationFailed("stream-router handler", nil)
+}
 
-	// Event bus errors
-	ErrFailedToStartInternalEventBus = errors.New("failed to start internal event bus")
+// Processing errors
 
-	// Marshaling errors
-	ErrFailedToMarshalStatus       = errors.New("failed to marshal status")
-	ErrFailedToMarshalNotification = errors.New("failed to marshal notification")
-	ErrFailedToMarshalAccount      = errors.New("failed to marshal account")
-	ErrFailedToMarshalMessage      = errors.New("failed to marshal message")
+// AllRecordsFailedProcessing creates an error indicating all records in a batch failed processing.
+func AllRecordsFailedProcessing() *errors.AppError {
+	return errors.SQSBatchProcessingFailed(0, 0, nil).WithMetadata("reason", "all records failed")
+}
 
-	// Account payload errors
-	ErrFailedToCreateAccountPayload = errors.New("failed to create account payload")
+// BroadcastToAllFollowersFailed creates an error indicating broadcasting to all followers failed.
+func BroadcastToAllFollowersFailed() *errors.AppError {
+	return errors.StreamingEventProcessingFailed("follower_broadcast", nil)
+}
 
-	// Follower retrieval errors
-	ErrFailedToGetFollowers = errors.New("failed to get followers")
+// SendToAllConnectionsFailed creates an error indicating sending to all connections failed.
+func SendToAllConnectionsFailed() *errors.AppError {
+	return errors.StreamingEventProcessingFailed("connection_broadcast", nil)
+}
 
-	// Internal event bus publishing errors
-	ErrFailedToPublishToInternalEventBus = errors.New("failed to publish to internal event bus")
+// Data validation errors
 
-	// Repository errors
-	ErrFailedToGetSubscriptions = errors.New("failed to get subscriptions")
+// NotificationMissingUsername creates an error indicating a notification is missing the recipient username.
+func NotificationMissingUsername() *errors.AppError {
+	return errors.RequiredFieldMissing("recipient_username")
+}
 
-	// Status extraction errors
-	ErrFailedToGetStatusForHashtagExtraction = errors.New("failed to get status for hashtag extraction")
+// AccountMissingID creates an error indicating an account record is missing its ID field.
+func AccountMissingID() *errors.AppError {
+	return errors.RequiredFieldMissing("account_id")
+}
 
-	// Hashtag processing errors
-	ErrHashtagProcessingFailed = errors.New("hashtag processing failed")
-)
+// UsernameCannotBeEmpty creates an error indicating a username field cannot be empty.
+func UsernameCannotBeEmpty() *errors.AppError {
+	return errors.UsernameEmpty()
+}
+
+// CouldNotExtractUsername creates an error indicating username extraction from account ID failed.
+func CouldNotExtractUsername() *errors.AppError {
+	return errors.EventInvalid("account", "could not extract username from account ID")
+}
+
+// Event processing errors
+
+// UnknownEventName creates an error indicating an unknown event name was encountered.
+func UnknownEventName() *errors.AppError {
+	return errors.EventInvalid("stream_event", "unknown event name")
+}
+
+// Stream subscription errors
+
+// FailedToGetSubscriptionsForStream creates an error indicating retrieval of stream subscriptions failed.
+func FailedToGetSubscriptionsForStream(err error) *errors.AppError {
+	return errors.FailedToQuery("stream subscriptions", err)
+}
+
+// FailedToQueryConnection creates an error indicating querying connection details failed.
+func FailedToQueryConnection(err error) *errors.AppError {
+	return errors.FailedToQuery("connection", err)
+}
+
+// Event bus errors
+
+// FailedToStartInternalEventBus creates an error indicating the internal event bus failed to start.
+func FailedToStartInternalEventBus(err error) *errors.AppError {
+	return errors.ServiceInitializationFailed("internal event bus", err)
+}
+
+// Marshaling errors
+
+// FailedToMarshalStatus creates an error indicating status marshaling failed.
+func FailedToMarshalStatus(err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed("status", err)
+}
+
+// FailedToMarshalNotification creates an error indicating notification marshaling failed.
+func FailedToMarshalNotification(err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed("notification", err)
+}
+
+// FailedToMarshalAccount creates an error indicating account marshaling failed.
+func FailedToMarshalAccount(err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed("account", err)
+}
+
+// FailedToMarshalMessage creates an error indicating message marshaling failed.
+func FailedToMarshalMessage(err error) *errors.AppError {
+	return errors.ObjectMarshalingFailed("message", err)
+}
+
+// Account payload errors
+
+// FailedToCreateAccountPayload creates an error indicating account payload creation failed.
+func FailedToCreateAccountPayload(err error) *errors.AppError {
+	return errors.ProcessingFailed("account_payload_creation", err)
+}
+
+// Follower retrieval errors
+
+// FailedToGetFollowers creates an error indicating follower retrieval failed.
+func FailedToGetFollowers(err error) *errors.AppError {
+	return errors.FailedToGet("followers", err)
+}
+
+// Internal event bus publishing errors
+
+// FailedToPublishToInternalEventBus creates an error indicating publishing to internal event bus failed.
+func FailedToPublishToInternalEventBus(err error) *errors.AppError {
+	return errors.ProcessingFailed("internal_event_bus_publish", err)
+}
+
+// Repository errors
+
+// FailedToGetSubscriptions creates an error indicating subscription retrieval failed.
+func FailedToGetSubscriptions(err error) *errors.AppError {
+	return errors.FailedToGet("subscriptions", err)
+}
+
+// Status extraction errors
+
+// FailedToGetStatusForHashtagExtraction creates an error indicating status retrieval for hashtag extraction failed.
+func FailedToGetStatusForHashtagExtraction(err error) *errors.AppError {
+	return errors.FailedToGet("status for hashtag extraction", err)
+}
+
+// Hashtag processing errors
+
+// HashtagProcessingFailed creates an error indicating hashtag processing failed.
+func HashtagProcessingFailed(err error) *errors.AppError {
+	return errors.ProcessingFailed("hashtag", err)
+}

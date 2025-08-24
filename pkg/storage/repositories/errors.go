@@ -1,15 +1,15 @@
 package repositories
 
 import (
-	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	dynamormErrors "github.com/pay-theory/dynamorm/pkg/errors"
 )
 
 // ErrorUtils provides utilities for standardizing error handling across repositories
+// This is maintained for backward compatibility while using the centralized error system.
 type ErrorUtils struct{}
 
 // NewErrorUtils creates a new ErrorUtils instance
@@ -20,7 +20,7 @@ func NewErrorUtils() *ErrorUtils {
 // HandleNotFound converts DynamORM not found errors to domain-specific errors
 func (e *ErrorUtils) HandleNotFound(err error, entityType, identifier string) error {
 	if dynamormErrors.IsNotFound(err) {
-		return fmt.Errorf("%w: %s %s", ErrEntityNotFound, entityType, identifier)
+		return errors.ItemNotFoundWithID(entityType, identifier)
 	}
 	return err
 }
@@ -32,10 +32,10 @@ func (e *ErrorUtils) HandleGetError(err error, entityType, identifier string) er
 	}
 
 	if dynamormErrors.IsNotFound(err) {
-		return fmt.Errorf("%w: %s %s", ErrEntityNotFound, entityType, identifier)
+		return errors.ItemNotFoundWithID(entityType, identifier)
 	}
 
-	return fmt.Errorf("%w: %s: %w", ErrFailedToGet, entityType, err)
+	return errors.FailedToGet(entityType, err)
 }
 
 // HandleCreateError standardizes error handling for Create operations
@@ -45,10 +45,10 @@ func (e *ErrorUtils) HandleCreateError(err error, entityType, identifier string)
 	}
 
 	if dynamormErrors.IsConditionFailed(err) {
-		return fmt.Errorf("%w: %s %s", ErrEntityAlreadyExists, entityType, identifier)
+		return errors.ItemAlreadyExistsWithID(entityType, identifier)
 	}
 
-	return fmt.Errorf("%w: %s: %w", ErrFailedToCreate, entityType, err)
+	return errors.FailedToCreate(entityType, err)
 }
 
 // HandleUpdateError standardizes error handling for Update operations
@@ -58,10 +58,10 @@ func (e *ErrorUtils) HandleUpdateError(err error, entityType, identifier string)
 	}
 
 	if dynamormErrors.IsNotFound(err) {
-		return fmt.Errorf("%w: %s %s", ErrEntityNotFoundForUpdate, entityType, identifier)
+		return errors.ItemNotFoundWithID(entityType, identifier)
 	}
 
-	return fmt.Errorf("%w: %s: %w", ErrFailedToUpdate, entityType, err)
+	return errors.FailedToUpdate(entityType, err)
 }
 
 // HandleDeleteError standardizes error handling for Delete operations
@@ -75,7 +75,7 @@ func (e *ErrorUtils) HandleDeleteError(err error, entityType, _ string) error {
 		return nil
 	}
 
-	return fmt.Errorf("%w: %s: %w", ErrFailedToDelete, entityType, err)
+	return errors.FailedToDelete(entityType, err)
 }
 
 // HandleQueryError standardizes error handling for Query operations
@@ -84,7 +84,7 @@ func (e *ErrorUtils) HandleQueryError(err error, entityType, queryType string) e
 		return nil
 	}
 
-	return fmt.Errorf("%w: %s (%s): %w", ErrFailedToQuery, entityType, queryType, err)
+	return errors.FailedToQuery(entityType+" ("+queryType+")", err)
 }
 
 // IsConditionalCheckFailed checks if error is a conditional check failure
@@ -201,303 +201,811 @@ const (
 	EntityQuotePermissions         = "quote permissions"
 )
 
-// Account authentication-specific error constants
-var (
-	// Validation errors
-	ErrAccountValidationFailed  = errors.New("account validation failed")
-	ErrDeviceValidationFailed   = errors.New("device validation failed")
-	ErrSessionValidationFailed  = errors.New("session validation failed")
-	ErrWebAuthnValidationFailed = errors.New("WebAuthn validation failed")
-	ErrWalletValidationFailed   = errors.New("wallet validation failed")
+// Account authentication-specific errors
+// These functions replace the old error constants with centralized error system calls.
 
-	// Not found errors
-	ErrDeviceNotFound             = errors.New("device not found")
-	ErrWebAuthnCredentialNotFound = errors.New("WebAuthn credential not found")
-)
+// AccountValidationFailed creates an error indicating account validation failed.
+func AccountValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("account", "Account validation failed").
+		WithMetadata("reason", reason)
+}
 
-// Account search-specific error constants
-var (
-	// Validation errors
-	ErrAccountSearchInvalidWebfingerFormat = errors.New("invalid webfinger format")
-)
+// DeviceValidationFailed creates an error indicating device validation failed.
+func DeviceValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("device", "Device validation failed").
+		WithMetadata("reason", reason)
+}
 
-// OAuth-specific error constants
-var (
-	// Validation errors
-	ErrOAuthClientNameRequired   = errors.New("client name is required")
-	ErrOAuthRedirectURIsRequired = errors.New("redirect_uris are required")
-	ErrOAuthNoUpdatesProvided    = errors.New("no updates provided")
-	ErrOAuthClientAlreadyExists  = errors.New("client already exists")
-	ErrOAuthStateExpired         = errors.New("OAuth state expired")
-)
+// SessionValidationFailed creates an error indicating session validation failed.
+func SessionValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("session", "Session validation failed").
+		WithMetadata("reason", reason)
+}
 
-// Repository operation base error constants
-var (
-	// Generic operation errors for formatting
-	ErrEntityNotFound          = errors.New("entity not found")
-	ErrEntityAlreadyExists     = errors.New("entity already exists")
-	ErrEntityNotFoundForUpdate = errors.New("entity not found for update")
-	ErrFailedToGet             = errors.New("failed to get entity")
-	ErrFailedToCreate          = errors.New("failed to create entity")
-	ErrFailedToUpdate          = errors.New("failed to update entity")
-	ErrFailedToDelete          = errors.New("failed to delete entity")
-	ErrFailedToQuery           = errors.New("failed to query entity")
-	ErrDatabaseOperation       = errors.New("database error")
-)
+// WebAuthnValidationFailed creates an error indicating WebAuthn validation failed.
+func WebAuthnValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("webauthn", "WebAuthn validation failed").
+		WithMetadata("reason", reason)
+}
 
-// Query utility-specific error constants
-var (
-	// Query operation errors
-	ErrQueryOperationFailed     = errors.New("query operation failed")
-	ErrQueryCollectionAddFailed = errors.New("failed to add to collection")
-	ErrQueryExecutionFailed     = errors.New("query execution failed")
-	ErrQueryValidationFailed    = errors.New("query validation failed")
-)
+// WalletValidationFailed creates an error indicating wallet validation failed.
+func WalletValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("wallet", "Wallet validation failed").
+		WithMetadata("reason", reason)
+}
 
-// Analytics-specific error constants
-var (
-	// Type validation errors
-	ErrInvalidHashtagTrendType = errors.New("invalid trend type: expected *models.HashtagTrend or *storage.TrendingHashtag")
-	ErrInvalidStatusTrendType  = errors.New("invalid trend type: expected *models.StatusTrend or *storage.TrendingStatus")
-	ErrInvalidLinkTrendType    = errors.New("invalid trend type: expected *models.LinkTrend or *storage.TrendingLink")
+// DeviceNotFound creates an error indicating device was not found.
+func DeviceNotFound(deviceID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("device", deviceID)
+}
 
-	// Hashtag batch operation errors
-	ErrHashtagBatchUnknownModelType = errors.New("unknown model type")
+// WebAuthnCredentialNotFound creates an error indicating WebAuthn credential was not found.
+func WebAuthnCredentialNotFound(credentialID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("WebAuthn credential", credentialID)
+}
 
-	// Dependency errors
-	ErrStatusRepoDependencyMissing = errors.New("statusRepo dependency not available")
+// Account search-specific errors
 
-	// Parameter validation errors
-	ErrInvalidQueryParameters = errors.New("invalid parameters: query cannot be empty and count must be positive")
+// AccountSearchInvalidWebfingerFormat creates an error indicating invalid webfinger format.
+func AccountSearchInvalidWebfingerFormat(format string) *errors.AppError {
+	return errors.InvalidFormat("webfinger", "acct:user@domain.tld").
+		WithMetadata("provided_format", format)
+}
 
-	// Operation errors
-	ErrFailedIndexByEngagement      = errors.New("failed to index by engagement")
-	ErrFailedRecordEngagement       = errors.New("failed to record engagement")
-	ErrFailedGetEngagementMetrics   = errors.New("failed to get engagement metrics")
-	ErrFailedGetEngagementByDate    = errors.New("failed to get engagement by date range")
-	ErrFailedGetTopContent          = errors.New("failed to get top engaged content")
-	ErrFailedUpdateTrendingTag      = errors.New("failed to update trending hashtag")
-	ErrFailedGetTrendingTags        = errors.New("failed to get trending hashtags")
-	ErrFailedQueryStaleTrends       = errors.New("failed to query stale trends")
-	ErrFailedRecordInstanceMetric   = errors.New("failed to record instance metric")
-	ErrFailedGetInstanceMetrics     = errors.New("failed to get instance metrics")
-	ErrFailedGetStartMetric         = errors.New("failed to get start metric")
-	ErrFailedGetEndMetric           = errors.New("failed to get end metric")
-	ErrFailedRecordManifest         = errors.New("failed to record manifest generation")
-	ErrFailedRecordQualityChange    = errors.New("failed to record quality change")
-	ErrFailedRecordMediaEvent       = errors.New("failed to record media event")
-	ErrFailedQuerySessionEvents     = errors.New("failed to query session events")
-	ErrFailedGetModerationAnalytics = errors.New("failed to get existing moderation analytics")
-	ErrFailedRecordModerationAction = errors.New("failed to record moderation action")
-	ErrFailedGetModerationData      = errors.New("failed to get moderation analytics")
-	ErrInvalidQueryForCounting      = errors.New("invalid query for counting")
-	ErrInvalidQueryForCount         = errors.New("invalid query for count retrieval")
-	ErrFailedGetQueryCount          = errors.New("failed to get query count")
-	ErrFailedGetTopQueries          = errors.New("failed to get top queries")
-	ErrFailedGetExistingCounter     = errors.New("failed to get existing counter")
-	ErrFailedSaveCounter            = errors.New("failed to save counter")
-	ErrFailedGetStats               = errors.New("failed to get stats")
-)
+// OAuth-specific errors
 
-// Federation cost-specific error constants
-var (
-	// Operation errors
-	ErrFederationCostRecordFailed        = errors.New("failed to record federation cost")
-	ErrFederationCostQueryFailed         = errors.New("failed to get federation costs")
-	ErrFederationCostActivityQueryFailed = errors.New("failed to get federation costs by activity type")
-	ErrFederationBudgetCreateFailed      = errors.New("failed to create/update federation budget")
-	ErrFederationBudgetNotFound          = errors.New("federation budget not found")
-	ErrFederationBudgetQueryFailed       = errors.New("failed to get federation budget")
-	ErrActiveBudgetsQueryFailed          = errors.New("failed to get active budgets")
-)
+// OAuthClientNameRequired creates an error indicating client name is required.
+func OAuthClientNameRequired() *errors.AppError {
+	return errors.RequiredFieldMissing("client_name")
+}
 
-// Federation instance-specific error constants
-var (
-	// Operation errors
-	ErrFederationInstanceSearchFailed                 = errors.New("failed to search federation instances")
-	ErrFederationInstanceHealthStoreFailed            = errors.New("failed to store health history")
-	ErrFederationInstanceHealthQueryFailed            = errors.New("failed to get health history")
-	ErrFederationInstanceBatchGetFailed               = errors.New("failed in batch get chunk")
-	ErrFederationInstanceBatchCreateFailed            = errors.New("failed to batch create instances")
-	ErrFederationInstanceBatchCreateChunkFailed       = errors.New("failed in batch create chunk")
-	ErrFederationInstanceBatchUpdateHealthFailed      = errors.New("failed to batch update instances health")
-	ErrFederationInstanceBatchUpdateHealthChunkFailed = errors.New("failed in batch update health chunk")
-	ErrFederationInstanceUsageUpdateFailed            = errors.New("failed to get current instances for usage update")
-	ErrFederationInstanceBatchUpdateUsageFailed       = errors.New("failed to batch update instances usage")
-	ErrFederationInstanceBatchUpdateUsageChunkFailed  = errors.New("failed in batch update usage chunk")
-	ErrFederationInstanceListFailed                   = errors.New("failed to list all instances")
+// OAuthRedirectURIsRequired creates an error indicating redirect URIs are required.
+func OAuthRedirectURIsRequired() *errors.AppError {
+	return errors.RequiredFieldMissing("redirect_uris")
+}
 
-	// Validation errors
-	ErrFederationInstanceCursorTooLong = errors.New("cursor too long: maximum 1024 characters")
-	ErrFederationInstanceCursorInvalid = errors.New("invalid cursor format")
-	ErrFederationInstanceLimitNegative = errors.New("limit cannot be negative")
-	ErrFederationInstanceLimitTooLarge = errors.New("limit too large: maximum 1000 items per page")
-)
+// OAuthNoUpdatesProvided creates an error indicating no updates were provided.
+func OAuthNoUpdatesProvided() *errors.AppError {
+	return errors.BadRequest("No updates provided")
+}
 
-// CSRF-specific error constants
-var (
-	// Validation errors
-	ErrCSRFTokenInvalid       = errors.New("invalid CSRF token")
-	ErrCSRFTokenExpired       = errors.New("expired CSRF token")
-	ErrCSRFTokenAlreadyExists = errors.New("token already exists")
-	ErrCSRFTooManyTokens      = errors.New("too many active CSRF tokens for user")
-)
+// OAuthClientAlreadyExists creates an error indicating OAuth client already exists.
+func OAuthClientAlreadyExists(clientID string) *errors.AppError {
+	return errors.ItemAlreadyExistsWithID("OAuth client", clientID)
+}
 
-// Media metadata-specific error constants
-var (
-	// Operation errors
-	ErrMediaMetadataPrepareFailed      = errors.New("failed to prepare media metadata")
-	ErrMediaMetadataNotFound           = errors.New("media metadata not found")
-	ErrMediaMetadataQueryFailed        = errors.New("failed to get media metadata")
-	ErrMediaMetadataStatusQueryFailed  = errors.New("failed to get media metadata by status")
-	ErrExpiredMediaMetadataQueryFailed = errors.New("failed to find expired media metadata")
-)
+// OAuthStateExpired creates an error indicating OAuth state has expired.
+func OAuthStateExpired(state string) *errors.AppError {
+	return errors.NewAppError(errors.CodeTokenExpired, errors.CategoryAuth, "OAuth state expired").
+		WithMetadata("state", state)
+}
 
-// DLQ-specific error constants
-var (
-	// Validation errors
-	ErrDLQServiceRequired         = errors.New("service is required for DLQ search")
-	ErrDLQMessageNotFound         = errors.New("DLQ message not found")
-	ErrDLQMessageNotReprocessable = errors.New("message cannot be reprocessed")
-	ErrDLQBatchUpdateFailed       = errors.New("batch update failed")
-)
+// Repository operation base errors
+// These are now provided by the centralized error system, but we maintain these for backward compatibility.
 
-// Notification-specific error constants
-var (
-	// Validation errors
-	ErrNotificationUnknownPreferenceType = errors.New("unknown notification preference type")
-)
+// ErrEntityNotFound is deprecated. Use errors.ItemNotFound() or errors.ItemNotFoundWithID() instead.
+var ErrEntityNotFound = errors.ItemNotFound("entity")
 
-// DNS cache-specific error constants
-var (
-	// Validation errors
-	ErrDNSCacheEntryRequired = errors.New("DNS cache entry cannot be nil")
+// ErrEntityAlreadyExists is deprecated. Use errors.ItemAlreadyExists() or errors.ItemAlreadyExistsWithID() instead.
+var ErrEntityAlreadyExists = errors.ItemAlreadyExists("entity")
 
-	// Operation errors
-	ErrDNSCacheGetFailed        = errors.New("failed to get DNS cache entry")
-	ErrDNSCacheSetFailed        = errors.New("failed to set DNS cache entry")
-	ErrDNSCacheInvalidateFailed = errors.New("failed to invalidate DNS cache entry")
-)
+// ErrEntityNotFoundForUpdate is deprecated. Use errors.ItemNotFoundWithID() instead.
+var ErrEntityNotFoundForUpdate = errors.ItemNotFound("entity")
 
-// Federation activity-specific error constants
-var (
-	// Validation errors
-	ErrFederationActivityValidationFailed = errors.New("federation activity validation failed")
+// ErrFailedToGet is deprecated. Use errors.FailedToGet() instead.
+var ErrFailedToGet = errors.FailedToGet("entity", nil)
 
-	// Not found errors
-	ErrFederationActivityNotFound = errors.New("federation activity not found")
-)
+// ErrFailedToCreate is deprecated. Use errors.FailedToCreate() instead.
+var ErrFailedToCreate = errors.FailedToCreate("entity", nil)
 
-// Quote-specific error constants
-var (
-	// Operation errors
-	ErrQuoteRelationshipCreateFailed = errors.New("failed to create quote relationship")
-	ErrQuoteRelationshipGetFailed    = errors.New("failed to get quote relationship")
-	ErrQuoteRelationshipUpdateFailed = errors.New("failed to update quote relationship")
-	ErrQuoteRelationshipDeleteFailed = errors.New("failed to delete quote relationship")
-	ErrQuoteRelationshipQueryFailed  = errors.New("failed to query quote relationships")
-	ErrQuotePermissionsCreateFailed  = errors.New("failed to create quote permissions")
-	ErrQuotePermissionsGetFailed     = errors.New("failed to get quote permissions")
-	ErrQuotePermissionsUpdateFailed  = errors.New("failed to update quote permissions")
-	ErrQuotePermissionsDeleteFailed  = errors.New("failed to delete quote permissions")
-	ErrQuoteCountQueryFailed         = errors.New("failed to get quote count")
-)
+// ErrFailedToUpdate is deprecated. Use errors.FailedToUpdate() instead.
+var ErrFailedToUpdate = errors.FailedToUpdate("entity", nil)
 
-// Marker-specific error constants
-var (
-	// Operation errors
-	ErrMarkerSaveFailed = errors.New("failed to save marker")
-)
+// ErrFailedToDelete is deprecated. Use errors.FailedToDelete() instead.
+var ErrFailedToDelete = errors.FailedToDelete("entity", nil)
 
-// Scheduled job cost-specific error constants
-var (
-	// Validation errors
-	ErrScheduledJobCostBeforeCreateFailed = errors.New("before create validation failed")
-	ErrScheduledJobCostBeforeUpdateFailed = errors.New("before update validation failed")
-	ErrScheduledJobCostNotFound           = errors.New("scheduled job cost record not found")
-	ErrScheduledJobCostAggregationFailed  = errors.New("failed to list job costs for aggregation")
-)
+// ErrFailedToQuery is deprecated. Use errors.FailedToQuery() instead.
+var ErrFailedToQuery = errors.FailedToQuery("entity", nil)
 
-// Moderation metrics-specific error constants
-var (
-	// Query operation errors
-	ErrModerationMetricsFalsePositivesQueryFailed  = errors.New("failed to get false positives")
-	ErrModerationMetricsDecisionSamplesQueryFailed = errors.New("failed to get decision samples")
-	ErrModerationMetricsTopPatternsQueryFailed     = errors.New("failed to get top patterns")
-	ErrModerationMetricsEntriesQueryFailed         = errors.New("failed to get metrics entries")
-)
+// ErrDatabaseOperation is deprecated. Use specific error functions from the centralized system.
+var ErrDatabaseOperation = errors.NewStorageError(errors.CodeInternal, "Database error")
 
-// Pagination-specific error constants
-var (
-	// Validation errors
-	ErrPaginationParametersInvalid = errors.New("invalid pagination parameters")
-	ErrPaginationCursorInvalid     = errors.New("invalid cursor")
-	ErrPaginationCursorFormat      = errors.New("invalid cursor format")
-	ErrPaginationCursorData        = errors.New("invalid cursor data")
-)
+// Query utility-specific errors
 
-// Relationship pagination-specific error constants
-var (
-	// Validation errors
-	ErrRelationshipPaginationModelTypeUnsupported = errors.New("unsupported model type")
+// QueryOperationFailed creates an error indicating query operation failed.
+func QueryOperationFailed(operation string, err error) *errors.AppError {
+	return errors.FailedToQuery(operation, err)
+}
 
-	// Operation errors
-	ErrRelationshipPaginationQueryFailed = errors.New("failed to get relationship data")
-)
+// QueryCollectionAddFailed creates an error indicating failed to add to collection.
+func QueryCollectionAddFailed(collection string, err error) *errors.AppError {
+	return errors.FailedToStore("collection item", err).
+		WithMetadata("collection", collection)
+}
 
-// Relay-specific error constants
-var (
-	// Not found errors
-	ErrRelayNotFound = errors.New("relay not found")
-)
+// QueryExecutionFailed creates an error indicating query execution failed.
+func QueryExecutionFailed(query string, err error) *errors.AppError {
+	return errors.FailedToQuery(query, err)
+}
 
-// Timeline-specific error constants
-var (
-	// Query operation errors
-	ErrTimelineQueryFailed                    = errors.New("failed to get timeline entries")
-	ErrTimelineEntriesByPostQueryFailed       = errors.New("failed to get timeline entries by post")
-	ErrTimelineEntriesByActorQueryFailed      = errors.New("failed to get timeline entries by actor")
-	ErrTimelineEntriesByVisibilityQueryFailed = errors.New("failed to get timeline entries by visibility")
-	ErrTimelineEntriesByLanguageQueryFailed   = errors.New("failed to get timeline entries by language")
-	ErrTimelineEntryQueryFailed               = errors.New("failed to get timeline entry")
-	ErrTimelineEntriesForDeletionQueryFailed  = errors.New("failed to get timeline entries for deletion")
-	ErrTimelineExpiredEntriesScanFailed       = errors.New("failed to scan for expired timeline entries")
-	ErrTimelineCountQueryFailed               = errors.New("failed to count timeline entries")
-	ErrTimelineEntriesInRangeQueryFailed      = errors.New("failed to get timeline entries in range")
-	ErrTimelineFilteredEntriesQueryFailed     = errors.New("failed to get filtered timeline entries")
+// QueryValidationFailed creates an error indicating query validation failed.
+func QueryValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("query", "Query validation failed").
+		WithMetadata("reason", reason)
+}
 
-	// Test mock error
-	ErrTestMockError = errors.New("mock error")
-)
+// Analytics-specific errors
 
-// StreamingConnection-specific error constants
-var (
-	// Connection limit validation errors
-	ErrStreamingConnectionUserLimitReached   = errors.New("user has reached maximum connections")
-	ErrStreamingConnectionGlobalLimitReached = errors.New("maximum total connections reached")
+// InvalidHashtagTrendType creates an error indicating invalid hashtag trend type.
+func InvalidHashtagTrendType(actualType string) *errors.AppError {
+	return errors.NewValidationError("trend_type", "Invalid trend type: expected *models.HashtagTrend or *storage.TrendingHashtag").
+		WithMetadata("actual_type", actualType)
+}
 
-	// Resource validation errors
-	ErrStreamingConnectionMessageSizeExceeded = errors.New("message size exceeds limit")
-	ErrStreamingConnectionRateLimitExceeded   = errors.New("rate limit exceeded")
+// InvalidStatusTrendType creates an error indicating invalid status trend type.
+func InvalidStatusTrendType(actualType string) *errors.AppError {
+	return errors.NewValidationError("trend_type", "Invalid trend type: expected *models.StatusTrend or *storage.TrendingStatus").
+		WithMetadata("actual_type", actualType)
+}
 
-	// Connection not found error
-	ErrStreamingConnectionNotFound = errors.New("connection not found")
-)
+// InvalidLinkTrendType creates an error indicating invalid link trend type.
+func InvalidLinkTrendType(actualType string) *errors.AppError {
+	return errors.NewValidationError("trend_type", "Invalid trend type: expected *models.LinkTrend or *storage.TrendingLink").
+		WithMetadata("actual_type", actualType)
+}
 
-// StreamingPreferences-specific error constants
-var (
-	// Validation errors
-	ErrStreamingUsernameRequired     = errors.New("username is required")
-	ErrStreamingDeviceParamsRequired = errors.New("username and deviceID are required")
+// HashtagBatchUnknownModelType creates an error indicating unknown hashtag model type.
+func HashtagBatchUnknownModelType(modelType string) *errors.AppError {
+	return errors.NewValidationError("model_type", "Unknown model type").
+		WithMetadata("model_type", modelType)
+}
 
-	// Operation errors
-	ErrStreamingConflictResolutionFailed = errors.New("failed to resolve preference conflict")
-)
+// StatusRepoDependencyMissing creates an error indicating status repository dependency is missing.
+func StatusRepoDependencyMissing() *errors.AppError {
+	return errors.ServiceNotAvailable("statusRepo")
+}
+
+// InvalidQueryParameters creates an error indicating invalid query parameters.
+func InvalidQueryParameters(reason string) *errors.AppError {
+	return errors.NewValidationError("query", "Invalid parameters: query cannot be empty and count must be positive").
+		WithMetadata("reason", reason)
+}
+
+// FailedIndexByEngagement creates an error indicating failed to index by engagement.
+func FailedIndexByEngagement(err error) *errors.AppError {
+	return errors.FailedToStore("engagement index", err)
+}
+
+// FailedRecordEngagement creates an error indicating failed to record engagement.
+func FailedRecordEngagement(err error) *errors.AppError {
+	return errors.FailedToStore("engagement record", err)
+}
+
+// FailedGetEngagementMetrics creates an error indicating failed to get engagement metrics.
+func FailedGetEngagementMetrics(err error) *errors.AppError {
+	return errors.FailedToGet("engagement metrics", err)
+}
+
+// FailedGetEngagementByDate creates an error indicating failed to get engagement by date range.
+func FailedGetEngagementByDate(err error) *errors.AppError {
+	return errors.FailedToQuery("engagement by date", err)
+}
+
+// FailedGetTopContent creates an error indicating failed to get top engaged content.
+func FailedGetTopContent(err error) *errors.AppError {
+	return errors.FailedToQuery("top engaged content", err)
+}
+
+// FailedUpdateTrendingTag creates an error indicating failed to update trending hashtag.
+func FailedUpdateTrendingTag(err error) *errors.AppError {
+	return errors.FailedToUpdate("trending hashtag", err)
+}
+
+// FailedGetTrendingTags creates an error indicating failed to get trending hashtags.
+func FailedGetTrendingTags(err error) *errors.AppError {
+	return errors.FailedToQuery("trending hashtags", err)
+}
+
+// FailedQueryStaleTrends creates an error indicating failed to query stale trends.
+func FailedQueryStaleTrends(err error) *errors.AppError {
+	return errors.FailedToQuery("stale trends", err)
+}
+
+// FailedRecordInstanceMetric creates an error indicating failed to record instance metric.
+func FailedRecordInstanceMetric(err error) *errors.AppError {
+	return errors.FailedToStore("instance metric", err)
+}
+
+// FailedGetInstanceMetrics creates an error indicating failed to get instance metrics.
+func FailedGetInstanceMetrics(err error) *errors.AppError {
+	return errors.FailedToQuery("instance metrics", err)
+}
+
+// FailedGetStartMetric creates an error indicating failed to get start metric.
+func FailedGetStartMetric(err error) *errors.AppError {
+	return errors.FailedToGet("start metric", err)
+}
+
+// FailedGetEndMetric creates an error indicating failed to get end metric.
+func FailedGetEndMetric(err error) *errors.AppError {
+	return errors.FailedToGet("end metric", err)
+}
+
+// FailedRecordManifest creates an error indicating failed to record manifest generation.
+func FailedRecordManifest(err error) *errors.AppError {
+	return errors.FailedToStore("manifest generation", err)
+}
+
+// FailedRecordQualityChange creates an error indicating failed to record quality change.
+func FailedRecordQualityChange(err error) *errors.AppError {
+	return errors.FailedToStore("quality change", err)
+}
+
+// FailedRecordMediaEvent creates an error indicating failed to record media event.
+func FailedRecordMediaEvent(err error) *errors.AppError {
+	return errors.FailedToStore("media event", err)
+}
+
+// FailedQuerySessionEvents creates an error indicating failed to query session events.
+func FailedQuerySessionEvents(err error) *errors.AppError {
+	return errors.FailedToQuery("session events", err)
+}
+
+// FailedGetModerationAnalytics creates an error indicating failed to get existing moderation analytics.
+func FailedGetModerationAnalytics(err error) *errors.AppError {
+	return errors.FailedToGet("moderation analytics", err)
+}
+
+// FailedRecordModerationAction creates an error indicating failed to record moderation action.
+func FailedRecordModerationAction(err error) *errors.AppError {
+	return errors.FailedToStore("moderation action", err)
+}
+
+// FailedGetModerationData creates an error indicating failed to get moderation analytics.
+func FailedGetModerationData(err error) *errors.AppError {
+	return errors.FailedToQuery("moderation data", err)
+}
+
+// InvalidQueryForCounting creates an error indicating invalid query for counting.
+func InvalidQueryForCounting(query string) *errors.AppError {
+	return errors.NewValidationError("query", "Invalid query for counting").
+		WithMetadata("query", query)
+}
+
+// InvalidQueryForCount creates an error indicating invalid query for count retrieval.
+func InvalidQueryForCount(query string) *errors.AppError {
+	return errors.NewValidationError("query", "Invalid query for count retrieval").
+		WithMetadata("query", query)
+}
+
+// FailedGetQueryCount creates an error indicating failed to get query count.
+func FailedGetQueryCount(err error) *errors.AppError {
+	return errors.FailedToQuery("query count", err)
+}
+
+// FailedGetTopQueries creates an error indicating failed to get top queries.
+func FailedGetTopQueries(err error) *errors.AppError {
+	return errors.FailedToQuery("top queries", err)
+}
+
+// FailedGetExistingCounter creates an error indicating failed to get existing counter.
+func FailedGetExistingCounter(err error) *errors.AppError {
+	return errors.FailedToGet("counter", err)
+}
+
+// FailedSaveCounter creates an error indicating failed to save counter.
+func FailedSaveCounter(err error) *errors.AppError {
+	return errors.FailedToSave("counter", err)
+}
+
+// FailedGetStats creates an error indicating failed to get stats.
+func FailedGetStats(err error) *errors.AppError {
+	return errors.FailedToQuery("stats", err)
+}
+
+// Federation cost-specific errors
+
+// FederationCostRecordFailed creates an error indicating failed to record federation cost.
+func FederationCostRecordFailed(err error) *errors.AppError {
+	return errors.FailedToStore("federation cost", err)
+}
+
+// FederationCostQueryFailed creates an error indicating failed to get federation costs.
+func FederationCostQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("federation costs", err)
+}
+
+// FederationCostActivityQueryFailed creates an error indicating failed to get federation costs by activity type.
+func FederationCostActivityQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("federation costs by activity type", err)
+}
+
+// FederationBudgetCreateFailed creates an error indicating failed to create/update federation budget.
+func FederationBudgetCreateFailed(err error) *errors.AppError {
+	return errors.FailedToStore("federation budget", err)
+}
+
+// FederationBudgetNotFound creates an error indicating federation budget not found.
+func FederationBudgetNotFound(budgetID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("federation budget", budgetID)
+}
+
+// FederationBudgetQueryFailed creates an error indicating failed to get federation budget.
+func FederationBudgetQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("federation budget", err)
+}
+
+// ActiveBudgetsQueryFailed creates an error indicating failed to get active budgets.
+func ActiveBudgetsQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("active budgets", err)
+}
+
+// Federation instance-specific errors
+
+// FederationInstanceSearchFailed creates an error indicating failed to search federation instances.
+func FederationInstanceSearchFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("federation instances", err)
+}
+
+// FederationInstanceHealthStoreFailed creates an error indicating failed to store health history.
+func FederationInstanceHealthStoreFailed(err error) *errors.AppError {
+	return errors.FailedToStore("federation instance health history", err)
+}
+
+// FederationInstanceHealthQueryFailed creates an error indicating failed to get health history.
+func FederationInstanceHealthQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("federation instance health history", err)
+}
+
+// FederationInstanceBatchGetFailed creates an error indicating failed in batch get chunk.
+func FederationInstanceBatchGetFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch get federation instances", err)
+}
+
+// FederationInstanceBatchCreateFailed creates an error indicating failed to batch create instances.
+func FederationInstanceBatchCreateFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch create federation instances", err)
+}
+
+// FederationInstanceBatchCreateChunkFailed creates an error indicating failed in batch create chunk.
+func FederationInstanceBatchCreateChunkFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch create chunk", err)
+}
+
+// FederationInstanceBatchUpdateHealthFailed creates an error indicating failed to batch update instances health.
+func FederationInstanceBatchUpdateHealthFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch update federation instance health", err)
+}
+
+// FederationInstanceBatchUpdateHealthChunkFailed creates an error indicating failed in batch update health chunk.
+func FederationInstanceBatchUpdateHealthChunkFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch update health chunk", err)
+}
+
+// FederationInstanceUsageUpdateFailed creates an error indicating failed to get current instances for usage update.
+func FederationInstanceUsageUpdateFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("current instances for usage update", err)
+}
+
+// FederationInstanceBatchUpdateUsageFailed creates an error indicating failed to batch update instances usage.
+func FederationInstanceBatchUpdateUsageFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch update federation instance usage", err)
+}
+
+// FederationInstanceBatchUpdateUsageChunkFailed creates an error indicating failed in batch update usage chunk.
+func FederationInstanceBatchUpdateUsageChunkFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("batch update usage chunk", err)
+}
+
+// FederationInstanceListFailed creates an error indicating failed to list all instances.
+func FederationInstanceListFailed(err error) *errors.AppError {
+	return errors.FailedToList("federation instances", err)
+}
+
+// FederationInstanceCursorTooLong creates an error indicating cursor is too long.
+func FederationInstanceCursorTooLong(cursorLength int) *errors.AppError {
+	return errors.FieldTooLong("cursor", 1024, cursorLength)
+}
+
+// FederationInstanceCursorInvalid creates an error indicating invalid cursor format.
+func FederationInstanceCursorInvalid(cursor string) *errors.AppError {
+	return errors.InvalidFormat("cursor", "base64 encoded").
+		WithMetadata("provided_cursor", cursor)
+}
+
+// FederationInstanceLimitNegative creates an error indicating limit cannot be negative.
+func FederationInstanceLimitNegative(limit int) *errors.AppError {
+	return errors.ValueOutOfRange("limit", 0, 1000, limit)
+}
+
+// FederationInstanceLimitTooLarge creates an error indicating limit is too large.
+func FederationInstanceLimitTooLarge(limit int) *errors.AppError {
+	return errors.ValueOutOfRange("limit", 0, 1000, limit)
+}
+
+// CSRF-specific errors
+
+// CSRFTokenInvalid creates an error indicating invalid CSRF token.
+func CSRFTokenInvalid(token string) *errors.AppError {
+	return errors.NewAppError(errors.CodeTokenInvalid, errors.CategoryAuth, "Invalid CSRF token").
+		WithMetadata("token", token)
+}
+
+// CSRFTokenExpired creates an error indicating expired CSRF token.
+func CSRFTokenExpired(token string) *errors.AppError {
+	return errors.NewAppError(errors.CodeTokenExpired, errors.CategoryAuth, "Expired CSRF token").
+		WithMetadata("token", token)
+}
+
+// CSRFTokenAlreadyExists creates an error indicating token already exists.
+func CSRFTokenAlreadyExists(token string) *errors.AppError {
+	return errors.ItemAlreadyExistsWithID("CSRF token", token)
+}
+
+// CSRFTooManyTokens creates an error indicating too many active CSRF tokens for user.
+func CSRFTooManyTokens(userID string, count int) *errors.AppError {
+	return errors.TooManyItems(count, 10). // Assuming max 10 tokens per user
+		WithMetadata("user_id", userID)
+}
+
+// Media metadata-specific errors
+
+// MediaMetadataPrepareFailed creates an error indicating failed to prepare media metadata.
+func MediaMetadataPrepareFailed(err error) *errors.AppError {
+	return errors.FailedToStore("media metadata", err)
+}
+
+// MediaMetadataNotFound creates an error indicating media metadata not found.
+func MediaMetadataNotFound(mediaID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("media metadata", mediaID)
+}
+
+// MediaMetadataQueryFailed creates an error indicating failed to get media metadata.
+func MediaMetadataQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("media metadata", err)
+}
+
+// MediaMetadataStatusQueryFailed creates an error indicating failed to get media metadata by status.
+func MediaMetadataStatusQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("media metadata by status", err)
+}
+
+// ExpiredMediaMetadataQueryFailed creates an error indicating failed to find expired media metadata.
+func ExpiredMediaMetadataQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("expired media metadata", err)
+}
+
+// DLQ-specific errors
+
+// DLQServiceRequired creates an error indicating service is required for DLQ search.
+func DLQServiceRequired() *errors.AppError {
+	return errors.RequiredFieldMissing("service")
+}
+
+// DLQMessageNotFound creates an error indicating DLQ message not found.
+func DLQMessageNotFound(messageID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("DLQ message", messageID)
+}
+
+// DLQMessageNotReprocessable creates an error indicating message cannot be reprocessed.
+func DLQMessageNotReprocessable(messageID string, reason string) *errors.AppError {
+	return errors.InvalidStateForOperation("message state", "reprocess").
+		WithMetadata("message_id", messageID).
+		WithMetadata("reason", reason)
+}
+
+// DLQBatchUpdateFailed creates an error indicating batch update failed.
+func DLQBatchUpdateFailed(err error) *errors.AppError {
+	return errors.BatchOperationFailed("DLQ batch update", err)
+}
+
+// Notification-specific errors
+
+// NotificationUnknownPreferenceType creates an error indicating unknown notification preference type.
+func NotificationUnknownPreferenceType(preferenceType string) *errors.AppError {
+	return errors.NewValidationError("preference_type", "Unknown notification preference type").
+		WithMetadata("preference_type", preferenceType)
+}
+
+// DNS cache-specific errors
+
+// DNSCacheEntryRequired creates an error indicating DNS cache entry cannot be nil.
+func DNSCacheEntryRequired() *errors.AppError {
+	return errors.RequiredFieldMissing("dns_cache_entry")
+}
+
+// DNSCacheGetFailed creates an error indicating failed to get DNS cache entry.
+func DNSCacheGetFailed(err error) *errors.AppError {
+	return errors.FailedToGet("DNS cache entry", err)
+}
+
+// DNSCacheSetFailed creates an error indicating failed to set DNS cache entry.
+func DNSCacheSetFailed(err error) *errors.AppError {
+	return errors.FailedToStore("DNS cache entry", err)
+}
+
+// DNSCacheInvalidateFailed creates an error indicating failed to invalidate DNS cache entry.
+func DNSCacheInvalidateFailed(err error) *errors.AppError {
+	return errors.FailedToDelete("DNS cache entry", err)
+}
+
+// Federation activity-specific errors
+
+// FederationActivityValidationFailed creates an error indicating federation activity validation failed.
+func FederationActivityValidationFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("federation_activity", "Federation activity validation failed").
+		WithMetadata("reason", reason)
+}
+
+// FederationActivityNotFound creates an error indicating federation activity not found.
+func FederationActivityNotFound(activityID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("federation activity", activityID)
+}
+
+// Quote-specific errors
+
+// QuoteRelationshipCreateFailed creates an error indicating failed to create quote relationship.
+func QuoteRelationshipCreateFailed(err error) *errors.AppError {
+	return errors.FailedToCreate("quote relationship", err)
+}
+
+// QuoteRelationshipGetFailed creates an error indicating failed to get quote relationship.
+func QuoteRelationshipGetFailed(err error) *errors.AppError {
+	return errors.FailedToGet("quote relationship", err)
+}
+
+// QuoteRelationshipUpdateFailed creates an error indicating failed to update quote relationship.
+func QuoteRelationshipUpdateFailed(err error) *errors.AppError {
+	return errors.FailedToUpdate("quote relationship", err)
+}
+
+// QuoteRelationshipDeleteFailed creates an error indicating failed to delete quote relationship.
+func QuoteRelationshipDeleteFailed(err error) *errors.AppError {
+	return errors.FailedToDelete("quote relationship", err)
+}
+
+// QuoteRelationshipQueryFailed creates an error indicating failed to query quote relationships.
+func QuoteRelationshipQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("quote relationships", err)
+}
+
+// QuotePermissionsCreateFailed creates an error indicating failed to create quote permissions.
+func QuotePermissionsCreateFailed(err error) *errors.AppError {
+	return errors.FailedToCreate("quote permissions", err)
+}
+
+// QuotePermissionsGetFailed creates an error indicating failed to get quote permissions.
+func QuotePermissionsGetFailed(err error) *errors.AppError {
+	return errors.FailedToGet("quote permissions", err)
+}
+
+// QuotePermissionsUpdateFailed creates an error indicating failed to update quote permissions.
+func QuotePermissionsUpdateFailed(err error) *errors.AppError {
+	return errors.FailedToUpdate("quote permissions", err)
+}
+
+// QuotePermissionsDeleteFailed creates an error indicating failed to delete quote permissions.
+func QuotePermissionsDeleteFailed(err error) *errors.AppError {
+	return errors.FailedToDelete("quote permissions", err)
+}
+
+// QuoteCountQueryFailed creates an error indicating failed to get quote count.
+func QuoteCountQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("quote count", err)
+}
+
+// Marker-specific errors
+
+// MarkerSaveFailed creates an error indicating failed to save marker.
+func MarkerSaveFailed(err error) *errors.AppError {
+	return errors.FailedToSave("marker", err)
+}
+
+// Scheduled job cost-specific errors
+
+// ScheduledJobCostBeforeCreateFailed creates an error indicating before create validation failed.
+func ScheduledJobCostBeforeCreateFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("scheduled_job_cost", "Before create validation failed").
+		WithMetadata("reason", reason)
+}
+
+// ScheduledJobCostBeforeUpdateFailed creates an error indicating before update validation failed.
+func ScheduledJobCostBeforeUpdateFailed(reason string) *errors.AppError {
+	return errors.NewValidationError("scheduled_job_cost", "Before update validation failed").
+		WithMetadata("reason", reason)
+}
+
+// ScheduledJobCostNotFound creates an error indicating scheduled job cost record not found.
+func ScheduledJobCostNotFound(jobID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("scheduled job cost record", jobID)
+}
+
+// ScheduledJobCostAggregationFailed creates an error indicating failed to list job costs for aggregation.
+func ScheduledJobCostAggregationFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("job costs for aggregation", err)
+}
+
+// Moderation metrics-specific errors
+
+// ModerationMetricsFalsePositivesQueryFailed creates an error indicating failed to get false positives.
+func ModerationMetricsFalsePositivesQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("moderation false positives", err)
+}
+
+// ModerationMetricsDecisionSamplesQueryFailed creates an error indicating failed to get decision samples.
+func ModerationMetricsDecisionSamplesQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("moderation decision samples", err)
+}
+
+// ModerationMetricsTopPatternsQueryFailed creates an error indicating failed to get top patterns.
+func ModerationMetricsTopPatternsQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("moderation top patterns", err)
+}
+
+// ModerationMetricsEntriesQueryFailed creates an error indicating failed to get metrics entries.
+func ModerationMetricsEntriesQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("moderation metrics entries", err)
+}
+
+// Pagination-specific errors
+
+// PaginationParametersInvalid creates an error indicating invalid pagination parameters.
+func PaginationParametersInvalid(reason string) *errors.AppError {
+	return errors.NewValidationError("pagination", "Invalid pagination parameters").
+		WithMetadata("reason", reason)
+}
+
+// PaginationCursorInvalid creates an error indicating invalid cursor.
+func PaginationCursorInvalid(cursor string) *errors.AppError {
+	return errors.NewValidationError("cursor", "Invalid cursor").
+		WithMetadata("cursor", cursor)
+}
+
+// PaginationCursorFormat creates an error indicating invalid cursor format.
+func PaginationCursorFormat(cursor string) *errors.AppError {
+	return errors.InvalidFormat("cursor", "base64 encoded JSON").
+		WithMetadata("cursor", cursor)
+}
+
+// PaginationCursorData creates an error indicating invalid cursor data.
+func PaginationCursorData(cursor string, reason string) *errors.AppError {
+	return errors.NewValidationError("cursor", "Invalid cursor data").
+		WithMetadata("cursor", cursor).
+		WithMetadata("reason", reason)
+}
+
+// Relationship pagination-specific errors
+
+// RelationshipPaginationModelTypeUnsupported creates an error indicating unsupported model type.
+func RelationshipPaginationModelTypeUnsupported(modelType string) *errors.AppError {
+	return errors.NewValidationError("model_type", "Unsupported model type").
+		WithMetadata("model_type", modelType)
+}
+
+// RelationshipPaginationQueryFailed creates an error indicating failed to get relationship data.
+func RelationshipPaginationQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("relationship data", err)
+}
+
+// Relay-specific errors
+
+// RelayNotFound creates an error indicating relay not found.
+func RelayNotFound(relayID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("relay", relayID)
+}
+
+// Timeline-specific errors
+
+// TimelineQueryFailed creates an error indicating failed to get timeline entries.
+func TimelineQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries", err)
+}
+
+// TimelineEntriesByPostQueryFailed creates an error indicating failed to get timeline entries by post.
+func TimelineEntriesByPostQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries by post", err)
+}
+
+// TimelineEntriesByActorQueryFailed creates an error indicating failed to get timeline entries by actor.
+func TimelineEntriesByActorQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries by actor", err)
+}
+
+// TimelineEntriesByVisibilityQueryFailed creates an error indicating failed to get timeline entries by visibility.
+func TimelineEntriesByVisibilityQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries by visibility", err)
+}
+
+// TimelineEntriesByLanguageQueryFailed creates an error indicating failed to get timeline entries by language.
+func TimelineEntriesByLanguageQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries by language", err)
+}
+
+// TimelineEntryQueryFailed creates an error indicating failed to get timeline entry.
+func TimelineEntryQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entry", err)
+}
+
+// TimelineEntriesForDeletionQueryFailed creates an error indicating failed to get timeline entries for deletion.
+func TimelineEntriesForDeletionQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries for deletion", err)
+}
+
+// TimelineExpiredEntriesScanFailed creates an error indicating failed to scan for expired timeline entries.
+func TimelineExpiredEntriesScanFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("expired timeline entries", err)
+}
+
+// TimelineCountQueryFailed creates an error indicating failed to count timeline entries.
+func TimelineCountQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entry count", err)
+}
+
+// TimelineEntriesInRangeQueryFailed creates an error indicating failed to get timeline entries in range.
+func TimelineEntriesInRangeQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("timeline entries in range", err)
+}
+
+// TimelineFilteredEntriesQueryFailed creates an error indicating failed to get filtered timeline entries.
+func TimelineFilteredEntriesQueryFailed(err error) *errors.AppError {
+	return errors.FailedToQuery("filtered timeline entries", err)
+}
+
+// TestMockError creates a test mock error for testing purposes.
+func TestMockError() *errors.AppError {
+	return errors.NewAppError(errors.CodeInternal, errors.CategoryInternal, "Mock error for testing")
+}
+
+// StreamingConnection-specific errors
+
+// StreamingConnectionUserLimitReached creates an error indicating user has reached maximum connections.
+func StreamingConnectionUserLimitReached(userID string, limit int) *errors.AppError {
+	return errors.QuotaExceeded("user streaming connections", int64(limit)).
+		WithMetadata("user_id", userID)
+}
+
+// StreamingConnectionGlobalLimitReached creates an error indicating maximum total connections reached.
+func StreamingConnectionGlobalLimitReached(limit int) *errors.AppError {
+	return errors.QuotaExceeded("global streaming connections", int64(limit))
+}
+
+// StreamingConnectionMessageSizeExceeded creates an error indicating message size exceeds limit.
+func StreamingConnectionMessageSizeExceeded(size, limit int64) *errors.AppError {
+	return errors.FileSizeExceedsLimit(size, limit)
+}
+
+// StreamingConnectionRateLimitExceeded creates an error indicating rate limit exceeded.
+func StreamingConnectionRateLimitExceeded(connectionID string) *errors.AppError {
+	return errors.RateLimitExceededGeneric("streaming connection").
+		WithMetadata("connection_id", connectionID)
+}
+
+// StreamingConnectionNotFound creates an error indicating connection not found.
+func StreamingConnectionNotFound(connectionID string) *errors.AppError {
+	return errors.ItemNotFoundWithID("streaming connection", connectionID)
+}
+
+// StreamingPreferences-specific errors
+
+// StreamingUsernameRequired creates an error indicating username is required.
+func StreamingUsernameRequired() *errors.AppError {
+	return errors.RequiredFieldMissing("username")
+}
+
+// StreamingDeviceParamsRequired creates an error indicating username and deviceID are required.
+func StreamingDeviceParamsRequired() *errors.AppError {
+	return errors.MultipleValidationErrors([]string{"username is required", "deviceID is required"})
+}
+
+// StreamingConflictResolutionFailed creates an error indicating failed to resolve preference conflict.
+func StreamingConflictResolutionFailed(err error) *errors.AppError {
+	return errors.ProcessingFailed("preference conflict resolution", err)
+}
 
 // ErrorHandler is the global error utils instance
 var ErrorHandler = NewErrorUtils()
 
-// MapDynamoDBError maps DynamoDB/DynamORM errors to storage errors
+// MapDynamoDBError maps DynamoDB/DynamORM errors to storage errors using the centralized error system.
 func MapDynamoDBError(err error) error {
 	if err == nil {
 		return nil
@@ -512,29 +1020,268 @@ func MapDynamoDBError(err error) error {
 		return storage.ErrAlreadyExists
 	}
 
-	// Fall back to string matching for other errors
+	// Use centralized error system for other errors
 	errStr := err.Error()
 
 	// Validation errors
-	if strings.Contains(errStr, "validation failed") || strings.Contains(errStr, "invalid") {
+	if containsAny(errStr, "validation failed", "invalid") {
 		return storage.ErrInvalidInput
 	}
 
 	// Authorization errors
-	if strings.Contains(errStr, "unauthorized") || strings.Contains(errStr, "forbidden") {
+	if containsAny(errStr, "unauthorized", "forbidden") {
 		return storage.ErrUnauthorized
 	}
 
-	// Default to original error wrapped with context
-	return fmt.Errorf("%w: %w", ErrDatabaseOperation, err)
+	// DynamoDB throttling
+	if containsAny(errStr, "ProvisionedThroughputExceededException", "throttling") {
+		return errors.DynamoDBProvisionedThroughputExceeded()
+	}
+
+	// DynamoDB item size limit
+	if containsAny(errStr, "Item size", "ValidationException") {
+		return errors.DynamoDBItemTooLarge()
+	}
+
+	// Default to database operation error with internal details
+	return errors.NewStorageInternalError(errors.CodeInternal, "Database operation failed", err)
 }
 
-// MapErrorWithContext wraps an error with additional context
+// MapErrorWithContext wraps an error with additional context using the centralized error system.
 func MapErrorWithContext(err error, context string) error {
 	if err == nil {
 		return nil
 	}
 
 	mappedErr := MapDynamoDBError(err)
-	return fmt.Errorf("%s: %w", context, mappedErr)
+	if appErr, ok := errors.AsAppError(mappedErr); ok {
+		return appErr.WithInternalMessage(context + ": " + appErr.InternalMessage)
+	}
+	return errors.WrapWithContext(mappedErr, context)
 }
+
+// Helper function to check if string contains any of the provided substrings
+func containsAny(s string, substrings ...string) bool {
+	for _, substr := range substrings {
+		if strings.Contains(s, substr) {
+			return true
+		}
+	}
+	return false
+}
+
+// Package-level convenience functions that wrap the centralized error system
+// These provide a consistent API for repository-level error handling.
+
+// NewRepositoryError creates a new repository error with Storage category.
+func NewRepositoryError(code errors.ErrorCode, message string) *errors.AppError {
+	return errors.NewStorageError(code, message)
+}
+
+// NewRepositoryInternalError creates a repository error with internal details.
+func NewRepositoryInternalError(code errors.ErrorCode, message string, internal error) *errors.AppError {
+	return errors.NewStorageInternalError(code, message, internal)
+}
+
+// WrapRepositoryError wraps an existing error as a repository error.
+func WrapRepositoryError(err error, code errors.ErrorCode, message string) *errors.AppError {
+	return errors.WrapError(err, code, errors.CategoryStorage, message)
+}
+
+// IsRepositoryNotFoundError checks if an error indicates a repository item was not found.
+func IsRepositoryNotFoundError(err error) bool {
+	return errors.HasCode(err, errors.CodeNotFound)
+}
+
+// IsRepositoryConflictError checks if an error indicates a repository conflict (already exists).
+func IsRepositoryConflictError(err error) bool {
+	return errors.HasCode(err, errors.CodeAlreadyExists)
+}
+
+// Deprecated error variables - These are maintained for backward compatibility.
+// New code should use the function-based error creation from the centralized system.
+var (
+	// Account authentication errors
+	ErrAccountValidationFailed  = AccountValidationFailed("general validation failure")
+	ErrDeviceValidationFailed   = DeviceValidationFailed("general validation failure")
+	ErrSessionValidationFailed  = SessionValidationFailed("general validation failure")
+	ErrWebAuthnValidationFailed = WebAuthnValidationFailed("general validation failure")
+	ErrWalletValidationFailed   = WalletValidationFailed("general validation failure")
+	ErrDeviceNotFound             = DeviceNotFound("unknown")
+	ErrWebAuthnCredentialNotFound = WebAuthnCredentialNotFound("unknown")
+
+	// Account search errors
+	ErrAccountSearchInvalidWebfingerFormat = AccountSearchInvalidWebfingerFormat("unknown format")
+
+	// OAuth errors
+	ErrOAuthClientNameRequired   = OAuthClientNameRequired()
+	ErrOAuthRedirectURIsRequired = OAuthRedirectURIsRequired()
+	ErrOAuthNoUpdatesProvided    = OAuthNoUpdatesProvided()
+	ErrOAuthClientAlreadyExists  = OAuthClientAlreadyExists("unknown")
+	ErrOAuthStateExpired         = OAuthStateExpired("unknown")
+
+	// Query utility errors
+	ErrQueryOperationFailed     = QueryOperationFailed("unknown", nil)
+	ErrQueryCollectionAddFailed = QueryCollectionAddFailed("unknown", nil)
+	ErrQueryExecutionFailed     = QueryExecutionFailed("unknown", nil)
+	ErrQueryValidationFailed    = QueryValidationFailed("unknown")
+
+	// Analytics errors
+	ErrInvalidHashtagTrendType = InvalidHashtagTrendType("unknown")
+	ErrInvalidStatusTrendType  = InvalidStatusTrendType("unknown")
+	ErrInvalidLinkTrendType    = InvalidLinkTrendType("unknown")
+	ErrHashtagBatchUnknownModelType = HashtagBatchUnknownModelType("unknown")
+	ErrStatusRepoDependencyMissing = StatusRepoDependencyMissing()
+	ErrInvalidQueryParameters = InvalidQueryParameters("unknown")
+	ErrFailedIndexByEngagement      = FailedIndexByEngagement(nil)
+	ErrFailedRecordEngagement       = FailedRecordEngagement(nil)
+	ErrFailedGetEngagementMetrics   = FailedGetEngagementMetrics(nil)
+	ErrFailedGetEngagementByDate    = FailedGetEngagementByDate(nil)
+	ErrFailedGetTopContent          = FailedGetTopContent(nil)
+	ErrFailedUpdateTrendingTag      = FailedUpdateTrendingTag(nil)
+	ErrFailedGetTrendingTags        = FailedGetTrendingTags(nil)
+	ErrFailedQueryStaleTrends       = FailedQueryStaleTrends(nil)
+	ErrFailedRecordInstanceMetric   = FailedRecordInstanceMetric(nil)
+	ErrFailedGetInstanceMetrics     = FailedGetInstanceMetrics(nil)
+	ErrFailedGetStartMetric         = FailedGetStartMetric(nil)
+	ErrFailedGetEndMetric           = FailedGetEndMetric(nil)
+	ErrFailedRecordManifest         = FailedRecordManifest(nil)
+	ErrFailedRecordQualityChange    = FailedRecordQualityChange(nil)
+	ErrFailedRecordMediaEvent       = FailedRecordMediaEvent(nil)
+	ErrFailedQuerySessionEvents     = FailedQuerySessionEvents(nil)
+	ErrFailedGetModerationAnalytics = FailedGetModerationAnalytics(nil)
+	ErrFailedRecordModerationAction = FailedRecordModerationAction(nil)
+	ErrFailedGetModerationData      = FailedGetModerationData(nil)
+	ErrInvalidQueryForCounting      = InvalidQueryForCounting("unknown")
+	ErrInvalidQueryForCount         = InvalidQueryForCount("unknown")
+	ErrFailedGetQueryCount          = FailedGetQueryCount(nil)
+	ErrFailedGetTopQueries          = FailedGetTopQueries(nil)
+	ErrFailedGetExistingCounter     = FailedGetExistingCounter(nil)
+	ErrFailedSaveCounter            = FailedSaveCounter(nil)
+	ErrFailedGetStats               = FailedGetStats(nil)
+
+	// Federation cost errors
+	ErrFederationCostRecordFailed        = FederationCostRecordFailed(nil)
+	ErrFederationCostQueryFailed         = FederationCostQueryFailed(nil)
+	ErrFederationCostActivityQueryFailed = FederationCostActivityQueryFailed(nil)
+	ErrFederationBudgetCreateFailed      = FederationBudgetCreateFailed(nil)
+	ErrFederationBudgetNotFound          = FederationBudgetNotFound("unknown")
+	ErrFederationBudgetQueryFailed       = FederationBudgetQueryFailed(nil)
+	ErrActiveBudgetsQueryFailed          = ActiveBudgetsQueryFailed(nil)
+
+	// Federation instance errors
+	ErrFederationInstanceSearchFailed                 = FederationInstanceSearchFailed(nil)
+	ErrFederationInstanceHealthStoreFailed            = FederationInstanceHealthStoreFailed(nil)
+	ErrFederationInstanceHealthQueryFailed            = FederationInstanceHealthQueryFailed(nil)
+	ErrFederationInstanceBatchGetFailed               = FederationInstanceBatchGetFailed(nil)
+	ErrFederationInstanceBatchCreateFailed            = FederationInstanceBatchCreateFailed(nil)
+	ErrFederationInstanceBatchCreateChunkFailed       = FederationInstanceBatchCreateChunkFailed(nil)
+	ErrFederationInstanceBatchUpdateHealthFailed      = FederationInstanceBatchUpdateHealthFailed(nil)
+	ErrFederationInstanceBatchUpdateHealthChunkFailed = FederationInstanceBatchUpdateHealthChunkFailed(nil)
+	ErrFederationInstanceUsageUpdateFailed            = FederationInstanceUsageUpdateFailed(nil)
+	ErrFederationInstanceBatchUpdateUsageFailed       = FederationInstanceBatchUpdateUsageFailed(nil)
+	ErrFederationInstanceBatchUpdateUsageChunkFailed  = FederationInstanceBatchUpdateUsageChunkFailed(nil)
+	ErrFederationInstanceListFailed                   = FederationInstanceListFailed(nil)
+	ErrFederationInstanceCursorTooLong = FederationInstanceCursorTooLong(1025)
+	ErrFederationInstanceCursorInvalid = FederationInstanceCursorInvalid("unknown")
+	ErrFederationInstanceLimitNegative = FederationInstanceLimitNegative(-1)
+	ErrFederationInstanceLimitTooLarge = FederationInstanceLimitTooLarge(1001)
+
+	// CSRF errors
+	ErrCSRFTokenInvalid       = CSRFTokenInvalid("unknown")
+	ErrCSRFTokenExpired       = CSRFTokenExpired("unknown")
+	ErrCSRFTokenAlreadyExists = CSRFTokenAlreadyExists("unknown")
+	ErrCSRFTooManyTokens      = CSRFTooManyTokens("unknown", 11)
+
+	// Media metadata errors
+	ErrMediaMetadataPrepareFailed      = MediaMetadataPrepareFailed(nil)
+	ErrMediaMetadataNotFound           = MediaMetadataNotFound("unknown")
+	ErrMediaMetadataQueryFailed        = MediaMetadataQueryFailed(nil)
+	ErrMediaMetadataStatusQueryFailed  = MediaMetadataStatusQueryFailed(nil)
+	ErrExpiredMediaMetadataQueryFailed = ExpiredMediaMetadataQueryFailed(nil)
+
+	// DLQ errors
+	ErrDLQServiceRequired         = DLQServiceRequired()
+	ErrDLQMessageNotFound         = DLQMessageNotFound("unknown")
+	ErrDLQMessageNotReprocessable = DLQMessageNotReprocessable("unknown", "unknown")
+	ErrDLQBatchUpdateFailed       = DLQBatchUpdateFailed(nil)
+
+	// Notification errors
+	ErrNotificationUnknownPreferenceType = NotificationUnknownPreferenceType("unknown")
+
+	// DNS cache errors
+	ErrDNSCacheEntryRequired = DNSCacheEntryRequired()
+	ErrDNSCacheGetFailed        = DNSCacheGetFailed(nil)
+	ErrDNSCacheSetFailed        = DNSCacheSetFailed(nil)
+	ErrDNSCacheInvalidateFailed = DNSCacheInvalidateFailed(nil)
+
+	// Federation activity errors
+	ErrFederationActivityValidationFailed = FederationActivityValidationFailed("unknown")
+	ErrFederationActivityNotFound = FederationActivityNotFound("unknown")
+
+	// Quote errors
+	ErrQuoteRelationshipCreateFailed = QuoteRelationshipCreateFailed(nil)
+	ErrQuoteRelationshipGetFailed    = QuoteRelationshipGetFailed(nil)
+	ErrQuoteRelationshipUpdateFailed = QuoteRelationshipUpdateFailed(nil)
+	ErrQuoteRelationshipDeleteFailed = QuoteRelationshipDeleteFailed(nil)
+	ErrQuoteRelationshipQueryFailed  = QuoteRelationshipQueryFailed(nil)
+	ErrQuotePermissionsCreateFailed  = QuotePermissionsCreateFailed(nil)
+	ErrQuotePermissionsGetFailed     = QuotePermissionsGetFailed(nil)
+	ErrQuotePermissionsUpdateFailed  = QuotePermissionsUpdateFailed(nil)
+	ErrQuotePermissionsDeleteFailed  = QuotePermissionsDeleteFailed(nil)
+	ErrQuoteCountQueryFailed         = QuoteCountQueryFailed(nil)
+
+	// Marker errors
+	ErrMarkerSaveFailed = MarkerSaveFailed(nil)
+
+	// Scheduled job cost errors
+	ErrScheduledJobCostBeforeCreateFailed = ScheduledJobCostBeforeCreateFailed("unknown")
+	ErrScheduledJobCostBeforeUpdateFailed = ScheduledJobCostBeforeUpdateFailed("unknown")
+	ErrScheduledJobCostNotFound           = ScheduledJobCostNotFound("unknown")
+	ErrScheduledJobCostAggregationFailed  = ScheduledJobCostAggregationFailed(nil)
+
+	// Moderation metrics errors
+	ErrModerationMetricsFalsePositivesQueryFailed  = ModerationMetricsFalsePositivesQueryFailed(nil)
+	ErrModerationMetricsDecisionSamplesQueryFailed = ModerationMetricsDecisionSamplesQueryFailed(nil)
+	ErrModerationMetricsTopPatternsQueryFailed     = ModerationMetricsTopPatternsQueryFailed(nil)
+	ErrModerationMetricsEntriesQueryFailed         = ModerationMetricsEntriesQueryFailed(nil)
+
+	// Pagination errors
+	ErrPaginationParametersInvalid = PaginationParametersInvalid("unknown")
+	ErrPaginationCursorInvalid     = PaginationCursorInvalid("unknown")
+	ErrPaginationCursorFormat      = PaginationCursorFormat("unknown")
+	ErrPaginationCursorData        = PaginationCursorData("unknown", "unknown")
+
+	// Relationship pagination errors
+	ErrRelationshipPaginationModelTypeUnsupported = RelationshipPaginationModelTypeUnsupported("unknown")
+	ErrRelationshipPaginationQueryFailed = RelationshipPaginationQueryFailed(nil)
+
+	// Relay errors
+	ErrRelayNotFound = RelayNotFound("unknown")
+
+	// Timeline errors
+	ErrTimelineQueryFailed                    = TimelineQueryFailed(nil)
+	ErrTimelineEntriesByPostQueryFailed       = TimelineEntriesByPostQueryFailed(nil)
+	ErrTimelineEntriesByActorQueryFailed      = TimelineEntriesByActorQueryFailed(nil)
+	ErrTimelineEntriesByVisibilityQueryFailed = TimelineEntriesByVisibilityQueryFailed(nil)
+	ErrTimelineEntriesByLanguageQueryFailed   = TimelineEntriesByLanguageQueryFailed(nil)
+	ErrTimelineEntryQueryFailed               = TimelineEntryQueryFailed(nil)
+	ErrTimelineEntriesForDeletionQueryFailed  = TimelineEntriesForDeletionQueryFailed(nil)
+	ErrTimelineExpiredEntriesScanFailed       = TimelineExpiredEntriesScanFailed(nil)
+	ErrTimelineCountQueryFailed               = TimelineCountQueryFailed(nil)
+	ErrTimelineEntriesInRangeQueryFailed      = TimelineEntriesInRangeQueryFailed(nil)
+	ErrTimelineFilteredEntriesQueryFailed     = TimelineFilteredEntriesQueryFailed(nil)
+	ErrTestMockError = TestMockError()
+
+	// Streaming connection errors
+	ErrStreamingConnectionUserLimitReached   = StreamingConnectionUserLimitReached("unknown", 10)
+	ErrStreamingConnectionGlobalLimitReached = StreamingConnectionGlobalLimitReached(100)
+	ErrStreamingConnectionMessageSizeExceeded = StreamingConnectionMessageSizeExceeded(1000, 500)
+	ErrStreamingConnectionRateLimitExceeded   = StreamingConnectionRateLimitExceeded("unknown")
+	ErrStreamingConnectionNotFound = StreamingConnectionNotFound("unknown")
+
+	// Streaming preferences errors
+	ErrStreamingUsernameRequired     = StreamingUsernameRequired()
+	ErrStreamingDeviceParamsRequired = StreamingDeviceParamsRequired()
+	ErrStreamingConflictResolutionFailed = StreamingConflictResolutionFailed(nil)
+)

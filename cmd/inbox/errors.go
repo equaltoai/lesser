@@ -1,97 +1,357 @@
+// Package main implements error handlers for the inbox Lambda function.
 package main
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for the inbox Lambda function
-var (
-	// Database and initialization errors
-	ErrDynamoDBInterface     = errors.New("DynamoDB client does not implement core.DB interface")
-	ErrDynamORMInit          = errors.New("failed to initialize DynamORM")
-	ErrRepositoryFactoryInit = errors.New("failed to initialize repository factory")
+// Database and initialization errors - using Lambda domain functions
 
-	// Direct message validation errors
-	ErrDMToAddressing  = errors.New("invalid 'to' addressing in direct message")
-	ErrDMCcAddressing  = errors.New("invalid 'cc' addressing in direct message")
-	ErrDMBtoAddressing = errors.New("invalid 'bto' addressing in direct message")
-	ErrDMBccAddressing = errors.New("invalid 'bcc' addressing in direct message")
-	ErrDMPublicAddress = errors.New("direct messages cannot include public addressing")
-	ErrDMRecipientURL  = errors.New("invalid recipient URL in direct message")
-	ErrDMNoRecipients  = errors.New("direct messages must have specific actor recipients")
+// dynamoDBInterfaceError creates an error when DynamoDB client does not implement core.DB interface.
+func dynamoDBInterfaceError() *errors.AppError {
+	return errors.ServiceInitializationFailed("DynamoDB client interface validation", nil)
+}
 
-	// Actor and authentication errors
-	ErrRequestConversion = errors.New("failed to convert request")
-	ErrCreateRequest     = errors.New("failed to create request")
-	ErrFetchActor        = errors.New("failed to fetch actor")
-	ErrActorResponse     = errors.New("failed to fetch actor: invalid status")
-	ErrParseActor        = errors.New("failed to parse actor")
-	ErrNoPublicKey       = errors.New("actor has no public key")
-	ErrParsePublicKey    = errors.New("failed to parse public key")
+// dynamORMInitError creates an error when DynamORM initialization fails.
+func dynamORMInitError() *errors.AppError {
+	return errors.ServiceInitializationFailed("DynamORM", nil)
+}
 
-	// Activity processing errors
-	ErrMarshalFollow  = errors.New("failed to marshal embedded follow")
-	ErrParseFollow    = errors.New("failed to parse embedded follow")
-	ErrInvalidNote    = errors.New("invalid note object")
-	ErrCreateLike     = errors.New("failed to create like")
-	ErrCreateAnnounce = errors.New("failed to create announce")
-	ErrCreateBlock    = errors.New("failed to create block")
-	ErrDeleteBlock    = errors.New("failed to delete block")
+// repositoryFactoryInitError creates an error when repository factory initialization fails.
+func repositoryFactoryInitError() *errors.AppError {
+	return errors.ServiceInitializationFailed("repository factory", nil)
+}
 
-	// Block authorization errors
-	ErrUnauthorizedBlockUndo = errors.New("unauthorized: only the original blocker can undo their block")
+// Direct message validation errors - using Validation domain functions
 
-	// Collection management errors
-	ErrAddNoTarget             = errors.New("add activity must specify a target collection")
-	ErrAddNoObject             = errors.New("add activity must specify an object to add")
-	ErrAddObjectNoID           = errors.New("add activity object must have an ID")
-	ErrInvalidCollectionTarget = errors.New("invalid collection target")
-	ErrUnauthorizedAdd         = errors.New("unauthorized add to collection")
-	ErrAddItemFailed           = errors.New("failed to add item to collection")
+// dmToAddressingError creates an error for invalid 'to' addressing in direct message.
+func dmToAddressingError() *errors.AppError {
+	return errors.InvalidFormat("to", "ActivityPub addressing format")
+}
 
-	ErrRemoveNoTarget     = errors.New("remove activity must specify a target collection")
-	ErrRemoveNoObject     = errors.New("remove activity must specify an object to remove")
-	ErrRemoveObjectNoID   = errors.New("remove activity object must have an ID")
-	ErrUnauthorizedRemove = errors.New("unauthorized remove from collection")
-	ErrRemoveItemFailed   = errors.New("failed to remove item from collection")
+// dmCcAddressingError creates an error for invalid 'cc' addressing in direct message.
+func dmCcAddressingError() *errors.AppError {
+	return errors.InvalidFormat("cc", "ActivityPub addressing format")
+}
 
-	// URL processing errors
-	ErrTargetURLEmpty  = errors.New("target URL is empty")
-	ErrTargetURLFormat = errors.New("invalid target URL format")
+// dmBtoAddressingError creates an error for invalid 'bto' addressing in direct message.
+func dmBtoAddressingError() *errors.AppError {
+	return errors.InvalidFormat("bto", "ActivityPub addressing format")
+}
 
-	// Flag activity errors
-	ErrInvalidFlag         = errors.New("invalid flag activity")
-	ErrFlagNoObjects       = errors.New("flag activity must specify objects to flag")
-	ErrStoreModerationFlag = errors.New("failed to store moderation flag")
+// dmBccAddressingError creates an error for invalid 'bcc' addressing in direct message.
+func dmBccAddressingError() *errors.AppError {
+	return errors.InvalidFormat("bcc", "ActivityPub addressing format")
+}
 
-	// Move activity errors
-	ErrMoveNoTarget          = errors.New("move activity must specify a target account")
-	ErrMoveAuthorization     = errors.New("move authorization failed")
-	ErrStoreMigration        = errors.New("failed to store account migration")
-	ErrUnsupportedFlagObject = errors.New("unsupported object type in flag activity")
-	ErrExtractUsername       = errors.New("cannot extract username from new account ID")
-	ErrVerifyMoveAuth        = errors.New("cannot verify move authorization via alsoKnownAs")
-	ErrMoveNotAuthorized     = errors.New("move not authorized: new account does not list old account in alsoKnownAs field")
+// dmPublicAddressError creates an error when direct messages include public addressing.
+func dmPublicAddressError() *errors.AppError {
+	return errors.InvalidValue("addressing", []string{"private recipients only"}, "public addressing")
+}
 
-	// Collection ownership errors
-	ErrDetermineCollectionOwner     = errors.New("cannot determine collection owner from target URL")
-	ErrExtractCollectionOwner       = errors.New("cannot extract collection owner from target URL")
-	ErrUnauthorizedCollection       = errors.New("only the actor can manage their own featured collection")
-	ErrUnauthorizedCollectionModify = errors.New("actor is not authorized to modify collection")
+// dmRecipientURLError creates an error for invalid recipient URL in direct message.
+func dmRecipientURLError() *errors.AppError {
+	return errors.URLInvalid("recipient URL")
+}
 
-	// Activity authorization errors
-	ErrActivityBlocked      = errors.New("activity blocked: actors have blocked each other")
-	ErrDetermineObjectOwner = errors.New("cannot determine object owner for authorization")
-	ErrUnauthorizedUpdate   = errors.New("unauthorized update: actor cannot update object")
-	ErrUnauthorizedDelete   = errors.New("unauthorized delete: actor cannot delete object")
+// dmNoRecipientsError creates an error when direct messages have no specific actor recipients.
+func dmNoRecipientsError() *errors.AppError {
+	return errors.RequiredFieldMissing("recipients")
+}
 
-	// Object processing errors
-	ErrSerializeObject         = errors.New("failed to serialize existing object")
-	ErrDeserializeObject       = errors.New("failed to deserialize existing object")
-	ErrCreateUpdateHistory     = errors.New("failed to create update history")
-	ErrUnsupportedDeleteObject = errors.New("unsupported object type in delete activity")
-	ErrGetObjectLikes          = errors.New("failed to get object likes")
-	ErrGetReplies              = errors.New("failed to get replies")
-	ErrCreateTombstone         = errors.New("failed to create tombstone")
+// Actor and authentication errors - using Auth domain functions
 
-	// Recovery processing errors
-	ErrUpdateTrusteeConfirmation = errors.New("failed to update trustee confirmation")
-)
+// requestConversionError creates an error when request conversion fails.
+//nolint:unused
+func requestConversionError() *errors.AppError {
+	return errors.ProcessingFailed("HTTP request conversion", nil)
+}
+
+// createRequestError creates an error when HTTP request creation fails.
+//nolint:unused
+func createRequestError() *errors.AppError {
+	return errors.ProcessingFailed("HTTP request creation", nil)
+}
+
+// fetchActorError creates an error when actor fetch fails.
+//nolint:unused
+func fetchActorError() *errors.AppError {
+	return errors.ActorFetchFailed("", nil)
+}
+
+// actorResponseError creates an error when actor fetch returns invalid status.
+//nolint:unused
+func actorResponseError() *errors.AppError {
+	return errors.ActorFetchFailed("", errors.NetworkError("invalid status response", nil))
+}
+
+// parseActorError creates an error when actor parsing fails.
+//nolint:unused
+func parseActorError() *errors.AppError {
+	return errors.ParsingFailed("ActivityPub actor", nil)
+}
+
+// noPublicKeyError creates an error when actor has no public key.
+//nolint:unused
+func noPublicKeyError() *errors.AppError {
+	return errors.ActivityMissingField("publicKey")
+}
+
+// parsePublicKeyError creates an error when public key parsing fails.
+//nolint:unused
+func parsePublicKeyError() *errors.AppError {
+	return errors.ParsingFailed("public key", nil)
+}
+
+// Activity processing errors - using Federation domain functions
+
+// marshalFollowError creates an error when marshaling embedded follow fails.
+func marshalFollowError() *errors.AppError {
+	return errors.MarshalingFailed("embedded follow", nil)
+}
+
+// parseFollowError creates an error when parsing embedded follow fails.
+func parseFollowError() *errors.AppError {
+	return errors.ParsingFailed("embedded follow", nil)
+}
+
+// invalidNoteError creates an error for invalid note object.
+func invalidNoteError() *errors.AppError {
+	return errors.ObjectInvalidField("type", "must be Note")
+}
+
+// createLikeError creates an error when like creation fails.
+func createLikeError() *errors.AppError {
+	return errors.FailedToCreate("like", nil)
+}
+
+// createAnnounceError creates an error when announce creation fails.
+func createAnnounceError() *errors.AppError {
+	return errors.FailedToCreate("announce", nil)
+}
+
+// createBlockError creates an error when block creation fails.
+func createBlockError() *errors.AppError {
+	return errors.FailedToCreate("block", nil)
+}
+
+// deleteBlockError creates an error when block deletion fails.
+func deleteBlockError() *errors.AppError {
+	return errors.FailedToDelete("block", nil)
+}
+
+// Block authorization errors - using Auth domain functions
+
+// unauthorizedBlockUndoError creates an error when only the original blocker can undo their block.
+func unauthorizedBlockUndoError() *errors.AppError {
+	return errors.OperationNotAllowed("only the original blocker can undo their block")
+}
+
+// Collection management errors - using Validation and Auth domain functions
+
+// addNoTargetError creates an error when add activity must specify a target collection.
+func addNoTargetError() *errors.AppError {
+	return errors.RequiredFieldMissing("target")
+}
+
+// addNoObjectError creates an error when add activity must specify an object to add.
+func addNoObjectError() *errors.AppError {
+	return errors.RequiredFieldMissing("object")
+}
+
+// addObjectNoIDError creates an error when add activity object must have an ID.
+func addObjectNoIDError() *errors.AppError {
+	return errors.RequiredFieldMissing("object.id")
+}
+
+// invalidCollectionTargetError creates an error for invalid collection target.
+func invalidCollectionTargetError() *errors.AppError {
+	return errors.URLInvalid("collection target")
+}
+
+// unauthorizedAddError creates an error for unauthorized add to collection.
+func unauthorizedAddError() *errors.AppError {
+	return errors.OperationNotAllowed("add to collection")
+}
+
+// addItemFailedError creates an error when adding item to collection fails.
+func addItemFailedError() *errors.AppError {
+	return errors.FailedToCreate("collection item", nil)
+}
+
+// removeNoTargetError creates an error when remove activity must specify a target collection.
+func removeNoTargetError() *errors.AppError {
+	return errors.RequiredFieldMissing("target")
+}
+
+// removeNoObjectError creates an error when remove activity must specify an object to remove.
+func removeNoObjectError() *errors.AppError {
+	return errors.RequiredFieldMissing("object")
+}
+
+// removeObjectNoIDError creates an error when remove activity object must have an ID.
+func removeObjectNoIDError() *errors.AppError {
+	return errors.RequiredFieldMissing("object.id")
+}
+
+// unauthorizedRemoveError creates an error for unauthorized remove from collection.
+func unauthorizedRemoveError() *errors.AppError {
+	return errors.OperationNotAllowed("remove from collection")
+}
+
+// removeItemFailedError creates an error when removing item from collection fails.
+func removeItemFailedError() *errors.AppError {
+	return errors.FailedToRemove("collection item", nil)
+}
+
+// URL processing errors - using Validation domain functions
+
+// targetURLEmptyError creates an error when target URL is empty.
+func targetURLEmptyError() *errors.AppError {
+	return errors.RequiredFieldMissing("target URL")
+}
+
+// targetURLFormatError creates an error for invalid target URL format.
+func targetURLFormatError() *errors.AppError {
+	return errors.URLInvalid("target URL")
+}
+
+// Flag activity errors - using Federation and Validation domain functions
+
+// invalidFlagError creates an error for invalid flag activity.
+func invalidFlagError() *errors.AppError {
+	return errors.ActivityInvalidField("flag", "invalid flag structure")
+}
+
+// flagNoObjectsError creates an error when flag activity must specify objects to flag.
+func flagNoObjectsError() *errors.AppError {
+	return errors.RequiredFieldMissing("objects")
+}
+
+// storeModerationFlagError creates an error when storing moderation flag fails.
+func storeModerationFlagError() *errors.AppError {
+	return errors.FailedToStore("moderation flag", nil)
+}
+
+// Move activity errors - using Federation and Auth domain functions
+
+// moveNoTargetError creates an error when move activity must specify a target account.
+func moveNoTargetError() *errors.AppError {
+	return errors.RequiredFieldMissing("target")
+}
+
+// moveAuthorizationError creates an error when move authorization fails.
+func moveAuthorizationError() *errors.AppError {
+	return errors.OperationNotAllowed("move authorization failed")
+}
+
+// storeMigrationError creates an error when storing account migration fails.
+func storeMigrationError() *errors.AppError {
+	return errors.FailedToStore("account migration", nil)
+}
+
+// unsupportedFlagObjectError creates an error for unsupported object type in flag activity.
+func unsupportedFlagObjectError() *errors.AppError {
+	return errors.ActivityTypeUnsupported("flag object type")
+}
+
+// extractUsernameError creates an error when cannot extract username from new account ID.
+func extractUsernameError() *errors.AppError {
+	return errors.ParsingFailed("username from account ID", nil)
+}
+
+// verifyMoveAuthError creates an error when cannot verify move authorization via alsoKnownAs.
+func verifyMoveAuthError() *errors.AppError {
+	return errors.ProcessingFailed("move authorization verification", nil)
+}
+
+// moveNotAuthorizedError creates an error when move is not authorized.
+func moveNotAuthorizedError() *errors.AppError {
+	return errors.OperationNotAllowed("move not authorized: new account does not list old account in alsoKnownAs field")
+}
+
+// Collection ownership errors - using Auth and Validation domain functions
+
+// determineCollectionOwnerError creates an error when cannot determine collection owner from target URL.
+func determineCollectionOwnerError() *errors.AppError {
+	return errors.ParsingFailed("collection owner from target URL", nil)
+}
+
+// extractCollectionOwnerError creates an error when cannot extract collection owner from target URL.
+func extractCollectionOwnerError() *errors.AppError {
+	return errors.ParsingFailed("collection owner from target URL", nil)
+}
+
+// unauthorizedCollectionError creates an error when only the actor can manage their own featured collection.
+func unauthorizedCollectionError() *errors.AppError {
+	return errors.OperationNotAllowed("only the actor can manage their own featured collection")
+}
+
+// unauthorizedCollectionModifyError creates an error when actor is not authorized to modify collection.
+func unauthorizedCollectionModifyError() *errors.AppError {
+	return errors.OperationNotAllowed("modify collection")
+}
+
+// Activity authorization errors - using Auth domain functions
+
+// activityBlockedError creates an error when activity is blocked because actors have blocked each other.
+func activityBlockedError() *errors.AppError {
+	return errors.OperationNotAllowed("activity blocked: actors have blocked each other")
+}
+
+// determineObjectOwnerError creates an error when cannot determine object owner for authorization.
+func determineObjectOwnerError() *errors.AppError {
+	return errors.ParsingFailed("object owner for authorization", nil)
+}
+
+// unauthorizedUpdateError creates an error when actor cannot update object.
+func unauthorizedUpdateError() *errors.AppError {
+	return errors.UpdateUnauthorized("", "")
+}
+
+// unauthorizedDeleteError creates an error when actor cannot delete object.
+func unauthorizedDeleteError() *errors.AppError {
+	return errors.DeleteUnauthorized("", "")
+}
+
+// Object processing errors - using Federation and Lambda domain functions
+
+// serializeObjectError creates an error when serializing existing object fails.
+func serializeObjectError() *errors.AppError {
+	return errors.MarshalingFailed("existing object", nil)
+}
+
+// deserializeObjectError creates an error when deserializing existing object fails.
+func deserializeObjectError() *errors.AppError {
+	return errors.UnmarshalingFailed("existing object", nil)
+}
+
+// createUpdateHistoryError creates an error when creating update history fails.
+func createUpdateHistoryError() *errors.AppError {
+	return errors.FailedToCreate("update history", nil)
+}
+
+// unsupportedDeleteObjectError creates an error for unsupported object type in delete activity.
+func unsupportedDeleteObjectError() *errors.AppError {
+	return errors.ActivityTypeUnsupported("delete object type")
+}
+
+// getObjectLikesError creates an error when getting object likes fails.
+func getObjectLikesError() *errors.AppError {
+	return errors.FailedToGet("object likes", nil)
+}
+
+// getRepliesError creates an error when getting replies fails.
+func getRepliesError() *errors.AppError {
+	return errors.FailedToGet("replies", nil)
+}
+
+// createTombstoneError creates an error when creating tombstone fails.
+func createTombstoneError() *errors.AppError {
+	return errors.FailedToCreate("tombstone", nil)
+}
+
+// Recovery processing errors - using Lambda domain functions
+
+// updateTrusteeConfirmationError creates an error when updating trustee confirmation fails.
+func updateTrusteeConfirmationError() *errors.AppError {
+	return errors.FailedToUpdate("trustee confirmation", nil)
+}

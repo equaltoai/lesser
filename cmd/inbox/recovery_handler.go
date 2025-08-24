@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -90,7 +89,7 @@ func (h *RecoveryActivityHandler) handleTrusteeAcceptance(ctx context.Context, a
 			zap.String("inviter", inviterUsername),
 			zap.String("trustee", trusteeActorID),
 			zap.Error(err))
-		return errors.Join(ErrUpdateTrusteeConfirmation, err)
+		return updateTrusteeConfirmationError()
 	}
 
 	h.logger.Info("trustee accepted invitation",

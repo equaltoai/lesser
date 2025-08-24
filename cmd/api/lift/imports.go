@@ -227,12 +227,12 @@ func (h *Handler) validateImportParams(req *ImportRequest) error {
 		h.logger.Error("invalid import type provided",
 			zap.String("type", req.Type),
 			zap.Strings("valid_types", []string{"followers", "following", "blocks", "mutes", "lists", "bookmarks"}))
-		return ErrInvalidImportType
+		return invalidImportType()
 	}
 
 	// Validate mode
 	if req.Mode != "merge" && req.Mode != "overwrite" {
-		return ErrInvalidImportMode
+		return invalidImportMode()
 	}
 
 	return nil
@@ -357,7 +357,7 @@ func (h *Handler) queueImportJobSQS(ctx *lift.Context, importID, username string
 			zap.String("import_id", importID),
 			zap.String("username", username),
 			zap.Error(err))
-		return errors.Join(ErrJobQueueServiceCreationFailed, err)
+		return errors.Join(jobQueueServiceCreationFailed(), err)
 	}
 
 	// Create import job message
@@ -748,7 +748,7 @@ func (h *Handler) basicFileValidation(data []byte) error {
 		h.logger.Error("unsupported file format detected",
 			zap.String("content_type", contentType),
 			zap.Strings("supported_formats", []string{"application/json", "text/csv", "text/plain"}))
-		return ErrUnsupportedFileFormat
+		return unsupportedFileFormat()
 	}
 	return nil
 }

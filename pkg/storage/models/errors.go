@@ -1,200 +1,203 @@
 package models
 
-import "errors"
+import (
+	centralErrors "github.com/equaltoai/lesser/pkg/errors"
+)
 
-// Model validation and business logic errors
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
 	// User Media Config errors
-	ErrInvalidPlanTier            = errors.New("invalid plan tier")
-	ErrInvalidFileSize            = errors.New("invalid file size configuration")
-	ErrFileSizeTooLarge           = errors.New("file size exceeds limits")
-	ErrVideoDurationInvalid       = errors.New("invalid video duration")
-	ErrUploadLimitsInvalid        = errors.New("invalid upload limits")
-	ErrBudgetLimitsInvalid        = errors.New("invalid budget limits")
-	ErrModerationThresholdInvalid = errors.New("invalid moderation threshold")
-	ErrInvalidQualitySetting      = errors.New("invalid quality setting")
-	ErrPlanUpgradeFailed          = errors.New("plan upgrade failed")
-	ErrUserIDRequired             = errors.New("user ID is required")
+	ErrInvalidPlanTier            = centralErrors.InvalidPlanTier()
+	ErrInvalidFileSize            = centralErrors.InvalidFileSize()
+	ErrFileSizeTooLarge           = centralErrors.FileSizeExceedsLimit(0, 0)
+	ErrVideoDurationInvalid       = centralErrors.VideoDurationInvalid()
+	ErrUploadLimitsInvalid        = centralErrors.UploadLimitsInvalid()
+	ErrBudgetLimitsInvalid        = centralErrors.BudgetLimitsInvalid()
+	ErrModerationThresholdInvalid = centralErrors.ModerationThresholdInvalid()
+	ErrInvalidQualitySetting      = centralErrors.InvalidQualitySetting()
+	ErrPlanUpgradeFailed          = centralErrors.PlanUpgradeFailed(nil)
+	ErrUserIDRequired             = centralErrors.UserIDRequired()
 
 	// Relay Cost errors
-	ErrRelayWindowStartRequired = errors.New("window start is required")
-	ErrInvalidBudgetLimit       = errors.New("limit_micro_cents must be positive")
+	ErrRelayWindowStartRequired = centralErrors.ValidationFailedWithField("window start is required")
+	ErrInvalidBudgetLimit       = centralErrors.ValidationFailedWithField("limit_micro_cents must be positive")
 
 	// Transcoding Job errors
-	ErrTranscodingJobIDRequired   = errors.New("transcoding job ID is required")
-	ErrTranscodingMediaIDRequired = errors.New("transcoding media ID is required")
-	ErrTranscodingUserIDRequired  = errors.New("transcoding user ID is required")
-	ErrInvalidJobType             = errors.New("invalid job type")
-	ErrInvalidJobStatus           = errors.New("invalid job status")
-	ErrNegativeSize               = errors.New("sizes cannot be negative")
-	ErrNegativeCost               = errors.New("costs cannot be negative")
+	ErrTranscodingJobIDRequired   = centralErrors.RequiredFieldMissing("transcoding job ID")
+	ErrTranscodingMediaIDRequired = centralErrors.RequiredFieldMissing("transcoding media ID")
+	ErrTranscodingUserIDRequired  = centralErrors.RequiredFieldMissing("transcoding user ID")
+	ErrInvalidJobType             = centralErrors.NewValidationError("job_type", "Invalid job type")
+	ErrInvalidJobStatus           = centralErrors.NewValidationError("job_status", "Invalid job status")
+	ErrNegativeSize               = centralErrors.ValueOutOfRange("size", 0, int64(^uint64(0)>>1), -1)
+	ErrNegativeCost               = centralErrors.ValueOutOfRange("cost", 0, int64(^uint64(0)>>1), -1)
 
 	// Metrics validation errors
-	ErrMetricIDRequired          = errors.New("ID is required")
-	ErrMetricTypeRequired        = errors.New("type is required")
-	ErrMetricServiceRequired     = errors.New("service is required")
-	ErrInvalidMetricType         = errors.New("invalid metric type")
-	ErrInvalidPeriod             = errors.New("invalid period")
-	ErrMetricWindowStartRequired = errors.New("WindowStart is required")
-	ErrMetricWindowEndRequired   = errors.New("WindowEnd is required")
-	ErrWindowEndBeforeStart      = errors.New("WindowEnd must be after WindowStart")
-	ErrTimestampRequired         = errors.New("timestamp is required")
-	ErrAggregationLevelRequired  = errors.New("AggregationLevel is required")
-	ErrInvalidAggregationLevel   = errors.New("invalid aggregation level")
-	ErrFailedToUpdateKeys        = errors.New("failed to update keys")
+	ErrMetricIDRequired          = centralErrors.RequiredFieldMissing("ID")
+	ErrMetricTypeRequired        = centralErrors.RequiredFieldMissing("type")
+	ErrMetricServiceRequired     = centralErrors.RequiredFieldMissing("service")
+	ErrInvalidMetricType         = centralErrors.NewValidationError("metric_type", "Invalid metric type")
+	ErrInvalidPeriod             = centralErrors.NewValidationError("period", "Invalid period")
+	ErrMetricWindowStartRequired = centralErrors.RequiredFieldMissing("WindowStart")
+	ErrMetricWindowEndRequired   = centralErrors.RequiredFieldMissing("WindowEnd")
+	ErrWindowEndBeforeStart      = centralErrors.NewValidationError("window_end", "WindowEnd must be after WindowStart")
+	ErrTimestampRequired         = centralErrors.RequiredFieldMissing("timestamp")
+	ErrAggregationLevelRequired  = centralErrors.RequiredFieldMissing("AggregationLevel")
+	ErrInvalidAggregationLevel   = centralErrors.NewValidationError("aggregation_level", "Invalid aggregation level")
+	ErrFailedToUpdateKeys        = centralErrors.FailedToUpdate("keys", nil)
 
 	// MetricRecord validation errors
-	ErrMetricRecordTypeRequired    = errors.New("MetricType is required")
-	ErrMetricRecordServiceRequired = errors.New("ServiceName is required")
+	ErrMetricRecordTypeRequired    = centralErrors.RequiredFieldMissing("MetricType")
+	ErrMetricRecordServiceRequired = centralErrors.RequiredFieldMissing("ServiceName")
 
 	// WebSocket Cost Tracking errors
-	ErrInvalidWebSocketOperationType = errors.New("invalid operation type")
-	ErrInvalidWebSocketPeriod        = errors.New("invalid period")
-	ErrBudgetMicroCentsNegative      = errors.New("BudgetMicroCents cannot be negative")
-	ErrWebSocketWindowStartRequired  = errors.New("WindowStart is required")
-	ErrWebSocketWindowEndRequired    = errors.New("WindowEnd is required")
-	ErrWebSocketWindowEndBeforeStart = errors.New("WindowEnd must be after WindowStart")
+	ErrInvalidWebSocketOperationType = centralErrors.NewValidationError("operation_type", "Invalid operation type")
+	ErrInvalidWebSocketPeriod        = centralErrors.NewValidationError("period", "Invalid period")
+	ErrBudgetMicroCentsNegative      = centralErrors.ValueOutOfRange("BudgetMicroCents", 0, int64(^uint64(0)>>1), -1)
+	ErrWebSocketWindowStartRequired  = centralErrors.RequiredFieldMissing("WindowStart")
+	ErrWebSocketWindowEndRequired    = centralErrors.RequiredFieldMissing("WindowEnd")
+	ErrWebSocketWindowEndBeforeStart = centralErrors.NewValidationError("window_end", "WindowEnd must be after WindowStart")
 
 	// Scheduled Job Cost Tracking errors
-	ErrInvalidScheduledJobStatus        = errors.New("invalid status")
-	ErrInvalidScheduledJobSchedule      = errors.New("invalid schedule")
-	ErrScheduledJobWindowStartRequired  = errors.New("WindowStart is required")
-	ErrScheduledJobWindowEndRequired    = errors.New("WindowEnd is required")
-	ErrScheduledJobWindowEndBeforeStart = errors.New("WindowEnd must be after WindowStart")
-	ErrInvalidScheduledJobPeriod        = errors.New("invalid period")
+	ErrInvalidScheduledJobStatus        = centralErrors.NewValidationError("status", "Invalid status")
+	ErrInvalidScheduledJobSchedule      = centralErrors.NewValidationError("schedule", "Invalid schedule")
+	ErrScheduledJobWindowStartRequired  = centralErrors.RequiredFieldMissing("WindowStart")
+	ErrScheduledJobWindowEndRequired    = centralErrors.RequiredFieldMissing("WindowEnd")
+	ErrScheduledJobWindowEndBeforeStart = centralErrors.NewValidationError("window_end", "WindowEnd must be after WindowStart")
+	ErrInvalidScheduledJobPeriod        = centralErrors.NewValidationError("period", "Invalid period")
 
 	// Media validation errors
-	ErrFileSizeZero           = errors.New("FileSize must be greater than 0")
-	ErrUnsupportedContentType = errors.New("unsupported content type")
-	ErrInvalidMediaStatus     = errors.New("invalid media status")
-	ErrMediaIDRequired        = errors.New("MediaID is required")
+	ErrFileSizeZero           = centralErrors.ValueOutOfRange("FileSize", 1, int64(^uint64(0)>>1), 0)
+	ErrUnsupportedContentType = centralErrors.ContentTypeNotAllowed("unknown")
+	ErrInvalidMediaStatus     = centralErrors.NewValidationError("media_status", "Invalid media status")
+	ErrMediaIDRequired        = centralErrors.RequiredFieldMissing("MediaID")
 
 	// Media Metadata validation errors
-	ErrMediaMetadataIDRequired       = errors.New("MediaID is required")
-	ErrMediaMetadataInvalidStatus    = errors.New("invalid status")
-	ErrMediaMetadataWidthNegative    = errors.New("width must be non-negative")
-	ErrMediaMetadataHeightNegative   = errors.New("height must be non-negative")
-	ErrMediaMetadataDurationNegative = errors.New("duration must be non-negative")
-	ErrMediaMetadataFileSizeNegative = errors.New("file size must be non-negative")
+	ErrMediaMetadataIDRequired       = centralErrors.RequiredFieldMissing("MediaID")
+	ErrMediaMetadataInvalidStatus    = centralErrors.NewValidationError("status", "Invalid status")
+	ErrMediaMetadataWidthNegative    = centralErrors.ValueOutOfRange("width", 0, int64(^uint64(0)>>1), -1)
+	ErrMediaMetadataHeightNegative   = centralErrors.ValueOutOfRange("height", 0, int64(^uint64(0)>>1), -1)
+	ErrMediaMetadataDurationNegative = centralErrors.ValueOutOfRange("duration", 0, int64(^uint64(0)>>1), -1)
+	ErrMediaMetadataFileSizeNegative = centralErrors.ValueOutOfRange("file_size", 0, int64(^uint64(0)>>1), -1)
 
 	// DLQ Message validation errors
-	ErrDLQIDRequired                = errors.New("ID is required")
-	ErrDLQOriginalMessageIDRequired = errors.New("OriginalMessageID is required")
-	ErrDLQServiceRequired           = errors.New("service is required")
-	ErrDLQMessageBodyRequired       = errors.New("MessageBody is required")
-	ErrDLQErrorTypeRequired         = errors.New("ErrorType is required")
-	ErrDLQErrorMessageRequired      = errors.New("ErrorMessage is required")
-	ErrDLQInvalidStatus             = errors.New("invalid status")
-	ErrDLQInvalidPriority           = errors.New("invalid priority")
+	ErrDLQIDRequired                = centralErrors.RequiredFieldMissing("ID")
+	ErrDLQOriginalMessageIDRequired = centralErrors.RequiredFieldMissing("OriginalMessageID")
+	ErrDLQServiceRequired           = centralErrors.RequiredFieldMissing("service")
+	ErrDLQMessageBodyRequired       = centralErrors.RequiredFieldMissing("MessageBody")
+	ErrDLQErrorTypeRequired         = centralErrors.RequiredFieldMissing("ErrorType")
+	ErrDLQErrorMessageRequired      = centralErrors.RequiredFieldMissing("ErrorMessage")
+	ErrDLQInvalidStatus             = centralErrors.NewValidationError("status", "Invalid status")
+	ErrDLQInvalidPriority           = centralErrors.NewValidationError("priority", "Invalid priority")
 
 	// Reputation validation errors
-	ErrInvalidActorIDFormat          = errors.New("invalid actorID format")
-	ErrReputationMarshalFailed       = errors.New("failed to marshal reputation")
-	ErrInvalidReputationJSON         = errors.New("invalid reputation JSON")
-	ErrReputationUnmarshalFailed     = errors.New("failed to unmarshal reputation to map")
-	ErrCalculatedAtFieldMissing      = errors.New("calculatedAt field not found or not a string")
-	ErrCalculatedAtParseFailed       = errors.New("failed to parse calculatedAt")
-	ErrInvalidReputationDataJSON     = errors.New("invalid reputation data JSON")
-	ErrReputationDataUnmarshalFailed = errors.New("failed to unmarshal reputation data")
+	ErrInvalidActorIDFormat          = centralErrors.InvalidFormat("actorID", "valid actor ID format")
+	ErrReputationMarshalFailed       = centralErrors.MarshalingFailed("reputation", nil)
+	ErrInvalidReputationJSON         = centralErrors.JSONFormatInvalid("invalid reputation structure")
+	ErrReputationUnmarshalFailed     = centralErrors.UnmarshalingFailed("reputation to map", nil)
+	ErrCalculatedAtFieldMissing      = centralErrors.RequiredFieldMissing("calculatedAt")
+	ErrCalculatedAtParseFailed       = centralErrors.ParsingFailed("calculatedAt", nil)
+	ErrInvalidReputationDataJSON     = centralErrors.JSONFormatInvalid("invalid reputation data structure")
+	ErrReputationDataUnmarshalFailed = centralErrors.UnmarshalingFailed("reputation data", nil)
 
 	// CSRF Token validation errors
-	ErrCSRFTokenRequired     = errors.New("token is required")
-	ErrCSRFUserIDRequired    = errors.New("UserID is required")
-	ErrCSRFExpiresAtRequired = errors.New("ExpiresAt must be set")
-	ErrCSRFCreatedAtRequired = errors.New("CreatedAt must be set")
-	ErrCSRFInvalidTimeRange  = errors.New("ExpiresAt must be after CreatedAt")
+	ErrCSRFTokenRequired     = centralErrors.RequiredFieldMissing("token")
+	ErrCSRFUserIDRequired    = centralErrors.RequiredFieldMissing("UserID")
+	ErrCSRFExpiresAtRequired = centralErrors.RequiredFieldMissing("ExpiresAt")
+	ErrCSRFCreatedAtRequired = centralErrors.RequiredFieldMissing("CreatedAt")
+	ErrCSRFInvalidTimeRange  = centralErrors.NewValidationError("expires_at", "ExpiresAt must be after CreatedAt")
 
 	// Notification Delivery validation errors
-	ErrNotificationIDRequired = errors.New("notification ID is required")
-	ErrDeliveryMethodRequired = errors.New("delivery method is required")
-	ErrInvalidDeliveryMethod  = errors.New("invalid delivery method")
-	ErrInvalidDeliveryStatus  = errors.New("invalid delivery status")
+	ErrNotificationIDRequired = centralErrors.RequiredFieldMissing("notification ID")
+	ErrDeliveryMethodRequired = centralErrors.RequiredFieldMissing("delivery method")
+	ErrInvalidDeliveryMethod  = centralErrors.NewValidationError("delivery_method", "Invalid delivery method")
+	ErrInvalidDeliveryStatus  = centralErrors.NewValidationError("delivery_status", "Invalid delivery status")
 
 	// Session validation errors
-	ErrSessionIDGenerationFailed   = errors.New("failed to generate session ID")
-	ErrAccessTokenGenerationFailed = errors.New("failed to generate access token")
-	ErrExpiresAtRequired           = errors.New("ExpiresAt must be set")
+	ErrSessionIDGenerationFailed   = centralErrors.SessionIDGenerationFailed(nil)
+	ErrAccessTokenGenerationFailed = centralErrors.AccessTokenGenerationFailed(nil)
+	ErrExpiresAtRequired           = centralErrors.RequiredFieldMissing("ExpiresAt")
 
 	// Cost tracking validation errors
-	ErrInvalidOperationType     = errors.New("invalid operation type")
-	ErrInvalidCostPeriod        = errors.New("invalid period")
-	ErrCostWindowStartRequired  = errors.New("WindowStart is required")
-	ErrCostWindowEndRequired    = errors.New("WindowEnd is required")
-	ErrCostWindowEndBeforeStart = errors.New("WindowEnd must be after WindowStart")
+	ErrInvalidOperationType     = centralErrors.NewValidationError("operation_type", "Invalid operation type")
+	ErrInvalidCostPeriod        = centralErrors.NewValidationError("period", "Invalid period")
+	ErrCostWindowStartRequired  = centralErrors.RequiredFieldMissing("WindowStart")
+	ErrCostWindowEndRequired    = centralErrors.RequiredFieldMissing("WindowEnd")
+	ErrCostWindowEndBeforeStart = centralErrors.NewValidationError("window_end", "WindowEnd must be after WindowStart")
 
 	// OAuth Session validation errors
-	ErrOAuthSessionIDGenerationFailed = errors.New("failed to generate session ID")
-	ErrOAuthCSRFTokenGenerationFailed = errors.New("failed to generate CSRF token")
+	ErrOAuthSessionIDGenerationFailed = centralErrors.SessionIDGenerationFailed(nil)
+	ErrOAuthCSRFTokenGenerationFailed = centralErrors.CSRFTokenGenerationFailed(nil)
 
 	// Provider Account validation errors
-	ErrProviderIDRequired = errors.New("provider ID is required")
-	ErrInvalidProvider    = errors.New("invalid provider")
-	ErrAccessTokenExpired = errors.New("access token has expired")
+	ErrProviderIDRequired = centralErrors.RequiredFieldMissing("provider ID")
+	ErrInvalidProvider    = centralErrors.NewValidationError("provider", "Invalid provider")
+	ErrAccessTokenExpired = centralErrors.NewAppError(centralErrors.CodeTokenExpired, centralErrors.CategoryAuth, "Access token has expired")
 
 	// Conversation validation errors
-	ErrConversationIDRequired   = errors.New("conversation ID is required")
-	ErrConversationDataRequired = errors.New("conversation data is required")
+	ErrConversationIDRequired   = centralErrors.RequiredFieldMissing("conversation ID")
+	ErrConversationDataRequired = centralErrors.RequiredFieldMissing("conversation data")
 
 	// Conversation Status validation errors
-	ErrConversationStatusIDRequired       = errors.New("conversation ID is required")
-	ErrConversationStatusUserIDRequired   = errors.New("user ID is required")
-	ErrConversationStatusStatusIDRequired = errors.New("status ID is required")
+	ErrConversationStatusIDRequired       = centralErrors.RequiredFieldMissing("conversation ID")
+	ErrConversationStatusUserIDRequired   = centralErrors.RequiredFieldMissing("user ID")
+	ErrConversationStatusStatusIDRequired = centralErrors.RequiredFieldMissing("status ID")
 
 	// Media Attachment validation errors
-	ErrMediaAttachmentIDRequired         = errors.New("MediaID is required")
-	ErrMediaAttachmentEntityTypeRequired = errors.New("EntityType is required")
-	ErrMediaAttachmentEntityIDRequired   = errors.New("EntityID is required")
-	ErrMediaAttachmentOrderNegative      = errors.New("order must be non-negative")
-	ErrMediaAttachmentInvalidEntityType  = errors.New("invalid entity type")
-	ErrMediaAttachmentInvalidFocalPoint  = errors.New("focal point must be in x,y format")
+	ErrMediaAttachmentIDRequired         = centralErrors.RequiredFieldMissing("MediaID")
+	ErrMediaAttachmentEntityTypeRequired = centralErrors.RequiredFieldMissing("EntityType")
+	ErrMediaAttachmentEntityIDRequired   = centralErrors.RequiredFieldMissing("EntityID")
+	ErrMediaAttachmentOrderNegative      = centralErrors.ValueOutOfRange("order", 0, int64(^uint64(0)>>1), -1)
+	ErrMediaAttachmentInvalidEntityType  = centralErrors.NewValidationError("entity_type", "Invalid entity type")
+	ErrMediaAttachmentInvalidFocalPoint  = centralErrors.InvalidFormat("focal_point", "x,y format")
 
 	// Media Spending validation errors
-	ErrInvalidMonthlyPeriodFormat         = errors.New("invalid monthly period format")
-	ErrInvalidDailyPeriodFormat           = errors.New("invalid daily period format")
-	ErrInvalidPeriodType                  = errors.New("invalid period type")
-	ErrInvalidPeriodTypeValue             = errors.New("PeriodType must be 'monthly' or 'daily'")
-	ErrNegativeSpendingAmounts            = errors.New("spending amounts cannot be negative")
-	ErrNegativeCostMicros                 = errors.New("CostMicros cannot be negative")
-	ErrInvalidSpendingCategory            = errors.New("invalid category")
-	ErrMediaSpendingUserIDRequired        = errors.New("UserID is required")
-	ErrMediaSpendingPeriodRequired        = errors.New("period is required")
-	ErrMediaSpendingTransactionIDRequired = errors.New("TransactionID is required")
+	ErrInvalidMonthlyPeriodFormat         = centralErrors.InvalidFormat("monthly_period", "YYYY-MM format")
+	ErrInvalidDailyPeriodFormat           = centralErrors.InvalidFormat("daily_period", "YYYY-MM-DD format")
+	ErrInvalidPeriodType                  = centralErrors.NewValidationError("period_type", "Invalid period type")
+	ErrInvalidPeriodTypeValue             = centralErrors.NewValidationError("period_type", "PeriodType must be 'monthly' or 'daily'")
+	ErrNegativeSpendingAmounts            = centralErrors.ValueOutOfRange("spending_amounts", 0, int64(^uint64(0)>>1), -1)
+	ErrNegativeCostMicros                 = centralErrors.ValueOutOfRange("CostMicros", 0, int64(^uint64(0)>>1), -1)
+	ErrInvalidSpendingCategory            = centralErrors.NewValidationError("category", "Invalid category")
+	ErrMediaSpendingUserIDRequired        = centralErrors.RequiredFieldMissing("UserID")
+	ErrMediaSpendingPeriodRequired        = centralErrors.RequiredFieldMissing("period")
+	ErrMediaSpendingTransactionIDRequired = centralErrors.RequiredFieldMissing("TransactionID")
 
 	// Alert validation errors
-	ErrAlertIDRequired = errors.New("alert_id is required")
+	ErrAlertIDRequired = centralErrors.RequiredFieldMissing("alert_id")
 
 	// Webhook Delivery validation errors
-	ErrDeliveryIDRequired = errors.New("delivery_id is required")
-	ErrWebhookIDRequired  = errors.New("webhook_id is required")
+	ErrDeliveryIDRequired = centralErrors.RequiredFieldMissing("delivery_id")
+	ErrWebhookIDRequired  = centralErrors.RequiredFieldMissing("webhook_id")
 
 	// Dead Letter Message validation errors
-	ErrMessageIDRequired = errors.New("message_id is required")
+	ErrMessageIDRequired = centralErrors.RequiredFieldMissing("message_id")
 
 	// Conversation Mute validation errors
-	ErrConversationMuteUsernameRequired       = errors.New("username is required")
-	ErrConversationMuteConversationIDRequired = errors.New("conversation ID is required")
+	ErrConversationMuteUsernameRequired       = centralErrors.RequiredFieldMissing("username")
+	ErrConversationMuteConversationIDRequired = centralErrors.RequiredFieldMissing("conversation ID")
 
 	// Export validation errors
-	ErrExportInvalidStartDate = errors.New("invalid start date")
-	ErrExportInvalidEndDate   = errors.New("invalid end date")
+	ErrExportInvalidStartDate = centralErrors.InvalidFormat("start_date", "valid date format")
+	ErrExportInvalidEndDate   = centralErrors.InvalidFormat("end_date", "valid date format")
 
 	// Media Job validation errors
-	ErrMediaJobIDRequired    = errors.New("JobID is required")
-	ErrInvalidMediaJobStatus = errors.New("invalid job status")
+	ErrMediaJobIDRequired    = centralErrors.RequiredFieldMissing("JobID")
+	ErrInvalidMediaJobStatus = centralErrors.NewValidationError("job_status", "Invalid job status")
 
 	// Push Subscription validation errors
-	ErrPushSubscriptionP256dhRequired = errors.New("p256dh public key is required")
-	ErrPushSubscriptionAuthRequired   = errors.New("auth secret is required")
+	ErrPushSubscriptionP256dhRequired = centralErrors.RequiredFieldMissing("p256dh public key")
+	ErrPushSubscriptionAuthRequired   = centralErrors.RequiredFieldMissing("auth secret")
 
 	// Block validation errors
-	ErrBlockUpdateKeysFailed = errors.New("failed to update block keys")
+	ErrBlockUpdateKeysFailed = centralErrors.FailedToUpdate("block keys", nil)
 
 	// Mute validation errors
-	ErrMuteUpdateKeysFailed = errors.New("failed to update mute keys")
+	ErrMuteUpdateKeysFailed = centralErrors.FailedToUpdate("mute keys", nil)
 
 	// CloudWatch Metrics validation errors
-	ErrCloudWatchMetricServiceNameRequired = errors.New("ServiceName is required")
+	ErrCloudWatchMetricServiceNameRequired = centralErrors.RequiredFieldMissing("ServiceName")
 
 	// Notification validation errors
-	ErrInvalidNotificationType = errors.New("invalid notification type")
+	ErrInvalidNotificationType = centralErrors.NewValidationError("notification_type", "Invalid notification type")
 )

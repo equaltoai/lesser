@@ -3,18 +3,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-
 	"github.com/equaltoai/lesser/pkg/ai"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -86,7 +84,7 @@ func (si *StatusIndexer) HandleStream(ctx context.Context, event events.DynamoDB
 			zap.String("request_id", requestID),
 			zap.Int("failed_records", len(errors)),
 			zap.Int("total_records", len(event.Records)))
-		return ErrPartialBatchFailure
+		return pkgErrors.StatusIndexerPartialBatchFailure()
 	}
 
 	return nil
@@ -121,7 +119,7 @@ func (si *StatusIndexer) processRecord(ctx context.Context, record events.Dynamo
 	// Process the status if valid
 	if details.objectID != "" && details.content != "" {
 		if err := si.processStatusEvent(ctx, details.objectID, details.content, details.authorID, details.authorUsername, details.published); err != nil {
-			return errors.Join(ErrProcessStatusEvent, err)
+			return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to process status event")
 		}
 	}
 
@@ -176,12 +174,12 @@ func (si *StatusIndexer) isObjectMetadataRecord(record events.DynamoDBEventRecor
 func (si *StatusIndexer) extractObjectFromRecord(record events.DynamoDBEventRecord) (map[string]events.DynamoDBAttributeValue, error) {
 	newImage := record.Change.NewImage
 	if newImage == nil {
-		return nil, ErrNoNewImage
+		return nil, pkgErrors.StatusIndexerNoNewImage()
 	}
 
 	objectData, ok := newImage["Object"]
 	if !ok || objectData.DataType() != events.DataTypeMap {
-		return nil, ErrNoObjectData
+		return nil, pkgErrors.StatusIndexerNoObjectData()
 	}
 
 	return objectData.Map(), nil
@@ -510,7 +508,7 @@ func (si *StatusIndexer) getReplyCount(ctx context.Context, statusID string) (in
 		All(&objects)
 
 	if err != nil {
-		return 0, errors.Join(ErrCountReplies, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to count replies")
 	}
 
 	return len(objects), nil

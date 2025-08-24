@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/stretchr/testify/assert"
@@ -24,7 +24,7 @@ func TestCreateActor_MissingUsername(t *testing.T) {
 	err := repo.CreateActor(context.Background(), actor, privateKey)
 
 	assert.Error(t, err)
-	assert.IsType(t, common.ValidationError{}, err)
+	assert.IsType(t, &errors.AppError{}, err)
 }
 
 func TestUpdateActor_MissingUsername(t *testing.T) {
@@ -37,7 +37,7 @@ func TestUpdateActor_MissingUsername(t *testing.T) {
 	err := repo.UpdateActor(context.Background(), actor)
 
 	assert.Error(t, err)
-	assert.IsType(t, common.ValidationError{}, err)
+	assert.IsType(t, &errors.AppError{}, err)
 }
 
 func TestSearchAccounts_EmptyQuery(t *testing.T) {

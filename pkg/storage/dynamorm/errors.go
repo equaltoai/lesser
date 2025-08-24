@@ -1,41 +1,40 @@
 package dynamorm
 
 import (
-	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
-// Common DynamoDB errors
+// Legacy error variables for backward compatibility - using centralized error system
 var (
 	// ErrConditionalCheckFailed is returned when a conditional write fails
-	ErrConditionalCheckFailed = errors.New("conditional check failed")
+	ErrConditionalCheckFailed = errors.DynamoDBConditionalCheckFailed("")
 
 	// ErrThrottling is returned when DynamoDB throttles the request
-	ErrThrottling = errors.New("request throttled")
+	ErrThrottling = errors.DynamoDBProvisionedThroughputExceeded()
 
 	// ErrResourceNotFound is returned when a DynamoDB resource is not found
-	ErrResourceNotFound = errors.New("resource not found")
+	ErrResourceNotFound = errors.DatabaseUnavailable(nil)
 
 	// ErrInternal is returned for internal errors
-	ErrInternal = errors.New("internal error")
+	ErrInternal = errors.NewStorageError(errors.CodeInternal, "internal error")
 
 	// ErrInvalidKey is returned when a key is invalid
-	ErrInvalidKey = errors.New("invalid key")
+	ErrInvalidKey = errors.InvalidFormat("key", "valid key format")
 
 	// ErrBatchOperationFailed is returned when a batch operation fails
-	ErrBatchOperationFailed = errors.New("batch operation failed")
+	ErrBatchOperationFailed = errors.BatchOperationFailed("", nil)
 
 	// ErrTransactionCanceled is returned when a transaction is canceled
-	ErrTransactionCanceled = errors.New("transaction canceled")
+	ErrTransactionCanceled = errors.TransactionFailed(nil)
 
 	// ErrValidation is returned when validation fails
-	ErrValidation = errors.New("validation failed")
+	ErrValidation = errors.NewValidationError("", "validation failed")
 )
 
-// MapError maps DynamORM errors to storage errors
+// MapError maps DynamORM errors to storage errors using centralized error system
 func MapError(err error) error {
 	if err == nil {
 		return nil
@@ -100,7 +99,7 @@ func MapError(err error) error {
 	}
 
 	// Default to internal error with original error message
-	return fmt.Errorf("%w: %v", ErrInternal, err)
+	return errors.NewStorageInternalError(errors.CodeInternal, "DynamORM error", err)
 }
 
 // isDynamORMNotFoundError checks if the error is a DynamORM not found error
@@ -127,14 +126,19 @@ func isDynamORMNotFoundError(err error) bool {
 	return false
 }
 
-// MapErrorWithContext maps DynamORM errors to storage errors with additional context
+// MapErrorWithContext maps DynamORM errors to storage errors with additional context using centralized error system
 func MapErrorWithContext(err error, context string) error {
 	if err == nil {
 		return nil
 	}
 
 	mappedErr := MapError(err)
-	return fmt.Errorf("%s: %w", context, mappedErr)
+	// If mapped error is already an AppError, add context as metadata
+	if appErr, ok := mappedErr.(*errors.AppError); ok {
+		return appErr.WithMetadata("context", context)
+	}
+	
+	return errors.NewStorageInternalError(errors.CodeInternal, context, mappedErr)
 }
 
 // DetailedError provides detailed error information
@@ -195,47 +199,47 @@ func (e *DetailedError) Unwrap() error {
 	return e.Err
 }
 
-// NewDetailedError creates a new DetailedError
+// NewDetailedError creates a new DetailedError using centralized error system
 func NewDetailedError(err error, operation, entityType, entityID, context string) error {
 	if err == nil {
 		return nil
 	}
 
-	return &DetailedError{
-		Err:        err,
-		Operation:  operation,
-		EntityType: entityType,
-		EntityID:   entityID,
-		Context:    context,
-	}
+	appErr := errors.NewStorageInternalError(errors.CodeInternal, "Detailed error", err).
+		WithMetadata("operation", operation).
+		WithMetadata("entity_type", entityType).
+		WithMetadata("entity_id", entityID).
+		WithMetadata("context", context)
+	
+	return appErr
 }
 
-// IsNotFound checks if an error is a not found error
+// IsNotFound checks if an error is a not found error using centralized error system
 func IsNotFound(err error) bool {
-	return errors.Is(err, storage.ErrNotFound)
+	return errors.HasCode(err, errors.CodeNotFound)
 }
 
-// IsConditionalCheckFailed checks if an error is a conditional check failed error
+// IsConditionalCheckFailed checks if an error is a conditional check failed error using centralized error system
 func IsConditionalCheckFailed(err error) bool {
-	return errors.Is(err, ErrConditionalCheckFailed)
+	return errors.HasCode(err, errors.CodeConflict)
 }
 
-// IsThrottling checks if an error is a throttling error
+// IsThrottling checks if an error is a throttling error using centralized error system
 func IsThrottling(err error) bool {
-	return errors.Is(err, ErrThrottling)
+	return errors.HasCode(err, errors.CodeRateLimited)
 }
 
-// IsTransactionCanceled checks if an error is a transaction canceled error
+// IsTransactionCanceled checks if an error is a transaction canceled error using centralized error system
 func IsTransactionCanceled(err error) bool {
-	return errors.Is(err, ErrTransactionCanceled)
+	return errors.HasCode(err, errors.CodeTransactionFailed)
 }
 
-// IsValidation checks if an error is a validation error
+// IsValidation checks if an error is a validation error using centralized error system
 func IsValidation(err error) bool {
-	return errors.Is(err, ErrValidation) || errors.Is(err, storage.ErrInvalidInput)
+	return errors.HasCode(err, errors.CodeValidationFailed) || errors.HasCode(err, errors.CodeInvalidInput)
 }
 
-// MapRepositoryError maps repository errors with context
+// MapRepositoryError maps repository errors with context using centralized error system
 func MapRepositoryError(err error, operation, entityType, entityID string) error {
 	if err == nil {
 		return nil
@@ -244,6 +248,17 @@ func MapRepositoryError(err error, operation, entityType, entityID string) error
 	// Map the error first
 	mappedErr := MapError(err)
 
-	// Create detailed error
-	return NewDetailedError(mappedErr, operation, entityType, entityID, "")
+	// If already an AppError, add metadata
+	if appErr, ok := mappedErr.(*errors.AppError); ok {
+		return appErr.
+			WithMetadata("operation", operation).
+			WithMetadata("entity_type", entityType).
+			WithMetadata("entity_id", entityID)
+	}
+
+	// Create detailed error using centralized system
+	return errors.NewStorageInternalError(errors.CodeInternal, "Repository error", mappedErr).
+		WithMetadata("operation", operation).
+		WithMetadata("entity_type", entityType).
+		WithMetadata("entity_id", entityID)
 }

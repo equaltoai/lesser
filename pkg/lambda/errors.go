@@ -1,16 +1,17 @@
 package lambda
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Federation delivery error constants
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
 	// Message processing errors
-	ErrInvalidMessageFormat = errors.New("invalid message format")
-	ErrMissingActivity      = errors.New("missing activity in message")
-	ErrMissingActor         = errors.New("missing actor in message")
-	ErrMissingTargetInbox   = errors.New("missing target inbox in message")
+	ErrInvalidMessageFormat = errors.InvalidFormat("message", "valid federation message format")
+	ErrMissingActivity      = errors.RequiredFieldMissing("activity")
+	ErrMissingActor         = errors.RequiredFieldMissing("actor")
+	ErrMissingTargetInbox   = errors.RequiredFieldMissing("target inbox")
 
 	// Delivery errors
-	ErrDeliveryToFollowers  = errors.New("failed to deliver to followers")
-	ErrDeliveryToRecipients = errors.New("failed to deliver to recipients")
+	ErrDeliveryToFollowers  = errors.DeliveryFailed("followers", nil)
+	ErrDeliveryToRecipients = errors.DeliveryFailed("recipients", nil)
 )

@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -36,6 +35,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 )
 
 // WebSocketCostAggregatorHandler handles scheduled WebSocket cost operations
@@ -211,7 +211,7 @@ func (h *WebSocketCostAggregatorHandler) trackIdleConnections(ctx context.Contex
 	// Get all WebSocket connections that have been idle past the threshold
 	idleConnections, err := h.getIdleConnections(ctx, idleThreshold)
 	if err != nil {
-		return errors.Join(ErrGetIdleConnections, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get idle connections")
 	}
 
 	if err := common.ValidateSliceNotEmpty("idleConnections", idleConnections); err != nil {
@@ -299,7 +299,7 @@ func (h *WebSocketCostAggregatorHandler) updateBudgetAlerts(ctx context.Context)
 	// This would typically involve querying for users with high recent costs
 	highCostUsers, err := h.costRepo.GetTopCostlyUsers(ctx, time.Now().AddDate(0, 0, -1), time.Now(), 50)
 	if err != nil {
-		return errors.Join(ErrGetHighCostUsers, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get high cost users")
 	}
 
 	alertCount := 0
@@ -349,7 +349,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 	// Marshal to JSON
 	alertJSON, err := json.Marshal(alertMessage)
 	if err != nil {
-		return errors.Join(ErrMarshalAlertMessage, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to marshal alert message")
 	}
 
 	var alertErrors []error
@@ -389,7 +389,7 @@ func (h *WebSocketCostAggregatorHandler) sendBudgetAlert(ctx context.Context, us
 
 	// Return error if all alert methods failed
 	if err := common.ValidateSliceNotEmpty("alertErrors", alertErrors); err == nil && len(alertErrors) == countConfiguredAlertMethods(h) {
-		return errors.Join(ErrAllAlertMethodsFailed, fmt.Errorf("alert errors: %v", alertErrors))
+		return pkgErrors.WrapError(fmt.Errorf("alert errors: %v", alertErrors), pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "All alert methods failed")
 	}
 
 	return nil
@@ -412,7 +412,7 @@ type BudgetAlertMessage struct {
 func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, alertJSON []byte) error {
 	req, err := http.NewRequestWithContext(ctx, "POST", h.webhookURL, bytes.NewBuffer(alertJSON))
 	if err != nil {
-		return errors.Join(ErrCreateWebhookRequest, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create webhook request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -425,12 +425,12 @@ func (h *WebSocketCostAggregatorHandler) sendWebhookAlert(ctx context.Context, a
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return errors.Join(ErrWebhookRequestFailed, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Webhook request failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.Join(ErrWebhookNon2xxStatus, fmt.Errorf("status code: %d", resp.StatusCode))
+		return pkgErrors.WrapError(fmt.Errorf("status code: %d", resp.StatusCode), pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Webhook returned non-2xx status")
 	}
 
 	return nil
@@ -456,7 +456,7 @@ func (h *WebSocketCostAggregatorHandler) sendSNSAlert(ctx context.Context, alert
 
 	_, err := h.snsClient.Publish(ctx, input)
 	if err != nil {
-		return errors.Join(ErrPublishSNSMessage, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to publish SNS message")
 	}
 
 	return nil
@@ -550,7 +550,7 @@ func (h *WebSocketCostAggregatorHandler) cleanupStaleConnections(ctx context.Con
 	// Find connections that are older than the stale threshold
 	staleConnections, err := h.getStaleConnections(ctx, staleThreshold)
 	if err != nil {
-		return errors.Join(ErrGetStaleConnections, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get stale connections")
 	}
 
 	if err := common.ValidateSliceNotEmpty("staleConnections", staleConnections); err != nil {
@@ -606,7 +606,7 @@ func (h *WebSocketCostAggregatorHandler) getIdleConnections(ctx context.Context,
 // trackIdleConnectionsBatch tracks costs for a batch of idle connections
 func (h *WebSocketCostAggregatorHandler) trackIdleConnectionsBatch(ctx context.Context, connections []models.WebSocketConnection, idleThreshold time.Time) (int64, error) {
 	if err := h.costTracker.TrackIdleConnections(ctx, connections); err != nil {
-		return 0, errors.Join(ErrTrackIdleConnections, err)
+		return 0, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to track idle connections")
 	}
 
 	// Calculate total idle cost for reporting

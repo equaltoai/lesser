@@ -5,13 +5,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
-
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"go.uber.org/zap"
@@ -28,7 +27,7 @@ func NewHandler(lambdaCtx *common.LambdaContext) (*Handler, error) {
 	// Initialize DynamORM with Lambda optimizations
 	db, err := dynamorm.NewLambdaOptimizedClient(context.Background(), lambdaCtx.Config.Region)
 	if err != nil {
-		return nil, errors.Join(ErrDynamORMInit, err)
+		return nil, pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to initialize DynamORM")
 	}
 
 	// Create SQS client
@@ -83,7 +82,7 @@ func (h *Handler) processMessage(ctx context.Context, record events.SQSMessage) 
 	// Parse the enhanced retry message
 	var retryMessage federation.EnhancedRetryMessage
 	if err := json.Unmarshal([]byte(record.Body), &retryMessage); err != nil {
-		return errors.Join(ErrUnmarshalRetryMessage, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeEventProcessingFailed, pkgErrors.CategoryLambda, "Failed to unmarshal retry message")
 	}
 
 	h.logger.Info("Processing enhanced retry message",
@@ -94,7 +93,7 @@ func (h *Handler) processMessage(ctx context.Context, record events.SQSMessage) 
 
 	// Process the retry
 	if err := h.retryProcessor.ProcessEnhancedRetry(ctx, &retryMessage); err != nil {
-		return errors.Join(ErrProcessEnhancedRetry, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to process enhanced retry")
 	}
 
 	return nil

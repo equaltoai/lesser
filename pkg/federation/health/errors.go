@@ -1,30 +1,30 @@
 package health
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
 // Error constants for federation health package
 var (
 	// Event processing errors
-	ErrUnknownAction = errors.New("unknown action")
+	ErrUnknownAction = errors.NewFederationError(errors.CodeInvalidInput, "unknown action")
 
 	// Health check errors
-	ErrNoDomains = errors.New("no domains specified for health check")
+	ErrNoDomains = errors.NewFederationError(errors.CodeRequiredFieldMissing, "no domains specified for health check")
 
 	// Aggregation errors
-	ErrAggregationRequired = errors.New("domains and windows are required for aggregation")
-	ErrUnsupportedWindow   = errors.New("unsupported window")
+	ErrAggregationRequired = errors.NewFederationError(errors.CodeRequiredFieldMissing, "domains and windows are required for aggregation")
+	ErrUnsupportedWindow   = errors.NewFederationError(errors.CodeInvalidInput, "unsupported window")
 
 	// Event validation errors
-	ErrActionRequired                = errors.New("action is required")
-	ErrDomainsOrInstanceIDsRequired  = errors.New("domains or instance IDs are required")
-	ErrBatchSizeMustBePositive       = errors.New("batch size must be positive")
-	ErrTimeoutMustBePositive         = errors.New("timeout must be positive")
-	ErrDomainsRequiredForAggregation = errors.New("domains are required for aggregation")
-	ErrWindowsRequiredForAggregation = errors.New("windows are required for aggregation")
-	ErrInvalidWindowFormat           = errors.New("invalid window format")
+	ErrActionRequired                = errors.NewValidationError("action", "required")
+	ErrDomainsOrInstanceIDsRequired  = errors.NewValidationError("domains_or_instance_ids", "required")
+	ErrBatchSizeMustBePositive       = errors.NewValidationError("batch_size", "must be positive")
+	ErrTimeoutMustBePositive         = errors.NewValidationError("timeout", "must be positive")
+	ErrDomainsRequiredForAggregation = errors.NewValidationError("domains", "required for aggregation")
+	ErrWindowsRequiredForAggregation = errors.NewValidationError("windows", "required for aggregation")
+	ErrInvalidWindowFormat           = errors.NewValidationError("window", "invalid format")
 
 	// Serverless health checker errors
-	ErrHealthCheckEventValidationFailed = errors.New("health check event validation failed")
-	ErrServerlessHealthCheckFailed      = errors.New("serverless health check failed")
-	ErrHealthDataCleanupFailed          = errors.New("health data cleanup failed")
+	ErrHealthCheckEventValidationFailed = errors.ValidationFailedWithField("health check event")
+	ErrServerlessHealthCheckFailed      = errors.ProcessingFailed("serverless health check", nil)
+	ErrHealthDataCleanupFailed          = errors.ProcessingFailed("health data cleanup", nil)
 )

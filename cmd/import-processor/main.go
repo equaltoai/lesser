@@ -103,7 +103,7 @@ func (t *ImportTransaction) Execute(_ context.Context) error {
 					zap.Error(rollbackErr))
 			}
 
-			return errors.Join(ErrOperationFailed, err)
+			return ErrOperationFailed(err)
 		}
 	}
 
@@ -128,7 +128,7 @@ func (t *ImportTransaction) rollback(lastExecutedIndex int) error {
 	}
 
 	if len(rollbackErrors) > 0 {
-		return ErrRollbackFailed
+		return ErrRollbackFailed(errors.New("multiple rollback errors occurred"))
 	}
 
 	return nil
@@ -262,7 +262,7 @@ func (p *ImportProcessor) initializeAWSClients(ctx context.Context) error {
 	// Load AWS configuration
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {
-		return errors.Join(ErrAWSConfigLoad, err)
+		return ErrAWSConfigLoad(err)
 	}
 
 	// Initialize S3 client
@@ -337,7 +337,7 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	// Download file from S3
 	fileData, err := p.downloadFromS3(ctx, event.S3Key)
 	if err != nil {
-		return errors.Join(ErrImportDownloadFailed, err)
+		return ErrImportDownloadFailed(err)
 	}
 
 	// Track S3 download costs
@@ -365,11 +365,11 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 		p.logger.Error("unsupported import format detected",
 			zap.String("format", format),
 			zap.String("import_id", event.ImportID))
-		return ErrUnsupportedImportFormat
+		return ErrUnsupportedImportFormat()
 	}
 
 	if err != nil {
-		return errors.Join(ErrImportProcessFailed, err)
+		return ErrImportProcessFailed(err)
 	}
 
 	// Update cost tracking with final metrics
@@ -390,7 +390,7 @@ func (p *ImportProcessor) processImportJob(ctx context.Context, event ImportProc
 	}
 
 	if err := p.importRepo.UpdateImportStatus(ctx, event.ImportID, "completed", completionData, ""); err != nil {
-		return errors.Join(ErrImportStatusUpdateFailed, err)
+		return ErrImportStatusUpdateFailed(err)
 	}
 
 	p.logger.Info("import completed",
@@ -430,7 +430,7 @@ func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProc
 	// Read header
 	header, err := reader.Read()
 	if err != nil {
-		return ImportResult{Errors: make([]string, 0)}, errors.Join(ErrCSVHeaderRead, err)
+		return ImportResult{Errors: make([]string, 0)}, ErrCSVHeaderRead(err)
 	}
 
 	// Process based on type
@@ -454,7 +454,7 @@ func (p *ImportProcessor) processCSVImport(ctx context.Context, event ImportProc
 		p.logger.Error("CSV import not supported for type",
 			zap.String("type", event.Type),
 			zap.String("import_id", event.ImportID))
-		return ImportResult{Errors: make([]string, 0)}, ErrCSVImportNotSupportedForType
+		return ImportResult{Errors: make([]string, 0)}, ErrCSVImportNotSupportedForType(event.Type)
 	}
 }
 
@@ -469,7 +469,7 @@ func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportPro
 		// Import lists with members
 		var lists map[string][]string
 		if err := common.ParseActivityPubObject(data, &lists); err != nil {
-			return result, errors.Join(ErrJSONParseFailed, err)
+			return result, ErrJSONParseFailed(err)
 		}
 
 		for listName, members := range lists {
@@ -502,7 +502,7 @@ func (p *ImportProcessor) processJSONImport(ctx context.Context, event ImportPro
 		p.logger.Error("JSON import not supported for type",
 			zap.String("type", event.Type),
 			zap.String("import_id", event.ImportID))
-		return result, ErrJSONImportNotSupportedForType
+		return result, ErrJSONImportNotSupportedForType(event.Type)
 	}
 
 	return result, nil
@@ -515,12 +515,12 @@ func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event Im
 
 	// For ActivityPub archives, we need to handle them differently based on type
 	if event.Type != "archive" {
-		return result, ErrActivityPubImportOnlySupportsArchive
+		return result, ErrActivityPubImportOnlySupportsArchive()
 	}
 
 	var collection map[string]any
 	if err := common.ParseActivityPubObject(data, &collection); err != nil {
-		return result, errors.Join(ErrActivityPubCollectionParseFailed, err)
+		return result, ErrActivityPubCollectionParseFailed(err)
 	}
 
 	// Process ActivityPub collection items
@@ -533,7 +533,7 @@ func (p *ImportProcessor) processActivityPubImport(ctx context.Context, event Im
 		return p.processActivityPubItems(ctx, event, items, costTracking)
 	}
 
-	return result, ErrNoItemsFoundInActivityPubCollection
+	return result, ErrNoItemsFoundInActivityPubCollection()
 }
 
 // processActivityPubItems processes individual items in an ActivityPub collection
@@ -573,12 +573,12 @@ func (p *ImportProcessor) processActivityPubItems(ctx context.Context, event Imp
 func (p *ImportProcessor) processActivityPubItem(ctx context.Context, event ImportProcessorEvent, item any, _ *models.ImportCostTracking) error {
 	itemMap, ok := item.(map[string]any)
 	if !ok {
-		return ErrItemNotValidActivityPubObject
+		return ErrItemNotValidActivityPubObject()
 	}
 
 	itemType, ok := itemMap["type"].(string)
 	if !ok {
-		return ErrItemMissingTypeField
+		return ErrItemMissingTypeField()
 	}
 
 	switch itemType {
@@ -606,7 +606,7 @@ func (p *ImportProcessor) importCreateActivity(ctx context.Context, event Import
 	// Extract the object from the Create activity
 	object, ok := activityMap["object"]
 	if !ok {
-		return ErrCreateActivityMissingObject
+		return ErrCreateActivityMissingObject()
 	}
 
 	// Process the embedded object
@@ -614,14 +614,14 @@ func (p *ImportProcessor) importCreateActivity(ctx context.Context, event Import
 		return p.importObject(ctx, event, objMap)
 	}
 
-	return ErrCreateActivityObjectNotValid
+	return ErrCreateActivityObjectNotValid()
 }
 
 // importFollowActivity imports a Follow activity
 func (p *ImportProcessor) importFollowActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
 	target, ok := activityMap["object"].(string)
 	if !ok {
-		return ErrFollowActivityMissingTargetObject
+		return ErrFollowActivityMissingTargetObject()
 	}
 
 	return p.followAccount(ctx, event.Username, target)
@@ -631,7 +631,7 @@ func (p *ImportProcessor) importFollowActivity(ctx context.Context, event Import
 func (p *ImportProcessor) importLikeActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
 	objectID, ok := activityMap["object"].(string)
 	if !ok {
-		return ErrLikeActivityMissingObjectID
+		return ErrLikeActivityMissingObjectID()
 	}
 
 	// Create a like/favorite
@@ -648,7 +648,7 @@ func (p *ImportProcessor) importLikeActivity(ctx context.Context, event ImportPr
 func (p *ImportProcessor) importAnnounceActivity(ctx context.Context, event ImportProcessorEvent, activityMap map[string]any) error {
 	objectID, ok := activityMap["object"].(string)
 	if !ok {
-		return ErrAnnounceActivityMissingObjectID
+		return ErrAnnounceActivityMissingObjectID()
 	}
 
 	// Create an announce
@@ -657,7 +657,7 @@ func (p *ImportProcessor) importAnnounceActivity(ctx context.Context, event Impo
 		Object: objectID,
 	}
 	if err := announce.BeforeCreate(); err != nil {
-		return errors.Join(ErrAnnouncePrepFailed, err)
+		return ErrAnnouncePrepFailed(err)
 	}
 
 	return p.repos.Object().CreateObject(ctx, announce)
@@ -667,7 +667,7 @@ func (p *ImportProcessor) importAnnounceActivity(ctx context.Context, event Impo
 func (p *ImportProcessor) importObject(ctx context.Context, _ ImportProcessorEvent, objMap map[string]any) error {
 	id, ok := objMap["id"].(string)
 	if !ok {
-		return ErrObjectMissingID
+		return ErrObjectMissingID()
 	}
 
 	content, _ := objMap["content"].(string)
@@ -952,13 +952,13 @@ func (p *ImportProcessor) followAccount(ctx context.Context, username, targetAcc
 	follow.State = models.FollowStateAccepted // Import assumes accepted
 
 	if err := p.repos.Object().CreateObject(ctx, follow); err != nil {
-		return errors.Join(ErrFollowRelationshipStore, err)
+		return ErrFollowRelationshipStore(err)
 	}
 
 	// Get the follower actor to send the follow activity
 	followerActor, err := p.repos.Account().GetActor(ctx, username)
 	if err != nil {
-		return errors.Join(ErrFollowerActorGet, err)
+		return ErrFollowerActorGet(err)
 	}
 
 	// Create and send Follow activity to the remote actor
@@ -1003,7 +1003,7 @@ func (p *ImportProcessor) blockAccount(ctx context.Context, username, targetAcco
 		Object: actorID,
 	}
 	if err := block.BeforeCreate(); err != nil {
-		return errors.Join(ErrBlockPrepFailed, err)
+		return ErrBlockPrepFailed(err)
 	}
 
 	return p.repos.Object().CreateObject(ctx, block)
@@ -1020,7 +1020,7 @@ func (p *ImportProcessor) muteAccount(ctx context.Context, username, targetAccou
 		HideNotifications: hideNotifications,
 	}
 	if err := mute.BeforeCreate(); err != nil {
-		return errors.Join(ErrMutePrepFailed, err)
+		return ErrMutePrepFailed(err)
 	}
 
 	return p.repos.Object().CreateObject(ctx, mute)
@@ -1045,7 +1045,7 @@ func (p *ImportProcessor) bookmarkStatus(ctx context.Context, username, statusUR
 
 	// Create the bookmark in storage
 	if err := p.repos.Object().CreateObject(ctx, bookmark); err != nil {
-		return errors.Join(ErrBookmarkCreate, err)
+		return ErrBookmarkCreate(err)
 	}
 
 	p.logger.Info("created bookmark",
@@ -1068,11 +1068,11 @@ func (p *ImportProcessor) createOrUpdateList(ctx context.Context, username, list
 		Username:      username,
 	}
 	if err := list.BeforeCreate(); err != nil {
-		return "", errors.Join(ErrListPrepFailed, err)
+		return "", ErrListPrepFailed(err)
 	}
 
 	if err := p.repos.Object().CreateObject(ctx, list); err != nil {
-		return "", errors.Join(ErrListCreate, err)
+		return "", ErrListCreate(err)
 	}
 
 	return listID, nil
@@ -1089,7 +1089,7 @@ func (p *ImportProcessor) addToList(ctx context.Context, username, listID, accou
 		ListUsername: username,
 	}
 	if err := listMember.BeforeCreate(); err != nil {
-		return errors.Join(ErrListMemberPrepFailed, err)
+		return ErrListMemberPrepFailed(err)
 	}
 
 	return p.repos.Object().CreateObject(ctx, listMember)
@@ -1136,7 +1136,7 @@ func (p *ImportProcessor) downloadFromS3(ctx context.Context, key string) ([]byt
 
 	result, err := p.s3Client.GetObject(ctx, input)
 	if err != nil {
-		return nil, errors.Join(ErrS3ObjectGet, err)
+		return nil, ErrS3ObjectGet(err)
 	}
 	defer func() {
 		if closeErr := result.Body.Close(); closeErr != nil {

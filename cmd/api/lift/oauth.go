@@ -580,7 +580,7 @@ func (h *Handler) exchangeAuthorizationCode(ctx context.Context, oauthSvc *auth.
 	// Generate tokens
 	accessToken, refreshToken, err := oauthSvc.GenerateTokens(ctx, authCode.Username, clientID, "", authCode.Scopes)
 	if err != nil {
-		return "", "", errors.Join(ErrFailedToGenerateTokens, err)
+		return "", "", errors.Join(failedToGenerateTokens(), err)
 	}
 
 	// Store refresh token in storage for later validation
@@ -625,7 +625,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 		if strings.Contains(err.Error(), "expired") {
 			return "", "", auth.ErrInvalidToken
 		}
-		return "", "", errors.Join(ErrFailedToValidateRefreshToken, err)
+		return "", "", errors.Join(failedToValidateRefreshToken(), err)
 	}
 
 	// Validate refresh token belongs to the client
@@ -643,7 +643,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	// Generate new tokens with same scopes
 	accessToken, newRefreshToken, err := oauthSvc.GenerateTokens(ctx, storedToken.Username, clientID, "", storedToken.Scopes)
 	if err != nil {
-		return "", "", errors.Join(ErrFailedToGenerateNewTokens, err)
+		return "", "", errors.Join(failedToGenerateNewTokens(), err)
 	}
 
 	// Create new refresh token record
@@ -659,7 +659,7 @@ func (h *Handler) exchangeRefreshToken(ctx context.Context, oauthSvc *auth.OAuth
 	// Store new refresh token
 	if err := h.repos.Account().CreateRefreshToken(ctx, newOAuthRefreshToken); err != nil {
 		h.logger.Error("failed to store new refresh token", zap.Error(err))
-		return "", "", errors.Join(ErrFailedToStoreNewRefreshToken, err)
+		return "", "", errors.Join(failedToStoreNewRefreshToken(), err)
 	}
 
 	// Delete the old refresh token to prevent reuse

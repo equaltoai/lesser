@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/apigatewaymanagementapi"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -190,7 +191,7 @@ func (erm *ErrorRecoveryManager) HandleConnectionError(ctx context.Context, conn
 	// Get the connection
 	conn, getErr := erm.connRepo.GetConnection(ctx, connectionID)
 	if getErr != nil {
-		return fmt.Errorf("failed to get connection for error handling: %w", getErr)
+		return errors.FailedToGet("streaming connection", getErr).WithMetadata("connection_id", connectionID)
 	}
 
 	// Record the error
@@ -205,7 +206,8 @@ func (erm *ErrorRecoveryManager) HandleConnectionError(ctx context.Context, conn
 		erm.logger.Info("not attempting recovery for connection",
 			zap.String("connection_id", connectionID),
 			zap.String("reason", "recovery criteria not met"))
-		return erm.markConnectionClosed(ctx, connectionID, err.Error())
+		recoveryErr := errors.StreamingRecoveryFailed(connectionID, conn.RetryCount, err).AsNonRetryable()
+		return erm.markConnectionClosedWithError(ctx, connectionID, recoveryErr)
 	}
 
 	// Check circuit breaker
@@ -213,7 +215,8 @@ func (erm *ErrorRecoveryManager) HandleConnectionError(ctx context.Context, conn
 		erm.logger.Info("circuit breaker preventing recovery attempt",
 			zap.String("connection_id", connectionID),
 			zap.String("breaker_state", fmt.Sprintf("%d", erm.circuitBreaker.GetState())))
-		return erm.markConnectionClosed(ctx, connectionID, "circuit breaker open")
+		cbErr := errors.StreamingCircuitBreakerOpen(connectionID).WithMetadata("breaker_state", fmt.Sprintf("%d", erm.circuitBreaker.GetState()))
+		return erm.markConnectionClosedWithError(ctx, connectionID, cbErr)
 	}
 
 	// Attempt recovery
@@ -228,18 +231,28 @@ func (erm *ErrorRecoveryManager) shouldAttemptRecovery(conn *models.WebSocketCon
 	}
 
 	// Don't attempt recovery for certain permanent error types
-	errorStr := err.Error()
-	permanentErrors := []string{
-		"authentication failed",
-		"unauthorized",
-		"forbidden",
-		"connection limit exceeded",
-		"rate limit exceeded",
-	}
-
-	for _, permErr := range permanentErrors {
-		if len(errorStr) > len(permErr) && errorStr[:len(permErr)] == permErr {
+	// Use centralized error code checking instead of string matching
+	if appErr, ok := errors.AsAppError(err); ok {
+		switch appErr.Code {
+		case errors.CodeAuthFailed, errors.CodeUnauthorized, errors.CodeForbidden,
+			errors.CodeAccountSuspended, errors.CodeTooManyConnections, errors.CodeRateLimited:
 			return false
+		}
+	} else {
+		// Fallback to string matching for non-AppError errors
+		errorStr := err.Error()
+		permanentErrors := []string{
+			"authentication failed",
+			"unauthorized",
+			"forbidden", 
+			"connection limit exceeded",
+			"rate limit exceeded",
+		}
+		
+		for _, permErr := range permanentErrors {
+			if len(errorStr) > len(permErr) && errorStr[:len(permErr)] == permErr {
+				return false
+			}
 		}
 	}
 
@@ -461,9 +474,9 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 
 	if conn.RetryCount >= conn.MaxRetries {
 		// Max retries exceeded, mark connection as closed
-		if err := erm.markConnectionClosed(ctx, conn.ConnectionID, "max retries exceeded"); err != nil {
-			erm.logger.Error("failed to mark connection as closed", zap.Error(err))
-		}
+		maxRetriesErr := errors.StreamingRecoveryFailed(conn.ConnectionID, conn.RetryCount, errors.NewAppError(errors.CodeInternal, errors.CategoryStreaming, "max retries exceeded")).
+			WithMetadata("max_retries", conn.MaxRetries).AsNonRetryable()
+		_ = erm.markConnectionClosedWithError(ctx, conn.ConnectionID, maxRetriesErr) // Database errors logged internally
 	} else {
 		// Schedule another retry
 		conn.UpdateState(models.ConnectionStateError)
@@ -477,7 +490,10 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 
 		// Schedule next retry using SQS job queue
 		delay := erm.calculateRetryDelay(conn.RetryCount + 1)
-		if err := erm.scheduleRetryJob(ctx, conn.ConnectionID, conn.RetryCount, delay, fmt.Errorf("recovery attempt failed")); err != nil {
+		recoveryError := errors.NewAppError(errors.CodeConnectionClosed, errors.CategoryStreaming, "Recovery attempt failed").
+			WithMetadata("connection_id", conn.ConnectionID).
+			WithMetadata("retry_count", conn.RetryCount)
+		if err := erm.scheduleRetryJob(ctx, conn.ConnectionID, conn.RetryCount, delay, recoveryError); err != nil {
 			erm.logger.Error("failed to schedule next retry job, using fallback goroutine",
 				zap.String("connection_id", conn.ConnectionID),
 				zap.Error(err))
@@ -491,32 +507,39 @@ func (erm *ErrorRecoveryManager) handleRecoveryFailure(ctx context.Context, conn
 	}
 }
 
-// markConnectionClosed marks a connection as permanently closed
-func (erm *ErrorRecoveryManager) markConnectionClosed(ctx context.Context, connectionID, reason string) error {
+// markConnectionClosedWithError marks a connection as permanently closed with error details
+func (erm *ErrorRecoveryManager) markConnectionClosedWithError(ctx context.Context, connectionID string, appErr *errors.AppError) error {
 	conn, err := erm.connRepo.GetConnection(ctx, connectionID)
 	if err != nil {
-		return fmt.Errorf("failed to get connection for closing: %w", err)
+		erm.logger.Error("failed to get connection for closing", zap.Error(err))
+		return appErr // Return original error even if DB update fails
 	}
 
 	conn.UpdateState(models.ConnectionStateClosed)
-	conn.CloseReason = reason
+	conn.CloseReason = appErr.Error()
 	conn.CloseCode = 1011 // Internal Error
 
 	if err := erm.connRepo.UpdateConnection(ctx, conn); err != nil {
-		return fmt.Errorf("failed to mark connection as closed: %w", err)
+		erm.logger.Error("failed to update connection status during close",
+			zap.String("connection_id", connectionID),
+			zap.Error(err))
+		// Continue - we still want to return the original error
 	}
 
-	erm.logger.Info("connection marked as closed",
+	erm.logger.Info("connection marked as closed with error",
 		zap.String("connection_id", connectionID),
-		zap.String("reason", reason))
+		zap.String("error_code", string(appErr.Code)),
+		zap.String("error_category", string(appErr.Category)),
+		zap.String("reason", appErr.Error()))
 
-	return nil
+	// Return the original error for upstream handling
+	return appErr
 }
 
 // scheduleRetryJob schedules a retry job using SQS queue for reliability
 func (erm *ErrorRecoveryManager) scheduleRetryJob(ctx context.Context, connectionID string, retryCount int, delay time.Duration, originalErr error) error {
 	if erm.jobQueue == nil {
-		return fmt.Errorf("job queue not configured")
+		return errors.ConfigurationMissing("streaming retry job queue").WithMetadata("connection_id", connectionID)
 	}
 
 	retryMsg := RetryJobMessage{
@@ -535,7 +558,11 @@ func (erm *ErrorRecoveryManager) scheduleRetryJob(ctx context.Context, connectio
 
 	err := erm.jobQueue.QueueDelayedJob(ctx, "streaming-retry", retryMsg, delaySeconds)
 	if err != nil {
-		return fmt.Errorf("failed to queue retry job: %w", err)
+		return errors.NewAppError(errors.CodeSQSProcessingFailed, errors.CategoryLambda, "Failed to queue streaming retry job").
+			WithInternalError(err).
+			WithMetadata("connection_id", connectionID).
+			WithMetadata("retry_count", retryCount).
+			AsRetryable()
 	}
 
 	erm.logger.Info("scheduled retry job for connection",
@@ -613,7 +640,7 @@ func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, co
 	if erm.apiClient != nil {
 		messageBytes, err := json.Marshal(syncMessage)
 		if err != nil {
-			return fmt.Errorf("failed to marshal sync message: %w", err)
+			return errors.MarshalingFailed("streaming sync message", err).WithMetadata("connection_id", conn.ConnectionID)
 		}
 
 		_, err = erm.apiClient.PostToConnection(ctx, &apigatewaymanagementapi.PostToConnectionInput{
@@ -625,7 +652,7 @@ func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, co
 			erm.logger.Warn("failed to send sync message, connection may be stale",
 				zap.String("connection_id", conn.ConnectionID),
 				zap.Error(err))
-			return err
+			return errors.StreamingSyncFailed(conn.ConnectionID, err)
 		}
 
 		erm.logger.Debug("sync message sent successfully",
@@ -639,7 +666,7 @@ func (erm *ErrorRecoveryManager) ResynchronizeConnection(ctx context.Context, co
 func (erm *ErrorRecoveryManager) PerformHealthCheck(ctx context.Context, connectionID string) (*HealthCheckResult, error) {
 	conn, err := erm.connRepo.GetConnection(ctx, connectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection for health check: %w", err)
+		return nil, errors.FailedToGet("streaming connection for health check", err).WithMetadata("connection_id", connectionID)
 	}
 
 	result := &HealthCheckResult{

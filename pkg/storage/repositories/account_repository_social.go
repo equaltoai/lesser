@@ -45,10 +45,7 @@ func (r *AccountRepository) Follow(ctx context.Context, followerUsername, follow
 		return err
 	}
 	if isFollowing {
-		return common.AlreadyFollowingError{
-			Follower: followerUsername,
-			Followee: followedUsername,
-		}
+		return common.AlreadyFollowingError{Follower: followerUsername, Followee: followedUsername}
 	}
 
 	// Create follow relationship using NewFollow constructor

@@ -1253,7 +1253,7 @@ func (h *Handler) deliverUpdateActivity(ctx context.Context, updateActivity *act
 			zap.String("activity_id", updateActivity.ID),
 			zap.String("actor_id", actor.ID),
 			zap.Error(err))
-		return errors.Join(ErrFailedToDetermineDeliveryRecipients, err)
+		return errors.Join(failedToDetermineDeliveryRecipients(), err)
 	}
 
 	if err := common.ValidateSliceNotEmpty("recipients", recipients); err != nil {

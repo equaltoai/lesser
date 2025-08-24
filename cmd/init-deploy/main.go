@@ -9,7 +9,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -22,6 +21,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/factory"
 	"go.uber.org/zap"
@@ -167,13 +167,13 @@ func generateVAPIDKeys() (string, string, error) {
 	// Generate private key
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return "", "", errors.Join(ErrFailedToGeneratePrivateKey, err)
+		return "", "", pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to generate private key")
 	}
 
 	// Encode private key to PEM
 	privateKeyBytes, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return "", "", errors.Join(ErrFailedToMarshalPrivateKey, err)
+		return "", "", pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to marshal private key")
 	}
 
 	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
@@ -184,7 +184,7 @@ func generateVAPIDKeys() (string, string, error) {
 	// Convert ECDSA key to ECDH and get public key bytes
 	ecdhKey, err := privateKey.ECDH()
 	if err != nil {
-		return "", "", errors.Join(ErrFailedToConvertToECDHKey, err)
+		return "", "", pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to convert to ECDH key")
 	}
 	publicKeyBytes := ecdhKey.PublicKey().Bytes()
 
@@ -223,7 +223,7 @@ func storeSecret(ctx context.Context, client *secretsmanager.Client, secretName,
 			SecretString: aws.String(secretValue),
 		})
 		if updateErr != nil {
-			return errors.Join(ErrFailedToCreateOrUpdateSecret, updateErr)
+			return pkgErrors.WrapError(updateErr, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to create or update secret")
 		}
 	}
 

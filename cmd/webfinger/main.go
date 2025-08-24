@@ -41,10 +41,7 @@ type WebFingerHandler struct {
 func parseWebFingerResource(resource string) (username, domain string, err error) {
 	// Validate webfinger format using comprehensive validation
 	if err := activitypub.ValidateWebfinger(resource); err != nil {
-		return "", "", common.ValidationError{
-			Field:   "resource",
-			Message: err.Error(),
-		}
+		return "", "", common.ValidationError{Field: "resource", Message: err.Error()}
 	}
 
 	// Extract username and domain

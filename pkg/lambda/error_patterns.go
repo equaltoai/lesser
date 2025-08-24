@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -57,26 +57,36 @@ func (ep *ErrorPattern) handleError(ctx *liftPkg.Context, err error) error {
 		return liftErr // Let Lift handle its own errors
 	}
 
-	// Handle common error types
-	statusCode, errorCode, message := ep.categorizeError(err)
+	// Handle centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
+		errorResponse := StandardErrorResponse{
+			Error:     string(appErr.Code),
+			Message:   appErr.Message,
+			RequestID: requestID,
+			Code:      string(appErr.Code),
+		}
+		ep.logError(requestID, appErr.HTTPStatusCode, appErr.Message, err)
+		return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
+	}
 
-	// Create standardized error response
+	// Handle legacy error types by converting to centralized system
+	appErr := ep.convertLegacyError(err)
 	errorResponse := StandardErrorResponse{
-		Error:     errorCode,
-		Message:   message,
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
 		RequestID: requestID,
-		Code:      errorCode,
+		Code:      string(appErr.Code),
 	}
 
 	// Log the error
-	ep.logError(requestID, statusCode, message, err)
+	ep.logError(requestID, appErr.HTTPStatusCode, appErr.Message, err)
 
 	// Return as Lift error
-	return ctx.Status(statusCode).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
-// categorizeError categorizes errors into standard types and status codes
-func (ep *ErrorPattern) categorizeError(err error) (statusCode int, errorCode string, message string) {
+// convertLegacyError converts legacy errors to centralized AppError
+func (ep *ErrorPattern) convertLegacyError(err error) *errors.AppError {
 	errMsg := err.Error()
 	errMsgLower := strings.ToLower(errMsg)
 
@@ -84,14 +94,14 @@ func (ep *ErrorPattern) categorizeError(err error) (statusCode int, errorCode st
 	if strings.Contains(errMsgLower, "unauthorized") ||
 		strings.Contains(errMsgLower, "invalid token") ||
 		strings.Contains(errMsgLower, "authentication required") {
-		return http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required"
+		return errors.WrapError(err, errors.CodeUnauthorized, errors.CategoryAuth, "Authentication required")
 	}
 
 	// Authorization errors
 	if strings.Contains(errMsgLower, "forbidden") ||
 		strings.Contains(errMsgLower, "insufficient") ||
 		strings.Contains(errMsgLower, "access denied") {
-		return http.StatusForbidden, "FORBIDDEN", "Access denied"
+		return errors.WrapError(err, errors.CodeForbidden, errors.CategoryAuth, "Access denied")
 	}
 
 	// Validation errors
@@ -99,36 +109,41 @@ func (ep *ErrorPattern) categorizeError(err error) (statusCode int, errorCode st
 		strings.Contains(errMsgLower, "required") ||
 		strings.Contains(errMsgLower, "validation") ||
 		strings.Contains(errMsgLower, "bad request") {
-		return http.StatusBadRequest, "VALIDATION_ERROR", "Invalid request data"
+		return errors.WrapError(err, errors.CodeValidationFailed, errors.CategoryValidation, "Invalid request data")
 	}
 
 	// Not found errors
 	if strings.Contains(errMsgLower, "not found") ||
 		strings.Contains(errMsgLower, "does not exist") {
-		return http.StatusNotFound, "NOT_FOUND", "Resource not found"
+		return errors.WrapError(err, errors.CodeNotFound, errors.CategoryAPI, "Resource not found")
 	}
 
 	// Conflict errors
 	if strings.Contains(errMsgLower, "conflict") ||
 		strings.Contains(errMsgLower, "already exists") ||
 		strings.Contains(errMsgLower, "duplicate") {
-		return http.StatusConflict, "CONFLICT", "Resource conflict"
+		return errors.WrapError(err, errors.CodeConflict, errors.CategoryBusiness, "Resource conflict")
 	}
 
 	// Rate limiting errors
 	if strings.Contains(errMsgLower, "rate limit") ||
 		strings.Contains(errMsgLower, "too many requests") {
-		return http.StatusTooManyRequests, "RATE_LIMITED", "Too many requests"
+		return errors.WrapError(err, errors.CodeRateLimited, errors.CategoryAPI, "Too many requests").AsRetryable()
 	}
 
 	// Timeout errors
 	if strings.Contains(errMsgLower, "timeout") ||
 		strings.Contains(errMsgLower, "deadline exceeded") {
-		return http.StatusRequestTimeout, "TIMEOUT", "Request timeout"
+		return errors.WrapError(err, errors.CodeTimeout, errors.CategoryLambda, "Request timeout").AsRetryable()
+	}
+
+	// Lambda-specific errors
+	if strings.Contains(errMsgLower, "lambda") {
+		return errors.WrapError(err, errors.CodeLambdaTimeout, errors.CategoryLambda, "Lambda function error").AsRetryable()
 	}
 
 	// Default to internal server error
-	return http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error"
+	return errors.WrapError(err, errors.CodeInternal, errors.CategoryInternal, "Internal server error")
 }
 
 // logError logs errors with appropriate levels and context
@@ -152,10 +167,11 @@ func (ep *ErrorPattern) logError(requestID string, statusCode int, message strin
 
 // HandleValidationError creates a standardized validation error response
 func (ep *ErrorPattern) HandleValidationError(ctx *liftPkg.Context, field string, message string) error {
+	appErr := errors.ValidationFailed(field, message)
 	errorResponse := StandardErrorResponse{
-		Error:     "VALIDATION_ERROR",
-		Message:   fmt.Sprintf("Validation failed for field '%s': %s", field, message),
-		Code:      "VALIDATION_ERROR",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"field":              field,
@@ -169,15 +185,16 @@ func (ep *ErrorPattern) HandleValidationError(ctx *liftPkg.Context, field string
 		zap.String("message", message),
 	)
 
-	return ctx.Status(http.StatusBadRequest).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // HandleAuthenticationError creates a standardized authentication error response
 func (ep *ErrorPattern) HandleAuthenticationError(ctx *liftPkg.Context, message string) error {
+	appErr := errors.Unauthorized(message)
 	errorResponse := StandardErrorResponse{
-		Error:     "UNAUTHORIZED",
-		Message:   message,
-		Code:      "UNAUTHORIZED",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -186,15 +203,16 @@ func (ep *ErrorPattern) HandleAuthenticationError(ctx *liftPkg.Context, message 
 		zap.String("message", message),
 	)
 
-	return ctx.Status(http.StatusUnauthorized).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // HandleAuthorizationError creates a standardized authorization error response
 func (ep *ErrorPattern) HandleAuthorizationError(ctx *liftPkg.Context, message string) error {
+	appErr := errors.Forbidden(message)
 	errorResponse := StandardErrorResponse{
-		Error:     "FORBIDDEN",
-		Message:   message,
-		Code:      "FORBIDDEN",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -203,15 +221,16 @@ func (ep *ErrorPattern) HandleAuthorizationError(ctx *liftPkg.Context, message s
 		zap.String("message", message),
 	)
 
-	return ctx.Status(http.StatusForbidden).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // HandleNotFoundError creates a standardized not found error response
 func (ep *ErrorPattern) HandleNotFoundError(ctx *liftPkg.Context, resource string) error {
+	appErr := errors.NotFound(resource)
 	errorResponse := StandardErrorResponse{
-		Error:     "NOT_FOUND",
-		Message:   fmt.Sprintf("%s not found", resource),
-		Code:      "NOT_FOUND",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"resource": resource,
@@ -223,15 +242,16 @@ func (ep *ErrorPattern) HandleNotFoundError(ctx *liftPkg.Context, resource strin
 		zap.String("resource", resource),
 	)
 
-	return ctx.Status(http.StatusNotFound).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // HandleInternalError creates a standardized internal server error response
 func (ep *ErrorPattern) HandleInternalError(ctx *liftPkg.Context, err error, message string) error {
+	appErr := errors.InternalWithCause(err, message)
 	errorResponse := StandardErrorResponse{
-		Error:     "INTERNAL_ERROR",
-		Message:   message,
-		Code:      "INTERNAL_ERROR",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
@@ -241,15 +261,17 @@ func (ep *ErrorPattern) HandleInternalError(ctx *liftPkg.Context, err error, mes
 		zap.Error(err),
 	)
 
-	return ctx.Status(http.StatusInternalServerError).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // HandleRateLimitError creates a standardized rate limit error response
 func (ep *ErrorPattern) HandleRateLimitError(ctx *liftPkg.Context, retryAfter int) error {
+	appErr := errors.NewAppError(errors.CodeRateLimited, errors.CategoryAuth, "Too many requests").
+		WithMetadata("retry_after_seconds", retryAfter)
 	errorResponse := StandardErrorResponse{
-		Error:     "RATE_LIMITED",
-		Message:   "Too many requests",
-		Code:      "RATE_LIMITED",
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 		Details: map[string]interface{}{
 			"retry_after_seconds": retryAfter,
@@ -264,7 +286,7 @@ func (ep *ErrorPattern) HandleRateLimitError(ctx *liftPkg.Context, retryAfter in
 		zap.Int("retry_after", retryAfter),
 	)
 
-	return ctx.Status(http.StatusTooManyRequests).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }
 
 // WrapWithErrorHandler wraps a handler function with standardized error handling
@@ -307,7 +329,7 @@ func (ep *ErrorPattern) CreatePanicRecoveryMiddleware() liftPkg.Middleware {
 
 // ValidateRequiredParam validates a required parameter and returns standardized error
 func (ep *ErrorPattern) ValidateRequiredParam(ctx *liftPkg.Context, paramName string, paramValue string) error {
-	if err := common.ValidateRequiredParam(paramName, paramValue); err != nil {
+	if paramValue == "" {
 		return ep.HandleValidationError(ctx, paramName, "parameter is required")
 	}
 	return nil
@@ -321,7 +343,7 @@ type ActivityPubErrorResponse struct {
 }
 
 // HandleActivityPubError creates ActivityPub-compatible error responses
-func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, statusCode int, errorType string, summary string) error {
+func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, appErr *errors.AppError, summary string) error {
 	// Check if client accepts ActivityPub content type
 	acceptHeader := ctx.Header("Accept")
 	if strings.Contains(acceptHeader, "application/activity+json") ||
@@ -329,22 +351,22 @@ func (ep *ErrorPattern) HandleActivityPubError(ctx *liftPkg.Context, statusCode 
 
 		// Return ActivityPub-formatted error
 		errorResponse := ActivityPubErrorResponse{
-			Type:    errorType,
-			Name:    http.StatusText(statusCode),
+			Type:    string(appErr.Code),
+			Name:    http.StatusText(appErr.HTTPStatusCode),
 			Summary: summary,
 		}
 
 		ctx.Response.Header("Content-Type", "application/activity+json")
-		return ctx.Status(statusCode).JSON(errorResponse)
+		return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 	}
 
 	// Return standard JSON error for non-ActivityPub clients
 	errorResponse := StandardErrorResponse{
-		Error:     errorType,
-		Message:   summary,
-		Code:      errorType,
+		Error:     string(appErr.Code),
+		Message:   appErr.Message,
+		Code:      string(appErr.Code),
 		RequestID: ctx.GetRequestID(),
 	}
 
-	return ctx.Status(statusCode).JSON(errorResponse)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(errorResponse)
 }

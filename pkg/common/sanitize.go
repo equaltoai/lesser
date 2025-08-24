@@ -146,10 +146,7 @@ func ValidateAndSanitizeMediaType(mediaType string) (string, error) {
 	}
 
 	if !allowedTypes[strings.ToLower(mediaType)] {
-		return "", ValidationError{
-			Field:   "mediaType",
-			Message: "unsupported media type",
-		}
+		return "", ValidationError{Field: "mediaType", Message: "unsupported media type"}
 	}
 
 	return mediaType, nil

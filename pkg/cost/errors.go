@@ -1,10 +1,11 @@
 package cost
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Circuit breaker related errors
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
-	ErrCircuitBreakerOpen      = errors.New("circuit breaker open: cost limit exceeded")
-	ErrCircuitBreakerReopened  = errors.New("circuit breaker reopened: cost still too high")
-	ErrHourlyCostLimitExceeded = errors.New("hourly cost limit would be exceeded")
+	ErrCircuitBreakerOpen      = errors.CircuitBreakerOpen()
+	ErrCircuitBreakerReopened  = errors.CircuitBreakerReopened()
+	ErrHourlyCostLimitExceeded = errors.HourlyCostLimitExceeded()
 )

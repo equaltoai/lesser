@@ -1,22 +1,23 @@
 package streaming
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Streaming-specific errors
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
 	// Connection errors
-	ErrConnectionWriteFailed   = errors.New("failed to write connection")
-	ErrConnectionDeleteFailed  = errors.New("failed to delete connection")
-	ErrAPIGatewayClientNotInit = errors.New("API Gateway client not initialized")
+	ErrConnectionWriteFailed   = errors.FailedToSave("connection", nil)
+	ErrConnectionDeleteFailed  = errors.FailedToDelete("connection", nil)
+	ErrAPIGatewayClientNotInit = errors.ServiceNotAvailable("API Gateway client")
 
 	// Message errors
-	ErrConfirmationSendFailed = errors.New("failed to send confirmation")
-	ErrPongSendFailed         = errors.New("failed to send pong")
-	ErrErrorMessageSendFailed = errors.New("failed to send error message")
+	ErrConfirmationSendFailed = errors.ProcessingFailed("confirmation send", nil)
+	ErrPongSendFailed         = errors.ProcessingFailed("pong send", nil)
+	ErrErrorMessageSendFailed = errors.ProcessingFailed("error message send", nil)
 
 	// Command validation errors
-	ErrCommandIDRequired       = errors.New("command id is required")
-	ErrCommandIDMustBeString   = errors.New("command id must be a string")
-	ErrCommandTypeRequired     = errors.New("command type is required")
-	ErrCommandTypeMustBeString = errors.New("command type must be a string")
+	ErrCommandIDRequired       = errors.ValidationFailedWithField("command id is required")
+	ErrCommandIDMustBeString   = errors.ValidationFailedWithField("command id must be a string")
+	ErrCommandTypeRequired     = errors.ValidationFailedWithField("command type is required")
+	ErrCommandTypeMustBeString = errors.ValidationFailedWithField("command type must be a string")
 )

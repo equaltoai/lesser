@@ -1,40 +1,128 @@
 package main
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for notification processor
-var (
-	// Budget and delivery errors
-	ErrNotificationBudgetExceeded = errors.New("notification delivery blocked: user budget exceeded")
+// Error functions for notification processor
 
-	// Client initialization errors
-	ErrSNSClientNotInitialized        = errors.New("SNS client not initialized")
-	ErrAPIGatewayClientNotInitialized = errors.New("API Gateway client not initialized")
-	ErrSQSClientNotInitialized        = errors.New("SQS client not initialized")
+// Budget and delivery errors
 
-	// Configuration errors
-	ErrPushTopicNotConfigured     = errors.New("PUSH_NOTIFICATION_TOPIC_ARN not configured")
-	ErrRetryQueueNotConfigured    = errors.New("retry queue URL not configured")
-	ErrSQSConfigurationIncomplete = errors.New("SQS client or retry queue URL not configured")
+// ErrNotificationBudgetExceeded returns an error indicating notification delivery blocked due to user budget exceeded.
+func ErrNotificationBudgetExceeded() error {
+	return errors.NewAppError(errors.CodeRateLimited, errors.CategoryValidation, "notification delivery blocked: user budget exceeded")
+}
 
-	// Channel delivery errors
-	ErrUnsupportedDeliveryChannel = errors.New("unsupported delivery channel")
-	ErrDeliveryChannelFailed      = errors.New("delivery failed on channel")
+// Client initialization errors
 
-	// Processing errors
-	ErrUnmarshalDeliveryRequest = errors.New("failed to unmarshal delivery request")
-	ErrGetNotification          = errors.New("failed to get notification")
-	ErrMarshalPushPayload       = errors.New("failed to marshal push payload")
-	ErrSendPushNotification     = errors.New("failed to send push notification")
-	ErrGetWebSocketConnections  = errors.New("failed to get websocket connections")
-	ErrDeliverWebSocketMessage  = errors.New("failed to deliver to any websocket connections")
-	ErrMarshalWebSocketMessage  = errors.New("failed to marshal websocket message")
-	ErrPublishToSNS             = errors.New("failed to publish push notification to SNS")
-	ErrMarshalScheduledRequest  = errors.New("failed to marshal scheduled notification request")
-	ErrRequeueNotification      = errors.New("failed to requeue scheduled notification")
-	ErrMarshalRetryRequest      = errors.New("failed to marshal retry request")
-	ErrScheduleRetry            = errors.New("failed to schedule retry")
+// ErrSNSClientNotInitialized returns an error indicating SNS client not initialized.
+func ErrSNSClientNotInitialized() error {
+	return errors.NewLambdaError(errors.CodeInternal, "SNS client not initialized")
+}
 
-	// Batch processing errors
-	ErrPartialBatchFailure = errors.New("partial batch failure")
-)
+// ErrAPIGatewayClientNotInitialized returns an error indicating API Gateway client not initialized.
+func ErrAPIGatewayClientNotInitialized() error {
+	return errors.NewLambdaError(errors.CodeInternal, "API Gateway client not initialized")
+}
+
+// ErrSQSClientNotInitialized returns an error indicating SQS client not initialized.
+func ErrSQSClientNotInitialized() error {
+	return errors.NewLambdaError(errors.CodeInternal, "SQS client not initialized")
+}
+
+// Configuration errors
+
+// ErrPushTopicNotConfigured returns an error indicating PUSH_NOTIFICATION_TOPIC_ARN not configured.
+func ErrPushTopicNotConfigured() error {
+	return errors.NewLambdaError(errors.CodeInternal, "PUSH_NOTIFICATION_TOPIC_ARN not configured")
+}
+
+// ErrRetryQueueNotConfigured returns an error indicating retry queue URL not configured.
+func ErrRetryQueueNotConfigured() error {
+	return errors.NewLambdaError(errors.CodeInternal, "retry queue URL not configured")
+}
+
+// ErrSQSConfigurationIncomplete returns an error indicating SQS client or retry queue URL not configured.
+func ErrSQSConfigurationIncomplete() error {
+	return errors.NewLambdaError(errors.CodeInternal, "SQS client or retry queue URL not configured")
+}
+
+// Channel delivery errors
+
+// ErrUnsupportedDeliveryChannel returns an error indicating unsupported delivery channel.
+func ErrUnsupportedDeliveryChannel(channel string) error {
+	return errors.NewAppError(errors.CodeInvalidInput, errors.CategoryValidation, "unsupported delivery channel").
+		WithMetadata("channel", channel)
+}
+
+// ErrDeliveryChannelFailed returns an error indicating delivery failed on channel.
+func ErrDeliveryChannelFailed() error {
+	return errors.NewLambdaError(errors.CodeInternal, "delivery failed on channel")
+}
+
+// Processing errors
+
+// ErrUnmarshalDeliveryRequest returns an error indicating failed to unmarshal delivery request.
+func ErrUnmarshalDeliveryRequest(err error) error {
+	return errors.WrapError(err, errors.CodeInvalidFormat, errors.CategoryValidation, "failed to unmarshal delivery request")
+}
+
+// ErrGetNotification returns an error indicating failed to get notification.
+func ErrGetNotification(err error) error {
+	return errors.NewStorageInternalError(errors.CodeQueryFailed, "failed to get notification", err)
+}
+
+// ErrMarshalPushPayload returns an error indicating failed to marshal push payload.
+func ErrMarshalPushPayload(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to marshal push payload", err)
+}
+
+// ErrSendPushNotification returns an error indicating failed to send push notification.
+func ErrSendPushNotification(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to send push notification", err)
+}
+
+// ErrGetWebSocketConnections returns an error indicating failed to get websocket connections.
+func ErrGetWebSocketConnections(err error) error {
+	return errors.NewStorageInternalError(errors.CodeQueryFailed, "failed to get websocket connections", err)
+}
+
+// ErrDeliverWebSocketMessage returns an error indicating failed to deliver to any websocket connections.
+func ErrDeliverWebSocketMessage(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to deliver to any websocket connections", err)
+}
+
+// ErrMarshalWebSocketMessage returns an error indicating failed to marshal websocket message.
+func ErrMarshalWebSocketMessage(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to marshal websocket message", err)
+}
+
+// ErrPublishToSNS returns an error indicating failed to publish push notification to SNS.
+func ErrPublishToSNS(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to publish push notification to SNS", err)
+}
+
+// ErrMarshalScheduledRequest returns an error indicating failed to marshal scheduled notification request.
+func ErrMarshalScheduledRequest(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to marshal scheduled notification request", err)
+}
+
+// ErrRequeueNotification returns an error indicating failed to requeue scheduled notification.
+func ErrRequeueNotification(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to requeue scheduled notification", err)
+}
+
+// ErrMarshalRetryRequest returns an error indicating failed to marshal retry request.
+func ErrMarshalRetryRequest(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to marshal retry request", err)
+}
+
+// ErrScheduleRetry returns an error indicating failed to schedule retry.
+func ErrScheduleRetry(err error) error {
+	return errors.NewLambdaInternalError(errors.CodeInternal, "failed to schedule retry", err)
+}
+
+// Batch processing errors
+
+// ErrPartialBatchFailure returns an error indicating partial batch failure.
+func ErrPartialBatchFailure() error {
+	return errors.NewLambdaError(errors.CodeSQSProcessingFailed, "partial batch failure")
+}

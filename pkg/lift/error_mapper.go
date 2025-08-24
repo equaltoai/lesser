@@ -6,44 +6,30 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/smithy-go"
-	"github.com/equaltoai/lesser/pkg/common"
+	pkgerrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // MapCommonError converts common package errors to Lift errors
 func MapCommonError(err error) error {
 	switch e := err.(type) {
-	case common.ActorNotFoundError:
-		return NotFoundError("actor")
-	case common.ActivityNotFoundError:
-		return NotFoundError("activity")
-	case common.ValidationError:
-		return ValidationErrorWithField(e.Field, e.Message)
-	case common.AuthenticationError:
-		return UnauthorizedError(e.Message)
-	case common.AuthorizationError:
-		return ForbiddenError(e.Action, e.Resource)
-	case common.ConflictError:
-		return ConflictError(e.Resource, e.Message)
-	case common.FederationError:
-		return FederationError(e.Operation, e.Remote, e.Err)
-	case common.AppError:
+	case *pkgerrors.AppError:
 		// Map AppError based on status code
-		switch e.StatusCode {
+		switch e.HTTPStatusCode {
 		case 400:
-			return ValidationError(e.UserMessage)
+			return ValidationError(e.Message)
 		case 401:
-			return UnauthorizedError(e.UserMessage)
+			return UnauthorizedError(e.Message)
 		case 403:
 			return ForbiddenError("", "")
 		case 404:
 			return NotFoundError("resource")
 		case 409:
-			return ConflictError("resource", e.UserMessage)
+			return ConflictError("resource", e.Message)
 		case 429:
-			return RateLimitError(e.UserMessage)
+			return RateLimitError(e.Message)
 		case 500:
-			return InternalError(e.UserMessage)
+			return InternalError(e.Message)
 		case 502:
 			return FederationError("request", "remote", e.InternalError)
 		case 503:
@@ -51,7 +37,7 @@ func MapCommonError(err error) error {
 		case 504:
 			return TimeoutError("")
 		default:
-			return InternalError(e.UserMessage)
+			return InternalError(e.Message)
 		}
 	default:
 		return err

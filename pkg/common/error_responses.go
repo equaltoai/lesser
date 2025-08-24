@@ -5,6 +5,7 @@ package common
 import (
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
@@ -18,13 +19,14 @@ type StandardErrorResponse struct {
 // Common error response patterns consolidated into reusable functions
 // This consolidates the 400+ occurrences of ctx.Status(4XX).JSON(map[string]string{"error": "..."})
 
-// RespondUnauthorized handles authentication errors (401)
+// RespondUnauthorized handles authentication errors (401) - now using centralized errors
 func RespondUnauthorized(ctx *lift.Context, message ...string) error {
 	msg := "Unauthorized"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(401).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.Unauthorized(msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondUnauthorizedWithDescription handles authentication errors (401) with additional description
@@ -50,13 +52,14 @@ func RespondExpiredToken(ctx *lift.Context) error {
 	return RespondUnauthorized(ctx, "token expired")
 }
 
-// RespondForbidden handles authorization/permission errors (403) with optional custom message
+// RespondForbidden handles authorization/permission errors (403) - now using centralized errors
 func RespondForbidden(ctx *lift.Context, message ...string) error {
 	msg := "Forbidden"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(403).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.Forbidden(msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondInsufficientScope handles insufficient OAuth scope errors by returning a 403 forbidden response
@@ -83,22 +86,29 @@ func RespondNotAuthorizedToDelete(ctx *lift.Context, resource string) error {
 	return RespondForbidden(ctx, fmt.Sprintf("not authorized to delete %s", resource))
 }
 
-// RespondBadRequest handles validation and bad request errors (400) with optional custom message
+// RespondBadRequest handles validation and bad request errors (400) - now using centralized errors
 func RespondBadRequest(ctx *lift.Context, message ...string) error {
 	msg := "Bad Request"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(400).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.BadRequest(msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
-// RespondValidationError handles validation failed errors by returning a 400 bad request response
+// RespondValidationError handles validation failed errors - now using centralized errors
 func RespondValidationError(ctx *lift.Context, err error) error {
-	msg := "Validation failed"
+	var appErr *errors.AppError
 	if err != nil {
-		msg = err.Error()
+		if existingAppErr, ok := errors.AsAppError(err); ok {
+			appErr = existingAppErr
+		} else {
+			appErr = errors.ValidationFailed("input", err.Error())
+		}
+	} else {
+		appErr = errors.ValidationFailed("input", "Validation failed")
 	}
-	return ctx.Status(400).JSON(StandardErrorResponse{Error: msg})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondMissingParameter handles missing required parameter errors by returning a 400 bad request response
@@ -126,13 +136,15 @@ func RespondInvalidRequest(ctx *lift.Context) error {
 	return RespondBadRequest(ctx, "invalid request")
 }
 
-// RespondNotFound handles resource not found errors (404) with optional custom resource name
+// RespondNotFound handles resource not found errors (404) - now using centralized errors
 func RespondNotFound(ctx *lift.Context, resource ...string) error {
-	msg := "Not Found"
+	var appErr *errors.AppError
 	if len(resource) > 0 && resource[0] != "" {
-		msg = fmt.Sprintf("%s not found", resource[0])
+		appErr = errors.NotFound(resource[0])
+	} else {
+		appErr = errors.NotFound("resource")
 	}
-	return ctx.Status(404).JSON(StandardErrorResponse{Error: msg})
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondAccountNotFound handles account not found errors by returning a 404 not found response
@@ -170,13 +182,14 @@ func RespondMethodNotAllowed(ctx *lift.Context) error {
 	return ctx.Status(405).JSON(StandardErrorResponse{Error: "Method Not Allowed"})
 }
 
-// RespondConflict handles resource conflict errors (409) with optional custom message
+// RespondConflict handles resource conflict errors (409) - now using centralized errors
 func RespondConflict(ctx *lift.Context, message ...string) error {
 	msg := "Conflict"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(409).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.NewAppError(errors.CodeConflict, errors.CategoryBusiness, msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondAlreadyExists handles resource already exists conflicts by returning a 409 conflict response
@@ -217,13 +230,14 @@ func RespondRateLimited(ctx *lift.Context) error {
 	return ctx.Status(429).JSON(StandardErrorResponse{Error: "Rate limit exceeded"})
 }
 
-// RespondInternalServerError handles internal server errors (500) with optional custom message
+// RespondInternalServerError handles internal server errors (500) - now using centralized errors
 func RespondInternalServerError(ctx *lift.Context, message ...string) error {
 	msg := "Internal server error"
 	if len(message) > 0 && message[0] != "" {
 		msg = message[0]
 	}
-	return ctx.Status(500).JSON(StandardErrorResponse{Error: msg})
+	appErr := errors.Internal(msg)
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 }
 
 // RespondDatabaseError handles database errors by returning a 500 internal server error response
@@ -307,14 +321,19 @@ func minInt(a, b int) int {
 
 // Common error response patterns for specific operations
 
-// RespondCreateError handles errors from create operations
+// RespondCreateError handles errors from create operations - now using centralized errors
 func RespondCreateError(ctx *lift.Context, resource string, err error) error {
 	if err == nil {
 		return RespondInternalServerError(ctx, fmt.Sprintf("unknown error creating %s", resource))
 	}
 
+	// Check for centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	}
+
 	// Check for validation errors
-	if err != nil && containsValidationKeywords(err.Error()) {
+	if containsValidationKeywords(err.Error()) {
 		return RespondValidationError(ctx, err)
 	}
 
@@ -327,14 +346,19 @@ func RespondCreateError(ctx *lift.Context, resource string, err error) error {
 	return RespondFailedToCreate(ctx, resource)
 }
 
-// RespondUpdateError handles errors from update operations
+// RespondUpdateError handles errors from update operations - now using centralized errors
 func RespondUpdateError(ctx *lift.Context, resource string, err error) error {
 	if err == nil {
 		return RespondInternalServerError(ctx, fmt.Sprintf("unknown error updating %s", resource))
 	}
 
+	// Check for centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+	}
+
 	// Check for validation errors
-	if err != nil && containsValidationKeywords(err.Error()) {
+	if containsValidationKeywords(err.Error()) {
 		return RespondValidationError(ctx, err)
 	}
 
@@ -347,10 +371,15 @@ func RespondUpdateError(ctx *lift.Context, resource string, err error) error {
 	return RespondFailedToUpdate(ctx, resource)
 }
 
-// RespondDeleteError handles errors from delete operations
+// RespondDeleteError handles errors from delete operations - now using centralized errors
 func RespondDeleteError(ctx *lift.Context, resource string, err error) error {
 	if err == nil {
 		return RespondInternalServerError(ctx, fmt.Sprintf("unknown error deleting %s", resource))
+	}
+
+	// Check for centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 	}
 
 	// Check for not found errors
@@ -362,10 +391,15 @@ func RespondDeleteError(ctx *lift.Context, resource string, err error) error {
 	return RespondFailedToDelete(ctx, resource)
 }
 
-// RespondGetError handles errors from get/fetch operations
+// RespondGetError handles errors from get/fetch operations - now using centralized errors
 func RespondGetError(ctx *lift.Context, resource string, err error) error {
 	if err == nil {
 		return RespondInternalServerError(ctx, fmt.Sprintf("unknown error getting %s", resource))
+	}
+
+	// Check for centralized AppError
+	if appErr, ok := errors.AsAppError(err); ok {
+		return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
 	}
 
 	// Check for not found errors
@@ -377,20 +411,23 @@ func RespondGetError(ctx *lift.Context, resource string, err error) error {
 	return RespondFailedToGet(ctx, resource)
 }
 
-// Error type checking helpers (these would need to be implemented based on actual error types)
-func isConflictError(_ error) bool {
-	// Implementation would check for specific conflict error types
-	// This is a placeholder for the actual logic
-	return false
+// Error type checking helpers - now using centralized error system
+func isConflictError(err error) bool {
+	return errors.HasCode(err, errors.CodeConflict) || 
+		   errors.HasCode(err, errors.CodeAlreadyExists)
 }
 
-func isNotFoundError(_ error) bool {
-	// Implementation would check for specific not found error types
-	// This is a placeholder for the actual logic
-	return false
+func isNotFoundError(err error) bool {
+	return errors.HasCode(err, errors.CodeNotFound) ||
+		   errors.HasCode(err, errors.CodeActorNotFound)
 }
 
 // Helper functions for common response patterns
+
+// RespondWithAppError creates a response from a centralized AppError
+func RespondWithAppError(ctx *lift.Context, appErr *errors.AppError) error {
+	return ctx.Status(appErr.HTTPStatusCode).JSON(StandardErrorResponse{Error: appErr.Message})
+}
 
 // RespondWithErrorMessage creates a standardized error response with custom message
 func RespondWithErrorMessage(ctx *lift.Context, statusCode int, message string) error {

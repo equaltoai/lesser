@@ -41,7 +41,7 @@ func ReadRequestBody(body io.Reader, maxSize int64) ([]byte, error) {
 
 	// Check if we read more than maxSize (the extra byte)
 	if int64(len(data)) > maxSize {
-		return nil, fmt.Errorf("%w: exceeds %d bytes", ErrRequestBodyTooLarge, maxSize)
+		return nil, fmt.Errorf("request body too large: exceeds %d bytes", maxSize)
 	}
 
 	return data, nil
@@ -86,7 +86,7 @@ func ParseRequestWithFallback(ctx *lift.Context, target interface{}) error {
 		}
 	}
 
-	return ErrFailedToParseRequestBody
+	return fmt.Errorf("failed to parse request body")
 }
 
 // ParseRequestWithValidation combines parsing with common validation responses
@@ -164,5 +164,5 @@ func ParseRequestWithComplexFallback(ctx *lift.Context, target interface{}) erro
 		}
 	}
 
-	return ErrFailedToParseWithComplexFallback
+	return fmt.Errorf("failed to parse request with complex fallback")
 }

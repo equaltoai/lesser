@@ -167,19 +167,19 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 	// Get raw body from request
 	bodyBytes := ctx.Request.Body
 	if err := common.ValidateSliceNotEmpty("request_body", bodyBytes); err != nil {
-		return nil, ErrEmptyRequestBody
+		return nil, emptyRequestBody()
 	}
 
 	// Handle base64 decoding for API Gateway
 	bodyBytes, err := h.handleBase64Decoding(bodyBytes)
 	if err != nil {
-		return nil, errors.Join(ErrUnableToParseRequestBody, err)
+		return nil, errors.Join(unableToParseRequestBody(), err)
 	}
 
 	// Parse multipart form
 	boundary, err := h.extractBoundary(ctx.Header("Content-Type"))
 	if err != nil {
-		return nil, errors.Join(ErrFailedToExtractBoundary, err)
+		return nil, errors.Join(failedToExtractBoundary(), err)
 	}
 
 	reader := multipart.NewReader(bytes.NewReader(bodyBytes), boundary)
@@ -202,7 +202,7 @@ func (h *Handler) parseMediaUpload(ctx *lift.Context) (*MediaUploadRequest, erro
 
 	// Validate required file data
 	if err := common.ValidateSliceNotEmpty("mediaData.FileData", mediaData.FileData); err != nil {
-		return nil, ErrNoFileDataFoundInRequest
+		return nil, noFileDataFoundInRequest()
 	}
 
 	return &mediaData, nil

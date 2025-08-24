@@ -122,10 +122,7 @@ func (r *AccountRepository) CreateAccount(ctx context.Context, account *storage.
 	// Create user using BaseRepository
 	if err := r.Create(ctx, userModel); err != nil {
 		if dynamormErrors.IsConditionFailed(err) {
-			return common.ConflictError{
-				Resource: "user",
-				Message:  fmt.Sprintf("user %s already exists", user.Username),
-			}
+			return common.ConflictError{Resource: "user", Message: fmt.Sprintf("user %s already exists", user.Username)}
 		}
 		return ErrorHandler.HandleCreateError(err, EntityUser, user.Username)
 	}
@@ -340,10 +337,7 @@ func (r *AccountRepository) createActor(ctx context.Context, actor *activitypub.
 	// Create using DynamORM
 	if err := r.db.WithContext(ctx).Model(actorModel).Create(); err != nil {
 		if dynamormErrors.IsConditionFailed(err) {
-			return common.ConflictError{
-				Resource: "actor",
-				Message:  fmt.Sprintf("actor %s already exists", username),
-			}
+			return common.ConflictError{Resource: "actor", Message: fmt.Sprintf("actor %s already exists", username)}
 		}
 		return ErrorHandler.HandleCreateError(err, EntityActor, username)
 	}

@@ -114,7 +114,7 @@ func (h *Handler) getOrCreateOAuthSession(ctx context.Context, authState *storag
 
 	err = repo.CreateOAuthSession(ctx, oauthSession)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToCreateOAuthSession, err)
+		return nil, errors.Join(failedToCreateOAuthSession(), err)
 	}
 
 	return oauthSession, nil
@@ -257,7 +257,7 @@ func (h *Handler) createUserSessionAfterAuth(ctx context.Context, username strin
 		"oauth", // Auth method
 	)
 	if err != nil {
-		return errors.Join(ErrFailedToCreateUserSession, err)
+		return errors.Join(failedToCreateUserSession(), err)
 	}
 
 	h.logger.Debug("created user session after OAuth authorization",

@@ -1,9 +1,9 @@
 package common
 
 import (
-	"errors"
 	"fmt"
 
+	"github.com/equaltoai/lesser/pkg/errors"
 	"go.uber.org/zap"
 )
 
@@ -11,47 +11,47 @@ import (
 
 // Token-related errors
 var (
-	ErrTokenNotFound = errors.New("token not found")
-	ErrTokenExpired  = errors.New("token expired")
-	ErrTokenRevoked  = errors.New("token revoked")
+	ErrTokenNotFound = errors.TokenNotFound()
+	ErrTokenExpired  = errors.TokenExpired()
+	ErrTokenRevoked  = errors.TokenRevoked()
 )
 
 // Auth helper errors
 var (
-	ErrMissingAuthorizationHeader = errors.New("missing authorization header")
-	ErrAuthHeaderEmpty            = errors.New("authorization header is empty")
-	ErrAuthHeaderInvalidPrefix    = errors.New("authorization header must start with 'Bearer '")
-	ErrAuthenticationRequired     = errors.New("authentication required for write operations")
-	ErrAuthenticationRequiredRead = errors.New("authentication required for read operations")
-	ErrInsufficientScope          = errors.New("insufficient scope")
-	ErrInsufficientScopeWrite     = errors.New("insufficient scope: write access required")
-	ErrInsufficientScopeRead      = errors.New("insufficient scope: read access required")
+	ErrMissingAuthorizationHeader = errors.NewAuthError(errors.CodeAuthFailed, "Missing authorization header")
+	ErrAuthHeaderEmpty            = errors.NewAuthError(errors.CodeAuthFailed, "Authorization header is empty")
+	ErrAuthHeaderInvalidPrefix    = errors.NewAuthError(errors.CodeAuthFailed, "Authorization header must start with 'Bearer '")
+	ErrAuthenticationRequired     = errors.NewAuthError(errors.CodeAuthFailed, "Authentication required for write operations")
+	ErrAuthenticationRequiredRead = errors.NewAuthError(errors.CodeAuthFailed, "Authentication required for read operations")
+	ErrInsufficientScope          = errors.InsufficientScope("")
+	ErrInsufficientScopeWrite     = errors.InsufficientScope("write access required")
+	ErrInsufficientScopeRead      = errors.InsufficientScope("read access required")
 )
 
 // Business logic validation errors
 var (
-	ErrDataCannotBeNil                         = errors.New("data cannot be nil")
-	ErrRequiredFieldMissing                    = errors.New("required field is missing or empty")
-	ErrFieldExceedsMaxLength                   = errors.New("field exceeds maximum length")
-	ErrFieldBelowMinLength                     = errors.New("field is below minimum length")
-	ErrCannotPerformOperationOnSelf            = errors.New("cannot perform operation on self")
-	ErrActorAndTargetIDsRequired               = errors.New("both actor and target IDs are required for operation")
-	ErrContentExceedsMaxLength                 = errors.New("content exceeds maximum length")
-	ErrContentBelowMinLength                   = errors.New("content below minimum length")
-	ErrContentContainsForbiddenWord            = errors.New("content contains forbidden word")
-	ErrInvalidVisibilityLevel                  = errors.New("invalid visibility level")
-	ErrActorIDRequiredForQuotaValidation       = errors.New("actorID is required for quota validation")
-	ErrActionTypeRequiredForQuotaValidation    = errors.New("actionType is required for quota validation")
-	ErrMetricTypeRequired                      = errors.New("metricType is required")
-	ErrActorIDRequiredForMetrics               = errors.New("actorID is required for metrics")
-	ErrInvalidCurrentState                     = errors.New("invalid current state")
-	ErrInvalidStateTransition                  = errors.New("invalid state transition")
-	ErrAuthenticationRequiredForAccess         = errors.New("authentication required to access resource")
-	ErrResourceIDRequiredForAccessValidation   = errors.New("resourceID is required for access validation")
-	ErrResourceTypeRequiredForAccessValidation = errors.New("resourceType is required for access validation")
-	ErrInvalidAccessLevel                      = errors.New("invalid access level")
-	ErrOperationValidationFailed               = errors.New("operation validation failed")
-	ErrOperationExecutionFailed                = errors.New("operation execution failed")
+	ErrDataCannotBeNil                         = errors.RequiredFieldMissing("data")
+	ErrRequiredFieldMissing                    = errors.RequiredFieldMissing("field")
+	ErrFieldExceedsMaxLength                   = errors.FieldTooLong("field", 0, 0)
+	ErrFieldBelowMinLength                     = errors.FieldTooShort("field", 0, 0)
+	ErrCannotPerformOperationOnSelf            = errors.OperationNotAllowedOnSelf("operation")
+	ErrActorAndTargetIDsRequired               = errors.MultipleValidationErrors([]string{"Both actor and target IDs are required for operation"})
+	ErrContentExceedsMaxLength                 = errors.ContentTooLong("content", 0)
+	ErrContentBelowMinLength                   = errors.ContentEmpty("content")
+	ErrContentContainsForbiddenWord            = errors.ContentContainsForbiddenWord("word")
+	ErrInvalidVisibilityLevel                  = errors.StatusInvalidVisibility("")
+	ErrActorIDRequiredForQuotaValidation       = errors.RequiredFieldMissing("actorID")
+	ErrActionTypeRequiredForQuotaValidation    = errors.RequiredFieldMissing("actionType")
+	ErrMetricTypeRequired                      = errors.RequiredFieldMissing("metricType")
+	ErrActorIDRequiredForMetrics               = errors.RequiredFieldMissing("actorID")
+	ErrInvalidCurrentState                     = errors.InvalidStateForOperation("", "operation")
+	ErrInvalidStateTransition                  = errors.InvalidStateForOperation("", "state_transition")
+	ErrAuthenticationRequiredForAccess         = errors.InsufficientPermissions("access")
+	ErrResourceIDRequiredForAccessValidation   = errors.RequiredFieldMissing("resourceID")
+	ErrResourceTypeRequiredForAccessValidation = errors.RequiredFieldMissing("resourceType")
+	ErrInvalidAccessLevel                      = errors.InvalidValue("access_level", []string{"read", "write", "admin"}, "")
+	ErrOperationValidationFailed               = errors.ValidationFailedWithField("operation")
+	ErrOperationExecutionFailed                = errors.ProcessingFailed("operation", nil)
 )
 
 // ActorNotFoundError indicates an actor was not found
@@ -234,7 +234,7 @@ func ErrNotFound(resource string) AppError {
 	return AppError{
 		Code:          "NOT_FOUND",
 		UserMessage:   "Resource not found",
-		InternalError: errors.New(resource + " not found"),
+		InternalError: fmt.Errorf("%s not found", resource),
 		StatusCode:    404,
 	}
 }
@@ -274,7 +274,7 @@ func ErrValidation(field string, message string) AppError {
 	return AppError{
 		Code:          "VALIDATION_ERROR",
 		UserMessage:   message,
-		InternalError: errors.New("validation failed for field " + field + ": " + message),
+		InternalError: fmt.Errorf("validation failed for field %s: %s", field, message),
 		StatusCode:    400,
 	}
 }
@@ -352,130 +352,130 @@ func IsFederation(err error) bool {
 
 // ActivityPub-specific errors
 var (
-	ErrActorURIEmpty           = errors.New("actor URI cannot be empty")
-	ErrActivityTypeEmpty       = errors.New("activity type cannot be empty")
-	ErrSignatureHeaderEmpty    = errors.New("signature header is empty")
-	ErrInvalidSignature        = errors.New("invalid signature: missing keyId or signature")
-	ErrActorURIMustUseHTTPS    = errors.New("actor URI must use HTTPS")
-	ErrActorDomainBlocked      = errors.New("actor domain is blocked")
-	ErrActorDomainNotAllowed   = errors.New("actor domain not in allowed list")
-	ErrUnsupportedActivityType = errors.New("unsupported activity type")
+	ErrActorURIEmpty           = errors.ActivityPubActorURIEmpty()
+	ErrActivityTypeEmpty       = errors.ActivityPubActivityTypeEmpty()
+	ErrSignatureHeaderEmpty    = errors.ActivityPubSignatureHeaderEmpty()
+	ErrInvalidSignature        = errors.ActivityPubInvalidSignature()
+	ErrActorURIMustUseHTTPS    = errors.ActivityPubActorURIMustUseHTTPS()
+	ErrActorDomainBlocked      = errors.ContentNotAllowed("actor_domain", "domain is blocked")
+	ErrActorDomainNotAllowed   = errors.ContentNotAllowed("actor_domain", "domain not in allowed list")
+	ErrUnsupportedActivityType = errors.ActivityPubUnsupportedActivityType("")
 )
 
 // Status validation errors
 var (
-	ErrStatusContentTooLong     = errors.New("status content exceeds maximum length")
-	ErrStatusMustHaveContent    = errors.New("status must have content or media attachments")
-	ErrStatusTooManyMedia       = errors.New("status cannot have more than 4 media attachments")
-	ErrStatusTooManyPollOptions = errors.New("poll cannot have more than maximum options")
+	ErrStatusContentTooLong     = errors.ContentTooLong("status", 500)
+	ErrStatusMustHaveContent    = errors.ContentMustHaveContentOrMedia()
+	ErrStatusTooManyMedia       = errors.StatusTooManyMedia(4, 0)
+	ErrStatusTooManyPollOptions = errors.PollTooManyOptions(4, 0)
 )
 
 // Account validation errors
 var (
-	ErrDisplayNameTooLong             = errors.New("display name exceeds maximum length")
-	ErrUsernameEmpty                  = errors.New("username cannot be empty")
-	ErrUsernameInvalidCharacters      = errors.New("username can only contain letters, numbers, and underscores")
-	ErrUsernameConsecutiveUnderscores = errors.New("username cannot contain consecutive underscores")
-	ErrUsernameInvalidLength          = errors.New("username must be between 1 and 30 characters")
-	ErrUsernameInvalidFormat          = errors.New("username cannot start or end with underscore")
-	ErrBioTooLong                     = errors.New("bio exceeds maximum length")
+	ErrDisplayNameTooLong             = errors.DisplayNameTooLong(30)
+	ErrUsernameEmpty                  = errors.UsernameEmpty()
+	ErrUsernameInvalidCharacters      = errors.UsernameInvalidCharacters()
+	ErrUsernameConsecutiveUnderscores = errors.UsernameConsecutiveUnderscores()
+	ErrUsernameInvalidLength          = errors.UsernameInvalidLength(1, 30)
+	ErrUsernameInvalidFormat          = errors.UsernameStartsOrEndsWithUnderscore()
+	ErrBioTooLong                     = errors.BioTooLong(160)
 )
 
 // Media validation errors
 var (
-	ErrVideoFileTooLarge    = errors.New("video file size exceeds limit")
-	ErrMediaFileTooLarge    = errors.New("media file size exceeds limit")
-	ErrInvalidImageMimeType = errors.New("invalid image MIME type")
-	ErrInvalidVideoMimeType = errors.New("invalid video MIME type")
-	ErrInvalidAudioMimeType = errors.New("invalid audio MIME type")
+	ErrVideoFileTooLarge    = errors.VideoFileTooLarge(0, 0)
+	ErrMediaFileTooLarge    = errors.MediaFileTooLarge(0, 0)
+	ErrInvalidImageMimeType = errors.ImageInvalidFormat("")
+	ErrInvalidVideoMimeType = errors.VideoInvalidFormat("")
+	ErrInvalidAudioMimeType = errors.AudioInvalidFormat("")
 )
 
 // Filter validation errors
 var (
-	ErrFilterKeywordEmpty   = errors.New("filter keyword cannot be empty")
-	ErrFilterKeywordTooLong = errors.New("filter keyword exceeds maximum length")
+	ErrFilterKeywordEmpty   = errors.FilterKeywordEmpty()
+	ErrFilterKeywordTooLong = errors.FilterKeywordTooLong(100)
 )
 
 // Poll validation errors
 var (
-	ErrPollTooFewOptions  = errors.New("poll must have at least 2 options")
-	ErrPollTooManyOptions = errors.New("poll cannot have more than maximum options")
-	ErrPollOptionEmpty    = errors.New("poll option cannot be empty")
-	ErrPollOptionTooLong  = errors.New("poll option exceeds maximum length")
-	ErrPollExpiryInvalid  = errors.New("poll expiry must be positive")
-	ErrPollExpiryTooLong  = errors.New("poll expiry cannot exceed maximum seconds")
+	ErrPollTooFewOptions  = errors.PollTooFewOptions(2)
+	ErrPollTooManyOptions = errors.PollTooManyOptions(4, 0)
+	ErrPollOptionEmpty    = errors.PollOptionEmpty()
+	ErrPollOptionTooLong  = errors.PollOptionTooLong(50)
+	ErrPollExpiryInvalid  = errors.PollExpiryInvalid()
+	ErrPollExpiryTooLong  = errors.PollExpiryTooLong(604800)
 )
 
 // Form parsing errors
 var (
-	ErrNoBoundaryInContentType = errors.New("no boundary found in content type")
+	ErrNoBoundaryInContentType = errors.FormBoundaryMissing()
 )
 
 // General validation errors
 var (
-	ErrInvalidNotificationType = errors.New("invalid notification type")
-	ErrInvalidOAuthScope       = errors.New("invalid OAuth scope")
-	ErrIDEmpty                 = errors.New("ID cannot be empty")
-	ErrInvalidIDFormat         = errors.New("invalid ID format")
-	ErrInvalidTimestampFormat  = errors.New("invalid timestamp format")
+	ErrInvalidNotificationType = errors.NotificationTypeInvalid("")
+	ErrInvalidOAuthScope       = errors.OAuthScopeInvalid("")
+	ErrIDEmpty                 = errors.IDEmpty("")
+	ErrInvalidIDFormat         = errors.IDInvalidFormat("")
+	ErrInvalidTimestampFormat  = errors.TimestampInvalidFormat("")
 )
 
 // JSON safety validation errors
 var (
-	ErrJSONDepthExceedsMaximum    = errors.New("JSON depth exceeds maximum")
-	ErrJSONObjectTooManyKeys      = errors.New("JSON object has too many keys")
-	ErrJSONKeyTooLong             = errors.New("JSON key too long")
-	ErrJSONArrayTooManyElements   = errors.New("JSON array has too many elements")
-	ErrJSONStringTooLong          = errors.New("JSON string too long")
-	ErrUnexpectedJSONType         = errors.New("unexpected JSON type")
-	ErrJSONSizeExceedsMaximum     = errors.New("JSON size exceeds maximum")
-	ErrJSONBombRepetitionDetected = errors.New("possible JSON bomb: excessive repetition detected")
-	ErrJSONBombNestingDetected    = errors.New("possible JSON bomb: excessive nesting detected")
+	ErrJSONDepthExceedsMaximum    = errors.JSONTooDeep(10)
+	ErrJSONObjectTooManyKeys      = errors.JSONTooManyKeys(100)
+	ErrJSONKeyTooLong             = errors.JSONKeyTooLong(256)
+	ErrJSONArrayTooManyElements   = errors.JSONArrayTooLarge(1000)
+	ErrJSONStringTooLong          = errors.JSONStringTooLong(10000)
+	ErrUnexpectedJSONType         = errors.JSONInvalid("unexpected type")
+	ErrJSONSizeExceedsMaximum     = errors.JSONSizeTooLarge(1048576)
+	ErrJSONBombRepetitionDetected = errors.JSONBombDetected("excessive repetition")
+	ErrJSONBombNestingDetected    = errors.JSONBombDetected("excessive nesting")
 )
 
 // Lambda helper errors
 var (
-	ErrDynamoTableRequired             = errors.New("DYNAMODB_TABLE is required for storage initialization")
-	ErrDynamORMNotImplemented          = errors.New("DynamORM initialization to be implemented in service-specific code")
-	ErrRepositoryFactoryNotImplemented = errors.New("repository factory initialization to be implemented in service-specific code")
-	ErrAuthServicesNotImplemented      = errors.New("auth services initialization to be implemented in service-specific code")
+	ErrDynamoTableRequired             = errors.EnvironmentVariableRequired("DYNAMODB_TABLE")
+	ErrDynamORMNotImplemented          = errors.ServiceInitializationFailedGeneric("DynamORM", nil)
+	ErrRepositoryFactoryNotImplemented = errors.ServiceInitializationFailedGeneric("repository factory", nil)
+	ErrAuthServicesNotImplemented      = errors.ServiceInitializationFailedGeneric("auth services", nil)
 )
 
 // Redirect validation errors
 var (
-	ErrRedirectURLEmpty               = errors.New("redirect URL cannot be empty")
-	ErrProtocolRelativeURLsNotAllowed = errors.New("protocol-relative URLs not allowed")
-	ErrJavascriptDataURLsNotAllowed   = errors.New("javascript: and data: URLs not allowed")
-	ErrExternalHostNotAllowed         = errors.New("redirect to external host not allowed")
+	ErrRedirectURLEmpty               = errors.RequiredFieldMissing("redirect_url")
+	ErrProtocolRelativeURLsNotAllowed = errors.URLSchemeNotAllowed("", "protocol-relative")
+	ErrJavascriptDataURLsNotAllowed   = errors.URLSchemeNotAllowed("", "javascript/data")
+	ErrExternalHostNotAllowed         = errors.URLHostNotAllowed("", "external")
 )
 
 // Request handling errors
 var (
-	ErrRequestBodyTooLarge              = errors.New("request body too large")
-	ErrFailedToParseRequestBody         = errors.New("failed to parse request body")
-	ErrFailedToParseWithComplexFallback = errors.New("failed to parse request with complex fallback")
+	ErrRequestBodyTooLarge              = errors.FileSizeExceedsLimit(0, 0)
+	ErrFailedToParseRequestBody         = errors.ParsingFailed("request body", nil)
+	ErrFailedToParseWithComplexFallback = errors.ParsingFailed("request with complex fallback", nil)
 )
 
 // Resource monitoring errors
 var (
-	ErrLambdaTimeoutApproaching = errors.New("operation approaching Lambda timeout")
-	ErrMemoryLimitExceeded      = errors.New("memory limit exceeded")
+	ErrLambdaTimeoutApproaching = errors.TimeoutError("Lambda operation")
+	ErrMemoryLimitExceeded      = errors.LambdaMemoryExceeded("", 0)
 )
 
 // Transformer errors
 var (
-	ErrTransformFunctionNotSet       = errors.New("transform function not set")
-	ErrTransformationConditionNotMet = errors.New("transformation condition not met")
-	ErrUnknownNumber                 = errors.New("unknown number")
+	ErrTransformFunctionNotSet       = errors.TransformFunctionNotSet()
+	ErrTransformationConditionNotMet = errors.PreConditionFailed("transformation condition")
+	ErrUnknownNumber                 = errors.InvalidValue("number", []string{"valid number"}, "unknown")
 )
 
 // Mastodon business logic errors
 var (
-	ErrMastodonOperationValidationFailed = errors.New("mastodon operation validation failed")
-	ErrMastodonOperationExecutionFailed  = errors.New("mastodon operation execution failed")
-	ErrMastodonAPIIncompatibility        = errors.New("mastodon API incompatibility")
-	ErrInvalidBusinessRule               = errors.New("invalid business rule")
-	ErrBusinessValidationFailed          = errors.New("business validation failed")
-	ErrInvalidRequestFormat              = errors.New("invalid request format")
-	ErrUnsupportedOperation              = errors.New("unsupported operation")
+	ErrMastodonOperationValidationFailed = errors.ValidationFailedWithField("mastodon operation")
+	ErrMastodonOperationExecutionFailed  = errors.ProcessingFailed("mastodon operation", nil)
+	ErrMastodonAPIIncompatibility        = errors.BusinessRuleViolated("mastodon API compatibility", nil)
+	ErrInvalidBusinessRule               = errors.BusinessRuleViolated("business rule", nil)
+	ErrBusinessValidationFailed          = errors.ValidationFailedWithField("business rule")
+	ErrInvalidRequestFormat              = errors.InvalidFormat("request", "expected format")
+	ErrUnsupportedOperation              = errors.FormatNotSupported("operation")
 )

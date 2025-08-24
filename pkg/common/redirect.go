@@ -50,7 +50,7 @@ func ValidateRedirectURL(redirectURL string, currentHost string) error {
 		return nil
 	}
 
-	return fmt.Errorf("%w: %s", ErrExternalHostNotAllowed, u.Host)
+	return fmt.Errorf("redirect to external host not allowed: %s", u.Host)
 }
 
 // SafeRedirect performs a safe redirect with validation

@@ -3,7 +3,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/lift/patterns"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage"
+	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/trust"
@@ -64,7 +64,7 @@ func (r *ReportTrustService) UpdateReporterTrustOnDecision(ctx context.Context, 
 	// Get the report to validate it exists
 	report, err := r.GetReport(ctx, reportID)
 	if err != nil {
-		return errors.Join(ErrReportRetrieval, err)
+		return pkgErrors.WrapError(err, pkgErrors.CodeInternal, pkgErrors.CategoryLambda, "Failed to get report")
 	}
 
 	// Determine if the report was valid based on the decision
@@ -238,7 +238,7 @@ func (rtu *ReportTrustUpdater) extractRecordKeys(record events.DynamoDBEventReco
 	skAttr, skExists := record.Change.NewImage["SK"]
 
 	if !pkExists || !skExists {
-		return "", "", ErrMissingKeys
+		return "", "", pkgErrors.ReportTrustUpdaterMissingKeys()
 	}
 
 	pk := rtu.getStringFromAttribute(pkAttr)

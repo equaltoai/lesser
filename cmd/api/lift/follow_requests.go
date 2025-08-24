@@ -366,14 +366,14 @@ func (h *Handler) sendFollowResponseActivity(ctx context.Context, followerID, fo
 	// Get follower actor to determine inbox
 	followerResult, err := h.registry.Accounts().GetAccount(ctx, followerID)
 	if err != nil {
-		return errors.Join(ErrFailedToGetFollowerActor, err)
+		return errors.Join(failedToGetFollowerActor(), err)
 	}
 	followerActor := followerResult.Actor
 
 	// Get followed actor
 	followedResult, err := h.registry.Accounts().GetAccount(ctx, followedID)
 	if err != nil {
-		return errors.Join(ErrFailedToGetFollowedActor, err)
+		return errors.Join(failedToGetFollowedActor(), err)
 	}
 	followedActor := followedResult.Actor
 

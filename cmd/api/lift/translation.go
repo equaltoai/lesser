@@ -227,11 +227,11 @@ func (h *Handler) performTranslation(ctx *lift.Context, statusID, content, spoil
 	// Validate language codes
 	if sourceLang != "" {
 		if err := common.ValidateLanguageCode(sourceLang); err != nil {
-			return nil, errors.Join(ErrInvalidSourceLanguageCode, err)
+			return nil, errors.Join(invalidSourceLanguageCode(), err)
 		}
 	}
 	if err := common.ValidateLanguageCode(targetLang); err != nil {
-		return nil, errors.Join(ErrInvalidTargetLanguageCode, err)
+		return nil, errors.Join(invalidTargetLanguageCode(), err)
 	}
 
 	// Initialize translation service

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/mocks"
@@ -26,7 +26,7 @@ func TestCreateUser_MissingUsername(t *testing.T) {
 	err := repo.CreateUser(context.Background(), user)
 
 	assert.Error(t, err)
-	assert.IsType(t, common.ValidationError{}, err)
+	assert.IsType(t, &errors.AppError{}, err)
 }
 
 func TestGetUserByEmail_EmptyEmail(t *testing.T) {
@@ -38,7 +38,7 @@ func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, user)
-	assert.IsType(t, common.ValidationError{}, err)
+	assert.IsType(t, &errors.AppError{}, err)
 }
 
 func TestUpdateUser_EmptyUpdates(t *testing.T) {
@@ -49,7 +49,7 @@ func TestUpdateUser_EmptyUpdates(t *testing.T) {
 	err := repo.UpdateUser(context.Background(), "testuser", map[string]any{})
 
 	assert.Error(t, err)
-	assert.IsType(t, common.ValidationError{}, err)
+	assert.IsType(t, &errors.AppError{}, err)
 }
 
 func TestGetUserByProviderID_Success(t *testing.T) {

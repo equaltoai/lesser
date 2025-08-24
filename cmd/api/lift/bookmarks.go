@@ -30,7 +30,7 @@ func (h *Handler) bookmarkAction(statusID, username string) (*models.Status, err
 	// Convert the storage Status model to API Status model
 	apiStatus, err := h.convertStorageStatusToAPI(result.Status, username)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToConvertStatus, err)
+		return nil, errors.Join(failedToConvertStatus(), err)
 	}
 
 	return apiStatus, nil

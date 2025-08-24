@@ -291,7 +291,7 @@ func (h *Handler) resolveAccountIDFull(ctx context.Context, accountID string) (*
 			}
 			return account.Actor, nil
 		}
-		return nil, ErrInvalidActorIDFormat
+		return nil, invalidActorIDFormat()
 	}
 	// Local username or @username@domain format
 	if strings.Contains(accountID, "@") {

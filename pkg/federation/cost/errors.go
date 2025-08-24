@@ -1,53 +1,53 @@
 package cost
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
 // Error constants for federation cost integration
 var (
 	// ErrFederationNotAllowed indicates federation is blocked or limited for a domain
-	ErrFederationNotAllowed = errors.New("federation not allowed")
+	ErrFederationNotAllowed = errors.NewFederationError(errors.CodeForbidden, "federation not allowed")
 
 	// ErrInstanceUnhealthy indicates an instance is marked as unhealthy and should not receive retries
-	ErrInstanceUnhealthy = errors.New("instance unhealthy")
+	ErrInstanceUnhealthy = errors.NewFederationError(errors.CodeExternalServiceUnavailable, "instance unhealthy")
 
 	// ErrOperationFailedAfterRetries indicates an operation failed after all retry attempts
-	ErrOperationFailedAfterRetries = errors.New("operation failed after retries")
+	ErrOperationFailedAfterRetries = errors.ProcessingFailed("operation after retries", nil)
 
 	// ErrEmptyInstanceURL indicates an empty or invalid instance URL was provided
-	ErrEmptyInstanceURL = errors.New("empty instance URL")
+	ErrEmptyInstanceURL = errors.NewValidationError("instance_url", "cannot be empty")
 
 	// ErrGetInstanceTier indicates failure to retrieve instance tier
-	ErrGetInstanceTier = errors.New("failed to get instance tier")
+	ErrGetInstanceTier = errors.FailedToGet("instance tier", nil)
 
 	// ErrCheckHealth indicates failure to check instance health
-	ErrCheckHealth = errors.New("failed to check health")
+	ErrCheckHealth = errors.ProcessingFailed("health check", nil)
 
 	// ErrGetRemainingBudget indicates failure to get remaining budget
-	ErrGetRemainingBudget = errors.New("failed to get remaining budget")
+	ErrGetRemainingBudget = errors.FailedToGet("remaining budget", nil)
 
 	// ErrGetInstanceConfig indicates failure to get instance configuration
-	ErrGetInstanceConfig = errors.New("failed to get instance config")
+	ErrGetInstanceConfig = errors.FailedToGet("instance config", nil)
 
 	// ErrGetRetryPolicy indicates failure to get retry policy
-	ErrGetRetryPolicy = errors.New("failed to get retry policy")
+	ErrGetRetryPolicy = errors.FailedToGet("retry policy", nil)
 
 	// ErrGetInstanceCost indicates failure to get instance cost data
-	ErrGetInstanceCost = errors.New("failed to get instance cost")
+	ErrGetInstanceCost = errors.FailedToGet("instance cost", nil)
 
 	// ErrRecordCost indicates failure to record cost data
-	ErrRecordCost = errors.New("failed to record cost")
+	ErrRecordCost = errors.ProcessingFailed("cost recording", nil)
 
 	// ErrGetInstanceHealth indicates failure to get instance health data
-	ErrGetInstanceHealth = errors.New("failed to get instance health")
+	ErrGetInstanceHealth = errors.FailedToGet("instance health", nil)
 
 	// ErrUpdateInstanceHealth indicates failure to update instance health
-	ErrUpdateInstanceHealth = errors.New("failed to update instance health")
+	ErrUpdateInstanceHealth = errors.FailedToUpdate("instance health", nil)
 
 	// Cost Integration specific errors
 
 	// ErrDomainExtractionFailed indicates failure to extract domain from URL
-	ErrDomainExtractionFailed = errors.New("domain extraction failed")
+	ErrDomainExtractionFailed = errors.ProcessingFailed("domain extraction", nil)
 
 	// ErrFederationCheckFailed indicates failure to check federation status
-	ErrFederationCheckFailed = errors.New("federation check failed")
+	ErrFederationCheckFailed = errors.ProcessingFailed("federation check", nil)
 )

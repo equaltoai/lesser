@@ -1,32 +1,33 @@
 package dlq
 
-import "errors"
+import "github.com/equaltoai/lesser/pkg/errors"
 
-// Error constants for DLQ package
+// Legacy error variables for backwards compatibility
+// These are now wrappers around the centralized error system
 var (
 	// ErrBatchProcessingFailed indicates that batch processing failed with some messages failing
-	ErrBatchProcessingFailed = errors.New("batch processing failed")
+	ErrBatchProcessingFailed = errors.BatchOperationFailed("DLQ processing", nil)
 
 	// ErrNoDLQMessagesProcessed indicates that all DLQ messages failed to process
-	ErrNoDLQMessagesProcessed = errors.New("failed to process any DLQ messages")
+	ErrNoDLQMessagesProcessed = errors.ProcessingFailed("DLQ messages", nil)
 
 	// Validation errors
-	ErrMissingRequiredField         = errors.New("missing required field")
-	ErrChannelsMustBeArray          = errors.New("channels must be an array")
-	ErrMissingActivityPubType       = errors.New("missing ActivityPub type field")
-	ErrActivityPubTypeMustBeString  = errors.New("ActivityPub type must be a string")
-	ErrMissingActivityPubActor      = errors.New("missing ActivityPub actor field")
-	ErrActivityPubActorMustBeString = errors.New("ActivityPub actor must be a string")
-	ErrInvalidAction                = errors.New("invalid action")
+	ErrMissingRequiredField         = errors.RequiredFieldMissing("field")
+	ErrChannelsMustBeArray          = errors.NewValidationError("channels", "Channels must be an array")
+	ErrMissingActivityPubType       = errors.RequiredFieldMissing("ActivityPub type")
+	ErrActivityPubTypeMustBeString  = errors.NewValidationError("type", "ActivityPub type must be a string")
+	ErrMissingActivityPubActor      = errors.RequiredFieldMissing("ActivityPub actor")
+	ErrActivityPubActorMustBeString = errors.NewValidationError("actor", "ActivityPub actor must be a string")
+	ErrInvalidAction                = errors.NewValidationError("action", "Invalid action")
 
 	// URL validation errors
-	ErrInvalidMediaURL       = errors.New("invalid media URL")
-	ErrInvalidMediaURLFormat = errors.New("invalid media URL format")
-	ErrInvalidInboxURL       = errors.New("invalid inbox URL")
-	ErrInvalidInboxURLFormat = errors.New("invalid inbox URL format")
+	ErrInvalidMediaURL       = errors.InvalidFormat("media_url", "valid URL format")
+	ErrInvalidMediaURLFormat = errors.InvalidFormat("media_url", "valid URL format")
+	ErrInvalidInboxURL       = errors.InvalidFormat("inbox_url", "valid URL format")
+	ErrInvalidInboxURLFormat = errors.InvalidFormat("inbox_url", "valid URL format")
 
 	// Media accessibility errors
-	ErrMediaPermanentlyUnavailable = errors.New("media permanently unavailable")
-	ErrMediaAccessDenied           = errors.New("media access denied")
-	ErrMediaValidationFailed       = errors.New("media validation failed with non-retryable error")
+	ErrMediaPermanentlyUnavailable = errors.ResourceUnavailable("media")
+	ErrMediaAccessDenied           = errors.AccessDeniedForResource("media", "")
+	ErrMediaValidationFailed       = errors.MediaAttachmentValidationFailed("non-retryable validation error")
 )

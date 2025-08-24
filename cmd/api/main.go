@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
+	"github.com/equaltoai/lesser/pkg/errors"
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
@@ -834,7 +835,7 @@ func createTracingMiddleware() lift.Middleware {
 // recordLatencyMetric records latency metrics to DynamoDB using DynamORM
 func recordLatencyMetric(ctx context.Context, metricType, operation string, duration time.Duration, dimensions map[string]string) error {
 	if repos == nil {
-		return ErrRepositoriesNotInitialized
+		return errors.ServiceInitializationFailed("repositories", nil)
 	}
 
 	// Create metric record
