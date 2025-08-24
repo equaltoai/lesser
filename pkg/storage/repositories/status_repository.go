@@ -18,23 +18,41 @@ import (
 	"go.uber.org/zap"
 )
 
-// StatusRepository implements status operations using DynamORM with BaseRepository
+// StatusRepository implements status operations using DynamORM with EnhancedBaseRepository
 type StatusRepository struct {
-	*BaseRepository[*models.Status]
+	*EnhancedBaseRepository[*models.Status]
 	relationshipRepo interface{} // Temporarily use interface to avoid circular dependency
 }
 
-// NewStatusRepository creates a new status repository with BaseRepository
+// NewStatusRepository creates a new status repository with enhanced functionality
 func NewStatusRepository(db core.DB, tableName string, logger *zap.Logger) *StatusRepository {
+	// Create enhanced repository with full service integration
+	enhancedRepo := NewEnhancedBaseRepository[*models.Status](db, tableName, logger, nil, "StatusRepository", "status")
+	
+	// Set up enhanced services for status operations
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &StatusRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Status](db, tableName, logger, nil, "StatusRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
 // NewStatusRepositoryWithCostTracking creates a new status repository with cost tracking
 func NewStatusRepositoryWithCostTracking(db core.DB, tableName string, logger *zap.Logger, costService *cost.TrackingService) *StatusRepository {
+	// Create enhanced repository with cost tracking and full service integration
+	enhancedRepo := NewEnhancedBaseRepository[*models.Status](db, tableName, logger, costService, "StatusRepository", "status")
+	
+	// Set up enhanced services
+	enhancedRepo.SetValidationService(NewDefaultValidationService())
+	enhancedRepo.SetPermissionService(NewDefaultPermissionService())
+	enhancedRepo.SetCachingService(NewInMemoryCachingService())
+	enhancedRepo.SetEventService(NewDefaultEventService())
+	
 	return &StatusRepository{
-		BaseRepository: NewBaseRepositoryWithCostTracking[*models.Status](db, tableName, logger, costService, "StatusRepository"),
+		EnhancedBaseRepository: enhancedRepo,
 	}
 }
 
@@ -43,9 +61,10 @@ func (r *StatusRepository) SetRelationshipRepository(relationshipRepo interface{
 	r.relationshipRepo = relationshipRepo
 }
 
-// CreateStatus creates a new status using BaseRepository
+// CreateStatus creates a new status using enhanced validation and event emission
 func (r *StatusRepository) CreateStatus(ctx context.Context, status *models.Status) error {
-	return r.Create(ctx, status)
+	// Use enhanced validation and creation with automatic event emission
+	return r.ValidateAndCreate(ctx, status)
 }
 
 // GetStatus retrieves a status by ID using BaseRepository
@@ -62,9 +81,10 @@ func (r *StatusRepository) GetStatus(ctx context.Context, statusID string) (*mod
 	return &status, nil
 }
 
-// UpdateStatus updates an existing status using BaseRepository
+// UpdateStatus updates an existing status using enhanced validation and event emission
 func (r *StatusRepository) UpdateStatus(ctx context.Context, status *models.Status) error {
-	return r.Update(ctx, status)
+	// Use enhanced validation and update with automatic event emission and cache invalidation
+	return r.ValidateAndUpdate(ctx, status)
 }
 
 // DeleteStatus marks a status as deleted using BaseRepository
