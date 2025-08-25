@@ -4,7 +4,6 @@ package common
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -99,7 +98,7 @@ func InitializeLambda(lambdaConfig LambdaConfig) (*LambdaContext, error) {
 
 	// Set defaults with environment variable overrides
 	if lambdaConfig.ServiceName == "" {
-		lambdaConfig.ServiceName = os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
+		lambdaConfig.ServiceName = GetLambdaFunctionName()
 		if lambdaConfig.ServiceName == "" {
 			lambdaConfig.ServiceName = "unknown"
 		}

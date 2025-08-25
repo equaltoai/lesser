@@ -22,12 +22,13 @@ const (
 
 // LatencyAlerter manages real-time latency alerting
 type LatencyAlerter struct {
-	logger          *zap.Logger
-	metricsRecorder MetricsRecorder
-	alertRules      map[string]*AlertRule
-	alertHistory    map[string]*AlertHistory
-	mu              sync.RWMutex
-	enabled         bool
+	logger            *zap.Logger
+	metricsRecorder   MetricsRecorder
+	webhookDelivery   *WebhookDeliveryService
+	alertRules        map[string]*AlertRule
+	alertHistory      map[string]*AlertHistory
+	mu                sync.RWMutex
+	enabled           bool
 }
 
 // AlertRule defines the conditions for triggering an alert
@@ -203,10 +204,11 @@ func (a ActionType) String() string {
 }
 
 // NewLatencyAlerter creates a new latency alerter
-func NewLatencyAlerter(logger *zap.Logger, recorder MetricsRecorder) *LatencyAlerter {
+func NewLatencyAlerter(logger *zap.Logger, recorder MetricsRecorder, webhookDelivery *WebhookDeliveryService) *LatencyAlerter {
 	alerter := &LatencyAlerter{
 		logger:          logger,
 		metricsRecorder: recorder,
+		webhookDelivery: webhookDelivery,
 		alertRules:      make(map[string]*AlertRule),
 		alertHistory:    make(map[string]*AlertHistory),
 		enabled:         true,
@@ -642,12 +644,88 @@ func (la *LatencyAlerter) executeMetricAction(ctx context.Context, alert *Alert,
 	}
 }
 
-// executeWebhookAction sends a webhook for the alert (placeholder)
-func (la *LatencyAlerter) executeWebhookAction(_ context.Context, alert *Alert, _ AlertAction) {
-	// TODO: Implement webhook sending
-	la.logger.Debug("webhook action triggered",
-		zap.String("rule_name", alert.RuleName),
-		zap.String("state", alert.State.String()))
+// executeWebhookAction sends a webhook for the alert
+func (la *LatencyAlerter) executeWebhookAction(ctx context.Context, alert *Alert, action AlertAction) {
+	if la.webhookDelivery == nil {
+		la.logger.Warn("webhook delivery service not configured",
+			zap.String("rule_name", alert.RuleName))
+		return
+	}
+
+	// Convert our Alert struct to the models.Alert format expected by webhook delivery
+	webhookAlert := &models.Alert{
+		AlertID:     fmt.Sprintf("latency_%s_%d", alert.RuleName, time.Now().Unix()),
+		Type:        "latency",
+		Severity:    alert.Severity.String(),
+		Priority:    la.mapSeverityToPriority(alert.Severity),
+		Status:      alert.State.String(),
+		Title:       fmt.Sprintf("Latency Alert: %s", alert.RuleName),
+		Description: alert.Message,
+		Message:     alert.Message,
+		Service:     alert.Service,
+		Source:      "latency_alerter",
+		FiredAt:     alert.Timestamp,
+		Dimensions:  alert.Dimensions,
+		Values:      alert.Values,
+		Metadata: map[string]interface{}{
+			"rule_name":   alert.RuleName,
+			"operation":   alert.Operation,
+			"alert_type":  "latency",
+			"webhook_url": action.Config["webhook_url"],
+		},
+	}
+
+	// Extract webhook-specific configuration from action config
+	if webhookURL, ok := action.Config["webhook_url"].(string); ok && webhookURL != "" {
+		webhookAlert.Metadata["custom_webhook_url"] = webhookURL
+	}
+
+	// Set thresholds from alert context
+	if alert.Context != nil {
+		webhookAlert.Thresholds = make(map[string]float64)
+		for key, value := range alert.Context {
+			if floatVal, ok := value.(float64); ok {
+				webhookAlert.Thresholds[key] = floatVal
+			}
+		}
+	}
+
+	// Mark alert as resolved if state is resolved
+	if alert.State == StateResolved {
+		now := time.Now()
+		webhookAlert.ResolvedAt = &now
+	}
+
+	// Attempt to deliver the webhook
+	err := la.webhookDelivery.DeliverAlert(ctx, webhookAlert)
+	if err != nil {
+		la.logger.Error("failed to deliver webhook alert",
+			zap.String("rule_name", alert.RuleName),
+			zap.String("alert_id", webhookAlert.AlertID),
+			zap.String("state", alert.State.String()),
+			zap.Error(err))
+	} else {
+		la.logger.Info("webhook alert delivered successfully",
+			zap.String("rule_name", alert.RuleName),
+			zap.String("alert_id", webhookAlert.AlertID),
+			zap.String("state", alert.State.String()))
+	}
+}
+
+// mapSeverityToPriority converts AlertSeverity to priority string
+func (la *LatencyAlerter) mapSeverityToPriority(severity AlertSeverity) string {
+	switch severity {
+	case SeverityCritical:
+		return "critical"
+	case SeverityError:
+		return "high"
+	case SeverityWarning:
+		return "medium"
+	case SeverityInfo:
+		return "low"
+	default:
+		return "medium"
+	}
 }
 
 // formatAlertMessage formats a human-readable alert message

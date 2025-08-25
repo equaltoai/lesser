@@ -4,7 +4,6 @@ package observability
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-xray-sdk-go/xray"
@@ -32,8 +31,8 @@ func NewXRayConfig(serviceName, serviceVersion string) *XRayConfig {
 	return &XRayConfig{
 		ServiceName:    serviceName,
 		ServiceVersion: serviceVersion,
-		Enabled:        os.Getenv("_X_AMZN_TRACE_ID") != "" || cfg.XrayTracingEnabled,
-		LocalTesting:   os.Getenv("AWS_LAMBDA_FUNCTION_NAME") == "",
+		Enabled:        common.GetXRayTraceID() != "" || cfg.XrayTracingEnabled,
+		LocalTesting:   !common.IsRunningInLambda(),
 	}
 }
 

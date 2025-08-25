@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
+	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
@@ -275,10 +276,14 @@ func (h *Handler) isLocal(username string) bool {
 }
 
 // convertStorageStatusToAPI converts a storage Status model to an API Status model with all real data
+// This version uses DataLoader for efficient actor loading to prevent N+1 queries
 //
 //nolint:gocognit // Complex conversion between storage and API models with many fields
 func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
 	ctx := context.Background()
+	
+	// Attach loaders to context for DataLoader usage
+	ctx = graph.WithLoaders(ctx, h.loaders)
 
 	// Convert InReplyToID to pointer if not empty
 	var inReplyToID *string
@@ -291,7 +296,7 @@ func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status,
 		}
 	}
 
-	// Get author account details
+	// Get author account details using DataLoader for efficient batched loading
 	authorAccount, err := h.repos.Account().GetAccount(ctx, storageStatus.AuthorUsername)
 	if err != nil {
 		// Fallback to basic info if account not found
@@ -504,26 +509,24 @@ func createOAuthService(jwtSecret string, cfg *config.Config, repos core.Reposit
 }
 
 // parsePaginationParams extracts common pagination parameters from a Lift context
+// This method now uses the centralized common.GetPaginationParams internally
 func (h *Handler) parsePaginationParams(ctx *lift.Context) *PaginationParams {
+	// Use the centralized pagination parameter extraction
+	commonParams := common.GetPaginationParams(ctx)
+	
+	// Convert to our local PaginationParams struct for backward compatibility
 	params := &PaginationParams{
-		Limit:   DefaultPaginationLimit,
-		MaxID:   ctx.Query("max_id"),
-		MinID:   ctx.Query("min_id"),
-		SinceID: ctx.Query("since_id"),
-		Cursor:  ctx.Query("cursor"),
-	}
-
-	// Parse limit with bounds checking
-	if limitStr := ctx.Query("limit"); limitStr != "" {
-		if limit, err := common.ParseSearchLimit(limitStr); err == nil {
-			params.Limit = limit
-		}
+		Limit:   commonParams.Limit,
+		MaxID:   commonParams.MaxID,
+		MinID:   commonParams.MinID,
+		SinceID: commonParams.SinceID,
+		Cursor:  commonParams.Cursor,
 	}
 
 	return params
 }
 
-// respondWithError sends a standardized error response
+// respondWithError sends a standardized error response using common helpers
 func (h *Handler) respondWithError(ctx *lift.Context, statusCode int, message string) error {
 	h.logger.Error("API error",
 		zap.Int("status", statusCode),
@@ -531,9 +534,8 @@ func (h *Handler) respondWithError(ctx *lift.Context, statusCode int, message st
 		zap.String("path", ctx.Request.Path),
 	)
 
-	return ctx.Status(statusCode).JSON(map[string]string{
-		"error": message,
-	})
+	// Use the centralized error response helper
+	return common.SendError(ctx, statusCode, message)
 }
 
 // respondNotFound sends a standardized 404 response
@@ -897,4 +899,19 @@ func (h *Handler) authenticateUserWithWriteScope(ctx *lift.Context) (string, err
 	}
 
 	return username, nil
+}
+
+// respondWithJSON sends a JSON response using common helpers  
+func (h *Handler) respondWithJSON(ctx *lift.Context, statusCode int, data interface{}) error {
+	return common.SendJSON(ctx, statusCode, data)
+}
+
+// respondOK sends a 200 OK response with data
+func (h *Handler) respondOK(ctx *lift.Context, data interface{}) error {
+	return common.SendOK(ctx, data)
+}
+
+// respondCreated sends a 201 Created response with data
+func (h *Handler) respondCreated(ctx *lift.Context, data interface{}) error {
+	return common.SendCreated(ctx, data)
 }

@@ -11,13 +11,7 @@ import (
 	// "go.uber.org/zap"
 )
 
-// ContextKey is a type for context keys
-type ContextKey string
-
-const (
-	// ContextKeyClaims is the context key for JWT claims
-	ContextKeyClaims ContextKey = "claims"
-)
+// Use ContextKey and ContextKeyClaims from common package
 
 var (
 	// ErrMissingAuthHeader is returned when Authorization header is missing
@@ -118,11 +112,11 @@ func (m *Middleware) RequireUser(claims *Claims, username string) error {
 
 // WithClaims adds claims to the context
 func WithClaims(ctx context.Context, claims *Claims) context.Context {
-	return context.WithValue(ctx, ContextKeyClaims, claims)
+	return context.WithValue(ctx, common.ContextKeyClaims, claims)
 }
 
 // GetClaims retrieves claims from the context
 func GetClaims(ctx context.Context) (*Claims, bool) {
-	claims, ok := ctx.Value(ContextKeyClaims).(*Claims)
+	claims, ok := ctx.Value(common.ContextKeyClaims).(*Claims)
 	return claims, ok
 }

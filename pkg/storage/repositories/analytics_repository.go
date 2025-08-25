@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/dynamorm/pkg/errors"
@@ -1097,8 +1098,14 @@ func (r *TrendingRepository) updatePopularQueries(ctx context.Context, query str
 }
 
 // GetStatusesByLink retrieves statuses that contain a specific link
-func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string, _ int) ([]any, error) {
-	// TODO: Implement limit validation and usage when actual query is implemented
+func (r *TrendingRepository) GetStatusesByLink(ctx context.Context, linkURL string, limit int) ([]any, error) {
+	// Implement limit validation
+	if limit <= 0 {
+		limit = 20 // Default limit
+	}
+	if limit > 100 {
+		limit = 100 // Maximum limit to prevent excessive resource usage
+	}
 
 	// Check if statusRepo dependency is available
 	if r.statusRepo == nil {
@@ -1106,27 +1113,45 @@ func (r *TrendingRepository) GetStatusesByLink(_ context.Context, linkURL string
 		return nil, ErrStatusRepoDependencyMissing
 	}
 
-	// TODO: Fix statusRepo method call after proper interface is established
-	// Use StatusRepository to fetch actual status objects that contain the link
-	// statuses, err := r.statusRepo.GetStatusesByURL(ctx, linkURL, limit)
-	// if err != nil {
-	//	r.logger.Error("failed to get statuses by link",
-	//		zap.String("link_url", linkURL),
-	//		zap.Error(err))
-	//	return nil, fmt.Errorf("failed to get statuses by link: %w", err)
-	// }
+	// Cast statusRepo to the proper interface
+	statusRepo, ok := r.statusRepo.(interfaces.StatusRepository)
+	if !ok {
+		r.logger.Error("statusRepo does not implement StatusRepository interface")
+		return nil, fmt.Errorf("invalid status repository type")
+	}
+
+	// Use StatusRepository to search for statuses that contain the link
+	// We'll use the search functionality to find statuses containing the URL
+	opts := interfaces.PaginationOptions{
+		Limit: limit,
+	}
+
+	statuses, err := statusRepo.SearchStatuses(ctx, linkURL, opts)
+	if err != nil {
+		r.logger.Error("failed to get statuses by link",
+			zap.String("link_url", linkURL),
+			zap.Int("limit", limit),
+			zap.Error(err))
+		return nil, fmt.Errorf("failed to get statuses by link: %w", err)
+	}
+
+	// Filter results to only include statuses that actually contain the exact link
+	var matchingStatuses []*models.Status
+	for _, status := range statuses.Items {
+		if status != nil && strings.Contains(status.Content, linkURL) {
+			matchingStatuses = append(matchingStatuses, status)
+		}
+	}
 
 	// Convert status objects to any slice for interface compatibility
-	// results := make([]any, len(statuses))
-	// for i, status := range statuses {
-	//	results[i] = status
-	// }
-
-	// Temporary placeholder - return empty results
-	results := make([]any, 0)
+	results := make([]any, len(matchingStatuses))
+	for i, status := range matchingStatuses {
+		results[i] = status
+	}
 
 	r.logger.Info("successfully retrieved statuses by link",
 		zap.String("link_url", linkURL),
+		zap.Int("limit", limit),
 		zap.Int("count", len(results)))
 
 	return results, nil

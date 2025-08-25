@@ -823,7 +823,7 @@ func ValidateBooleanString(value string) bool {
 
 // ValidateHTTPScheme validates HTTP/HTTPS schemes
 func ValidateHTTPScheme(scheme string) error {
-	if scheme != "http" && scheme != "https" {
+	if scheme != SchemeHTTP && scheme != SchemeHTTPS {
 		return ValidationError{Field: "scheme", Message: "must be http or https"}
 	}
 	return nil

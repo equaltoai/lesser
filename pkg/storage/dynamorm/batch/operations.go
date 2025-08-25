@@ -1,3 +1,6 @@
+// Package batch provides efficient batch processing capabilities for DynamoDB operations.
+// This package implements patterns for batching multiple database operations together
+// to improve performance and reduce costs in serverless environments.
 package batch
 
 import (

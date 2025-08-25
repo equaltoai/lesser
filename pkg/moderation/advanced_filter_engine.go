@@ -16,9 +16,15 @@ const (
 	MatchModeKeyword = "keyword"
 )
 
+// FilterRepository defines the interface for accessing filter data
+type FilterRepository interface {
+	GetFilterKeywords(ctx context.Context, filterID string) ([]*models.FilterKeyword, error)
+}
+
 // AdvancedFilterEngine provides enhanced content filtering capabilities
 type AdvancedFilterEngine struct {
 	logger          *zap.Logger
+	filterRepo      FilterRepository
 	compiledRegexes map[string]*regexp.Regexp
 	semanticMatcher *SemanticMatcher
 }
@@ -30,6 +36,11 @@ func NewAdvancedFilterEngine(logger *zap.Logger) *AdvancedFilterEngine {
 		compiledRegexes: make(map[string]*regexp.Regexp),
 		semanticMatcher: NewSemanticMatcher(),
 	}
+}
+
+// SetFilterRepository sets the filter repository for accessing filter data
+func (afe *AdvancedFilterEngine) SetFilterRepository(repo FilterRepository) {
+	afe.filterRepo = repo
 }
 
 // FilterResult represents the result of filter evaluation
@@ -90,7 +101,7 @@ func (afe *AdvancedFilterEngine) EvaluateContent(
 
 // evaluateFilterAgainstContent evaluates a single filter against content
 func (afe *AdvancedFilterEngine) evaluateFilterAgainstContent(
-	_ context.Context,
+	ctx context.Context,
 	content string,
 	filter *models.Filter,
 	_ *ContentContext,
@@ -105,37 +116,120 @@ func (afe *AdvancedFilterEngine) evaluateFilterAgainstContent(
 	// Apply different matching strategies based on filter match mode
 	switch filter.MatchMode {
 	case string(URLPatternRegex):
-		return afe.evaluateRegexFilter(content, filter, result)
+		return afe.evaluateRegexFilter(ctx, content, filter, result)
 	case "semantic":
 		return afe.evaluateSemanticFilter(content, filter, result)
 	case "exact":
-		return afe.evaluateExactFilter(content, filter, result)
+		return afe.evaluateExactFilter(ctx, content, filter, result)
 	case MatchModeKeyword:
 		fallthrough
 	default:
-		return afe.evaluateKeywordFilter(content, filter, result)
+		return afe.evaluateKeywordFilter(ctx, content, filter, result)
 	}
 }
 
 // evaluateKeywordFilter evaluates keyword-based filtering with enhanced matching
 func (afe *AdvancedFilterEngine) evaluateKeywordFilter(
+	ctx context.Context,
 	content string,
 	filter *models.Filter,
 	result *FilterResult,
 ) (*FilterResult, error) {
-	contentToMatch := content
-	if !filter.CaseSensitive {
-		contentToMatch = strings.ToLower(content)
+	contentToMatch := afe.prepareContentForMatching(content, filter.CaseSensitive)
+	var totalScore float64
+	var matchCount int
+
+	// Process repository keywords if available
+	if afe.filterRepo != nil {
+		score, count, err := afe.processRepositoryKeywords(ctx, contentToMatch, filter, result)
+		if err != nil {
+			afe.logger.Warn("failed to process repository keywords",
+				zap.String("filter_id", filter.ID),
+				zap.Error(err))
+		} else {
+			totalScore += score
+			matchCount += count
+		}
+	}
+
+	// Fallback to hardcoded logic when repository is not available
+	if afe.filterRepo == nil {
+		score, count := afe.processFallbackKeywords(contentToMatch, result)
+		totalScore += score
+		matchCount += count
+	}
+
+	afe.updateResultScore(result, totalScore, matchCount)
+	return result, nil
+}
+
+// prepareContentForMatching normalizes content based on case sensitivity setting
+func (afe *AdvancedFilterEngine) prepareContentForMatching(content string, caseSensitive bool) string {
+	if caseSensitive {
+		return content
+	}
+	return strings.ToLower(content)
+}
+
+// processRepositoryKeywords processes keywords from the repository
+func (afe *AdvancedFilterEngine) processRepositoryKeywords(
+	ctx context.Context,
+	contentToMatch string,
+	filter *models.Filter,
+	result *FilterResult,
+) (float64, int, error) {
+	keywords, err := afe.filterRepo.GetFilterKeywords(ctx, filter.ID)
+	if err != nil {
+		return 0, 0, err
 	}
 
 	var totalScore float64
 	var matchCount int
 
-	// TODO: Integrate with keyword repository to get filter keywords
-	// For now, simulate keyword evaluation logic
+	for _, keyword := range keywords {
+		if keyword.IsRegex {
+			continue // Skip regex keywords, handled elsewhere
+		}
 
-	// Placeholder for keyword matching logic
-	// This would integrate with the FilterKeyword model and repository
+		if afe.matchesKeyword(contentToMatch, keyword, filter.CaseSensitive) {
+			matchCount++
+			totalScore += 0.8 // High confidence match
+			result.MatchedRules = append(result.MatchedRules, "keyword:"+keyword.Keyword)
+		}
+	}
+
+	return totalScore, matchCount, nil
+}
+
+// matchesKeyword checks if content matches a specific keyword
+func (afe *AdvancedFilterEngine) matchesKeyword(contentToMatch string, keyword *models.FilterKeyword, caseSensitive bool) bool {
+	keywordToMatch := keyword.Keyword
+	if !caseSensitive {
+		keywordToMatch = strings.ToLower(keywordToMatch)
+	}
+
+	if keyword.WholeWord {
+		return afe.matchesWholeWord(contentToMatch, keywordToMatch)
+	}
+	return strings.Contains(contentToMatch, keywordToMatch)
+}
+
+// matchesWholeWord performs word boundary matching
+func (afe *AdvancedFilterEngine) matchesWholeWord(content, keyword string) bool {
+	words := strings.Fields(content)
+	for _, word := range words {
+		if word == keyword {
+			return true
+		}
+	}
+	return false
+}
+
+// processFallbackKeywords processes keywords when repository is not available
+func (afe *AdvancedFilterEngine) processFallbackKeywords(contentToMatch string, result *FilterResult) (float64, int) {
+	var totalScore float64
+	var matchCount int
+
 	words := strings.Fields(contentToMatch)
 	for _, word := range words {
 		if afe.isOffensiveWord(word) {
@@ -145,39 +239,75 @@ func (afe *AdvancedFilterEngine) evaluateKeywordFilter(
 		}
 	}
 
+	return totalScore, matchCount
+}
+
+// updateResultScore updates the result with calculated scores
+func (afe *AdvancedFilterEngine) updateResultScore(result *FilterResult, totalScore float64, matchCount int) {
 	if matchCount > 0 {
 		result.Matched = true
 		result.MatchScore = totalScore / float64(matchCount)
 	}
-
-	return result, nil
 }
 
 // evaluateRegexFilter evaluates regex-based filtering
 func (afe *AdvancedFilterEngine) evaluateRegexFilter(
+	ctx context.Context,
 	content string,
-	_ *models.Filter,
+	filter *models.Filter,
 	result *FilterResult,
 ) (*FilterResult, error) {
-	// TODO: Integrate with regex patterns from FilterKeyword model
-	// This would compile and cache regex patterns from keywords marked as IsRegex
+	// Integrate with regex patterns from FilterKeyword model
+	if afe.filterRepo != nil {
+		keywords, err := afe.filterRepo.GetFilterKeywords(ctx, filter.ID)
+		if err != nil {
+			afe.logger.Warn("failed to get filter keywords for regex",
+				zap.String("filter_id", filter.ID),
+				zap.Error(err))
+		} else {
+			// Process regex keywords from repository
+			for _, keyword := range keywords {
+				if !keyword.IsRegex {
+					// Skip non-regex keywords, they're handled in evaluateKeywordFilter
+					continue
+				}
 
-	// Placeholder regex patterns for demonstration
-	patterns := []string{
-		`\b(spam|scam)\b`,
-		`\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}`, // Credit card pattern
+				regex, err := afe.getCompiledRegex(keyword.Keyword)
+				if err != nil {
+					afe.logger.Warn("failed to compile regex pattern",
+						zap.String("pattern", keyword.Keyword),
+						zap.String("keyword_id", keyword.ID),
+						zap.Error(err))
+					continue
+				}
+
+				if regex.MatchString(content) {
+					result.Matched = true
+					result.MatchScore = 0.9
+					result.MatchedRules = append(result.MatchedRules, "regex:"+keyword.Keyword)
+				}
+			}
+		}
 	}
 
-	for _, pattern := range patterns {
-		regex, err := afe.getCompiledRegex(pattern)
-		if err != nil {
-			continue
+	// Fallback: placeholder regex patterns when repository is not available
+	if afe.filterRepo == nil {
+		patterns := []string{
+			`\b(spam|scam)\b`,
+			`\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}`, // Credit card pattern
 		}
 
-		if regex.MatchString(content) {
-			result.Matched = true
-			result.MatchScore = 0.9
-			result.MatchedRules = append(result.MatchedRules, "regex:"+pattern)
+		for _, pattern := range patterns {
+			regex, err := afe.getCompiledRegex(pattern)
+			if err != nil {
+				continue
+			}
+
+			if regex.MatchString(content) {
+				result.Matched = true
+				result.MatchScore = 0.9
+				result.MatchedRules = append(result.MatchedRules, "regex:"+pattern)
+			}
 		}
 	}
 
@@ -207,22 +337,77 @@ func (afe *AdvancedFilterEngine) evaluateSemanticFilter(
 
 // evaluateExactFilter evaluates exact string matching
 func (afe *AdvancedFilterEngine) evaluateExactFilter(
+	ctx context.Context,
 	content string,
 	filter *models.Filter,
 	result *FilterResult,
 ) (*FilterResult, error) {
-	// TODO: Integrate with exact match patterns from FilterKeyword model
+	contentToMatch := afe.prepareContentForMatching(content, filter.CaseSensitive)
 
-	// Placeholder exact matches
+	// Process repository keywords if available
+	if afe.filterRepo != nil {
+		err := afe.processExactRepositoryKeywords(ctx, contentToMatch, filter, result)
+		if err != nil {
+			afe.logger.Warn("failed to process exact match keywords",
+				zap.String("filter_id", filter.ID),
+				zap.Error(err))
+		}
+	}
+
+	// Fallback to hardcoded phrases when repository is not available
+	if afe.filterRepo == nil {
+		afe.processExactFallbackPhrases(contentToMatch, filter, result)
+	}
+
+	return result, nil
+}
+
+// processExactRepositoryKeywords processes exact match keywords from repository
+func (afe *AdvancedFilterEngine) processExactRepositoryKeywords(
+	ctx context.Context,
+	contentToMatch string,
+	filter *models.Filter,
+	result *FilterResult,
+) error {
+	keywords, err := afe.filterRepo.GetFilterKeywords(ctx, filter.ID)
+	if err != nil {
+		return err
+	}
+
+	for _, keyword := range keywords {
+		if keyword.IsRegex {
+			continue // Skip regex keywords
+		}
+
+		if afe.matchesExactKeyword(contentToMatch, keyword, filter.CaseSensitive) {
+			result.Matched = true
+			result.MatchScore = 1.0 // Exact match
+			result.MatchedRules = append(result.MatchedRules, "exact:"+keyword.Keyword)
+		}
+	}
+
+	return nil
+}
+
+// matchesExactKeyword checks if content matches exactly
+func (afe *AdvancedFilterEngine) matchesExactKeyword(contentToMatch string, keyword *models.FilterKeyword, caseSensitive bool) bool {
+	keywordToMatch := keyword.Keyword
+	if !caseSensitive {
+		keywordToMatch = strings.ToLower(keywordToMatch)
+	}
+
+	if keyword.WholeWord {
+		return afe.matchesWholeWord(contentToMatch, keywordToMatch)
+	}
+	return strings.Contains(contentToMatch, keywordToMatch)
+}
+
+// processExactFallbackPhrases processes hardcoded exact match phrases
+func (afe *AdvancedFilterEngine) processExactFallbackPhrases(contentToMatch string, filter *models.Filter, result *FilterResult) {
 	blockedPhrases := []string{
 		"click here now",
 		"limited time offer",
 		"act now",
-	}
-
-	contentToMatch := content
-	if !filter.CaseSensitive {
-		contentToMatch = strings.ToLower(content)
 	}
 
 	for _, phrase := range blockedPhrases {
@@ -237,8 +422,6 @@ func (afe *AdvancedFilterEngine) evaluateExactFilter(
 			result.MatchedRules = append(result.MatchedRules, "exact:"+phrase)
 		}
 	}
-
-	return result, nil
 }
 
 // Helper methods

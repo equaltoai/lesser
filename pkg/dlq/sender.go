@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -132,9 +131,9 @@ func (s *DLQSender) SendBatchFailedMessages(ctx context.Context, service string,
 // createDLQMessage creates a DLQ message from the failed processing
 func (s *DLQSender) createDLQMessage(service string, originalMessage events.SQSMessage, processingError error) *DLQFailureMessage {
 	// Extract function context
-	functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
-	logGroup := os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME")
-	logStream := os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")
+	functionName := common.GetLambdaFunctionName()
+	logGroup := common.GetLambdaLogGroupName()
+	logStream := common.GetLambdaLogStreamName()
 
 	// Classify error
 	errorClassifier := NewErrorClassifier()

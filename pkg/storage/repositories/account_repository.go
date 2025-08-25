@@ -461,7 +461,7 @@ func (r *AccountRepository) applyUserUpdates(user *models.User, updates map[stri
 			if v, ok := value.(bool); ok {
 				user.Approved = v
 			}
-		case "suspended":
+		case AccountStatusSuspended:
 			if v, ok := value.(bool); ok {
 				user.Suspended = v
 			}

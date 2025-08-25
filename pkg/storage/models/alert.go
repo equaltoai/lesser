@@ -262,9 +262,10 @@ type WebhookDelivery struct {
 	WebhookID  string `json:"webhook_id"`
 
 	// Webhook configuration
-	URL     string            `json:"url"`
-	Headers map[string]string `json:"headers"`
-	Timeout int               `json:"timeout_seconds"`
+	URL         string            `json:"url"`
+	Headers     map[string]string `json:"headers"`
+	SecretToken string            `json:"secret_token,omitempty"`
+	Timeout     int               `json:"timeout_seconds"`
 
 	// Delivery details
 	Status        string `json:"status"` // pending, success, failed, retrying

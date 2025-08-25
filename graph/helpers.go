@@ -11,6 +11,7 @@ import (
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"go.uber.org/zap"
 )
@@ -46,7 +47,7 @@ func stringPtr(s string) *string {
 // getUsernameFromContext extracts username from authentication context
 func getUsernameFromContext(ctx context.Context) string {
 	// Extract claims from context
-	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
 		return claims.Username
 	}
 	return ""
@@ -55,7 +56,7 @@ func getUsernameFromContext(ctx context.Context) string {
 // GetUserID extracts user ID from authentication context
 func GetUserID(ctx context.Context) string {
 	// Try to get claims from context
-	if claims, ok := ctx.Value(auth.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(*auth.Claims); ok && claims != nil {
 		return claims.Username // In this system, username is used as user ID
 	}
 	return ""

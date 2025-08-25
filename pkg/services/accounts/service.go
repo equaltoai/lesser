@@ -1734,7 +1734,7 @@ func (s *Service) generateRSAKeyPair() (interface{}, error) {
 	if s.crypto == nil {
 		return nil, ErrCryptoServiceNotConfigured
 	}
-	return s.crypto.GenerateRSAKeyPair(2048)
+	return s.crypto.GenerateRSAKeyPair(4096)
 }
 
 func (s *Service) encodePublicKeyPEM(publicKey interface{}) ([]byte, error) {

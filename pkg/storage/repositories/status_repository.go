@@ -552,12 +552,30 @@ func (r *StatusRepository) GetHomeTimeline(ctx context.Context, userID string, o
 		return r.GetPublicTimeline(ctx, opts)
 	}
 
-	// TODO: Implement relationship repository integration
-	// Get list of users that this user follows
-	var followingUsernames []string // Temporarily empty for compilation
-	if r.relationshipRepo == nil {
-		// Fallback to public timeline when relationship repo not available
+	// Cast relationshipRepo to the proper interface
+	relationshipRepo, ok := r.relationshipRepo.(interfaces.RelationshipRepository)
+	if !ok {
+		r.logger.Error("relationshipRepo does not implement RelationshipRepository interface")
+		// Fallback to public timeline
 		return r.GetPublicTimeline(ctx, opts)
+	}
+
+	// Get list of users that this user follows
+	followingResult, err := relationshipRepo.GetFollowing(ctx, userID, interfaces.PaginationOptions{Limit: 1000}) // Get up to 1000 followed users
+	if err != nil {
+		r.logger.Error("failed to get following list for home timeline",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		// Fallback to public timeline
+		return r.GetPublicTimeline(ctx, opts)
+	}
+
+	// Extract usernames from the following accounts
+	followingUsernames := make([]string, len(followingResult.Items))
+	for i, account := range followingResult.Items {
+		if account != nil && account.User != nil {
+			followingUsernames[i] = account.User.Username
+		}
 	}
 
 	// If user follows no one, return empty timeline (not public timeline)

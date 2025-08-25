@@ -85,7 +85,7 @@ func ValidateActorURI(actorURI string, rules ActivityPubValidationRules) error {
 	}
 
 	// Check HTTPS requirement
-	if rules.RequireHTTPS && parsedURI.Scheme != "https" {
+	if rules.RequireHTTPS && parsedURI.Scheme != SchemeHTTPS {
 		return fmt.Errorf("%w: %s", ErrActorURIMustUseHTTPS, actorURI)
 	}
 

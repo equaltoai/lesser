@@ -465,3 +465,49 @@ func getEnvAsUint8OrDefault(key string, defaultValue uint8) uint8 {
 	}
 	return result
 }
+
+// Helper functions for health checks
+
+// GetEnvironment returns the current environment
+func GetEnvironment() string {
+	return getEnvOrDefault("ENVIRONMENT", "development")
+}
+
+// GetS3Bucket returns the S3 bucket name
+func GetS3Bucket() string {
+	// Check multiple possible environment variables
+	bucket := os.Getenv("S3_BUCKET")
+	if bucket == "" {
+		bucket = os.Getenv("S3_BUCKET_NAME")
+	}
+	if bucket == "" {
+		bucket = os.Getenv("MEDIA_BUCKET_NAME")
+	}
+	if bucket == "" {
+		bucket = os.Getenv("S3_MEDIA_BUCKET")
+	}
+	return bucket
+}
+
+// GetPrivateKeySecret returns the private key secret name
+func GetPrivateKeySecret() string {
+	return os.Getenv("PRIVATE_KEY_SECRET")
+}
+
+// GetDomainName returns the domain name
+func GetDomainName() string {
+	domain := os.Getenv("DOMAIN_NAME")
+	if domain == "" {
+		domain = os.Getenv("DOMAIN")
+	}
+	return domain
+}
+
+// GetDynamoTableName returns the DynamoDB table name
+func GetDynamoTableName() string {
+	table := os.Getenv("DYNAMODB_TABLE")
+	if table == "" {
+		table = os.Getenv("DYNAMO_TABLE_NAME")
+	}
+	return table
+}

@@ -1,3 +1,6 @@
+// Package repositories provides DynamoDB-backed repository implementations using DynamORM.
+// This package contains the core repository layer that abstracts database operations,
+// implements the Lift framework patterns, and provides comprehensive cost tracking.
 package repositories
 
 import (
@@ -95,6 +98,217 @@ func (r *BaseRepository[T]) Create(ctx context.Context, item T) error {
 		return ErrorHandler.HandleCreateError(err, "base entity", item.GetPK())
 	}
 
+	return nil
+}
+
+// BatchGetItems retrieves multiple items by their keys in a single batch operation
+func (r *BaseRepository[T]) BatchGetItems(ctx context.Context, keys []map[string]interface{}) ([]T, error) {
+	if len(keys) == 0 {
+		return []T{}, nil
+	}
+
+	// DynamoDB BatchGetItem has a limit of 100 items
+	const batchSize = 100
+	var allResults []T
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "BatchGetItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  int64(len(keys)), // Estimated 1 RU per item
+			ConsumedWriteUnits: 0,
+			ItemCount:          int64(len(keys)),
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_batch_get_%d", r.repoName, time.Now().UnixNano()),
+		}
+
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB batch get operation cost",
+					zap.String("repository", r.repoName),
+					zap.Int("key_count", len(keys)),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	for i := 0; i < len(keys); i += batchSize {
+		end := i + batchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		batchKeys := keys[i:end]
+		batchResults, err := r.batchGetBatch(ctx, batchKeys)
+		if err != nil {
+			r.logger.Error("failed to batch get items",
+				zap.Error(err),
+				zap.Int("batch_size", len(batchKeys)))
+			return nil, ErrorHandler.HandleGetError(err, "batch items", fmt.Sprintf("batch_%d", i))
+		}
+
+		allResults = append(allResults, batchResults...)
+	}
+
+	return allResults, nil
+}
+
+// BatchWriteItems writes multiple items in a single batch operation
+func (r *BaseRepository[T]) BatchWriteItems(ctx context.Context, items []T) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// Update keys for all items before writing
+	for i, item := range items {
+		if err := item.UpdateKeys(); err != nil {
+			return ErrorHandler.HandleCreateError(err, "batch entity keys", fmt.Sprintf("item_%d_%s", i, item.GetPK()))
+		}
+	}
+
+	// DynamoDB BatchWriteItem has a limit of 25 items
+	const batchSize = 25
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "BatchWriteItem",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: int64(len(items)), // Estimated 1 WU per item
+			ItemCount:          int64(len(items)),
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_batch_write_%d", r.repoName, time.Now().UnixNano()),
+		}
+
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB batch write operation cost",
+					zap.String("repository", r.repoName),
+					zap.Int("item_count", len(items)),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	for i := 0; i < len(items); i += batchSize {
+		end := i + batchSize
+		if end > len(items) {
+			end = len(items)
+		}
+
+		batch := items[i:end]
+		if err := r.batchWriteBatch(ctx, batch); err != nil {
+			r.logger.Error("failed to batch write items",
+				zap.Error(err),
+				zap.Int("batch_size", len(batch)))
+			return ErrorHandler.HandleCreateError(err, "batch items", fmt.Sprintf("batch_%d", i))
+		}
+	}
+
+	return nil
+}
+
+// TransactWrite performs a transaction with multiple write operations
+func (r *BaseRepository[T]) TransactWrite(ctx context.Context, items []T) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	// DynamoDB TransactWriteItems has a limit of 25 items
+	if len(items) > 25 {
+		return fmt.Errorf("transaction write supports maximum 25 items, got %d", len(items))
+	}
+
+	// Update keys for all items
+	for i, item := range items {
+		if err := item.UpdateKeys(); err != nil {
+			return ErrorHandler.HandleCreateError(err, "transaction entity keys", fmt.Sprintf("item_%d_%s", i, item.GetPK()))
+		}
+	}
+
+	// Track cost if cost service is available
+	if r.costService != nil {
+		operation := cost.DynamoOperation{
+			Type:               "TransactWriteItems",
+			TableName:          r.tableName,
+			ConsumedReadUnits:  0,
+			ConsumedWriteUnits: int64(len(items) * 2), // Estimated 2 WU per item for transactions
+			ItemCount:          int64(len(items)),
+			Timestamp:          time.Now(),
+			OperationID:        fmt.Sprintf("%s_transact_write_%d", r.repoName, time.Now().UnixNano()),
+		}
+
+		defer func() {
+			if trackErr := r.costService.TrackDynamoOperation(ctx, operation); trackErr != nil {
+				r.logger.Warn("failed to track DynamoDB transaction write operation cost",
+					zap.String("repository", r.repoName),
+					zap.Int("item_count", len(items)),
+					zap.Error(trackErr))
+			}
+		}()
+	}
+
+	return r.transactWriteBatch(ctx, items)
+}
+
+// Helper methods for batch operations
+
+func (r *BaseRepository[T]) batchGetBatch(ctx context.Context, keys []map[string]interface{}) ([]T, error) {
+	var results []T
+	var model T
+
+	// This would need to be implemented using the DynamORM batch get capabilities
+	// For now, fall back to individual gets (this should be optimized in the future)
+	for _, key := range keys {
+		pk, ok := key["PK"].(string)
+		if !ok {
+			continue
+		}
+		sk, ok := key["SK"].(string)
+		if !ok {
+			continue
+		}
+
+		err := r.db.WithContext(ctx).Model(&model).
+			Where("PK", "=", pk).
+			Where("SK", "=", sk).
+			First(&model)
+
+		if err != nil {
+			if errors.IsNotFound(err) {
+				continue // Skip not found items in batch operations
+			}
+			return nil, err
+		}
+
+		results = append(results, model)
+	}
+
+	return results, nil
+}
+
+func (r *BaseRepository[T]) batchWriteBatch(ctx context.Context, items []T) error {
+	// This would need to be implemented using DynamORM batch write capabilities
+	// For now, fall back to individual creates (this should be optimized in the future)
+	for _, item := range items {
+		if err := r.db.WithContext(ctx).Model(item).Create(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *BaseRepository[T]) transactWriteBatch(ctx context.Context, items []T) error {
+	// This would need to be implemented using DynamORM transaction capabilities
+	// For now, fall back to individual creates (this should be optimized in the future)
+	// In a real implementation, this should use DynamoDB transactions for atomicity
+	for _, item := range items {
+		if err := r.db.WithContext(ctx).Model(item).Create(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
