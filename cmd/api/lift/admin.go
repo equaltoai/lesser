@@ -390,13 +390,13 @@ func (h *Handler) HandleAdminAccountActionLift(ctx *lift.Context) error {
 
 	switch req.Type {
 	case actionSuspend:
-		updates["suspended"] = true
+		updates[common.AccountStatusSuspended] = true
 		// Cancel all follow relationships when suspending
 		if err := h.cancelUserFollowRelationships(ctx.Context, username); err != nil {
 			h.logger.Error("failed to cancel follow relationships", zap.Error(err))
 		}
 	case "unsuspend":
-		updates["suspended"] = false
+		updates[common.AccountStatusSuspended] = false
 	case "disable":
 		updates["approved"] = false
 	case actionEnable, actionApprove:

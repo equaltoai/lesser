@@ -325,9 +325,40 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 		return err
 	}
 
-	// Apply updates - for now just update the UpdatedAt timestamp
-	// TODO: Add specific field updates when model fields are defined
+	// Apply updates based on the provided updates map
+	hasChanges := false
+	for key, value := range updates {
+		switch key {
+		case "state", "State":
+			if strValue, ok := value.(string); ok && strValue != relationship.State {
+				relationship.State = strValue
+				hasChanges = true
+			}
+		case "activity_id", "ActivityID":
+			if strValue, ok := value.(string); ok && strValue != relationship.ActivityID {
+				relationship.ActivityID = strValue
+				hasChanges = true
+			}
+		default:
+			r.logger.Warn("unsupported relationship field update",
+				zap.String("field", key),
+				zap.Any("value", value),
+				zap.String("follower", followerUsername),
+				zap.String("following", followingUsername))
+		}
+	}
+
+	// Always update timestamp
 	relationship.UpdatedAt = time.Now()
+	hasChanges = true
+
+	// Only proceed with update if there are actual changes
+	if !hasChanges {
+		r.logger.Debug("no changes to apply to relationship",
+			zap.String("follower", followerUsername),
+			zap.String("following", followingUsername))
+		return nil
+	}
 
 	// Use enhanced validation and update with automatic event emission and cache invalidation
 	if err := r.ValidateAndUpdate(ctx, relationship); err != nil {

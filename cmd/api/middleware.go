@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"os"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/auth"
@@ -36,9 +35,9 @@ func createLoggingMiddleware(logger *zap.Logger) lift.Middleware {
 				zap.String("request_id", requestID),
 				zap.String("user_id", userID),
 				zap.String("tenant_id", tenantID),
-				zap.String("function_name", os.Getenv("AWS_LAMBDA_FUNCTION_NAME")),
-				zap.String("function_version", os.Getenv("AWS_LAMBDA_FUNCTION_VERSION")),
-				zap.String("cold_start", os.Getenv("AWS_LAMBDA_INITIALIZATION_TYPE")),
+				zap.String("function_name", common.GetLambdaFunctionName()),
+				zap.String("function_version", common.GetLambdaFunctionVersion()),
+				zap.String("cold_start", common.GetLambdaInitializationType()),
 			)
 
 			// Store contextual logger in context

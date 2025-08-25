@@ -120,7 +120,7 @@ func NewAlertingSystem(config *AlertingConfig) (*AlertingSystem, error) {
 	metricsRecorder := NewDefaultMetricsRecorder(createMetricFn, config.ServiceName)
 
 	// Create latency alerter
-	latencyAlerter := NewLatencyAlerter(config.Logger, metricsRecorder)
+	latencyAlerter := NewLatencyAlerter(config.Logger, metricsRecorder, webhookDelivery)
 
 	return &AlertingSystem{
 		logger:          config.Logger,
@@ -654,7 +654,7 @@ func (a *AlertingSystem) getPriorityForLatency(latencyMs float64) string {
 func (a *AlertingSystem) getSeverityForCost(costMicroCents float64) string {
 	switch {
 	case costMicroCents > 1000000: // $10
-		return "critical"
+		return AlertSeverityCritical
 	case costMicroCents > 100000: // $1
 		return AlertSeverityError
 	case costMicroCents > 10000: // $0.10

@@ -160,9 +160,60 @@ func isBot(actorType string) bool {
 	return common.ValidateEnumField(actorType, botTypes, "actor_type") == nil
 }
 
-func transformAttachments(_ interface{}) []any {
-	// TODO: Implement attachment transformation
+func transformAttachments(attachment interface{}) []any {
+	// Transform ActivityPub attachment property to Mastodon Field format
+	if attachment == nil {
+		return []any{}
+	}
+
+	// Handle different attachment formats from ActivityPub
+	switch att := attachment.(type) {
+	case []interface{}:
+		// Array of attachments
+		fields := make([]any, 0, len(att))
+		for _, item := range att {
+			if field := processAttachmentItem(item); field != nil {
+				fields = append(fields, field)
+			}
+		}
+		return fields
+	case interface{}:
+		// Single attachment
+		if field := processAttachmentItem(att); field != nil {
+			return []any{field}
+		}
+	}
+	
 	return []any{}
+}
+
+// processAttachmentItem processes a single attachment item and converts it to Mastodon Field format
+func processAttachmentItem(item interface{}) interface{} {
+	itemMap, ok := item.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract name and value from ActivityPub attachment
+	name, _ := itemMap["name"].(string)
+	value, _ := itemMap["value"].(string)
+	
+	// If no name or value, skip this attachment
+	if name == "" && value == "" {
+		return nil
+	}
+
+	field := map[string]interface{}{
+		"name":  name,
+		"value": value,
+	}
+
+	// Add verified_at if present (for link verification)
+	if verifiedAt, ok := itemMap["verified_at"].(string); ok && verifiedAt != "" {
+		field["verified_at"] = verifiedAt
+	}
+
+	return field
 }
 
 func extractReplyToID(obj map[string]interface{}) *string {
@@ -196,19 +247,232 @@ func extractLanguage(obj map[string]interface{}) *string {
 	return nil
 }
 
-func transformMediaAttachments(_ map[string]interface{}) []any {
-	// TODO: Implement media attachment transformation
-	return []any{}
+func transformMediaAttachments(obj map[string]interface{}) []any {
+	// Transform ActivityPub attachment array to Mastodon MediaAttachment format
+	attachmentValue, exists := obj["attachment"]
+	if !exists || attachmentValue == nil {
+		return []any{}
+	}
+
+	attachments, ok := attachmentValue.([]interface{})
+	if !ok {
+		return []any{}
+	}
+
+	mediaAttachments := make([]any, 0, len(attachments))
+	for _, attachment := range attachments {
+		if mediaAttachment := processMediaAttachmentItem(attachment); mediaAttachment != nil {
+			mediaAttachments = append(mediaAttachments, mediaAttachment)
+		}
+	}
+
+	return mediaAttachments
 }
 
-func transformMentions(_ map[string]interface{}) []any {
-	// TODO: Implement mentions transformation
-	return []any{}
+// processMediaAttachmentItem processes a single media attachment item
+func processMediaAttachmentItem(item interface{}) interface{} {
+	itemMap, ok := item.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Extract media type to determine if this is a media attachment
+	mediaType, _ := itemMap["mediaType"].(string)
+	attachmentType, _ := itemMap["type"].(string)
+	url, _ := itemMap["url"].(string)
+	
+	// Only process actual media attachments (not property value attachments)
+	if attachmentType != "Document" && attachmentType != "Image" && attachmentType != "Video" && attachmentType != "Audio" {
+		return nil
+	}
+
+	if url == "" {
+		return nil
+	}
+
+	// Generate ID from URL
+	id := GenerateNumericIDFromURL(url)
+	
+	// Determine Mastodon media type
+	mastodonType := "unknown"
+	if strings.HasPrefix(mediaType, "image/") || attachmentType == "Image" {
+		mastodonType = "image"
+	} else if strings.HasPrefix(mediaType, "video/") || attachmentType == "Video" {
+		mastodonType = "video"
+	} else if strings.HasPrefix(mediaType, "audio/") || attachmentType == "Audio" {
+		mastodonType = "audio"
+	}
+
+	mediaAttachment := map[string]interface{}{
+		"id":          id,
+		"type":        mastodonType,
+		"url":         url,
+		"preview_url": url, // Use same URL for preview by default
+		"remote_url":  url,
+		"text_url":    url,
+		"meta":        map[string]interface{}{},
+		"description": "",
+		"blurhash":    "",
+	}
+
+	// Add description if available
+	if name, ok := itemMap["name"].(string); ok && name != "" {
+		mediaAttachment["description"] = name
+	}
+
+	// Add width/height to meta if available
+	if width, ok := itemMap["width"].(float64); ok {
+		if mediaAttachment["meta"] == nil {
+			mediaAttachment["meta"] = map[string]interface{}{}
+		}
+		meta := mediaAttachment["meta"].(map[string]interface{})
+		meta["width"] = int(width)
+	}
+	if height, ok := itemMap["height"].(float64); ok {
+		if mediaAttachment["meta"] == nil {
+			mediaAttachment["meta"] = map[string]interface{}{}
+		}
+		meta := mediaAttachment["meta"].(map[string]interface{})
+		meta["height"] = int(height)
+	}
+
+	return mediaAttachment
 }
 
-func transformTags(_ map[string]interface{}) []any {
-	// TODO: Implement tags transformation
-	return []any{}
+func transformMentions(obj map[string]interface{}) []any {
+	// Transform ActivityPub tag array to Mastodon Mention format
+	// In ActivityPub, mentions are stored in the "tag" property with type "Mention"
+	tagValue, exists := obj["tag"]
+	if !exists || tagValue == nil {
+		return []any{}
+	}
+
+	tags, ok := tagValue.([]interface{})
+	if !ok {
+		return []any{}
+	}
+
+	mentions := make([]any, 0)
+	for _, tag := range tags {
+		if mention := processMentionTag(tag); mention != nil {
+			mentions = append(mentions, mention)
+		}
+	}
+
+	return mentions
+}
+
+// processMentionTag processes a single tag and extracts mention information
+func processMentionTag(tag interface{}) interface{} {
+	tagMap, ok := tag.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Only process Mention type tags
+	tagType, _ := tagMap["type"].(string)
+	if tagType != "Mention" {
+		return nil
+	}
+
+	href, _ := tagMap["href"].(string)
+	name, _ := tagMap["name"].(string)
+	
+	if href == "" || name == "" {
+		return nil
+	}
+
+	// Extract username from the name (remove @ prefix)
+	username := strings.TrimPrefix(name, "@")
+	
+	// Extract domain from href if it's a remote mention
+	var domain *string
+	if strings.Contains(href, "://") {
+		// Parse the URL to extract domain
+		if idx := strings.Index(href[8:], "/"); idx != -1 {
+			domainStr := href[8 : 8+idx]
+			domain = &domainStr
+		}
+	}
+
+	// Generate account ID from href
+	id := GenerateNumericIDFromURL(href)
+
+	mention := map[string]interface{}{
+		"id":       id,
+		"username": username,
+		"acct":     username, // For remote users, this would be username@domain
+		"url":      href,
+	}
+
+	// Add domain if it's a remote mention
+	if domain != nil {
+		mention["acct"] = username + "@" + *domain
+	}
+
+	return mention
+}
+
+func transformTags(obj map[string]interface{}) []any {
+	// Transform ActivityPub tag array to Mastodon Tag format
+	// In ActivityPub, hashtags are stored in the "tag" property with type "Hashtag"
+	tagValue, exists := obj["tag"]
+	if !exists || tagValue == nil {
+		return []any{}
+	}
+
+	tags, ok := tagValue.([]interface{})
+	if !ok {
+		return []any{}
+	}
+
+	hashtags := make([]any, 0)
+	for _, tag := range tags {
+		if hashtag := processHashtagTag(tag); hashtag != nil {
+			hashtags = append(hashtags, hashtag)
+		}
+	}
+
+	return hashtags
+}
+
+// processHashtagTag processes a single tag and extracts hashtag information
+func processHashtagTag(tag interface{}) interface{} {
+	tagMap, ok := tag.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	// Only process Hashtag type tags
+	tagType, _ := tagMap["type"].(string)
+	if tagType != "Hashtag" {
+		return nil
+	}
+
+	href, _ := tagMap["href"].(string)
+	name, _ := tagMap["name"].(string)
+	
+	if href == "" || name == "" {
+		return nil
+	}
+
+	// Extract hashtag name (remove # prefix)
+	hashtagName := strings.TrimPrefix(name, "#")
+	
+	if hashtagName == "" {
+		return nil
+	}
+
+	hashtag := map[string]interface{}{
+		"name": hashtagName,
+		"url":  href,
+	}
+
+	// Add empty history array for consistency with Mastodon API
+	// In a real implementation, this would contain usage statistics
+	hashtag["history"] = []interface{}{}
+
+	return hashtag
 }
 
 // GenerateNumericIDFromUsername generates a stable numeric ID from username

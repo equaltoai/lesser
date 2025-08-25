@@ -248,7 +248,7 @@ func (sm *AWSSecretsManager) DeletePrivateKey(ctx context.Context, keyID string)
 // GenerateAndStoreKeyPair generates a new RSA key pair and stores it
 func (sm *AWSSecretsManager) GenerateAndStoreKeyPair(ctx context.Context, keyID string) (publicKeyPEM, privateKeyPEM string, err error) {
 	// Generate RSA key pair
-	privateKey, err := federation.GenerateRSAKeyPair(2048)
+	privateKey, err := federation.GenerateRSAKeyPair(4096)
 	if err != nil {
 		return "", "", errors.Join(ErrRSAKeyPairGeneration, err)
 	}

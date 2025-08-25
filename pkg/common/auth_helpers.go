@@ -9,6 +9,14 @@ import (
 	"github.com/pay-theory/lift/pkg/lift"
 )
 
+// ContextKey is the type for context keys
+type ContextKey string
+
+const (
+	// ContextKeyClaims is the context key for JWT claims
+	ContextKeyClaims ContextKey = "claims"
+)
+
 // Claims represents JWT claims interface
 type Claims interface {
 	HasScope(scope string) bool

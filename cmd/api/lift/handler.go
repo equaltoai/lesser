@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/graph"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
@@ -29,6 +30,9 @@ type Handler struct {
 	authService    services.AuthenticationService
 	registry       *services.Registry
 	streamQueue    streaming.StreamQueueService
+
+	// DataLoader instances for batched data loading to prevent N+1 queries
+	loaders *graph.Loaders
 
 	// Additional business logic frameworks for enhanced semantic consolidation
 	commonBusinessLogic *common.BusinessLogicService
@@ -101,6 +105,9 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 	mastodonConfig.Domain = cfg.Domain
 	mastodonAPILogic := common.NewMastodonBusinessLogic(mastodonConfig, logger)
 
+	// Initialize DataLoader instances for batched data loading
+	loaders := graph.NewLoaders(repos, logger)
+
 	return &Handler{
 		cfg:                 cfg,
 		repos:               repos,
@@ -111,6 +118,7 @@ func NewHandler(cfg *config.Config, repos core.RepositoryStorage, logger *zap.Lo
 		authService:         authService,
 		registry:            registry,
 		streamQueue:         streamQueue,
+		loaders:             loaders,
 		commonBusinessLogic: commonBusinessLogic,
 		activityPubLogic:    activityPubLogic,
 		mastodonLogic:       mastodonAPILogic,

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/errors"
 )
 
@@ -14,7 +15,7 @@ import (
 
 // DefaultValidationService provides standard validation logic
 type DefaultValidationService struct {
-	logger interface{} // Use interface to avoid import cycles
+	logger interface{} //nolint:unused // Use interface to avoid import cycles
 }
 
 // NewDefaultValidationService creates a new validation service
@@ -60,11 +61,11 @@ func (v *DefaultValidationService) ValidateBusinessRules(ctx context.Context, mo
 
 	// Check for business rule violations based on action
 	switch action {
-	case "create":
+	case common.OperationCreate:
 		return v.validateCreateRules(ctx, val, typ)
-	case "update":
+	case common.OperationUpdate:
 		return v.validateUpdateRules(ctx, val, typ)
-	case "delete":
+	case common.OperationDelete:
 		return v.validateDeleteRules(ctx, val, typ)
 	default:
 		return nil // No specific rules for other actions
@@ -211,7 +212,7 @@ func (v *DefaultValidationService) isCommonRequiredField(fieldName string) bool 
 
 // DefaultPermissionService provides standard permission checking logic
 type DefaultPermissionService struct {
-	logger interface{} // Use interface to avoid import cycles
+	logger interface{} //nolint:unused // Use interface to avoid import cycles
 }
 
 // NewDefaultPermissionService creates a new permission service
@@ -351,7 +352,7 @@ func (p *DefaultPermissionService) isOwner(actor string, resourceID string) bool
 // InMemoryCachingService provides a simple in-memory cache implementation
 type InMemoryCachingService struct {
 	cache  map[string]cacheEntry
-	logger interface{} // Use interface to avoid import cycles
+	logger interface{} //nolint:unused // Use interface to avoid import cycles
 }
 
 type cacheEntry struct {
@@ -422,7 +423,7 @@ func (c *InMemoryCachingService) InvalidatePattern(ctx context.Context, pattern 
 // DefaultEventService provides basic event emission
 type DefaultEventService struct {
 	handlers []EventHandler
-	logger   interface{} // Use interface to avoid import cycles
+	logger   interface{} //nolint:unused // Use interface to avoid import cycles
 }
 
 // EventHandler handles emitted events
@@ -464,7 +465,7 @@ func (e *DefaultEventService) EmitAsync(ctx context.Context, event Event) error 
 
 // LogEventHandler logs all events (useful for debugging)
 type LogEventHandler struct {
-	logger interface{}
+	logger interface{} //nolint:unused // Reserved for future logging functionality
 }
 
 // NewLogEventHandler creates a new log event handler

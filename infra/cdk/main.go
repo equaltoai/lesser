@@ -10,6 +10,8 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/jsii-runtime-go"
 	"gopkg.in/yaml.v2"
+
+	"github.com/lesser-app/lesser/pkg/config"
 )
 
 // Config represents the environment-specific configuration
@@ -142,6 +144,7 @@ func main() {
 	})
 
 	// Create monitoring stack
+	cfg := config.Get()
 	monitoringStack := stacks.NewMonitoringStack(app, fmt.Sprintf("LesserMonitoringStack-%s", env), &stacks.MonitoringStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
@@ -149,7 +152,7 @@ func main() {
 		},
 		AppName:     config.AppName,
 		Environment: env,
-		AlertEmail:  os.Getenv("ALERT_EMAIL"),
+		AlertEmail:  cfg.AlertEmail,
 	})
 
 	var jwtSecretString *string
@@ -178,13 +181,21 @@ func main() {
 
 // getEnv determines the AWS environment (account+region) in which our stack is to be deployed
 func getEnv(config *Config) *awscdk.Environment {
-	// Try to get from environment variables first
+	cfg := config.Get()
+	
+	// CDK_DEFAULT_ACCOUNT and CDK_DEFAULT_REGION are CDK-specific deployment variables
+	// These should remain as direct os.Getenv calls as they are CDK runtime variables
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
 	region := os.Getenv("CDK_DEFAULT_REGION")
 
-	// Use config region if not specified in environment
+	// Use Lesser config region if CDK region is not specified
 	if region == "" {
-		region = config.AWS.Region
+		region = cfg.Region
+	}
+
+	// Use Lesser config AWS account if available
+	if account == "" && cfg.AWSAccountID != "" {
+		account = cfg.AWSAccountID
 	}
 
 	// If account is specified, use it

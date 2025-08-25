@@ -86,14 +86,14 @@ type TagTimelineUser struct {
 	Username string
 }
 
-// HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag
+// HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag  
 func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	hashtag := ctx.Param("hashtag")
 	if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Get authenticated user (if any)
+	// Get authenticated user (if any) using helper method
 	username := ""
 	authHeader := h.getAuthHeader(ctx)
 	if authHeader != "" {
@@ -105,7 +105,7 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		}
 	}
 
-	// Parse query parameters
+	// Parse query parameters using improved helper
 	params, err := h.parseTagTimelineParams(ctx, hashtag)
 	if err != nil {
 		return common.RespondValidationError(ctx, err)
@@ -150,29 +150,42 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 		statuses = append(statuses, apiStatus)
 	}
 
-	// Add pagination header
+	// Add pagination header using centralized helper
 	if result.Pagination != nil && result.Pagination.NextCursor != "" {
-		h.addTagTimelinePaginationHeader(ctx, params, result.Pagination.NextCursor)
+		// Use common pagination helper for consistent header format
+		baseURL := fmt.Sprintf("/api/v1/timelines/tag/%s", hashtag)
+		paginationParams := common.PaginationParams{
+			Limit: params.Limit,
+			MaxID: params.MaxID,
+		}
+		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
 	}
 
-	return ctx.JSON(statuses)
+	// Return statuses using common JSON response helper
+	return h.respondOK(ctx, statuses)
 }
 
 // getTagTimelineUser extracts and authenticates user from request
 
-// parseTagTimelineParams extracts query parameters
+// parseTagTimelineParams extracts query parameters using centralized pagination helper
 func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*TagTimelineParams, error) {
+	// Use centralized timeline pagination helper 
+	timelineParams := common.GetTimelinePaginationParams(ctx)
+	
 	params := &TagTimelineParams{
-		Hashtag: hashtag,
-		Limit:   20,
+		Hashtag:   hashtag,
+		Limit:     timelineParams.Limit,
+		MaxID:     timelineParams.MaxID,
+		Local:     timelineParams.Local,
+		OnlyMedia: timelineParams.OnlyMedia,
 	}
 
 	// Build parameter map for centralized validation
 	paramMap := map[string]interface{}{
-		"limit":      ctx.Query("limit"),
-		"max_id":     ctx.Query("max_id"),
-		"local":      ctx.Query("local"),
-		"only_media": ctx.Query("only_media"),
+		"limit":      timelineParams.Limit,
+		"max_id":     timelineParams.MaxID,
+		"local":      timelineParams.Local,
+		"only_media": timelineParams.OnlyMedia,
 	}
 
 	// Validate timeline parameters using centralized validation
@@ -180,20 +193,6 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*Ta
 		h.logger.Debug("invalid timeline parameters", zap.Error(err))
 		// Continue with defaults on validation error
 	}
-
-	// Parse limit
-	if limitStr := h.getQueryParam(ctx, "limit"); limitStr != "" {
-		parsedLimit, err := common.ParseTimelineLimit(limitStr)
-		if err != nil {
-			return nil, err
-		}
-		params.Limit = parsedLimit
-	}
-
-	// Parse other parameters
-	params.MaxID = h.getQueryParam(ctx, "max_id")
-	params.Local = h.getQueryParam(ctx, "local") == boolTrue
-	params.OnlyMedia = h.getQueryParam(ctx, "only_media") == boolTrue
 
 	return params, nil
 }
@@ -290,23 +289,30 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 		apiStatuses = append(apiStatuses, apiStatus)
 	}
 
-	// Add pagination header
+	// Add pagination header using common helper
 	if timelineResult.Pagination != nil && timelineResult.Pagination.NextCursor != "" && len(apiStatuses) > 0 {
-		linkURL := h.buildLinkURL(fmt.Sprintf("/api/v1/timelines/list/%s", listID), timelineResult.Pagination.NextCursor, map[string]string{"limit": strconv.Itoa(limit)})
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
+		baseURL := fmt.Sprintf("/api/v1/timelines/list/%s", listID)
+		paginationParams := common.PaginationParams{
+			Limit: limit,
+			MaxID: cursor,
+		}
+		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, timelineResult.Pagination.NextCursor, "")
 	}
 
-	return ctx.JSON(apiStatuses)
+	return h.respondOK(ctx, apiStatuses)
 }
 
 // Helper functions for HandleGetListTimelineLift
 
-// parseTimelineParams parses limit and cursor from query parameters
+// parseTimelineParams parses limit and cursor from query parameters using centralized helper
 func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
+	// Use centralized pagination parameter extraction
+	paginationParams := common.GetPaginationParams(ctx)
+
 	// Build parameter map for centralized validation
 	paramMap := map[string]interface{}{
-		"limit":  ctx.Query("limit"),
-		"max_id": ctx.Query("max_id"),
+		"limit":  paginationParams.Limit,
+		"max_id": paginationParams.MaxID,
 	}
 
 	// Validate timeline parameters using centralized validation
@@ -315,27 +321,7 @@ func (h *Handler) parseTimelineParams(ctx *lift.Context) (int, string, error) {
 		// Continue with defaults on validation error
 	}
 
-	// Parse limit parameter
-	limit := 20
-	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-	if limitStr != "" {
-		l, err := common.ParseTimelineLimit(limitStr)
-		if err != nil {
-			return 0, "", err
-		}
-		limit = l
-	}
-
-	// Parse cursor parameter
-	cursor := ctx.Query("max_id")
-	if common.ValidateRequiredParam(cursor, "cursor") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		cursor = ctx.Request.Request.QueryParams["max_id"]
-	}
-
-	return limit, cursor, nil
+	return paginationParams.Limit, paginationParams.MaxID, nil
 }
 
 // HandleGetDirectTimelineLift handles GET /api/v1/timelines/direct
@@ -380,13 +366,17 @@ func (h *Handler) HandleGetDirectTimelineLift(ctx *lift.Context) error {
 		apiStatuses = append(apiStatuses, apiStatus)
 	}
 
-	// Add pagination header
+	// Add pagination header using common helper
 	if result.Pagination != nil && result.Pagination.NextCursor != "" && len(apiStatuses) > 0 {
-		linkURL := h.buildLinkURL("/api/v1/timelines/direct", result.Pagination.NextCursor, map[string]string{"limit": strconv.Itoa(params.limit)})
-		ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
+		baseURL := "/api/v1/timelines/direct"
+		paginationParams := common.PaginationParams{
+			Limit: params.limit,
+			MaxID: params.maxID,
+		}
+		common.SetPaginationHeaders(ctx, baseURL, paginationParams, true, false, result.Pagination.NextCursor, "")
 	}
 
-	return ctx.JSON(apiStatuses)
+	return h.respondOK(ctx, apiStatuses)
 }
 
 // directTimelineParams holds parameters for direct timeline requests
@@ -445,39 +435,26 @@ func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 
 // getUserActorForDirectTimeline gets the user's actor for direct timeline operations
 
-// parseDirectTimelineParams parses query parameters for direct timeline
+// parseDirectTimelineParams parses query parameters for direct timeline using centralized helper
 func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelineParams {
+	// Use centralized pagination parameter extraction
+	paginationParams := common.GetPaginationParams(ctx)
+	
 	params := directTimelineParams{
-		limit: 20,
+		limit: paginationParams.Limit,
+		maxID: paginationParams.MaxID,
 	}
 
 	// Build parameter map for centralized validation
 	paramMap := map[string]interface{}{
-		"limit":  ctx.Query("limit"),
-		"max_id": ctx.Query("max_id"),
+		"limit":  paginationParams.Limit,
+		"max_id": paginationParams.MaxID,
 	}
 
 	// Validate timeline parameters using centralized validation
 	if err := common.ValidateMastodonTimeline(paramMap); err != nil {
 		h.logger.Debug("invalid timeline parameters", zap.Error(err))
 		// Continue with defaults on validation error
-	}
-
-	// Parse limit
-	limitStr := ctx.Query("limit")
-	if common.ValidateRequiredParam(limitStr, "limitStr") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		limitStr = ctx.Request.Request.QueryParams["limit"]
-	}
-	if limitStr != "" {
-		if parsedLimit, err := common.ParseTimelineLimit(limitStr); err == nil {
-			params.limit = parsedLimit
-		}
-	}
-
-	// Parse max_id
-	params.maxID = ctx.Query("max_id")
-	if common.ValidateRequiredParam(params.maxID, "params.maxID") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		params.maxID = ctx.Request.Request.QueryParams["max_id"]
 	}
 
 	return params

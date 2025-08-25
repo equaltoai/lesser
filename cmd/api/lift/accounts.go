@@ -75,7 +75,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	// Return response
+	// Return response using common helper
 	resp := models.AccountRegistrationResponse{
 		ID:       result.Actor.ID,
 		Username: result.Account.User.Username,
@@ -83,7 +83,7 @@ func (h *Handler) HandleRegistrationLift(ctx *lift.Context) error {
 		Created:  true,
 	}
 
-	return ctx.Status(201).JSON(resp)
+	return h.respondCreated(ctx, resp)
 }
 
 // HandleVerifyCredentialsLift returns the current user's information
@@ -101,7 +101,7 @@ func (h *Handler) HandleVerifyCredentialsLift(ctx *lift.Context) error {
 		return common.RespondInternalServerError(ctx)
 	}
 
-	return ctx.JSON(account)
+	return h.respondOK(ctx, account)
 }
 
 // HandleUpdateCredentialsLift updates the current user's profile
@@ -145,7 +145,7 @@ func (h *Handler) HandleUpdateCredentialsLift(ctx *lift.Context) error {
 		return common.RespondFailedToUpdate(ctx, "profile")
 	}
 
-	return ctx.JSON(result.Account)
+	return h.respondOK(ctx, result.Account)
 }
 
 // UpdateCredentialsFileData holds file upload data from multipart form

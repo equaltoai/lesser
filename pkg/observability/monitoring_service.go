@@ -156,7 +156,7 @@ func NewMonitoringService(monitoringConfig *MonitoringServiceConfig) (*Monitorin
 		return nil
 	}
 	metricsRecorder := NewDefaultMetricsRecorder(createMetricFn, monitoringConfig.ServiceName)
-	latencyAlerter := NewLatencyAlerter(monitoringConfig.Logger, metricsRecorder)
+	latencyAlerter := NewLatencyAlerter(monitoringConfig.Logger, metricsRecorder, nil)
 
 	// Set up alert routes
 	alertRoutes := make(map[string]*AlertRoute)

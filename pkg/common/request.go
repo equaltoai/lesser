@@ -117,8 +117,8 @@ func ParseRequestBodyWithValidation(ctx *lift.Context, target interface{}, field
 
 // Specialized parsing functions for common request types
 
-// PaginationParams extracts common pagination parameters
-type PaginationParams struct {
+// RequestPaginationParams extracts common pagination parameters (different from pagination.go version)
+type RequestPaginationParams struct {
 	Limit   int    `json:"limit"`
 	Offset  int    `json:"offset"`
 	MaxID   string `json:"max_id"`
@@ -128,7 +128,7 @@ type PaginationParams struct {
 
 // TimelineParams extracts timeline-specific parameters
 type TimelineParams struct {
-	PaginationParams
+	RequestPaginationParams
 	Local     bool `json:"local"`
 	OnlyMedia bool `json:"only_media"`
 }

@@ -25,6 +25,7 @@ type LatencyAggregator struct {
 	buckets           map[string]*LatencyBucket
 	logger            *zap.Logger
 	metricsRecorder   MetricsRecorder
+	metricsReader     HistoricalMetricsReader
 	aggregateInterval time.Duration
 	retentionPeriod   time.Duration
 	maxBuckets        int
@@ -140,9 +141,9 @@ func WithMaxBuckets(maxBuckets int) LatencyAggregatorOption {
 }
 
 // WithMetricsRepository sets the historical metrics repository
-func WithMetricsRepository(_ HistoricalMetricsReader) LatencyAggregatorOption {
+func WithMetricsRepository(reader HistoricalMetricsReader) LatencyAggregatorOption {
 	return func(la *LatencyAggregator) {
-		// Store the repository - would need to add a field to LatencyAggregator if used
+		la.metricsReader = reader
 		la.logger.Debug("metrics repository configured")
 	}
 }
@@ -490,15 +491,42 @@ func (la *LatencyAggregator) flushBucket(bucket *LatencyBucket) {
 	}
 }
 
-func (la *LatencyAggregator) getDataPoints(_ context.Context, operation, service string, startTime, endTime time.Time, _ time.Duration) ([]LatencyDataPoint, error) {
+func (la *LatencyAggregator) getDataPoints(ctx context.Context, operation, service string, startTime, endTime time.Time, _ time.Duration) ([]LatencyDataPoint, error) {
 	dataPoints := make([]LatencyDataPoint, 0)
 
-	// Get data from memory buckets first
-	la.mu.RLock()
-	for _, bucket := range la.buckets {
-		if bucket.Operation == operation && bucket.Service == service &&
-			bucket.WindowStart.After(startTime) && bucket.WindowStart.Before(endTime) {
+	// Get data from memory buckets
+	memoryPoints := la.getMemoryDataPoints(operation, service, startTime, endTime)
+	dataPoints = append(dataPoints, memoryPoints...)
 
+	// Get historical data from storage if available
+	if la.metricsReader != nil {
+		historicalPoints, err := la.getHistoricalDataPoints(ctx, operation, service, startTime, endTime)
+		if err != nil {
+			la.logger.Warn("failed to retrieve historical metrics",
+				zap.String("service", service),
+				zap.String("operation", operation),
+				zap.Time("start_time", startTime),
+				zap.Time("end_time", endTime),
+				zap.Error(err))
+		} else {
+			dataPoints = append(dataPoints, historicalPoints...)
+		}
+	}
+
+	// Sort by timestamp
+	la.sortDataPointsByTimestamp(dataPoints)
+	return dataPoints, nil
+}
+
+// getMemoryDataPoints retrieves data points from memory buckets
+func (la *LatencyAggregator) getMemoryDataPoints(operation, service string, startTime, endTime time.Time) []LatencyDataPoint {
+	var dataPoints []LatencyDataPoint
+
+	la.mu.RLock()
+	defer la.mu.RUnlock()
+
+	for _, bucket := range la.buckets {
+		if la.isBucketInTimeRange(bucket, operation, service, startTime, endTime) {
 			stats := bucket.calculateStats()
 			dataPoint := LatencyDataPoint{
 				Timestamp:   bucket.WindowStart,
@@ -509,17 +537,84 @@ func (la *LatencyAggregator) getDataPoints(_ context.Context, operation, service
 			dataPoints = append(dataPoints, dataPoint)
 		}
 	}
-	la.mu.RUnlock()
 
-	// TODO: Get historical data from storage if needed
-	// This would query the MetricRecord repository for historical aggregated data
+	return dataPoints
+}
 
-	// Sort by timestamp
+// isBucketInTimeRange checks if bucket matches criteria and time range
+func (la *LatencyAggregator) isBucketInTimeRange(bucket *LatencyBucket, operation, service string, startTime, endTime time.Time) bool {
+	return bucket.Operation == operation &&
+		bucket.Service == service &&
+		bucket.WindowStart.After(startTime) &&
+		bucket.WindowStart.Before(endTime)
+}
+
+// getHistoricalDataPoints retrieves data points from historical storage
+func (la *LatencyAggregator) getHistoricalDataPoints(ctx context.Context, operation, service string, startTime, endTime time.Time) ([]LatencyDataPoint, error) {
+	historicalMetrics, err := la.metricsReader.GetMetricsByService(ctx, service, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	var dataPoints []LatencyDataPoint
+	for _, metric := range historicalMetrics {
+		if la.isRelevantHistoricalMetric(metric, operation) {
+			dataPoint := la.convertMetricToDataPoint(metric)
+			dataPoints = append(dataPoints, dataPoint)
+		}
+	}
+
+	return dataPoints, nil
+}
+
+// isRelevantHistoricalMetric checks if metric matches operation and is latency aggregated
+func (la *LatencyAggregator) isRelevantHistoricalMetric(metric *models.MetricRecord, operation string) bool {
+	return metric.Dimensions != nil &&
+		metric.Dimensions["operation"] == operation &&
+		metric.MetricType == "latency_aggregated"
+}
+
+// convertMetricToDataPoint converts a stored metric to a data point
+func (la *LatencyAggregator) convertMetricToDataPoint(metric *models.MetricRecord) LatencyDataPoint {
+	percentiles := la.buildPercentiles(metric)
+	average := la.calculateAverage(metric)
+
+	return LatencyDataPoint{
+		Timestamp:   metric.Timestamp,
+		Average:     average,
+		Count:       metric.Count,
+		Percentiles: percentiles,
+	}
+}
+
+// buildPercentiles creates percentiles map from metric
+func (la *LatencyAggregator) buildPercentiles(metric *models.MetricRecord) map[string]float64 {
+	percentiles := make(map[string]float64)
+	if metric.P50 > 0 {
+		percentiles["p50"] = metric.P50
+	}
+	if metric.P95 > 0 {
+		percentiles["p95"] = metric.P95
+	}
+	if metric.P99 > 0 {
+		percentiles["p99"] = metric.P99
+	}
+	return percentiles
+}
+
+// calculateAverage calculates average from metric sum and count
+func (la *LatencyAggregator) calculateAverage(metric *models.MetricRecord) float64 {
+	if metric.Count > 0 {
+		return metric.Sum / float64(metric.Count)
+	}
+	return 0
+}
+
+// sortDataPointsByTimestamp sorts data points in chronological order
+func (la *LatencyAggregator) sortDataPointsByTimestamp(dataPoints []LatencyDataPoint) {
 	sort.Slice(dataPoints, func(i, j int) bool {
 		return dataPoints[i].Timestamp.Before(dataPoints[j].Timestamp)
 	})
-
-	return dataPoints, nil
 }
 
 func (la *LatencyAggregator) calculateTrendAnalysis(dataPoints []LatencyDataPoint) TrendAnalysis {

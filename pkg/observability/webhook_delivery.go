@@ -4,6 +4,9 @@ package observability
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -326,6 +329,7 @@ func (w *WebhookDeliveryService) createDelivery(alert *models.Alert, webhook *We
 		WebhookID:     webhook.ID,
 		URL:           webhook.URL,
 		Headers:       webhook.Headers,
+		SecretToken:   webhook.SecretToken,
 		Timeout:       int(webhook.Timeout.Seconds()),
 		Status:        "pending",
 		AttemptNumber: 1,
@@ -368,9 +372,10 @@ func (w *WebhookDeliveryService) deliverWebhook(ctx context.Context, delivery *m
 	}
 
 	// Add signature if secret token provided
-	if delivery.WebhookID != "default" {
-		// TODO: Add HMAC signature generation for webhook security
-		_ = delivery.WebhookID // Prevent unused variable warning
+	if delivery.SecretToken != "" {
+		signature := generateHMACSignature(payload, delivery.SecretToken)
+		req.Header.Set("X-Webhook-Signature", signature)
+		req.Header.Set("X-Webhook-Signature-256", signature) // GitHub-style header
 	}
 
 	// Send request
@@ -553,4 +558,11 @@ func stringContains(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// generateHMACSignature generates an HMAC-SHA256 signature for webhook payload
+func generateHMACSignature(payload []byte, secret string) string {
+	h := hmac.New(sha256.New, []byte(secret))
+	h.Write(payload)
+	return "sha256=" + hex.EncodeToString(h.Sum(nil))
 }

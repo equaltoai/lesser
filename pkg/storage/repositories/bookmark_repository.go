@@ -287,21 +287,87 @@ func (r *BookmarkRepository) CascadeDeleteUserBookmarks(ctx context.Context, use
 }
 
 // CascadeDeleteObjectBookmarks deletes all bookmarks for an object (when object is deleted)
-func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(_ context.Context, objectID string) error {
+func (r *BookmarkRepository) CascadeDeleteObjectBookmarks(ctx context.Context, objectID string) error {
 	// Since bookmark keys are BOOKMARK#{username} / timestamp#{objectID},
 	// we need to scan for bookmarks containing the objectID
 	// This is less efficient than a GSI but works with current schema
 
-	// We'll need to implement a scan operation here
-	// For now, log that this functionality needs implementation
-	r.logger.Warn("cascade delete for object bookmarks not fully implemented - requires scan operation",
+	r.logger.Info("starting cascade delete for object bookmarks",
 		zap.String("object_id", objectID))
 
-	// TODO: Implement full scan operation or add GSI for object-based queries
-	// This would require either:
-	// 1. A GSI with objectID as PK
-	// 2. A scan operation across all bookmarks
-	// 3. Maintaining a separate index structure
+	deletedCount := 0
+
+	// Use scan operation to find all bookmarks with the specified objectID
+	// We need to scan through all bookmark records and filter by SK containing objectID
+	var bookmarks []models.Bookmark
+
+	// Perform scan with filter on PK prefix to limit to bookmark records only
+	err := r.db.WithContext(ctx).Model(&models.Bookmark{}).
+		Where("PK", "BEGINS_WITH", "BOOKMARK#").
+		Where("SK", "CONTAINS", fmt.Sprintf("#%s", objectID)).
+		Scan(&bookmarks)
+
+	if err != nil {
+		r.logger.Error("failed to scan bookmarks for object deletion",
+			zap.String("object_id", objectID),
+			zap.Error(err))
+		return ErrorHandler.HandleQueryError(err, EntityBookmark, "cascade scan")
+	}
+
+	// Filter results to ensure exact objectID match (since CONTAINS might match partial IDs)
+	var exactMatches []models.Bookmark
+	for _, bookmark := range bookmarks {
+		if bookmark.ObjectID == objectID {
+			exactMatches = append(exactMatches, bookmark)
+		}
+	}
+
+	if len(exactMatches) == 0 {
+		r.logger.Debug("no bookmarks found for object",
+			zap.String("object_id", objectID))
+		return nil
+	}
+
+	// Delete matching bookmarks in batches
+	const batchSize = 25 // DynamoDB batch write limit
+	for i := 0; i < len(exactMatches); i += batchSize {
+		end := i + batchSize
+		if end > len(exactMatches) {
+			end = len(exactMatches)
+		}
+
+		batch := exactMatches[i:end]
+		keys := make([]struct{ PK, SK string }, len(batch))
+		for j, bookmark := range batch {
+			keys[j] = struct{ PK, SK string }{PK: bookmark.PK, SK: bookmark.SK}
+		}
+
+		// Use batch delete
+		if err := r.BatchDelete(ctx, keys); err != nil {
+			r.logger.Warn("failed to batch delete bookmarks during object cascade",
+				zap.String("object_id", objectID),
+				zap.Int("batch_size", len(keys)),
+				zap.Error(err))
+			// Continue with individual deletes as fallback
+			for _, key := range keys {
+				if delErr := r.Delete(ctx, key.PK, key.SK); delErr != nil {
+					r.logger.Warn("failed to delete individual bookmark during cascade",
+						zap.String("object_id", objectID),
+						zap.String("pk", key.PK),
+						zap.String("sk", key.SK),
+						zap.Error(delErr))
+				} else {
+					deletedCount++
+				}
+			}
+		} else {
+			deletedCount += len(keys)
+		}
+	}
+
+	r.logger.Info("cascade deleted object bookmarks",
+		zap.String("object_id", objectID),
+		zap.Int("deleted_count", deletedCount))
 
 	return nil
 }

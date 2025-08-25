@@ -13,8 +13,6 @@ before passing requests to this Lambda, so the router receives clean paths.
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -223,7 +221,7 @@ func initializeManualServices() {
 		latencyAggregator.Start()
 
 		// Initialize latency alerter
-		latencyAlerter = observability.NewLatencyAlerter(logger, metricsRecorder)
+		latencyAlerter = observability.NewLatencyAlerter(logger, metricsRecorder, nil)
 
 		// Initialize centralized cost tracking service
 		if cloudWatchClient != nil {
@@ -879,10 +877,8 @@ func createCentralizedCostTrackingMiddleware() lift.Middleware {
 			// Track Lambda execution cost
 			duration := time.Since(startTime)
 			memoryMB := int64(128) // Default Lambda memory, could be extracted from env
-			if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
-				if mem, parseErr := strconv.ParseInt(envMem, 10, 64); parseErr == nil {
-					memoryMB = mem
-				}
+			if mem, parseErr := common.GetLambdaMemorySizeInt(); parseErr == nil && mem > 0 {
+				memoryMB = int64(mem)
 			}
 
 			// Create Lambda operation for cost tracking

@@ -3,7 +3,6 @@ package lift
 import (
 	"context"
 	"fmt"
-	"os"
 	"runtime"
 	"strconv"
 	"strings"
@@ -195,14 +194,12 @@ func (mm *MetricsMiddleware) recordRequestMetrics(_ context.Context, metrics Req
 			types.StandardUnitCount, lambdaDimensions)
 
 		// Record memory utilization
-		if memorySize := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); memorySize != "" {
-			if size, err := strconv.Atoi(memorySize); err == nil {
-				var m runtime.MemStats
-				runtime.ReadMemStats(&m)
-				utilization := float64(m.Alloc) / float64(size*1024*1024) * 100
-				mm.addMetric("MemoryUtilization", utilization,
-					types.StandardUnitPercent, lambdaDimensions)
-			}
+		if size, err := common.GetLambdaMemorySizeInt(); err == nil && size > 0 {
+			var m runtime.MemStats
+			runtime.ReadMemStats(&m)
+			utilization := float64(m.Alloc) / float64(size*1024*1024) * 100
+			mm.addMetric("MemoryUtilization", utilization,
+				types.StandardUnitPercent, lambdaDimensions)
 		}
 	}
 }
@@ -218,7 +215,7 @@ func (mm *MetricsMiddleware) recordColdStartMetrics(_ context.Context, operation
 	mm.logger.Info("cold_start_detected",
 		zap.String("operation", operation),
 		zap.Duration("init_duration", initDuration),
-		zap.String("function_name", os.Getenv("AWS_LAMBDA_FUNCTION_NAME")),
+		zap.String("function_name", common.GetLambdaFunctionName()),
 	)
 }
 
@@ -304,13 +301,13 @@ func (mm *MetricsMiddleware) getBaseDimensions(operation string) []types.Dimensi
 	}
 
 	// Add function name if available
-	if functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); functionName != "" {
+	if functionName := common.GetLambdaFunctionName(); functionName != "" {
 		dimensions = append(dimensions,
 			types.Dimension{Name: aws.String("FunctionName"), Value: aws.String(functionName)})
 	}
 
 	// Add version if available
-	if version := os.Getenv("AWS_LAMBDA_FUNCTION_VERSION"); version != "" {
+	if version := common.GetLambdaFunctionVersion(); version != "" {
 		dimensions = append(dimensions,
 			types.Dimension{Name: aws.String("Version"), Value: aws.String(version)})
 	}
@@ -338,7 +335,7 @@ func (mm *MetricsMiddleware) getOperationName(ctx *lift.Context) string {
 	}
 
 	// Fallback to function name
-	if functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); functionName != "" {
+	if functionName := common.GetLambdaFunctionName(); functionName != "" {
 		return functionName
 	}
 
@@ -396,7 +393,7 @@ func getEnvironment() string {
 	}
 
 	// Fallback to AWS Lambda function name pattern
-	if env := os.Getenv("AWS_LAMBDA_FUNCTION_NAME"); env != "" {
+	if env := common.GetLambdaFunctionName(); env != "" {
 		// Extract environment from function name if it follows pattern
 		parts := strings.Split(env, "-")
 		if len(parts) > 1 {

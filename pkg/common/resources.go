@@ -2,7 +2,6 @@ package common
 
 import (
 	"fmt"
-	"os"
 	"runtime"
 	"strconv"
 	"sync"
@@ -30,7 +29,7 @@ type ResourceCheckpoint struct {
 func NewLambdaResourceMonitor() *LambdaResourceMonitor {
 	// Get Lambda memory limit from environment
 	memoryMB := 512 // default
-	if envMem := os.Getenv("AWS_LAMBDA_FUNCTION_MEMORY_SIZE"); envMem != "" {
+	if envMem := GetLambdaMemorySize(); envMem != "" {
 		if parsed, err := strconv.Atoi(envMem); err == nil {
 			memoryMB = parsed
 		}

@@ -8,6 +8,7 @@ import (
 	"github.com/pay-theory/dynamorm/pkg/core"
 	"go.uber.org/zap"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
 )
@@ -157,7 +158,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndCreate(ctx context.Context, model
 	// 5. Emit creation event
 	if r.events != nil {
 		event := NewEvent("entity.created", r.entityName, model.GetPK(), "create", model)
-		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
+		event.Actor = r.getActorFromContext(ctx)
 		_ = r.events.EmitAsync(ctx, event)
 	}
 
@@ -191,7 +192,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndUpdate(ctx context.Context, model
 	// 5. Emit update event
 	if r.events != nil {
 		event := NewEvent("entity.updated", r.entityName, model.GetPK(), "update", model)
-		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
+		event.Actor = r.getActorFromContext(ctx)
 		_ = r.events.EmitAsync(ctx, event)
 	}
 
@@ -227,7 +228,7 @@ func (r *EnhancedBaseRepository[T]) ValidateAndDelete(ctx context.Context, pk, s
 	// 3. Emit delete event
 	if r.events != nil {
 		event := NewEvent("entity.deleted", r.entityName, pk, "delete", map[string]string{"pk": pk, "sk": sk})
-		// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
+		event.Actor = r.getActorFromContext(ctx)
 		_ = r.events.EmitAsync(ctx, event)
 	}
 
@@ -321,10 +322,9 @@ func (r *EnhancedBaseRepository[T]) checkCreatePermissions(ctx context.Context, 
 		return nil // No permission service configured
 	}
 
-	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
-	actor := "unknown" // TODO: Implement GetActorFromContext
-	if actor == "unknown" {
-		// For now, skip authentication checks
+	actor := r.getActorFromContext(ctx)
+	if actor == "" {
+		// No authentication context available, skip permission check
 		return nil
 	}
 
@@ -336,10 +336,9 @@ func (r *EnhancedBaseRepository[T]) checkUpdatePermissions(ctx context.Context, 
 		return nil
 	}
 
-	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
-	actor := "unknown" // TODO: Implement GetActorFromContext
-	if actor == "unknown" {
-		// For now, skip authentication checks
+	actor := r.getActorFromContext(ctx)
+	if actor == "" {
+		// No authentication context available, skip permission check
 		return nil
 	}
 
@@ -351,10 +350,9 @@ func (r *EnhancedBaseRepository[T]) checkDeletePermissions(ctx context.Context, 
 		return nil
 	}
 
-	// Note: GetActorFromContext doesn't exist yet, so we'll use a placeholder
-	actor := "unknown" // TODO: Implement GetActorFromContext
-	if actor == "unknown" {
-		// For now, skip authentication checks
+	actor := r.getActorFromContext(ctx)
+	if actor == "" {
+		// No authentication context available, skip permission check
 		return nil
 	}
 
@@ -402,9 +400,10 @@ func (r *EnhancedBaseRepository[T]) ValidateAndBatchCreate(ctx context.Context, 
 
 	// Emit events for all created items
 	if r.events != nil {
+		actor := r.getActorFromContext(ctx)
 		for _, item := range items {
 			event := NewEvent("entity.created", r.entityName, item.GetPK(), "batch_create", item)
-			// Note: GetActorFromContext doesn't exist yet, so we'll skip actor for now
+			event.Actor = actor
 			_ = r.events.EmitAsync(ctx, event)
 		}
 	}
@@ -437,4 +436,20 @@ func (r *EnhancedBaseRepository[T]) HasCaching() bool {
 // HasEvents returns true if event service is configured
 func (r *EnhancedBaseRepository[T]) HasEvents() bool {
 	return r.events != nil
+}
+
+// getActorFromContext extracts the actor (username) from the request context
+// It looks for JWT claims in the context that contain the authenticated user's username
+func (r *EnhancedBaseRepository[T]) getActorFromContext(ctx context.Context) string {
+	// Try to get claims from context using common package's context key
+	if claims, ok := ctx.Value(common.ContextKeyClaims).(common.Claims); ok && claims != nil {
+		// Return the username from the claims if available
+		username := claims.GetUsername()
+		if username != "" {
+			return username
+		}
+	}
+
+	// If no claims or username found, return empty string
+	return ""
 }

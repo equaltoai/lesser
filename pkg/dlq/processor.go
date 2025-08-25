@@ -3,7 +3,6 @@ package dlq
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -188,9 +187,9 @@ func (p *Processor) createDLQMessage(record events.SQSMessage, originalMessage *
 	}
 
 	// Extract function context
-	functionName := os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
-	logGroup := os.Getenv("AWS_LAMBDA_LOG_GROUP_NAME")
-	logStream := os.Getenv("AWS_LAMBDA_LOG_STREAM_NAME")
+	functionName := common.GetLambdaFunctionName()
+	logGroup := common.GetLambdaLogGroupName()
+	logStream := common.GetLambdaLogStreamName()
 
 	// Build DLQ message
 	builder := models.NewDLQMessageBuilder().
