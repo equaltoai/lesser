@@ -278,11 +278,6 @@ func (h *Handler) HandleUpdateQuotePermissionsLift(ctx *lift.Context) error {
 // Helper methods
 
 func (h *Handler) authenticateQuoteRequest(ctx *lift.Context) (*auth.Claims, error) {
-	// Test mode support
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		return &auth.Claims{Username: testUsername, Scopes: []string{"write:statuses", "read:statuses", "write:accounts"}}, nil
-	}
-
 	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {

@@ -16,6 +16,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
@@ -871,6 +872,12 @@ func main() {
 	}
 
 	app := lift.New()
+
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(processor.lambdaCtx.Logger))
+
+	// Apply federation security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, processor.lambdaCtx.Logger)
 
 	// Use standardized Lambda handler wrapper for observability
 	standardHandler := processor.lambdaCtx.CreateStandardizedLambdaHandler

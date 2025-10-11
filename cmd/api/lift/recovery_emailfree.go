@@ -187,18 +187,13 @@ func (h *EmailFreeRecoveryHandler) HandleConfirmSocialRecoveryLift(ctx *lift.Con
 // POST /auth/recovery/codes/generate
 func (h *EmailFreeRecoveryHandler) HandleGenerateRecoveryCodesLift(ctx *lift.Context) error {
 	// Get username from authorization context or test header
-	testUsername := ctx.Header("X-Test-Username")
 	var username string
 
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
-				if sub, ok := claims["sub"].(string); ok {
-					username = sub
-				}
+	// Authentication required - get from JWT context
+	if ctx.Value("jwt_claims") != nil {
+		if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
+			if sub, ok := claims["sub"].(string); ok {
+				username = sub
 			}
 		}
 	}
@@ -275,18 +270,13 @@ func (h *EmailFreeRecoveryHandler) HandleUseRecoveryCodeLift(ctx *lift.Context) 
 // POST /auth/recovery/trustees/add
 func (h *EmailFreeRecoveryHandler) HandleAddTrusteeLift(ctx *lift.Context) error {
 	// Get username from authorization context or test header
-	testUsername := ctx.Header("X-Test-Username")
 	var username string
 
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
-				if sub, ok := claims["sub"].(string); ok {
-					username = sub
-				}
+	// Authentication required - get from JWT context
+	if ctx.Value("jwt_claims") != nil {
+		if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
+			if sub, ok := claims["sub"].(string); ok {
+				username = sub
 			}
 		}
 	}
@@ -335,18 +325,13 @@ func (h *EmailFreeRecoveryHandler) HandleAddTrusteeLift(ctx *lift.Context) error
 // GET /auth/recovery/trustees
 func (h *EmailFreeRecoveryHandler) HandleListTrusteesLift(ctx *lift.Context) error {
 	// Get username from authorization context or test header
-	testUsername := ctx.Header("X-Test-Username")
 	var username string
 
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
-				if sub, ok := claims["sub"].(string); ok {
-					username = sub
-				}
+	// Authentication required - get from JWT context
+	if ctx.Value("jwt_claims") != nil {
+		if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
+			if sub, ok := claims["sub"].(string); ok {
+				username = sub
 			}
 		}
 	}
@@ -375,18 +360,13 @@ func (h *EmailFreeRecoveryHandler) HandleListTrusteesLift(ctx *lift.Context) err
 // DELETE /auth/recovery/trustees/{trustee_id}
 func (h *EmailFreeRecoveryHandler) HandleRemoveTrusteeLift(ctx *lift.Context) error {
 	// Get username from authorization context or test header
-	testUsername := ctx.Header("X-Test-Username")
 	var username string
 
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Get from JWT context - this would be populated by auth middleware
-		if ctx.Value("jwt_claims") != nil {
-			if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
-				if sub, ok := claims["sub"].(string); ok {
-					username = sub
-				}
+	// Authentication required - get from JWT context
+	if ctx.Value("jwt_claims") != nil {
+		if claims, ok := ctx.Value("jwt_claims").(map[string]any); ok {
+			if sub, ok := claims["sub"].(string); ok {
+				username = sub
 			}
 		}
 	}

@@ -301,7 +301,18 @@ func NewSimplifiedAIProcessor(lambdaCtx *common.LambdaContext) *AIProcessor {
 }
 
 func main() {
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				requestID := fmt.Sprintf("ai-processor-%d", time.Now().UnixNano())
+				logger.Error("panic in ai processor handler",
+					zap.String("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in ai-processor: %v", r)
+			}
+		}()
+		
 		// Create a simple lift context with minimal setup
 		liftCtx := &lift.Context{
 			RequestID: fmt.Sprintf("ai-processor-%d", time.Now().UnixNano()),

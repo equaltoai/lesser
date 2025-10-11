@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/search"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -197,39 +196,23 @@ func (h *Handler) getActorAvatarURL(actor *activitypub.Actor) string {
 // HandleGetSuggestionsV1Lift handles GET /api/v1/suggestions
 // Returns follow suggestions (v1 format)
 func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeRead},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Get limit from query params
@@ -297,39 +280,23 @@ func (h *Handler) HandleGetSuggestionsV1Lift(ctx *lift.Context) error {
 // HandleGetSuggestionsV2Lift handles GET /api/v2/suggestions
 // Returns follow suggestions (v2 format with sources)
 func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeRead},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Get limit from query params
@@ -398,39 +365,23 @@ func (h *Handler) HandleGetSuggestionsV2Lift(ctx *lift.Context) error {
 // HandleRemoveSuggestionLift handles DELETE /api/v1/suggestions/:account_id
 // Removes an account from suggestions
 func (h *Handler) HandleRemoveSuggestionLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header(common.XTestUsernameHeader)
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers[common.XTestUsernameHeader]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeWrite},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Get account ID from path

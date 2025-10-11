@@ -4,6 +4,8 @@ package lambda
 import (
 	"context"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -56,19 +58,19 @@ func StandardizedMain(config MainConfig) {
 
 	lambdaCtx, err := common.InitializeLambda(lambdaConfig)
 	if err != nil {
-		panic(fmt.Sprintf("failed to initialize Lambda %s: %v", config.ServiceName, err))
+		log.Fatalf("failed to initialize Lambda %s: %v", config.ServiceName, err)
 	}
 
 	// Initialize with default options for the Lambda type
 	options := common.DefaultLambdaInitOptions(config.LambdaType)
 	if err := lambdaCtx.InitializeWithOptions(options); err != nil {
-		panic(fmt.Sprintf("failed to initialize %s Lambda services: %v", config.ServiceName, err))
+		log.Fatalf("failed to initialize %s Lambda services: %v", config.ServiceName, err)
 	}
 
 	// Initialize custom services if provided
 	if config.InitCustomServices != nil {
 		if err := config.InitCustomServices(lambdaCtx); err != nil {
-			panic(fmt.Sprintf("failed to initialize custom services for %s: %v", config.ServiceName, err))
+			log.Fatalf("failed to initialize custom services for %s: %v", config.ServiceName, err)
 		}
 	}
 
@@ -89,7 +91,7 @@ func StandardizedMain(config MainConfig) {
 	// Configure routes
 	if config.ConfigureRoutes != nil {
 		if err := config.ConfigureRoutes(app, lambdaCtx); err != nil {
-			panic(fmt.Sprintf("failed to configure routes for %s: %v", config.ServiceName, err))
+			log.Fatalf("failed to configure routes for %s: %v", config.ServiceName, err)
 		}
 	}
 
@@ -116,7 +118,10 @@ func createStandardizedLiftApp(config MainConfig, lambdaCtx *common.LambdaContex
 
 // addStandardMiddleware adds the standard middleware stack to the Lift app
 func addStandardMiddleware(app *liftPkg.App, config MainConfig, lambdaCtx *common.LambdaContext) {
-	// Timeout middleware (first)
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(PanicRecovery(lambdaCtx.Logger))
+	
+	// Timeout middleware
 	app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
 		DefaultTimeout: config.Timeout,
 	}))
@@ -331,6 +336,45 @@ func createRateLimitMiddleware(_ *common.LambdaContext) liftPkg.Middleware {
 	return func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			// Basic rate limiting - can be enhanced with ratelimit package
+			return next.Handle(ctx)
+		})
+	}
+}
+
+// PanicRecovery creates a middleware that recovers from panics and returns a proper error response
+func PanicRecovery(logger *zap.Logger) liftPkg.Middleware {
+	return func(next liftPkg.Handler) liftPkg.Handler {
+		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) (err error) {
+			defer func() {
+				if r := recover(); r != nil {
+					// Get stack trace
+					stack := debug.Stack()
+					
+					// Generate request ID for tracking
+					requestID := ctx.Header("X-Request-Id")
+					if requestID == "" {
+						requestID = common.GenerateRequestIDULID()
+					}
+					
+					// Log the panic with full context
+					logger.Error("panic recovered",
+						zap.Any("panic", r),
+						zap.String("request_id", requestID),
+						zap.String("path", ctx.Request.Path),
+						zap.String("method", ctx.Request.Method),
+						zap.ByteString("stack", stack),
+					)
+					
+					// Return a proper error response
+					err = ctx.Status(500).JSON(map[string]interface{}{
+						"error": "internal_server_error",
+						"error_description": "An unexpected error occurred",
+						"request_id": requestID,
+					})
+				}
+			}()
+			
+			// Call the next handler
 			return next.Handle(ctx)
 		})
 	}

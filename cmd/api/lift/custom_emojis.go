@@ -237,18 +237,6 @@ func (h *Handler) HandleDeleteCustomEmojiLift(ctx *lift.Context) error {
 
 // authenticateAdminRequest handles authentication for admin endpoints
 func (h *Handler) authenticateAdminRequest(ctx *lift.Context) (string, error) {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if testUsername != "" {
-		// Test mode - use provided username
-		h.logger.Debug("test mode: using provided username", zap.String("username", testUsername))
-		return testUsername, nil
-	}
-
 	// Extract token from Authorization header
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {

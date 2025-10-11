@@ -117,7 +117,18 @@ func main() {
 	// Initialize processor
 	processor = NewMetricsAggregator(db, lambdaCtx.Config.DynamoTableName, lambdaCtx.Logger)
 
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				requestID := fmt.Sprintf("metrics-%d", time.Now().UnixNano())
+				lambdaCtx.Logger.Error("panic in metrics aggregator handler",
+					zap.String("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in metrics-aggregator: %v", r)
+			}
+		}()
+		
 		liftCtx := &lift.Context{
 			Request:   &lift.Request{},
 			RequestID: fmt.Sprintf("metrics-%d", time.Now().UnixNano()),

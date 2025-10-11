@@ -18,39 +18,23 @@ import (
 
 // HandlePinStatusLift handles POST /api/v1/statuses/:id/pin
 func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeWrite},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check write scope
@@ -162,39 +146,23 @@ func (h *Handler) HandlePinStatusLift(ctx *lift.Context) error {
 
 // HandleUnpinStatusLift handles POST /api/v1/statuses/:id/unpin
 func (h *Handler) HandleUnpinStatusLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeWrite},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check write scope
@@ -292,31 +260,8 @@ func (h *Handler) HandleMuteConversationLift(ctx *lift.Context) error {
 
 // authenticateMuteRequest authenticates the mute request
 func (h *Handler) authenticateMuteRequest(ctx *lift.Context) (*auth.Claims, error) {
-	// Check for test mode
-	testUsername := h.getMuteTestUsername(ctx)
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		return h.createTestClaims(testUsername), nil
-	}
-
 	// Normal authentication flow
 	return h.authenticateWithWriteScope(ctx)
-}
-
-// getMuteTestUsername extracts test username from headers
-func (h *Handler) getMuteTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
-
-// createTestClaims creates test mode claims
-func (h *Handler) createTestClaims(username string) *auth.Claims {
-	return &auth.Claims{
-		Username: username,
-		Scopes:   []string{auth.ScopeWrite},
-	}
 }
 
 // authenticateWithWriteScope authenticates and checks write scope
@@ -487,39 +432,23 @@ func (h *Handler) buildMutedStatusResponse(ctx *lift.Context, objectID, username
 
 // HandleUnmuteConversationLift handles POST /api/v1/statuses/:id/unmute
 func (h *Handler) HandleUnmuteConversationLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{auth.ScopeWrite},
-		}
-	} else {
-		// Extract token from Authorization header
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check write scope

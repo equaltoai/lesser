@@ -13,6 +13,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -522,6 +523,9 @@ func main() {
 
 	// Create new Lift app
 	app := lift.New()
+
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
 
 	// Add request ID middleware (first - generates request ID)
 	app.Use(func(next lift.Handler) lift.Handler {

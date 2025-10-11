@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -128,5 +129,16 @@ func init() {
 }
 
 func main() {
-	lambda.Start(handler.HandleSQSEvent)
+	lambda.Start(func(ctx context.Context, event events.SQSEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				lambdaCtx.Logger.Error("panic in enhanced federation processor handler",
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in enhanced-federation-processor: %v", r)
+			}
+		}()
+		
+		return handler.HandleSQSEvent(ctx, event)
+	})
 }

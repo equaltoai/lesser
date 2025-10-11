@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -159,6 +160,7 @@ func DefaultRateLimiterConfig() *RateLimiterConfig {
 		PenaltyDuration:          5 * time.Minute,
 		PenaltyMultiplier:        0.5,
 		EndpointLimits: map[string]EndpointLimit{
+			// Client API endpoints (stricter for regular users)
 			"/api/v1/statuses": {
 				RequestsPerMinute: 30,
 				BurstSize:         5,
@@ -187,6 +189,50 @@ func DefaultRateLimiterConfig() *RateLimiterConfig {
 				AuthenticatedRPM:  60,
 				AnonymousRPM:      15,
 			},
+			
+			// ActivityPub federation endpoints (more generous for server-to-server)
+			"/inbox": {
+				RequestsPerMinute: 1000,
+				BurstSize:         50,
+				WindowSize:        time.Minute,
+			},
+			"/users/*/inbox": {
+				RequestsPerMinute: 1000,
+				BurstSize:         50,
+				WindowSize:        time.Minute,
+			},
+			"/outbox": {
+				RequestsPerMinute: 600,
+				BurstSize:         30,
+				WindowSize:        time.Minute,
+			},
+			"/users/*": {
+				RequestsPerMinute: 600,
+				BurstSize:         30,
+				WindowSize:        time.Minute,
+			},
+			"/.well-known/webfinger": {
+				RequestsPerMinute: 600,
+				BurstSize:         30,
+				WindowSize:        time.Minute,
+			},
+			"/.well-known/nodeinfo": {
+				RequestsPerMinute: 300,
+				BurstSize:         15,
+				WindowSize:        time.Minute,
+			},
+			
+			// Authentication endpoints (very strict)
+			"/oauth/token": {
+				RequestsPerMinute: 10,
+				BurstSize:         3,
+				WindowSize:        time.Minute,
+			},
+			"/oauth/authorize": {
+				RequestsPerMinute: 20,
+				BurstSize:         5,
+				WindowSize:        time.Minute,
+			},
 		},
 	}
 }
@@ -198,9 +244,12 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 			// Extract client identifier
 			clientID := rl.getClientID(ctx)
 			endpoint := rl.normalizeEndpoint(ctx.Request.Path)
+			
+			// Check if this is federation traffic using enhanced detection
+			isFederation := rl.isFederationRequestEnhanced(ctx)
 
 			// Check if client is allowed to proceed
-			allowed, delay, headers := rl.checkRateLimit(ctx.Context, clientID, endpoint, rl.isAuthenticated(ctx))
+			allowed, delay, headers := rl.checkRateLimit(ctx.Context, clientID, endpoint, rl.isAuthenticated(ctx), isFederation)
 
 			// Set rate limit headers
 			for key, value := range headers {
@@ -233,9 +282,14 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 }
 
 // checkRateLimit checks if a request should be allowed
-func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint string, authenticated bool) (bool, time.Duration, map[string]string) {
-	// Get endpoint-specific configuration
+func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint string, authenticated, isFederation bool) (bool, time.Duration, map[string]string) {
+	// Get endpoint-specific configuration with federation awareness
 	limit := rl.getEndpointLimit(endpoint, authenticated)
+	
+	// Apply federation-specific adjustments
+	if isFederation {
+		limit = rl.adjustLimitForFederation(limit, endpoint)
+	}
 
 	// Get or create sliding window counter
 	counter := rl.getOrCreateCounter(clientID, endpoint)
@@ -658,4 +712,105 @@ func (rl *RateLimiter) ResetClientLimits(ctx context.Context, clientID string) e
 		zap.String("client_id", clientID))
 
 	return nil
+}
+
+// isFederationRequest detects if a request is likely from an ActivityPub server
+func (rl *RateLimiter) isFederationRequest(ctx *lift.Context) bool {
+	path := ctx.Request.Path
+	
+	// Check if path is a federation endpoint
+	if strings.HasPrefix(path, "/inbox") ||
+		strings.HasPrefix(path, "/outbox") ||
+		strings.HasPrefix(path, "/users/") ||
+		strings.HasPrefix(path, "/.well-known/") ||
+		strings.HasPrefix(path, "/nodeinfo") {
+		return true
+	}
+	
+	userAgent := ctx.Header("User-Agent")
+	
+	// Common ActivityPub server user agents
+	federationUAs := []string{
+		"Mastodon", "Pleroma", "Misskey", "PeerTube",
+		"PixelFed", "Lemmy", "Kbin", "GoToSocial",
+		"http.rb", "Akkoma", "Friendica", "Hubzilla",
+		"Sharkey", "Iceshrimp", "Firefish",
+	}
+	
+	for _, ua := range federationUAs {
+		if strings.Contains(userAgent, ua) {
+			return true
+		}
+	}
+	
+	// Check for ActivityPub content types
+	accept := ctx.Header("Accept")
+	contentType := ctx.Header("Content-Type")
+	
+	activityPubTypes := []string{
+		"application/activity+json",
+		"application/ld+json",
+		"application/json",
+	}
+	
+	for _, apType := range activityPubTypes {
+		if strings.Contains(accept, apType) || strings.Contains(contentType, apType) {
+			// Additional check: ensure it's not just a regular API client
+			if strings.Contains(accept, "profile=\"https://www.w3.org/ns/activitystreams\"") {
+				return true
+			}
+		}
+	}
+	
+	// Check for HTTP signature header (used by ActivityPub servers)
+	if signature := ctx.Header("Signature"); signature != "" {
+		return true
+	}
+	
+	return false
+}
+
+// isFederationRequestEnhanced uses the enhanced federation detection logic
+func (rl *RateLimiter) isFederationRequestEnhanced(ctx *lift.Context) bool {
+	userAgent := ctx.Header("User-Agent")
+	accept := ctx.Header("Accept")
+	contentType := ctx.Header("Content-Type")
+	path := ctx.Request.Path
+	signature := ctx.Header("Signature")
+	
+	return ratelimit.ShouldApplyFederationLimits(userAgent, accept, contentType, path, signature)
+}
+
+// adjustLimitForFederation adjusts rate limits for federation requests
+func (rl *RateLimiter) adjustLimitForFederation(limit EndpointLimit, endpoint string) EndpointLimit {
+	// Federation requests get higher limits and different burst handling
+	switch {
+	case strings.Contains(endpoint, "/inbox"):
+		// Inbox endpoints need higher limits for federation delivery
+		return EndpointLimit{
+			RequestsPerMinute: 1000,
+			BurstSize:         50,
+			WindowSize:        time.Minute,
+		}
+	case strings.Contains(endpoint, "/outbox"):
+		// Outbox fetching by remote servers
+		return EndpointLimit{
+			RequestsPerMinute: 600,
+			BurstSize:         30,
+			WindowSize:        time.Minute,
+		}
+	case strings.Contains(endpoint, "/users/") || strings.Contains(endpoint, "/.well-known/"):
+		// Actor and WebFinger lookups
+		return EndpointLimit{
+			RequestsPerMinute: 600,
+			BurstSize:         30,
+			WindowSize:        time.Minute,
+		}
+	default:
+		// For other endpoints, just increase the limits moderately
+		federationLimit := limit
+		federationLimit.RequestsPerMinute = int(float64(limit.RequestsPerMinute) * 2.0)
+		federationLimit.BurstSize = int(float64(limit.BurstSize) * 1.5)
+		return federationLimit
+	}
 }

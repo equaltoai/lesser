@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
-	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
 	relationshipsvc "github.com/equaltoai/lesser/pkg/services/relationships"
 	"github.com/equaltoai/lesser/pkg/transformations"
@@ -40,10 +39,11 @@ func (h *Handler) HandleMuteAccountLift(ctx *lift.Context) error {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeWrite)
+	claims, err := h.authenticateWithScope(ctx, "write")
 	if err != nil {
 		return err
 	}
+	username := claims.Username
 
 	// Validation will be handled by the service layer
 
@@ -94,10 +94,11 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeWrite)
+	claims, err := h.authenticateWithScope(ctx, "write")
 	if err != nil {
 		return err
 	}
+	username := claims.Username
 
 	// Use Relationships service if available
 	if h.registry != nil && h.registry.Relationships() != nil {
@@ -119,10 +120,11 @@ func (h *Handler) HandleUnmuteAccountLift(ctx *lift.Context) error {
 
 // HandleGetMutedAccountsLift handles GET /api/v1/mutes
 func (h *Handler) HandleGetMutedAccountsLift(ctx *lift.Context) error {
-	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeRead)
+	claims, err := h.authenticateWithScope(ctx, "read")
 	if err != nil {
 		return err
 	}
+	username := claims.Username
 
 	// Parse pagination parameters
 	limit := 40

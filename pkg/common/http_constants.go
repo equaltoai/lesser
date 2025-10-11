@@ -9,7 +9,6 @@ const (
 	AcceptHeader        = "Accept"
 
 	// Custom headers
-	XTestUsernameHeader    = "X-Test-Username"
 	XTenantIDHeader        = "X-Tenant-ID"
 	XRequestIDHeader       = "X-Request-ID"
 	XRealIPHeader          = "X-Real-IP"

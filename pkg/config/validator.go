@@ -19,13 +19,13 @@ import (
 
 // ValidationResult represents the result of configuration validation
 type ValidationResult struct {
-	Valid      bool                    `json:"valid"`
-	Errors     []ValidationError       `json:"errors,omitempty"`
-	Warnings   []ValidationWarning     `json:"warnings,omitempty"`
-	Summary    ValidationSummary       `json:"summary"`
-	Resources  ResourceValidation      `json:"resources"`
-	Security   SecurityValidation      `json:"security"`
-	Timestamp  time.Time              `json:"timestamp"`
+	Valid     bool                `json:"valid"`
+	Errors    []ValidationError   `json:"errors,omitempty"`
+	Warnings  []ValidationWarning `json:"warnings,omitempty"`
+	Summary   ValidationSummary   `json:"summary"`
+	Resources ResourceValidation  `json:"resources"`
+	Security  SecurityValidation  `json:"security"`
+	Timestamp time.Time           `json:"timestamp"`
 }
 
 // ValidationError represents a configuration validation error
@@ -39,9 +39,9 @@ type ValidationError struct {
 
 // ValidationWarning represents a configuration validation warning
 type ValidationWarning struct {
-	Field   string `json:"field"`
-	Value   string `json:"value,omitempty"`
-	Message string `json:"message"`
+	Field          string `json:"field"`
+	Value          string `json:"value,omitempty"`
+	Message        string `json:"message"`
 	Recommendation string `json:"recommendation,omitempty"`
 }
 
@@ -56,19 +56,19 @@ type ValidationSummary struct {
 
 // ResourceValidation tracks AWS resource availability
 type ResourceValidation struct {
-	DynamoDB      ResourceStatus `json:"dynamodb"`
-	S3            ResourceStatus `json:"s3"`
+	DynamoDB       ResourceStatus `json:"dynamodb"`
+	S3             ResourceStatus `json:"s3"`
 	SecretsManager ResourceStatus `json:"secrets_manager"`
-	Lambda        ResourceStatus `json:"lambda"`
+	Lambda         ResourceStatus `json:"lambda"`
 }
 
 // SecurityValidation tracks security configuration status
 type SecurityValidation struct {
-	EncryptionKeys    SecurityStatus `json:"encryption_keys"`
-	PrivateKeys       SecurityStatus `json:"private_keys"`
-	OAuthSecrets      SecurityStatus `json:"oauth_secrets"`
-	JWTConfiguration  SecurityStatus `json:"jwt_configuration"`
-	HTTPSEnforcement  SecurityStatus `json:"https_enforcement"`
+	EncryptionKeys   SecurityStatus `json:"encryption_keys"`
+	PrivateKeys      SecurityStatus `json:"private_keys"`
+	OAuthSecrets     SecurityStatus `json:"oauth_secrets"`
+	JWTConfiguration SecurityStatus `json:"jwt_configuration"`
+	HTTPSEnforcement SecurityStatus `json:"https_enforcement"`
 }
 
 // ResourceStatus represents the status of an AWS resource
@@ -145,11 +145,11 @@ func (v *ProductionConfigValidator) ValidateProductionConfig(ctx context.Context
 // validateEnvironmentVariables validates required environment variables
 func (v *ProductionConfigValidator) validateEnvironmentVariables(result *ValidationResult) {
 	requiredVars := map[string]string{
-		"DOMAIN_NAME":         "The domain name for your Lesser instance",
-		"AWS_REGION":          "AWS region for deploying resources",
-		"DYNAMODB_TABLE":      "DynamoDB table name for data storage",
-		"PRIVATE_KEY_SECRET":  "Secret name for ActivityPub signing key",
-		"JWT_SECRET":          "Secret key for JWT token signing",
+		"DOMAIN_NAME":        "The domain name for your Lesser instance",
+		"AWS_REGION":         "AWS region for deploying resources",
+		"DYNAMODB_TABLE":     "DynamoDB table name for data storage",
+		"PRIVATE_KEY_SECRET": "Secret name for ActivityPub signing key",
+		"JWT_SECRET":         "Secret key for JWT token signing",
 	}
 
 	optionalVars := map[string]string{
@@ -181,8 +181,8 @@ func (v *ProductionConfigValidator) validateEnvironmentVariables(result *Validat
 		value := os.Getenv(varName)
 		if value == "" {
 			result.Warnings = append(result.Warnings, ValidationWarning{
-				Field:   varName,
-				Message: fmt.Sprintf("Optional environment variable %s is not set", varName),
+				Field:          varName,
+				Message:        fmt.Sprintf("Optional environment variable %s is not set", varName),
 				Recommendation: fmt.Sprintf("Consider setting %s: %s", varName, description),
 			})
 		}
@@ -195,20 +195,20 @@ func (v *ProductionConfigValidator) validateEnvironmentVariableFormat(name, valu
 	case "DOMAIN_NAME":
 		if !v.isValidDomain(value) {
 			result.Errors = append(result.Errors, ValidationError{
-				Field:    name,
-				Value:    value,
-				Message:  "Invalid domain name format",
-				Severity: "high",
+				Field:       name,
+				Value:       value,
+				Message:     "Invalid domain name format",
+				Severity:    "high",
 				Remediation: "Ensure domain name follows proper DNS format (example.com)",
 			})
 		}
 	case "AWS_REGION":
 		if !v.isValidAWSRegion(value) {
 			result.Errors = append(result.Errors, ValidationError{
-				Field:    name,
-				Value:    value,
-				Message:  "Invalid AWS region format",
-				Severity: "high",
+				Field:       name,
+				Value:       value,
+				Message:     "Invalid AWS region format",
+				Severity:    "high",
 				Remediation: "Use valid AWS region format (e.g., us-east-1, eu-west-1)",
 			})
 		}
@@ -216,9 +216,9 @@ func (v *ProductionConfigValidator) validateEnvironmentVariableFormat(name, valu
 		validLevels := []string{"debug", "info", "warn", "error", "fatal"}
 		if !v.isValueInList(strings.ToLower(value), validLevels) {
 			result.Warnings = append(result.Warnings, ValidationWarning{
-				Field:   name,
-				Value:   value,
-				Message: "Non-standard log level",
+				Field:          name,
+				Value:          value,
+				Message:        "Non-standard log level",
 				Recommendation: fmt.Sprintf("Use one of: %s", strings.Join(validLevels, ", ")),
 			})
 		}
@@ -226,9 +226,9 @@ func (v *ProductionConfigValidator) validateEnvironmentVariableFormat(name, valu
 		validEnvs := []string{"production", "staging", "development", "test"}
 		if !v.isValueInList(strings.ToLower(value), validEnvs) {
 			result.Warnings = append(result.Warnings, ValidationWarning{
-				Field:   name,
-				Value:   value,
-				Message: "Non-standard environment name",
+				Field:          name,
+				Value:          value,
+				Message:        "Non-standard environment name",
 				Recommendation: fmt.Sprintf("Consider using: %s", strings.Join(validEnvs, ", ")),
 			})
 		}
@@ -487,9 +487,9 @@ func (v *ProductionConfigValidator) validateNetworkConfiguration(result *Validat
 	if domainName != "" {
 		if !v.isDomainAccessible(domainName) {
 			result.Warnings = append(result.Warnings, ValidationWarning{
-				Field:   "DOMAIN_NAME",
-				Value:   domainName,
-				Message: "Domain may not be accessible or properly configured",
+				Field:          "DOMAIN_NAME",
+				Value:          domainName,
+				Message:        "Domain may not be accessible or properly configured",
 				Recommendation: "Ensure DNS records are properly configured and domain is accessible",
 			})
 		}
@@ -506,10 +506,10 @@ func (v *ProductionConfigValidator) validatePortConfiguration(result *Validation
 		port, err := strconv.Atoi(portStr)
 		if err != nil || port <= 0 || port > 65535 {
 			result.Errors = append(result.Errors, ValidationError{
-				Field:    "PORT",
-				Value:    portStr,
-				Message:  "Invalid port number",
-				Severity: "medium",
+				Field:       "PORT",
+				Value:       portStr,
+				Message:     "Invalid port number",
+				Severity:    "medium",
 				Remediation: "Use a valid port number between 1 and 65535",
 			})
 		}

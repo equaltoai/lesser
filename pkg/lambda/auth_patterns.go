@@ -2,12 +2,15 @@
 package lambda
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/golang-jwt/jwt/v5"
 	liftPkg "github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -235,12 +238,12 @@ func ActivityPubFederationAuthConfig() AuthConfig {
 
 // HTTPSignatureAuth provides HTTP signature-based authentication for ActivityPub federation
 type HTTPSignatureAuth struct {
-	signatureService interface{} // federation.SignatureService interface
+	signatureService *federation.SignatureService
 	logger           *zap.Logger
 }
 
 // NewHTTPSignatureAuth creates a new HTTP signature authentication pattern
-func NewHTTPSignatureAuth(signatureService interface{}, logger *zap.Logger) *HTTPSignatureAuth {
+func NewHTTPSignatureAuth(signatureService *federation.SignatureService, logger *zap.Logger) *HTTPSignatureAuth {
 	return &HTTPSignatureAuth{
 		signatureService: signatureService,
 		logger:           logger,
@@ -249,31 +252,113 @@ func NewHTTPSignatureAuth(signatureService interface{}, logger *zap.Logger) *HTT
 
 // ValidateHTTPSignature validates ActivityPub HTTP signatures
 // This eliminates the federation signature validation duplication
-func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, _ []byte) error {
+func (hsa *HTTPSignatureAuth) ValidateHTTPSignature(ctx *liftPkg.Context, body []byte) error {
 	// Extract signature headers
 	signature := ctx.Header("Signature")
-	date := ctx.Header("Date")
-	// digest := ctx.Header("Digest") // Currently unused
-
 	if signature == "" {
 		return fmt.Errorf("missing signature header")
 	}
 
-	// Parse signature components
+	// Parse signature components to get keyID (actor URL)
 	sigMap := parseSignature(signature)
 	keyID, exists := sigMap["keyId"]
 	if !exists {
 		return fmt.Errorf("missing keyId in signature")
 	}
 
+	// Extract the actor URL from the keyID
+	// KeyID format is typically: https://example.com/users/alice#main-key
+	actorURL := keyID
+	if idx := strings.LastIndex(keyID, "#"); idx != -1 {
+		actorURL = keyID[:idx]
+	}
+
 	hsa.logger.Debug("validating HTTP signature",
 		zap.String("key_id", keyID),
-		zap.String("date", date),
+		zap.String("actor_url", actorURL),
 	)
 
-	// Note: Actual signature validation would be implemented here
-	// For now, we'll return success to avoid breaking federation
+	// Create an http.Request from the lift.Context for signature verification
+	req, err := hsa.createHTTPRequest(ctx, body)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Use the SignatureService to verify the signature
+	if err := hsa.signatureService.VerifySignature(context.Background(), req, actorURL); err != nil {
+		hsa.logger.Error("signature verification failed",
+			zap.String("actor_url", actorURL),
+			zap.Error(err),
+		)
+		return fmt.Errorf("signature verification failed: %w", err)
+	}
+
+	hsa.logger.Info("HTTP signature validated successfully",
+		zap.String("actor_url", actorURL),
+	)
+
 	return nil
+}
+
+// createHTTPRequest creates an http.Request from lift.Context for signature verification
+func (hsa *HTTPSignatureAuth) createHTTPRequest(ctx *liftPkg.Context, body []byte) (*http.Request, error) {
+	// Get the HTTP method and path from the request
+	method := "POST" // Default method for federation endpoints
+	path := "/"
+	
+	if ctx.Request != nil {
+		method = ctx.Request.Method
+		path = ctx.Request.Path
+	}
+	
+	// Create the request URL
+	scheme := "https"
+	if ctx.Header("X-Forwarded-Proto") == "http" {
+		scheme = "http"
+	}
+	
+	host := ctx.Header("Host")
+	if host == "" {
+		// Fallback to X-Forwarded-Host if Host header is not set
+		host = ctx.Header("X-Forwarded-Host")
+	}
+	
+	url := fmt.Sprintf("%s://%s%s", scheme, host, path)
+	
+	// Create the HTTP request
+	req, err := http.NewRequest(method, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	
+	// Copy relevant headers from the lift.Context
+	headers := []string{
+		"Signature",
+		"Date",
+		"Digest",
+		"Content-Type",
+		"Accept",
+		"User-Agent",
+		"Host",
+	}
+	
+	for _, header := range headers {
+		value := ctx.Header(header)
+		if value != "" {
+			req.Header.Set(header, value)
+		}
+	}
+	
+	// Add query parameters if any
+	if ctx.Request != nil && ctx.Request.Request != nil && ctx.Request.Request.QueryParams != nil {
+		q := req.URL.Query()
+		for key, value := range ctx.Request.Request.QueryParams {
+			q.Add(key, value)
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+	
+	return req, nil
 }
 
 // parseSignature parses the Signature header into a map

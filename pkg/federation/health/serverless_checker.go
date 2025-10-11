@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/dynamorm/pkg/core"
@@ -18,9 +19,9 @@ import (
 // ServerlessHealthChecker performs stateless health checks triggered by EventBridge
 type ServerlessHealthChecker struct {
 	// Dependencies
-	healthRepo *repositories.InstanceHealthRepository
-	logger     *zap.Logger
-	httpClient *http.Client
+	healthRepo       *repositories.InstanceHealthRepository
+	logger           *zap.Logger
+	federationClient *httpclient.FederationClient
 
 	// Configuration
 	config CheckerConfig
@@ -69,31 +70,28 @@ func DefaultConfig() CheckerConfig {
 
 // NewServerlessHealthChecker creates a new serverless health checker
 func NewServerlessHealthChecker(db core.DB, tableName string, logger *zap.Logger, config CheckerConfig) *ServerlessHealthChecker {
-	// Create HTTP client with optimized settings for Lambda
-	transport := &http.Transport{
-		MaxIdleConns:        config.MaxIdleConns,
-		MaxIdleConnsPerHost: config.MaxIdleConnsPerHost,
-		IdleConnTimeout:     config.IdleConnTimeout,
-		DisableCompression:  true, // Reduce CPU usage in Lambda
+	// Create secure federation client
+	federationConfig := &httpclient.FederationClientConfig{
+		Timeout:              config.RequestTimeout,
+		MaxRedirects:         10,
+		UserAgent:            config.UserAgent,
+		AllowInsecureTLS:     false,
+		AllowPrivateNetworks: false,
+		MaxResponseSize:      1024 * 1024, // 1MB
+		DNSTimeout:           5 * time.Second,
 	}
-
-	// Configure redirect policy
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   config.RequestTimeout,
-	}
-
+	
 	if !config.FollowRedirects {
-		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-			return http.ErrUseLastResponse
-		}
+		federationConfig.MaxRedirects = 0
 	}
+
+	federationClient := httpclient.NewFederationClient(federationConfig, logger)
 
 	return &ServerlessHealthChecker{
-		healthRepo: repositories.NewInstanceHealthRepository(db, tableName, logger, nil),
-		logger:     logger,
-		httpClient: client,
-		config:     config,
+		healthRepo:       repositories.NewInstanceHealthRepository(db, tableName, logger, nil),
+		logger:           logger,
+		federationClient: federationClient,
+		config:           config,
 	}
 }
 
@@ -276,20 +274,7 @@ func (c *ServerlessHealthChecker) checkSingleDomain(ctx context.Context, domain 
 	// Construct inbox URL (ActivityPub standard)
 	inboxURL := fmt.Sprintf("https://%s/inbox", domain)
 
-	// Create HTTP request with context for timeout
-	req, err := http.NewRequestWithContext(ctx, "GET", inboxURL, nil)
-	if err != nil {
-		result.ErrorMessage = fmt.Sprintf("invalid URL: %v", err)
-		return result, nil
-	}
-
-	// Set required headers
-	req.Header.Set("User-Agent", c.config.UserAgent)
-	for key, value := range c.config.RequiredHeaders {
-		req.Header.Set(key, value)
-	}
-
-	// Perform the request with retries
+	// Perform the request with retries using secure federation client
 	var resp *http.Response
 	var lastErr error
 
@@ -299,7 +284,7 @@ func (c *ServerlessHealthChecker) checkSingleDomain(ctx context.Context, domain 
 			time.Sleep(c.config.RetryBackoff * time.Duration(attempt))
 		}
 
-		resp, lastErr = c.httpClient.Do(req)
+		resp, lastErr = c.federationClient.Get(ctx, inboxURL)
 		if lastErr == nil {
 			break
 		}

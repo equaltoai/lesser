@@ -443,15 +443,15 @@ func OptimalBatchSize(items []any) int {
 	if len(items) == 0 {
 		return 0
 	}
-	
+
 	sampleItem, _ := json.Marshal(items[0])
 	estimatedItemSize := len(sampleItem)
-	
+
 	if estimatedItemSize > 10000 { // 10KB per item
 		return 10 // Smaller batches for large items
 	} else if estimatedItemSize > 1000 { // 1KB per item
 		return 20
 	}
-	
+
 	return 25 // Maximum DynamoDB batch size
 }

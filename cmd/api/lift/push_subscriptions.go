@@ -14,39 +14,23 @@ import (
 
 // HandleGetPushSubscriptionLift handles GET /api/v1/push/subscription
 func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{"push", auth.ScopeRead},
-		}
-	} else {
-		// Extract token
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check push scope
@@ -132,39 +116,23 @@ func (h *Handler) HandleGetPushSubscriptionLift(ctx *lift.Context) error {
 
 // HandleCreatePushSubscriptionLift handles POST /api/v1/push/subscription
 func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{"push", auth.ScopeWrite},
-		}
-	} else {
-		// Extract token
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check push scope
@@ -281,39 +249,23 @@ func (h *Handler) HandleCreatePushSubscriptionLift(ctx *lift.Context) error {
 
 // HandleUpdatePushSubscriptionLift handles PUT /api/v1/push/subscription
 func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{"push", auth.ScopeWrite},
-		}
-	} else {
-		// Extract token
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check push scope
@@ -410,39 +362,23 @@ func (h *Handler) HandleUpdatePushSubscriptionLift(ctx *lift.Context) error {
 
 // HandleDeletePushSubscriptionLift handles DELETE /api/v1/push/subscription
 func (h *Handler) HandleDeletePushSubscriptionLift(ctx *lift.Context) error {
-	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token
+	token := h.getBearerTokenLift(ctx)
+	if err := common.ValidateRequiredParam("token", token); err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "authentication required",
+		})
 	}
 
-	var claims *auth.Claims
-	if testUsername != "" {
-		// Test mode - create mock claims
-		claims = &auth.Claims{
-			Username: testUsername,
-			Scopes:   []string{"push", auth.ScopeWrite},
-		}
-	} else {
-		// Extract token
-		token := h.getBearerTokenLift(ctx)
-		if err := common.ValidateRequiredParam("token", token); err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "authentication required",
-			})
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		var err error
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			ctx.Status(http.StatusUnauthorized)
-			return ctx.JSON(map[string]string{
-				"error": "invalid token",
-			})
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		ctx.Status(http.StatusUnauthorized)
+		return ctx.JSON(map[string]string{
+			"error": "invalid token",
+		})
 	}
 
 	// Check push scope

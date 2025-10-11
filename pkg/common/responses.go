@@ -28,7 +28,7 @@ func SendMastodonError(ctx *lift.Context, code int, error string) error {
 	mastodonError := map[string]interface{}{
 		"error": error,
 	}
-	
+
 	// Add additional fields for specific error codes
 	switch code {
 	case 422:
@@ -85,26 +85,26 @@ type MastodonAccount struct {
 
 // MastodonStatus represents a basic Mastodon status structure for responses
 type MastodonStatus struct {
-	ID                string          `json:"id"`
-	CreatedAt         string          `json:"created_at"`
-	InReplyToID       *string         `json:"in_reply_to_id"`
-	InReplyToAccountID *string        `json:"in_reply_to_account_id"`
-	Sensitive         bool            `json:"sensitive"`
-	SpoilerText       string          `json:"spoiler_text"`
-	Visibility        string          `json:"visibility"`
-	Language          *string         `json:"language"`
-	URI               string          `json:"uri"`
-	URL               *string         `json:"url"`
-	RepliesCount      int             `json:"replies_count"`
-	ReblogsCount      int             `json:"reblogs_count"`
-	FavouritesCount   int             `json:"favourites_count"`
-	Content           string          `json:"content"`
-	Reblog            *MastodonStatus `json:"reblog"`
-	Account           MastodonAccount `json:"account"`
-	Reblogged         bool            `json:"reblogged"`
-	Favourited        bool            `json:"favourited"`
-	Bookmarked        bool            `json:"bookmarked"`
-	Pinned            bool            `json:"pinned"`
+	ID                 string          `json:"id"`
+	CreatedAt          string          `json:"created_at"`
+	InReplyToID        *string         `json:"in_reply_to_id"`
+	InReplyToAccountID *string         `json:"in_reply_to_account_id"`
+	Sensitive          bool            `json:"sensitive"`
+	SpoilerText        string          `json:"spoiler_text"`
+	Visibility         string          `json:"visibility"`
+	Language           *string         `json:"language"`
+	URI                string          `json:"uri"`
+	URL                *string         `json:"url"`
+	RepliesCount       int             `json:"replies_count"`
+	ReblogsCount       int             `json:"reblogs_count"`
+	FavouritesCount    int             `json:"favourites_count"`
+	Content            string          `json:"content"`
+	Reblog             *MastodonStatus `json:"reblog"`
+	Account            MastodonAccount `json:"account"`
+	Reblogged          bool            `json:"reblogged"`
+	Favourited         bool            `json:"favourited"`
+	Bookmarked         bool            `json:"bookmarked"`
+	Pinned             bool            `json:"pinned"`
 }
 
 // SendMastodonAccount sends a Mastodon-formatted account response
@@ -165,7 +165,7 @@ func SendPaginatedMastodonResponse(ctx *lift.Context, data interface{}, params P
 		linkHeader := BuildLinkHeader(baseURL, params, hasNext, hasPrev, nextCursor, prevCursor)
 		ctx.Response.Header("Link", linkHeader)
 	}
-	
+
 	// Send data without pagination metadata in body (Mastodon style)
 	return SendOK(ctx, data)
 }
@@ -178,14 +178,14 @@ func GetBaseURL(ctx *lift.Context) string {
 			scheme = "http"
 		}
 	}
-	
+
 	host := ctx.Request.Headers["Host"]
 	if host == "" && ctx.Request.Request != nil {
 		host = ctx.Request.Request.Headers["Host"]
 	}
-	
+
 	path := ctx.Request.Path
-	
+
 	return fmt.Sprintf("%s://%s%s", scheme, host, path)
 }
 
@@ -214,13 +214,13 @@ func SendStreamingMessage(ctx *lift.Context, event string, data interface{}) err
 	ctx.Response.Header("Content-Type", "text/plain")
 	ctx.Response.Header("Cache-Control", "no-cache")
 	ctx.Response.Header("Connection", "keep-alive")
-	
+
 	// Format as SSE
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	
+
 	message := fmt.Sprintf("event: %s\ndata: %s\n\n", event, string(jsonData))
 	return ctx.Status(200).JSON(map[string]string{"sse": message})
 }

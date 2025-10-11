@@ -30,6 +30,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	pkgErrors "github.com/equaltoai/lesser/pkg/errors"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -740,7 +741,13 @@ func main() {
 	// Create a new Lift application
 	app := lift.New()
 
-	// Add request ID middleware (first - generates request ID)
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
+	// Apply WebSocket-compatible security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeWebSocket, lambdaCtx.Logger)
+
+	// Add request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("streaming-%d", time.Now().UnixNano())

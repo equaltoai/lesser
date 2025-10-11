@@ -17,16 +17,10 @@ import (
 	"go.uber.org/zap"
 )
 
-// extractUsernameFromContext extracts the username from auth header or test header
+// extractUsernameFromContext extracts the username from auth header
 func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 	var username string
 	authHeader := ctx.Header("Authorization")
-
-	// Check for test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
 
 	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
@@ -38,9 +32,6 @@ func (h *Handler) extractUsernameFromContext(ctx *lift.Context) string {
 				username = claims.Username
 			}
 		}
-	} else if testUsername != "" {
-		// Use test username for testing
-		username = testUsername
 	}
 	return username
 }

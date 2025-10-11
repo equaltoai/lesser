@@ -383,12 +383,6 @@ func (h *Handler) HandleUndoUnifiedBoostLift(ctx *lift.Context) error {
 
 // authenticateUndoBoostRequest handles authentication for undo boost requests
 func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error) {
-	// Check for test username header
-	testUsername := h.getTestUsernameForBoost(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract auth header
 	authHeader := h.extractAuthHeaderForBoost(ctx)
 
@@ -411,15 +405,6 @@ func (h *Handler) authenticateUndoBoostRequest(ctx *lift.Context) (string, error
 	}
 
 	return claims.Username, nil
-}
-
-// getTestUsernameForBoost extracts test username from headers
-func (h *Handler) getTestUsernameForBoost(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
 }
 
 // extractAuthHeaderForBoost extracts authorization header from various sources

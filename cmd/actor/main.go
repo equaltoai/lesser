@@ -19,7 +19,6 @@ import (
 	"net/url"
 
 	"strings"
-	"time"
 
 	appErrors "github.com/equaltoai/lesser/pkg/errors"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/federation"
 	liftErrors "github.com/equaltoai/lesser/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/pay-theory/lift/pkg/lift"
@@ -365,75 +365,11 @@ func main() {
 	// Create a new Lift application
 	app := lift.New()
 
-	// Add request ID middleware (first - generates request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			requestID := fmt.Sprintf("actor-%d", time.Now().UnixNano())
-			ctx.Set("requestID", requestID)
-			return next.Handle(ctx)
-		})
-	})
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
 
-	// Add logging middleware (second - logs with request ID)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			start := time.Now()
-			err := next.Handle(ctx)
-			duration := time.Since(start)
-
-			requestID := ctx.Get("requestID")
-			logger.Info("request completed",
-				zap.Any("request_id", requestID),
-				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.URL().Path),
-				zap.Duration("duration", duration),
-				zap.Int("status", ctx.Response.StatusCode),
-			)
-			return err
-		})
-	})
-
-	// Add recovery middleware (third - catches panics)
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			defer func() {
-				if r := recover(); r != nil {
-					requestID := ctx.Get("requestID")
-					logger.Error("panic recovered",
-						zap.Any("request_id", requestID),
-						zap.Any("panic", r),
-					)
-					_ = ctx.Status(http.StatusInternalServerError).JSON(map[string]string{
-						"error": "Internal server error",
-					})
-				}
-			}()
-			return next.Handle(ctx)
-		})
-	})
-
-	// Add CORS middleware for federation compatibility
-	app.Use(func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Set CORS headers for ActivityPub federation
-			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
-			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, HEAD, OPTIONS"
-			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Accept, Authorization, Content-Type, Signature, Date, Digest"
-
-			// Handle preflight requests
-			if ctx.Request.Method == "OPTIONS" {
-				return ctx.Status(http.StatusNoContent).JSON(nil)
-			}
-
-			return next.Handle(ctx)
-		})
-	})
-
-	// Create handler instance using standardized services
-	handler := NewHandler()
-
-	// Define routes for ActivityPub federation
-	_ = app.GET("/users/:username", handler.HandleActorProfile)
+	// Apply federation security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
 
 	// Use standardized Lambda handler wrapper with observability
 	standardHandler := lambdaCtx.CreateStandardizedLambdaHandler(func(ctx context.Context, event interface{}) (interface{}, error) {

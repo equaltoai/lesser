@@ -80,24 +80,6 @@ func (h *Handler) handleFollowRequestOperation(ctx *lift.Context, actor *activit
 // HandleGetFollowRequestsLift handles GET /api/v1/follow_requests
 // Returns pending follow requests for locked accounts
 func (h *Handler) HandleGetFollowRequestsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err == nil {
-		// Get the user's actor directly (test mode)
-		result, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
-		if err != nil {
-			h.logger.Error("failed to get actor", zap.Error(err))
-			return common.RespondInternalServerError(ctx, "internal server error")
-		}
-		actor := result.Actor
-
-		// Skip to the main logic with test username
-		return h.handleGetFollowRequestsLogic(ctx, actor, testUsername)
-	}
 
 	// Extract token from Authorization header using centralized validation
 	authHeader := ctx.Header("Authorization")
@@ -215,24 +197,6 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHa
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err == nil {
-		// Get the user's actor directly (test mode)
-		result, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
-		if err != nil {
-			h.logger.Error("failed to get actor", zap.Error(err))
-			return common.RespondInternalServerError(ctx, "internal server error")
-		}
-		actor := result.Actor
-
-		// Skip to the main logic with test username
-		return logicHandler(ctx, actor, testUsername, accountID)
-	}
 
 	// Extract token from Authorization header using centralized validation
 	authHeader := ctx.Header("Authorization")

@@ -49,13 +49,11 @@ func RequiredAuth(config MiddlewareConfig) lift.Middleware {
 			ctx.Set("auth_context", authResult.Context)
 			ctx.Set("username", authResult.Context.Username)
 			ctx.Set("claims", authResult.Context.Claims)
-			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
 
 			if config.Logger != nil {
 				config.Logger.Debug("authentication successful",
 					zap.String("username", authResult.Context.Username),
-					zap.String("service", config.ServiceName),
-					zap.Bool("test_mode", authResult.Context.IsTestMode))
+					zap.String("service", config.ServiceName))
 			}
 
 			return next.Handle(ctx)
@@ -80,14 +78,13 @@ func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
 			ctx.Set("auth_context", authResult.Context)
 			ctx.Set("username", authResult.Context.Username)
 			ctx.Set("claims", authResult.Context.Claims)
-			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
 
 			if config.Logger != nil {
 				config.Logger.Debug("authentication successful (multiple scopes)",
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
 					zap.Strings("allowed_scopes", config.AllowedScopes),
-					zap.Bool("test_mode", authResult.Context.IsTestMode))
+					)
 			}
 
 			return next.Handle(ctx)
@@ -112,13 +109,12 @@ func OptionalAuth(config MiddlewareConfig) lift.Middleware {
 			} else {
 				ctx.Set("is_authenticated", false)
 			}
-			ctx.Set("is_test_mode", authResult.Context.IsTestMode)
 
 			if config.Logger != nil && authResult.Context.Username != "" {
 				config.Logger.Debug("optional authentication successful",
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
-					zap.Bool("test_mode", authResult.Context.IsTestMode))
+					)
 			}
 
 			return next.Handle(ctx)
@@ -185,8 +181,8 @@ func CreateFederationAuthMiddleware(oauthService common.OAuthServiceInterface, l
 
 // Utility functions for accessing authentication context in handlers
 
-// GetAuthContext retrieves the authentication context from the Lift context
-func GetAuthContext(ctx *lift.Context) *common.AuthContext {
+// GetLegacyAuthContext retrieves the legacy authentication context from the Lift context
+func GetLegacyAuthContext(ctx *lift.Context) *common.AuthContext {
 	if authCtx, ok := ctx.Get("auth_context").(*common.AuthContext); ok {
 		return authCtx
 	}
@@ -217,24 +213,21 @@ func IsAuthenticated(ctx *lift.Context) bool {
 	return GetAuthenticatedUsername(ctx) != ""
 }
 
-// IsTestMode returns true if the request is in test mode
+// IsTestMode always returns false as test mode has been removed for security
 func IsTestMode(ctx *lift.Context) bool {
-	if testMode, ok := ctx.Get("is_test_mode").(bool); ok {
-		return testMode
-	}
 	return false
 }
 
 // RequireWriteAccess validates that the current request has write access
 func RequireWriteAccess(ctx *lift.Context) error {
-	authCtx := GetAuthContext(ctx)
+	authCtx := GetLegacyAuthContext(ctx)
 	authResult := &common.AuthenticationResult{Context: authCtx}
 	return common.ValidateWriteAccess(authResult)
 }
 
 // RequireReadAccess validates that the current request has read access
 func RequireReadAccess(ctx *lift.Context) error {
-	authCtx := GetAuthContext(ctx)
+	authCtx := GetLegacyAuthContext(ctx)
 	authResult := &common.AuthenticationResult{Context: authCtx}
 	return common.ValidateReadAccess(authResult)
 }

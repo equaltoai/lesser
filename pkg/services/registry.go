@@ -59,6 +59,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -226,9 +227,22 @@ func (r *Registry) validate() error {
 	}
 
 	if r.config == nil {
+		// JWT secret must be provided from environment
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			r.logger.Fatal("JWT_SECRET environment variable is required")
+			panic("JWT_SECRET environment variable is required")
+		}
+		
+		// Validate JWT secret strength
+		if err := validateJWTSecret(jwtSecret); err != nil {
+			r.logger.Fatal("invalid JWT_SECRET", zap.Error(err))
+			panic(fmt.Sprintf("invalid JWT_SECRET: %v", err))
+		}
+		
 		r.config = &ServiceConfig{
 			BaseURL:   "https://" + DefaultLocalhost,
-			JWTSecret: "default-secret-change-in-production",
+			JWTSecret: jwtSecret,
 			Config:    nil, // Will remain nil for default config
 		}
 	}
@@ -1511,4 +1525,70 @@ func (r *Registry) getJobQueue() JobQueueServiceInterface {
 
 	// Fall back to simple job queue if SQS is not available
 	return &simpleJobQueue{logger: r.logger}
+}
+
+// validateJWTSecret validates that the JWT secret meets security requirements
+func validateJWTSecret(secret string) error {
+	// Check minimum length (32 characters for 256-bit security)
+	if len(secret) < 32 {
+		return errors.New("JWT_SECRET must be at least 32 characters long")
+	}
+	
+	// Check for common weak patterns
+	lowerSecret := strings.ToLower(secret)
+	weakPatterns := []string{
+		"default",
+		"change",
+		"secret",
+		"password",
+		"12345",
+		"admin",
+		"test",
+		"demo",
+		"example",
+	}
+	
+	for _, pattern := range weakPatterns {
+		if strings.Contains(lowerSecret, pattern) {
+			return fmt.Errorf("JWT_SECRET contains weak pattern '%s' - please use a strong, random secret", pattern)
+		}
+	}
+	
+	// Check for insufficient entropy (all same character, sequential, etc.)
+	if isLowEntropy(secret) {
+		return errors.New("JWT_SECRET has insufficient entropy - please use a random secret")
+	}
+	
+	return nil
+}
+
+// isLowEntropy checks if a string has low entropy (e.g., all same character, sequential)
+func isLowEntropy(s string) bool {
+	if len(s) == 0 {
+		return true
+	}
+	
+	// Check if all characters are the same
+	firstChar := s[0]
+	allSame := true
+	for i := 1; i < len(s); i++ {
+		if s[i] != firstChar {
+			allSame = false
+			break
+		}
+	}
+	if allSame {
+		return true
+	}
+	
+	// Check for sequential patterns
+	sequential := true
+	for i := 1; i < len(s); i++ {
+		if s[i] != s[i-1]+1 {
+			sequential = false
+			break
+		}
+	}
+	
+	return sequential
 }

@@ -17,18 +17,7 @@ import (
 
 // authenticateNotesUser handles authentication for notes endpoints with userID formatting
 func (h *Handler) authenticateNotesUser(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if testUsername != "" {
-		// Test mode - use test username directly
-		return fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, testUsername), nil
-	}
-
-	// Production mode - extract and validate token
+	// Extract and validate token
 	authHeader := ctx.Header("Authorization")
 	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
 		authHeader = ctx.Header("authorization")
@@ -164,39 +153,26 @@ func (h *Handler) HandleGetNotesLift(ctx *lift.Context) error {
 
 	// Optional auth - for personalized scoring
 	var userID string
-
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
+		authHeader = ctx.Header("authorization")
 	}
 
-	if testUsername != "" {
-		// Test mode
-		userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, testUsername)
-	} else {
-		// Optional auth for personalized scoring
-		authHeader := ctx.Header("Authorization")
+	// Try direct access to headers if ctx.Header doesn't work
+	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
 		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Header("authorization")
+			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
+	}
 
-		// Try direct access to headers if ctx.Header doesn't work
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		if authHeader != "" {
-			token, err := auth.ExtractBearerToken(authHeader)
+	if authHeader != "" {
+		token, err := auth.ExtractBearerToken(authHeader)
+		if err == nil {
+			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+			claims, err := oauthSvc.ValidateAccessToken(token)
 			if err == nil {
-				oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-				claims, err := oauthSvc.ValidateAccessToken(token)
-				if err == nil {
-					userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
-				}
+				userID = fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, claims.Username)
 			}
 		}
 	}

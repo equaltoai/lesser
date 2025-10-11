@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/federation/types"
+	"github.com/equaltoai/lesser/pkg/httpclient"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"go.uber.org/zap"
@@ -16,26 +16,30 @@ import (
 
 // InstanceHealthChecker monitors instance health using DynamORM
 type InstanceHealthChecker struct {
-	healthRepo *repositories.InstanceHealthRepository
-	logger     *zap.Logger
-	config     *types.RoutingConfig
-	httpClient *http.Client
+	healthRepo       *repositories.InstanceHealthRepository
+	logger           *zap.Logger
+	config           *types.RoutingConfig
+	federationClient *httpclient.FederationClient
 }
 
 // NewHealthChecker creates a new health checker using DynamORM
 func NewHealthChecker(healthRepo *repositories.InstanceHealthRepository, logger *zap.Logger, config *types.RoutingConfig) *InstanceHealthChecker {
+	// Create secure federation client for health checks
+	federationConfig := &httpclient.FederationClientConfig{
+		Timeout:              config.HealthCheckTimeout,
+		MaxRedirects:         3,
+		UserAgent:            "Lesser/1.0 (Federation Health Check)",
+		AllowInsecureTLS:     false,
+		AllowPrivateNetworks: false,
+		MaxResponseSize:      1024 * 1024, // 1MB
+		DNSTimeout:           5 * time.Second,
+	}
+
 	return &InstanceHealthChecker{
-		healthRepo: healthRepo,
-		logger:     logger,
-		config:     config,
-		httpClient: &http.Client{
-			Timeout: config.HealthCheckTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
+		healthRepo:       healthRepo,
+		logger:           logger,
+		config:           config,
+		federationClient: httpclient.NewFederationClient(federationConfig, logger),
 	}
 }
 
@@ -65,25 +69,8 @@ func (hc *InstanceHealthChecker) CheckHealth(instance *types.Instance) (*types.H
 		StatusCode:   0,
 	}
 
-	// Perform HTTP health check
-	req, err := http.NewRequestWithContext(ctx, "GET", instance.InboxURL, nil)
-	if err != nil {
-		hc.logger.Error("invalid URL for health check",
-			zap.Error(err),
-			zap.String("domain", instance.Domain),
-			zap.String("inbox_url", instance.InboxURL))
-		health.ErrorMessage = ErrInvalidURL.Error() + ": " + err.Error()
-		// Store the failed health check
-		hc.storeHealthCheck(ctx, instance.Domain, health)
-		return health, errors.Join(ErrInvalidURL, err)
-	}
-
-	// Add headers
-	req.Header.Set("User-Agent", "Lesser/1.0 (Federation Health Check)")
-	req.Header.Set("Accept", "application/activity+json")
-
-	// Perform request
-	resp, err := hc.httpClient.Do(req)
+	// Perform HTTP health check using secure federation client
+	resp, err := hc.federationClient.Get(ctx, instance.InboxURL)
 	if err != nil {
 		health.ErrorMessage = fmt.Sprintf("%s: %v", ErrHealthCheckRequestFailed.Error(), err)
 		// Store the failed health check

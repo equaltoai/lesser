@@ -41,11 +41,11 @@ func GetMiddleware() (*Middleware, error) {
 func NewMiddleware() *Middleware {
 	m, err := GetMiddleware()
 	if err != nil {
-		// Get the JWT secret from centralized config for fallback
+		// JWT secret is required - no fallback to default
 		cfg := config.Get()
 		jwtSecret := cfg.JWTSecret
-		if err := common.ValidateRequiredParam("JWT_SECRET", jwtSecret); err != nil {
-			jwtSecret = "development-secret-change-me"
+		if jwtSecret == "" {
+			panic("JWT_SECRET environment variable is required")
 		}
 
 		// Fallback for backward compatibility, but this won't work properly

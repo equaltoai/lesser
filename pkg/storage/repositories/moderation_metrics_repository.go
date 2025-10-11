@@ -70,7 +70,14 @@ func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsReposi
 		logger = args[2].(*zap.Logger)
 		costService = args[3].(*cost.TrackingService)
 	default:
-		panic("NewModerationMetricsRepository: invalid number of arguments")
+		// Return nil and let caller handle the error
+		if len(args) > 0 {
+			if logger, ok := args[2].(*zap.Logger); ok {
+				logger.Error("NewModerationMetricsRepository: invalid number of arguments", 
+					zap.Int("arg_count", len(args)))
+			}
+		}
+		return nil
 	}
 
 	// Create enhanced repositories for moderation metrics operations

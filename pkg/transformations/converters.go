@@ -183,7 +183,7 @@ func transformAttachments(attachment interface{}) []any {
 			return []any{field}
 		}
 	}
-	
+
 	return []any{}
 }
 
@@ -197,7 +197,7 @@ func processAttachmentItem(item interface{}) interface{} {
 	// Extract name and value from ActivityPub attachment
 	name, _ := itemMap["name"].(string)
 	value, _ := itemMap["value"].(string)
-	
+
 	// If no name or value, skip this attachment
 	if name == "" && value == "" {
 		return nil
@@ -280,7 +280,7 @@ func processMediaAttachmentItem(item interface{}) interface{} {
 	mediaType, _ := itemMap["mediaType"].(string)
 	attachmentType, _ := itemMap["type"].(string)
 	url, _ := itemMap["url"].(string)
-	
+
 	// Only process actual media attachments (not property value attachments)
 	if attachmentType != "Document" && attachmentType != "Image" && attachmentType != "Video" && attachmentType != "Audio" {
 		return nil
@@ -292,7 +292,7 @@ func processMediaAttachmentItem(item interface{}) interface{} {
 
 	// Generate ID from URL
 	id := GenerateNumericIDFromURL(url)
-	
+
 	// Determine Mastodon media type
 	mastodonType := "unknown"
 	if strings.HasPrefix(mediaType, "image/") || attachmentType == "Image" {
@@ -377,14 +377,14 @@ func processMentionTag(tag interface{}) interface{} {
 
 	href, _ := tagMap["href"].(string)
 	name, _ := tagMap["name"].(string)
-	
+
 	if href == "" || name == "" {
 		return nil
 	}
 
 	// Extract username from the name (remove @ prefix)
 	username := strings.TrimPrefix(name, "@")
-	
+
 	// Extract domain from href if it's a remote mention
 	var domain *string
 	if strings.Contains(href, "://") {
@@ -451,14 +451,14 @@ func processHashtagTag(tag interface{}) interface{} {
 
 	href, _ := tagMap["href"].(string)
 	name, _ := tagMap["name"].(string)
-	
+
 	if href == "" || name == "" {
 		return nil
 	}
 
 	// Extract hashtag name (remove # prefix)
 	hashtagName := strings.TrimPrefix(name, "#")
-	
+
 	if hashtagName == "" {
 		return nil
 	}

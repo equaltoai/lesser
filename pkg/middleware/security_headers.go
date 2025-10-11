@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -400,10 +401,130 @@ func ActivityPubSecurityHeaders() *SecurityHeadersConfig {
 	return &SecurityHeadersConfig{
 		EnableCSP:                 false, // CSP can interfere with federation
 		XContentTypeOptions:       "nosniff",
+		XFrameOptions:             "SAMEORIGIN", // Allow embedding for federation previews
 		ReferrerPolicy:            "strict-origin-when-cross-origin",
 		CrossOriginResourcePolicy: "cross-origin", // Allow federation
 		CustomHeaders: map[string]string{
 			"X-Robots-Tag": "noindex, nofollow", // Don't index federation endpoints
 		},
+	}
+}
+
+// WebClientSecurityHeaders returns strict security headers for web client API endpoints
+func WebClientSecurityHeaders() *SecurityHeadersConfig {
+	config := DefaultSecurityHeadersConfig()
+	
+	// Stricter CSP for web clients
+	config.CSPDirectives = map[string][]string{
+		"default-src":     {"'self'"},
+		"script-src":      {"'self'", "'unsafe-inline'"},
+		"style-src":       {"'self'", "'unsafe-inline'"},
+		"img-src":         {"'self'", "data:", "https:"},
+		"connect-src":     {"'self'", "wss:", "https:"},
+		"font-src":        {"'self'", "data:"},
+		"object-src":      {"'none'"},
+		"media-src":       {"'self'"},
+		"frame-src":       {"'none'"},
+		"base-uri":        {"'self'"},
+		"form-action":     {"'self'"},
+		"frame-ancestors": {"'none'"},
+	}
+	
+	// Strict frame options for web client
+	config.XFrameOptions = "DENY"
+	
+	// Enable HSTS for web clients only in production
+	config.EnableHSTS = true
+	config.HSTSMaxAge = 31536000
+	config.HSTSIncludeSubDomains = true
+	
+	return config
+}
+
+// GetSecurityConfigForEndpoint returns appropriate security config based on endpoint type
+func GetSecurityConfigForEndpoint(path string) *SecurityHeadersConfig {
+	// Federation endpoints - permissive
+	if strings.HasPrefix(path, "/inbox") ||
+		strings.HasPrefix(path, "/outbox") ||
+		strings.HasPrefix(path, "/users/") ||
+		strings.HasPrefix(path, "/.well-known/") ||
+		strings.HasPrefix(path, "/nodeinfo") {
+		return ActivityPubSecurityHeaders()
+	}
+	
+	// Media endpoints
+	if strings.HasPrefix(path, "/media/") ||
+		strings.HasPrefix(path, "/files/") ||
+		strings.Contains(path, "/media") {
+		return MediaSecurityHeaders()
+	}
+	
+	// WebSocket streaming endpoints
+	if strings.Contains(path, "/streaming") {
+		return WebSocketSecurityHeaders()
+	}
+	
+	// API endpoints - strict for web clients
+	if strings.HasPrefix(path, "/api/") {
+		return WebClientSecurityHeaders()
+	}
+	
+	// Default to strict web client headers
+	return WebClientSecurityHeaders()
+}
+
+// BodyLimits returns a middleware that enforces request body size limits
+func BodyLimits() func(lift.HandlerFunc) lift.HandlerFunc {
+	return func(next lift.HandlerFunc) lift.HandlerFunc {
+		return func(ctx *lift.Context) error {
+			path := ctx.Request.Path
+			
+			var maxSize int64
+			switch {
+			case strings.Contains(path, "/inbox"):
+				maxSize = 1024 * 1024 // 1MB for ActivityPub inbox
+			case strings.Contains(path, "/outbox"):
+				maxSize = 1024 * 1024 // 1MB for ActivityPub outbox  
+			case strings.Contains(path, "/api/v1/media"):
+				maxSize = 40 * 1024 * 1024 // 40MB for media uploads
+			case strings.Contains(path, "/api/v1/statuses"):
+				maxSize = 512 * 1024 // 512KB for posts
+			case strings.Contains(path, "/oauth/"):
+				maxSize = 16 * 1024 // 16KB for OAuth
+			case strings.HasPrefix(path, "/api/"):
+				maxSize = 256 * 1024 // 256KB for other API endpoints
+			case strings.Contains(path, "/.well-known/"):
+				maxSize = 64 * 1024 // 64KB for well-known endpoints
+			default:
+				maxSize = 128 * 1024 // 128KB default
+			}
+			
+			// Check content-length header if present
+			if contentLength := ctx.Header("Content-Length"); contentLength != "" {
+				if size, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
+					if size > maxSize {
+						return ctx.Status(413).JSON(map[string]interface{}{
+							"error": "payload_too_large",
+							"message": fmt.Sprintf("Request body too large: %d bytes (max %d)", size, maxSize),
+							"max_size": maxSize,
+						})
+					}
+				}
+			}
+			
+			// For requests with body, check actual size
+			if ctx.Request != nil && ctx.Request.Body != nil {
+				bodySize := len(ctx.Request.Body)
+				if int64(bodySize) > maxSize {
+					return ctx.Status(413).JSON(map[string]interface{}{
+						"error": "payload_too_large", 
+						"message": fmt.Sprintf("Request body too large: %d bytes (max %d)", bodySize, maxSize),
+						"max_size": maxSize,
+					})
+				}
+			}
+			
+			return next(ctx)
+		}
 	}
 }

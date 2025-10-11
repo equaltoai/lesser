@@ -32,20 +32,20 @@ const (
 	OperationDelete = "delete"
 
 	// ActivityPub activities
-	ActivityCreate    = "Create"
-	ActivityUpdate    = "Update"
-	ActivityDelete    = "Delete"
-	ActivityFollow    = "Follow"
-	ActivityAccept    = "Accept"
-	ActivityReject    = "Reject"
-	ActivityAnnounce  = "Announce"
-	ActivityLike      = "Like"
-	ActivityUndo      = "Undo"
-	ActivityBlock     = "Block"
-	ActivityFlag      = "Flag"
-	ActivityMove      = "Move"
-	ActivityAdd       = "Add"
-	ActivityRemove    = "Remove"
+	ActivityCreate   = "Create"
+	ActivityUpdate   = "Update"
+	ActivityDelete   = "Delete"
+	ActivityFollow   = "Follow"
+	ActivityAccept   = "Accept"
+	ActivityReject   = "Reject"
+	ActivityAnnounce = "Announce"
+	ActivityLike     = "Like"
+	ActivityUndo     = "Undo"
+	ActivityBlock    = "Block"
+	ActivityFlag     = "Flag"
+	ActivityMove     = "Move"
+	ActivityAdd      = "Add"
+	ActivityRemove   = "Remove"
 )
 
 // Visibility constants - used for post visibility settings (additional to business.go)
@@ -89,16 +89,16 @@ const (
 	ActorTypeGroup   = "Group"
 
 	// Object types
-	ObjectTypeNote     = "Note"
-	ObjectTypeArticle  = "Article"
-	ObjectTypeImage    = "Image"
-	ObjectTypeVideo    = "Video"
-	ObjectTypeAudio    = "Audio"
-	ObjectTypeDocument = "Document"
-	ObjectTypePage     = "Page"
-	ObjectTypeEvent    = "Event"
-	ObjectTypePlace    = "Place"
-	ObjectTypeProfile  = "Profile"
+	ObjectTypeNote      = "Note"
+	ObjectTypeArticle   = "Article"
+	ObjectTypeImage     = "Image"
+	ObjectTypeVideo     = "Video"
+	ObjectTypeAudio     = "Audio"
+	ObjectTypeDocument  = "Document"
+	ObjectTypePage      = "Page"
+	ObjectTypeEvent     = "Event"
+	ObjectTypePlace     = "Place"
+	ObjectTypeProfile   = "Profile"
 	ObjectTypeTombstone = "Tombstone"
 
 	// Collection types
@@ -110,19 +110,19 @@ const (
 
 // Timeline and stream constants
 const (
-	TimelineHome   = "home"
-	TimelinePublic = "public"
-	TimelineLocal  = "local"
+	TimelineHome      = "home"
+	TimelinePublic    = "public"
+	TimelineLocal     = "local"
 	TimelineFederated = "federated"
-	TimelineUser   = "user"
-	TimelineHashtag = "hashtag"
-	TimelineList   = "list"
+	TimelineUser      = "user"
+	TimelineHashtag   = "hashtag"
+	TimelineList      = "list"
 
 	// Stream event types
-	StreamEventUpdate      = "update"
-	StreamEventDelete      = "delete"
+	StreamEventUpdate       = "update"
+	StreamEventDelete       = "delete"
 	StreamEventNotification = "notification"
-	StreamEventFilters     = "filters_changed"
+	StreamEventFilters      = "filters_changed"
 	StreamEventConversation = "conversation"
 	StreamEventAnnouncement = "announcement"
 	StreamEventStatusUpdate = "status.update"
@@ -130,16 +130,16 @@ const (
 
 // Notification types
 const (
-	NotificationTypeMention    = "mention"
-	NotificationTypeReblog     = "reblog"
-	NotificationTypeFavourite  = "favourite"
-	NotificationTypeFollow     = "follow"
+	NotificationTypeMention       = "mention"
+	NotificationTypeReblog        = "reblog"
+	NotificationTypeFavourite     = "favourite"
+	NotificationTypeFollow        = "follow"
 	NotificationTypeFollowRequest = "follow_request"
-	NotificationTypePoll       = "poll"
-	NotificationTypeStatus     = "status"
-	NotificationTypeUpdate     = "update"
-	NotificationTypeAdminSignUp = "admin.sign_up"
-	NotificationTypeAdminReport = "admin.report"
+	NotificationTypePoll          = "poll"
+	NotificationTypeStatus        = "status"
+	NotificationTypeUpdate        = "update"
+	NotificationTypeAdminSignUp   = "admin.sign_up"
+	NotificationTypeAdminReport   = "admin.report"
 )
 
 // Filter contexts are defined in business_mastodon.go as FilterContext type
@@ -148,19 +148,19 @@ const (
 // Job processing constants
 const (
 	// Job types
-	JobTypeImport      = "import"
-	JobTypeExport      = "export"
-	JobTypeMedia       = "media"
-	JobTypeFederation  = "federation"
-	JobTypeModeration  = "moderation"
+	JobTypeImport       = "import"
+	JobTypeExport       = "export"
+	JobTypeMedia        = "media"
+	JobTypeFederation   = "federation"
+	JobTypeModeration   = "moderation"
 	JobTypeNotification = "notification"
-	JobTypeSearch      = "search"
-	JobTypeAnalytics   = "analytics"
+	JobTypeSearch       = "search"
+	JobTypeAnalytics    = "analytics"
 
 	// Job priorities
-	JobPriorityLow    = "low"
-	JobPriorityNormal = "normal"
-	JobPriorityHigh   = "high"
+	JobPriorityLow      = "low"
+	JobPriorityNormal   = "normal"
+	JobPriorityHigh     = "high"
 	JobPriorityCritical = "critical"
 
 	// Queue names
@@ -178,50 +178,50 @@ const (
 
 // Relationship constants
 const (
-	RelationshipFollowing    = "following"
-	RelationshipFollowed     = "followed_by"
-	RelationshipBlocked      = "blocked"
-	RelationshipBlocking     = "blocking"
-	RelationshipMuted        = "muted"
-	RelationshipMuting       = "muting"
-	RelationshipRequested    = "requested"
+	RelationshipFollowing     = "following"
+	RelationshipFollowed      = "followed_by"
+	RelationshipBlocked       = "blocked"
+	RelationshipBlocking      = "blocking"
+	RelationshipMuted         = "muted"
+	RelationshipMuting        = "muting"
+	RelationshipRequested     = "requested"
 	RelationshipDomainBlocked = "domain_blocked"
-	RelationshipEndorsed     = "endorsed"
+	RelationshipEndorsed      = "endorsed"
 )
 
 // Report constants
 const (
-	ReportCategorySpam        = "spam"
-	ReportCategoryViolation   = "violation"
-	ReportCategoryOther       = "other"
-	ReportCategoryLegal       = "legal"
+	ReportCategorySpam      = "spam"
+	ReportCategoryViolation = "violation"
+	ReportCategoryOther     = "other"
+	ReportCategoryLegal     = "legal"
 
-	ReportStatusOpen      = "open"
-	ReportStatusResolved  = "resolved"
-	ReportStatusRejected  = "rejected"
+	ReportStatusOpen     = "open"
+	ReportStatusResolved = "resolved"
+	ReportStatusRejected = "rejected"
 )
 
 // Moderation constants
 const (
-	ModerationActionNone        = "none"
-	ModerationActionWarn        = "warn"
-	ModerationActionSilence     = "silence"
-	ModerationActionSuspend     = "suspend"
-	ModerationActionSensitive   = "mark_as_sensitive"
-	ModerationActionDelete      = "delete"
+	ModerationActionNone      = "none"
+	ModerationActionWarn      = "warn"
+	ModerationActionSilence   = "silence"
+	ModerationActionSuspend   = "suspend"
+	ModerationActionSensitive = "mark_as_sensitive"
+	ModerationActionDelete    = "delete"
 
-	ModerationSeverityInfo    = "info"
-	ModerationSeverityWarning = "warning"
-	ModerationSeverityError   = "error"
+	ModerationSeverityInfo     = "info"
+	ModerationSeverityWarning  = "warning"
+	ModerationSeverityError    = "error"
 	ModerationSeverityCritical = "critical"
 )
 
 // Search constants
 const (
-	SearchTypeAccount  = "accounts"
-	SearchTypeStatus   = "statuses"
-	SearchTypeHashtag  = "hashtags"
-	SearchTypeAll      = "all"
+	SearchTypeAccount = "accounts"
+	SearchTypeStatus  = "statuses"
+	SearchTypeHashtag = "hashtags"
+	SearchTypeAll     = "all"
 
 	SearchScopeLocal  = "local"
 	SearchScopeRemote = "remote"
@@ -256,9 +256,9 @@ const (
 	CacheKeyFederation   = "federation:"
 
 	// Cache durations (used as string constants for configuration)
-	CacheDurationShort  = "5m"
-	CacheDurationMedium = "30m"
-	CacheDurationLong   = "2h"
+	CacheDurationShort    = "5m"
+	CacheDurationMedium   = "30m"
+	CacheDurationLong     = "2h"
 	CacheDurationExtended = "24h"
 )
 
@@ -273,14 +273,14 @@ const (
 	DBOperationBatch  = "batch"
 
 	// DynamoDB specific operations
-	DynamoOperationPutItem        = "PutItem"
-	DynamoOperationGetItem        = "GetItem"
-	DynamoOperationUpdateItem     = "UpdateItem"
-	DynamoOperationDeleteItem     = "DeleteItem"
-	DynamoOperationQuery          = "Query"
-	DynamoOperationScan           = "Scan"
-	DynamoOperationBatchGetItem   = "BatchGetItem"
-	DynamoOperationBatchWriteItem = "BatchWriteItem"
+	DynamoOperationPutItem            = "PutItem"
+	DynamoOperationGetItem            = "GetItem"
+	DynamoOperationUpdateItem         = "UpdateItem"
+	DynamoOperationDeleteItem         = "DeleteItem"
+	DynamoOperationQuery              = "Query"
+	DynamoOperationScan               = "Scan"
+	DynamoOperationBatchGetItem       = "BatchGetItem"
+	DynamoOperationBatchWriteItem     = "BatchWriteItem"
 	DynamoOperationTransactWriteItems = "TransactWriteItems"
 	DynamoOperationTransactGetItems   = "TransactGetItems"
 )
@@ -305,15 +305,15 @@ const (
 
 // HTTP header constants
 const (
-	HeaderAuthorization   = "Authorization"
-	HeaderContentType     = "Content-Type"
-	HeaderAccept         = "Accept"
-	HeaderUserAgent      = "User-Agent"
-	HeaderSignature      = "Signature"
-	HeaderDigest         = "Digest"
-	HeaderDate           = "Date"
-	HeaderHost           = "Host"
-	HeaderActivityPub    = "activity+json"
+	HeaderAuthorization = "Authorization"
+	HeaderContentType   = "Content-Type"
+	HeaderAccept        = "Accept"
+	HeaderUserAgent     = "User-Agent"
+	HeaderSignature     = "Signature"
+	HeaderDigest        = "Digest"
+	HeaderDate          = "Date"
+	HeaderHost          = "Host"
+	HeaderActivityPub   = "activity+json"
 
 	// CORS headers
 	HeaderCORSOrigin      = "Access-Control-Allow-Origin"
@@ -323,11 +323,11 @@ const (
 	HeaderCORSMaxAge      = "Access-Control-Max-Age"
 
 	// Security headers
-	HeaderXFrameOptions        = "X-Frame-Options"
-	HeaderXContentTypeOptions  = "X-Content-Type-Options"
-	HeaderXXSSProtection       = "X-XSS-Protection"
+	HeaderXFrameOptions           = "X-Frame-Options"
+	HeaderXContentTypeOptions     = "X-Content-Type-Options"
+	HeaderXXSSProtection          = "X-XSS-Protection"
 	HeaderStrictTransportSecurity = "Strict-Transport-Security"
-	HeaderReferrerPolicy       = "Referrer-Policy"
+	HeaderReferrerPolicy          = "Referrer-Policy"
 )
 
 // Environment constants
@@ -356,19 +356,19 @@ const (
 	ConfigKeyS3AccessKey = "s3.access_key"
 	ConfigKeyS3SecretKey = "s3.secret_key"
 
-	ConfigKeyDomainName  = "domain.name"
-	ConfigKeyBaseURL     = "base.url"
-	ConfigKeyAPIVersion  = "api.version"
+	ConfigKeyDomainName = "domain.name"
+	ConfigKeyBaseURL    = "base.url"
+	ConfigKeyAPIVersion = "api.version"
 
-	ConfigKeyJWTSecret       = "jwt.secret"
-	ConfigKeyOAuthSecret     = "oauth.secret"
-	ConfigKeyEncryptionKey   = "encryption.key"
+	ConfigKeyJWTSecret     = "jwt.secret"
+	ConfigKeyOAuthSecret   = "oauth.secret"
+	ConfigKeyEncryptionKey = "encryption.key"
 
-	ConfigKeyLogLevel        = "log.level"
-	ConfigKeyLogFormat       = "log.format"
-	ConfigKeyLogOutput       = "log.output"
+	ConfigKeyLogLevel  = "log.level"
+	ConfigKeyLogFormat = "log.format"
+	ConfigKeyLogOutput = "log.output"
 
-	ConfigKeyRateLimitEnabled = "ratelimit.enabled"
+	ConfigKeyRateLimitEnabled  = "ratelimit.enabled"
 	ConfigKeyRateLimitRequests = "ratelimit.requests"
 	ConfigKeyRateLimitWindow   = "ratelimit.window"
 

@@ -1174,15 +1174,6 @@ func getStringFromMap(m map[string]any, key, defaultValue string) string {
 
 // extractUsernameFromToken extracts the username from authentication token
 func (h *Handler) extractUsernameFromToken(ctx *lift.Context) string {
-	// Check for test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		return testUsername
-	}
-
 	// Get authorization header
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {

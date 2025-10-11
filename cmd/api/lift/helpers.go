@@ -37,52 +37,7 @@ const DefaultPaginationLimit = 20
 // MaxPaginationLimit is the maximum allowed limit for paginated responses
 const MaxPaginationLimit = 80
 
-// authenticateRequestWithScope extracts and validates authentication for both test and production modes
-func (h *Handler) authenticateRequestWithScope(ctx *lift.Context, requiredScope string) (string, error) {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if testUsername != "" {
-		// Test mode - skip auth
-		return testUsername, nil
-	}
-
-	// Extract and validate token
-	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	// Try direct access to headers if ctx.Header doesn't work
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Check required scope
-	if !claims.HasScope(requiredScope) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
-}
+// Legacy authentication function removed - use auth.RequireAuthWithScope() instead
 
 // resolveAccountID resolves an account ID (which can be a username, numeric ID, or URL) to an actor
 func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*activitypub.Actor, error) {
@@ -118,14 +73,7 @@ func (h *Handler) resolveAccountID(ctx context.Context, accountID string) (*acti
 }
 
 // authenticateUser handles the common pattern of extracting and validating user authentication
-// It supports both test mode (via X-Test-Username header) and production OAuth
 func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (username string, err error) {
-	// Test hook - check for test username header
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		// Test mode - skip auth
-		return testUsername, nil
-	}
 
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
@@ -162,11 +110,6 @@ func (h *Handler) authenticateUser(ctx *lift.Context, requiredScopes []string) (
 //
 //nolint:unused // Utility function for optional authentication patterns
 func (h *Handler) authenticateUserOptional(ctx *lift.Context, requiredScopes []string) (username string, err error) {
-	// Test hook - check for test username header
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
 
 	// Extract token - if none provided, return empty string (no error)
 	token := h.getBearerTokenLift(ctx)
@@ -232,15 +175,6 @@ func (h *Handler) statusActionHandler(ctx *lift.Context, requiredScope string, a
 	return ctx.JSON(status)
 }
 
-// getTestUsername extracts test username from headers
-func (h *Handler) getTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
-
 // getAuthHeader extracts authorization header from request
 func (h *Handler) getAuthHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
@@ -281,7 +215,7 @@ func (h *Handler) isLocal(username string) bool {
 //nolint:gocognit // Complex conversion between storage and API models with many fields
 func (h *Handler) convertStorageStatusToAPI(storageStatus *storageModels.Status, currentUsername string) (*models.Status, error) {
 	ctx := context.Background()
-	
+
 	// Attach loaders to context for DataLoader usage
 	ctx = graph.WithLoaders(ctx, h.loaders)
 
@@ -513,7 +447,7 @@ func createOAuthService(jwtSecret string, cfg *config.Config, repos core.Reposit
 func (h *Handler) parsePaginationParams(ctx *lift.Context) *PaginationParams {
 	// Use the centralized pagination parameter extraction
 	commonParams := common.GetPaginationParams(ctx)
-	
+
 	// Convert to our local PaginationParams struct for backward compatibility
 	params := &PaginationParams{
 		Limit:   commonParams.Limit,
@@ -812,14 +746,6 @@ func (h *Handler) parseLimitParam(ctx *lift.Context, defaultLimit, maxLimit int)
 
 //nolint:unused // Part of comprehensive authentication helper set for complex auth scenarios
 func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []string) (*auth.Claims, error) {
-	// Test hook - check for test username header
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		// Return test claims with all scopes (test mode)
-		testScopes := []string{auth.ScopeRead, auth.ScopeWrite, "read:notifications", "write:notifications", "read:filters", "write:filters"}
-		return &auth.Claims{Username: testUsername, Scopes: testScopes}, nil
-	}
-
 	// Extract and validate token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
@@ -851,57 +777,42 @@ func (h *Handler) authenticateWithClaims(ctx *lift.Context, requiredScopes []str
 }
 
 // authenticateUserWithWriteScope handles the common authentication pattern with write scope requirement
-// Supports both test mode (via X-Test-Username header) and production OAuth with write scope validation
 // Returns the authenticated username or triggers an HTTP error response
 func (h *Handler) authenticateUserWithWriteScope(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract and validate token using centralized validation
+	authHeader := ctx.Header("Authorization")
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
+		authHeader = ctx.Header("authorization")
 	}
 
-	var username string
-	if testUsername != "" {
-		// Test mode - skip auth
-		username = testUsername
-	} else {
-		// Extract and validate token using centralized validation
-		authHeader := ctx.Header("Authorization")
+	// Try direct access to headers if ctx.Header doesn't work
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
 		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-			authHeader = ctx.Header("authorization")
+			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
-
-		// Try direct access to headers if ctx.Header doesn't work
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return "", common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and require write scope
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return "", common.RespondUnauthorized(ctx)
-		}
-
-		if !claims.HasScope(auth.ScopeWrite) {
-			return "", common.RespondInsufficientScope(ctx)
-		}
-
-		username = claims.Username
 	}
 
-	return username, nil
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token and require write scope
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return "", common.RespondUnauthorized(ctx)
+	}
+
+	if !claims.HasScope(auth.ScopeWrite) {
+		return "", common.RespondInsufficientScope(ctx)
+	}
+
+	return claims.Username, nil
 }
 
-// respondWithJSON sends a JSON response using common helpers  
+// respondWithJSON sends a JSON response using common helpers
 func (h *Handler) respondWithJSON(ctx *lift.Context, statusCode int, data interface{}) error {
 	return common.SendJSON(ctx, statusCode, data)
 }

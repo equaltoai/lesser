@@ -33,13 +33,13 @@ const (
 // EnhancedMetric represents a comprehensive metric with metadata
 type EnhancedMetric struct {
 	Name        string                 `json:"name"`
-	Type        MetricType            `json:"type"`
-	Level       MetricLevel           `json:"level"`
-	Value       float64               `json:"value"`
-	Unit        string                `json:"unit"`
-	Description string                `json:"description"`
-	Labels      map[string]string     `json:"labels"`
-	Timestamp   time.Time             `json:"timestamp"`
+	Type        MetricType             `json:"type"`
+	Level       MetricLevel            `json:"level"`
+	Value       float64                `json:"value"`
+	Unit        string                 `json:"unit"`
+	Description string                 `json:"description"`
+	Labels      map[string]string      `json:"labels"`
+	Timestamp   time.Time              `json:"timestamp"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -54,12 +54,12 @@ type PercentileMetric struct {
 
 // ErrorRateMetric represents error rate metrics
 type ErrorRateMetric struct {
-	Total      int64   `json:"total_requests"`
-	Errors     int64   `json:"error_count"`
-	ErrorRate  float64 `json:"error_rate"`
-	By4xx      int64   `json:"4xx_errors"`
-	By5xx      int64   `json:"5xx_errors"`
-	ByType     map[string]int64 `json:"errors_by_type"`
+	Total     int64            `json:"total_requests"`
+	Errors    int64            `json:"error_count"`
+	ErrorRate float64          `json:"error_rate"`
+	By4xx     int64            `json:"4xx_errors"`
+	By5xx     int64            `json:"5xx_errors"`
+	ByType    map[string]int64 `json:"errors_by_type"`
 }
 
 // CapacityMetrics represents DynamoDB capacity consumption
@@ -74,25 +74,25 @@ type CapacityMetrics struct {
 
 // CacheMetrics represents cache performance metrics
 type CacheMetrics struct {
-	HitRate     float64 `json:"hit_rate"`
-	MissRate    float64 `json:"miss_rate"`
-	TotalHits   int64   `json:"total_hits"`
-	TotalMisses int64   `json:"total_misses"`
+	HitRate      float64 `json:"hit_rate"`
+	MissRate     float64 `json:"miss_rate"`
+	TotalHits    int64   `json:"total_hits"`
+	TotalMisses  int64   `json:"total_misses"`
 	EvictionRate float64 `json:"eviction_rate"`
 }
 
 // EnhancedMetricsCollector collects and aggregates metrics
 type EnhancedMetricsCollector struct {
-	mu                sync.RWMutex
-	metrics           map[string]*EnhancedMetric
-	logger            *zap.Logger
-	requestLatencies  []float64
-	errorCounts       map[string]int64
-	capacityMetrics   *CapacityMetrics
-	cacheMetrics      *CacheMetrics
-	startTime         time.Time
-	lastFlush         time.Time
-	flushInterval     time.Duration
+	mu               sync.RWMutex
+	metrics          map[string]*EnhancedMetric
+	logger           *zap.Logger
+	requestLatencies []float64
+	errorCounts      map[string]int64
+	capacityMetrics  *CapacityMetrics
+	cacheMetrics     *CacheMetrics
+	startTime        time.Time
+	lastFlush        time.Time
+	flushInterval    time.Duration
 }
 
 // NewEnhancedMetricsCollector creates a new enhanced metrics collector
@@ -144,7 +144,7 @@ func (c *EnhancedMetricsCollector) RecordError(errorType string, statusCode int)
 	defer c.mu.Unlock()
 
 	c.errorCounts[errorType]++
-	
+
 	// Categorize by status code
 	category := "other"
 	if statusCode >= 400 && statusCode < 500 {
@@ -252,7 +252,7 @@ func (c *EnhancedMetricsCollector) GetLatencyPercentiles() PercentileMetric {
 	// Sort latencies for percentile calculation
 	latencies := make([]float64, len(c.requestLatencies))
 	copy(latencies, c.requestLatencies)
-	
+
 	// Simple sort for percentile calculation
 	for i := 0; i < len(latencies); i++ {
 		for j := i + 1; j < len(latencies); j++ {
@@ -330,7 +330,7 @@ func (c *EnhancedMetricsCollector) GetMetricsJSON() ([]byte, error) {
 func (c *EnhancedMetricsCollector) ShouldFlush() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	
+
 	return time.Since(c.lastFlush) >= c.flushInterval
 }
 
@@ -338,7 +338,7 @@ func (c *EnhancedMetricsCollector) ShouldFlush() bool {
 func (c *EnhancedMetricsCollector) MarkFlushed() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	
+
 	c.lastFlush = time.Now()
 }
 
@@ -354,7 +354,7 @@ func (c *EnhancedMetricsCollector) Reset() {
 			newMetrics[k] = v
 		}
 	}
-	
+
 	c.metrics = newMetrics
 	c.requestLatencies = c.requestLatencies[:0]
 }
@@ -465,10 +465,10 @@ func MetricsMiddleware(collector *EnhancedMetricsCollector) func(next func()) fu
 	return func(next func()) func() {
 		return func() {
 			start := time.Now()
-			
+
 			// Call next handler
 			next()
-			
+
 			// Record latency
 			latency := time.Since(start)
 			collector.RecordLatency("http_request", latency)

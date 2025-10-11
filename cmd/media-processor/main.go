@@ -25,6 +25,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/media"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
@@ -313,6 +314,9 @@ type liftApp interface {
 // setupLiftApp configures the Lift application with middleware and handlers
 func setupLiftApp() liftApp {
 	app := lift.New()
+
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
 
 	// Add all middleware
 	addRequestIDMiddleware(app)

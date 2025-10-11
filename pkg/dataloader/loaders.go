@@ -19,11 +19,11 @@ type BatchFunc[K comparable, V any] func(context.Context, []K) ([]V, []error)
 // DataLoader provides batching and caching for database operations
 type DataLoader[K comparable, V any] struct {
 	// Configuration
-	batchFn      BatchFunc[K, V]
-	wait         time.Duration
-	maxBatch     int
-	cache        bool
-	cacheExpiry  time.Duration
+	batchFn     BatchFunc[K, V]
+	wait        time.Duration
+	maxBatch    int
+	cache       bool
+	cacheExpiry time.Duration
 
 	// Internal state
 	mu           sync.Mutex
@@ -33,11 +33,11 @@ type DataLoader[K comparable, V any] struct {
 	singleflight singleflight.Group
 
 	// Metrics
-	logger     *zap.Logger
-	hits       int64
-	misses     int64
-	batches    int64
-	errors     int64
+	logger  *zap.Logger
+	hits    int64
+	misses  int64
+	batches int64
+	errors  int64
 }
 
 type cacheItem[V any] struct {
@@ -129,18 +129,18 @@ func (dl *DataLoader[K, V]) LoadMany(ctx context.Context, keys []K) ([]V, []erro
 	if len(keys) <= 10 {
 		results := make([]V, len(keys))
 		errors := make([]error, len(keys))
-		
+
 		for i, key := range keys {
 			results[i], errors[i] = dl.Load(ctx, key)
 		}
-		
+
 		return results, errors
 	}
 
 	// For larger requests, batch directly
 	uncachedKeys := make([]K, 0, len(keys))
 	keyToIndex := make(map[K]int)
-	
+
 	results := make([]V, len(keys))
 	errors := make([]error, len(keys))
 
@@ -167,30 +167,30 @@ func (dl *DataLoader[K, V]) LoadMany(ctx context.Context, keys []K) ([]V, []erro
 	// Load uncached keys
 	if len(uncachedKeys) > 0 {
 		batchResults, batchErrors := dl.batchFn(ctx, uncachedKeys)
-		
+
 		// Map results back to original positions
 		for i, key := range uncachedKeys {
 			originalIndex := keyToIndex[key]
-			
+
 			var value V
 			var err error
-			
+
 			if i < len(batchResults) {
 				value = batchResults[i]
 			}
 			if i < len(batchErrors) {
 				err = batchErrors[i]
 			}
-			
+
 			results[originalIndex] = value
 			errors[originalIndex] = err
-			
+
 			// Cache the result
 			if dl.cache {
 				dl.setCached(key, value, err)
 			}
 		}
-		
+
 		dl.batches++
 	}
 
@@ -210,7 +210,7 @@ func (dl *DataLoader[K, V]) Clear(key K) {
 	if !dl.cache {
 		return
 	}
-	
+
 	dl.mu.Lock()
 	delete(dl.cache_data, key)
 	dl.mu.Unlock()
@@ -221,7 +221,7 @@ func (dl *DataLoader[K, V]) ClearAll() {
 	if !dl.cache {
 		return
 	}
-	
+
 	dl.mu.Lock()
 	dl.cache_data = make(map[K]*cacheItem[V])
 	dl.mu.Unlock()
@@ -231,9 +231,9 @@ func (dl *DataLoader[K, V]) ClearAll() {
 func (dl *DataLoader[K, V]) GetStats() LoaderStats {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
-	
+
 	cacheSize := len(dl.cache_data)
-	
+
 	return LoaderStats{
 		Hits:      dl.hits,
 		Misses:    dl.misses,
@@ -256,37 +256,37 @@ type LoaderStats struct {
 
 func (dl *DataLoader[K, V]) loadBatch(ctx context.Context, key K) (V, error) {
 	results, errors := dl.batchFn(ctx, []K{key})
-	
+
 	var value V
 	var err error
-	
+
 	if len(results) > 0 {
 		value = results[0]
 	}
 	if len(errors) > 0 {
 		err = errors[0]
 	}
-	
+
 	if dl.cache {
 		dl.setCached(key, value, err)
 	}
-	
+
 	dl.batches++
-	
+
 	return value, err
 }
 
 func (dl *DataLoader[K, V]) getCached(key K) *cacheItem[V] {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
-	
+
 	return dl.cache_data[key]
 }
 
 func (dl *DataLoader[K, V]) setCached(key K, value V, err error) {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
-	
+
 	dl.cache_data[key] = &cacheItem[V]{
 		value:     value,
 		err:       err,

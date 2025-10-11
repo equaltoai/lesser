@@ -38,13 +38,13 @@ import (
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/mastodon"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/services"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/middleware"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 )
 
@@ -459,12 +459,18 @@ func main() {
 	}
 
 	// Add global middleware in correct order
-	// 1. Timeout middleware
-	app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
+	// 1. Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
+	// Apply strict security middleware for web clients
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
+
+	// Timeout middleware
+	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{
 		DefaultTimeout: 30 * time.Second,
 	}))
 
-	// 2. Request ID middleware
+	// Request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("graphql-%d", time.Now().UnixNano())
@@ -473,7 +479,7 @@ func main() {
 		})
 	})
 
-	// 3. Logging middleware
+	// Logging middleware
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			start := time.Now()
@@ -490,7 +496,7 @@ func main() {
 		})
 	})
 
-	// 4. Recovery middleware
+	// Recovery middleware
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			defer func() {
@@ -508,34 +514,19 @@ func main() {
 		})
 	})
 
-	// 5. CORS middleware
-	app.Use(createCORSMiddleware())
-
-	// 6. Unified error handling middleware
+	// Unified error handling middleware
 	app.Use(common.CreateGraphQLErrorMiddleware(logger))
 
-	// 7. Rate limiting middleware (before auth to catch anonymous users)
-	if !cfg.DisableRateLimiting {
-		// Create GraphQL-specific rate limiting config
-		graphqlConfig := ratelimit.DefaultRateLimitConfig()
-		// Add GraphQL-specific limits
-		graphqlConfig.EndpointLimits["POST:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute} // 100 queries per 5 minutes
-		graphqlConfig.EndpointLimits["GET:/graphql"] = ratelimit.EndpointLimit{Limit: 100, Window: 5 * time.Minute}  // 100 queries per 5 minutes (GET for introspection)
-
-		app.Use(ratelimit.Middleware(repos, graphqlConfig))
-		logger.Info("enabled rate limiting middleware for GraphQL service")
-	}
-
-	// 7. Authentication middleware
+	// Authentication middleware
 	app.Use(createAuthMiddleware())
 
-	// 8. Cost tracking middleware
+	// Cost tracking middleware
 	app.Use(createCostTrackingMiddleware())
 
-	// 9. DataLoader middleware
+	// DataLoader middleware
 	app.Use(createDataLoaderMiddleware())
 
-	// 10. EMF performance monitoring middleware
+	// EMF performance monitoring middleware
 	if emfMetricsService != nil {
 		if emfService, ok := emfMetricsService.(*observability.EMFMetricsService); ok {
 			app.Use(observability.CreateEMFPerformanceMonitoringMiddleware(emfService))
