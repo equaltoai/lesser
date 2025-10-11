@@ -88,23 +88,8 @@ func (h *Handler) getTranslationStatusID(ctx *lift.Context) (string, error) {
 
 // authenticateTranslationRequest handles authentication for translation
 func (h *Handler) authenticateTranslationRequest(ctx *lift.Context) (string, error) {
-	// Check for test username
-	testUsername := h.getTranslationTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Normal authentication flow
 	return h.authenticateTranslationWithToken(ctx)
-}
-
-// getTranslationTestUsername extracts test username from headers
-func (h *Handler) getTranslationTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
 }
 
 // authenticateTranslationWithToken authenticates using bearer token

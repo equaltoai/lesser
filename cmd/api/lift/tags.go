@@ -142,16 +142,6 @@ const (
 
 // authenticateTagRequest handles authentication for tag operations
 func (h *Handler) authenticateTagRequest(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract token from Authorization header
 	authHeader := h.getAuthorizationHeader(ctx)
 
@@ -299,14 +289,8 @@ func (h *Handler) HandleGetFollowedTagsLift(ctx *lift.Context) error {
 	return ctx.JSON(tags)
 }
 
-// extractUsernameFromContextForTags extracts username from test header or OAuth token
+// extractUsernameFromContextForTags extracts username from OAuth token
 func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header
-	testUsername := h.getHeaderValue(ctx, "X-Test-Username")
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract and validate OAuth token
 	authHeader := h.getAuthorizationHeader(ctx)
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -324,14 +308,6 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 	return claims.Username, nil
 }
 
-// getHeaderValue gets header value with fallback to direct request access
-func (h *Handler) getHeaderValue(ctx *lift.Context, headerName string) string {
-	value := ctx.Header(headerName)
-	if common.ValidateRequiredParam(value, "value") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		value = ctx.Request.Request.Headers[headerName]
-	}
-	return value
-}
 
 // getAuthorizationHeader extracts Authorization header with case variations
 func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
@@ -422,32 +398,21 @@ func (h *Handler) getHashtagHistory(ctx context.Context, hashtag string) []hasht
 
 // HandleGetFeaturedTagsLift retrieves the user's featured tags
 func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	authHeader := h.getAuthorizationHeader(ctx)
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-		username = claims.Username
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+	username := claims.Username
 
 	// Get featured tags
 	featuredTags, err := h.repos.FeaturedTag().GetFeaturedTags(ctx.Context, username)
@@ -478,32 +443,21 @@ func (h *Handler) HandleGetFeaturedTagsLift(ctx *lift.Context) error {
 
 // HandleCreateFeaturedTagLift features a hashtag on the user's profile
 func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	authHeader := h.getAuthorizationHeader(ctx)
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-		username = claims.Username
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+	username := claims.Username
 
 	// Parse request body
 	var req struct {
@@ -539,7 +493,7 @@ func (h *Handler) HandleCreateFeaturedTagLift(ctx *lift.Context) error {
 		Name:     tagName,
 		URL:      fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), tagName),
 	}
-	err := h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context, featuredTag)
+	err = h.repos.FeaturedTag().CreateFeaturedTag(ctx.Context, featuredTag)
 	if err != nil {
 		// Check if it's a duplicate
 		if err.Error() == "item already exists" {
@@ -582,35 +536,24 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	authHeader := h.getAuthorizationHeader(ctx)
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-		username = claims.Username
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+	username := claims.Username
 
 	// Delete the featured tag
-	err := h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
+	err = h.repos.FeaturedTag().DeleteFeaturedTag(ctx.Context, username, tagID)
 	if err != nil {
 		if err.Error() == "item not found" {
 			return common.RespondNotFound(ctx, "featured tag")
@@ -625,32 +568,21 @@ func (h *Handler) HandleDeleteFeaturedTagLift(ctx *lift.Context) error {
 
 // HandleGetFeaturedTagSuggestionsLift suggests hashtags to feature based on usage
 func (h *Handler) HandleGetFeaturedTagSuggestionsLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	authHeader := h.getAuthorizationHeader(ctx)
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
-	var username string
-	if testUsername != "" {
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
-		authHeader := h.getAuthorizationHeader(ctx)
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-		username = claims.Username
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+	username := claims.Username
 
 	// Get tag suggestions based on user's posting history
 	suggestions, err := h.repos.FeaturedTag().GetTagSuggestions(ctx.Context, username, 10)

@@ -437,16 +437,6 @@ func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) i
 
 // authenticateDebugRequest handles common authentication logic for debug endpoints
 func (h *Handler) authenticateDebugRequest(ctx *lift.Context, operation string) (*auth.Claims, error) {
-	// Check for test mode first
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		// Test mode - skip JWT validation
-		h.logger.Info("debug request in test mode",
-			zap.String("operation", operation),
-			zap.String("test_username", testUsername))
-		return nil, nil
-	}
-
 	// Extract and validate JWT token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {

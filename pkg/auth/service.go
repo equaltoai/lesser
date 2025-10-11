@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/common"
@@ -35,10 +36,12 @@ type AuthService struct {
 func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, error) {
 	jwtSecret := cfg.JWTSecret
 	if jwtSecret == "" {
-		jwtSecret = "development-secret-change-me"
-		if cfg.Stage != "test" {
-			common.Logger().Warn("using default JWT secret - not secure for production")
-		}
+		return nil, fmt.Errorf("JWT_SECRET is required")
+	}
+	
+	// Validate JWT secret strength
+	if err := validateJWTSecretStrength(jwtSecret); err != nil {
+		return nil, fmt.Errorf("invalid JWT_SECRET: %w", err)
 	}
 
 	// Get domain for WebAuthn configuration
@@ -594,3 +597,33 @@ type AuthResponse struct {
 
 // EnhancedClaims is now an alias for the improved Claims struct
 type EnhancedClaims = Claims
+
+// validateJWTSecretStrength validates that the JWT secret meets security requirements
+func validateJWTSecretStrength(secret string) error {
+	// Check minimum length (32 characters for 256-bit security)
+	if len(secret) < 32 {
+		return fmt.Errorf("must be at least 32 characters long")
+	}
+	
+	// Check for common weak patterns
+	lowerSecret := strings.ToLower(secret)
+	weakPatterns := []string{
+		"default",
+		"change",
+		"secret",
+		"password",
+		"12345",
+		"admin",
+		"test",
+		"demo",
+		"example",
+	}
+	
+	for _, pattern := range weakPatterns {
+		if strings.Contains(lowerSecret, pattern) {
+			return fmt.Errorf("contains weak pattern '%s'", pattern)
+		}
+	}
+	
+	return nil
+}

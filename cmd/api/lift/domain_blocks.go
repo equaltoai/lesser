@@ -116,19 +116,9 @@ func (h *Handler) HandleCreateDomainBlockLift(ctx *lift.Context) error {
 
 // HandleDeleteDomainBlockLift handles DELETE /api/v1/domain_blocks
 func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
-	// Test hook - check for test username header
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
 
-	if err := common.ValidateRequiredParam("test_username", testUsername); err == nil {
-		// Use test username directly (test mode)
-		username = testUsername
-	} else {
-		// Extract token from Authorization header
+	// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
 		if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
 			authHeader = ctx.Header("authorization")
@@ -160,7 +150,6 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 		}
 
 		username = claims.Username
-	}
 
 	// Get domain from query parameter
 	domain := ctx.Query("domain")
@@ -173,7 +162,7 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	}
 
 	// Use Relationships service
-	err := h.registry.Relationships().RemoveDomainBlock(ctx.Context, &relationshipsvc.RemoveDomainBlockCommand{
+	err = h.registry.Relationships().RemoveDomainBlock(ctx.Context, &relationshipsvc.RemoveDomainBlockCommand{
 		UserID: username,
 		Domain: domain,
 	})

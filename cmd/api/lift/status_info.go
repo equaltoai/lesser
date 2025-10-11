@@ -24,13 +24,6 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 		return common.RespondValidationError(ctx, err)
 	}
 
-	// Support test mode with X-Test-Username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("status source request in test mode",
-			zap.String("test_username", testUsername),
-			zap.String("status_id", statusID))
-	}
 
 	// Normalize the status ID to a full URL if it's not already
 	objectID := statusID
@@ -114,13 +107,6 @@ func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 
 // performOptionalHistoryAuth performs optional authentication for private status history
 func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string) {
-	// Support test mode with X-Test-Username header
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		h.logger.Info("status history request in test mode",
-			zap.String("test_username", testUsername),
-			zap.String("status_id", statusID))
-	}
 
 	// Optional authentication
 	authHeader := h.extractHistoryAuthHeader(ctx)

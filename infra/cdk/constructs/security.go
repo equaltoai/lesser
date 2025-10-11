@@ -2,6 +2,7 @@ package constructs
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
@@ -34,11 +35,6 @@ type SecurityConstructs struct {
 func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *SecurityConstructs {
 	security := &SecurityConstructs{}
 
-	// Reference existing KMS key from SharedStack
-	security.KMSKey = awskms.Key_FromLookup(stack, jsii.String("LesserKMSKey"), &awskms.KeyLookupOptions{
-		AliasName: jsii.String("alias/lesser-encryption"),
-	})
-
 	// Create Lambda execution role
 	security.LambdaRole = awsiam.NewRole(stack, jsii.String("LesserLambdaRole"), &awsiam.RoleProps{
 		AssumedBy: awsiam.NewServicePrincipal(jsii.String("lambda.amazonaws.com"), nil),
@@ -63,9 +59,22 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 	security.BedrockPolicy = createBedrockPolicy(stack)
 	security.LambdaRole.AttachInlinePolicy(security.BedrockPolicy)
 
-	// Create KMS policy matching Pulumi exactly (lines 589-613)
-	security.KMSPolicy = createKMSPolicy(stack, security.KMSKey)
+	// Create KMS policy using ARN pattern (no lookup required)
+	security.KMSPolicy = createKMSPolicyByPattern(stack, props.Environment)
 	security.LambdaRole.AttachInlinePolicy(security.KMSPolicy)
+
+	// Add Secrets Manager permissions for JWT secret and actor private key
+	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect: awsiam.Effect_ALLOW,
+		Actions: &[]*string{
+			jsii.String("secretsmanager:GetSecretValue"),
+			jsii.String("secretsmanager:DescribeSecret"),
+		},
+		Resources: &[]*string{
+			jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret-*"),
+			jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"),
+		},
+	}))
 
 	return security
 }
@@ -211,7 +220,12 @@ func createBedrockPolicy(stack awscdk.Stack) awsiam.Policy {
 	})
 }
 
-func createKMSPolicy(stack awscdk.Stack, kmsKey awskms.IKey) awsiam.Policy {
+// createKMSPolicyByPattern creates KMS policy using ARN pattern (no key lookup needed)
+func createKMSPolicyByPattern(stack awscdk.Stack, environment string) awsiam.Policy {
+	// Construct KMS key ARN pattern - works without looking up the actual key
+	// Format: arn:aws:kms:region:account:alias/lesser-encryption
+	kmsArnPattern := fmt.Sprintf("arn:aws:kms:*:*:alias/lesser-encryption")
+
 	policyDoc := map[string]interface{}{
 		"Version": "2012-10-17",
 		"Statement": []map[string]interface{}{
@@ -223,7 +237,7 @@ func createKMSPolicy(stack awscdk.Stack, kmsKey awskms.IKey) awsiam.Policy {
 					"kms:GenerateDataKey",
 					"kms:DescribeKey",
 				},
-				"Resource": kmsKey.KeyArn(),
+				"Resource": kmsArnPattern,
 			},
 		},
 	}

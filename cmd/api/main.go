@@ -24,6 +24,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/errors"
 	liftAuth "github.com/equaltoai/lesser/pkg/lift"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/observability"
 	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage/core"
@@ -32,7 +33,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/streaming"
 	dynamormCore "github.com/pay-theory/dynamorm/pkg/core"
 	"github.com/pay-theory/lift/pkg/lift"
-	"github.com/pay-theory/lift/pkg/middleware"
+	liftMiddleware "github.com/pay-theory/lift/pkg/middleware"
 	"go.uber.org/zap"
 
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -290,16 +291,19 @@ func main() {
 	}
 
 	// Add global middleware
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
 	// Add timeout middleware
-	app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
+	app.Use(liftMiddleware.TimeoutMiddleware(liftMiddleware.TimeoutConfig{
 		DefaultTimeout: 30 * time.Second,
 	}))
 
 	// Add custom logging middleware
 	app.Use(createLoggingMiddleware(logger))
 
-	// Add CORS middleware
-	app.Use(createCORSMiddleware())
+	// Apply strict security middleware for web clients
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeAPI, logger)
 
 	// Add unified error handling middleware
 	app.Use(common.CreateAPIErrorMiddleware(logger))

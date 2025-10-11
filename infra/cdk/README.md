@@ -36,9 +36,9 @@ infra/cdk/
 │   ├── api_routes.go         # API Gateway route configurations
 │   └── stream_processors.go  # DynamoDB stream processors
 └── config/
-    ├── dev.yaml              # Development environment config
+    ├── development.yaml      # Development environment config
     ├── staging.yaml          # Staging environment config
-    └── prod.yaml             # Production environment config
+    └── production.yaml       # Production environment config
 ```
 
 ## Deployment
@@ -167,7 +167,7 @@ cdk destroy --all --context environment=development --force
 
 Each environment has its own configuration in `config/*.yaml`:
 
-### Development (`config/dev.yaml`)
+### Development (`config/development.yaml`)
 - **Memory**: 512MB RAM 
 - **Timeout**: 30 seconds
 - **Log Level**: DEBUG
@@ -179,14 +179,13 @@ Each environment has its own configuration in `config/*.yaml`:
 - **Timeout**: 30 seconds  
 - **Log Level**: INFO
 - **Features**: Deletion protection enabled, detailed monitoring
-- **Reserved Concurrency**: 10 concurrent executions
+- **Cost**: Optimized with auto-scaling
 
-### Production (`config/prod.yaml`)
+### Production (`config/production.yaml`)
 - **Memory**: 3008MB RAM (ARM64 optimized)
 - **Timeout**: 30 seconds
 - **Log Level**: INFO
 - **Features**: Full deletion protection, comprehensive monitoring
-- **Reserved Concurrency**: 50 concurrent executions
 - **Advanced Monitoring**: Error rate thresholds, latency monitoring
 
 ### Required Context Variables

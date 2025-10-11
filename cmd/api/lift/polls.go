@@ -35,19 +35,8 @@ func (h *Handler) HandleGetPollLift(ctx *lift.Context) error {
 	}
 
 	// Test mode support
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var userID string
-	if testUsername != "" {
-		// Test mode - use test username
-		account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
-		if err == nil && account.Actor != nil {
-			userID = account.Actor.ID
-		}
-	} else if authHeader != "" {
+	if authHeader != "" {
 		token, err := auth.ExtractBearerToken(authHeader)
 		if err == nil {
 			oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
@@ -183,45 +172,6 @@ func (h *Handler) HandleVoteOnPollLift(ctx *lift.Context) error {
 
 // authenticatePollVoter handles authentication for poll voting
 func (h *Handler) authenticatePollVoter(ctx *lift.Context) (*auth.Claims, *storage.ActorRecord, error) {
-	// Check for test mode
-	testUsername := h.getPollTestUsername(ctx)
-	if testUsername != "" {
-		return h.authenticateTestPollVoter(ctx, testUsername)
-	}
-
-	// Normal authentication flow
-	return h.authenticateRealPollVoter(ctx)
-}
-
-// getPollTestUsername extracts test username from headers
-func (h *Handler) getPollTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("test_username", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
-
-// authenticateTestPollVoter handles test mode authentication
-func (h *Handler) authenticateTestPollVoter(ctx *lift.Context, testUsername string) (*auth.Claims, *storage.ActorRecord, error) {
-	account, err := h.registry.Accounts().GetAccount(ctx.Context, testUsername)
-	if err != nil || account.Actor == nil {
-		h.logger.Error("failed to get test actor", zap.Error(err))
-		ctx.Status(http.StatusUnauthorized)
-		return nil, nil, ctx.JSON(map[string]any{"error": "unauthorized"})
-	}
-
-	actor := h.convertToActorRecord(account.Actor)
-	claims := &auth.Claims{
-		Username: testUsername,
-		Scopes:   auth.DefaultScopes(),
-	}
-
-	return claims, actor, nil
-}
-
-// authenticateRealPollVoter handles normal authentication flow
-func (h *Handler) authenticateRealPollVoter(ctx *lift.Context) (*auth.Claims, *storage.ActorRecord, error) {
 	// Extract auth header
 	authHeader := h.getPollAuthHeader(ctx)
 

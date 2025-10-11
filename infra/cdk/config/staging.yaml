@@ -1,6 +1,6 @@
 environment: staging
 appName: lesser
-domain: staging.lesser.app
+domain: staging.lesser.host
 memorySize: 1024
 timeout: 30
 logLevel: INFO
@@ -20,4 +20,4 @@ monitoring:
   realTimeStreaming: false
 cost:
   optimized: true
-  reservedConcurrency: 10
+  reservedConcurrency: 0

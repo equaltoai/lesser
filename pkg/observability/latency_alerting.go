@@ -22,13 +22,13 @@ const (
 
 // LatencyAlerter manages real-time latency alerting
 type LatencyAlerter struct {
-	logger            *zap.Logger
-	metricsRecorder   MetricsRecorder
-	webhookDelivery   *WebhookDeliveryService
-	alertRules        map[string]*AlertRule
-	alertHistory      map[string]*AlertHistory
-	mu                sync.RWMutex
-	enabled           bool
+	logger          *zap.Logger
+	metricsRecorder MetricsRecorder
+	webhookDelivery *WebhookDeliveryService
+	alertRules      map[string]*AlertRule
+	alertHistory    map[string]*AlertHistory
+	mu              sync.RWMutex
+	enabled         bool
 }
 
 // AlertRule defines the conditions for triggering an alert

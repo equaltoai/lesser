@@ -118,12 +118,6 @@ func (h *Handler) HandleCreateImportLift(ctx *lift.Context) error {
 
 // authenticateImportRequest handles authentication for import requests
 func (h *Handler) authenticateImportRequest(ctx *lift.Context) (string, error) {
-	// Check for test username
-	testUsername := h.getImportTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract auth header
 	authHeader := h.extractImportAuthHeader(ctx)
 
@@ -135,15 +129,6 @@ func (h *Handler) authenticateImportRequest(ctx *lift.Context) (string, error) {
 
 	// Validate token and check scope
 	return h.validateImportToken(ctx, token)
-}
-
-// getImportTestUsername extracts test username from headers
-func (h *Handler) getImportTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
 }
 
 // extractImportAuthHeader extracts authorization header
@@ -756,12 +741,6 @@ func (h *Handler) basicFileValidation(data []byte) error {
 // authenticateImportStatusRequest handles authentication for import status/list requests
 // This consolidates the duplicate authentication logic from HandleGetImportStatusLift and HandleListImportsLift
 func (h *Handler) authenticateImportStatusRequest(ctx *lift.Context) (string, error) {
-	// Check for test username
-	testUsername := h.getImportTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract auth header
 	authHeader := h.extractImportAuthHeader(ctx)
 

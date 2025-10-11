@@ -86,7 +86,7 @@ type TagTimelineUser struct {
 	Username string
 }
 
-// HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag  
+// HandleGetTagTimelineLift handles GET /api/v1/timelines/tag/:hashtag
 func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 	hashtag := ctx.Param("hashtag")
 	if err := common.ValidateRequiredParam("hashtag", hashtag); err != nil {
@@ -169,9 +169,9 @@ func (h *Handler) HandleGetTagTimelineLift(ctx *lift.Context) error {
 
 // parseTagTimelineParams extracts query parameters using centralized pagination helper
 func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*TagTimelineParams, error) {
-	// Use centralized timeline pagination helper 
+	// Use centralized timeline pagination helper
 	timelineParams := common.GetTimelinePaginationParams(ctx)
-	
+
 	params := &TagTimelineParams{
 		Hashtag:   hashtag,
 		Limit:     timelineParams.Limit,
@@ -234,10 +234,11 @@ func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate and get username
-	username, err := h.authenticateRequestWithScope(ctx, auth.ScopeRead)
+	claims, err := h.authenticateWithScope(ctx, "read")
 	if err != nil {
 		return err
 	}
+	username := claims.Username
 
 	// Parse timeline parameters
 	limit, cursor, err := h.parseTimelineParams(ctx)
@@ -387,12 +388,6 @@ type directTimelineParams struct {
 
 // authenticateDirectTimeline authenticates the user for direct timeline access
 func (h *Handler) authenticateDirectTimeline(ctx *lift.Context) (string, error) {
-	// Test hook - check for test username header
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract and validate token
 	authHeader := h.extractDirectTimelineAuthHeader(ctx)
 	token, err := auth.ExtractBearerToken(authHeader)
@@ -439,7 +434,7 @@ func (h *Handler) extractDirectTimelineAuthHeader(ctx *lift.Context) string {
 func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelineParams {
 	// Use centralized pagination parameter extraction
 	paginationParams := common.GetPaginationParams(ctx)
-	
+
 	params := directTimelineParams{
 		limit: paginationParams.Limit,
 		maxID: paginationParams.MaxID,

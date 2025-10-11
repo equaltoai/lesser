@@ -1,6 +1,6 @@
 environment: production
 appName: lesser
-domain: lesser.app
+domain: lesser.host
 memorySize: 3008
 timeout: 30
 logLevel: INFO
@@ -24,4 +24,4 @@ monitoring:
   concurrentExecutionsThreshold: 100
 cost:
   optimized: false
-  reservedConcurrency: 50
+  reservedConcurrency: 0

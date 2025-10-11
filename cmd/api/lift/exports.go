@@ -115,11 +115,6 @@ func (h *Handler) HandleCreateExportLift(ctx *lift.Context) error {
 // authenticateExportRequest handles authentication for export requests
 func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, error) {
 	// Check for test username
-	testUsername := h.getExportTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract auth header
 	authHeader := h.extractExportAuthHeader(ctx)
 
@@ -133,14 +128,6 @@ func (h *Handler) authenticateExportRequest(ctx *lift.Context) (string, error) {
 	return h.validateExportToken(ctx, token)
 }
 
-// getExportTestUsername extracts test username from headers
-func (h *Handler) getExportTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if err := common.ValidateRequiredParam("testUsername", testUsername); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
 
 // extractExportAuthHeader extracts authorization header
 func (h *Handler) extractExportAuthHeader(ctx *lift.Context) string {
@@ -454,11 +441,8 @@ func (h *Handler) authenticateListExportsRequest(ctx *lift.Context) (string, err
 
 // getListExportsTestUsername extracts test username from headers
 func (h *Handler) getListExportsTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
+	// Test authentication has been removed - always return empty string
+	return ""
 }
 
 // authenticateListExportsWithToken authenticates using bearer token
@@ -687,11 +671,6 @@ func (h *Handler) estimateExportCost(req *ExportRequest) int64 {
 // This consolidates the duplicate authentication logic from HandleGetExportStatusLift and HandleDownloadExportLift
 func (h *Handler) authenticateExportStatusRequest(ctx *lift.Context) (string, error) {
 	// Check for test username
-	testUsername := h.getExportTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Extract auth header
 	authHeader := h.extractExportAuthHeader(ctx)
 

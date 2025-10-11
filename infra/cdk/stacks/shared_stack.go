@@ -19,6 +19,7 @@ type SharedStack struct {
 	awscdk.Stack
 	EncryptionKey   awskms.Key
 	ActorPrivateKey awssecretsmanager.Secret
+	JWTSecret       awssecretsmanager.Secret
 }
 
 func NewSharedStack(scope constructs.Construct, id string, props *SharedStackProps) *SharedStack {
@@ -49,6 +50,19 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		},
 	})
 
+	// Create JWT secret (shared across all environments)
+	sharedStack.JWTSecret = awssecretsmanager.NewSecret(stack, jsii.String("JWTSecret"), &awssecretsmanager.SecretProps{
+		Description:   jsii.String("JWT signing secret for authentication (shared by all environments)"),
+		SecretName:    jsii.String(fmt.Sprintf("%s/jwt-secret", props.AppName)),
+		EncryptionKey: sharedStack.EncryptionKey,
+		GenerateSecretString: &awssecretsmanager.SecretStringGenerator{
+			SecretStringTemplate: jsii.String(`{}`),
+			GenerateStringKey:    jsii.String("secret"),
+			PasswordLength:       jsii.Number(64),
+			ExcludeCharacters:    jsii.String(" \t\n\"'\\"),
+		},
+	})
+
 	// Create outputs
 	awscdk.NewCfnOutput(stack, jsii.String("EncryptionKeyArn"), &awscdk.CfnOutputProps{
 		Value:       sharedStack.EncryptionKey.KeyArn(),
@@ -60,6 +74,12 @@ func NewSharedStack(scope constructs.Construct, id string, props *SharedStackPro
 		Value:       sharedStack.ActorPrivateKey.SecretArn(),
 		Description: jsii.String("Actor private key secret ARN"),
 		ExportName:  jsii.String(fmt.Sprintf("%s-actor-private-key-arn", props.AppName)),
+	})
+
+	awscdk.NewCfnOutput(stack, jsii.String("JWTSecretArn"), &awscdk.CfnOutputProps{
+		Value:       sharedStack.JWTSecret.SecretArn(),
+		Description: jsii.String("JWT secret ARN"),
+		ExportName:  jsii.String(fmt.Sprintf("%s-jwt-secret-arn", props.AppName)),
 	})
 
 	return sharedStack

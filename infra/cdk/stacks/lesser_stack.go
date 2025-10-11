@@ -20,7 +20,6 @@ type LesserStackProps struct {
 	awscdk.StackProps
 	Environment string
 	Domain      string
-	JWTSecret   *string                // JWT secret for auth
 	Config      map[string]interface{} // Environment-specific configuration
 }
 
@@ -117,9 +116,11 @@ func (s *LesserStack) createSharedResources() {
 		BillingMode:         awsdynamodb.BillingMode_PAY_PER_REQUEST,
 		Stream:              awsdynamodb.StreamViewType_NEW_AND_OLD_IMAGES,
 		TimeToLiveAttribute: jsii.String("TTL"),
-		PointInTimeRecovery: jsii.Bool(isProd),
-		DeletionProtection:  jsii.Bool(isProd),
-		RemovalPolicy:       getRemovalPolicy(isProd),
+		PointInTimeRecoverySpecification: &awsdynamodb.PointInTimeRecoverySpecification{
+			PointInTimeRecoveryEnabled: jsii.Bool(isProd),
+		},
+		DeletionProtection: jsii.Bool(isProd),
+		RemovalPolicy:      getRemovalPolicy(isProd),
 	})
 
 	// Add GSIs
@@ -189,7 +190,7 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 		Certificate:            s.Certificate,
 		MinimumProtocolVersion: awscloudfront.SecurityPolicyProtocol_TLS_V1_2_2021,
 		DefaultBehavior: &awscloudfront.BehaviorOptions{
-			Origin: awscloudfrontorigins.NewS3Origin(s.MediaBucket, &awscloudfrontorigins.S3OriginProps{
+			Origin: awscloudfrontorigins.S3BucketOrigin_WithOriginAccessIdentity(s.MediaBucket, &awscloudfrontorigins.S3BucketOriginWithOAIProps{
 				OriginAccessIdentity: oai,
 			}),
 			ViewerProtocolPolicy: awscloudfront.ViewerProtocolPolicy_REDIRECT_TO_HTTPS,

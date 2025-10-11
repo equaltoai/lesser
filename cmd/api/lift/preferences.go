@@ -15,45 +15,30 @@ import (
 // HandleGetPreferencesLift handles GET /api/v1/preferences
 // Returns user preferences in Mastodon format
 func (h *Handler) HandleGetPreferencesLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Extract token from Authorization header
+	authHeader := ctx.Header("Authorization")
+	if authHeader == "" {
+		return common.RespondUnauthorized(ctx)
 	}
 
-	var username string
-	var claims *auth.Claims
-
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if authHeader == "" {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Check read scope
-		if !claims.HasScope(auth.ScopeRead) {
-			return common.RespondInsufficientScope(ctx)
-		}
-
-		username = claims.Username
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.RespondInsufficientScope(ctx)
+	}
+
+	username := claims.Username
 
 	// Get user preferences using Accounts service
 	result, err := h.registry.Accounts().GetPreferences(ctx.Context, &accounts.GetPreferencesQuery{
@@ -118,28 +103,12 @@ func (h *Handler) HandleUpdatePreferencesLift(ctx *lift.Context) error {
 
 // authenticatePreferencesRequest authenticates and authorizes the preferences request
 func (h *Handler) authenticatePreferencesRequest(ctx *lift.Context, requiredScope string) (string, error) {
-	// Check for test mode
-	testUsername := h.getPreferencesTestUsername(ctx)
-	if testUsername != "" {
-		h.logger.Debug("test mode: using provided username", zap.String("username", testUsername))
-		return testUsername, nil
-	}
-
 	// Normal authentication flow
 	claims, err := h.authenticateWithScope(ctx, requiredScope)
 	if err != nil {
 		return "", err
 	}
 	return claims.Username, nil
-}
-
-// getPreferencesTestUsername extracts test username from headers
-func (h *Handler) getPreferencesTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
 }
 
 // parsePreferencesUpdateRequest parses the preferences update request

@@ -213,11 +213,6 @@ func (h *Handler) oauthErrorLift(ctx *lift.Context, errorCode, errorDescription,
 
 // getUserFromSessionLift extracts the username from the session using Lift patterns
 func (h *Handler) getUserFromSessionLift(ctx *lift.Context) string {
-	// Test mode - check for test header
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		return testUsername
-	}
-
 	// Check for authentication context from unified middleware
 	if username := ctx.Get("username"); username != nil {
 		if usernameStr, ok := username.(string); ok && usernameStr != "" {

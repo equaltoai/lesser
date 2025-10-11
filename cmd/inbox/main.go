@@ -22,9 +22,9 @@ import (
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/federation"
 	"github.com/equaltoai/lesser/pkg/httpclient"
+	"github.com/equaltoai/lesser/pkg/middleware"
 	"github.com/equaltoai/lesser/pkg/monitoring"
 	"github.com/equaltoai/lesser/pkg/observability"
-	"github.com/equaltoai/lesser/pkg/ratelimit"
 	"github.com/equaltoai/lesser/pkg/storage"
 	storageCore "github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/storage/dynamorm"
@@ -3851,7 +3851,13 @@ func main() {
 
 	app := lift.New()
 
-	// Add request ID middleware (first in chain)
+	// Panic recovery middleware (MUST be first to catch all panics)
+	app.Use(middleware.PanicRecovery(lambdaCtx.Logger))
+
+	// Apply federation security middleware
+	middleware.ApplySecurityMiddleware(app, middleware.SecurityTypeFederation, lambdaCtx.Logger)
+
+	// Add request ID middleware
 	app.Use(func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(ctx *lift.Context) error {
 			requestID := fmt.Sprintf("inbox-%d", time.Now().UnixNano())
@@ -3908,11 +3914,7 @@ func main() {
 		app.Use(handler.createFederationMetricsMiddleware())
 	}
 
-	// Add federation rate limiting middleware (fourth in chain)
-	if !handler.getConfig().DisableAWSModeration { // Use existing moderation flag to control rate limiting
-		app.Use(ratelimit.FederationRateLimitMiddleware(handler.storageAdapter))
-		handler.logger.Info("enabled federation rate limiting middleware")
-	}
+	// Rate limiting is now handled by ApplySecurityMiddleware
 
 	// Register all inbox routes
 	handler.RegisterRoutes(app)

@@ -112,7 +112,18 @@ func main() {
 		processor.baseURL = "https://example.com" // Default
 	}
 
-	lambda.Start(func(ctx context.Context, event events.SQSEvent) error {
+	lambda.Start(func(ctx context.Context, event events.SQSEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				requestID := fmt.Sprintf("export-%d", time.Now().UnixNano())
+				processor.logger.Error("panic in export generator handler",
+					zap.String("request_id", requestID),
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in export-generator: %v", r)
+			}
+		}()
+		
 		liftCtx := &lift.Context{
 			Request:   &lift.Request{},
 			RequestID: fmt.Sprintf("export-%d", time.Now().UnixNano()),

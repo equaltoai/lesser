@@ -1001,5 +1001,16 @@ func main() {
 		zap.String("lambda_type", "processor"))
 
 	// Start Lambda handler for DynamoDB streams
-	lambda.Start(handler.HandleDynamoDBStreamEvent)
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				lambdaCtx.Logger.Error("panic in metrics processor handler",
+					zap.Any("panic", r),
+					zap.Stack("stack"))
+				err = fmt.Errorf("panic recovered in metrics-processor: %v", r)
+			}
+		}()
+		
+		return handler.HandleDynamoDBStreamEvent(ctx, event)
+	})
 }

@@ -21,36 +21,22 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
 
-	var username string
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		_, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	_, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Normalize actor ID
@@ -87,40 +73,28 @@ func (h *Handler) HandleGetReputationLift(ctx *lift.Context) error {
 
 // HandleExportReputationLift handles POST /api/v1/reputation/export
 func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
 	var claims *auth.Claims
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		username = claims.Username
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	username = claims.Username
 
 	// Get the actor ID for the authenticated user
 	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)
@@ -147,36 +121,22 @@ func (h *Handler) HandleExportReputationLift(ctx *lift.Context) error {
 
 // HandleImportReputationLift handles POST /api/v1/reputation/import
 func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
 
-	var username string
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		_, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	_, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Parse request body
@@ -213,40 +173,28 @@ func (h *Handler) HandleImportReputationLift(ctx *lift.Context) error {
 
 // HandleCreateVouchLift handles POST /api/v1/vouches
 func (h *Handler) HandleCreateVouchLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
 	var claims *auth.Claims
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		username = claims.Username
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	username = claims.Username
 
 	// Parse request body
 	var vouchReq struct {
@@ -310,36 +258,22 @@ func (h *Handler) HandleGetVouchesLift(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
 
-	var username string
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		_, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	_, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
 
 	// Normalize actor ID
@@ -385,40 +319,28 @@ func (h *Handler) HandleRevokeVouchLift(ctx *lift.Context) error {
 		return common.RespondBadRequest(ctx, "missing vouch_id parameter")
 	}
 
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam("testUsername", testUsername) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
 	var claims *auth.Claims
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract and validate token
-		authHeader := ctx.Header("Authorization")
-		if common.ValidateRequiredParam("authHeader", authHeader) != nil {
-			authHeader = ctx.Header("authorization")
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		username = claims.Username
+	// Authentication required - extract and validate token
+	authHeader := ctx.Header("Authorization")
+	if common.ValidateRequiredParam("authHeader", authHeader) != nil {
+		authHeader = ctx.Header("authorization")
 	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	username = claims.Username
 
 	// Get the actor ID for the authenticated user
 	actorID := fmt.Sprintf("https://%s/users/%s", h.cfg.Domain, username)

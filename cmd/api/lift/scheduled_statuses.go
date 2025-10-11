@@ -21,10 +21,12 @@ import (
 // HandleGetScheduledStatusesLift handles GET /api/v1/scheduled_statuses
 func (h *Handler) HandleGetScheduledStatusesLift(ctx *lift.Context) error {
 	// Authenticate request
-	username, err := h.authenticateScheduledStatusRequest(ctx)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "read")
 	if err != nil {
 		return err
 	}
+	username := account.Username
 
 	// Parse pagination parameters
 	limit, cursor := h.parseScheduledStatusPagination(ctx)
@@ -73,10 +75,12 @@ func (h *Handler) HandleGetScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	username, err := h.authenticateScheduledStatusRequest(ctx)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "read")
 	if err != nil {
 		return err
 	}
+	username := account.Username
 
 	// Get scheduled service
 	scheduledService := h.registry.Scheduled()
@@ -112,10 +116,12 @@ func (h *Handler) HandleUpdateScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	username, err := h.authenticateScheduledStatusRequest(ctx)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
 	if err != nil {
 		return err
 	}
+	username := account.Username
 
 	// Parse request body
 	var req apimodels.ScheduledStatusUpdateRequest
@@ -181,10 +187,12 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 	}
 
 	// Authenticate request
-	username, err := h.authenticateScheduledStatusRequest(ctx)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
 	if err != nil {
 		return err
 	}
+	username := account.Username
 
 	// Get scheduled service
 	scheduledService := h.registry.Scheduled()
@@ -220,10 +228,13 @@ func (h *Handler) HandleDeleteScheduledStatusLift(ctx *lift.Context) error {
 func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *apimodels.CreateStatusRequest) (*apimodels.ScheduledStatus, error) {
 	// This is called from the main status creation handler when scheduled_at is present
 	// Authenticate request and extract client ID for application tracking
-	username, clientID := h.getAuthenticatedUsernameAndClientID(ctx)
-	if common.ValidateRequiredParam(username, "username") != nil {
-		return nil, common.RespondUnauthorized(ctx)
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	account, err := auth.RequireAuthWithScope(ctx, oauthSvc, "write")
+	if err != nil {
+		return nil, err
 	}
+	username := account.Username
+	clientID := account.Claims.ClientID
 
 	// Parse scheduled time
 	if statusReq.ScheduledAt == nil || common.ValidateRequiredParam(*statusReq.ScheduledAt, "scheduledAt") != nil {
@@ -285,68 +296,6 @@ func (h *Handler) HandleCreateScheduledStatusLift(ctx *lift.Context, statusReq *
 }
 
 // Helper methods
-
-// authenticateScheduledStatusRequest handles authentication for scheduled status requests
-func (h *Handler) authenticateScheduledStatusRequest(ctx *lift.Context) (string, error) {
-	// Check for test username
-	testUsername := h.getScheduledStatusTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
-	// Extract auth header
-	authHeader := h.extractScheduledStatusAuthHeader(ctx)
-
-	// Extract and validate token
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	// Validate token and check scope
-	return h.validateScheduledStatusToken(ctx, token)
-}
-
-// getScheduledStatusTestUsername extracts test username from headers
-func (h *Handler) getScheduledStatusTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if common.ValidateRequiredParam(testUsername, "testUsername") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
-}
-
-// extractScheduledStatusAuthHeader extracts authorization header
-func (h *Handler) extractScheduledStatusAuthHeader(ctx *lift.Context) string {
-	authHeader := ctx.Header("Authorization")
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-		authHeader = ctx.Header("authorization")
-	}
-
-	if common.ValidateRequiredParam(authHeader, "authHeader") != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		authHeader = ctx.Request.Request.Headers["Authorization"]
-		if common.ValidateRequiredParam(authHeader, "authHeader") != nil {
-			authHeader = ctx.Request.Request.Headers["authorization"]
-		}
-	}
-
-	return authHeader
-}
-
-// validateScheduledStatusToken validates the token and checks scope
-func (h *Handler) validateScheduledStatusToken(ctx *lift.Context, token string) (string, error) {
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", common.RespondUnauthorized(ctx)
-	}
-
-	if !claims.HasScope(auth.ScopeRead) {
-		return "", common.RespondInsufficientScope(ctx)
-	}
-
-	return claims.Username, nil
-}
 
 // parseScheduledStatusPagination parses pagination parameters
 func (h *Handler) parseScheduledStatusPagination(ctx *lift.Context) (int, string) {
@@ -600,37 +549,3 @@ func (h *Handler) parseScheduledStatusRequest(ctx *lift.Context, req interface{}
 	return nil
 }
 
-// getAuthenticatedUsernameAndClientID gets both username and client ID from the authenticated context
-func (h *Handler) getAuthenticatedUsernameAndClientID(ctx *lift.Context) (string, string) {
-	// For test environments, use test username and default client ID
-	testUsername := h.getScheduledStatusTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, "test-client-id"
-	}
-
-	// Try to get from context if set by middleware
-	if username, ok := ctx.Get("username").(string); ok {
-		// Try to get client ID from context as well
-		if clientID, ok := ctx.Get("client_id").(string); ok {
-			return username, clientID
-		}
-		return username, ""
-	}
-
-	// Extract and validate token to get both username and client ID
-	authHeader := h.extractScheduledStatusAuthHeader(ctx)
-	token, err := auth.ExtractBearerToken(authHeader)
-	if err != nil {
-		return "", ""
-	}
-
-	// Validate token and extract claims
-	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-	claims, err := oauthSvc.ValidateAccessToken(token)
-	if err != nil {
-		return "", ""
-	}
-
-	// Return both username and client ID from claims
-	return claims.Username, claims.ClientID
-}

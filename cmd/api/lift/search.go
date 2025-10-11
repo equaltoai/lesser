@@ -140,12 +140,6 @@ func (h *Handler) parseSearchResolve(ctx *lift.Context) bool {
 
 // authenticateAccountSearch handles authentication for account search
 func (h *Handler) authenticateAccountSearch(ctx *lift.Context, followingOnly bool) (string, error) {
-	// Check test mode first
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Try to authenticate from header
 	authenticatedUser := h.authenticateFromSearchHeader(ctx, followingOnly)
 
@@ -399,12 +393,6 @@ func (h *Handler) parseStatusSearchParams(ctx *lift.Context) (*statusSearchParam
 
 // authenticateStatusSearch handles authentication for status search
 func (h *Handler) authenticateStatusSearch(ctx *lift.Context) (string, error) {
-	// Check test mode first
-	testUsername := h.getTestUsername(ctx)
-	if testUsername != "" {
-		return testUsername, nil
-	}
-
 	// Status search requires authentication for privacy
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {

@@ -19,12 +19,12 @@ type FederationCache struct {
 	publicKeys map[string]*PublicKeyEntry
 	pkMu       sync.RWMutex
 
-	// Instance metadata cache  
+	// Instance metadata cache
 	instances map[string]*InstanceEntry
 	instMu    sync.RWMutex
 
 	// Actor profile cache
-	actors map[string]*ActorEntry
+	actors  map[string]*ActorEntry
 	actorMu sync.RWMutex
 
 	// Configuration
@@ -34,7 +34,7 @@ type FederationCache struct {
 	maxEntries   int
 
 	// Storage backend (optional, for persistence) - interface to be defined by implementer
-	storage interface{}  // Should implement persistence methods
+	storage interface{} // Should implement persistence methods
 	logger  *zap.Logger
 
 	// Cleanup goroutine control
@@ -46,8 +46,8 @@ type FederationCache struct {
 type PublicKeyEntry struct {
 	Key       crypto.PublicKey `json:"key"`
 	KeyID     string           `json:"key_id"`
-	Owner     string           `json:"owner"`      // Actor URI who owns this key
-	Algorithm string           `json:"algorithm"`  // Key algorithm (RSA, Ed25519, etc.)
+	Owner     string           `json:"owner"`     // Actor URI who owns this key
+	Algorithm string           `json:"algorithm"` // Key algorithm (RSA, Ed25519, etc.)
 	CreatedAt time.Time        `json:"created_at"`
 	ExpiresAt time.Time        `json:"expires_at"`
 }
@@ -75,20 +75,20 @@ type ActorEntry struct {
 
 // Config holds configuration for FederationCache
 type CacheConfig struct {
-	PublicKeyTTL time.Duration // Default: 1 hour
-	InstanceTTL  time.Duration // Default: 30 minutes
-	ActorTTL     time.Duration // Default: 15 minutes
-	MaxEntries   int           // Default: 10000
+	PublicKeyTTL    time.Duration // Default: 1 hour
+	InstanceTTL     time.Duration // Default: 30 minutes
+	ActorTTL        time.Duration // Default: 15 minutes
+	MaxEntries      int           // Default: 10000
 	CleanupInterval time.Duration // Default: 5 minutes
 }
 
 // DefaultCacheConfig returns sensible defaults for federation caching
 func DefaultCacheConfig() CacheConfig {
 	return CacheConfig{
-		PublicKeyTTL: 1 * time.Hour,
-		InstanceTTL:  30 * time.Minute,
-		ActorTTL:     15 * time.Minute,
-		MaxEntries:   10000,
+		PublicKeyTTL:    1 * time.Hour,
+		InstanceTTL:     30 * time.Minute,
+		ActorTTL:        15 * time.Minute,
+		MaxEntries:      10000,
 		CleanupInterval: 5 * time.Minute,
 	}
 }
@@ -398,7 +398,7 @@ func (fc *FederationCache) cleanupLoop(interval time.Duration) {
 
 func (fc *FederationCache) cleanup() {
 	now := time.Now()
-	
+
 	// Cleanup expired public keys
 	fc.pkMu.Lock()
 	for keyID, entry := range fc.publicKeys {
@@ -474,7 +474,7 @@ func (fc *FederationCache) removePersistentPublicKey(keyID string) {
 		return
 	}
 
-	// Implementation would depend on the specific storage interface provided  
+	// Implementation would depend on the specific storage interface provided
 	// Example: fc.storage.DeletePublicKey(ctx, keyID)
 	fc.logger.Debug("would remove persistent public key",
 		zap.String("key_id", keyID))
@@ -529,7 +529,7 @@ func (fc *FederationCache) GetOrFetchInstance(domain string, fetchFn func() (map
 
 	// Cache the result
 	fc.SetInstance(domain, metadata, available)
-	
+
 	// Return the newly cached entry
 	entry, _ := fc.GetInstance(domain)
 	return entry, nil

@@ -343,22 +343,6 @@ func TestAuthHelperFunctions(t *testing.T) {
 		}
 	})
 
-	t.Run("GetTestUsername", func(t *testing.T) {
-		// Test with test username header
-		ctx := liftTesting.MockLiftContext("GET", "/test",
-			liftTesting.WithHeaders(map[string]string{
-				"X-Test-Username": "testuser",
-			}),
-		)
-
-		username := GetTestUsername(ctx)
-		assert.Equal(t, "testuser", username)
-
-		// Test without test username header
-		ctx = liftTesting.MockLiftContext("GET", "/test")
-		username = GetTestUsername(ctx)
-		assert.Empty(t, username)
-	})
 
 	t.Run("ExtractAuthHeader", func(t *testing.T) {
 		// Test with Authorization header

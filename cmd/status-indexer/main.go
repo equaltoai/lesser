@@ -712,7 +712,17 @@ func main() {
 	// Initialize processor
 	processor = NewStatusIndexer(db, cfg.DynamoTableName, cfg.Domain, aiService, logger)
 
-	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) error {
+	lambda.Start(func(ctx context.Context, event events.DynamoDBEvent) (err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("panic recovered in status-indexer",
+					zap.Any("panic", r),
+					zap.Stack("stack"),
+				)
+				err = fmt.Errorf("panic recovered: %v", r)
+			}
+		}()
+		
 		return processor.HandleStream(ctx, event)
 	})
 }

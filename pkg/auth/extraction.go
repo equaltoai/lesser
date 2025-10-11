@@ -20,15 +20,6 @@ type AuthenticatedAccount struct {
 // GetAccountFromContext extracts the authenticated account from the Lift context
 // This consolidates the common pattern: claims, err := h.oauthService.ValidateAccessToken(token)
 func GetAccountFromContext(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
-	// Check for test mode first (found in 50+ handlers)
-	testUsername := common.GetTestUsername(ctx)
-	if testUsername != "" {
-		return &AuthenticatedAccount{
-			Username: testUsername,
-			Claims:   nil, // Test mode bypasses JWT claims
-		}, nil
-	}
-
 	// Extract Authorization header with fallbacks
 	authHeader := common.ExtractAuthHeader(ctx)
 	if authHeader == "" {
@@ -78,11 +69,6 @@ func RequireAuthWithScope(ctx *lift.Context, oauthService OAuthServiceInterface,
 		return nil, err
 	}
 
-	// Test mode bypasses scope checks
-	if account.Claims == nil {
-		return account, nil
-	}
-
 	if !account.Claims.HasScope(scope) {
 		return nil, apperrors.Forbidden(fmt.Sprintf("insufficient scope: requires %s", scope))
 	}
@@ -96,11 +82,6 @@ func RequireAuthWithMultipleScopes(ctx *lift.Context, oauthService OAuthServiceI
 	account, err := GetAccountFromContext(ctx, oauthService)
 	if err != nil {
 		return nil, err
-	}
-
-	// Test mode bypasses scope checks
-	if account.Claims == nil {
-		return account, nil
 	}
 
 	// Check if user has any of the required scopes
@@ -120,17 +101,8 @@ func RequireAuthWithMultipleScopes(ctx *lift.Context, oauthService OAuthServiceI
 }
 
 // ExtractOptionalAuth extracts authentication if present, but doesn't require it
-// This consolidates the pattern used in public endpoints that benefit from auth context  
+// This consolidates the pattern used in public endpoints that benefit from auth context
 func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) (*AuthenticatedAccount, error) {
-	// Check for test mode first
-	testUsername := common.GetTestUsername(ctx)
-	if testUsername != "" {
-		return &AuthenticatedAccount{
-			Username: testUsername,
-			Claims:   nil,
-		}, nil
-	}
-
 	// Extract Authorization header
 	authHeader := common.ExtractAuthHeader(ctx)
 	if authHeader == "" {
@@ -193,11 +165,6 @@ func ValidateAccountOwnershipOrAdmin(account *AuthenticatedAccount, targetUserna
 		return nil
 	}
 
-	// Test mode bypasses admin checks
-	if account.Claims == nil {
-		return nil
-	}
-
 	if account.Claims.HasScope(ScopeAdmin) {
 		return nil
 	}
@@ -223,7 +190,7 @@ func NewAuthenticationMiddleware(oauthService OAuthServiceInterface) *Authentica
 	}
 }
 
-// RequireAuthMiddleware returns a Lift middleware that requires authentication  
+// RequireAuthMiddleware returns a Lift middleware that requires authentication
 // Note: This would need to be implemented based on the specific Lift middleware interface
 func (am *AuthenticationMiddleware) RequireAuthMiddleware() func(*lift.Context) error {
 	return func(ctx *lift.Context) error {
@@ -260,7 +227,7 @@ func (am *AuthenticationMiddleware) OptionalAuthMiddleware() func(*lift.Context)
 		if account != nil {
 			ctx.Set("authenticated_account", account)
 		}
-		// Continue to next handler - implementation depends on Lift framework  
+		// Continue to next handler - implementation depends on Lift framework
 		return nil
 	}
 }

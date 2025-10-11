@@ -76,11 +76,6 @@ func (h *Handler) HandleSearchLift(ctx *lift.Context) error {
 
 // logSearchAuthentication handles optional authentication logging
 func (h *Handler) logSearchAuthentication(ctx *lift.Context) {
-	if testUsername := h.getTestUsername(ctx); testUsername != "" {
-		h.logger.Info("Using test mode authentication", zap.String("username", testUsername))
-		return
-	}
-
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {
 		return

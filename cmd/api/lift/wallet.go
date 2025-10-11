@@ -295,16 +295,6 @@ func (h *Handler) HandleGetWalletsLift(ctx *lift.Context) error {
 
 // getAuthenticatedUserLift gets the authenticated user from the context
 func (h *Handler) getAuthenticatedUserLift(ctx *lift.Context) string {
-	// Test mode - check for test header
-	if testUsername := ctx.Header("X-Test-Username"); testUsername != "" {
-		return testUsername
-	}
-	if testUsername := ""; ctx.Request != nil && ctx.Request.Request != nil {
-		if testUsername = ctx.Request.Request.Headers["X-Test-Username"]; testUsername != "" {
-			return testUsername
-		}
-	}
-
 	// Get bearer token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {

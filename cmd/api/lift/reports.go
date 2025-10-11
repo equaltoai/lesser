@@ -31,21 +31,10 @@ type CreateReportRequest struct {
 
 // HandleCreateReportLift handles POST /api/v1/reports
 func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
 	var claims *auth.Claims
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract token from Authorization header
+	// Extract token from Authorization header
 		authHeader := ctx.Header("Authorization")
 		if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
 			return h.respondUnauthorized(ctx)
@@ -69,7 +58,6 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 		}
 
 		username = claims.Username
-	}
 
 	// Parse request body
 	var req CreateReportRequest

@@ -220,9 +220,9 @@ func SetPaginationHeaders(ctx *lift.Context, baseURL string, params PaginationPa
 // TimelinePaginationParams extends PaginationParams for timeline-specific needs
 type TimelinePaginationParams struct {
 	PaginationParams
-	Local         bool `json:"local"`
-	OnlyMedia     bool `json:"only_media"`
-	RemoteOnly    bool `json:"remote_only"`
+	Local          bool `json:"local"`
+	OnlyMedia      bool `json:"only_media"`
+	RemoteOnly     bool `json:"remote_only"`
 	IncludeReplies bool `json:"include_replies"`
 }
 
@@ -244,12 +244,12 @@ func GetTimelinePaginationParams(ctx *lift.Context) TimelinePaginationParams {
 // SearchPaginationParams extends PaginationParams for search-specific needs
 type SearchPaginationParams struct {
 	PaginationParams
-	Type         string `json:"type"`          // account, hashtag, status
-	Resolve      bool   `json:"resolve"`       // Resolve remote resources
-	Following    bool   `json:"following"`     // Only search followed accounts
-	AccountID    string `json:"account_id"`    // Limit search to specific account
-	MaxResults   int    `json:"max_results"`   // Override limit for search APIs
-	ExcludeUnreviewed bool `json:"exclude_unreviewed"` // Exclude unreviewed content
+	Type              string `json:"type"`               // account, hashtag, status
+	Resolve           bool   `json:"resolve"`            // Resolve remote resources
+	Following         bool   `json:"following"`          // Only search followed accounts
+	AccountID         string `json:"account_id"`         // Limit search to specific account
+	MaxResults        int    `json:"max_results"`        // Override limit for search APIs
+	ExcludeUnreviewed bool   `json:"exclude_unreviewed"` // Exclude unreviewed content
 }
 
 // GetSearchPaginationParams extracts search-specific pagination parameters
@@ -277,13 +277,13 @@ func GetSearchPaginationParams(ctx *lift.Context) SearchPaginationParams {
 // AdminPaginationParams extends PaginationParams for admin-specific needs
 type AdminPaginationParams struct {
 	PaginationParams
-	Origin       string `json:"origin"`       // local, remote
-	Status       string `json:"status"`       // active, pending, disabled, etc.
-	Permissions  string `json:"permissions"`  // Filter by permission level
-	IP           string `json:"ip"`           // Filter by IP address
-	Email        string `json:"email"`        // Filter by email pattern
-	Username     string `json:"username"`     // Filter by username pattern
-	ByDomain     string `json:"by_domain"`    // Filter by domain
+	Origin       string `json:"origin"`        // local, remote
+	Status       string `json:"status"`        // active, pending, disabled, etc.
+	Permissions  string `json:"permissions"`   // Filter by permission level
+	IP           string `json:"ip"`            // Filter by IP address
+	Email        string `json:"email"`         // Filter by email pattern
+	Username     string `json:"username"`      // Filter by username pattern
+	ByDomain     string `json:"by_domain"`     // Filter by domain
 	InviteFilter bool   `json:"invite_filter"` // Show only invited accounts
 }
 

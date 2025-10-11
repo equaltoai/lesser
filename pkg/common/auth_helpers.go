@@ -23,12 +23,10 @@ type Claims interface {
 	GetUsername() string
 }
 
-// AuthContext holds authentication state and test mode information
+// AuthContext holds authentication state
 type AuthContext struct {
-	Username     string
-	Claims       Claims
-	IsTestMode   bool
-	TestUsername string
+	Username string
+	Claims   Claims
 }
 
 // AuthenticationResult holds the result of authentication validation
@@ -42,23 +40,11 @@ type AuthenticationResult struct {
 
 // ExtractAndValidateAuth performs the complete authentication flow
 // This consolidates the most common pattern found across 80+ files:
-//   - Check for test mode (X-Test-Username header)
 //   - Extract Authorization header (with fallback patterns)
 //   - Extract bearer token
 //   - Validate JWT token
 //   - Check required scopes
 func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthService OAuthServiceInterface) *AuthenticationResult {
-	// Check for test mode first
-	testUsername := GetTestUsername(ctx)
-	if testUsername != "" {
-		return &AuthenticationResult{
-			Context: &AuthContext{
-				Username:     testUsername,
-				IsTestMode:   true,
-				TestUsername: testUsername,
-			},
-		}
-	}
 
 	// Extract Authorization header with multiple fallback patterns
 	authHeader := ExtractAuthHeader(ctx)
@@ -106,17 +92,6 @@ func ExtractAndValidateAuth(ctx *lift.Context, requiredScope string, oauthServic
 // ExtractAndValidateAuthWithMultipleScopes validates authentication with multiple allowed scopes
 // This handles the pattern where either of several scopes is acceptable
 func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes []string, oauthService OAuthServiceInterface) *AuthenticationResult {
-	// Check for test mode first
-	testUsername := GetTestUsername(ctx)
-	if testUsername != "" {
-		return &AuthenticationResult{
-			Context: &AuthContext{
-				Username:     testUsername,
-				IsTestMode:   true,
-				TestUsername: testUsername,
-			},
-		}
-	}
 
 	// Extract Authorization header
 	authHeader := ExtractAuthHeader(ctx)
@@ -174,17 +149,6 @@ func ExtractAndValidateAuthWithMultipleScopes(ctx *lift.Context, allowedScopes [
 // ExtractOptionalAuth performs optional authentication (for public endpoints that benefit from auth)
 // This consolidates the pattern where auth is optional but used if present
 func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) *AuthenticationResult {
-	// Check for test mode first
-	testUsername := GetTestUsername(ctx)
-	if testUsername != "" {
-		return &AuthenticationResult{
-			Context: &AuthContext{
-				Username:     testUsername,
-				IsTestMode:   true,
-				TestUsername: testUsername,
-			},
-		}
-	}
 
 	// Extract Authorization header
 	authHeader := ExtractAuthHeader(ctx)
@@ -221,24 +185,6 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 	}
 }
 
-// GetTestUsername extracts test username from multiple header locations
-// This consolidates the pattern found in 50+ files
-func GetTestUsername(ctx *lift.Context) string {
-	// Try primary header method
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername != "" {
-		return testUsername
-	}
-
-	// Try direct request access (fallback pattern found in many files)
-	if ctx.Request != nil && ctx.Request.Request != nil {
-		if headers := ctx.Request.Request.Headers; headers != nil {
-			return headers["X-Test-Username"]
-		}
-	}
-
-	return ""
-}
 
 // ExtractAuthHeader extracts Authorization header with multiple fallback patterns
 // This consolidates the various patterns found across the codebase
@@ -278,9 +224,6 @@ func ValidateWriteAccess(authResult *AuthenticationResult) error {
 		return authResult.Error
 	}
 
-	if authResult.Context.IsTestMode {
-		return nil // Test mode bypasses scope checks
-	}
 
 	if authResult.Context.Claims == nil {
 		return ErrAuthenticationRequired
@@ -299,9 +242,6 @@ func ValidateReadAccess(authResult *AuthenticationResult) error {
 		return authResult.Error
 	}
 
-	if authResult.Context.IsTestMode {
-		return nil // Test mode bypasses scope checks
-	}
 
 	if authResult.Context.Claims == nil {
 		return ErrAuthenticationRequiredRead

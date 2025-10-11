@@ -43,13 +43,13 @@ type AuditReport struct {
 
 // AuditSummary provides a summary of audit findings
 type AuditSummary struct {
-	TotalFiles       int            `json:"total_files"`
-	FilesScanned     int            `json:"files_scanned"`
-	TotalFindings    int            `json:"total_findings"`
-	BySeverity       map[string]int `json:"by_severity"`
-	ByType           map[string]int `json:"by_type"`
-	CriticalIssues   int            `json:"critical_issues"`
-	HighPriorityIssues int          `json:"high_priority_issues"`
+	TotalFiles         int            `json:"total_files"`
+	FilesScanned       int            `json:"files_scanned"`
+	TotalFindings      int            `json:"total_findings"`
+	BySeverity         map[string]int `json:"by_severity"`
+	ByType             map[string]int `json:"by_type"`
+	CriticalIssues     int            `json:"critical_issues"`
+	HighPriorityIssues int            `json:"high_priority_issues"`
 }
 
 // InputValidationAuditor performs comprehensive input validation audits
@@ -128,7 +128,7 @@ func (a *InputValidationAuditor) AuditDirectory(ctx context.Context) (*AuditRepo
 	a.calculateSummary()
 
 	duration := time.Since(start)
-	
+
 	report := &AuditReport{
 		Summary:   a.summary,
 		Findings:  a.findings,
@@ -316,7 +316,7 @@ func (v *validationVisitor) isHTTPHandler(fn *ast.FuncDecl) bool {
 func (v *validationVisitor) checkHTTPHandlerValidation(fn *ast.FuncDecl) {
 	// This is a simplified check - in practice, you'd need more sophisticated analysis
 	bodyHasValidation := v.functionHasValidationCalls(fn)
-	
+
 	if !bodyHasValidation {
 		v.addFinding(ValidationFinding{
 			Type:        "missing_validation",
@@ -355,16 +355,16 @@ func (v *validationVisitor) checkParameterValidation(fn *ast.FuncDecl, param *as
 // checkDangerousFunctions checks for calls to dangerous functions
 func (v *validationVisitor) checkDangerousFunctions(call *ast.CallExpr, funcName string) {
 	dangerousFunctions := map[string]string{
-		"exec.Command":      "Command injection risk",
-		"os.Exec":          "Command injection risk", 
-		"syscall.Exec":     "Command injection risk",
-		"eval":             "Code injection risk",
-		"template.HTML":    "XSS risk with unescaped HTML",
-		"template.JS":      "XSS risk with unescaped JavaScript",
-		"template.CSS":     "XSS risk with unescaped CSS",
-		"sql.Query":        "SQL injection risk",
-		"sql.Exec":         "SQL injection risk",
-		"fmt.Sprintf":      "Potential format string vulnerability",
+		"exec.Command":  "Command injection risk",
+		"os.Exec":       "Command injection risk",
+		"syscall.Exec":  "Command injection risk",
+		"eval":          "Code injection risk",
+		"template.HTML": "XSS risk with unescaped HTML",
+		"template.JS":   "XSS risk with unescaped JavaScript",
+		"template.CSS":  "XSS risk with unescaped CSS",
+		"sql.Query":     "SQL injection risk",
+		"sql.Exec":      "SQL injection risk",
+		"fmt.Sprintf":   "Potential format string vulnerability",
 	}
 
 	if risk, exists := dangerousFunctions[funcName]; exists {
@@ -384,7 +384,7 @@ func (v *validationVisitor) checkDangerousFunctions(call *ast.CallExpr, funcName
 // checkSQLInjection checks for SQL injection vulnerabilities
 func (v *validationVisitor) checkSQLInjection(call *ast.CallExpr, funcName string) {
 	sqlFunctions := []string{
-		"db.Query", "db.QueryRow", "db.Exec", 
+		"db.Query", "db.QueryRow", "db.Exec",
 		"tx.Query", "tx.QueryRow", "tx.Exec",
 		"sql.Query", "sql.Exec",
 		"DB.Query", "DB.Exec",
@@ -412,13 +412,13 @@ func (v *validationVisitor) checkSQLInjection(call *ast.CallExpr, funcName strin
 // checkHTTPRequestProcessing checks HTTP request processing for validation
 func (v *validationVisitor) checkHTTPRequestProcessing(call *ast.CallExpr, funcName string) {
 	httpInputFunctions := map[string]string{
-		"FormValue":       "Form parameter should be validated",
-		"Query":           "Query parameter should be validated", 
-		"PostFormValue":   "POST form value should be validated",
-		"Header":          "HTTP header should be validated",
-		"Cookie":          "Cookie value should be validated",
-		"PathParam":       "Path parameter should be validated",
-		"Param":           "URL parameter should be validated",
+		"FormValue":     "Form parameter should be validated",
+		"Query":         "Query parameter should be validated",
+		"PostFormValue": "POST form value should be validated",
+		"Header":        "HTTP header should be validated",
+		"Cookie":        "Cookie value should be validated",
+		"PathParam":     "Path parameter should be validated",
+		"Param":         "URL parameter should be validated",
 	}
 
 	for httpFunc, suggestion := range httpInputFunctions {
@@ -465,11 +465,11 @@ func (v *validationVisitor) checkStringConversions(call *ast.CallExpr, funcName 
 // checkFileOperations checks file operation functions
 func (v *validationVisitor) checkFileOperations(call *ast.CallExpr, funcName string) {
 	fileOperations := map[string]string{
-		"os.Open":       "File path should be validated to prevent directory traversal",
-		"os.OpenFile":   "File path should be validated to prevent directory traversal",
+		"os.Open":         "File path should be validated to prevent directory traversal",
+		"os.OpenFile":     "File path should be validated to prevent directory traversal",
 		"ioutil.ReadFile": "File path should be validated to prevent directory traversal",
-		"os.ReadFile":   "File path should be validated to prevent directory traversal",
-		"filepath.Join": "Path components should be validated",
+		"os.ReadFile":     "File path should be validated to prevent directory traversal",
+		"filepath.Join":   "Path components should be validated",
 	}
 
 	for fileFunc, suggestion := range fileOperations {
@@ -492,7 +492,7 @@ func (v *validationVisitor) checkFileOperations(call *ast.CallExpr, funcName str
 func (v *validationVisitor) checkInputAssignment(lhs, rhs ast.Expr) {
 	// This is a simplified implementation
 	// In practice, you'd need more sophisticated taint analysis
-	
+
 	if call, ok := rhs.(*ast.CallExpr); ok {
 		funcName := v.getFunctionName(call)
 		if v.isUserInputFunction(funcName) {
@@ -659,7 +659,7 @@ func (v *validationVisitor) hasErrorHandling(call *ast.CallExpr) bool {
 
 func (v *validationVisitor) isUserInputFunction(funcName string) bool {
 	userInputFunctions := []string{
-		"FormValue", "Query", "PostFormValue", "Header", 
+		"FormValue", "Query", "PostFormValue", "Header",
 		"Cookie", "PathParam", "Param", "Body", "GetHeader",
 	}
 
@@ -720,10 +720,10 @@ func (v *validationVisitor) getDangerousFunctionSeverity(funcName string) string
 
 func (v *validationVisitor) getDangerousFunctionSuggestion(funcName string) string {
 	suggestions := map[string]string{
-		"exec.Command":   "Validate and sanitize all command arguments, use allowlists for commands",
-		"template.HTML":  "Use proper template escaping or html/template package",
-		"sql.Query":      "Use parameterized queries with database/sql package",
-		"fmt.Sprintf":    "Validate format strings and arguments to prevent format string attacks",
+		"exec.Command":  "Validate and sanitize all command arguments, use allowlists for commands",
+		"template.HTML": "Use proper template escaping or html/template package",
+		"sql.Query":     "Use parameterized queries with database/sql package",
+		"fmt.Sprintf":   "Validate format strings and arguments to prevent format string attacks",
 	}
 
 	for pattern, suggestion := range suggestions {
@@ -736,10 +736,10 @@ func (v *validationVisitor) getDangerousFunctionSuggestion(funcName string) stri
 
 func (v *validationVisitor) getDangerousFunctionCWE(funcName string) string {
 	cweMap := map[string]string{
-		"exec.Command": "CWE-78",
-		"sql.Query":    "CWE-89", 
+		"exec.Command":  "CWE-78",
+		"sql.Query":     "CWE-89",
 		"template.HTML": "CWE-79",
-		"fmt.Sprintf":  "CWE-134",
+		"fmt.Sprintf":   "CWE-134",
 	}
 
 	for pattern, cwe := range cweMap {

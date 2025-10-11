@@ -16,45 +16,32 @@ import (
 // HandleGetMarkersLift handles GET /api/v1/markers
 // Returns saved timeline positions
 func (h *Handler) HandleGetMarkersLift(ctx *lift.Context) error {
-	// Check for test mode
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-
 	var username string
-	var claims *auth.Claims
 
-	if testUsername != "" {
-		// Test mode - use provided username
-		username = testUsername
-		h.logger.Debug("test mode: using provided username", zap.String("username", username))
-	} else {
-		// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
-
-		// Check read scope
-		if !claims.HasScope(auth.ScopeRead) {
-			return common.RespondInsufficientScope(ctx)
-		}
-
-		username = claims.Username
+	// Extract token from Authorization header
+	authHeader := ctx.Header("Authorization")
+	if err := common.ValidateRequiredParam("authorization_header", authHeader); err != nil {
+		return common.RespondUnauthorized(ctx)
 	}
+
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
+
+	// Check read scope
+	if !claims.HasScope(auth.ScopeRead) {
+		return common.RespondInsufficientScope(ctx)
+	}
+
+	username = claims.Username
 
 	// Get timeline parameter (can be comma-separated)
 	timelineParam := ctx.Query("timeline[]")
@@ -144,11 +131,8 @@ func (h *Handler) authenticateMarkersRequest(ctx *lift.Context, requiredScope st
 
 // getMarkersTestUsername extracts test username from headers
 func (h *Handler) getMarkersTestUsername(ctx *lift.Context) string {
-	testUsername := ctx.Header("X-Test-Username")
-	if testUsername == "" && ctx.Request != nil && ctx.Request.Request != nil {
-		testUsername = ctx.Request.Request.Headers["X-Test-Username"]
-	}
-	return testUsername
+	// Test authentication has been removed - always return empty string
+	return ""
 }
 
 // authenticateMarkersWithScope authenticates and checks for the required scope

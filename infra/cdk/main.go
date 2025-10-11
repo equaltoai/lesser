@@ -10,8 +10,6 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2"
 	"github.com/aws/jsii-runtime-go"
 	"gopkg.in/yaml.v2"
-
-	"github.com/lesser-app/lesser/pkg/config"
 )
 
 // Config represents the environment-specific configuration
@@ -127,12 +125,8 @@ func main() {
 		config.Domain = domain.(string)
 	}
 
-	// Get JWT secret from context (required for production)
-	jwtSecret := app.Node().TryGetContext(jsii.String("jwtSecret"))
-	if jwtSecret == nil && env == "production" {
-		fmt.Printf("JWT secret is required for production environment. Pass via context: --context jwtSecret=<secret>\n")
-		os.Exit(1)
-	}
+	// JWT secret is now auto-generated in SharedStack and retrieved by Lambda functions
+	// No need to pass it via context anymore
 
 	// Create shared stack (only once per account)
 	sharedStack := stacks.NewSharedStack(app, "LesserSharedStack", &stacks.SharedStackProps{
@@ -144,7 +138,12 @@ func main() {
 	})
 
 	// Create monitoring stack
-	cfg := config.Get()
+	// Get alert email from environment variable
+	alertEmail := os.Getenv("ALERT_EMAIL")
+	if alertEmail == "" {
+		alertEmail = "alerts@example.com" // Default fallback
+	}
+
 	monitoringStack := stacks.NewMonitoringStack(app, fmt.Sprintf("LesserMonitoringStack-%s", env), &stacks.MonitoringStackProps{
 		StackProps: awscdk.StackProps{
 			Env:         getEnv(config),
@@ -152,13 +151,8 @@ func main() {
 		},
 		AppName:     config.AppName,
 		Environment: env,
-		AlertEmail:  cfg.AlertEmail,
+		AlertEmail:  alertEmail,
 	})
-
-	var jwtSecretString *string
-	if jwtSecret != nil {
-		jwtSecretString = jsii.String(jwtSecret.(string))
-	}
 
 	// Create main application stack (creates its own certificate like Pulumi did)
 	lesserStack := stacks.NewLesserStack(app, fmt.Sprintf("LesserStack-%s", env), &stacks.LesserStackProps{
@@ -168,7 +162,6 @@ func main() {
 		},
 		Environment: env,
 		Domain:      config.Domain,
-		JWTSecret:   jwtSecretString,
 		Config:      configToMap(config),
 	})
 
@@ -181,8 +174,6 @@ func main() {
 
 // getEnv determines the AWS environment (account+region) in which our stack is to be deployed
 func getEnv(config *Config) *awscdk.Environment {
-	cfg := config.Get()
-	
 	// CDK_DEFAULT_ACCOUNT and CDK_DEFAULT_REGION are CDK-specific deployment variables
 	// These should remain as direct os.Getenv calls as they are CDK runtime variables
 	account := os.Getenv("CDK_DEFAULT_ACCOUNT")
@@ -190,12 +181,7 @@ func getEnv(config *Config) *awscdk.Environment {
 
 	// Use Lesser config region if CDK region is not specified
 	if region == "" {
-		region = cfg.Region
-	}
-
-	// Use Lesser config AWS account if available
-	if account == "" && cfg.AWSAccountID != "" {
-		account = cfg.AWSAccountID
+		region = config.AWS.Region
 	}
 
 	// If account is specified, use it
