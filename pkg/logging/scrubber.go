@@ -1,3 +1,5 @@
+// Package logging provides robust, structured logging capabilities for the application,
+// including sensitive data scrubbing and audit logging.
 package logging
 
 import (
@@ -20,60 +22,60 @@ type SensitiveDataScrubber struct {
 // NewSensitiveDataScrubber creates a new scrubber with comprehensive sensitive data patterns
 func NewSensitiveDataScrubber() *SensitiveDataScrubber {
 	patterns := make(map[string]*regexp.Regexp)
-	
+
 	// OAuth tokens and API keys
 	patterns["bearer_token"] = regexp.MustCompile(`(?i)(bearer[\s]+)([a-zA-Z0-9._-]{20,})`)
 	patterns["api_key"] = regexp.MustCompile(`(?i)(api[_-]?key[\s]*[:=][\s]*)([a-zA-Z0-9._-]{20,})`)
 	patterns["access_token"] = regexp.MustCompile(`(?i)(access[_-]?token[\s]*[:=][\s]*)([a-zA-Z0-9._-]{20,})`)
 	patterns["refresh_token"] = regexp.MustCompile(`(?i)(refresh[_-]?token[\s]*[:=][\s]*)([a-zA-Z0-9._-]{20,})`)
-	
+
 	// AWS credentials
 	patterns["aws_access_key"] = regexp.MustCompile(`(AKIA[0-9A-Z]{16})`)
 	patterns["aws_secret_key"] = regexp.MustCompile(`(?i)(aws[_-]?secret[_-]?access[_-]?key[\s]*[:=][\s]*)([A-Za-z0-9/+=]{40})`)
 	patterns["aws_session_token"] = regexp.MustCompile(`(?i)(aws[_-]?session[_-]?token[\s]*[:=][\s]*)([A-Za-z0-9/+=]{100,})`)
-	
+
 	// Database credentials
 	patterns["db_password"] = regexp.MustCompile(`(?i)(password[\s]*[:=][\s]*)([^\s"'\n]{8,})`)
 	patterns["connection_string"] = regexp.MustCompile(`(?i)(postgresql://|mysql://|mongodb://)[^\s"'\n]*:[^\s"'\n]*@[^\s"'\n]*`)
-	
+
 	// Private keys and certificates
 	patterns["private_key"] = regexp.MustCompile(`-----BEGIN[A-Z\s]*PRIVATE KEY-----[\s\S]*?-----END[A-Z\s]*PRIVATE KEY-----`)
 	patterns["rsa_private"] = regexp.MustCompile(`-----BEGIN RSA PRIVATE KEY-----[\s\S]*?-----END RSA PRIVATE KEY-----`)
 	patterns["certificate"] = regexp.MustCompile(`-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----`)
-	
+
 	// JWT tokens
 	patterns["jwt"] = regexp.MustCompile(`(eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*)`)
-	
+
 	// Email addresses (in sensitive contexts)
 	patterns["email"] = regexp.MustCompile(`([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})`)
-	
+
 	// Phone numbers (international format)
 	patterns["phone"] = regexp.MustCompile(`(\+?[1-9]\d{1,14})`)
-	
+
 	// IP addresses (in auth contexts)
 	patterns["ip_address"] = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
-	
+
 	// Credit card numbers
 	patterns["credit_card"] = regexp.MustCompile(`\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13}|3[0-9]{13}|6(?:011|5[0-9]{2})[0-9]{12})\b`)
-	
+
 	// Social Security Numbers
 	patterns["ssn"] = regexp.MustCompile(`\b\d{3}-\d{2}-\d{4}\b`)
-	
+
 	// Session IDs
 	patterns["session_id"] = regexp.MustCompile(`(?i)(session[_-]?id[\s]*[:=][\s]*)([a-zA-Z0-9._-]{20,})`)
-	
+
 	// Authorization headers
 	patterns["auth_header"] = regexp.MustCompile(`(?i)(authorization[\s]*:[\s]*)(.+)`)
-	
+
 	// Wallet addresses (ActivityPub context)
 	patterns["wallet_address"] = regexp.MustCompile(`(0x[a-fA-F0-9]{40}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59})`)
-	
+
 	// Recovery codes
 	patterns["recovery_code"] = regexp.MustCompile(`([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})`)
-	
+
 	// WebAuthn credentials
 	patterns["webauthn_credential"] = regexp.MustCompile(`(?i)(credential[_-]?id[\s]*[:=][\s]*)([A-Za-z0-9+/=]{20,})`)
-	
+
 	return &SensitiveDataScrubber{
 		patterns: patterns,
 		enabled:  true,
@@ -85,9 +87,9 @@ func (s *SensitiveDataScrubber) ScrubString(input string) string {
 	if !s.enabled {
 		return input
 	}
-	
+
 	result := input
-	
+
 	for patternName, regex := range s.patterns {
 		switch patternName {
 		case "bearer_token", "api_key", "access_token", "refresh_token", "session_id", "auth_header":
@@ -102,7 +104,7 @@ func (s *SensitiveDataScrubber) ScrubString(input string) string {
 			result = regex.ReplaceAllStringFunc(result, func(match string) string {
 				parts := strings.Split(match, "@")
 				if len(parts) == 2 {
-					return parts[0][:min(3, len(parts[0]))] + "***@" + parts[1]
+					return parts[0][:Min(3, len(parts[0]))] + "***@" + parts[1]
 				}
 				return "[EMAIL_REDACTED]"
 			})
@@ -120,7 +122,7 @@ func (s *SensitiveDataScrubber) ScrubString(input string) string {
 			result = regex.ReplaceAllString(result, "["+strings.ToUpper(patternName)+"_REDACTED]")
 		}
 	}
-	
+
 	return result
 }
 
@@ -129,33 +131,33 @@ func (s *SensitiveDataScrubber) ScrubJSON(input map[string]interface{}) map[stri
 	if !s.enabled {
 		return input
 	}
-	
+
 	result := make(map[string]interface{})
 	sensitiveFields := map[string]bool{
-		"password":           true,
-		"token":             true,
-		"access_token":      true,
-		"refresh_token":     true,
-		"api_key":           true,
-		"secret":            true,
-		"private_key":       true,
-		"authorization":     true,
-		"bearer":            true,
-		"session_id":        true,
-		"credential_id":     true,
-		"recovery_code":     true,
-		"client_secret":     true,
-		"webhook_secret":    true,
-		"signing_key":       true,
-		"encryption_key":    true,
-		"wallet_address":    true,
-		"private_key_pem":   true,
-		"jwt":               true,
+		"password":        true,
+		"token":           true,
+		"access_token":    true,
+		"refresh_token":   true,
+		"api_key":         true,
+		"secret":          true,
+		"private_key":     true,
+		"authorization":   true,
+		"bearer":          true,
+		"session_id":      true,
+		"credential_id":   true,
+		"recovery_code":   true,
+		"client_secret":   true,
+		"webhook_secret":  true,
+		"signing_key":     true,
+		"encryption_key":  true,
+		"wallet_address":  true,
+		"private_key_pem": true,
+		"jwt":             true,
 	}
-	
+
 	for key, value := range input {
 		lowerKey := strings.ToLower(key)
-		
+
 		// Check if field name indicates sensitive data
 		isSensitive := false
 		for sensitiveField := range sensitiveFields {
@@ -164,7 +166,7 @@ func (s *SensitiveDataScrubber) ScrubJSON(input map[string]interface{}) map[stri
 				break
 			}
 		}
-		
+
 		if isSensitive {
 			result[key] = "[REDACTED]"
 		} else {
@@ -180,14 +182,14 @@ func (s *SensitiveDataScrubber) ScrubJSON(input map[string]interface{}) map[stri
 			}
 		}
 	}
-	
+
 	return result
 }
 
 // scrubArray handles arrays in JSON data
 func (s *SensitiveDataScrubber) scrubArray(input []interface{}) []interface{} {
 	result := make([]interface{}, len(input))
-	
+
 	for i, item := range input {
 		switch v := item.(type) {
 		case string:
@@ -200,7 +202,7 @@ func (s *SensitiveDataScrubber) scrubArray(input []interface{}) []interface{} {
 			result[i] = item
 		}
 	}
-	
+
 	return result
 }
 
@@ -238,7 +240,7 @@ func (c *ScrubbingCore) Write(entry zapcore.Entry, fields []zapcore.Field) error
 	if c.scrubber.IsEnabled() {
 		// Scrub the message
 		entry.Message = c.scrubber.ScrubString(entry.Message)
-		
+
 		// Scrub field values
 		scrubbedFields := make([]zapcore.Field, len(fields))
 		for i, field := range fields {
@@ -246,7 +248,7 @@ func (c *ScrubbingCore) Write(entry zapcore.Entry, fields []zapcore.Field) error
 		}
 		fields = scrubbedFields
 	}
-	
+
 	return c.Core.Write(entry, fields)
 }
 
@@ -265,14 +267,14 @@ func (c *ScrubbingCore) scrubField(field zapcore.Field) zapcore.Field {
 			field.Interface = c.scrubber.ScrubString(str)
 		}
 	}
-	
+
 	return field
 }
 
-// ProductionLoggerConfig creates a production logger configuration with scrubbing
-func ProductionLoggerConfig(scrubber *SensitiveDataScrubber) zap.Config {
+// ProductionLoggerConfig creates a production-optimized logger configuration
+func ProductionLoggerConfig(_ *SensitiveDataScrubber) zap.Config {
 	config := zap.NewProductionConfig()
-	
+
 	// Enhanced production settings
 	config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
 	config.Development = false
@@ -282,25 +284,25 @@ func ProductionLoggerConfig(scrubber *SensitiveDataScrubber) zap.Config {
 		Initial:    100,
 		Thereafter: 100,
 	}
-	
+
 	// Enhanced field configuration
 	config.EncoderConfig = zapcore.EncoderConfig{
-		TimeKey:        "timestamp",
-		LevelKey:       "level",
-		NameKey:        "logger",
-		CallerKey:      "caller",
-		FunctionKey:    zapcore.OmitKey,
-		MessageKey:     "message",
-		StacktraceKey:  "stacktrace",
-		LineEnding:     zapcore.DefaultLineEnding,
-		EncodeLevel:    zapcore.LowercaseLevelEncoder,
+		TimeKey:       "timestamp",
+		LevelKey:      "level",
+		NameKey:       "logger",
+		CallerKey:     "caller",
+		FunctionKey:   zapcore.OmitKey,
+		MessageKey:    "message",
+		StacktraceKey: "stacktrace",
+		LineEnding:    zapcore.DefaultLineEnding,
+		EncodeLevel:   zapcore.LowercaseLevelEncoder,
 		EncodeTime: func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
 			enc.AppendString(t.UTC().Format(time.RFC3339))
 		},
 		EncodeDuration: zapcore.SecondsDurationEncoder,
 		EncodeCaller:   zapcore.ShortCallerEncoder,
 	}
-	
+
 	return config
 }
 
@@ -308,16 +310,16 @@ func ProductionLoggerConfig(scrubber *SensitiveDataScrubber) zap.Config {
 func NewProductionLoggerWithScrubbing() (*zap.Logger, error) {
 	scrubber := NewSensitiveDataScrubber()
 	config := ProductionLoggerConfig(scrubber)
-	
+
 	core, err := config.Build()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build logger config: %w", err)
 	}
-	
+
 	// Wrap the core with scrubbing
 	scrubbingCore := NewScrubbingCore(core.Core(), scrubber)
 	logger := zap.New(scrubbingCore, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
-	
+
 	return logger, nil
 }
 
@@ -341,17 +343,17 @@ func (m *LoggerMiddleware) WithContext(ctx context.Context, fields ...zap.Field)
 	if correlationID := ctx.Value("correlation_id"); correlationID != nil {
 		fields = append(fields, zap.String("correlation_id", correlationID.(string)))
 	}
-	
+
 	// Extract user ID from context if available
 	if userID := ctx.Value("user_id"); userID != nil {
 		fields = append(fields, zap.String("user_id", userID.(string)))
 	}
-	
+
 	// Extract request ID from context if available
 	if requestID := ctx.Value("request_id"); requestID != nil {
 		fields = append(fields, zap.String("request_id", requestID.(string)))
 	}
-	
+
 	return m.logger.With(fields...)
 }
 
@@ -362,7 +364,7 @@ func (m *LoggerMiddleware) LogSafeError(ctx context.Context, message string, err
 		errorMessage := m.scrubber.ScrubString(err.Error())
 		fields = append(fields, zap.String("error", errorMessage))
 	}
-	
+
 	logger := m.WithContext(ctx, fields...)
 	logger.Error(m.scrubber.ScrubString(message))
 }
@@ -399,12 +401,12 @@ func NewAuditLogger(logger *zap.Logger, scrubber *SensitiveDataScrubber) *AuditL
 	}
 }
 
-// LogAuthenticationEvent logs authentication events with scrubbing
-func (a *AuditLogger) LogAuthenticationEvent(ctx context.Context, event string, userID string, success bool, metadata map[string]interface{}) {
+// LogAuthenticationEvent logs an authentication event
+func (a *AuditLogger) LogAuthenticationEvent(_ context.Context, _ string, userID string, success bool, metadata map[string]interface{}) {
 	scrubbedMetadata := a.scrubber.ScrubJSON(metadata)
-	
+
 	a.logger.Info("authentication_event",
-		zap.String("event_type", event),
+		zap.String("event_type", "authentication"),
 		zap.String("user_id", userID),
 		zap.Bool("success", success),
 		zap.Any("metadata", scrubbedMetadata),
@@ -412,9 +414,10 @@ func (a *AuditLogger) LogAuthenticationEvent(ctx context.Context, event string, 
 	)
 }
 
-// LogAuthorizationEvent logs authorization events with scrubbing
-func (a *AuditLogger) LogAuthorizationEvent(ctx context.Context, action string, resource string, userID string, granted bool, reason string) {
+// LogAuthorizationEvent logs an authorization event
+func (a *AuditLogger) LogAuthorizationEvent(_ context.Context, action string, resource string, userID string, granted bool, reason string) {
 	a.logger.Info("authorization_event",
+		zap.String("event_type", "authorization"),
 		zap.String("action", action),
 		zap.String("resource", resource),
 		zap.String("user_id", userID),
@@ -424,11 +427,11 @@ func (a *AuditLogger) LogAuthorizationEvent(ctx context.Context, action string, 
 	)
 }
 
-// LogSecurityEvent logs security-related events
-func (a *AuditLogger) LogSecurityEvent(ctx context.Context, eventType string, severity string, description string, metadata map[string]interface{}) {
+// LogSecurityEvent logs a generic security event
+func (a *AuditLogger) LogSecurityEvent(_ context.Context, eventType string, severity string, description string, metadata map[string]interface{}) {
 	scrubbedMetadata := a.scrubber.ScrubJSON(metadata)
-	
-	a.logger.Warn("security_event",
+
+	a.logger.Info("security_event",
 		zap.String("event_type", eventType),
 		zap.String("severity", severity),
 		zap.String("description", a.scrubber.ScrubString(description)),
@@ -437,8 +440,8 @@ func (a *AuditLogger) LogSecurityEvent(ctx context.Context, eventType string, se
 	)
 }
 
-// Helper function for minimum of two integers
-func min(a, b int) int {
+// Min returns the minimum of two integers.
+func Min(a, b int) int {
 	if a < b {
 		return a
 	}

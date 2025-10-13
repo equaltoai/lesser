@@ -2,7 +2,7 @@
 // with the new repository-based DynamORM approach for the Lesser ActivityPub server.
 //
 // This is the foundation interface for Phase 1 completion of the DynamORM migration initiative.
-package interfaces
+package interfaces //nolint:revive // Standard interfaces package name
 
 import (
 	"context"

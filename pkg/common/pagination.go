@@ -259,15 +259,15 @@ func GetSearchPaginationParams(ctx *lift.Context) SearchPaginationParams {
 	}
 
 	params.Type = ctx.Query("type")
-	params.Resolve = ctx.Query("resolve") == "true" || ctx.Query("resolve") == "1"
-	params.Following = ctx.Query("following") == "true" || ctx.Query("following") == "1"
+	params.Resolve = ctx.Query("resolve") == StringTrue || ctx.Query("resolve") == "1"
+	params.Following = ctx.Query("following") == StringTrue || ctx.Query("following") == "1"
 	params.AccountID = ctx.Query("account_id")
-	params.ExcludeUnreviewed = ctx.Query("exclude_unreviewed") == "true" || ctx.Query("exclude_unreviewed") == "1"
+	params.ExcludeUnreviewed = ctx.Query("exclude_unreviewed") == StringTrue || ctx.Query("exclude_unreviewed") == "1"
 
 	// Parse max_results for search APIs
 	if maxStr := ctx.Query("max_results"); maxStr != "" {
-		if max, err := strconv.Atoi(maxStr); err == nil && max > 0 {
-			params.MaxResults = ValidatePaginationLimit(max)
+		if maxResults, err := strconv.Atoi(maxStr); err == nil && maxResults > 0 {
+			params.MaxResults = ValidatePaginationLimit(maxResults)
 		}
 	}
 
@@ -300,7 +300,7 @@ func GetAdminPaginationParams(ctx *lift.Context) AdminPaginationParams {
 	params.Email = ctx.Query("email")
 	params.Username = ctx.Query("username")
 	params.ByDomain = ctx.Query("by_domain")
-	params.InviteFilter = ctx.Query("invited") == "true" || ctx.Query("invited") == "1"
+	params.InviteFilter = ctx.Query("invited") == StringTrue || ctx.Query("invited") == "1"
 
 	return params
 }

@@ -27,9 +27,7 @@ type DataLoader[K comparable, V any] struct {
 
 	// Internal state
 	mu           sync.Mutex
-	batch        []K
-	batchCh      chan struct{}
-	cache_data   map[K]*cacheItem[V]
+	cacheData    map[K]*cacheItem[V]
 	singleflight singleflight.Group
 
 	// Metrics
@@ -85,7 +83,7 @@ func NewDataLoader[K comparable, V any](batchFn BatchFunc[K, V], cfg Config, log
 		maxBatch:    cfg.MaxBatch,
 		cache:       cfg.Cache,
 		cacheExpiry: cfg.CacheExpiry,
-		cache_data:  make(map[K]*cacheItem[V]),
+		cacheData:   make(map[K]*cacheItem[V]),
 		logger:      logger,
 	}
 
@@ -212,7 +210,7 @@ func (dl *DataLoader[K, V]) Clear(key K) {
 	}
 
 	dl.mu.Lock()
-	delete(dl.cache_data, key)
+	delete(dl.cacheData, key)
 	dl.mu.Unlock()
 }
 
@@ -223,7 +221,7 @@ func (dl *DataLoader[K, V]) ClearAll() {
 	}
 
 	dl.mu.Lock()
-	dl.cache_data = make(map[K]*cacheItem[V])
+	dl.cacheData = make(map[K]*cacheItem[V])
 	dl.mu.Unlock()
 }
 
@@ -232,7 +230,7 @@ func (dl *DataLoader[K, V]) GetStats() LoaderStats {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
-	cacheSize := len(dl.cache_data)
+	cacheSize := len(dl.cacheData)
 
 	return LoaderStats{
 		Hits:      dl.hits,
@@ -280,14 +278,14 @@ func (dl *DataLoader[K, V]) getCached(key K) *cacheItem[V] {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
-	return dl.cache_data[key]
+	return dl.cacheData[key]
 }
 
 func (dl *DataLoader[K, V]) setCached(key K, value V, err error) {
 	dl.mu.Lock()
 	defer dl.mu.Unlock()
 
-	dl.cache_data[key] = &cacheItem[V]{
+	dl.cacheData[key] = &cacheItem[V]{
 		value:     value,
 		err:       err,
 		timestamp: time.Now(),

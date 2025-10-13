@@ -189,7 +189,7 @@ func DefaultRateLimiterConfig() *RateLimiterConfig {
 				AuthenticatedRPM:  60,
 				AnonymousRPM:      15,
 			},
-			
+
 			// ActivityPub federation endpoints (more generous for server-to-server)
 			"/inbox": {
 				RequestsPerMinute: 1000,
@@ -221,7 +221,7 @@ func DefaultRateLimiterConfig() *RateLimiterConfig {
 				BurstSize:         15,
 				WindowSize:        time.Minute,
 			},
-			
+
 			// Authentication endpoints (very strict)
 			"/oauth/token": {
 				RequestsPerMinute: 10,
@@ -244,7 +244,7 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 			// Extract client identifier
 			clientID := rl.getClientID(ctx)
 			endpoint := rl.normalizeEndpoint(ctx.Request.Path)
-			
+
 			// Check if this is federation traffic using enhanced detection
 			isFederation := rl.isFederationRequestEnhanced(ctx)
 
@@ -285,7 +285,7 @@ func (rl *RateLimiter) Middleware() func(lift.HandlerFunc) lift.HandlerFunc {
 func (rl *RateLimiter) checkRateLimit(ctx context.Context, clientID, endpoint string, authenticated, isFederation bool) (bool, time.Duration, map[string]string) {
 	// Get endpoint-specific configuration with federation awareness
 	limit := rl.getEndpointLimit(endpoint, authenticated)
-	
+
 	// Apply federation-specific adjustments
 	if isFederation {
 		limit = rl.adjustLimitForFederation(limit, endpoint)
@@ -714,62 +714,6 @@ func (rl *RateLimiter) ResetClientLimits(ctx context.Context, clientID string) e
 	return nil
 }
 
-// isFederationRequest detects if a request is likely from an ActivityPub server
-func (rl *RateLimiter) isFederationRequest(ctx *lift.Context) bool {
-	path := ctx.Request.Path
-	
-	// Check if path is a federation endpoint
-	if strings.HasPrefix(path, "/inbox") ||
-		strings.HasPrefix(path, "/outbox") ||
-		strings.HasPrefix(path, "/users/") ||
-		strings.HasPrefix(path, "/.well-known/") ||
-		strings.HasPrefix(path, "/nodeinfo") {
-		return true
-	}
-	
-	userAgent := ctx.Header("User-Agent")
-	
-	// Common ActivityPub server user agents
-	federationUAs := []string{
-		"Mastodon", "Pleroma", "Misskey", "PeerTube",
-		"PixelFed", "Lemmy", "Kbin", "GoToSocial",
-		"http.rb", "Akkoma", "Friendica", "Hubzilla",
-		"Sharkey", "Iceshrimp", "Firefish",
-	}
-	
-	for _, ua := range federationUAs {
-		if strings.Contains(userAgent, ua) {
-			return true
-		}
-	}
-	
-	// Check for ActivityPub content types
-	accept := ctx.Header("Accept")
-	contentType := ctx.Header("Content-Type")
-	
-	activityPubTypes := []string{
-		"application/activity+json",
-		"application/ld+json",
-		"application/json",
-	}
-	
-	for _, apType := range activityPubTypes {
-		if strings.Contains(accept, apType) || strings.Contains(contentType, apType) {
-			// Additional check: ensure it's not just a regular API client
-			if strings.Contains(accept, "profile=\"https://www.w3.org/ns/activitystreams\"") {
-				return true
-			}
-		}
-	}
-	
-	// Check for HTTP signature header (used by ActivityPub servers)
-	if signature := ctx.Header("Signature"); signature != "" {
-		return true
-	}
-	
-	return false
-}
-
 // isFederationRequestEnhanced uses the enhanced federation detection logic
 func (rl *RateLimiter) isFederationRequestEnhanced(ctx *lift.Context) bool {
 	userAgent := ctx.Header("User-Agent")
@@ -777,7 +721,7 @@ func (rl *RateLimiter) isFederationRequestEnhanced(ctx *lift.Context) bool {
 	contentType := ctx.Header("Content-Type")
 	path := ctx.Request.Path
 	signature := ctx.Header("Signature")
-	
+
 	return ratelimit.ShouldApplyFederationLimits(userAgent, accept, contentType, path, signature)
 }
 

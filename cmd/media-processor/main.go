@@ -306,7 +306,7 @@ func main() {
 
 // liftApp interface defines the methods we need from the Lift app
 type liftApp interface {
-	Use(middleware lift.Middleware) *lift.App
+	Use(middleware func(lift.Handler) lift.Handler) *lift.App
 	SQS(name string, handler interface{}) error
 	HandleRequest(ctx context.Context, event interface{}) (interface{}, error)
 }

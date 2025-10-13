@@ -1,5 +1,5 @@
-// Package types defines federation message types and data structures for ActivityPub protocol handling.
-package types
+// Package types defines shared data structures for ActivityPub federation.
+package types //nolint:revive // Standard types package name
 
 import (
 	"net/url"

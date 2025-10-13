@@ -354,7 +354,7 @@ const (
 	ConfigKeyS3Bucket    = "s3.bucket"
 	ConfigKeyS3Region    = "s3.region"
 	ConfigKeyS3AccessKey = "s3.access_key"
-	ConfigKeyS3SecretKey = "s3.secret_key"
+	ConfigKeyS3SecretKey = "s3.secret_key" // #nosec G101 -- configuration key name, not a credential
 
 	ConfigKeyDomainName = "domain.name"
 	ConfigKeyBaseURL    = "base.url"

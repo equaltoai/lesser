@@ -1,3 +1,4 @@
+// Package common provides shared error constants for the Lesser application.
 package common
 
 // Common Error Messages

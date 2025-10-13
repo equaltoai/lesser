@@ -1,7 +1,5 @@
-// Package interfaces defines repository interfaces for the Lesser project's API alignment.
-// These interfaces provide technology-agnostic contracts between services and storage,
-// supporting clean architecture patterns and testability.
-package interfaces
+// Package interfaces defines the repository interfaces for the Lesser application.
+package interfaces //nolint:revive // Standard interfaces package name
 
 import (
 	"context"

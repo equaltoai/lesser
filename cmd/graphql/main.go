@@ -48,11 +48,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	// Environment variable constants
-	envTrue = "true"
-)
-
 // Context key types for type-safe context values
 type contextKey string
 
@@ -63,9 +58,10 @@ const (
 )
 
 var (
-	lambdaCtx           *common.LambdaContext
-	cfg                 *config.Config
-	repos               core.RepositoryStorage
+	lambdaCtx *common.LambdaContext
+	cfg       *config.Config
+	repos     core.RepositoryStorage
+	//nolint:gochecknoglobals // These are initialized once at startup
 	logger              *zap.Logger
 	graphQLHandler      *handler.Server
 	emfMetricsService   interface{}           // *observability.EMFMetricsService interface
@@ -427,28 +423,6 @@ func createAuthMiddleware() lift.Middleware {
 
 	// Use the unified GraphQL auth middleware
 	return auth.CreateGraphQLAuthMiddlewareFromAuthService(authService, logger)
-}
-
-// createCORSMiddleware creates CORS middleware for GraphQL
-func createCORSMiddleware() lift.Middleware {
-	return func(next lift.Handler) lift.Handler {
-		return lift.HandlerFunc(func(ctx *lift.Context) error {
-			// Set CORS headers for GraphQL
-			ctx.Response.Headers["Access-Control-Allow-Origin"] = "*"
-			ctx.Response.Headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-			ctx.Response.Headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With"
-			ctx.Response.Headers["Access-Control-Allow-Credentials"] = envTrue
-			ctx.Response.Headers["Access-Control-Max-Age"] = "86400"
-
-			// Handle preflight requests
-			if ctx.Request.Method == "OPTIONS" {
-				ctx.Response.StatusCode = 200
-				return nil
-			}
-
-			return next.Handle(ctx)
-		})
-	}
 }
 
 func main() {

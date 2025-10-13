@@ -142,9 +142,10 @@ type Config struct {
 	ActorPrivateKeyEncryption string // Actor private key encryption key
 
 	// Delivery & Processing
-	FederationDeliveryMode string // Federation delivery mode
-	AuthorizedFetchEnabled bool   // Authorized fetch enabled
-	ModerationMode         string // Moderation mode setting
+	FederationDeliveryMode   string // Federation delivery mode
+	AuthorizedFetchEnabled   bool   // Authorized fetch enabled
+	ModerationMode           string // Moderation mode setting
+	AllowPublicStatusHistory bool   // Allow public access to status history
 
 	// Deployment info
 	Stage   string // Deployment stage (dev, staging, prod)
@@ -311,6 +312,7 @@ func loadConfig() *Config {
 		// Delivery & Processing
 		FederationDeliveryMode: getEnvOrDefault("FEDERATION_DELIVERY_MODE", ""),
 		AuthorizedFetchEnabled: getEnvAsBoolOrDefault("AUTHORIZED_FETCH_ENABLED", false),
+		ModerationMode:         getEnvOrDefault("MODERATION_MODE", ""),
 
 		Stage:   getEnvOrDefault("STAGE", "dev"),
 		Version: getEnvOrDefault("VERSION", "v1.0.0"),
@@ -325,18 +327,19 @@ func loadConfig() *Config {
 		LambdaLogStreamName: getEnvOrDefault("AWS_LAMBDA_LOG_STREAM_NAME", ""),
 
 		// Instance configuration
-		InstanceTitle:       getEnvOrDefault("INSTANCE_TITLE", "Lesser Instance"),
-		InstanceShortDesc:   getEnvOrDefault("INSTANCE_SHORT_DESC", "A personal ActivityPub server"),
-		InstanceDescription: getEnvOrDefault("INSTANCE_DESCRIPTION", "A lightweight, serverless ActivityPub implementation"),
-		InstanceAdminEmail:  getEnvOrDefault("INSTANCE_ADMIN_EMAIL", "admin@localhost"),
-		InstanceLanguages:   getEnvAsStringSliceOrDefault("INSTANCE_LANGUAGES", []string{"en"}),
-		MaxStatusChars:      getEnvAsIntOrDefault("MAX_STATUS_CHARS", 5000),
-		MaxMediaSize:        getEnvAsInt64OrDefault("MAX_MEDIA_SIZE", 10*1024*1024), // 10MB
-		MaxVideoSize:        getEnvAsInt64OrDefault("MAX_VIDEO_SIZE", 40*1024*1024), // 40MB
-		RegistrationsOpen:   getEnvAsBoolOrDefault("REGISTRATIONS_OPEN", false),
-		ApprovalRequired:    getEnvAsBoolOrDefault("APPROVAL_REQUIRED", true),
-		InvitesEnabled:      getEnvAsBoolOrDefault("INVITES_ENABLED", false),
-		FederationEnabled:   getEnvAsBoolOrDefault("FEDERATION_ENABLED", true),
+		InstanceTitle:            getEnvOrDefault("INSTANCE_TITLE", "Lesser Instance"),
+		InstanceShortDesc:        getEnvOrDefault("INSTANCE_SHORT_DESC", "A personal ActivityPub server"),
+		InstanceDescription:      getEnvOrDefault("INSTANCE_DESCRIPTION", "A lightweight, serverless ActivityPub implementation"),
+		InstanceAdminEmail:       getEnvOrDefault("INSTANCE_ADMIN_EMAIL", "admin@localhost"),
+		InstanceLanguages:        getEnvAsStringSliceOrDefault("INSTANCE_LANGUAGES", []string{"en"}),
+		MaxStatusChars:           getEnvAsIntOrDefault("MAX_STATUS_CHARS", 5000),
+		MaxMediaSize:             getEnvAsInt64OrDefault("MAX_MEDIA_SIZE", 10*1024*1024), // 10MB
+		MaxVideoSize:             getEnvAsInt64OrDefault("MAX_VIDEO_SIZE", 40*1024*1024), // 40MB
+		RegistrationsOpen:        getEnvAsBoolOrDefault("REGISTRATIONS_OPEN", false),
+		ApprovalRequired:         getEnvAsBoolOrDefault("APPROVAL_REQUIRED", true),
+		InvitesEnabled:           getEnvAsBoolOrDefault("INVITES_ENABLED", false),
+		FederationEnabled:        getEnvAsBoolOrDefault("FEDERATION_ENABLED", true),
+		AllowPublicStatusHistory: getEnvAsBoolOrDefault("ALLOW_PUBLIC_STATUS_HISTORY", false),
 	}
 
 	return cfg

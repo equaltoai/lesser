@@ -70,7 +70,8 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 	// Configure TLS
 	if config.AllowInsecureTLS {
 		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: true,
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: true, // #nosec G402 - a temporary measure for federation compatibility
 		}
 	} else {
 		transport.TLSClientConfig = &tls.Config{
@@ -86,12 +87,12 @@ func NewFederationClient(config *FederationClientConfig, logger *zap.Logger) *Fe
 			if len(via) >= config.MaxRedirects {
 				return fmt.Errorf("too many redirects: %d", len(via))
 			}
-			
+
 			// Validate redirect URL for SSRF protection
 			if err := validateFederationURL(req.URL.String(), config, logger); err != nil {
 				return fmt.Errorf("redirect URL blocked: %w", err)
 			}
-			
+
 			return nil
 		},
 	}
@@ -190,7 +191,7 @@ func isBlockedIP(ip net.IP) bool {
 }
 
 // validateFederationURL validates a URL for SSRF protection
-func validateFederationURL(rawURL string, config *FederationClientConfig, logger *zap.Logger) error {
+func validateFederationURL(rawURL string, _ *FederationClientConfig, _ *zap.Logger) error {
 	if strings.Contains(rawURL, "127.0.0.1") ||
 		strings.Contains(rawURL, "localhost") ||
 		strings.Contains(rawURL, "::1") {
@@ -254,13 +255,13 @@ func (fc *FederationClient) Post(ctx context.Context, url string, contentType st
 func (fc *FederationClient) setActivityPubHeaders(req *http.Request) {
 	// Set User-Agent
 	req.Header.Set("User-Agent", "Lesser/1.0 (+https://github.com/equaltoai/lesser)")
-	
+
 	// Set Accept header for ActivityPub
 	req.Header.Set("Accept", "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\", application/json")
-	
+
 	// Set Date header for HTTP signature
 	req.Header.Set("Date", time.Now().UTC().Format(http.TimeFormat))
-	
+
 	// Set Host header (required for HTTP signatures)
 	req.Header.Set("Host", req.URL.Host)
 }

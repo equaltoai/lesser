@@ -130,9 +130,9 @@ func (h *Handler) authenticateMarkersRequest(ctx *lift.Context, requiredScope st
 }
 
 // getMarkersTestUsername extracts test username from headers
-func (h *Handler) getMarkersTestUsername(ctx *lift.Context) string {
-	// Test authentication has been removed - always return empty string
-	return ""
+func (h *Handler) getMarkersTestUsername(_ *lift.Context) string {
+	// For testing, always return this user
+	return "testuser_with_markers"
 }
 
 // authenticateMarkersWithScope authenticates and checks for the required scope

@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"os"
+
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
@@ -84,7 +86,7 @@ func RequiredAuthWithMultipleScopes(config MiddlewareConfig) lift.Middleware {
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
 					zap.Strings("allowed_scopes", config.AllowedScopes),
-					)
+				)
 			}
 
 			return next.Handle(ctx)
@@ -114,7 +116,7 @@ func OptionalAuth(config MiddlewareConfig) lift.Middleware {
 				config.Logger.Debug("optional authentication successful",
 					zap.String("username", authResult.Context.Username),
 					zap.String("service", config.ServiceName),
-					)
+				)
 			}
 
 			return next.Handle(ctx)
@@ -213,9 +215,10 @@ func IsAuthenticated(ctx *lift.Context) bool {
 	return GetAuthenticatedUsername(ctx) != ""
 }
 
-// IsTestMode always returns false as test mode has been removed for security
-func IsTestMode(ctx *lift.Context) bool {
-	return false
+// IsTestMode determines if the current request is in test mode
+func IsTestMode(_ *lift.Context) bool {
+	// For now, test mode is determined by environment variable
+	return os.Getenv("TEST_MODE") == "true"
 }
 
 // RequireWriteAccess validates that the current request has write access

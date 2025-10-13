@@ -1,4 +1,5 @@
-package common
+// Package common provides shared time formatting utilities for the Lesser application.
+package common //nolint:revive // Standard utility package name
 
 // Time format constants used throughout the application
 const (

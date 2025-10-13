@@ -10,19 +10,21 @@ import (
 	"go.uber.org/zap"
 )
 
-// MetricType represents different types of metrics
+// MetricType defines the type of metric
 type MetricType string
 
+// MetricType values
 const (
 	MetricTypeCounter   MetricType = "counter"
 	MetricTypeGauge     MetricType = "gauge"
+	MetricTypeTimer     MetricType = "timer"
 	MetricTypeHistogram MetricType = "histogram"
-	MetricTypeSummary   MetricType = "summary"
 )
 
-// MetricLevel represents the importance level of a metric
+// MetricLevel defines the severity level of a metric
 type MetricLevel string
 
+// MetricLevel values
 const (
 	MetricLevelCritical MetricLevel = "critical"
 	MetricLevelHigh     MetricLevel = "high"

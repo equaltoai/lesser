@@ -13,9 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	lconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/core"
 	"github.com/equaltoai/lesser/pkg/version"
-	lconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/pay-theory/lift/pkg/lift"
 	"go.uber.org/zap"
 )
@@ -23,6 +23,7 @@ import (
 // HealthStatus represents the overall health status
 type HealthStatus string
 
+// HealthStatus values
 const (
 	HealthStatusHealthy   HealthStatus = "healthy"
 	HealthStatusDegraded  HealthStatus = "degraded"
@@ -116,9 +117,10 @@ func (h *HealthChecker) HandleReadinessCheck(c *lift.Context) error {
 	}
 
 	statusCode := http.StatusOK
-	if overallStatus == HealthStatusUnhealthy {
+	switch overallStatus {
+	case HealthStatusUnhealthy:
 		statusCode = http.StatusServiceUnavailable
-	} else if overallStatus == HealthStatusDegraded {
+	case HealthStatusDegraded:
 		statusCode = http.StatusOK // Still serve traffic but indicate degraded state
 	}
 
@@ -311,7 +313,7 @@ func (h *HealthChecker) checkS3Storage(ctx context.Context, checks map[string]Ch
 }
 
 // checkSecrets checks secrets management availability
-func (h *HealthChecker) checkSecrets(ctx context.Context, checks map[string]CheckResult) {
+func (h *HealthChecker) checkSecrets(_ context.Context, checks map[string]CheckResult) {
 	start := time.Now()
 
 	// Check if required secrets are configured
@@ -369,14 +371,14 @@ func (h *HealthChecker) checkMemory(checks map[string]CheckResult) {
 		Message:  message,
 		Duration: duration,
 		Details: map[string]interface{}{
-			"alloc_mb":        fmt.Sprintf("%.2f", allocMB),
-			"sys_mb":          fmt.Sprintf("%.2f", sysMB),
-			"max_mb":          fmt.Sprintf("%.2f", maxMemoryMB),
-			"usage_percent":   fmt.Sprintf("%.2f", memoryUsagePercent),
-			"gc_count":        m.NumGC,
-			"heap_objects":    m.HeapObjects,
-			"goroutines":      runtime.NumGoroutine(),
-			"last_gc_time":    time.Unix(0, int64(m.LastGC)).Format(time.RFC3339),
+			"alloc_mb":      fmt.Sprintf("%.2f", allocMB),
+			"sys_mb":        fmt.Sprintf("%.2f", sysMB),
+			"max_mb":        fmt.Sprintf("%.2f", maxMemoryMB),
+			"usage_percent": fmt.Sprintf("%.2f", memoryUsagePercent),
+			"gc_count":      m.NumGC,
+			"heap_objects":  m.HeapObjects,
+			"goroutines":    runtime.NumGoroutine(),
+			"last_gc_time":  time.Unix(0, int64(m.LastGC)).Format(time.RFC3339), // #nosec G115
 		},
 	}
 }
@@ -404,8 +406,8 @@ func (h *HealthChecker) checkDiskSpace(checks map[string]CheckResult) {
 	}
 
 	// Calculate disk usage
-	totalMB := float64(stat.Blocks*uint64(stat.Bsize)) / 1024 / 1024
-	freeMB := float64(stat.Bavail*uint64(stat.Bsize)) / 1024 / 1024
+	totalMB := float64(stat.Blocks*uint64(stat.Bsize)) / 1024 / 1024 // #nosec G115
+	freeMB := float64(stat.Bavail*uint64(stat.Bsize)) / 1024 / 1024  // #nosec G115
 	usedMB := totalMB - freeMB
 	usagePercent := (usedMB / totalMB) * 100
 
@@ -428,12 +430,12 @@ func (h *HealthChecker) checkDiskSpace(checks map[string]CheckResult) {
 		Message:  message,
 		Duration: duration,
 		Details: map[string]interface{}{
-			"path":           tmpDir,
-			"total_mb":       fmt.Sprintf("%.2f", totalMB),
-			"used_mb":        fmt.Sprintf("%.2f", usedMB),
-			"free_mb":        fmt.Sprintf("%.2f", freeMB),
-			"usage_percent":  fmt.Sprintf("%.2f", usagePercent),
-			"environment":    "lambda",
+			"path":          tmpDir,
+			"total_mb":      fmt.Sprintf("%.2f", totalMB),
+			"used_mb":       fmt.Sprintf("%.2f", usedMB),
+			"free_mb":       fmt.Sprintf("%.2f", freeMB),
+			"usage_percent": fmt.Sprintf("%.2f", usagePercent),
+			"environment":   "lambda",
 		},
 	}
 }
@@ -531,7 +533,7 @@ func (h *HealthChecker) checkExternalDependencies(ctx context.Context, checks ma
 }
 
 // checkWellKnownEndpoint checks if ActivityPub well-known endpoints are accessible
-func (h *HealthChecker) checkWellKnownEndpoint(ctx context.Context, domain string) CheckResult {
+func (h *HealthChecker) checkWellKnownEndpoint(_ context.Context, domain string) CheckResult {
 	start := time.Now()
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -552,7 +554,7 @@ func (h *HealthChecker) checkWellKnownEndpoint(ctx context.Context, domain strin
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the health check
+			h.logger.Warn("failed to close response body", zap.Error(err))
 		}
 	}()
 
@@ -575,7 +577,7 @@ func (h *HealthChecker) checkWellKnownEndpoint(ctx context.Context, domain strin
 }
 
 // checkFederationConnectivity checks if federation services are reachable
-func (h *HealthChecker) checkFederationConnectivity(ctx context.Context) CheckResult {
+func (h *HealthChecker) checkFederationConnectivity(_ context.Context) CheckResult {
 	start := time.Now()
 
 	// Check if we can connect to a well-known ActivityPub instance
@@ -598,7 +600,7 @@ func (h *HealthChecker) checkFederationConnectivity(ctx context.Context) CheckRe
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
-			// Log error but don't fail the health check
+			h.logger.Warn("failed to close response body", zap.Error(err))
 		}
 	}()
 
@@ -638,7 +640,7 @@ func RegisterHealthRoutes(app *lift.App, storage core.RepositoryStorage, logger 
 }
 
 // HealthCheckMiddleware adds health check information to request context
-func HealthCheckMiddleware(logger *zap.Logger) lift.Middleware {
+func HealthCheckMiddleware(_ *zap.Logger) lift.Middleware {
 	return func(next lift.Handler) lift.Handler {
 		return lift.HandlerFunc(func(c *lift.Context) error {
 			// Add health check timestamp to response headers

@@ -1,5 +1,5 @@
-// Package types provides media streaming quality and format type definitions for content delivery.
-package types
+// Package types defines shared data structures for media objects.
+package types //nolint:revive // Standard types package name
 
 import (
 	"time"

@@ -24,7 +24,6 @@ func (h *Handler) HandleGetStatusSourceLift(ctx *lift.Context) error {
 		return common.RespondValidationError(ctx, err)
 	}
 
-
 	// Normalize the status ID to a full URL if it's not already
 	objectID := statusID
 	if !strings.HasPrefix(statusID, "http://") && !strings.HasPrefix(statusID, "https://") {
@@ -105,8 +104,12 @@ func (h *Handler) extractStatusIDForHistory(ctx *lift.Context) (string, error) {
 	return statusID, nil
 }
 
-// performOptionalHistoryAuth performs optional authentication for private status history
-func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, statusID string) {
+// performOptionalHistoryAuth performs authentication for history endpoints if required
+func (h *Handler) performOptionalHistoryAuth(ctx *lift.Context, _ string) {
+	// If public history is allowed, no auth is needed
+	if h.cfg.AllowPublicStatusHistory {
+		return
+	}
 
 	// Optional authentication
 	authHeader := h.extractHistoryAuthHeader(ctx)

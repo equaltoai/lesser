@@ -29,38 +29,39 @@ func NewActivityPubValidator(logger *zap.Logger) *ActivityPubValidator {
 
 // Activity represents a basic ActivityPub Activity
 type Activity struct {
-	Context   interface{} `json:"@context,omitempty"`
-	ID        string      `json:"id,omitempty"`
-	Type      string      `json:"type"`
-	Actor     string      `json:"actor"`
-	Object    interface{} `json:"object,omitempty"`
-	Target    interface{} `json:"target,omitempty"`
-	Result    interface{} `json:"result,omitempty"`
-	Origin    interface{} `json:"origin,omitempty"`
+	Context    interface{} `json:"@context,omitempty"`
+	ID         string      `json:"id,omitempty"`
+	Type       string      `json:"type"`
+	Actor      string      `json:"actor"`
+	Object     interface{} `json:"object,omitempty"`
+	Target     interface{} `json:"target,omitempty"`
+	Result     interface{} `json:"result,omitempty"`
+	Origin     interface{} `json:"origin,omitempty"`
 	Instrument interface{} `json:"instrument,omitempty"`
-	Published time.Time   `json:"published,omitempty"`
-	Updated   time.Time   `json:"updated,omitempty"`
-	To        []string    `json:"to,omitempty"`
-	CC        []string    `json:"cc,omitempty"`
-	BTO       []string    `json:"bto,omitempty"`
-	BCC       []string    `json:"bcc,omitempty"`
+	Published  time.Time   `json:"published,omitempty"`
+	Updated    time.Time   `json:"updated,omitempty"`
+	To         []string    `json:"to,omitempty"`
+	CC         []string    `json:"cc,omitempty"`
+	BTO        []string    `json:"bto,omitempty"`
+	BCC        []string    `json:"bcc,omitempty"`
 }
 
-// ValidationConfig defines validation rules
-type ValidationConfig struct {
-	MaxObjectSize     int           // Maximum size of ActivityPub object in bytes
-	MaxStringLength   int           // Maximum length for string fields
-	MaxArrayLength    int           // Maximum length for arrays
-	AllowedTypes      []string      // Allowed ActivityPub types
-	RequiredFields    []string      // Required fields for validation
-	URLTimeout        time.Duration // Timeout for URL validation
-	AllowLocalURLs    bool          // Whether to allow local/internal URLs
-	MaxDepth          int           // Maximum nesting depth for objects
+// Config defines validation rules
+type Config struct {
+	MaxObjectSize   int           // Maximum size of ActivityPub object in bytes
+	MaxStringLength int           // Maximum length for string fields
+	MaxArrayLength  int           // Maximum length for arrays
+	AllowedTypes    []string      // Allowed ActivityPub types
+	RequiredFields  []string      // Required fields for validation
+	URLTimeout      time.Duration // Timeout for URL validation
+	AllowLocalURLs  bool          // Whether to allow local/internal URLs
+	MaxDepth        int           // Maximum nesting depth for objects
+	AllowedIRI      []string      // Allowed IRI schemes (e.g., https, http)
 }
 
-// DefaultValidationConfig returns default validation configuration
-func DefaultValidationConfig() *ValidationConfig {
-	return &ValidationConfig{
+// DefaultConfig returns default validation configuration
+func DefaultConfig() *Config {
+	return &Config{
 		MaxObjectSize:   1024 * 1024, // 1MB
 		MaxStringLength: 5000,        // 5KB per string field
 		MaxArrayLength:  1000,        // Max 1000 items in arrays
@@ -75,13 +76,14 @@ func DefaultValidationConfig() *ValidationConfig {
 		URLTimeout:     5 * time.Second,
 		AllowLocalURLs: false,
 		MaxDepth:       5,
+		AllowedIRI:     []string{"https", "http"},
 	}
 }
 
 // ValidateActivity validates an ActivityPub activity
-func (v *ActivityPubValidator) ValidateActivity(data []byte, config *ValidationConfig) (*Activity, error) {
+func (v *ActivityPubValidator) ValidateActivity(data []byte, config *Config) (*Activity, error) {
 	if config == nil {
-		config = DefaultValidationConfig()
+		config = DefaultConfig()
 	}
 
 	// Size check
@@ -141,7 +143,7 @@ func (v *ActivityPubValidator) ValidateActivity(data []byte, config *ValidationC
 }
 
 // validateRequiredFields checks that required fields are present
-func (v *ActivityPubValidator) validateRequiredFields(activity *Activity, config *ValidationConfig) error {
+func (v *ActivityPubValidator) validateRequiredFields(activity *Activity, config *Config) error {
 	for _, field := range config.RequiredFields {
 		switch field {
 		case "type":
@@ -182,7 +184,7 @@ func (v *ActivityPubValidator) validateType(activityType string, allowedTypes []
 }
 
 // validateURL validates that a URL is safe and reachable
-func (v *ActivityPubValidator) validateURL(rawURL, fieldName string, config *ValidationConfig) error {
+func (v *ActivityPubValidator) validateURL(rawURL, fieldName string, config *Config) error {
 	if rawURL == "" {
 		return nil // Optional field
 	}
@@ -236,8 +238,8 @@ func (v *ActivityPubValidator) validateURLNotInternal(u *url.URL) error {
 	ips, err := net.LookupIP(host)
 	if err != nil {
 		// Allow if we can't resolve (might be temporary DNS issue)
-		v.logger.Warn("failed to resolve hostname for SSRF check", 
-			zap.String("host", host), 
+		v.logger.Warn("failed to resolve hostname for SSRF check",
+			zap.String("host", host),
 			zap.Error(err))
 		return nil
 	}
@@ -258,7 +260,7 @@ func (v *ActivityPubValidator) isPrivateIP(ip net.IP) bool {
 		"10.0.0.0/8",
 		"172.16.0.0/12",
 		"192.168.0.0/16",
-		"127.0.0.0/8",   // Loopback
+		"127.0.0.0/8",    // Loopback
 		"169.254.0.0/16", // Link-local
 	}
 
@@ -312,7 +314,7 @@ func (v *ActivityPubValidator) validateHostname(hostname string) error {
 }
 
 // validateRecipients validates recipient arrays (to, cc, bto, bcc)
-func (v *ActivityPubValidator) validateRecipients(activity *Activity, config *ValidationConfig) error {
+func (v *ActivityPubValidator) validateRecipients(activity *Activity, config *Config) error {
 	recipients := [][]string{activity.To, activity.CC, activity.BTO, activity.BCC}
 	fieldNames := []string{"to", "cc", "bto", "bcc"}
 
@@ -326,7 +328,7 @@ func (v *ActivityPubValidator) validateRecipients(activity *Activity, config *Va
 }
 
 // validateRecipientArray validates a recipient array
-func (v *ActivityPubValidator) validateRecipientArray(recipients []string, fieldName string, config *ValidationConfig) error {
+func (v *ActivityPubValidator) validateRecipientArray(recipients []string, fieldName string, config *Config) error {
 	if len(recipients) > config.MaxArrayLength {
 		return fmt.Errorf("too many recipients in %s: %d (max %d)", fieldName, len(recipients), config.MaxArrayLength)
 	}
@@ -347,7 +349,7 @@ func (v *ActivityPubValidator) validateRecipientArray(recipients []string, field
 }
 
 // validateStringLengths validates that string fields don't exceed limits
-func (v *ActivityPubValidator) validateStringLengths(activity *Activity, config *ValidationConfig) error {
+func (v *ActivityPubValidator) validateStringLengths(activity *Activity, config *Config) error {
 	stringFields := map[string]string{
 		"id":    activity.ID,
 		"type":  activity.Type,
@@ -364,21 +366,21 @@ func (v *ActivityPubValidator) validateStringLengths(activity *Activity, config 
 }
 
 // validateNestedObjects validates nested objects within the activity
-func (v *ActivityPubValidator) validateNestedObjects(activity *Activity, config *ValidationConfig, depth int) error {
+func (v *ActivityPubValidator) validateNestedObjects(_ *Activity, config *Config, depth int) error {
 	if depth > config.MaxDepth {
 		return fmt.Errorf("object nesting too deep: %d (max %d)", depth, config.MaxDepth)
 	}
 
 	// This is a simplified version - in a full implementation you'd recursively
 	// validate nested objects, arrays, etc.
-	
+
 	return nil
 }
 
 // ValidateInboxDelivery validates an incoming ActivityPub delivery to an inbox
 func (v *ActivityPubValidator) ValidateInboxDelivery(data []byte, signature string) (*Activity, error) {
 	// Create stricter config for inbox deliveries
-	config := DefaultValidationConfig()
+	config := DefaultConfig()
 	config.RequiredFields = []string{"type", "actor", "id"}
 	config.MaxObjectSize = 512 * 1024 // 512KB for inbox deliveries
 

@@ -1,6 +1,7 @@
 //go:build !production
 // +build !production
 
+// Package common provides shared utilities for the Lesser application.
 package common
 
 import (

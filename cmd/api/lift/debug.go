@@ -436,7 +436,14 @@ func (h *Handler) countStatusRepliesLift(ctx context.Context, statusID string) i
 // Note: HandleDebugQueueLift removed - was an unused placeholder
 
 // authenticateDebugRequest handles common authentication logic for debug endpoints
-func (h *Handler) authenticateDebugRequest(ctx *lift.Context, operation string) (*auth.Claims, error) {
+func (h *Handler) authenticateDebugRequest(ctx *lift.Context, _ string) (*auth.Claims, error) {
+	// For now, debug requests are only allowed in local/test environments
+	if h.cfg.Stage != "local" && h.cfg.Stage != "test" {
+		ctx.Status(http.StatusForbidden)
+		_ = ctx.JSON(map[string]string{"error": "debug endpoints are only available in local or test environments"})
+		return nil, fmt.Errorf("debug endpoints are only available in local or test environments")
+	}
+
 	// Extract and validate JWT token
 	token := h.getBearerTokenLift(ctx)
 	if err := common.ValidateRequiredParam("token", token); err != nil {

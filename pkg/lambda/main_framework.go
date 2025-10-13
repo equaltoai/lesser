@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -120,7 +121,7 @@ func createStandardizedLiftApp(config MainConfig, lambdaCtx *common.LambdaContex
 func addStandardMiddleware(app *liftPkg.App, config MainConfig, lambdaCtx *common.LambdaContext) {
 	// Panic recovery middleware (MUST be first to catch all panics)
 	app.Use(PanicRecovery(lambdaCtx.Logger))
-	
+
 	// Timeout middleware
 	app.Use(middleware.TimeoutMiddleware(middleware.TimeoutConfig{
 		DefaultTimeout: config.Timeout,
@@ -227,19 +228,64 @@ func createRequestIDMiddleware() liftPkg.Middleware {
 
 // These functions delegate to the shared implementations in cmd/api/middleware.go
 func createLoggingMiddleware(logger *zap.Logger) liftPkg.Middleware {
-	// This would reference the shared implementation
-	// For now, we'll inline a simplified version to avoid circular imports
 	return func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
 			start := time.Now()
-			err := next.Handle(ctx)
 
-			logger.Info("request completed",
-				zap.String("request_id", ctx.GetRequestID()),
-				zap.String("method", ctx.Request.Method),
-				zap.String("path", ctx.Request.Path),
-				zap.Duration("duration", time.Since(start)),
-				zap.Bool("success", err == nil),
+			if ctx.GetRequestID() == "" {
+				ctx.SetRequestID(fmt.Sprintf("lambda-%d", time.Now().UnixNano()))
+			}
+
+			requestID := ctx.GetRequestID()
+			method := ""
+			path := ""
+			userAgent := ""
+			remoteAddr := ""
+
+			if ctx.Request != nil {
+				method = ctx.Request.Method
+				path = ctx.Request.Path
+				userAgent = ctx.Header("User-Agent")
+				remoteAddr = ctx.Header("X-Forwarded-For")
+			}
+
+			contextLogger := logger.With(
+				zap.String("request_id", requestID),
+				zap.String("function_name", common.GetLambdaFunctionName()),
+				zap.String("function_version", common.GetLambdaFunctionVersion()),
+				zap.String("cold_start", common.GetLambdaInitializationType()),
+			)
+
+			ctx.Set("logger", contextLogger)
+
+			contextLogger.Info("request_start",
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.String("user_agent", userAgent),
+				zap.String("remote_addr", remoteAddr),
+			)
+
+			err := next.Handle(ctx)
+			duration := time.Since(start)
+			statusCode := 0
+			if ctx.Response != nil {
+				statusCode = ctx.Response.StatusCode
+			}
+
+			logLevel := zap.InfoLevel
+			if err != nil {
+				logLevel = zap.ErrorLevel
+			} else if statusCode >= 400 {
+				logLevel = zap.WarnLevel
+			}
+
+			contextLogger.Log(logLevel, "request_complete",
+				zap.String("method", method),
+				zap.String("path", path),
+				zap.Int("status", statusCode),
+				zap.Duration("duration", duration),
+				zap.Bool("success", err == nil && statusCode < 400),
+				zap.Error(err),
 			)
 
 			return err
@@ -250,13 +296,23 @@ func createLoggingMiddleware(logger *zap.Logger) liftPkg.Middleware {
 func createCORSMiddleware() liftPkg.Middleware {
 	return func(next liftPkg.Handler) liftPkg.Handler {
 		return liftPkg.HandlerFunc(func(ctx *liftPkg.Context) error {
-			// Standard CORS headers
-			ctx.Response.Header("Access-Control-Allow-Origin", "*")
-			ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
-			ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept")
+			if ctx.Response != nil {
+				ctx.Response.Header("Access-Control-Allow-Origin", "*")
+				ctx.Response.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD")
+				ctx.Response.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept")
+				ctx.Response.Header("Vary", "Origin")
+			}
 
-			if ctx.Request.Method == "OPTIONS" {
-				return ctx.Status(200).Text("")
+			method := http.MethodGet
+			if ctx.Request != nil && ctx.Request.Method != "" {
+				method = ctx.Request.Method
+			}
+
+			if method == http.MethodOptions {
+				if ctx.Response != nil {
+					ctx.Response.StatusCode = http.StatusOK
+				}
+				return ctx.Status(http.StatusOK).Text("")
 			}
 
 			return next.Handle(ctx)
@@ -349,13 +405,13 @@ func PanicRecovery(logger *zap.Logger) liftPkg.Middleware {
 				if r := recover(); r != nil {
 					// Get stack trace
 					stack := debug.Stack()
-					
+
 					// Generate request ID for tracking
 					requestID := ctx.Header("X-Request-Id")
 					if requestID == "" {
 						requestID = common.GenerateRequestIDULID()
 					}
-					
+
 					// Log the panic with full context
 					logger.Error("panic recovered",
 						zap.Any("panic", r),
@@ -364,16 +420,16 @@ func PanicRecovery(logger *zap.Logger) liftPkg.Middleware {
 						zap.String("method", ctx.Request.Method),
 						zap.ByteString("stack", stack),
 					)
-					
+
 					// Return a proper error response
 					err = ctx.Status(500).JSON(map[string]interface{}{
-						"error": "internal_server_error",
+						"error":             "internal_server_error",
 						"error_description": "An unexpected error occurred",
-						"request_id": requestID,
+						"request_id":        requestID,
 					})
 				}
 			}()
-			
+
 			// Call the next handler
 			return next.Handle(ctx)
 		})
