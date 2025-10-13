@@ -193,15 +193,6 @@ func (h *Handler) getAuthHeader(ctx *lift.Context) string {
 	return authHeader
 }
 
-// getQueryParam extracts query parameter from request
-func (h *Handler) getQueryParam(ctx *lift.Context, key string) string {
-	value := ctx.Query(key)
-	if common.ValidateRequiredParam("value", value) != nil && ctx.Request != nil && ctx.Request.Request != nil {
-		value = ctx.Request.Request.QueryParams[key]
-	}
-	return value
-}
-
 // isLocal checks if a username belongs to the local instance
 func (h *Handler) isLocal(username string) bool {
 	// A username is local if it doesn't contain '@' or only contains our domain
@@ -810,11 +801,6 @@ func (h *Handler) authenticateUserWithWriteScope(ctx *lift.Context) (string, err
 	}
 
 	return claims.Username, nil
-}
-
-// respondWithJSON sends a JSON response using common helpers
-func (h *Handler) respondWithJSON(ctx *lift.Context, statusCode int, data interface{}) error {
-	return common.SendJSON(ctx, statusCode, data)
 }
 
 // respondOK sends a 200 OK response with data

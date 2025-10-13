@@ -24,7 +24,7 @@ func NewDefaultValidationService() *DefaultValidationService {
 }
 
 // ValidateModel validates a model's structure and constraints
-func (v *DefaultValidationService) ValidateModel(ctx context.Context, model BaseModel) error {
+func (v *DefaultValidationService) ValidateModel(_ context.Context, model BaseModel) error {
 	if model == nil {
 		return errors.ValidationFailed("model", "model is nil")
 	}
@@ -73,7 +73,7 @@ func (v *DefaultValidationService) ValidateBusinessRules(ctx context.Context, mo
 }
 
 // ValidateRequiredFields validates that required fields are present
-func (v *DefaultValidationService) ValidateRequiredFields(ctx context.Context, model BaseModel) error {
+func (v *DefaultValidationService) ValidateRequiredFields(_ context.Context, model BaseModel) error {
 	// Get the underlying value
 	val := reflect.ValueOf(model)
 	if val.Kind() == reflect.Ptr {
@@ -115,7 +115,7 @@ func (v *DefaultValidationService) ValidateRequiredFields(ctx context.Context, m
 }
 
 // validateCreateRules validates rules specific to entity creation
-func (v *DefaultValidationService) validateCreateRules(ctx context.Context, val reflect.Value, typ reflect.Type) error {
+func (v *DefaultValidationService) validateCreateRules(_ context.Context, val reflect.Value, typ reflect.Type) error {
 	// Check for timestamp fields that should be set on creation
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
@@ -138,7 +138,7 @@ func (v *DefaultValidationService) validateCreateRules(ctx context.Context, val 
 }
 
 // validateUpdateRules validates rules specific to entity updates
-func (v *DefaultValidationService) validateUpdateRules(ctx context.Context, val reflect.Value, typ reflect.Type) error {
+func (v *DefaultValidationService) validateUpdateRules(_ context.Context, val reflect.Value, typ reflect.Type) error {
 	// Check for timestamp fields that should be updated
 	for i := 0; i < val.NumField(); i++ {
 		field := val.Field(i)
@@ -161,7 +161,7 @@ func (v *DefaultValidationService) validateUpdateRules(ctx context.Context, val 
 }
 
 // validateDeleteRules validates rules specific to entity deletion
-func (v *DefaultValidationService) validateDeleteRules(ctx context.Context, val reflect.Value, typ reflect.Type) error {
+func (v *DefaultValidationService) validateDeleteRules(_ context.Context, _ reflect.Value, _ reflect.Type) error {
 	// Default implementation - can be overridden by specific repositories
 	return nil
 }
@@ -246,7 +246,7 @@ func (p *DefaultPermissionService) CheckPermissions(ctx context.Context, actor s
 }
 
 // HasPermission checks if an actor has a specific permission
-func (p *DefaultPermissionService) HasPermission(ctx context.Context, actor string, permission string) bool {
+func (p *DefaultPermissionService) HasPermission(_ context.Context, actor string, permission string) bool {
 	if actor == "" {
 		return false
 	}
@@ -275,14 +275,14 @@ func (p *DefaultPermissionService) HasPermission(ctx context.Context, actor stri
 }
 
 // checkCreatePermission checks creation permissions
-func (p *DefaultPermissionService) checkCreatePermission(ctx context.Context, actor string, resourceType string) error {
+func (p *DefaultPermissionService) checkCreatePermission(_ context.Context, _ string, _ string) error {
 	// Default: most actors can create most resources
 	// This can be overridden by specific permission services
 	return nil
 }
 
 // checkReadPermission checks read permissions
-func (p *DefaultPermissionService) checkReadPermission(ctx context.Context, actor string, resourceType string, resourceID string) error {
+func (p *DefaultPermissionService) checkReadPermission(_ context.Context, _ string, _ string, _ string) error {
 	// Default: most actors can read most resources
 	// This can be overridden for private resources
 	return nil
@@ -368,7 +368,7 @@ func NewInMemoryCachingService() *InMemoryCachingService {
 }
 
 // Get retrieves a value from the cache
-func (c *InMemoryCachingService) Get(ctx context.Context, key string, dest interface{}) error {
+func (c *InMemoryCachingService) Get(_ context.Context, key string, dest interface{}) error {
 	entry, exists := c.cache[key]
 	if !exists {
 		return errors.ItemNotFound("cache_entry")
@@ -394,7 +394,7 @@ func (c *InMemoryCachingService) Get(ctx context.Context, key string, dest inter
 }
 
 // Set stores a value in the cache with TTL
-func (c *InMemoryCachingService) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (c *InMemoryCachingService) Set(_ context.Context, key string, value interface{}, ttl time.Duration) error {
 	c.cache[key] = cacheEntry{
 		value:     value,
 		expiresAt: time.Now().Add(ttl),
@@ -403,13 +403,13 @@ func (c *InMemoryCachingService) Set(ctx context.Context, key string, value inte
 }
 
 // Delete removes a value from the cache
-func (c *InMemoryCachingService) Delete(ctx context.Context, key string) error {
+func (c *InMemoryCachingService) Delete(_ context.Context, key string) error {
 	delete(c.cache, key)
 	return nil
 }
 
 // InvalidatePattern removes all cache entries matching a pattern
-func (c *InMemoryCachingService) InvalidatePattern(ctx context.Context, pattern string) error {
+func (c *InMemoryCachingService) InvalidatePattern(_ context.Context, pattern string) error {
 	for key := range c.cache {
 		if strings.Contains(key, pattern) {
 			delete(c.cache, key)
@@ -474,7 +474,7 @@ func NewLogEventHandler() *LogEventHandler {
 }
 
 // Handle logs the event
-func (h *LogEventHandler) Handle(ctx context.Context, event Event) error {
+func (h *LogEventHandler) Handle(_ context.Context, event Event) error {
 	// In a real implementation, this would use proper logging
 	fmt.Printf("Event: %s.%s on %s/%s by %s\n",
 		event.Entity, event.Action, event.EntityID, event.Type, event.Actor)

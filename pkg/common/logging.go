@@ -1,3 +1,4 @@
+// Package common provides shared logging utilities for the Lesser application.
 package common
 
 import (

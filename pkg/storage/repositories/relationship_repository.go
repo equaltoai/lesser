@@ -326,7 +326,7 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 	}
 
 	// Apply updates based on the provided updates map
-	hasChanges := false
+	var hasChanges bool
 	for key, value := range updates {
 		switch key {
 		case "state", "State":
@@ -348,17 +348,14 @@ func (r *RelationshipRepository) UpdateRelationship(ctx context.Context, followe
 		}
 	}
 
-	// Always update timestamp
-	relationship.UpdatedAt = time.Now()
-	hasChanges = true
-
-	// Only proceed with update if there are actual changes
 	if !hasChanges {
 		r.logger.Debug("no changes to apply to relationship",
 			zap.String("follower", followerUsername),
 			zap.String("following", followingUsername))
 		return nil
 	}
+
+	relationship.UpdatedAt = time.Now()
 
 	// Use enhanced validation and update with automatic event emission and cache invalidation
 	if err := r.ValidateAndUpdate(ctx, relationship); err != nil {

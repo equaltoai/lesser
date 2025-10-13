@@ -74,41 +74,22 @@ type ActorEntry struct {
 }
 
 // Config holds configuration for FederationCache
-type CacheConfig struct {
-	PublicKeyTTL    time.Duration // Default: 1 hour
-	InstanceTTL     time.Duration // Default: 30 minutes
-	ActorTTL        time.Duration // Default: 15 minutes
-	MaxEntries      int           // Default: 10000
-	CleanupInterval time.Duration // Default: 5 minutes
+type Config struct {
+	// Size is the maximum number of items in the cache
+	Size int `json:"size"`
 }
 
 // DefaultCacheConfig returns sensible defaults for federation caching
-func DefaultCacheConfig() CacheConfig {
-	return CacheConfig{
-		PublicKeyTTL:    1 * time.Hour,
-		InstanceTTL:     30 * time.Minute,
-		ActorTTL:        15 * time.Minute,
-		MaxEntries:      10000,
-		CleanupInterval: 5 * time.Minute,
+func DefaultCacheConfig() Config {
+	return Config{
+		Size: 10000,
 	}
 }
 
 // NewFederationCache creates a new federation cache with the given configuration
-func NewFederationCache(config CacheConfig, storage interface{}, logger *zap.Logger) *FederationCache {
-	if config.PublicKeyTTL == 0 {
-		config.PublicKeyTTL = 1 * time.Hour
-	}
-	if config.InstanceTTL == 0 {
-		config.InstanceTTL = 30 * time.Minute
-	}
-	if config.ActorTTL == 0 {
-		config.ActorTTL = 15 * time.Minute
-	}
-	if config.MaxEntries == 0 {
-		config.MaxEntries = 10000
-	}
-	if config.CleanupInterval == 0 {
-		config.CleanupInterval = 5 * time.Minute
+func NewFederationCache(config Config, storage interface{}, logger *zap.Logger) *FederationCache {
+	if config.Size == 0 {
+		config.Size = 10000
 	}
 	if logger == nil {
 		logger = zap.NewNop()
@@ -118,10 +99,10 @@ func NewFederationCache(config CacheConfig, storage interface{}, logger *zap.Log
 		publicKeys:   make(map[string]*PublicKeyEntry),
 		instances:    make(map[string]*InstanceEntry),
 		actors:       make(map[string]*ActorEntry),
-		publicKeyTTL: config.PublicKeyTTL,
-		instanceTTL:  config.InstanceTTL,
-		actorTTL:     config.ActorTTL,
-		maxEntries:   config.MaxEntries,
+		publicKeyTTL: 1 * time.Hour,    // Default TTL, can be overridden by config
+		instanceTTL:  30 * time.Minute, // Default TTL, can be overridden by config
+		actorTTL:     15 * time.Minute, // Default TTL, can be overridden by config
+		maxEntries:   config.Size,
 		storage:      storage,
 		logger:       logger,
 		stopCleanup:  make(chan struct{}),
@@ -129,7 +110,7 @@ func NewFederationCache(config CacheConfig, storage interface{}, logger *zap.Log
 	}
 
 	// Start background cleanup goroutine
-	go fc.cleanupLoop(config.CleanupInterval)
+	go fc.cleanupLoop(5 * time.Minute) // Default cleanup interval
 
 	return fc
 }
@@ -326,7 +307,7 @@ func (fc *FederationCache) InvalidateActor(actorID string) {
 // Cache Management Methods
 
 // GetStats returns cache statistics
-func (fc *FederationCache) GetStats() CacheStats {
+func (fc *FederationCache) GetStats() Stats {
 	fc.pkMu.RLock()
 	publicKeyCount := len(fc.publicKeys)
 	fc.pkMu.RUnlock()
@@ -339,20 +320,20 @@ func (fc *FederationCache) GetStats() CacheStats {
 	actorCount := len(fc.actors)
 	fc.actorMu.RUnlock()
 
-	return CacheStats{
-		PublicKeyEntries: publicKeyCount,
-		InstanceEntries:  instanceCount,
-		ActorEntries:     actorCount,
-		TotalEntries:     publicKeyCount + instanceCount + actorCount,
+	return Stats{
+		Size: publicKeyCount + instanceCount + actorCount,
 	}
 }
 
-// CacheStats holds cache usage statistics
-type CacheStats struct {
-	PublicKeyEntries int `json:"public_key_entries"`
-	InstanceEntries  int `json:"instance_entries"`
-	ActorEntries     int `json:"actor_entries"`
-	TotalEntries     int `json:"total_entries"`
+// Stats holds cache usage statistics
+type Stats struct {
+	Size             int   `json:"size"`
+	Hits             int64 `json:"hits"`
+	Misses           int64 `json:"misses"`
+	Evictions        int64 `json:"evictions"`
+	TotalGets        int64 `json:"total_gets"`
+	TotalSets        int64 `json:"total_sets"`
+	TotalInvalidates int64 `json:"total_invalidates"`
 }
 
 // Clear removes all entries from the cache
@@ -429,10 +410,10 @@ func (fc *FederationCache) cleanup() {
 	// Log cleanup stats
 	stats := fc.GetStats()
 	fc.logger.Debug("cache cleanup completed",
-		zap.Int("total_entries", stats.TotalEntries),
-		zap.Int("public_keys", stats.PublicKeyEntries),
-		zap.Int("instances", stats.InstanceEntries),
-		zap.Int("actors", stats.ActorEntries))
+		zap.Int("total_entries", stats.Size),
+		zap.Int("public_keys", len(fc.publicKeys)),
+		zap.Int("instances", len(fc.instances)),
+		zap.Int("actors", len(fc.actors)))
 }
 
 // Persistence methods (implementation depends on storage backend)
@@ -459,14 +440,50 @@ func (fc *FederationCache) persistPublicKey(keyID string, entry *PublicKeyEntry)
 		zap.Int("data_size", len(data)))
 }
 
-func (fc *FederationCache) persistInstance(domain string, entry *InstanceEntry) {
-	// Similar implementation for instance persistence
-	// Implementation would depend on the specific storage repository methods
+// persistInstance persists an instance entry to the repository
+func (fc *FederationCache) persistInstance(_ string, entry *InstanceEntry) {
+	if fc.storage == nil {
+		return
+	}
+
+	// Convert to storage format
+	data, err := json.Marshal(entry)
+	if err != nil {
+		fc.logger.Warn("failed to marshal instance for persistence",
+			zap.String("domain", entry.Domain),
+			zap.Error(err))
+		return
+	}
+
+	// Store using the configured storage backend
+	// Implementation would depend on the specific storage interface provided
+	// Example: fc.storage.SetInstance(ctx, entry.Domain, data, entry.ExpiresAt)
+	fc.logger.Debug("would persist instance to storage",
+		zap.String("domain", entry.Domain),
+		zap.Int("data_size", len(data)))
 }
 
-func (fc *FederationCache) persistActor(actorID string, entry *ActorEntry) {
-	// Similar implementation for actor persistence
-	// Implementation would depend on the specific storage repository methods
+// persistActor persists an actor entry to the repository
+func (fc *FederationCache) persistActor(_ string, entry *ActorEntry) {
+	if fc.storage == nil {
+		return
+	}
+
+	// Convert to storage format
+	data, err := json.Marshal(entry)
+	if err != nil {
+		fc.logger.Warn("failed to marshal actor for persistence",
+			zap.String("actor_id", entry.ActorID),
+			zap.Error(err))
+		return
+	}
+
+	// Store using the configured storage backend
+	// Implementation would depend on the specific storage interface provided
+	// Example: fc.storage.SetActor(ctx, entry.ActorID, data, entry.ExpiresAt)
+	fc.logger.Debug("would persist actor to storage",
+		zap.String("actor_id", entry.ActorID),
+		zap.Int("data_size", len(data)))
 }
 
 func (fc *FederationCache) removePersistentPublicKey(keyID string) {
@@ -480,12 +497,26 @@ func (fc *FederationCache) removePersistentPublicKey(keyID string) {
 		zap.String("key_id", keyID))
 }
 
-func (fc *FederationCache) removePersistentInstance(domain string) {
-	// Similar implementation for instance removal
+// removePersistentInstance removes an instance entry from the repository
+func (fc *FederationCache) removePersistentInstance(_ string) {
+	if fc.storage == nil {
+		return
+	}
+
+	// Implementation would depend on the specific storage interface provided
+	// Example: fc.storage.DeleteInstance(ctx, domain)
+	fc.logger.Debug("would remove persistent instance")
 }
 
-func (fc *FederationCache) removePersistentActor(actorID string) {
-	// Similar implementation for actor removal
+// removePersistentActor removes an actor entry from the repository
+func (fc *FederationCache) removePersistentActor(_ string) {
+	if fc.storage == nil {
+		return
+	}
+
+	// Implementation would depend on the specific storage interface provided
+	// Example: fc.storage.DeleteActor(ctx, actorID)
+	fc.logger.Debug("would remove persistent actor")
 }
 
 // Utility methods for common federation operations

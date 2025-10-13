@@ -24,9 +24,9 @@ func SendJSON(ctx *lift.Context, code int, data interface{}) error {
 
 // SendMastodonError sends Mastodon API-compatible error responses
 // Mastodon clients expect a specific error format for proper error handling
-func SendMastodonError(ctx *lift.Context, code int, error string) error {
+func SendMastodonError(ctx *lift.Context, code int, errorMsg string) error {
 	mastodonError := map[string]interface{}{
-		"error": error,
+		"error": errorMsg,
 	}
 
 	// Add additional fields for specific error codes

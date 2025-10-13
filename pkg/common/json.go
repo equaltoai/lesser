@@ -1,4 +1,5 @@
-package common
+// Package common provides shared JSON utilities for ActivityPub operations.
+package common //nolint:revive // Standard utility package name
 
 import (
 	"encoding/json"

@@ -1,4 +1,5 @@
-package common
+// Package common provides shared utilities for key operations.
+package common //nolint:revive // Standard utility package name
 
 import "strings"
 

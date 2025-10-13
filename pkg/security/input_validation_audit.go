@@ -1,3 +1,5 @@
+//go:build tools
+
 // Package security provides security-related utilities and auditing functions
 package security
 
@@ -146,7 +148,7 @@ func (a *InputValidationAuditor) AuditDirectory(ctx context.Context) (*AuditRepo
 }
 
 // auditFile audits a single Go file for input validation issues
-func (a *InputValidationAuditor) auditFile(ctx context.Context, filePath string) error {
+func (a *InputValidationAuditor) auditFile(_ context.Context, filePath string) error {
 	// Parse the Go file
 	src, err := os.ReadFile(filePath)
 	if err != nil {
@@ -489,7 +491,7 @@ func (v *validationVisitor) checkFileOperations(call *ast.CallExpr, funcName str
 }
 
 // checkInputAssignment checks assignments from user input
-func (v *validationVisitor) checkInputAssignment(lhs, rhs ast.Expr) {
+func (v *validationVisitor) checkInputAssignment(_, rhs ast.Expr) {
 	// This is a simplified implementation
 	// In practice, you'd need more sophisticated taint analysis
 
@@ -510,7 +512,7 @@ func (v *validationVisitor) checkInputAssignment(lhs, rhs ast.Expr) {
 }
 
 // checkValidationPatterns checks for validation patterns in conditions
-func (v *validationVisitor) checkValidationPatterns(cond ast.Expr) {
+func (v *validationVisitor) checkValidationPatterns(_ ast.Expr) {
 	// This would check for common validation patterns like length checks,
 	// null checks, type checks, etc.
 }

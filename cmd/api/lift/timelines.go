@@ -2,7 +2,6 @@ package lift
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/equaltoai/lesser/cmd/api/models"
@@ -206,25 +205,6 @@ func (h *Handler) parseTagTimelineParams(ctx *lift.Context, hashtag string) (*Ta
 // addStatusInteractions adds interaction counts and user interaction state
 
 // addTagTimelinePaginationHeader adds Link header for pagination
-func (h *Handler) addTagTimelinePaginationHeader(ctx *lift.Context, params *TagTimelineParams, cursor string) {
-	if common.ValidateRequiredParam(cursor, "cursor") != nil {
-		return
-	}
-
-	queryParams := make(map[string]string)
-	if params.Limit != 20 {
-		queryParams["limit"] = strconv.Itoa(params.Limit)
-	}
-	if params.Local {
-		queryParams["local"] = boolTrue
-	}
-	if params.OnlyMedia {
-		queryParams["only_media"] = boolTrue
-	}
-
-	linkURL := h.buildLinkURL(fmt.Sprintf("/api/v1/timelines/tag/%s", params.Hashtag), cursor, queryParams)
-	ctx.Response.Header("Link", fmt.Sprintf(`<%s>; rel="next"`, linkURL))
-}
 
 // HandleGetListTimelineLift handles GET /api/v1/timelines/list/:list_id
 func (h *Handler) HandleGetListTimelineLift(ctx *lift.Context) error {
@@ -453,15 +433,6 @@ func (h *Handler) parseDirectTimelineParams(ctx *lift.Context) directTimelinePar
 	}
 
 	return params
-}
-
-// buildLinkURL is a helper function to build Link header URLs
-func (h *Handler) buildLinkURL(path, cursor string, params map[string]string) string {
-	url := fmt.Sprintf("%s%s?max_id=%s", h.cfg.BaseURL(), path, cursor)
-	for key, value := range params {
-		url += fmt.Sprintf("&%s=%s", key, value)
-	}
-	return url
 }
 
 // NOTE: convertStorageStatusToAPI has been moved to helpers.go to be shared across all handlers
