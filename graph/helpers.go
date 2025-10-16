@@ -14,6 +14,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/auth"
 	"github.com/equaltoai/lesser/pkg/common"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/hashtags"
 	"github.com/equaltoai/lesser/pkg/services/lists"
@@ -229,10 +230,10 @@ func (r *mutationResolver) executeListMembershipOperation(
 }
 
 // buildAndSortDrivers creates, sorts, and limits cost drivers
-func (r *queryResolver) buildAndSortDrivers(drivers []*model.Driver) []*model.Driver {
+func (r *queryResolver) buildAndSortDrivers(drivers []*cost.Driver) []*cost.Driver {
 	// Sort by cost percentage
 	sort.Slice(drivers, func(i, j int) bool {
-		return drivers[i].PercentOfTotal > drivers[j].PercentOfTotal
+		return drivers[i].PercentageOfTotal > drivers[j].PercentageOfTotal
 	})
 
 	// Return top 5 drivers
@@ -243,28 +244,34 @@ func (r *queryResolver) buildAndSortDrivers(drivers []*model.Driver) []*model.Dr
 }
 
 // createReadWriteDrivers creates standard DynamoDB read/write cost drivers
-func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, totalCost float64) []*model.Driver {
-	drivers := []*model.Driver{}
+func (r *queryResolver) createReadWriteDrivers(totalReads, totalWrites int64, totalCost float64) []*cost.Driver {
+	drivers := []*cost.Driver{}
 
 	if totalReads > 0 && totalCost > 0 {
 		readCost := float64(totalReads) * 0.00025 // Approximate DynamoDB read cost
 		readPercentage := (readCost / totalCost) * 100
-		drivers = append(drivers, &model.Driver{
-			Type:           "DynamoDB Reads",
-			Cost:           readCost,
-			PercentOfTotal: readPercentage,
-			Trend:          model.TrendStable,
+		readCostMicro := int64(readCost * 1_000_000)
+		drivers = append(drivers, &cost.Driver{
+			Service:           "DynamoDB",
+			Operation:         "Read",
+			CostMicroCents:    readCostMicro,
+			PercentageOfTotal: readPercentage,
+			OperationCount:    totalReads,
+			AverageCost:       readCostMicro / totalReads,
 		})
 	}
 
 	if totalWrites > 0 && totalCost > 0 {
 		writeCost := float64(totalWrites) * 0.00125 // Approximate DynamoDB write cost
 		writePercentage := (writeCost / totalCost) * 100
-		drivers = append(drivers, &model.Driver{
-			Type:           "DynamoDB Writes",
-			Cost:           writeCost,
-			PercentOfTotal: writePercentage,
-			Trend:          model.TrendStable,
+		writeCostMicro := int64(writeCost * 1_000_000)
+		drivers = append(drivers, &cost.Driver{
+			Service:           "DynamoDB",
+			Operation:         "Write",
+			CostMicroCents:    writeCostMicro,
+			PercentageOfTotal: writePercentage,
+			OperationCount:    totalWrites,
+			AverageCost:       writeCostMicro / totalWrites,
 		})
 	}
 

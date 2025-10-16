@@ -4,12 +4,12 @@ package model
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"strconv"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/cost"
 	"github.com/equaltoai/lesser/pkg/moderation"
 	"github.com/equaltoai/lesser/pkg/storage/models"
 )
@@ -213,14 +213,6 @@ type CostBreakdown struct {
 	Breakdown        []*CostItem `json:"breakdown"`
 }
 
-type Driver struct {
-	Type           string  `json:"type"`
-	Domain         *string `json:"domain,omitempty"`
-	Cost           float64 `json:"cost"`
-	PercentOfTotal float64 `json:"percentOfTotal"`
-	Trend          Trend   `json:"trend"`
-}
-
 type CostItem struct {
 	Operation string  `json:"operation"`
 	Count     int     `json:"count"`
@@ -234,12 +226,12 @@ type CostOptimizationResult struct {
 }
 
 type CostProjection struct {
-	Period          Period    `json:"period"`
-	CurrentCost     float64   `json:"currentCost"`
-	ProjectedCost   float64   `json:"projectedCost"`
-	Variance        float64   `json:"variance"`
-	TopDrivers      []*Driver `json:"topDrivers"`
-	Recommendations []string  `json:"recommendations"`
+	Period          Period         `json:"period"`
+	CurrentCost     float64        `json:"currentCost"`
+	ProjectedCost   float64        `json:"projectedCost"`
+	Variance        float64        `json:"variance"`
+	TopDrivers      []*cost.Driver `json:"topDrivers"`
+	Recommendations []string       `json:"recommendations"`
 }
 
 type CostUpdate struct {
@@ -1494,12 +1486,12 @@ func (e ActivityType) String() string {
 func (e *ActivityType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ActivityType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ActivityType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ActivityType", str)
 	}
 	return nil
 }
@@ -1555,12 +1547,12 @@ func (e ActorType) String() string {
 func (e *ActorType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ActorType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ActorType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ActorType", str)
 	}
 	return nil
 }
@@ -1612,12 +1604,12 @@ func (e AlertLevel) String() string {
 func (e *AlertLevel) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = AlertLevel(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("AlertLevel %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid AlertLevel", str)
 	}
 	return nil
 }
@@ -1671,12 +1663,12 @@ func (e AlertSeverity) String() string {
 func (e *AlertSeverity) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = AlertSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("AlertSeverity %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid AlertSeverity", str)
 	}
 	return nil
 }
@@ -1734,12 +1726,12 @@ func (e ConnectionType) String() string {
 func (e *ConnectionType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ConnectionType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ConnectionType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ConnectionType", str)
 	}
 	return nil
 }
@@ -1795,12 +1787,12 @@ func (e CostOrderBy) String() string {
 func (e *CostOrderBy) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = CostOrderBy(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("CostOrderBy %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid CostOrderBy", str)
 	}
 	return nil
 }
@@ -1854,12 +1846,12 @@ func (e DigestFrequency) String() string {
 func (e *DigestFrequency) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = DigestFrequency(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("DigestFrequency %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid DigestFrequency", str)
 	}
 	return nil
 }
@@ -1909,12 +1901,12 @@ func (e DirectoryOrder) String() string {
 func (e *DirectoryOrder) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = DirectoryOrder(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("DirectoryOrder %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid DirectoryOrder", str)
 	}
 	return nil
 }
@@ -1970,12 +1962,12 @@ func (e FederationState) String() string {
 func (e *FederationState) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = FederationState(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("FederationState %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid FederationState", str)
 	}
 	return nil
 }
@@ -2025,12 +2017,12 @@ func (e HashtagMode) String() string {
 func (e *HashtagMode) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = HashtagMode(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("HashtagMode %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid HashtagMode", str)
 	}
 	return nil
 }
@@ -2084,12 +2076,12 @@ func (e HealthStatus) String() string {
 func (e *HealthStatus) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = HealthStatus(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("HealthStatus %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid HealthStatus", str)
 	}
 	return nil
 }
@@ -2145,12 +2137,12 @@ func (e InfrastructureEventType) String() string {
 func (e *InfrastructureEventType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = InfrastructureEventType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("InfrastructureEventType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid InfrastructureEventType", str)
 	}
 	return nil
 }
@@ -2206,12 +2198,12 @@ func (e InstanceHealthStatus) String() string {
 func (e *InstanceHealthStatus) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = InstanceHealthStatus(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("InstanceHealthStatus %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid InstanceHealthStatus", str)
 	}
 	return nil
 }
@@ -2265,12 +2257,12 @@ func (e IssueSeverity) String() string {
 func (e *IssueSeverity) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = IssueSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("IssueSeverity %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid IssueSeverity", str)
 	}
 	return nil
 }
@@ -2324,12 +2316,12 @@ func (e MediaType) String() string {
 func (e *MediaType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = MediaType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("MediaType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid MediaType", str)
 	}
 	return nil
 }
@@ -2387,12 +2379,12 @@ func (e ModerationAction) String() string {
 func (e *ModerationAction) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ModerationAction(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ModerationAction %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ModerationAction", str)
 	}
 	return nil
 }
@@ -2448,12 +2440,12 @@ func (e ModerationSeverity) String() string {
 func (e *ModerationSeverity) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ModerationSeverity(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ModerationSeverity %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ModerationSeverity", str)
 	}
 	return nil
 }
@@ -2507,12 +2499,12 @@ func (e NotificationLevel) String() string {
 func (e *NotificationLevel) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = NotificationLevel(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("NotificationLevel %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid NotificationLevel", str)
 	}
 	return nil
 }
@@ -2572,12 +2564,12 @@ func (e ObjectType) String() string {
 func (e *ObjectType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ObjectType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ObjectType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ObjectType", str)
 	}
 	return nil
 }
@@ -2631,12 +2623,12 @@ func (e PatternType) String() string {
 func (e *PatternType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = PatternType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("PatternType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid PatternType", str)
 	}
 	return nil
 }
@@ -2692,12 +2684,12 @@ func (e Period) String() string {
 func (e *Period) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = Period(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("Period %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid Period", str)
 	}
 	return nil
 }
@@ -2751,12 +2743,12 @@ func (e Priority) String() string {
 func (e *Priority) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = Priority(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("Priority %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid Priority", str)
 	}
 	return nil
 }
@@ -2808,12 +2800,12 @@ func (e QuotePermission) String() string {
 func (e *QuotePermission) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = QuotePermission(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("QuotePermission %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid QuotePermission", str)
 	}
 	return nil
 }
@@ -2867,12 +2859,12 @@ func (e QuoteType) String() string {
 func (e *QuoteType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = QuoteType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("QuoteType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid QuoteType", str)
 	}
 	return nil
 }
@@ -2928,12 +2920,12 @@ func (e RecommendationType) String() string {
 func (e *RecommendationType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = RecommendationType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("RecommendationType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid RecommendationType", str)
 	}
 	return nil
 }
@@ -2985,12 +2977,12 @@ func (e RepliesPolicy) String() string {
 func (e *RepliesPolicy) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = RepliesPolicy(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("RepliesPolicy %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid RepliesPolicy", str)
 	}
 	return nil
 }
@@ -3044,12 +3036,12 @@ func (e Sentiment) String() string {
 func (e *Sentiment) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = Sentiment(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("Sentiment %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid Sentiment", str)
 	}
 	return nil
 }
@@ -3107,12 +3099,12 @@ func (e ServiceCategory) String() string {
 func (e *ServiceCategory) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = ServiceCategory(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("ServiceCategory %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid ServiceCategory", str)
 	}
 	return nil
 }
@@ -3168,12 +3160,12 @@ func (e SeveranceReason) String() string {
 func (e *SeveranceReason) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = SeveranceReason(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("SeveranceReason %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid SeveranceReason", str)
 	}
 	return nil
 }
@@ -3229,12 +3221,12 @@ func (e StreamQuality) String() string {
 func (e *StreamQuality) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = StreamQuality(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("StreamQuality %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid StreamQuality", str)
 	}
 	return nil
 }
@@ -3288,12 +3280,12 @@ func (e SuggestionSource) String() string {
 func (e *SuggestionSource) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = SuggestionSource(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("SuggestionSource %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid SuggestionSource", str)
 	}
 	return nil
 }
@@ -3347,12 +3339,12 @@ func (e SyncStatus) String() string {
 func (e *SyncStatus) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = SyncStatus(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("SyncStatus %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid SyncStatus", str)
 	}
 	return nil
 }
@@ -3406,12 +3398,12 @@ func (e TimePeriod) String() string {
 func (e *TimePeriod) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = TimePeriod(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("TimePeriod %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid TimePeriod", str)
 	}
 	return nil
 }
@@ -3469,12 +3461,12 @@ func (e TimelineType) String() string {
 func (e *TimelineType) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = TimelineType(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("TimelineType %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid TimelineType", str)
 	}
 	return nil
 }
@@ -3526,12 +3518,12 @@ func (e Trend) String() string {
 func (e *Trend) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = Trend(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("Trend %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid Trend", str)
 	}
 	return nil
 }
@@ -3585,12 +3577,12 @@ func (e Visibility) String() string {
 func (e *Visibility) UnmarshalGQL(v any) error {
 	str, ok := v.(string)
 	if !ok {
-		return ErrEnumNotString
+		return fmt.Errorf("enums must be strings")
 	}
 
 	*e = Visibility(str)
 	if !e.IsValid() {
-		return errors.Join(fmt.Errorf("Visibility %s", str), ErrInvalidEnumValue)
+		return fmt.Errorf("%s is not a valid Visibility", str)
 	}
 	return nil
 }
