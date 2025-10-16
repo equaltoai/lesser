@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -15,8 +16,10 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/cloudfront/sign"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -35,6 +38,7 @@ type S3MediaStorage struct {
 	cloudfrontKeyPairID  string
 	cloudfrontPrivateKey *rsa.PrivateKey
 	urlSigner            *sign.URLSigner
+	logger               *zap.Logger
 }
 
 // NewS3MediaStorage creates a new S3-based media storage with DynamORM for metadata
@@ -44,11 +48,12 @@ func NewS3MediaStorage(client *s3.Client, bucket, region string, db core.DB) *S3
 		bucket: bucket,
 		region: region,
 		db:     db,
+		logger: common.Logger(),
 	}
 
 	// Initialize CloudFront if environment variables are set
 	if err := storage.initializeCloudFront(); err != nil {
-		common.Logger().Warn("CloudFront initialization failed, falling back to S3 URLs",
+		storage.logger.Warn("CloudFront initialization failed, falling back to S3 URLs",
 			zap.Error(err))
 	}
 
@@ -492,13 +497,21 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 	var privateKeyPEM []byte
 	var err error
 
-	if cfPrivateKeyPath != "" {
+	// Check if key path is a Secrets Manager reference
+	if strings.HasPrefix(cfPrivateKeyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(cfPrivateKeyPath, "lesser/") {
+		// Retrieve from Secrets Manager
+		privateKeyPEM, err = s.getSecretFromSecretsManager(cfPrivateKeyPath)
+		if err != nil {
+			return fmt.Errorf("failed to load CloudFront private key from Secrets Manager: %w", err)
+		}
+	} else if cfPrivateKeyPath != "" {
 		// Validate the file path to prevent directory traversal
 		cleanPath := filepath.Clean(cfPrivateKeyPath)
 		if !filepath.IsAbs(cleanPath) || strings.Contains(cleanPath, "..") {
 			return fmt.Errorf("%w: %s", ErrInvalidCloudFrontPrivateKeyPath, cfPrivateKeyPath)
 		}
 		// Load from file path
+		// #nosec G304 -- cleanPath is validated and from configuration, not user input
 		privateKeyPEM, err = os.ReadFile(cleanPath)
 		if err != nil {
 			return fmt.Errorf("%w: %w", ErrFailedToReadCloudFrontPrivateKeyFile, err)
@@ -531,11 +544,53 @@ func (s *S3MediaStorage) initializeCloudFront() error {
 	s.cloudfrontPrivateKey = privateKey
 	s.urlSigner = urlSigner
 
-	common.Logger().Info("CloudFront URL signing enabled",
+	s.logger.Info("CloudFront URL signing enabled",
 		zap.String("domain", cfDomain),
 		zap.String("key_pair_id", cfKeyPairID))
 
 	return nil
+}
+
+// getSecretFromSecretsManager retrieves a secret from AWS Secrets Manager
+func (s *S3MediaStorage) getSecretFromSecretsManager(secretID string) ([]byte, error) {
+	// Load AWS config
+	ctx := context.Background()
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config for Secrets Manager: %w", err)
+	}
+
+	// Create Secrets Manager client
+	client := secretsmanager.NewFromConfig(awsCfg)
+
+	// Get secret value
+	result, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &secretID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve secret %s from Secrets Manager: %w", secretID, err)
+	}
+
+	if result.SecretString == nil {
+		return nil, fmt.Errorf("secret %s has no string value", secretID)
+	}
+
+	secretValue := *result.SecretString
+
+	// If the secret is JSON (from CloudFront key generation), extract the privateKey field
+	if strings.HasPrefix(strings.TrimSpace(secretValue), "{") {
+		var secretData map[string]interface{}
+		if err := json.Unmarshal([]byte(secretValue), &secretData); err == nil {
+			if privateKey, ok := secretData["privateKey"].(string); ok {
+				secretValue = privateKey
+			}
+		}
+	}
+
+	s.logger.Info("successfully retrieved CloudFront private key from Secrets Manager",
+		zap.String("secret_id", secretID))
+
+	return []byte(secretValue), nil
 }
 
 // generateCloudFrontURL creates a signed CloudFront URL for the given S3 key

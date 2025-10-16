@@ -73,7 +73,7 @@ func NewModerationMetricsRepository(args ...interface{}) ModerationMetricsReposi
 		// Return nil and let caller handle the error
 		if len(args) > 0 {
 			if logger, ok := args[2].(*zap.Logger); ok {
-				logger.Error("NewModerationMetricsRepository: invalid number of arguments", 
+				logger.Error("NewModerationMetricsRepository: invalid number of arguments",
 					zap.Int("arg_count", len(args)))
 			}
 		}

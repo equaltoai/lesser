@@ -313,6 +313,22 @@ func loadConfig() *Config {
 		DynamoDBEncryptionKey:     getEnvOrDefault("DYNAMODB_ENCRYPTION_KEY", ""),
 		ActorPrivateKeyEncryption: getEnvOrDefault("ACTOR_PRIVATE_KEY_ENCRYPTION", ""),
 
+		// Media Streaming Configuration
+		MediaSourceBucketName:    getEnvOrDefault("MEDIA_SOURCE_BUCKET_NAME", ""),
+		MediaStreamingBucketName: getEnvOrDefault("MEDIA_STREAMING_BUCKET_NAME", ""),
+		MediaConvertEndpoint:     getEnvOrDefault("MEDIA_CONVERT_ENDPOINT", ""),
+		MediaConvertRoleArn:      getEnvOrDefault("MEDIA_CONVERT_ROLE_ARN", ""),
+		CloudFrontDomain:         getEnvOrDefault("CLOUDFRONT_DOMAIN", ""),
+		CloudFrontKeyPairID:      getEnvOrDefault("CLOUDFRONT_KEY_PAIR_ID", ""),
+		CloudFrontPrivateKeyPath: getEnvOrDefault("CLOUDFRONT_PRIVATE_KEY_PATH", ""),
+		ManifestTTLHours:         getEnvAsIntOrDefault("MANIFEST_TTL_HOURS", 24),
+
+		// ML Moderation Configuration
+		ModerationTrainingBucketName: getEnvOrDefault("MODERATION_TRAINING_BUCKET_NAME", ""),
+		ModerationModelMetadataTable: getEnvOrDefault("MODERATION_MODEL_METADATA_TABLE", ""),
+		BedrockTrainingRegion:        getEnvOrDefault("BEDROCK_TRAINING_REGION", "us-east-1"),
+		BedrockInferenceModelID:      getEnvOrDefault("BEDROCK_INFERENCE_MODEL_ID", ""),
+
 		// Delivery & Processing
 		FederationDeliveryMode: getEnvOrDefault("FEDERATION_DELIVERY_MODE", ""),
 		AuthorizedFetchEnabled: getEnvAsBoolOrDefault("AUTHORIZED_FETCH_ENABLED", false),

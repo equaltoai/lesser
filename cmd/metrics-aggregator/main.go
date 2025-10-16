@@ -128,7 +128,7 @@ func main() {
 				err = fmt.Errorf("panic recovered in metrics-aggregator: %v", r)
 			}
 		}()
-		
+
 		liftCtx := &lift.Context{
 			Request:   &lift.Request{},
 			RequestID: fmt.Sprintf("metrics-%d", time.Now().UnixNano()),

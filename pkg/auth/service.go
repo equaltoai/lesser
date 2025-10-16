@@ -38,7 +38,7 @@ func NewAuthService(cfg *config.Config, repos StorageProvider) (*AuthService, er
 	if jwtSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
-	
+
 	// Validate JWT secret strength
 	if err := validateJWTSecretStrength(jwtSecret); err != nil {
 		return nil, fmt.Errorf("invalid JWT_SECRET: %w", err)
@@ -604,7 +604,7 @@ func validateJWTSecretStrength(secret string) error {
 	if len(secret) < 32 {
 		return fmt.Errorf("must be at least 32 characters long")
 	}
-	
+
 	// Check for common weak patterns
 	lowerSecret := strings.ToLower(secret)
 	weakPatterns := []string{
@@ -618,12 +618,12 @@ func validateJWTSecretStrength(secret string) error {
 		"demo",
 		"example",
 	}
-	
+
 	for _, pattern := range weakPatterns {
 		if strings.Contains(lowerSecret, pattern) {
 			return fmt.Errorf("contains weak pattern '%s'", pattern)
 		}
 	}
-	
+
 	return nil
 }

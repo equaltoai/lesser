@@ -119,37 +119,37 @@ func (h *Handler) HandleDeleteDomainBlockLift(ctx *lift.Context) error {
 	var username string
 
 	// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
-			authHeader = ctx.Header("authorization")
-		}
+	authHeader := ctx.Header("Authorization")
+	if err := common.ValidateRequiredParam("auth_header", authHeader); err != nil {
+		authHeader = ctx.Header("authorization")
+	}
 
-		// Try direct access to headers if ctx.Header doesn't work
-		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
-			authHeader = ctx.Request.Request.Headers["Authorization"]
-			if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
-				authHeader = ctx.Request.Request.Headers["authorization"]
-			}
+	// Try direct access to headers if ctx.Header doesn't work
+	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil && ctx.Request != nil && ctx.Request.Request != nil {
+		authHeader = ctx.Request.Request.Headers["Authorization"]
+		if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {
+			authHeader = ctx.Request.Request.Headers["authorization"]
 		}
+	}
 
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
 
-		// Validate token
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err := oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return common.RespondUnauthorized(ctx)
-		}
+	// Validate token
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err := oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return common.RespondUnauthorized(ctx)
+	}
 
-		// Check write scope for blocks
-		if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
-			return common.RespondInsufficientScope(ctx)
-		}
+	// Check write scope for blocks
+	if !claims.HasScope(auth.ScopeWrite) && !claims.HasScope("write:blocks") {
+		return common.RespondInsufficientScope(ctx)
+	}
 
-		username = claims.Username
+	username = claims.Username
 
 	// Get domain from query parameter
 	domain := ctx.Query("domain")

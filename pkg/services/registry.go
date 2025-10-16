@@ -64,7 +64,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
 	pkgconfig "github.com/equaltoai/lesser/pkg/config"
@@ -154,6 +157,12 @@ type Registry struct {
 	// Service management
 	mu          sync.RWMutex
 	initialized map[string]bool
+
+	// Cached secrets
+	secretsCache     map[string]string
+	secretsCacheMu   sync.RWMutex
+	awsConfigCached  *aws.Config
+	awsConfigCacheMu sync.Mutex
 }
 
 // RegistryOption defines functional options for Registry configuration
@@ -164,7 +173,8 @@ type RegistryOption func(*Registry) error
 // but recommended for full functionality.
 func NewRegistry(opts ...RegistryOption) (*Registry, error) {
 	r := &Registry{
-		initialized: make(map[string]bool),
+		initialized:  make(map[string]bool),
+		secretsCache: make(map[string]string),
 	}
 
 	// Apply all options
@@ -821,13 +831,13 @@ func (r *Registry) initializeTranscodingService(cfg interface{}) *transcoding.Se
 		return nil
 	}
 
-	// Load AWS SDK config
-	ctx := context.Background()
-	awsConfig, err := awsconfig.LoadDefaultConfig(ctx)
+	// Get cached AWS config
+	awsCfg, err := r.getAWSConfig()
 	if err != nil {
 		r.logger.Warn("failed to load AWS config for MediaConvert", zap.Error(err))
 		return nil
 	}
+	awsConfig := *awsCfg
 
 	// Create transcoding service config
 	transcodingConfig := transcoding.Config{
@@ -855,6 +865,16 @@ func (r *Registry) initializeManifestService(_ interface{}) *transcoding.Manifes
 		return nil
 	}
 
+	// Get cached AWS config and create S3 client
+	awsCfg, err := r.getAWSConfig()
+	if err != nil {
+		r.logger.Warn("failed to load AWS config for manifest service", zap.Error(err))
+		return nil
+	}
+
+	// Create S3 client
+	s3Client := s3.NewFromConfig(*awsCfg)
+
 	// Create manifest service config
 	manifestConfig := transcoding.ManifestConfig{
 		Bucket:    streamingBucket,
@@ -862,7 +882,7 @@ func (r *Registry) initializeManifestService(_ interface{}) *transcoding.Manifes
 	}
 
 	// Create the service
-	service := transcoding.NewManifestService(nil, manifestConfig, r.logger)
+	service := transcoding.NewManifestService(s3Client, manifestConfig, r.logger)
 	return service
 }
 
@@ -980,8 +1000,7 @@ func (r *Registry) getConfigInt(cfg interface{}, key string) int {
 func (r *Registry) readCloudFrontPrivateKey(keyPath string) (string, error) {
 	// If it looks like an ARN or secret path, try Secrets Manager
 	if strings.HasPrefix(keyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(keyPath, "lesser/") {
-		// TODO: Implement Secrets Manager retrieval
-		return "", fmt.Errorf("secrets Manager retrieval not yet implemented for %s", keyPath)
+		return r.getSecretFromSecretsManager(keyPath)
 	}
 
 	// Otherwise, try reading from file
@@ -992,6 +1011,80 @@ func (r *Registry) readCloudFrontPrivateKey(keyPath string) (string, error) {
 	}
 
 	return string(keyBytes), nil
+}
+
+// getSecretFromSecretsManager retrieves a secret from AWS Secrets Manager with caching
+func (r *Registry) getSecretFromSecretsManager(secretID string) (string, error) {
+	// Check cache first
+	r.secretsCacheMu.RLock()
+	if cached, ok := r.secretsCache[secretID]; ok {
+		r.secretsCacheMu.RUnlock()
+		return cached, nil
+	}
+	r.secretsCacheMu.RUnlock()
+
+	// Load AWS config
+	awsCfg, err := r.getAWSConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config for Secrets Manager: %w", err)
+	}
+
+	// Create Secrets Manager client
+	client := secretsmanager.NewFromConfig(*awsCfg)
+
+	// Get secret value
+	ctx := context.Background()
+	result, err := client.GetSecretValue(ctx, &secretsmanager.GetSecretValueInput{
+		SecretId: &secretID,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve secret %s from Secrets Manager: %w", secretID, err)
+	}
+
+	if result.SecretString == nil {
+		return "", fmt.Errorf("secret %s has no string value", secretID)
+	}
+
+	secretValue := *result.SecretString
+
+	// If the secret is JSON (from CloudFront key generation), extract the privateKey field
+	if strings.HasPrefix(strings.TrimSpace(secretValue), "{") {
+		var secretData map[string]interface{}
+		if err := json.Unmarshal([]byte(secretValue), &secretData); err == nil {
+			if privateKey, ok := secretData["privateKey"].(string); ok {
+				secretValue = privateKey
+			}
+		}
+	}
+
+	// Cache the secret
+	r.secretsCacheMu.Lock()
+	r.secretsCache[secretID] = secretValue
+	r.secretsCacheMu.Unlock()
+
+	r.logger.Info("successfully retrieved secret from Secrets Manager",
+		zap.String("secret_id", secretID))
+
+	return secretValue, nil
+}
+
+// getAWSConfig returns a cached AWS config or loads a new one
+func (r *Registry) getAWSConfig() (*aws.Config, error) {
+	r.awsConfigCacheMu.Lock()
+	defer r.awsConfigCacheMu.Unlock()
+
+	if r.awsConfigCached != nil {
+		return r.awsConfigCached, nil
+	}
+
+	ctx := context.Background()
+	cfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	r.awsConfigCached = &cfg
+	return r.awsConfigCached, nil
 }
 
 // Lists returns the lists service, initializing it if necessary

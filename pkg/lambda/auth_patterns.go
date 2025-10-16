@@ -305,32 +305,32 @@ func (hsa *HTTPSignatureAuth) createHTTPRequest(ctx *liftPkg.Context, body []byt
 	// Get the HTTP method and path from the request
 	method := "POST" // Default method for federation endpoints
 	path := "/"
-	
+
 	if ctx.Request != nil {
 		method = ctx.Request.Method
 		path = ctx.Request.Path
 	}
-	
+
 	// Create the request URL
 	scheme := "https"
 	if ctx.Header("X-Forwarded-Proto") == "http" {
 		scheme = "http"
 	}
-	
+
 	host := ctx.Header("Host")
 	if host == "" {
 		// Fallback to X-Forwarded-Host if Host header is not set
 		host = ctx.Header("X-Forwarded-Host")
 	}
-	
+
 	url := fmt.Sprintf("%s://%s%s", scheme, host, path)
-	
+
 	// Create the HTTP request
 	req, err := http.NewRequest(method, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Copy relevant headers from the lift.Context
 	headers := []string{
 		"Signature",
@@ -341,14 +341,14 @@ func (hsa *HTTPSignatureAuth) createHTTPRequest(ctx *liftPkg.Context, body []byt
 		"User-Agent",
 		"Host",
 	}
-	
+
 	for _, header := range headers {
 		value := ctx.Header(header)
 		if value != "" {
 			req.Header.Set(header, value)
 		}
 	}
-	
+
 	// Add query parameters if any
 	if ctx.Request != nil && ctx.Request.Request != nil && ctx.Request.Request.QueryParams != nil {
 		q := req.URL.Query()
@@ -357,7 +357,7 @@ func (hsa *HTTPSignatureAuth) createHTTPRequest(ctx *liftPkg.Context, body []byt
 		}
 		req.URL.RawQuery = q.Encode()
 	}
-	
+
 	return req, nil
 }
 

@@ -35,29 +35,29 @@ func (h *Handler) HandleCreateReportLift(ctx *lift.Context) error {
 	var claims *auth.Claims
 
 	// Extract token from Authorization header
-		authHeader := ctx.Header("Authorization")
-		if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
-			return h.respondUnauthorized(ctx)
-		}
+	authHeader := ctx.Header("Authorization")
+	if err := common.ValidateRequiredParam("authorization", authHeader); err != nil {
+		return h.respondUnauthorized(ctx)
+	}
 
-		token, err := auth.ExtractBearerToken(authHeader)
-		if err != nil {
-			return h.respondUnauthorized(ctx)
-		}
+	token, err := auth.ExtractBearerToken(authHeader)
+	if err != nil {
+		return h.respondUnauthorized(ctx)
+	}
 
-		// Validate token and get claims
-		oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
-		claims, err = oauthSvc.ValidateAccessToken(token)
-		if err != nil {
-			return h.respondUnauthorized(ctx)
-		}
+	// Validate token and get claims
+	oauthSvc := createOAuthService(h.cfg.JWTSecret, h.cfg, h.repos, h.logger)
+	claims, err = oauthSvc.ValidateAccessToken(token)
+	if err != nil {
+		return h.respondUnauthorized(ctx)
+	}
 
-		// Check write scope
-		if !claims.HasScope(auth.ScopeWrite) {
-			return h.respondInsufficientScope(ctx)
-		}
+	// Check write scope
+	if !claims.HasScope(auth.ScopeWrite) {
+		return h.respondInsufficientScope(ctx)
+	}
 
-		username = claims.Username
+	username = claims.Username
 
 	// Parse request body
 	var req CreateReportRequest

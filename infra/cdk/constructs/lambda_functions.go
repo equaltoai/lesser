@@ -14,14 +14,19 @@ import (
 )
 
 type LambdaFunctionsProps struct {
-	Environment     string
-	Table           awsdynamodb.Table
-	MediaBucket     awss3.Bucket
-	FederationQueue awssqs.Queue
-	FederationDLQ   awssqs.Queue
-	PushQueue       awssqs.Queue
-	PrivateKey      awssecretsmanager.ISecret
-	Config          map[string]interface{}
+	Environment          string
+	Table                awsdynamodb.Table
+	MediaBucket          awss3.Bucket
+	StreamingBucket      awss3.Bucket
+	TrainingBucket       awss3.Bucket
+	FederationQueue      awssqs.Queue
+	FederationDLQ        awssqs.Queue
+	PushQueue            awssqs.Queue
+	PrivateKey           awssecretsmanager.ISecret
+	CloudFrontPrivateKey awssecretsmanager.ISecret
+	MediaConvertRoleArn  *string
+	ModelMetadataTable   *string
+	Config               map[string]interface{}
 }
 
 type LambdaFunctions struct {
@@ -68,6 +73,16 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		PushQueue:       props.PushQueue,
 	})
 
+	// Helper to get config values
+	getConfigString := func(key string, defaultVal string) *string {
+		if props.Config != nil {
+			if val, ok := props.Config[key].(string); ok {
+				return jsii.String(val)
+			}
+		}
+		return jsii.String(defaultVal)
+	}
+
 	// Common environment variables matching Pulumi config (lines 620-641)
 	commonEnv := &map[string]*string{
 		"DYNAMO_TABLE_NAME":     props.Table.TableName(),
@@ -88,6 +103,22 @@ func CreateLambdaFunctions(stack awscdk.Stack, props *LambdaFunctionsProps) *Lam
 		"APPROVAL_REQUIRED":     jsii.String("true"),
 		"INVITES_ENABLED":       jsii.String("false"),
 		"FEDERATION_ENABLED":    jsii.String("true"),
+
+		// Media Streaming Configuration (Phase 2.2)
+		"MEDIA_SOURCE_BUCKET_NAME":    props.MediaBucket.BucketName(),
+		"MEDIA_STREAMING_BUCKET_NAME": props.StreamingBucket.BucketName(),
+		"MEDIA_CONVERT_ENDPOINT":      getConfigString("mediaConvertEndpoint", ""),
+		"MEDIA_CONVERT_ROLE_ARN":      props.MediaConvertRoleArn,
+		"CLOUDFRONT_DOMAIN":           getConfigString("cloudfrontDomain", ""),
+		"CLOUDFRONT_PRIVATE_KEY_PATH": props.CloudFrontPrivateKey.SecretArn(),
+		"CLOUDFRONT_KEY_PAIR_ID":      getConfigString("cloudfrontKeyPairId", ""), // Set after manual upload
+		"MANIFEST_TTL_HOURS":          getConfigString("manifestTTLHours", "24"),
+
+		// ML Moderation Configuration (Phase 2.3)
+		"MODERATION_TRAINING_BUCKET_NAME": props.TrainingBucket.BucketName(),
+		"MODERATION_MODEL_METADATA_TABLE": props.ModelMetadataTable,
+		"BEDROCK_TRAINING_REGION":         getConfigString("bedrockRegion", "us-east-1"),
+		"BEDROCK_INFERENCE_MODEL_ID":      getConfigString("bedrockInferenceModelId", ""),
 	}
 
 	// Determine log retention based on environment

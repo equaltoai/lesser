@@ -11,17 +11,17 @@ func IsFederationRequest(userAgent, accept, contentType, path string) bool {
 	if IsFederationEndpoint(path) {
 		return true
 	}
-	
+
 	// Check User-Agent for known ActivityPub servers
 	if IsFederationUserAgent(userAgent) {
 		return true
 	}
-	
+
 	// Check Accept header for ActivityPub content types
 	if IsFederationContentType(accept, contentType) {
 		return true
 	}
-	
+
 	return false
 }
 
@@ -29,20 +29,20 @@ func IsFederationRequest(userAgent, accept, contentType, path string) bool {
 func IsFederationEndpoint(path string) bool {
 	federationPaths := []string{
 		"/inbox",
-		"/outbox", 
+		"/outbox",
 		"/users/",
 		"/.well-known/",
 		"/nodeinfo",
 		"/actor/",
 		"/objects/",
 	}
-	
+
 	for _, fedPath := range federationPaths {
 		if strings.HasPrefix(path, fedPath) || strings.Contains(path, fedPath) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -51,22 +51,22 @@ func IsFederationUserAgent(userAgent string) bool {
 	if userAgent == "" {
 		return false
 	}
-	
+
 	// Known ActivityPub server user agents
 	federationUAs := []string{
 		"Mastodon",
-		"Pleroma", 
+		"Pleroma",
 		"Misskey",
 		"PeerTube",
 		"PixelFed",
 		"Lemmy",
 		"Kbin",
 		"GoToSocial",
-		"Lesser", // Our own server
+		"Lesser",  // Our own server
 		"http.rb", // Ruby HTTP library used by many AP servers
 		"Akkoma",
 		"Friendica",
-		"Hubzilla", 
+		"Hubzilla",
 		"Sharkey",
 		"Iceshrimp",
 		"Firefish",
@@ -76,16 +76,16 @@ func IsFederationUserAgent(userAgent string) bool {
 		"postActiv",
 		"Smithereen",
 		"Hometown", // Mastodon fork
-		"Glitch", // Another Mastodon fork  
+		"Glitch",   // Another Mastodon fork
 	}
-	
+
 	userAgentLower := strings.ToLower(userAgent)
 	for _, ua := range federationUAs {
 		if strings.Contains(userAgentLower, strings.ToLower(ua)) {
 			return true
 		}
 	}
-	
+
 	// Check for generic federation indicators
 	federationIndicators := []string{
 		"activitypub",
@@ -94,13 +94,13 @@ func IsFederationUserAgent(userAgent string) bool {
 		"/outbox",
 		"webfinger",
 	}
-	
+
 	for _, indicator := range federationIndicators {
 		if strings.Contains(userAgentLower, indicator) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -111,7 +111,7 @@ func IsFederationContentType(accept, contentType string) bool {
 		"application/ld+json",
 		"application/json", // Generic, but used by some servers
 	}
-	
+
 	// Check Accept header
 	if accept != "" {
 		acceptLower := strings.ToLower(accept)
@@ -119,7 +119,7 @@ func IsFederationContentType(accept, contentType string) bool {
 			if strings.Contains(acceptLower, apType) {
 				// Additional check for ActivityStreams profile
 				if strings.Contains(acceptLower, "activitystreams") ||
-				   strings.Contains(acceptLower, "profile=") {
+					strings.Contains(acceptLower, "profile=") {
 					return true
 				}
 				// For specific ActivityPub types
@@ -129,7 +129,7 @@ func IsFederationContentType(accept, contentType string) bool {
 			}
 		}
 	}
-	
+
 	// Check Content-Type header
 	if contentType != "" {
 		contentTypeLower := strings.ToLower(contentType)
@@ -137,7 +137,7 @@ func IsFederationContentType(accept, contentType string) bool {
 			if strings.Contains(contentTypeLower, apType) {
 				// Same additional checks as above
 				if strings.Contains(contentTypeLower, "activitystreams") ||
-				   strings.Contains(contentTypeLower, "profile=") {
+					strings.Contains(contentTypeLower, "profile=") {
 					return true
 				}
 				if apType == "application/activity+json" {
@@ -146,7 +146,7 @@ func IsFederationContentType(accept, contentType string) bool {
 			}
 		}
 	}
-	
+
 	return false
 }
 
@@ -183,7 +183,7 @@ func GetClientLimits(endpoint string, authenticated bool) (requestsPerMinute int
 	if authenticated {
 		baseLimit = 120 // Authenticated users get higher limits
 	}
-	
+
 	switch {
 	case strings.Contains(endpoint, "/api/v1/statuses"):
 		// Post creation
@@ -227,7 +227,7 @@ func ShouldApplyFederationLimits(userAgent, accept, contentType, path, signature
 	if signature != "" {
 		return true
 	}
-	
+
 	// Use the main federation detection logic
 	return IsFederationRequest(userAgent, accept, contentType, path)
 }
