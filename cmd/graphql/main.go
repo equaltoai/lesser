@@ -71,6 +71,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	initTime = time.Now()
 
 	// Standardized Lambda initialization with automatic service detection

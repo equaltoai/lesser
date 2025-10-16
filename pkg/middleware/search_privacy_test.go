@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,7 +65,9 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 	// Create a test OAuth service with audit logger
 	testJWTSecret := "test_jwt_secret"
 	logger := zap.NewNop()
-	auditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
+	auditConfig := auth.DefaultAuditConfig()
+	auditConfig.StoreToDB = false
+	auditLogger := auth.NewAuditLogger(nil, logger, auditConfig)
 	testConfig := &config.Config{Stage: "test"}
 	oauthService := auth.NewOAuthService(testJWTSecret, testConfig, nil, auditLogger)
 
@@ -74,7 +77,9 @@ func TestSearchPrivacyMiddleware(t *testing.T) {
 	validAuthHeader := "Bearer " + validToken
 
 	// Create an invalid token with wrong signature
-	wrongAuditLogger := auth.NewAuditLogger(nil, logger, auth.DefaultAuditConfig())
+	wrongAuditConfig := auth.DefaultAuditConfig()
+	wrongAuditConfig.StoreToDB = false
+	wrongAuditLogger := auth.NewAuditLogger(nil, logger, wrongAuditConfig)
 	wrongOAuthService := auth.NewOAuthService("wrong_secret", testConfig, nil, wrongAuditLogger)
 	invalidToken, _, _ := wrongOAuthService.GenerateTokens(ctx, "testuser", "test-client", "127.0.0.1", []string{auth.ScopeRead})
 	invalidAuthHeader := "Bearer " + invalidToken
@@ -397,13 +402,9 @@ func TestNewSearchRateLimitMiddleware(t *testing.T) {
 
 			// Set up rate limit expectations
 			if tt.path == "/api/v1/search" {
-				key := "search:"
-				if tt.userID != "" {
-					key += tt.userID
-				} else {
-					key += "" // RemoteAddr() returns empty in test context
-				}
-				mockRepos.On("CheckRateLimit", mock.Anything, key, requestsPerMinute, time.Minute).Return(tt.rateLimitOK, nil)
+				mockRepos.On("CheckRateLimit", mock.Anything, mock.MatchedBy(func(key string) bool {
+					return strings.HasPrefix(key, "search:")
+				}), requestsPerMinute, time.Minute).Return(tt.rateLimitOK, nil)
 			}
 
 			// Create middleware

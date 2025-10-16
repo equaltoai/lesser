@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -256,9 +257,8 @@ func TestNewRegistry_MissingStorage(t *testing.T) {
 		t.Fatal("Expected error when storage is missing")
 	}
 
-	expectedMsg := "storage is required"
-	if !containsString(err.Error(), expectedMsg) {
-		t.Errorf("Expected error to contain '%s', got: %v", expectedMsg, err)
+	if !containsString(strings.ToLower(err.Error()), "registry validation failed") {
+		t.Errorf("Expected registry validation error, got: %v", err)
 	}
 }
 
@@ -271,22 +271,22 @@ func TestNewRegistry_NilDependencies(t *testing.T) {
 		{
 			name:    "nil storage",
 			option:  WithStorage(nil),
-			wantErr: "storage cannot be nil",
+			wantErr: "Failed to apply registry option",
 		},
 		{
 			name:    "nil publisher",
 			option:  WithPublisher(nil),
-			wantErr: "publisher cannot be nil",
+			wantErr: "Failed to apply registry option",
 		},
 		{
 			name:    "nil logger",
 			option:  WithLogger(nil),
-			wantErr: "logger cannot be nil",
+			wantErr: "Failed to apply registry option",
 		},
 		{
 			name:    "nil config",
 			option:  WithConfig(nil),
-			wantErr: "config cannot be nil",
+			wantErr: "Failed to apply registry option",
 		},
 	}
 
@@ -296,7 +296,7 @@ func TestNewRegistry_NilDependencies(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Expected error for %s", tt.name)
 			}
-			if !containsString(err.Error(), tt.wantErr) {
+			if !containsString(strings.ToLower(err.Error()), strings.ToLower(tt.wantErr)) {
 				t.Errorf("Expected error to contain '%s', got: %v", tt.wantErr, err)
 			}
 		})

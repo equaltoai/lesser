@@ -107,7 +107,15 @@ func NewAppErrorf(code ErrorCode, category ErrorCategory, format string, args ..
 // WrapError wraps an existing error as an AppError
 func WrapError(err error, code ErrorCode, category ErrorCategory, message string) *AppError {
 	if err == nil {
-		return nil
+		return &AppError{
+			Code:           code,
+			Category:       category,
+			Message:        message,
+			HTTPStatusCode: code.GetHTTPStatusCode(),
+			Timestamp:      time.Now(),
+			Retryable:      false,
+			Metadata:       make(map[string]interface{}),
+		}
 	}
 
 	// If it's already an AppError, wrap it with additional context

@@ -377,7 +377,7 @@ func extractUsernameFromActorID(actorID string) string {
 	return ""
 }
 
-func (r *Resolver) convertThreadContextResultToModel(ctx context.Context, result *threads.ThreadContextResult) *model.ThreadContext {
+func (r *Resolver) convertThreadContextResultToModel(_ context.Context, result *threads.ThreadContextResult) *model.ThreadContext {
 	if result == nil {
 		return nil
 	}

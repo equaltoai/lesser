@@ -57,6 +57,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize Lambda with basic configuration for WebSocket cost aggregation
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "websocket-cost-aggregator",

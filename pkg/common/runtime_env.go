@@ -1,4 +1,6 @@
 // Package common provides runtime environment helpers for AWS Lambda functions.
+//
+//nolint:revive // package name "common" is intentional and widely used throughout the codebase
 package common
 
 import (

@@ -156,6 +156,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for background processors
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "dlq-processor",

@@ -399,6 +399,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for processor functions
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "moderation-processor",
@@ -444,6 +447,9 @@ func init() {
 
 // initAdvancedModerationEngine initializes the advanced moderation engine with or without AWS
 func initAdvancedModerationEngine() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Determine moderation mode based on configuration
 	mode := advanced.ModeHybrid // Default to hybrid mode
 	if lambdaCtx.Config.DisableAWSModeration {

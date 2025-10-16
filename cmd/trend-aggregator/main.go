@@ -433,6 +433,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize Lambda with basic configuration for trend aggregation
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "trend-aggregator",

@@ -8,22 +8,22 @@ package errors
 
 // FailedToCreate creates an error indicating creation of an item failed.
 func FailedToCreate(itemType string, err error) *AppError {
-	return NewStorageInternalError(CodeInternal, "Failed to create "+itemType, err).AsRetryable()
+	return NewStorageInternalError(CodeInternal, "Failed to create "+itemType, err)
 }
 
 // FailedToGet creates an error indicating retrieval of an item failed.
 func FailedToGet(itemType string, err error) *AppError {
-	return NewStorageInternalError(CodeInternal, "Failed to retrieve "+itemType, err).AsRetryable()
+	return NewStorageInternalError(CodeInternal, "Failed to retrieve "+itemType, err)
 }
 
 // FailedToUpdate creates an error indicating update of an item failed.
 func FailedToUpdate(itemType string, err error) *AppError {
-	return NewStorageInternalError(CodeInternal, "Failed to update "+itemType, err).AsRetryable()
+	return NewStorageInternalError(CodeInternal, "Failed to update "+itemType, err)
 }
 
 // FailedToDelete creates an error indicating deletion of an item failed.
 func FailedToDelete(itemType string, err error) *AppError {
-	return NewStorageInternalError(CodeInternal, "Failed to delete "+itemType, err).AsRetryable()
+	return NewStorageInternalError(CodeInternal, "Failed to delete "+itemType, err)
 }
 
 // FailedToList creates an error indicating listing of items failed.

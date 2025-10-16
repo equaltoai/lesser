@@ -1,12 +1,4 @@
-// Package hashtags provides hashtag management and discovery services for the Lesser ActivityPub server.
-//
-// This service handles all operations related to hashtags including:
-// - Following and unfollowing hashtags
-// - Retrieving hashtag timelines (single and multi-hashtag)
-// - Getting hashtag statistics and trends
-// - Discovering suggested hashtags
-// - Managing hashtag notifications
-// - Muting hashtags
+// Package hashtags implements the hashtag follow/mute business logic used by GraphQL resolvers.
 package hashtags
 
 import (
@@ -15,553 +7,429 @@ import (
 	"strings"
 	"time"
 
-	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/storage"
+	"github.com/equaltoai/lesser/pkg/storage/interfaces"
 	"github.com/equaltoai/lesser/pkg/storage/repositories"
 	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
-// Service provides business logic for hashtag operations
-type Service struct {
-	hashtagRepo      *repositories.HashtagRepository
-	statusRepo       *repositories.StatusRepository
-	relationshipRepo *repositories.RelationshipRepository
-	publisher        streaming.Publisher
-	logger           *zap.Logger
-	domain           string
+const (
+	defaultRelatedHashtagSampleSize = 50
+	defaultFollowedHashtagLimit     = 20
+	maxFollowedHashtagLimit         = 100
+)
+
+// HashtagRepository defines the storage interface needed by the hashtag service.
+type HashtagRepository interface {
+	FollowHashtag(ctx context.Context, userID, hashtag string) error
+	UnfollowHashtag(ctx context.Context, userID, hashtag string) error
+	IsFollowingHashtag(ctx context.Context, userID, hashtag string) (bool, error)
+	GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]*storage.HashtagFollow, string, error)
+	GetHashtagInfo(ctx context.Context, hashtag string) (*storage.Hashtag, error)
+	GetHashtagStats(ctx context.Context, hashtag string) (any, error)
+	GetHashtagTimelineAdvanced(ctx context.Context, hashtag string, maxID *string, limit int, visibility string) ([]*storage.StatusSearchResult, error)
+	UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, settings *storage.HashtagNotificationSettings) error
+	MuteHashtag(ctx context.Context, userID, hashtag string, until *time.Time) error
+	IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error)
+	GetHashtagNotificationSettings(ctx context.Context, userID, hashtag string) (*storage.HashtagNotificationSettings, error)
 }
 
-// NewService creates a new hashtag service
+// Service coordinates hashtag follow/mute state with storage repositories and the streaming layer.
+type Service struct {
+	hashtagRepo HashtagRepository
+	accountRepo interfaces.AccountRepository
+	objectRepo  *repositories.ObjectRepository
+	publisher   streaming.Publisher
+	logger      *zap.Logger
+}
+
+// Hashtag captures the service-level representation of a hashtag enriched with viewer state.
+type Hashtag struct {
+	Name                 string
+	URL                  string
+	PostCount            int
+	FollowerCount        int
+	TrendingScore        float64
+	Related              []string
+	IsFollowing          bool
+	IsMuted              bool
+	FollowedAt           *time.Time
+	NotificationSettings *storage.HashtagNotificationSettings
+	Stats                *storage.HashtagStats
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+// ActivityEvent represents a hashtag-related streaming event forwarded from the global bus.
+type ActivityEvent struct {
+	Hashtag   string
+	StatusID  string
+	ActorID   string
+	Timestamp time.Time
+	Event     *streaming.InternalEvent
+}
+
+// NewService wires repositories and infrastructure needed for the hashtag service.
 func NewService(
-	hashtagRepo *repositories.HashtagRepository,
-	statusRepo *repositories.StatusRepository,
-	relationshipRepo *repositories.RelationshipRepository,
+	hashtagRepo HashtagRepository,
+	accountRepo interfaces.AccountRepository,
+	objectRepo *repositories.ObjectRepository,
 	publisher streaming.Publisher,
 	logger *zap.Logger,
-	domain string,
 ) *Service {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 
 	return &Service{
-		hashtagRepo:      hashtagRepo,
-		statusRepo:       statusRepo,
-		relationshipRepo: relationshipRepo,
-		publisher:        publisher,
-		logger:           logger,
-		domain:           domain,
+		hashtagRepo: hashtagRepo,
+		accountRepo: accountRepo,
+		objectRepo:  objectRepo,
+		publisher:   publisher,
+		logger:      logger,
 	}
 }
 
-// Query and Command types for CQRS pattern
+// GetHashtag loads the latest hashtag metadata plus viewer specific state.
+func (s *Service) GetHashtag(ctx context.Context, name, viewerID string) (*Hashtag, error) {
+	tag := normalizeHashtagName(name)
+	if tag == "" {
+		return nil, ErrHashtagNameRequired
+	}
 
-// GetHashtagQuery contains parameters for retrieving hashtag information
-type GetHashtagQuery struct {
-	Name     string `json:"name" validate:"required"`
-	ViewerID string `json:"viewer_id"` // For checking following status
-}
-
-// FollowHashtagCommand contains data needed to follow a hashtag
-type FollowHashtagCommand struct {
-	UserID               string `json:"user_id" validate:"required"`
-	Hashtag              string `json:"hashtag" validate:"required"`
-	NotificationsEnabled bool   `json:"notifications_enabled"`
-}
-
-// UnfollowHashtagCommand contains data needed to unfollow a hashtag
-type UnfollowHashtagCommand struct {
-	UserID  string `json:"user_id" validate:"required"`
-	Hashtag string `json:"hashtag" validate:"required"`
-}
-
-// GetFollowedHashtagsQuery contains parameters for retrieving followed hashtags
-type GetFollowedHashtagsQuery struct {
-	UserID  string `json:"user_id" validate:"required"`
-	First   int    `json:"first"`
-	AfterSK string `json:"after_sk"` // Cursor for pagination
-}
-
-// GetHashtagTimelineQuery contains parameters for retrieving hashtag timeline
-type GetHashtagTimelineQuery struct {
-	Hashtag    string  `json:"hashtag" validate:"required"`
-	First      int     `json:"first"`
-	After      *string `json:"after"` // Status ID cursor
-	ViewerID   string  `json:"viewer_id"`
-	Visibility string  `json:"visibility"` // Optional visibility filter
-}
-
-// GetMultiHashtagTimelineQuery contains parameters for multi-hashtag timeline
-type GetMultiHashtagTimelineQuery struct {
-	Hashtags []string `json:"hashtags" validate:"required,min=1"`
-	Mode     string   `json:"mode" validate:"required,oneof=ANY ALL"`
-	First    int      `json:"first"`
-	After    *string  `json:"after"`
-	ViewerID string   `json:"viewer_id"`
-}
-
-// GetSuggestedHashtagsQuery contains parameters for hashtag suggestions
-type GetSuggestedHashtagsQuery struct {
-	UserID string `json:"user_id"`
-	Limit  int    `json:"limit"`
-}
-
-// UpdateHashtagNotificationsCommand contains data for updating notification settings
-type UpdateHashtagNotificationsCommand struct {
-	UserID  string `json:"user_id" validate:"required"`
-	Hashtag string `json:"hashtag" validate:"required"`
-	Notify  bool   `json:"notify"`
-}
-
-// MuteHashtagCommand contains data for muting a hashtag
-type MuteHashtagCommand struct {
-	UserID  string     `json:"user_id" validate:"required"`
-	Hashtag string     `json:"hashtag" validate:"required"`
-	Until   *time.Time `json:"until"` // Optional expiration
-}
-
-// Result types
-
-// HashtagResult contains hashtag information
-type HashtagResult struct {
-	Name        string                `json:"name"`
-	URL         string                `json:"url"`
-	Following   bool                  `json:"following"`
-	Stats       *storage.HashtagStats `json:"stats"`
-	RelatedTags []string              `json:"related_tags"`
-	Events      []*streaming.Event    `json:"events"`
-}
-
-// FollowHashtagResult contains result of follow operation
-type FollowHashtagResult struct {
-	Hashtag string             `json:"hashtag"`
-	Events  []*streaming.Event `json:"events"`
-}
-
-// HashtagConnection represents a paginated list of hashtags
-type HashtagConnection struct {
-	Hashtags   []*HashtagInfo `json:"hashtags"`
-	NextCursor string         `json:"next_cursor"`
-	HasMore    bool           `json:"has_more"`
-}
-
-// HashtagInfo contains basic hashtag information
-type HashtagInfo struct {
-	Name       string    `json:"name"`
-	URL        string    `json:"url"`
-	UsageCount int       `json:"usage_count"`
-	LastUsed   time.Time `json:"last_used"`
-	Following  bool      `json:"following"`
-	Muted      bool      `json:"muted"`
-}
-
-// PostConnection represents a paginated list of posts
-type PostConnection struct {
-	Posts      []*storage.StatusSearchResult `json:"posts"`
-	NextCursor string                        `json:"next_cursor"`
-	HasMore    bool                          `json:"has_more"`
-}
-
-// HashtagSuggestion represents a suggested hashtag
-type HashtagSuggestion struct {
-	Name       string  `json:"name"`
-	URL        string  `json:"url"`
-	Reason     string  `json:"reason"` // Why it's suggested
-	Score      float64 `json:"score"`
-	UsageCount int     `json:"usage_count"`
-}
-
-// Service methods
-
-// GetHashtag retrieves hashtag information with optional viewer context
-func (s *Service) GetHashtag(ctx context.Context, query *GetHashtagQuery) (*HashtagResult, error) {
-	s.logger.Debug("getting hashtag",
-		zap.String("name", query.Name),
-		zap.String("viewer_id", query.ViewerID))
-
-	// Normalize hashtag name
-	tagName := strings.ToLower(strings.TrimPrefix(query.Name, "#"))
-
-	// Get hashtag info
-	hashtagInfo, err := s.hashtagRepo.GetHashtagInfo(ctx, tagName)
+	info, err := s.hashtagRepo.GetHashtagInfo(ctx, tag)
 	if err != nil {
+		s.logger.Error("failed to fetch hashtag info",
+			zap.String("hashtag", tag),
+			zap.Error(err))
 		return nil, ErrGetHashtag
 	}
 
-	if hashtagInfo == nil {
-		// Hashtag doesn't exist yet
-		return &HashtagResult{
-			Name:        tagName,
-			URL:         fmt.Sprintf("https://%s/tags/%s", s.domain, tagName),
-			Following:   false,
-			Stats:       nil,
-			RelatedTags: []string{},
-		}, nil
-	}
+	stats := s.loadHashtagStats(ctx, tag)
 
-	// Check if viewer is following
-	following := false
-	if query.ViewerID != "" {
-		following, _ = s.hashtagRepo.IsFollowingHashtag(ctx, query.ViewerID, tagName)
-	}
+	isFollowing := false
+	var settings *storage.HashtagNotificationSettings
+	isMuted := false
 
-	// Get hashtag stats
-	statsAny, err := s.hashtagRepo.GetHashtagStats(ctx, tagName)
-	if err != nil {
-		s.logger.Warn("failed to get hashtag stats",
-			zap.String("hashtag", tagName),
-			zap.Error(err))
-	}
+	if viewerID != "" {
+		isFollowing, err = s.hashtagRepo.IsFollowingHashtag(ctx, viewerID, tag)
+		if err != nil {
+			s.logger.Error("failed to check follow relationship",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag),
+				zap.Error(err))
+			return nil, ErrGetHashtag
+		}
 
-	var stats *storage.HashtagStats
-	if statsAny != nil {
-		if s, ok := statsAny.(*storage.HashtagStats); ok {
-			stats = s
+		settings, err = s.hashtagRepo.GetHashtagNotificationSettings(ctx, viewerID, tag)
+		if err != nil {
+			s.logger.Error("failed to load hashtag notification settings",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag),
+				zap.Error(err))
+			return nil, ErrGetHashtag
+		}
+
+		isMuted, err = s.hashtagRepo.IsHashtagMuted(ctx, viewerID, tag)
+		if err != nil {
+			s.logger.Error("failed to check hashtag mute status",
+				zap.String("viewer", viewerID),
+				zap.String("hashtag", tag),
+				zap.Error(err))
+			return nil, ErrGetHashtag
 		}
 	}
 
-	// Get related hashtags (simplified - would be more sophisticated in production)
-	relatedTags := s.getRelatedHashtags(ctx, tagName, 5)
-
-	return &HashtagResult{
-		Name:        tagName,
-		URL:         hashtagInfo.URL,
-		Following:   following,
-		Stats:       stats,
-		RelatedTags: relatedTags,
-	}, nil
-}
-
-// FollowHashtag creates a follow relationship for a hashtag
-func (s *Service) FollowHashtag(ctx context.Context, cmd *FollowHashtagCommand) (*FollowHashtagResult, error) {
-	s.logger.Info("following hashtag",
-		zap.String("user_id", cmd.UserID),
-		zap.String("hashtag", cmd.Hashtag))
-
-	// Validate hashtag name
-	if err := s.validateHashtagName(cmd.Hashtag); err != nil {
-		return nil, err
+	result := &Hashtag{
+		Name:                 tag,
+		IsFollowing:          isFollowing,
+		IsMuted:              isMuted,
+		NotificationSettings: settings,
+		Stats:                stats,
 	}
 
-	// Create follow relationship
-	err := s.hashtagRepo.FollowHashtag(ctx, cmd.UserID, cmd.Hashtag)
-	if err != nil {
+	if info != nil {
+		result.URL = info.URL
+		result.PostCount = info.UsageCount
+		result.FollowerCount = info.Accounts
+		result.CreatedAt = info.CreatedAt
+		result.UpdatedAt = info.UpdatedAt
+	}
+
+	if stats != nil {
+		if stats.UsageCount > result.PostCount {
+			result.PostCount = stats.UsageCount
+		}
+		if int(stats.TotalAccounts) > result.FollowerCount {
+			result.FollowerCount = int(stats.TotalAccounts)
+		}
+		result.TrendingScore = stats.TrendingScore
+	}
+
+	result.Related = s.relatedHashtags(ctx, tag, 5)
+
+	return result, nil
+}
+
+// FollowHashtag creates a follow record, optionally updates notification settings, and emits streaming events.
+func (s *Service) FollowHashtag(ctx context.Context, userID, hashtag string, settings *storage.HashtagNotificationSettings) (*Hashtag, error) {
+	tag := normalizeHashtagName(hashtag)
+	if tag == "" {
+		return nil, ErrHashtagNameRequired
+	}
+
+	if err := s.hashtagRepo.FollowHashtag(ctx, userID, tag); err != nil {
+		s.logger.Error("failed to follow hashtag",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
 		return nil, ErrFollowHashtag
 	}
 
-	// Update notification settings if needed
-	if !cmd.NotificationsEnabled {
-		_ = s.hashtagRepo.UpdateHashtagNotificationSettings(ctx, cmd.UserID, cmd.Hashtag, false)
+	if settings != nil {
+		clone := cloneNotificationSettings(settings, userID, tag)
+		if err := s.hashtagRepo.UpdateHashtagNotificationSettings(ctx, userID, tag, clone); err != nil {
+			s.logger.Error("failed to apply hashtag notification settings",
+				zap.String("user_id", userID),
+				zap.String("hashtag", tag),
+				zap.Error(err))
+			return nil, ErrFollowHashtag
+		}
 	}
 
-	// Emit events
-	events := s.emitHashtagFollowedEvents(ctx, cmd.UserID, cmd.Hashtag)
+	s.publishUserEvent(ctx, streaming.HashtagFollowed, userID, tag)
+	s.publishInternalHashtagEvent(streaming.ActionFollow, tag)
 
-	return &FollowHashtagResult{
-		Hashtag: cmd.Hashtag,
-		Events:  events,
-	}, nil
+	return s.GetHashtag(ctx, tag, userID)
 }
 
-// UnfollowHashtag removes a follow relationship for a hashtag
-func (s *Service) UnfollowHashtag(ctx context.Context, cmd *UnfollowHashtagCommand) (*FollowHashtagResult, error) {
-	s.logger.Info("unfollowing hashtag",
-		zap.String("user_id", cmd.UserID),
-		zap.String("hashtag", cmd.Hashtag))
+// UnfollowHashtag deletes a follow record and notifies streaming consumers.
+func (s *Service) UnfollowHashtag(ctx context.Context, userID, hashtag string) (*Hashtag, error) {
+	tag := normalizeHashtagName(hashtag)
+	if tag == "" {
+		return nil, ErrHashtagNameRequired
+	}
 
-	// Remove follow relationship
-	err := s.hashtagRepo.UnfollowHashtag(ctx, cmd.UserID, cmd.Hashtag)
-	if err != nil {
+	if err := s.hashtagRepo.UnfollowHashtag(ctx, userID, tag); err != nil {
+		s.logger.Error("failed to unfollow hashtag",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tag),
+			zap.Error(err))
 		return nil, ErrUnfollowHashtag
 	}
 
-	// Emit events
-	events := s.emitHashtagUnfollowedEvents(ctx, cmd.UserID, cmd.Hashtag)
+	s.publishUserEvent(ctx, "hashtag.unfollowed", userID, tag)
+	s.publishInternalHashtagEvent(streaming.ActionUnfollow, tag)
 
-	return &FollowHashtagResult{
-		Hashtag: cmd.Hashtag,
-		Events:  events,
-	}, nil
+	return s.GetHashtag(ctx, tag, userID)
 }
 
-// GetFollowedHashtags retrieves hashtags followed by a user with pagination
-func (s *Service) GetFollowedHashtags(ctx context.Context, query *GetFollowedHashtagsQuery) (*HashtagConnection, error) {
-	s.logger.Debug("getting followed hashtags",
-		zap.String("user_id", query.UserID),
-		zap.Int("first", query.First))
-
-	// Set default limit
-	limit := query.First
-	if limit <= 0 || limit > 100 {
-		limit = 20
+// GetFollowedHashtags returns the viewer's followed hashtags enriched with current metadata.
+func (s *Service) GetFollowedHashtags(
+	ctx context.Context,
+	userID string,
+	pagination *interfaces.PaginationOptions,
+) ([]*Hashtag, string, error) {
+	if userID == "" {
+		return nil, "", ErrHashtagNameRequired
 	}
 
-	// Get followed hashtags from repository
-	hashtags, nextCursor, err := s.hashtagRepo.GetFollowedHashtags(ctx, query.UserID, limit, query.AfterSK)
+	limit := defaultFollowedHashtagLimit
+	cursor := ""
+	if pagination != nil {
+		if pagination.Limit > 0 {
+			limit = pagination.Limit
+		}
+		cursor = pagination.Cursor
+	}
+
+	if limit <= 0 {
+		limit = defaultFollowedHashtagLimit
+	}
+	if limit > maxFollowedHashtagLimit {
+		limit = maxFollowedHashtagLimit
+	}
+
+	follows, nextCursor, err := s.hashtagRepo.GetFollowedHashtags(ctx, userID, limit, cursor)
 	if err != nil {
-		return nil, ErrGetFollowedHashtags
+		s.logger.Error("failed to load followed hashtags",
+			zap.String("user_id", userID),
+			zap.Error(err))
+		return nil, "", ErrGetFollowedHashtags
 	}
 
-	// Get detailed info for each hashtag
-	hashtagInfos := make([]*HashtagInfo, 0, len(hashtags))
-	for _, tag := range hashtags {
-		info, err := s.hashtagRepo.GetHashtagInfo(ctx, tag)
+	results := make([]*Hashtag, 0, len(follows))
+	for _, follow := range follows {
+		if follow == nil {
+			continue
+		}
+		tag, err := s.GetHashtag(ctx, follow.Hashtag, userID)
 		if err != nil {
-			s.logger.Warn("failed to get hashtag info",
-				zap.String("hashtag", tag),
+			s.logger.Warn("failed to enrich followed hashtag",
+				zap.String("user_id", userID),
+				zap.String("hashtag", follow.Hashtag),
 				zap.Error(err))
 			continue
 		}
-
-		if info != nil {
-			hashtagInfos = append(hashtagInfos, &HashtagInfo{
-				Name:       info.Name,
-				URL:        info.URL,
-				UsageCount: info.UsageCount,
-				LastUsed:   info.LastUsed,
-				Following:  true,
-				Muted:      false, // Would check mute status in production
-			})
-		}
+		followedAt := follow.CreatedAt
+		tag.FollowedAt = &followedAt
+		results = append(results, tag)
 	}
 
-	return &HashtagConnection{
-		Hashtags:   hashtagInfos,
-		NextCursor: nextCursor,
-		HasMore:    nextCursor != "",
-	}, nil
+	return results, nextCursor, nil
 }
 
-// GetHashtagTimeline retrieves posts for a single hashtag
-func (s *Service) GetHashtagTimeline(ctx context.Context, query *GetHashtagTimelineQuery) (*PostConnection, error) {
-	s.logger.Debug("getting hashtag timeline",
-		zap.String("hashtag", query.Hashtag),
-		zap.Int("first", query.First))
-
-	// Set default limit
-	limit := query.First
-	if limit <= 0 || limit > 40 {
-		limit = 20
+// MuteHashtag persists a mute entry for the user and broadcasts the change.
+func (s *Service) MuteHashtag(ctx context.Context, userID, hashtag string, until *time.Time) (*Hashtag, error) {
+	tag := normalizeHashtagName(hashtag)
+	if tag == "" {
+		return nil, ErrHashtagNameRequired
 	}
 
-	// Get timeline from repository
-	results, err := s.hashtagRepo.GetHashtagTimelineAdvanced(ctx, query.Hashtag, query.After, limit, query.Visibility)
-	if err != nil {
-		return nil, ErrGetHashtagTimeline
-	}
-
-	// Determine next cursor
-	nextCursor := ""
-	if len(results) >= limit {
-		nextCursor = results[len(results)-1].StatusID
-	}
-
-	return &PostConnection{
-		Posts:      results,
-		NextCursor: nextCursor,
-		HasMore:    len(results) >= limit,
-	}, nil
-}
-
-// GetMultiHashtagTimeline retrieves posts for multiple hashtags
-func (s *Service) GetMultiHashtagTimeline(ctx context.Context, query *GetMultiHashtagTimelineQuery) (*PostConnection, error) {
-	s.logger.Debug("getting multi-hashtag timeline",
-		zap.Strings("hashtags", query.Hashtags),
-		zap.String("mode", query.Mode),
-		zap.Int("first", query.First))
-
-	// Set default limit
-	limit := query.First
-	if limit <= 0 || limit > 40 {
-		limit = 20
-	}
-
-	// Handle different modes
-	var results []*storage.StatusSearchResult
-	var err error
-
-	switch query.Mode {
-	case "ANY":
-		// Union mode: get posts from any of the hashtags
-		results, err = s.hashtagRepo.GetMultiHashtagTimeline(ctx, query.Hashtags, query.After, limit, query.ViewerID)
-	case "ALL":
-		// Intersection mode: get posts that have all hashtags
-		results, err = s.getHashtagIntersection(ctx, query.Hashtags, query.After, limit)
-	default:
-		return nil, ErrInvalidMode
-	}
-
-	if err != nil {
-		return nil, ErrGetMultiHashtagTimeline
-	}
-
-	// Determine next cursor
-	nextCursor := ""
-	if len(results) >= limit {
-		nextCursor = results[len(results)-1].StatusID
-	}
-
-	return &PostConnection{
-		Posts:      results,
-		NextCursor: nextCursor,
-		HasMore:    len(results) >= limit,
-	}, nil
-}
-
-// GetSuggestedHashtags returns hashtag suggestions for a user
-func (s *Service) GetSuggestedHashtags(ctx context.Context, query *GetSuggestedHashtagsQuery) ([]*HashtagSuggestion, error) {
-	s.logger.Debug("getting suggested hashtags",
-		zap.String("user_id", query.UserID),
-		zap.Int("limit", query.Limit))
-
-	// Set default limit
-	limit := query.Limit
-	if limit <= 0 || limit > 20 {
-		limit = 10
-	}
-
-	// Get trending hashtags (primary source of suggestions)
-	since := time.Now().AddDate(0, 0, -7) // Last 7 days
-	trending, err := s.hashtagRepo.GetTrendingHashtags(ctx, since, limit)
-	if err != nil {
-		s.logger.Warn("failed to get trending hashtags for suggestions",
+	if err := s.hashtagRepo.MuteHashtag(ctx, userID, tag, until); err != nil {
+		s.logger.Error("failed to mute hashtag",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tag),
 			zap.Error(err))
-		// Fall back to recent hashtags
-		trending, _ = s.hashtagRepo.GetRecentHashtags(ctx, since, limit)
+		return nil, ErrMuteHashtag
 	}
 
-	// Convert to suggestions
-	suggestions := make([]*HashtagSuggestion, 0, len(trending))
-	for _, tag := range trending {
-		suggestions = append(suggestions, &HashtagSuggestion{
-			Name:       tag.Name,
-			URL:        tag.URL,
-			Reason:     "trending",
-			Score:      float64(tag.UsageCount),
-			UsageCount: int(tag.UsageCount),
-		})
-	}
+	s.publishUserEvent(ctx, "hashtag.muted", userID, tag)
+	s.publishInternalHashtagEvent(streaming.ActionUpdate, tag)
 
-	// If we have a user, personalize suggestions
-	if query.UserID != "" {
-		suggestions = s.personalizeHashtagSuggestions(ctx, query.UserID, suggestions, limit)
-	}
-
-	// Limit results
-	if len(suggestions) > limit {
-		suggestions = suggestions[:limit]
-	}
-
-	return suggestions, nil
+	return s.GetHashtag(ctx, tag, userID)
 }
 
-// UpdateHashtagNotifications updates notification settings for a followed hashtag
-func (s *Service) UpdateHashtagNotifications(ctx context.Context, cmd *UpdateHashtagNotificationsCommand) error {
-	s.logger.Info("updating hashtag notification settings",
-		zap.String("user_id", cmd.UserID),
-		zap.String("hashtag", cmd.Hashtag),
-		zap.Bool("notify", cmd.Notify))
-
-	err := s.hashtagRepo.UpdateHashtagNotificationSettings(ctx, cmd.UserID, cmd.Hashtag, cmd.Notify)
-	if err != nil {
-		return ErrUpdateHashtagNotifications
+// GetHashtagActivity subscribes to the global event bus for hashtag-related events.
+func (s *Service) GetHashtagActivity(ctx context.Context, hashtags []string) (<-chan *ActivityEvent, error) {
+	cleaned := uniqueNormalizedHashtags(hashtags)
+	if len(cleaned) == 0 {
+		return nil, ErrHashtagNameRequired
 	}
 
+	eventBus := s.ensureEventBus()
+	if eventBus == nil {
+		return nil, ErrPublisherNotAvailable
+	}
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			streaming.EventTypeStatus,
+			streaming.EventTypeHashtagUpdate,
+		},
+		Streams: buildHashtagStreams(cleaned),
+	}
+
+	subID := fmt.Sprintf("hashtag_service_%d", time.Now().UnixNano())
+	subscriber, err := eventBus.Subscribe(subID, filter, streaming.DefaultBufferSize)
+	if err != nil {
+		s.logger.Error("failed to subscribe to hashtag activity",
+			zap.Strings("hashtags", cleaned),
+			zap.Error(err))
+		return nil, ErrPublisherNotAvailable
+	}
+
+	out := make(chan *ActivityEvent, streaming.DefaultBufferSize)
+
+	go func() {
+		defer close(out)
+		defer func() {
+			if err := eventBus.Unsubscribe(subID); err != nil {
+				s.logger.Warn("failed to unsubscribe hashtag activity listener",
+					zap.String("subscriber_id", subID),
+					zap.Error(err))
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-subscriber.Quit:
+				return
+			case evt, ok := <-subscriber.Channel:
+				if !ok || evt == nil {
+					return
+				}
+				select {
+				case out <- wrapActivityEvent(evt):
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+
+	return out, nil
+}
+
+// loadHashtagStats attempts to load hashtag stats and logs conversion failures gracefully.
+func (s *Service) loadHashtagStats(ctx context.Context, hashtag string) *storage.HashtagStats {
+	statsAny, err := s.hashtagRepo.GetHashtagStats(ctx, hashtag)
+	if err != nil {
+		s.logger.Warn("failed to load hashtag stats",
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+		return nil
+	}
+	if statsAny == nil {
+		return nil
+	}
+
+	if stats, ok := statsAny.(*storage.HashtagStats); ok {
+		return stats
+	}
+
+	s.logger.Warn("unexpected hashtag stats type",
+		zap.String("hashtag", hashtag),
+		zap.String("type", fmt.Sprintf("%T", statsAny)))
 	return nil
 }
 
-// MuteHashtag mutes a hashtag for a user
-func (s *Service) MuteHashtag(ctx context.Context, cmd *MuteHashtagCommand) error {
-	s.logger.Info("muting hashtag",
-		zap.String("user_id", cmd.UserID),
-		zap.String("hashtag", cmd.Hashtag))
-
-	err := s.hashtagRepo.MuteHashtag(ctx, cmd.UserID, cmd.Hashtag)
-	if err != nil {
-		return ErrMuteHashtag
-	}
-
-	// Emit events
-	_ = s.emitHashtagMutedEvents(ctx, cmd.UserID, cmd.Hashtag)
-
-	return nil
-}
-
-// UnmuteHashtag unmutes a hashtag for a user
-func (s *Service) UnmuteHashtag(ctx context.Context, userID, hashtag string) error {
-	s.logger.Info("unmuting hashtag",
-		zap.String("user_id", userID),
-		zap.String("hashtag", hashtag))
-
-	err := s.hashtagRepo.UnmuteHashtag(ctx, userID, hashtag)
-	if err != nil {
-		return ErrUnmuteHashtag
-	}
-
-	// Emit events
-	_ = s.emitHashtagUnmutedEvents(ctx, userID, hashtag)
-
-	return nil
-}
-
-// IsFollowingHashtag checks if a user is following a hashtag
-func (s *Service) IsFollowingHashtag(ctx context.Context, userID, hashtag string) (bool, error) {
-	following, err := s.hashtagRepo.IsFollowingHashtag(ctx, userID, hashtag)
-	if err != nil {
-		return false, ErrCheckFollowingHashtag
-	}
-	return following, nil
-}
-
-// Private helper methods
-
-// validateHashtagName validates a hashtag name
-func (s *Service) validateHashtagName(hashtag string) error {
-	tagName := strings.TrimPrefix(hashtag, "#")
-	if err := common.ValidateRequiredParam("hashtag", tagName); err != nil {
-		return ErrHashtagNameRequired
-	}
-	if err := common.ValidateStringLength("hashtag", tagName, 1, 100); err != nil {
-		return ErrHashtagNameTooLong
-	}
-	return nil
-}
-
-// getRelatedHashtags retrieves hashtags related to the given hashtag
-func (s *Service) getRelatedHashtags(ctx context.Context, hashtag string, limit int) []string {
-	// Query for recent posts with this hashtag
-	posts, err := s.hashtagRepo.GetHashtagTimelineAdvanced(ctx, hashtag, nil, 50, "") // Get up to 50 recent posts
-	if err != nil || len(posts) == 0 {
+// relatedHashtags derives co-occurring hashtags from recent timeline content.
+func (s *Service) relatedHashtags(ctx context.Context, hashtag string, limit int) []string {
+	if limit <= 0 {
 		return []string{}
 	}
 
-	// Count co-occurring hashtags
-	hashtagCount := make(map[string]int)
+	posts, err := s.hashtagRepo.GetHashtagTimelineAdvanced(ctx, hashtag, nil, defaultRelatedHashtagSampleSize, "")
+	if err != nil {
+		s.logger.Debug("failed to load related hashtag timeline sample",
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+		return []string{}
+	}
+
+	frequency := make(map[string]int)
+	current := strings.ToLower(hashtag)
+
 	for _, post := range posts {
-		// Extract hashtags from content
-		tags := extractHashtagsFromContent(post.Content)
-		for _, tag := range tags {
-			// Skip the current hashtag and count others
+		if post == nil {
+			continue
+		}
+		for _, tag := range extractHashtagsFromContent(post.Content) {
 			tagLower := strings.ToLower(tag)
-			currentTagLower := strings.ToLower(hashtag)
-			if tagLower != currentTagLower {
-				hashtagCount[tagLower]++
+			if tagLower == "" || tagLower == current {
+				continue
 			}
+			frequency[tagLower]++
 		}
 	}
 
-	// Sort by frequency
-	type hashtagFreq struct {
+	if len(frequency) == 0 {
+		return []string{}
+	}
+
+	type pair struct {
 		name  string
 		count int
 	}
-	sorted := make([]hashtagFreq, 0, len(hashtagCount))
-	for name, count := range hashtagCount {
-		sorted = append(sorted, hashtagFreq{name: name, count: count})
+	sorted := make([]pair, 0, len(frequency))
+	for name, count := range frequency {
+		sorted = append(sorted, pair{name: name, count: count})
 	}
 
-	// Sort descending by count
 	for i := 0; i < len(sorted)-1; i++ {
 		for j := i + 1; j < len(sorted); j++ {
 			if sorted[j].count > sorted[i].count {
@@ -570,321 +438,195 @@ func (s *Service) getRelatedHashtags(ctx context.Context, hashtag string, limit 
 		}
 	}
 
-	// Return top N
 	result := make([]string, 0, limit)
 	for i := 0; i < len(sorted) && i < limit; i++ {
 		result = append(result, sorted[i].name)
+	}
+	return result
+}
+
+// publishUserEvent notifies websocket clients about hashtag follow-related operations.
+func (s *Service) publishUserEvent(ctx context.Context, eventType, userID, hashtag string) {
+	if s.publisher == nil {
+		return
+	}
+
+	event := streaming.NewEvent(eventType).
+		ForStream(fmt.Sprintf("%s:%s", streaming.UserStream, userID)).
+		WithData("user_id", userID).
+		WithData("hashtag", hashtag).
+		Build()
+
+	if err := s.publisher.PublishToUser(ctx, userID, event); err != nil {
+		s.logger.Warn("failed to publish user hashtag event",
+			zap.String("type", eventType),
+			zap.String("user_id", userID),
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+	}
+
+	// Broadcast to hashtag stream as well so hashtag timelines receive updates.
+	if err := s.publisher.PublishToStream(ctx, streaming.HashtagStreamName(hashtag), event); err != nil {
+		s.logger.Debug("failed to publish hashtag stream event",
+			zap.String("type", eventType),
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+	}
+}
+
+// publishInternalHashtagEvent sends a lightweight update to the internal event bus.
+func (s *Service) publishInternalHashtagEvent(action streaming.EventAction, hashtag string) {
+	eventBus := s.ensureEventBus()
+	if eventBus == nil {
+		return
+	}
+
+	event := &streaming.InternalEvent{
+		ID:        fmt.Sprintf("hashtag:%s:%d", hashtag, time.Now().UnixNano()),
+		Type:      streaming.EventTypeHashtagUpdate,
+		Action:    action,
+		Timestamp: time.Now(),
+		Streams:   []string{streaming.HashtagStreamName(hashtag)},
+		Data: &streaming.HashtagEventPayload{
+			Hashtag:   hashtag,
+			Count:     0,
+			Period:    "realtime",
+			UpdatedAt: time.Now(),
+		},
+	}
+
+	if err := streaming.PublishGlobal(event); err != nil {
+		s.logger.Debug("failed to publish internal hashtag event",
+			zap.String("hashtag", hashtag),
+			zap.Error(err))
+	}
+}
+
+// ensureEventBus lazily starts the global event bus if required and returns it.
+func (s *Service) ensureEventBus() *streaming.EventBus {
+	eventBus := streaming.GetGlobalEventBus(s.logger)
+	if eventBus == nil {
+		return nil
+	}
+
+	if eventBus.IsRunning() {
+		return eventBus
+	}
+
+	if err := eventBus.Start(context.Background()); err != nil {
+		s.logger.Warn("failed to start global event bus", zap.Error(err))
+		return nil
+	}
+
+	return eventBus
+}
+
+// wrapActivityEvent converts a raw internal event to an ActivityEvent understood by service consumers.
+func wrapActivityEvent(event *streaming.InternalEvent) *ActivityEvent {
+	if event == nil {
+		return nil
+	}
+
+	result := &ActivityEvent{
+		Event:     event,
+		Timestamp: event.Timestamp,
+	}
+
+	switch payload := event.Data.(type) {
+	case *streaming.HashtagEventPayload:
+		result.Hashtag = payload.Hashtag
+		result.Timestamp = payload.UpdatedAt
+	case *streaming.StatusEventPayload:
+		if len(payload.Hashtags) > 0 {
+			result.Hashtag = payload.Hashtags[0]
+		}
+		result.StatusID = payload.StatusID
+		result.ActorID = payload.AuthorID
+		result.Timestamp = payload.CreatedAt
 	}
 
 	return result
 }
 
-// extractHashtagsFromContent extracts hashtags from post content
+// cloneNotificationSettings creates a safe copy with enforced user/hashtag identity.
+func cloneNotificationSettings(settings *storage.HashtagNotificationSettings, userID, hashtag string) *storage.HashtagNotificationSettings {
+	if settings == nil {
+		return nil
+	}
+
+	clone := *settings
+	if len(settings.Filters) > 0 {
+		clone.Filters = make([]*storage.NotificationFilter, len(settings.Filters))
+		for i, filter := range settings.Filters {
+			if filter == nil {
+				continue
+			}
+			copied := *filter
+			clone.Filters[i] = &copied
+		}
+	}
+	if len(settings.Metadata) > 0 {
+		copied := make(map[string]interface{}, len(settings.Metadata))
+		for k, v := range settings.Metadata {
+			copied[k] = v
+		}
+		clone.Metadata = copied
+	}
+	clone.UserID = userID
+	clone.Hashtag = hashtag
+	return &clone
+}
+
+// extractHashtagsFromContent performs basic hashtag parsing from the raw content.
 func extractHashtagsFromContent(content string) []string {
-	// Simple hashtag extraction - matches #word patterns
-	hashtags := []string{}
 	words := strings.Fields(content)
+	results := make([]string, 0, len(words))
+
 	for _, word := range words {
-		if strings.HasPrefix(word, "#") {
-			// Remove # and any trailing punctuation
-			tag := strings.TrimPrefix(word, "#")
-			tag = strings.TrimRight(tag, ".,!?;:")
-			if len(tag) > 0 {
-				hashtags = append(hashtags, tag)
-			}
+		if !strings.HasPrefix(word, "#") || len(word) == 1 {
+			continue
+		}
+		tag := strings.Trim(word, "#.,!?;:()[]{}\"'")
+		tag = normalizeHashtagName(tag)
+		if tag != "" {
+			results = append(results, tag)
 		}
 	}
-	return hashtags
+
+	return results
 }
 
-// getHashtagIntersection gets posts that contain all specified hashtags
-func (s *Service) getHashtagIntersection(ctx context.Context, hashtags []string, after *string, limit int) ([]*storage.StatusSearchResult, error) {
-	if len(hashtags) == 0 {
-		return []*storage.StatusSearchResult{}, nil
-	}
-
-	// Get timeline for first hashtag
-	results, err := s.hashtagRepo.GetHashtagTimelineAdvanced(ctx, hashtags[0], after, limit*2, "")
-	if err != nil {
-		return nil, err
-	}
-
-	// For each result, check if it contains all other hashtags
-	filtered := make([]*storage.StatusSearchResult, 0)
-	for _, result := range results {
-		hasAll := true
-		for _, tag := range hashtags[1:] {
-			tagLower := strings.ToLower(strings.TrimPrefix(tag, "#"))
-			contentLower := strings.ToLower(result.Content)
-			if !strings.Contains(contentLower, "#"+tagLower) {
-				hasAll = false
-				break
-			}
-		}
-		if hasAll {
-			filtered = append(filtered, result)
-			if len(filtered) >= limit {
-				break
-			}
-		}
-	}
-
-	return filtered, nil
+// normalizeHashtagName lowercases and trims a hashtag identifier.
+func normalizeHashtagName(name string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.ToLower(name), "#"))
 }
 
-// personalizeHashtagSuggestions adds personalized suggestions based on user activity
-func (s *Service) personalizeHashtagSuggestions(ctx context.Context, userID string, suggestions []*HashtagSuggestion, limit int) []*HashtagSuggestion {
-	// Get user's followed accounts to find related hashtags
-	// This is a simplified version - production would be more sophisticated
+// uniqueNormalizedHashtags removes duplicates while normalizing each hashtag.
+func uniqueNormalizedHashtags(inputs []string) []string {
+	dedupe := make(map[string]struct{})
+	order := make([]string, 0, len(inputs))
 
-	// Get suggested hashtags from repository (these are already trending/popular)
-	searchResults, err := s.hashtagRepo.GetSuggestedHashtags(ctx, userID, limit)
-	if err != nil {
-		s.logger.Warn("failed to get personalized suggestions",
-			zap.String("user_id", userID),
-			zap.Error(err))
-		return suggestions
-	}
-
-	// Merge with existing suggestions, avoiding duplicates
-	existingNames := make(map[string]bool)
-	for _, sugg := range suggestions {
-		existingNames[sugg.Name] = true
-	}
-
-	for _, result := range searchResults {
-		if !existingNames[result.Name] && len(suggestions) < limit {
-			suggestions = append(suggestions, &HashtagSuggestion{
-				Name:       result.Name,
-				URL:        result.URL,
-				Reason:     "popular",
-				Score:      1.0,
-				UsageCount: 0, // Would get from result if available
-			})
-			existingNames[result.Name] = true
+	for _, raw := range inputs {
+		tag := normalizeHashtagName(raw)
+		if tag == "" {
+			continue
 		}
+		if _, exists := dedupe[tag]; exists {
+			continue
+		}
+		dedupe[tag] = struct{}{}
+		order = append(order, tag)
 	}
 
-	return suggestions
+	return order
 }
 
-// Event emission helpers
-
-// emitHashtagFollowedEvents emits events when a hashtag is followed
-func (s *Service) emitHashtagFollowedEvents(ctx context.Context, userID, hashtag string) []*streaming.Event {
-	if s.publisher == nil {
-		return nil
+// buildHashtagStreams creates stream names for the given hashtags plus the global hashtag stream.
+func buildHashtagStreams(hashtags []string) []string {
+	streams := make([]string, 0, len(hashtags)+1)
+	streams = append(streams, "hashtags:global")
+	for _, tag := range hashtags {
+		streams = append(streams, streaming.HashtagStreamName(tag))
 	}
-
-	event := &streaming.Event{
-		Type:      "hashtag.followed",
-		Stream:    fmt.Sprintf("user:%s", userID),
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"user_id": userID,
-			"hashtag": hashtag,
-		},
-	}
-
-	if err := s.publisher.PublishToUser(ctx, userID, event); err != nil {
-		s.logger.Error("failed to publish hashtag followed event",
-			zap.Error(err))
-		return nil
-	}
-
-	return []*streaming.Event{event}
-}
-
-// emitHashtagUnfollowedEvents emits events when a hashtag is unfollowed
-func (s *Service) emitHashtagUnfollowedEvents(ctx context.Context, userID, hashtag string) []*streaming.Event {
-	if s.publisher == nil {
-		return nil
-	}
-
-	event := &streaming.Event{
-		Type:      "hashtag.unfollowed",
-		Stream:    fmt.Sprintf("user:%s", userID),
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"user_id": userID,
-			"hashtag": hashtag,
-		},
-	}
-
-	if err := s.publisher.PublishToUser(ctx, userID, event); err != nil {
-		s.logger.Error("failed to publish hashtag unfollowed event",
-			zap.Error(err))
-		return nil
-	}
-
-	return []*streaming.Event{event}
-}
-
-// emitHashtagMutedEvents emits events when a hashtag is muted
-func (s *Service) emitHashtagMutedEvents(ctx context.Context, userID, hashtag string) []*streaming.Event {
-	if s.publisher == nil {
-		return nil
-	}
-
-	event := &streaming.Event{
-		Type:      "hashtag.muted",
-		Stream:    fmt.Sprintf("user:%s", userID),
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"user_id": userID,
-			"hashtag": hashtag,
-		},
-	}
-
-	if err := s.publisher.PublishToUser(ctx, userID, event); err != nil {
-		s.logger.Error("failed to publish hashtag muted event",
-			zap.Error(err))
-		return nil
-	}
-
-	return []*streaming.Event{event}
-}
-
-// emitHashtagUnmutedEvents emits events when a hashtag is unmuted
-func (s *Service) emitHashtagUnmutedEvents(ctx context.Context, userID, hashtag string) []*streaming.Event {
-	if s.publisher == nil {
-		return nil
-	}
-
-	event := &streaming.Event{
-		Type:      "hashtag.unmuted",
-		Stream:    fmt.Sprintf("user:%s", userID),
-		Timestamp: time.Now(),
-		Payload: map[string]interface{}{
-			"user_id": userID,
-			"hashtag": hashtag,
-		},
-	}
-
-	if err := s.publisher.PublishToUser(ctx, userID, event); err != nil {
-		s.logger.Error("failed to publish hashtag unmuted event",
-			zap.Error(err))
-		return nil
-	}
-
-	return []*streaming.Event{event}
-}
-
-// GetHashtagActivity retrieves activity for a hashtag stream
-//
-//nolint:gocognit // Complex event handling and conversion logic
-func (s *Service) GetHashtagActivity(ctx context.Context, hashtags []string) (<-chan *streaming.Event, error) {
-	if s.publisher == nil {
-		return nil, ErrPublisherNotAvailable
-	}
-
-	activityChan := make(chan *streaming.Event, 100)
-
-	// Start background goroutine that listens to actual events
-	go func() {
-		defer close(activityChan)
-
-		// Get the global event bus
-		eventBus := streaming.GetGlobalEventBus(s.logger)
-		if eventBus == nil || !eventBus.IsRunning() {
-			s.logger.Error("event bus not available for hashtag activity")
-			return
-		}
-
-		// Normalize hashtags
-		normalizedTags := make([]string, len(hashtags))
-		for i, tag := range hashtags {
-			normalizedTags[i] = strings.ToLower(strings.TrimPrefix(tag, "#"))
-		}
-
-		// Build event filter with hashtag streams
-		streams := make([]string, len(normalizedTags))
-		for i, tag := range normalizedTags {
-			streams[i] = fmt.Sprintf("hashtag:%s", tag)
-		}
-
-		eventFilter := &streaming.EventFilter{
-			Types: []streaming.EventType{
-				streaming.EventTypeStatus,        // Status posts
-				streaming.EventTypeStatusUpdate,  // Updated posts
-				streaming.EventTypeHashtagTrend,  // Hashtag trends
-				streaming.EventTypeHashtagUpdate, // Hashtag updates
-			},
-			Streams: streams,
-		}
-
-		// Subscribe to event bus
-		subscriber, err := eventBus.Subscribe(
-			fmt.Sprintf("hashtag_activity_%d", time.Now().UnixNano()),
-			eventFilter,
-			100,
-		)
-		if err != nil {
-			s.logger.Error("failed to subscribe to hashtag activity", zap.Error(err))
-			return
-		}
-		defer subscriber.Close()
-
-		s.logger.Info("hashtag activity subscription started", zap.Strings("hashtags", normalizedTags))
-
-		// Forward events from subscriber to channel
-		// Note: subscriber.Channel returns InternalEvent, we need to convert to Event
-		for {
-			select {
-			case internalEvent := <-subscriber.Channel:
-				if internalEvent == nil {
-					return
-				}
-
-				// Convert InternalEvent to Event with populated payload
-				payload := make(map[string]interface{})
-
-				// Include the actual data from the internal event
-				if internalEvent.Data != nil {
-					payload["data"] = internalEvent.Data
-				}
-
-				// Include additional context
-				if internalEvent.ActorID != "" {
-					payload["actor_id"] = internalEvent.ActorID
-				}
-				if internalEvent.TargetID != "" {
-					payload["target_id"] = internalEvent.TargetID
-				}
-				if internalEvent.UserID != "" {
-					payload["user_id"] = internalEvent.UserID
-				}
-
-				// Include metadata
-				if len(internalEvent.Metadata) > 0 {
-					payload["metadata"] = internalEvent.Metadata
-				}
-
-				// Determine stream name from normalized tags
-				streamName := ""
-				if len(normalizedTags) > 0 {
-					streamName = fmt.Sprintf("hashtag:%s", normalizedTags[0])
-				}
-
-				event := &streaming.Event{
-					Type:      string(internalEvent.Type),
-					Stream:    streamName,
-					Payload:   payload, // Now includes actual data
-					Timestamp: internalEvent.Timestamp,
-				}
-
-				select {
-				case activityChan <- event:
-				case <-ctx.Done():
-					return
-				}
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return activityChan, nil
+	return streams
 }

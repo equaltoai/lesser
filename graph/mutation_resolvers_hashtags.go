@@ -9,7 +9,7 @@ import (
 )
 
 // FollowHashtag is the resolver for the followHashtag field.
-func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, notifyLevel *model.NotificationLevel) (*model.HashtagFollowPayload, error) {
+func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, _ *model.NotificationLevel) (*model.HashtagFollowPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -31,7 +31,7 @@ func (r *mutationResolver) FollowHashtag(ctx context.Context, hashtag string, no
 }
 
 // MuteHashtag is the resolver for the muteHashtag field.
-func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, until *model.Time) (*model.MuteHashtagPayload, error) {
+func (r *mutationResolver) MuteHashtag(ctx context.Context, hashtag string, _ *model.Time) (*model.MuteHashtagPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err

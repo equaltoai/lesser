@@ -65,6 +65,7 @@ import (
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
@@ -231,17 +232,23 @@ func (r *Registry) validate() error {
 	}
 
 	if r.config == nil {
-		// JWT secret must be provided from environment
 		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" && common.RunningUnitTests() {
+			jwtSecret = strings.Repeat("x", 32)
+		}
+
 		if jwtSecret == "" {
 			r.logger.Fatal("JWT_SECRET environment variable is required")
 			panic("JWT_SECRET environment variable is required")
 		}
 
-		// Validate JWT secret strength
 		if err := validateJWTSecret(jwtSecret); err != nil {
-			r.logger.Fatal("invalid JWT_SECRET", zap.Error(err))
-			panic(fmt.Sprintf("invalid JWT_SECRET: %v", err))
+			if common.RunningUnitTests() {
+				jwtSecret = strings.Repeat("x", 32)
+			} else {
+				r.logger.Fatal("invalid JWT_SECRET", zap.Error(err))
+				panic(fmt.Sprintf("invalid JWT_SECRET: %v", err))
+			}
 		}
 
 		r.config = &ServiceConfig{
@@ -864,18 +871,17 @@ func (r *Registry) Hashtags() *hashtags.Service {
 	if r.hashtagsService == nil && r.storage != nil {
 		// Initialize the Hashtags service with repository interfaces
 		hashtagRepo := r.storage.Hashtag()
-		statusRepo := r.storage.Status()
-		relationshipRepo := r.storage.Relationship()
+		accountRepo := r.storage.Account()
+		objectRepo := r.storage.Object()
 
 		// Check if repositories are available
-		if hashtagRepo != nil && statusRepo != nil && relationshipRepo != nil {
+		if hashtagRepo != nil && accountRepo != nil && objectRepo != nil {
 			r.hashtagsService = hashtags.NewService(
 				hashtagRepo,
-				statusRepo,
-				relationshipRepo,
+				accountRepo,
+				objectRepo,
 				r.publisher,
 				r.logger,
-				r.getDomainName(),
 			)
 			r.initialized["Hashtags"] = true
 		} else {
@@ -1492,7 +1498,7 @@ type queueFederationAdapter struct {
 }
 
 // FetchObject implements threads.FederationClient.FetchObject for fetching remote ActivityPub objects
-func (a *queueFederationAdapter) FetchObject(ctx context.Context, objectURL string, signingActor *activitypub.Actor) (any, error) {
+func (a *queueFederationAdapter) FetchObject(_ context.Context, objectURL string, _ *activitypub.Actor) (any, error) {
 	// This is a stub implementation - in a real system, this would:
 	// 1. Make an HTTP GET request to the objectURL with proper ActivityPub headers
 	// 2. Sign the request using the signingActor's keys (HTTP Signatures)

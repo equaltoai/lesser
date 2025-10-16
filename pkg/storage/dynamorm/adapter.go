@@ -3099,14 +3099,69 @@ func (s *StorageAdapter) IsFollowingHashtag(ctx context.Context, username, hasht
 }
 
 // GetFollowedHashtags retrieves followed hashtags
-func (s *StorageAdapter) GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]interface{}, string, error) {
+func (s *StorageAdapter) GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]*storage.HashtagFollow, string, error) {
 	hashtagRepo := s.Hashtag()
 	if followedRepo, ok := hashtagRepo.(interface {
-		GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]interface{}, string, error)
+		GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]*storage.HashtagFollow, string, error)
 	}); ok {
 		return followedRepo.GetFollowedHashtags(ctx, username, limit, cursor)
 	}
-	return []interface{}{}, "", nil
+	return []*storage.HashtagFollow{}, "", nil
+}
+
+// MuteHashtag mutes a hashtag for a user.
+func (s *StorageAdapter) MuteHashtag(ctx context.Context, username, hashtagName string, until *time.Time) error {
+	hashtagRepo := s.Hashtag()
+	if muteRepo, ok := hashtagRepo.(interface {
+		MuteHashtag(ctx context.Context, username, hashtagName string, until *time.Time) error
+	}); ok {
+		return muteRepo.MuteHashtag(ctx, username, hashtagName, until)
+	}
+	return fmt.Errorf("hashtag repository does not support mute operation")
+}
+
+// UnmuteHashtag unmutes a hashtag for a user.
+func (s *StorageAdapter) UnmuteHashtag(ctx context.Context, username, hashtagName string) error {
+	hashtagRepo := s.Hashtag()
+	if muteRepo, ok := hashtagRepo.(interface {
+		UnmuteHashtag(ctx context.Context, username, hashtagName string) error
+	}); ok {
+		return muteRepo.UnmuteHashtag(ctx, username, hashtagName)
+	}
+	return fmt.Errorf("hashtag repository does not support unmute operation")
+}
+
+// IsHashtagMuted reports whether the user has muted the hashtag.
+func (s *StorageAdapter) IsHashtagMuted(ctx context.Context, username, hashtagName string) (bool, error) {
+	hashtagRepo := s.Hashtag()
+	if muteRepo, ok := hashtagRepo.(interface {
+		IsHashtagMuted(ctx context.Context, username, hashtagName string) (bool, error)
+	}); ok {
+		return muteRepo.IsHashtagMuted(ctx, username, hashtagName)
+	}
+	return false, fmt.Errorf("hashtag repository does not support mute inspections")
+}
+
+// GetHashtagNotificationSettings fetches notification preferences.
+func (s *StorageAdapter) GetHashtagNotificationSettings(ctx context.Context, username, hashtagName string) (*storage.HashtagNotificationSettings, error) {
+	hashtagRepo := s.Hashtag()
+	if settingsRepo, ok := hashtagRepo.(interface {
+		GetHashtagNotificationSettings(ctx context.Context, username, hashtagName string) (*storage.HashtagNotificationSettings, error)
+	}); ok {
+		return settingsRepo.GetHashtagNotificationSettings(ctx, username, hashtagName)
+	}
+	return nil, fmt.Errorf("hashtag repository does not support notification settings retrieval")
+}
+
+// UpdateHashtagNotificationSettings updates notification preferences.
+func (s *StorageAdapter) UpdateHashtagNotificationSettings(ctx context.Context, username, hashtagName string, settings *storage.HashtagNotificationSettings) error {
+	hashtagRepo := s.Hashtag()
+	if settingsRepo, ok := hashtagRepo.(interface {
+		UpdateHashtagNotificationSettings(ctx context.Context, username, hashtagName string, settings *storage.HashtagNotificationSettings) error
+	}); ok {
+		return settingsRepo.UpdateHashtagNotificationSettings(ctx, username, hashtagName, settings)
+	}
+	return fmt.Errorf("hashtag repository does not support notification settings updates")
 }
 
 // =======================================

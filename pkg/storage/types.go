@@ -1445,6 +1445,44 @@ type HashtagStats struct {
 	History       []HashtagHistoryEntry `json:"history"`
 }
 
+// HashtagFollow is the storage-facing representation of a follow record.
+type HashtagFollow struct {
+	PK                   string    `json:"pk"`
+	SK                   string    `json:"sk"`
+	UserID               string    `json:"user_id"`
+	Hashtag              string    `json:"hashtag"`
+	NotificationsEnabled bool      `json:"notifications_enabled"`
+	Muted                bool      `json:"muted"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
+}
+
+// HashtagMute captures mute metadata, including optional expiration.
+type HashtagMute struct {
+	PK        string     `json:"pk"`
+	SK        string     `json:"sk"`
+	UserID    string     `json:"user_id"`
+	Hashtag   string     `json:"hashtag"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	TTL       int64      `json:"ttl,omitempty"`
+}
+
+// HashtagNotificationSettings stores notification preferences for a user+hashtag pair.
+type HashtagNotificationSettings struct {
+	PK         string                 `json:"pk"`
+	SK         string                 `json:"sk"`
+	UserID     string                 `json:"user_id"`
+	Hashtag    string                 `json:"hashtag"`
+	Level      string                 `json:"level"`
+	Muted      bool                   `json:"muted"`
+	MutedUntil *time.Time             `json:"muted_until,omitempty"`
+	Filters    []*NotificationFilter  `json:"filters,omitempty"`
+	CreatedAt  time.Time              `json:"created_at"`
+	UpdatedAt  time.Time              `json:"updated_at"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
+}
+
 // InstanceRule represents a rule for the instance
 type InstanceRule struct {
 	ID        string    `json:"id"`

@@ -308,7 +308,6 @@ func (h *Handler) extractUsernameFromContextForTags(ctx *lift.Context) (string, 
 	return claims.Username, nil
 }
 
-
 // getAuthorizationHeader extracts Authorization header with case variations
 func (h *Handler) getAuthorizationHeader(ctx *lift.Context) string {
 	authHeader := ctx.Header("Authorization")
@@ -353,15 +352,21 @@ func (h *Handler) extractPaginationParams(ctx *lift.Context) paginationParams {
 }
 
 // buildTagModels converts hashtags to tag models with history
-func (h *Handler) buildTagModels(ctx context.Context, hashtags []string) []map[string]any {
-	tags := make([]map[string]any, len(hashtags))
-	for i, hashtag := range hashtags {
-		tags[i] = map[string]any{
+func (h *Handler) buildTagModels(ctx context.Context, follows []*storage.HashtagFollow) []map[string]any {
+	tags := make([]map[string]any, 0, len(follows))
+	for _, follow := range follows {
+		if follow == nil || follow.Hashtag == "" {
+			continue
+		}
+
+		hashtag := follow.Hashtag
+
+		tags = append(tags, map[string]any{
 			"name":      hashtag,
 			"url":       fmt.Sprintf("%s/tags/%s", h.cfg.BaseURL(), hashtag),
 			"history":   h.getHashtagHistory(ctx, hashtag),
 			"following": true,
-		}
+		})
 	}
 	return tags
 }

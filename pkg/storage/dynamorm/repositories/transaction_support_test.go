@@ -9,6 +9,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/cost"
 	repoTesting "github.com/equaltoai/lesser/pkg/storage/dynamorm/repositories/testing"
 	"github.com/pay-theory/dynamorm/pkg/core"
+	githubMocks "github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -17,6 +18,43 @@ import (
 // MockTx represents a mock transaction
 type MockTx struct {
 	mock.Mock
+}
+
+func newNoopQuery() *githubMocks.MockQuery {
+	query := new(githubMocks.MockQuery)
+	query.On("Create").Return(nil).Maybe()
+	query.On("Update", mock.Anything).Return(nil).Maybe()
+	query.On("Delete").Return(nil).Maybe()
+	query.On("CreateOrUpdate").Return(nil).Maybe()
+	query.On("UpdateBuilder").Return(new(githubMocks.MockUpdateBuilder)).Maybe()
+	query.On("BatchCreate", mock.Anything).Return(nil).Maybe()
+	query.On("BatchDelete", mock.Anything).Return(nil).Maybe()
+	query.On("BatchWrite", mock.Anything, mock.Anything).Return(nil).Maybe()
+	query.On("First", mock.Anything).Return(nil).Maybe()
+	query.On("Find", mock.Anything).Return(nil).Maybe()
+	query.On("All", mock.Anything).Return(nil).Maybe()
+	query.On("Count").Return(int64(0), nil).Maybe()
+	query.On("Where", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("Filter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("OrFilter", mock.Anything, mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("FilterGroup", mock.Anything).Return(query).Maybe()
+	query.On("OrFilterGroup", mock.Anything).Return(query).Maybe()
+	query.On("Index", mock.Anything).Return(query).Maybe()
+	query.On("OrderBy", mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("Limit", mock.Anything).Return(query).Maybe()
+	query.On("Offset", mock.Anything).Return(query).Maybe()
+	query.On("Select", mock.Anything).Return(query).Maybe()
+	query.On("ConsistentRead").Return(query).Maybe()
+	query.On("WithRetry", mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("Cursor", mock.Anything).Return(query).Maybe()
+	query.On("SetCursor", mock.Anything).Return(nil).Maybe()
+	query.On("WithContext", mock.Anything).Return(query).Maybe()
+	query.On("Scan", mock.Anything).Return(nil).Maybe()
+	query.On("ParallelScan", mock.Anything, mock.Anything).Return(query).Maybe()
+	query.On("ScanAllSegments", mock.Anything, mock.Anything).Return(nil).Maybe()
+	query.On("BatchGet", mock.Anything, mock.Anything).Return(nil).Maybe()
+	query.On("BatchUpdateWithOptions", mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	return query
 }
 
 func TestNewTransactionManager(t *testing.T) {
@@ -130,52 +168,57 @@ func TestTransferOwnershipTransactional_ConceptualTest(t *testing.T) {
 	mockDB.AssertExpectations(t)
 }
 
-func TestConditionalCreate(t *testing.T) {
-	txCtx := &TransactionContext{
+func newTransactionContextWithMocks() *TransactionContext {
+	mockDB := new(repoTesting.MockDB)
+	mockQuery := newNoopQuery()
+	mockDB.On("Model", mock.Anything).Return(mockQuery).Maybe()
+	mockDB.On("WithContext", mock.Anything).Return(mockDB).Maybe()
+
+	tx := &core.Tx{}
+	tx.SetDB(mockDB)
+
+	return &TransactionContext{
+		tx:            tx,
 		operationsCnt: 0,
+		startTime:     time.Now(),
+		logger:        zap.NewNop(),
 	}
+}
+
+func TestConditionalCreate(t *testing.T) {
+	txCtx := newTransactionContextWithMocks()
 
 	item := map[string]any{"key": "value"}
 	key := map[string]any{"PK": "test"}
 
 	err := ConditionalCreate(txCtx, item, key)
 
-	// Should fail with placeholder error but increment operation count
-	assert.Error(t, err)
-	assert.NoError(t, err)                        // Transactions now implemented
-	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
+	assert.NoError(t, err)
+	assert.Equal(t, 2, txCtx.GetOperationCount())
 }
 
 func TestConditionalUpdate(t *testing.T) {
-	txCtx := &TransactionContext{
-		operationsCnt: 0,
-	}
+	txCtx := newTransactionContextWithMocks()
 
 	item := map[string]any{"key": "value"}
 	key := map[string]any{"PK": "test"}
 
 	err := ConditionalUpdate(txCtx, item, key, "attribute_exists(PK)")
 
-	// Should fail with placeholder error but increment operation count
-	assert.Error(t, err)
-	assert.NoError(t, err)                        // Transactions now implemented
-	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
+	assert.NoError(t, err)
+	assert.Equal(t, 2, txCtx.GetOperationCount())
 }
 
 func TestConditionalDelete(t *testing.T) {
-	txCtx := &TransactionContext{
-		operationsCnt: 0,
-	}
+	txCtx := newTransactionContextWithMocks()
 
 	item := map[string]any{"key": "value"}
 	key := map[string]any{"PK": "test"}
 
 	err := ConditionalDelete(txCtx, item, key, "attribute_exists(PK)")
 
-	// Should fail with placeholder error but increment operation count
-	assert.Error(t, err)
-	assert.NoError(t, err)                        // Transactions now implemented
-	assert.Equal(t, 1, txCtx.GetOperationCount()) // only condition check executes
+	assert.NoError(t, err)
+	assert.Equal(t, 2, txCtx.GetOperationCount())
 }
 
 func TestIsRetryableError(t *testing.T) {

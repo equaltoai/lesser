@@ -167,6 +167,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for federation-aggregator function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "federation-aggregator",    // federation-aggregator

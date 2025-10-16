@@ -242,6 +242,12 @@ const (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize default budget limits by MIME type (in micros)
 	DefaultBudgetLimits = map[string]int64{
 		"image/jpeg": 50000,  // $0.05 per image
@@ -290,6 +296,9 @@ func init() {
 
 // NewMediaProcessor creates a new media processor instance with simplified Lambda context
 func NewMediaProcessor(lambdaCtx *common.LambdaContext) *MediaProcessor {
+    if lambdaCtx == nil || lambdaCtx.DynamoDB == nil || lambdaCtx.Repos == nil {
+        return &MediaProcessor{}
+    }
 	// Initialize simplified processor with essential components
 	return &MediaProcessor{
 		db:        lambdaCtx.DynamoDB.(core.DB),

@@ -34,9 +34,9 @@ func TestParseSignatureHeader(t *testing.T) {
 		},
 		{
 			name:   "minimal signature header",
-			header: `keyId="test-key",signature="dGVzdA=="`,
+			header: `keyId="https://example.com/actor#main-key",signature="dGVzdA=="`,
 			want: &HTTPSignature{
-				KeyID:     "test-key",
+				KeyID:     "https://example.com/actor#main-key",
 				Algorithm: "rsa-sha256",     // default
 				Headers:   []string{"date"}, // default
 				Signature: []byte("test"),
@@ -63,7 +63,7 @@ func TestParseSignatureHeader(t *testing.T) {
 		},
 		{
 			name:    "invalid base64 signature",
-			header:  `keyId="test-key",signature="invalid!!!base64"`,
+			header:  `keyId="https://example.com/actor#main-key",signature="invalid!!!base64"`,
 			want:    nil,
 			wantErr: true,
 		},

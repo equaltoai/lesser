@@ -3,7 +3,6 @@ package repositories
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/equaltoai/lesser/pkg/storage"
@@ -21,20 +20,25 @@ type HashtagFollowUpdateConfig struct {
 
 // updateHashtagFollowSetting is a generic helper for updating hashtag follow settings
 func updateHashtagFollowSetting(
-	_ context.Context,
+	ctx context.Context,
 	db core.DB,
 	logger *zap.Logger,
 	userID, hashtag string,
 	config HashtagFollowUpdateConfig,
 ) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	now := time.Now()
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+	now := time.Now().UTC()
+	pk := fmt.Sprintf("user#%s", userID)
+	sk := fmt.Sprintf("hashtag#%s", tagLower)
 
 	// Get existing follow
 	var existingFollow models.HashtagFollow
-	err := db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "=", fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)).
+	err := db.WithContext(ctx).Model(&models.HashtagFollow{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
 		First(&existingFollow)
 
 	if err != nil {
@@ -66,7 +70,7 @@ func updateHashtagFollowSetting(
 	existingFollow.UpdatedAt = now
 
 	// Save by recreating (DynamORM pattern)
-	err = db.Model(&existingFollow).Create()
+	err = db.WithContext(ctx).Model(&existingFollow).Create()
 	if err != nil {
 		logger.Error(fmt.Sprintf("failed to %s hashtag", config.Operation),
 			zap.String("user_id", userID),

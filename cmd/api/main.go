@@ -67,6 +67,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	startTime = time.Now()
 
 	// Initialize Lambda with standardized configuration

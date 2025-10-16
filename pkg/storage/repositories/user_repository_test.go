@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/equaltoai/lesser/pkg/common"
 	"github.com/equaltoai/lesser/pkg/errors"
 	"github.com/equaltoai/lesser/pkg/storage"
 	"github.com/equaltoai/lesser/pkg/storage/models"
@@ -26,7 +27,7 @@ func TestCreateUser_MissingUsername(t *testing.T) {
 	err := repo.CreateUser(context.Background(), user)
 
 	assert.Error(t, err)
-	assert.IsType(t, &errors.AppError{}, err)
+	assert.IsType(t, common.ValidationError{}, err)
 }
 
 func TestGetUserByEmail_EmptyEmail(t *testing.T) {
@@ -38,7 +39,7 @@ func TestGetUserByEmail_EmptyEmail(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Nil(t, user)
-	assert.IsType(t, &errors.AppError{}, err)
+	assert.IsType(t, common.ValidationError{}, err)
 }
 
 func TestUpdateUser_EmptyUpdates(t *testing.T) {
@@ -71,7 +72,7 @@ func TestGetUserByProviderID_Success(t *testing.T) {
 
 	assert.Error(t, err) // It returns an error when user not found
 	assert.Nil(t, user)
-	assert.Contains(t, err.Error(), "user not found")
+	assert.Contains(t, err.Error(), "Failed to retrieve user")
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)
@@ -122,7 +123,7 @@ func TestUnlinkProviderAccount_Success(t *testing.T) {
 	err := repo.UnlinkProviderAccount(context.Background(), "testuser", "google")
 
 	assert.Error(t, err) // Returns error when provider account not found
-	assert.Contains(t, err.Error(), "provider account not found")
+	assert.Contains(t, err.Error(), "Failed to retrieve provider account")
 
 	// Verify mocks
 	mockDB.AssertExpectations(t)

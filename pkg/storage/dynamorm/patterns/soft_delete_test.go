@@ -5,159 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pay-theory/dynamorm/pkg/core"
+	"github.com/pay-theory/dynamorm/pkg/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap/zaptest"
 )
-
-// MockDynamORMDB is a mock implementation of DynamORM's core.DB
-type MockDynamORMDB struct {
-	mock.Mock
-}
-
-func (m *MockDynamORMDB) WithContext(ctx context.Context) core.DB {
-	args := m.Called(ctx)
-	return args.Get(0).(core.DB)
-}
-
-func (m *MockDynamORMDB) Model(model interface{}) core.Query {
-	args := m.Called(model)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockDynamORMDB) Save(model interface{}) error {
-	args := m.Called(model)
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) Create(model interface{}) error {
-	args := m.Called(model)
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) Delete(model interface{}) error {
-	args := m.Called(model)
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) AutoMigrate(models ...interface{}) error {
-	args := m.Called(models)
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) Migrate() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockDynamORMDB) Transaction(fn func(tx *core.Tx) error) error {
-	args := m.Called(fn)
-	return args.Error(0)
-}
-
-// MockQuery is a mock implementation of DynamORM's core.Query
-type MockQuery struct {
-	mock.Mock
-}
-
-func (m *MockQuery) Where(field string, op string, value interface{}) core.Query {
-	args := m.Called(field, op, value)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) First(result interface{}) error {
-	args := m.Called(result)
-	return args.Error(0)
-}
-
-func (m *MockQuery) Find(results interface{}) error {
-	args := m.Called(results)
-	return args.Error(0)
-}
-
-func (m *MockQuery) Count() (int64, error) {
-	args := m.Called()
-	return args.Get(0).(int64), args.Error(1)
-}
-
-func (m *MockQuery) Limit(limit int) core.Query {
-	args := m.Called(limit)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) All(results interface{}) error {
-	args := m.Called(results)
-	return args.Error(0)
-}
-
-func (m *MockQuery) AllPaginated(results interface{}) (*core.PaginatedResult, error) {
-	args := m.Called(results)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*core.PaginatedResult), args.Error(1)
-}
-
-func (m *MockQuery) Index(indexName string) core.Query {
-	args := m.Called(indexName)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) Filter(field string, op string, value interface{}) core.Query {
-	args := m.Called(field, op, value)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) OrFilter(field string, op string, value interface{}) core.Query {
-	args := m.Called(field, op, value)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) BatchCreate(items interface{}) error {
-	args := m.Called(items)
-	return args.Error(0)
-}
-
-func (m *MockQuery) Create() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockQuery) Update(fields ...string) error {
-	args := m.Called(fields)
-	return args.Error(0)
-}
-
-func (m *MockQuery) Delete() error {
-	args := m.Called()
-	return args.Error(0)
-}
-
-func (m *MockQuery) Offset(offset int) core.Query {
-	args := m.Called(offset)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) Select(fields ...string) core.Query {
-	args := m.Called(fields)
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) ConsistentRead() core.Query {
-	args := m.Called()
-	return args.Get(0).(core.Query)
-}
-
-func (m *MockQuery) BatchDelete(items interface{}) error {
-	args := m.Called(items)
-	return args.Error(0)
-}
 
 func TestSoftDeleteModel_SoftDelete(t *testing.T) {
 	model := &SoftDeleteModel{}
@@ -242,7 +94,7 @@ func TestExampleModel_ImplementsSoftDeletable(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_NewSoftDeleteRepository(t *testing.T) {
-	db := &MockDynamORMDB{}
+	db := new(mocks.MockDB)
 	logger := zaptest.NewLogger(t)
 
 	repo := NewSoftDeleteRepository(db, logger)
@@ -254,7 +106,7 @@ func TestSoftDeleteRepository_NewSoftDeleteRepository(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_WithDeleted(t *testing.T) {
-	db := &MockDynamORMDB{}
+	db := new(mocks.MockDB)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -266,7 +118,7 @@ func TestSoftDeleteRepository_WithDeleted(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_OnlyDeleted(t *testing.T) {
-	db := &MockDynamORMDB{}
+	db := new(mocks.MockDB)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -277,7 +129,7 @@ func TestSoftDeleteRepository_OnlyDeleted(t *testing.T) {
 }
 
 func TestSoftDeleteRepository_HardDelete(t *testing.T) {
-	db := &MockDynamORMDB{}
+	db := new(mocks.MockDB)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -296,8 +148,8 @@ func TestSoftDeleteRepository_HardDelete(t *testing.T) {
 
 // TestSoftDeleteRepository_Query tests query functionality with DynamORM
 func TestSoftDeleteRepository_Query(t *testing.T) {
-	db := &MockDynamORMDB{}
-	query := &MockQuery{}
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -310,7 +162,7 @@ func TestSoftDeleteRepository_Query(t *testing.T) {
 
 		result := repo.Query(context.Background(), model, nil)
 		assert.NotNil(t, result)
-		assert.IsType(t, &MockQuery{}, result)
+		assert.IsType(t, &mocks.MockQuery{}, result)
 	})
 
 	t.Run("query only deleted returns query builder with deleted filter", func(t *testing.T) {
@@ -320,14 +172,14 @@ func TestSoftDeleteRepository_Query(t *testing.T) {
 
 		result := repo.QueryOnlyDeleted(context.Background(), model)
 		assert.NotNil(t, result)
-		assert.IsType(t, &MockQuery{}, result)
+		assert.IsType(t, &mocks.MockQuery{}, result)
 	})
 }
 
 // TestSoftDeleteRepository_Stats tests statistics functionality
 func TestSoftDeleteRepository_Stats(t *testing.T) {
-	db := &MockDynamORMDB{}
-	query := &MockQuery{}
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 
@@ -349,8 +201,8 @@ func TestSoftDeleteRepository_Stats(t *testing.T) {
 
 // TestSoftDeleteRepository_Cleanup tests cleanup functionality
 func TestSoftDeleteRepository_Cleanup(t *testing.T) {
-	db := &MockDynamORMDB{}
-	query := &MockQuery{}
+	db := new(mocks.MockDB)
+	query := new(mocks.MockQuery)
 	logger := zaptest.NewLogger(t)
 	repo := NewSoftDeleteRepository(db, logger)
 

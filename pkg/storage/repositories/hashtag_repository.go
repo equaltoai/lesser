@@ -705,76 +705,124 @@ func (r *HashtagRepository) GetSuggestedHashtags(ctx context.Context, userID str
 }
 
 // FollowHashtag creates a hashtag follow relationship
-func (r *HashtagRepository) FollowHashtag(ctx context.Context, userID string, hashtag string) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	now := time.Now()
+func (r *HashtagRepository) FollowHashtag(ctx context.Context, userID, hashtag string) error {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleCreateError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
 
+	now := time.Now().UTC()
 	follow := &models.HashtagFollow{
+		PK:                   fmt.Sprintf("user#%s", userID),
+		SK:                   fmt.Sprintf("hashtag#%s", tagLower),
 		UserID:               userID,
 		Hashtag:              tagLower,
-		NotificationsEnabled: true, // Default to enabled
+		NotificationsEnabled: true,
 		Muted:                false,
 		CreatedAt:            now,
 		UpdatedAt:            now,
 	}
-	follow.UpdateKeysWithParams(userID, tagLower)
 
-	// Use direct DynamORM for HashtagFollow since BaseRepository is typed for Hashtag
-	err := r.db.WithContext(ctx).Model(follow).Create()
-	if err != nil {
+	if err := r.db.WithContext(ctx).Model(follow).Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			r.logger.Debug("hashtag follow already exists",
+				zap.String("user_id", userID),
+				zap.String("hashtag", tagLower))
+			return nil
+		}
 		r.logger.Error("failed to create hashtag follow",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return ErrorHandler.HandleCreateError(err, "hashtag follow", tagLower)
+		return ErrorHandler.HandleCreateError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 	}
 
 	return nil
 }
 
-// UnfollowHashtag removes a hashtag follow relationship
-func (r *HashtagRepository) UnfollowHashtag(_ context.Context, userID string, hashtag string) error {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
+// UnfollowHashtag removes a hashtag follow relationship and related artifacts
+func (r *HashtagRepository) UnfollowHashtag(ctx context.Context, userID, hashtag string) error {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleDeleteError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
 
-	follow := &models.HashtagFollow{}
-	follow.UpdateKeysWithParams(userID, tagLower)
+	pk := fmt.Sprintf("user#%s", userID)
+	follow := &models.HashtagFollow{
+		PK: pk,
+		SK: fmt.Sprintf("hashtag#%s", tagLower),
+	}
 
-	err := r.db.Model(follow).Delete()
-	if err != nil {
-		r.logger.Error("failed to delete hashtag follow",
+	if err := r.db.WithContext(ctx).Model(follow).Delete(); err != nil {
+		if !errors.IsNotFound(err) {
+			r.logger.Error("failed to delete hashtag follow",
+				zap.String("user_id", userID),
+				zap.String("hashtag", tagLower),
+				zap.Error(err))
+			return ErrorHandler.HandleDeleteError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
+		}
+	} else {
+		r.logger.Debug("deleted hashtag follow",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower))
+	}
+
+	// Cleanup mute and notification records (best effort)
+	mute := &models.HashtagMute{PK: pk, SK: fmt.Sprintf("mute#%s", tagLower)}
+	if err := r.db.WithContext(ctx).Model(mute).Delete(); err != nil && !errors.IsNotFound(err) {
+		r.logger.Debug("failed to cleanup hashtag mute after unfollow",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return ErrorHandler.HandleDeleteError(err, "hashtag follow", tagLower)
+	}
+
+	settings := &models.HashtagNotificationSettings{PK: pk, SK: fmt.Sprintf("settings#%s", tagLower)}
+	if err := r.db.WithContext(ctx).Model(settings).Delete(); err != nil && !errors.IsNotFound(err) {
+		r.logger.Debug("failed to cleanup hashtag notification settings after unfollow",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
 	}
 
 	return nil
 }
 
 // IsFollowingHashtag checks if a user is following a hashtag
-func (r *HashtagRepository) IsFollowingHashtag(ctx context.Context, userID string, hashtag string) (bool, error) {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	pk := fmt.Sprintf("USER#%s", userID)
-	sk := fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)
+func (r *HashtagRepository) IsFollowingHashtag(ctx context.Context, userID, hashtag string) (bool, error) {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return false, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
 
-	// Use BaseRepository Exists method for efficient existence check
-	exists, err := r.Exists(ctx, pk, sk)
+	var follow models.HashtagFollow
+	err := r.db.WithContext(ctx).Model(&models.HashtagFollow{}).
+		Where("PK", "=", fmt.Sprintf("user#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("hashtag#%s", tagLower)).
+		First(&follow)
+
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
 		r.logger.Error("failed to check hashtag follow",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return false, ErrorHandler.HandleGetError(err, "hashtag follow", tagLower)
+		return false, ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 	}
 
-	return exists, nil
+	return true, nil
 }
 
 // GetHashtagFollow retrieves the hashtag follow record for a user
 func (r *HashtagRepository) GetHashtagFollow(ctx context.Context, userID string, hashtag string) (*models.HashtagFollow, error) {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	pk := fmt.Sprintf("USER#%s", userID)
-	sk := fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+
+	pk := fmt.Sprintf("user#%s", userID)
+	sk := fmt.Sprintf("hashtag#%s", tagLower)
 
 	var follow models.HashtagFollow
 	err := r.db.WithContext(ctx).Model(&models.HashtagFollow{}).
@@ -784,13 +832,13 @@ func (r *HashtagRepository) GetHashtagFollow(ctx context.Context, userID string,
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error - user just isn't following
+			return nil, nil
 		}
 		r.logger.Error("failed to get hashtag follow record",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, "hashtag follow", tagLower)
+		return nil, ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("follow %s#%s", userID, tagLower))
 	}
 
 	return &follow, nil
@@ -798,9 +846,13 @@ func (r *HashtagRepository) GetHashtagFollow(ctx context.Context, userID string,
 
 // GetHashtagMute retrieves the hashtag mute record for a user
 func (r *HashtagRepository) GetHashtagMute(ctx context.Context, userID string, hashtag string) (*models.HashtagMute, error) {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-	pk := fmt.Sprintf("USER#%s", userID)
-	sk := fmt.Sprintf("HASHTAG_MUTE#%s", tagLower)
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+
+	pk := fmt.Sprintf("user#%s", userID)
+	sk := fmt.Sprintf("mute#%s", tagLower)
 
 	var mute models.HashtagMute
 	err := r.db.WithContext(ctx).Model(&models.HashtagMute{}).
@@ -810,113 +862,327 @@ func (r *HashtagRepository) GetHashtagMute(ctx context.Context, userID string, h
 
 	if err != nil {
 		if errors.IsNotFound(err) {
-			return nil, nil // Not found is not an error - hashtag just isn't muted
+			return nil, nil
 		}
 		r.logger.Error("failed to get hashtag mute record",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return nil, ErrorHandler.HandleGetError(err, "hashtag mute", tagLower)
+		return nil, ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
 	}
 
-	// Check if TTL has expired
-	if mute.TTL > 0 && time.Now().Unix() > mute.TTL {
-		return nil, nil // Mute has expired
+	if mute.TTL > 0 && time.Now().UTC().Unix() > mute.TTL {
+		return nil, nil
 	}
 
 	return &mute, nil
 }
 
 // GetFollowedHashtags retrieves hashtags followed by a user
-func (r *HashtagRepository) GetFollowedHashtags(_ context.Context, userID string, limit int, cursor string) ([]string, string, error) {
-	if limit <= 0 || limit > 100 {
-		limit = 20
-	}
+func (r *HashtagRepository) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]*storage.HashtagFollow, string, error) {
+	limit = NormalizePaginationLimit(limit)
+	pk := fmt.Sprintf("user#%s", userID)
 
-	query := r.db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "BEGINS_WITH", "HASHTAG_FOLLOW#").
-		Limit(limit)
+	query := r.db.WithContext(ctx).Model(&models.HashtagFollow{}).
+		Where("PK", "=", pk).
+		Where("SK", "BEGINS_WITH", "hashtag#").
+		OrderBy("SK", "ASC").
+		Limit(limit + 1)
 
-	// Add cursor if provided
 	if cursor != "" {
-		query = query.Where("SK", ">", cursor)
+		query = query.Cursor(cursor)
 	}
 
-	var follows []*models.HashtagFollow
-	err := query.All(&follows)
-	if err != nil {
-		r.logger.Error("failed to get followed hashtags",
+	var followModels []*models.HashtagFollow
+	if err := query.All(&followModels); err != nil {
+		r.logger.Error("failed to query followed hashtags",
 			zap.String("user_id", userID),
 			zap.Error(err))
-		return nil, "", ErrorHandler.HandleQueryError(err, "followed hashtags", userID)
+		return nil, "", ErrorHandler.HandleQueryError(err, EntityHashtag, fmt.Sprintf("follow list %s", userID))
 	}
 
-	// Extract hashtag names
-	hashtags := make([]string, len(follows))
-	for i, follow := range follows {
-		hashtags[i] = follow.Hashtag
-	}
-
-	// Determine next cursor
 	nextCursor := ""
-	if len(follows) == limit {
-		nextCursor = follows[len(follows)-1].SK
+	if len(followModels) > limit {
+		nextCursor = followModels[limit].SK
+		followModels = followModels[:limit]
 	}
 
-	return hashtags, nextCursor, nil
-}
-
-// UpdateHashtagNotificationSettings updates notification settings for a followed hashtag
-func (r *HashtagRepository) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error {
-	config := HashtagFollowUpdateConfig{
-		Operation:   "notification",
-		BoolValue:   &notify,
-		ErrorPrefix: "update hashtag notification settings",
+	result := make([]*storage.HashtagFollow, len(followModels))
+	for i, follow := range followModels {
+		result[i] = convertHashtagFollowModel(follow)
 	}
-	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
+
+	return result, nextCursor, nil
 }
 
 // MuteHashtag mutes a hashtag for a user
-func (r *HashtagRepository) MuteHashtag(ctx context.Context, userID, hashtag string) error {
-	config := HashtagFollowUpdateConfig{
-		Operation:   "mute",
-		ErrorPrefix: "mute hashtag",
+func (r *HashtagRepository) MuteHashtag(ctx context.Context, userID, hashtag string, until *time.Time) error {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
 	}
-	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
+
+	now := time.Now().UTC()
+	mute := &models.HashtagMute{
+		PK:        fmt.Sprintf("user#%s", userID),
+		SK:        fmt.Sprintf("mute#%s", tagLower),
+		Username:  userID,
+		Hashtag:   tagLower,
+		CreatedAt: now,
+	}
+	if until != nil {
+		mute.TTL = until.UTC().Unix()
+	}
+
+	if err := r.db.WithContext(ctx).Model(mute).Create(); err != nil {
+		if errors.IsConditionFailed(err) {
+			return nil
+		}
+		r.logger.Error("failed to mute hashtag",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
+	}
+
+	return nil
 }
 
 // UnmuteHashtag unmutes a hashtag for a user
 func (r *HashtagRepository) UnmuteHashtag(ctx context.Context, userID, hashtag string) error {
-	config := HashtagFollowUpdateConfig{
-		Operation:   "unmute",
-		ErrorPrefix: "unmute hashtag",
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
 	}
-	return updateHashtagFollowSetting(ctx, r.db, r.logger, userID, hashtag, config)
-}
 
-// IsHashtagMuted checks if a hashtag is muted for a user
-func (r *HashtagRepository) IsHashtagMuted(_ context.Context, userID, hashtag string) (bool, error) {
-	tagLower := strings.ToLower(strings.TrimPrefix(hashtag, "#"))
-
-	var follow models.HashtagFollow
-	err := r.db.Model(&models.HashtagFollow{}).
-		Where("PK", "=", fmt.Sprintf("USER#%s", userID)).
-		Where("SK", "=", fmt.Sprintf("HASHTAG_FOLLOW#%s", tagLower)).
-		First(&follow)
-
-	if errors.IsNotFound(err) {
-		return false, nil // Not following, so not muted
+	mute := &models.HashtagMute{
+		PK: fmt.Sprintf("user#%s", userID),
+		SK: fmt.Sprintf("mute#%s", tagLower),
 	}
-	if err != nil {
-		r.logger.Error("failed to check if hashtag is muted",
+
+	if err := r.db.WithContext(ctx).Model(mute).Delete(); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		r.logger.Error("failed to unmute hashtag",
 			zap.String("user_id", userID),
 			zap.String("hashtag", tagLower),
 			zap.Error(err))
-		return false, ErrorHandler.HandleGetError(err, "hashtag mute status", tagLower)
+		return ErrorHandler.HandleDeleteError(err, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
 	}
 
-	return follow.Muted, nil
+	return nil
+}
+
+// IsHashtagMuted checks if a hashtag is muted for a user
+func (r *HashtagRepository) IsHashtagMuted(ctx context.Context, userID, hashtag string) (bool, error) {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return false, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+
+	var mute models.HashtagMute
+	err := r.db.WithContext(ctx).Model(&models.HashtagMute{}).
+		Where("PK", "=", fmt.Sprintf("user#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("mute#%s", tagLower)).
+		First(&mute)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return false, nil
+		}
+		r.logger.Error("failed to check hashtag mute",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return false, ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("mute %s#%s", userID, tagLower))
+	}
+
+	if mute.TTL > 0 && time.Now().UTC().Unix() > mute.TTL {
+		_ = r.UnmuteHashtag(ctx, userID, tagLower)
+		return false, nil
+	}
+
+	return true, nil
+}
+
+func normalizeHashtagName(hashtag string) string {
+	return strings.TrimSpace(strings.ToLower(strings.TrimPrefix(hashtag, "#")))
+}
+
+func convertHashtagFollowModel(model *models.HashtagFollow) *storage.HashtagFollow {
+	if model == nil {
+		return nil
+	}
+
+	return &storage.HashtagFollow{
+		PK:                   model.PK,
+		SK:                   model.SK,
+		UserID:               model.UserID,
+		Hashtag:              model.Hashtag,
+		NotificationsEnabled: model.NotificationsEnabled,
+		Muted:                model.Muted,
+		CreatedAt:            model.CreatedAt,
+		UpdatedAt:            model.UpdatedAt,
+	}
+}
+
+func convertNotificationFiltersToModel(filters []*storage.NotificationFilter) []models.NotificationFilter {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	result := make([]models.NotificationFilter, len(filters))
+	for i, f := range filters {
+		if f == nil {
+			continue
+		}
+		result[i] = models.NotificationFilter{
+			Types:        append([]string{}, f.Types...),
+			AccountID:    f.AccountID,
+			MinID:        f.MinID,
+			MaxID:        f.MaxID,
+			SinceID:      f.SinceID,
+			Limit:        f.Limit,
+			ExcludeTypes: append([]string{}, f.ExcludeTypes...),
+		}
+	}
+	return result
+}
+
+func convertNotificationFiltersToStorage(filters []models.NotificationFilter) []*storage.NotificationFilter {
+	if len(filters) == 0 {
+		return nil
+	}
+
+	result := make([]*storage.NotificationFilter, len(filters))
+	for i := range filters {
+		f := filters[i]
+		result[i] = &storage.NotificationFilter{
+			Types:        append([]string{}, f.Types...),
+			AccountID:    f.AccountID,
+			MinID:        f.MinID,
+			MaxID:        f.MaxID,
+			SinceID:      f.SinceID,
+			Limit:        f.Limit,
+			ExcludeTypes: append([]string{}, f.ExcludeTypes...),
+		}
+	}
+	return result
+}
+
+func convertHashtagNotificationSettingsModel(model *models.HashtagNotificationSettings) *storage.HashtagNotificationSettings {
+	if model == nil {
+		return nil
+	}
+
+	return &storage.HashtagNotificationSettings{
+		PK:         model.PK,
+		SK:         model.SK,
+		UserID:     model.UserID,
+		Hashtag:    model.Hashtag,
+		Level:      model.Level,
+		Muted:      model.Muted,
+		MutedUntil: model.MutedUntil,
+		Filters:    convertNotificationFiltersToStorage(model.Filters),
+		CreatedAt:  model.CreatedAt,
+		UpdatedAt:  model.UpdatedAt,
+	}
+}
+
+// GetHashtagNotificationSettings retrieves notification preferences for a hashtag
+func (r *HashtagRepository) GetHashtagNotificationSettings(ctx context.Context, userID, hashtag string) (*storage.HashtagNotificationSettings, error) {
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return nil, ErrorHandler.HandleGetError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+
+	var model models.HashtagNotificationSettings
+	err := r.db.WithContext(ctx).Model(&models.HashtagNotificationSettings{}).
+		Where("PK", "=", fmt.Sprintf("user#%s", userID)).
+		Where("SK", "=", fmt.Sprintf("settings#%s", tagLower)).
+		First(&model)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil, nil
+		}
+		r.logger.Error("failed to get hashtag notification settings",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return nil, ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+	}
+
+	return convertHashtagNotificationSettingsModel(&model), nil
+}
+
+// UpdateHashtagNotificationSettings updates notification settings for a hashtag
+func (r *HashtagRepository) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, settings *storage.HashtagNotificationSettings) error {
+	if settings == nil {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, "nil settings")
+	}
+
+	tagLower := normalizeHashtagName(hashtag)
+	if tagLower == "" {
+		return ErrorHandler.HandleUpdateError(storage.ErrInvalidInput, EntityHashtag, "empty hashtag")
+	}
+
+	now := time.Now().UTC()
+	pk := fmt.Sprintf("user#%s", userID)
+	sk := fmt.Sprintf("settings#%s", tagLower)
+
+	var existing models.HashtagNotificationSettings
+	err := r.db.WithContext(ctx).Model(&models.HashtagNotificationSettings{}).
+		Where("PK", "=", pk).
+		Where("SK", "=", sk).
+		First(&existing)
+
+	createdAt := now
+	if err == nil {
+		createdAt = existing.CreatedAt
+	} else if !errors.IsNotFound(err) {
+		r.logger.Error("failed to load existing hashtag notification settings",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return ErrorHandler.HandleGetError(err, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+	}
+
+	model := &models.HashtagNotificationSettings{
+		PK:         pk,
+		SK:         sk,
+		UserID:     userID,
+		Hashtag:    tagLower,
+		Level:      settings.Level,
+		Muted:      settings.Muted,
+		MutedUntil: settings.MutedUntil,
+		Filters:    convertNotificationFiltersToModel(settings.Filters),
+		CreatedAt:  createdAt,
+		UpdatedAt:  now,
+	}
+
+	if err = r.db.WithContext(ctx).Model(model).Create(); err != nil {
+		r.logger.Error("failed to update hashtag notification settings",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+		return ErrorHandler.HandleUpdateError(err, EntityHashtag, fmt.Sprintf("settings %s#%s", userID, tagLower))
+	}
+
+	notifyEnabled := !strings.EqualFold(settings.Level, "none") && !settings.Muted
+	if err := updateHashtagFollowSetting(ctx, r.db, r.logger, userID, tagLower, HashtagFollowUpdateConfig{
+		Operation:   "notification",
+		BoolValue:   &notifyEnabled,
+		ErrorPrefix: "sync hashtag notification flag",
+	}); err != nil {
+		r.logger.Debug("failed to sync notification flag on follow record",
+			zap.String("user_id", userID),
+			zap.String("hashtag", tagLower),
+			zap.Error(err))
+	}
+
+	return nil
 }
 
 // DeleteOldHashtagTrends deletes hashtag trend records older than the specified time

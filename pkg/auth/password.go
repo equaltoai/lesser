@@ -64,7 +64,7 @@ func VerifyPassword(password, hash string) error {
 func ValidatePassword(password string, username string) error {
 	// Check minimum length
 	if len(password) < DefaultPolicy.MinLength {
-		return ErrPasswordInsufficientLength
+		return fmt.Errorf("password must be at least %d characters", DefaultPolicy.MinLength)
 	}
 
 	// Check character requirements
@@ -83,37 +83,37 @@ func ValidatePassword(password string, username string) error {
 	}
 
 	if DefaultPolicy.RequireUppercase && !hasUpper {
-		return ErrPasswordMissingUppercase
+		return errors.New("password must contain at least one uppercase letter")
 	}
 	if DefaultPolicy.RequireLowercase && !hasLower {
-		return ErrPasswordMissingLowercase
+		return errors.New("password must contain at least one lowercase letter")
 	}
 	if DefaultPolicy.RequireNumbers && !hasNumber {
-		return ErrPasswordMissingNumber
+		return errors.New("password must contain at least one number")
 	}
 	if DefaultPolicy.RequireSpecialChars && !hasSpecial {
-		return ErrPasswordMissingSpecialChar
+		return errors.New("password must contain at least one special character")
 	}
 
 	// Check against username
 	if strings.Contains(strings.ToLower(password), strings.ToLower(username)) {
-		return ErrPasswordContainsUsername
+		return errors.New("password cannot contain username")
 	}
 
 	// Check common passwords - do this check before other pattern checks
 	// This is important for the test case with "password@123"
 	if DefaultPolicy.PreventCommonPasswords && IsCommonPassword(password) {
-		return ErrPasswordTooCommon
+		return errors.New("password is too common")
 	}
 
 	// Check for sequential patterns
 	if hasSequentialPattern(password) {
-		return ErrPasswordSequentialPattern
+		return errors.New("password cannot contain sequential characters")
 	}
 
 	// Check for repeated characters
 	if hasRepeatedPattern(password) {
-		return ErrPasswordRepeatedPattern
+		return errors.New("password cannot contain repeated characters")
 	}
 
 	return nil

@@ -135,6 +135,9 @@ func (t *ImportTransaction) rollback(lastExecutedIndex int) error {
 }
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize Lambda with processor configuration for import processing
 	lambdaCtx := common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "import-processor",

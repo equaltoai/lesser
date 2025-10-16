@@ -672,7 +672,7 @@ func (h *ActivityHandler) processStatusForTimelines(ctx context.Context, status 
 	var contentPreview string
 	if status.Note != nil && status.Note.Content != "" {
 		contentPreview = status.Note.Content
-		if err := common.ValidateStringLength("contentPreview", contentPreview, 0, 500); err == nil {
+		if len(contentPreview) > 500 {
 			contentPreview = contentPreview[:500] + "..."
 		}
 	}

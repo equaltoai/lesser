@@ -82,7 +82,7 @@ func (r *mutationResolver) UnfollowHashtag(ctx context.Context, hashtag string) 
 }
 
 // UpdateHashtagNotifications is the resolver for the updateHashtagNotifications field.
-func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hashtag string, settings model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
+func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hashtag string, _ model.HashtagNotificationSettingsInput) (*model.UpdateHashtagNotificationsPayload, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (r *mutationResolver) UpdateHashtagNotifications(ctx context.Context, hasht
 }
 
 // UpdateStreamingPreferences is the resolver for the updateStreamingPreferences field.
-func (r *mutationResolver) UpdateStreamingPreferences(ctx context.Context, input model.StreamingPreferencesInput) (*model.UserPreferences, error) {
+func (r *mutationResolver) UpdateStreamingPreferences(ctx context.Context, _ model.StreamingPreferencesInput) (*model.UserPreferences, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err
