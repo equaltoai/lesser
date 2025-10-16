@@ -477,15 +477,16 @@ func (s *S3MediaStorage) GetPresignedUploadURL(mediaID string, filename string) 
 func (s *S3MediaStorage) initializeCloudFront() error {
 	// Get CloudFront configuration from config
 	cfg := config.Get()
-	cfDomain := cfg.CloudFrontDistributionDomain
+	cfDomain := cfg.CloudFrontDomain
 	cfKeyPairID := cfg.CloudFrontKeyPairID
 	cfPrivateKeyPath := cfg.CloudFrontPrivateKeyPath
-	cfPrivateKeyContent := cfg.CloudFrontPrivateKey
 
 	// Check if CloudFront is configured
 	if cfDomain == "" || cfKeyPairID == "" {
 		return ErrCloudFrontNotConfigured
 	}
+
+	var cfPrivateKeyContent string
 
 	// Load private key
 	var privateKeyPEM []byte

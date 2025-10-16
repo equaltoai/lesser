@@ -64,8 +64,10 @@ import (
 	"sync"
 	"time"
 
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/equaltoai/lesser/pkg/activitypub"
 	"github.com/equaltoai/lesser/pkg/common"
+	pkgconfig "github.com/equaltoai/lesser/pkg/config"
 	"github.com/equaltoai/lesser/pkg/services/accounts"
 	"github.com/equaltoai/lesser/pkg/services/ai"
 	"github.com/equaltoai/lesser/pkg/services/bulk"
@@ -75,6 +77,7 @@ import (
 	"github.com/equaltoai/lesser/pkg/services/importexport"
 	"github.com/equaltoai/lesser/pkg/services/lists"
 	"github.com/equaltoai/lesser/pkg/services/media"
+	"github.com/equaltoai/lesser/pkg/services/media/transcoding"
 	"github.com/equaltoai/lesser/pkg/services/notes"
 	"github.com/equaltoai/lesser/pkg/services/notifications"
 	"github.com/equaltoai/lesser/pkg/services/relationships"
@@ -751,15 +754,23 @@ func (r *Registry) Media() *media.Service {
 			// Create an adapter for the media service's job queue interface
 			mediaJobQueue := &mediaJobQueueAdapter{jobQueue: jobQueue}
 
+			// Get media configuration from config
+			sourceBucket := r.getMediaSourceBucket()
+			cdnDomain := r.getCloudFrontDomain()
+
 			r.mediaService = media.NewService(
 				mediaRepo,
 				accountRepo,
 				r.publisher,
 				mediaJobQueue,
 				r.logger,
-				"lesser-media-bucket", // Default S3 bucket - should come from config
-				"cdn.example.com",     // Default CDN domain - should come from config
+				sourceBucket,
+				cdnDomain,
 			)
+
+			// Wire up optional streaming services if config is available
+			r.wireMediaStreamingServices(r.mediaService)
+
 			r.initialized["Media"] = true
 		} else {
 			if r.logger != nil {
@@ -769,6 +780,218 @@ func (r *Registry) Media() *media.Service {
 	}
 
 	return r.mediaService
+}
+
+// wireMediaStreamingServices wires up the optional transcoding, manifest, and CloudFront services
+func (r *Registry) wireMediaStreamingServices(mediaService *media.Service) {
+	if mediaService == nil || r.config == nil || r.config.Config == nil {
+		return
+	}
+
+	cfg := r.config.Config
+
+	// Initialize MediaConvert transcoding service if configured
+	transcodingService := r.initializeTranscodingService(cfg)
+	if transcodingService != nil {
+		mediaService.SetTranscodingService(transcodingService)
+		r.logger.Info("MediaConvert transcoding service initialized")
+	}
+
+	// Initialize manifest generation service if configured
+	manifestService := r.initializeManifestService(cfg)
+	if manifestService != nil {
+		mediaService.SetManifestService(manifestService)
+		r.logger.Info("Manifest generation service initialized")
+	}
+
+	// Initialize CloudFront signing service if configured
+	cloudfrontService := r.initializeCloudFrontService(cfg)
+	if cloudfrontService != nil {
+		mediaService.SetCloudFrontService(cloudfrontService)
+		r.logger.Info("CloudFront signing service initialized")
+	}
+}
+
+// initializeTranscodingService creates the AWS MediaConvert transcoding service
+func (r *Registry) initializeTranscodingService(cfg interface{}) *transcoding.Service {
+	// Extract config fields
+	endpoint := r.getConfigString(cfg, "MediaConvertEndpoint")
+	if endpoint == "" {
+		r.logger.Debug("MediaConvert endpoint not configured, skipping transcoding service initialization")
+		return nil
+	}
+
+	// Load AWS SDK config
+	ctx := context.Background()
+	awsConfig, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		r.logger.Warn("failed to load AWS config for MediaConvert", zap.Error(err))
+		return nil
+	}
+
+	// Create transcoding service config
+	transcodingConfig := transcoding.Config{
+		Endpoint:          endpoint,
+		DestinationBucket: r.getMediaStreamingBucket(),
+		DestinationPrefix: "transcoded/",
+		Role:              r.getConfigString(cfg, "MediaConvertRoleArn"),
+	}
+
+	// Create the service
+	service, err := transcoding.NewService(awsConfig, transcodingConfig, r.logger)
+	if err != nil {
+		r.logger.Warn("failed to initialize MediaConvert transcoding service", zap.Error(err))
+		return nil
+	}
+
+	return service
+}
+
+// initializeManifestService creates the HLS/DASH manifest generation service
+func (r *Registry) initializeManifestService(_ interface{}) *transcoding.ManifestService {
+	streamingBucket := r.getMediaStreamingBucket()
+	if streamingBucket == "" {
+		r.logger.Debug("streaming bucket not configured, skipping manifest service initialization")
+		return nil
+	}
+
+	// Create manifest service config
+	manifestConfig := transcoding.ManifestConfig{
+		Bucket:    streamingBucket,
+		CDNDomain: r.getCloudFrontDomain(),
+	}
+
+	// Create the service
+	service := transcoding.NewManifestService(nil, manifestConfig, r.logger)
+	return service
+}
+
+// initializeCloudFrontService creates the CloudFront URL signing service
+func (r *Registry) initializeCloudFrontService(cfg interface{}) *transcoding.CloudFrontService {
+	domain := r.getCloudFrontDomain()
+	keyPairID := r.getConfigString(cfg, "CloudFrontKeyPairID")
+	privateKeyPath := r.getConfigString(cfg, "CloudFrontPrivateKeyPath")
+
+	if domain == "" || keyPairID == "" || privateKeyPath == "" {
+		r.logger.Debug("CloudFront configuration incomplete, skipping signing service initialization")
+		return nil
+	}
+
+	// Read private key
+	privateKey, err := r.readCloudFrontPrivateKey(privateKeyPath)
+	if err != nil {
+		r.logger.Warn("failed to read CloudFront private key", zap.Error(err))
+		return nil
+	}
+
+	// Get TTL from config (default 24 hours)
+	ttlHours := r.getConfigInt(cfg, "ManifestTTLHours")
+	if ttlHours == 0 {
+		ttlHours = 24
+	}
+
+	// Create CloudFront service config
+	cloudfrontConfig := transcoding.CloudFrontConfig{
+		Domain:        domain,
+		KeyPairID:     keyPairID,
+		PrivateKeyPEM: privateKey,
+		DefaultTTL:    time.Duration(ttlHours) * time.Hour,
+	}
+
+	// Create the service
+	service, err := transcoding.NewCloudFrontService(cloudfrontConfig, r.logger)
+	if err != nil {
+		r.logger.Warn("failed to initialize CloudFront signing service", zap.Error(err))
+		return nil
+	}
+
+	return service
+}
+
+// Helper functions to extract configuration values
+
+func (r *Registry) getMediaSourceBucket() string {
+	if r.config == nil || r.config.Config == nil {
+		return "lesser-media-bucket" // Default fallback
+	}
+	val := r.getConfigString(r.config.Config, "MediaSourceBucketName")
+	if val == "" {
+		val = r.getConfigString(r.config.Config, "S3BucketName") // Fallback to main bucket
+	}
+	if val == "" {
+		return "lesser-media-bucket"
+	}
+	return val
+}
+
+func (r *Registry) getMediaStreamingBucket() string {
+	if r.config == nil || r.config.Config == nil {
+		return ""
+	}
+	return r.getConfigString(r.config.Config, "MediaStreamingBucketName")
+}
+
+func (r *Registry) getCloudFrontDomain() string {
+	if r.config == nil || r.config.Config == nil {
+		return "cdn.example.com" // Default fallback
+	}
+	val := r.getConfigString(r.config.Config, "CloudFrontDomain")
+	if val == "" {
+		return "cdn.example.com"
+	}
+	return val
+}
+
+func (r *Registry) getConfigString(cfg interface{}, key string) string {
+	// Try reflection to get field value
+	if cfgStruct, ok := cfg.(*pkgconfig.Config); ok {
+		switch key {
+		case "MediaConvertEndpoint":
+			return cfgStruct.MediaConvertEndpoint
+		case "MediaConvertRoleArn":
+			return cfgStruct.MediaConvertRoleArn
+		case "CloudFrontKeyPairID":
+			return cfgStruct.CloudFrontKeyPairID
+		case "CloudFrontPrivateKeyPath":
+			return cfgStruct.CloudFrontPrivateKeyPath
+		case "MediaSourceBucketName":
+			return cfgStruct.MediaSourceBucketName
+		case "MediaStreamingBucketName":
+			return cfgStruct.MediaStreamingBucketName
+		case "CloudFrontDomain":
+			return cfgStruct.CloudFrontDomain
+		case "S3BucketName":
+			return cfgStruct.S3BucketName
+		}
+	}
+	return ""
+}
+
+func (r *Registry) getConfigInt(cfg interface{}, key string) int {
+	if cfgStruct, ok := cfg.(*pkgconfig.Config); ok {
+		switch key {
+		case "ManifestTTLHours":
+			return cfgStruct.ManifestTTLHours
+		}
+	}
+	return 0
+}
+
+func (r *Registry) readCloudFrontPrivateKey(keyPath string) (string, error) {
+	// If it looks like an ARN or secret path, try Secrets Manager
+	if strings.HasPrefix(keyPath, "arn:aws:secretsmanager:") || strings.HasPrefix(keyPath, "lesser/") {
+		// TODO: Implement Secrets Manager retrieval
+		return "", fmt.Errorf("secrets Manager retrieval not yet implemented for %s", keyPath)
+	}
+
+	// Otherwise, try reading from file
+	// #nosec G304 -- keyPath is from configuration, not user input
+	keyBytes, err := os.ReadFile(keyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read private key from %s: %w", keyPath, err)
+	}
+
+	return string(keyBytes), nil
 }
 
 // Lists returns the lists service, initializing it if necessary

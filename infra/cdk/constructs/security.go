@@ -9,17 +9,21 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awskms"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
 	"github.com/aws/jsii-runtime-go"
 )
 
 type SecurityProps struct {
-	Environment     string
-	Table           awsdynamodb.Table
-	MediaBucket     awss3.Bucket
-	FederationQueue awssqs.Queue
-	FederationDLQ   awssqs.Queue
-	PushQueue       awssqs.Queue
+	Environment      string
+	Table            awsdynamodb.Table
+	MediaBucket      awss3.Bucket
+	StreamingBucket  awss3.Bucket
+	TrainingBucket   awss3.Bucket
+	FederationQueue  awssqs.Queue
+	FederationDLQ    awssqs.Queue
+	PushQueue        awssqs.Queue
+	CloudFrontSecret awssecretsmanager.ISecret
 }
 
 type SecurityConstructs struct {
@@ -63,18 +67,28 @@ func CreateSecurityConstructs(stack awscdk.Stack, props *SecurityProps) *Securit
 	security.KMSPolicy = createKMSPolicyByPattern(stack, props.Environment)
 	security.LambdaRole.AttachInlinePolicy(security.KMSPolicy)
 
-	// Add Secrets Manager permissions for JWT secret and actor private key
+	// Add Secrets Manager permissions for JWT secret, actor private key, and CloudFront key
+	secretResources := &[]*string{
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"),
+		jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/cloudfront-private-key-*"),
+	}
 	security.LambdaRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
 		Effect: awsiam.Effect_ALLOW,
 		Actions: &[]*string{
 			jsii.String("secretsmanager:GetSecretValue"),
 			jsii.String("secretsmanager:DescribeSecret"),
 		},
-		Resources: &[]*string{
-			jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/jwt-secret-*"),
-			jsii.String("arn:aws:secretsmanager:*:*:secret:lesser/actor-private-key-*"),
-		},
+		Resources: secretResources,
 	}))
+
+	// Grant access to streaming and training buckets
+	if props.StreamingBucket != nil {
+		props.StreamingBucket.GrantReadWrite(security.LambdaRole, jsii.String("*"))
+	}
+	if props.TrainingBucket != nil {
+		props.TrainingBucket.GrantReadWrite(security.LambdaRole, jsii.String("*"))
+	}
 
 	return security
 }
@@ -194,8 +208,18 @@ func createBedrockPolicy(stack awscdk.Stack) awsiam.Policy {
 				"Action": []string{
 					"bedrock:InvokeModel",
 					"bedrock:InvokeModelWithResponseStream",
+					"bedrock:CreateModelCustomizationJob",
+					"bedrock:GetModelCustomizationJob",
+					"bedrock:ListModelCustomizationJobs",
+					"bedrock:StopModelCustomizationJob",
+					"bedrock:GetFoundationModel",
+					"bedrock:ListFoundationModels",
 				},
-				"Resource": "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v1",
+				"Resource": []string{
+					"arn:aws:bedrock:*::foundation-model/*",
+					"arn:aws:bedrock:*:*:model-customization-job/*",
+					"arn:aws:bedrock:*:*:custom-model/*",
+				},
 			},
 			{
 				"Effect": "Allow",
