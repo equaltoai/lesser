@@ -684,6 +684,47 @@ func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Contex
 	return sm.createBudgetAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, domain)
 }
 
+// SubscribeToModerationAlerts subscribes to moderation alert updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToModerationAlerts(ctx context.Context, username string, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.ModerationAlert, 100)
+
+	// Build stream names for moderation alerts
+	streams := []string{"moderation:alerts", fmt.Sprintf("user:%s:alerts", username)}
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			streaming.EventTypeModerationFlag,
+			streaming.EventTypeModerationReview,
+			streaming.EventTypeAIModeration,
+		},
+		Streams:     streams,
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	// Store severity in params for filtering
+	params := make(map[string]interface{})
+	if severity != nil {
+		params["severity"] = *severity
+	}
+
+	subscriptionID := fmt.Sprintf("mod_alerts_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForModeration
+	}
+
+	return sm.createModerationAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, severity)
+}
+
 // SubscribeToCostAlerts subscribes to cost alert updates using the event bus
 func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context, username string, thresholdUSD float64) (<-chan *model.CostAlert, error) {
 	if !sm.IsRunning() {

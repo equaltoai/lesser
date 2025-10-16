@@ -59,71 +59,35 @@ func (r *subscriptionResolver) ModerationAlerts(ctx context.Context, severity *m
 		return nil, err
 	}
 
-	alertChan := make(chan *model.ModerationAlert, 100)
-
-	// Get internal EventBus for real-time moderation alerts
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available for ModerationAlerts")
-		close(alertChan)
-		return alertChan, ErrInternalEventBusUnavailable
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for moderation alerts")
+		ch := make(chan *model.ModerationAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeModerationFlag,
-			streaming.EventTypeModerationReview,
-			streaming.EventTypeAIModeration,
-		},
-		Streams: []string{"moderation:alerts", fmt.Sprintf("user:%s:alerts", username)},
-		UserID:  username,
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for moderation alerts")
+		ch := make(chan *model.ModerationAlert)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	subscriber, err := internalEventBus.Subscribe(
-		fmt.Sprintf("mod_alerts_%s_%d", username, time.Now().UnixNano()),
-		filter, 100)
+	alertsChan, err := sm.SubscribeToModerationAlerts(ctx, username, severity)
 	if err != nil {
-		r.Logger.Error("Failed to subscribe to moderation alerts", zap.Error(err))
-		close(alertChan)
-		return alertChan, errors.Join(errors.New("failed to subscribe"), err)
+		r.Logger.Error("failed to create moderation alerts subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
-
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(alertChan)
-			if subscriber != nil {
-				subscriber.Close()
-			}
-		}()
-
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return
-				}
-
-				// Convert event to ModerationAlert
-				alert := r.convertEventToModerationAlert(event, severity)
-				if alert != nil {
-					select {
-					case alertChan <- alert:
-					case <-ctx.Done():
-						return
-					}
-				}
-
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 
 	r.Logger.Info("Started moderation alerts subscription",
-		zap.String("user", username))
+		zap.String("user", username),
+		zap.Bool("filtered", severity != nil))
 
-	return alertChan, nil
+	return alertsChan, nil
 }
 
 // ModerationQueueUpdate implements SubscriptionResolver

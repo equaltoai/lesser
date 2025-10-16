@@ -253,6 +253,9 @@ Day 2: Subscription Implementations
 └── Add tests for all subscriptions
 ```
 
+**Notes**:
+- The ModerationQueueUpdate subscription still uses the legacy direct event-bus wiring. Harmonizing it with the SubscriptionManager can be scheduled as a follow-up (e.g., during the Phase 3 moderation dashboard work).
+
 ---
 
 #### 2.2 Media Streaming Completion

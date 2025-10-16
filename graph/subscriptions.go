@@ -176,6 +176,11 @@ func (sm *SubscriptionManager) SubscribeToBudgetAlerts(ctx context.Context, user
 	return sm.manager.SubscribeToBudgetAlerts(ctx, username, domain)
 }
 
+// SubscribeToModerationAlerts creates a channel for moderation alert updates using event bus
+func (sm *SubscriptionManager) SubscribeToModerationAlerts(ctx context.Context, username string, severity *model.ModerationSeverity) (<-chan *model.ModerationAlert, error) {
+	return sm.manager.SubscribeToModerationAlerts(ctx, username, severity)
+}
+
 // SubscribeToCostAlerts creates a channel for cost alert updates using event bus
 func (sm *SubscriptionManager) SubscribeToCostAlerts(ctx context.Context, username string, thresholdUSD float64) (<-chan *model.CostAlert, error) {
 	return sm.manager.SubscribeToCostAlerts(ctx, username, thresholdUSD)
