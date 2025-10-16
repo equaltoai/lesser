@@ -429,6 +429,154 @@ func (sm *GraphQLSubscriptionManager) SubscribeToMetricsUpdates(ctx context.Cont
 	return sm.createMetricsEventBusSubscription(ctx, subscriptionID, username, categories, services, threshold, filter, ch)
 }
 
+// SubscribeToListActivity subscribes to list activity updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToListActivity(ctx context.Context, username string, listID string) (<-chan *model.ListUpdate, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("listID", listID); err != nil {
+		return nil, ErrListIDCannotBeEmpty
+	}
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.ListUpdate, 100)
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			"list.update",
+			"list.member.add",
+			"list.member.remove",
+		},
+		Streams:     []string{fmt.Sprintf("list:%s", listID)},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("list_%s_%s_%d", listID, username, time.Now().UnixNano())
+
+	// Use event bus for list activity subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForList
+	}
+
+	return sm.createListEventBusSubscription(ctx, subscriptionID, username, listID, filter, ch)
+}
+
+// SubscribeToConversation subscribes to conversation updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToConversation(ctx context.Context, username string) (<-chan *model.Conversation, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.Conversation, 100)
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			"conversation.update",
+			"conversation.create",
+		},
+		Streams:     []string{fmt.Sprintf("user:%s", username)},
+		ActorID:     username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("conv_%s_%d", username, time.Now().UnixNano())
+
+	// Use event bus for conversation subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForConversation
+	}
+
+	return sm.createConversationEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+}
+
+// SubscribeToFederationHealth subscribes to federation health updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToFederationHealth(ctx context.Context, username string, domain *string) (<-chan *model.FederationHealthUpdate, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.FederationHealthUpdate, 100)
+
+	// Build streams based on domain filter
+	var streamNames []string
+	if domain != nil && *domain != "" {
+		streamNames = []string{fmt.Sprintf("federation:%s", *domain)}
+	} else {
+		streamNames = []string{"federation:health"}
+	}
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			streaming.EventTypeFederationHealthUpdate,
+			streaming.EventTypeFederationFailure,
+			streaming.EventTypeFederationRecovery,
+		},
+		Streams:     streamNames,
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("fedhealth_%s_%d", username, time.Now().UnixNano())
+
+	// Use event bus for federation health subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForFederation
+	}
+
+	return sm.createFederationHealthEventBusSubscription(ctx, subscriptionID, username, domain, filter, ch)
+}
+
+// SubscribeToRelationshipUpdates subscribes to relationship updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToRelationshipUpdates(ctx context.Context, username string, actorID *string) (<-chan *model.RelationshipUpdate, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.RelationshipUpdate, 100)
+
+	// Determine stream target - either specific actor or user's relationships
+	streamTarget := username
+	if actorID != nil && *actorID != "" {
+		streamTarget = *actorID
+	}
+
+	filter := &streaming.EventFilter{
+		Types: []streaming.EventType{
+			"relationship.create",
+			"relationship.update",
+			"relationship.delete",
+		},
+		Streams:     []string{fmt.Sprintf("user:%s", username)},
+		ActorID:     streamTarget,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("rel_%s_%s_%d", username, streamTarget, time.Now().UnixNano())
+
+	// Use event bus for relationship subscription
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForRelationship
+	}
+
+	return sm.createRelationshipEventBusSubscription(ctx, subscriptionID, username, actorID, filter, ch)
+}
+
 // Helper function to get string value from pointer
 func getStringValue(ptr *string) string {
 	if ptr == nil {
@@ -498,6 +646,162 @@ func (sm *GraphQLSubscriptionManager) cleanupSubscription(sub *GraphQLSubscripti
 	if sub.Subscriber != nil && sm.eventBus != nil {
 		_ = sm.eventBus.Unsubscribe(sub.Subscriber.ID)
 	}
+}
+
+// SubscribeToBudgetAlerts subscribes to budget alert updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToBudgetAlerts(ctx context.Context, username string, domain *string) (<-chan *model.BudgetAlert, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.BudgetAlert, 100)
+
+	// Build stream name based on domain
+	var streamName string
+	if domain != nil {
+		streamName = fmt.Sprintf("budget_alerts:%s", *domain)
+	} else {
+		streamName = fmt.Sprintf("budget_alerts:%s", username)
+	}
+
+	filter := &streaming.EventFilter{
+		Types:       []streaming.EventType{"budget.alert", "budget.threshold"},
+		Streams:     []string{streamName},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("budget_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForCost
+	}
+
+	return sm.createBudgetAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, domain)
+}
+
+// SubscribeToCostAlerts subscribes to cost alert updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToCostAlerts(ctx context.Context, username string, thresholdUSD float64) (<-chan *model.CostAlert, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.CostAlert, 100)
+
+	streamName := fmt.Sprintf("cost_events:%s", username)
+
+	filter := &streaming.EventFilter{
+		Types:       []streaming.EventType{"cost.update", "cost.alert"},
+		Streams:     []string{streamName},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("cost_alert_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForCost
+	}
+
+	return sm.createCostAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, thresholdUSD)
+}
+
+// SubscribeToPerformanceAlerts subscribes to performance alert updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToPerformanceAlerts(ctx context.Context, username string, severity model.AlertSeverity) (<-chan *model.PerformanceAlert, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.PerformanceAlert, 100)
+
+	streamName := fmt.Sprintf("performance:%s", username)
+
+	filter := &streaming.EventFilter{
+		Types:       []streaming.EventType{"performance.alert", "performance.degradation"},
+		Streams:     []string{streamName},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("performance_alert_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForCost
+	}
+
+	return sm.createPerformanceAlertEventBusSubscription(ctx, subscriptionID, username, filter, ch, severity)
+}
+
+// SubscribeToThreatIntelligence subscribes to threat intelligence updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToThreatIntelligence(ctx context.Context, username string) (<-chan *model.ThreatAlert, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.ThreatAlert, 100)
+
+	streamName := fmt.Sprintf("threat:%s", username)
+
+	filter := &streaming.EventFilter{
+		Types:       []streaming.EventType{"threat.detected", "threat.intelligence"},
+		Streams:     []string{streamName},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("threat_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForCost
+	}
+
+	return sm.createThreatIntelligenceEventBusSubscription(ctx, subscriptionID, username, filter, ch)
+}
+
+// SubscribeToInfrastructureEvents subscribes to infrastructure event updates using the event bus
+func (sm *GraphQLSubscriptionManager) SubscribeToInfrastructureEvents(ctx context.Context, username string) (<-chan *model.InfrastructureEvent, error) {
+	if !sm.IsRunning() {
+		return nil, ErrSubscriptionManagerNotRunning
+	}
+
+	if err := common.ValidateRequiredParam("username", username); err != nil {
+		return nil, ErrUsernameCannotBeEmpty
+	}
+
+	ch := make(chan *model.InfrastructureEvent, 100)
+
+	streamName := fmt.Sprintf("infrastructure:%s", username)
+
+	filter := &streaming.EventFilter{
+		Types:       []streaming.EventType{"infrastructure.event", "infrastructure.outage"},
+		Streams:     []string{streamName},
+		UserID:      username,
+		MinPriority: streaming.PriorityNormal,
+	}
+
+	subscriptionID := fmt.Sprintf("infrastructure_%s_%d", username, time.Now().UnixNano())
+
+	if sm.eventBus == nil || !sm.eventBus.IsRunning() {
+		return nil, ErrEventBusNotAvailableForCost
+	}
+
+	return sm.createInfrastructureEventBusSubscription(ctx, subscriptionID, username, filter, ch)
 }
 
 // GetStats returns statistics about active subscriptions

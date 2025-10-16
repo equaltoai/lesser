@@ -103,9 +103,14 @@ var (
 	ErrEventBusNotAvailableForHashtag       = errors.ServiceUnavailable("event bus for hashtag activity subscription")
 	ErrEventBusNotAvailableForQuote         = errors.ServiceUnavailable("event bus for quote activity subscription")
 	ErrEventBusNotAvailableForMetrics       = errors.ServiceUnavailable("event bus for metrics subscription")
+	ErrEventBusNotAvailableForList          = errors.ServiceUnavailable("event bus for list activity subscription")
+	ErrEventBusNotAvailableForConversation  = errors.ServiceUnavailable("event bus for conversation subscription")
+	ErrEventBusNotAvailableForFederation    = errors.ServiceUnavailable("event bus for federation health subscription")
+	ErrEventBusNotAvailableForRelationship  = errors.ServiceUnavailable("event bus for relationship subscription")
 	ErrAtLeastOneHashtagRequired            = errors.NewValidationError("hashtags", "at least one must be specified")
 	ErrNoteIDCannotBeEmpty                  = errors.NewValidationError("noteID", "cannot be empty")
 	ErrUsernameCannotBeEmpty                = errors.NewValidationError("username", "cannot be empty")
+	ErrListIDCannotBeEmpty                  = errors.NewValidationError("listID", "cannot be empty")
 
 	// Subscription factory errors
 	ErrEventBusSubscriptionFailed = errors.EventBusSubscriptionFailed(nil)

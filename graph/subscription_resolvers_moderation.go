@@ -22,77 +22,29 @@ func (r *subscriptionResolver) ModerationEvents(ctx context.Context, actorID *st
 		return nil, err
 	}
 
-	eventChan := make(chan *moderation.ModerationDecision, 100)
-
-	// Get internal EventBus for real-time moderation events
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available for ModerationEvents")
-		close(eventChan)
-		return eventChan, ErrInternalEventBusUnavailable
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for moderation events")
+		ch := make(chan *moderation.ModerationDecision)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Build filter for moderation events
-	streams := []string{"moderation:global"}
-	if actorID != nil && *actorID != "" {
-		streams = append(streams, fmt.Sprintf("actor:%s", *actorID))
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for moderation events")
+		ch := make(chan *moderation.ModerationDecision)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeModeration,
-			streaming.EventTypeModerationFlag,
-			streaming.EventTypeModerationReview,
-			streaming.EventTypeAIModeration,
-		},
-		Streams: streams,
-		UserID:  username,
-	}
-
-	if actorID != nil {
-		filter.ActorID = *actorID
-	}
-
-	subscriber, err := internalEventBus.Subscribe(
-		fmt.Sprintf("moderation_%s_%d", username, time.Now().UnixNano()),
-		filter, 100)
+	eventChan, err := sm.SubscribeToModerationEvents(ctx, actorID)
 	if err != nil {
-		r.Logger.Error("Failed to subscribe to moderation events", zap.Error(err))
-		close(eventChan)
-		return eventChan, errors.Join(errors.New("failed to subscribe"), err)
+		r.Logger.Error("failed to create moderation events subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
-
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(eventChan)
-			if subscriber != nil {
-				subscriber.Close()
-			}
-		}()
-
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return
-				}
-
-				// Convert event payload to ModerationDecision
-				decision := r.convertEventToModerationDecision(event)
-				if decision != nil {
-					select {
-					case eventChan <- decision:
-					case <-ctx.Done():
-						return
-					}
-				}
-
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
 
 	r.Logger.Info("Started moderation events subscription",
 		zap.String("user", username))

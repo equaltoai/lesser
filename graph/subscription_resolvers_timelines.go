@@ -3,12 +3,9 @@ package graph
 import (
 	"context"
 	"errors"
-	"fmt"
-	"time"
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
-	"github.com/equaltoai/lesser/pkg/streaming"
 	"go.uber.org/zap"
 )
 
@@ -23,95 +20,39 @@ import (
 func (r *subscriptionResolver) ActivityStream(ctx context.Context, types []model.ActivityType) (<-chan *activitypub.Activity, error) {
 	username := r.optionalAuth(ctx)
 
-	// Create channel for streaming
-	ch := make(chan *activitypub.Activity, 100)
-
 	r.Logger.Info("Activity stream subscription started",
 		zap.String("user", username),
 		zap.Int("typeCount", len(types)))
 
-	// Get internal EventBus from registry for advanced filtering
-	// We need direct access to set up custom filters
-	registryEventBus := r.Registry.EventBus()
-	if registryEventBus == nil {
-		r.Logger.Error("EventBus not available for ActivityStream subscription")
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for activity stream")
+		ch := make(chan *activitypub.Activity)
 		close(ch)
-		return ch, ErrEventBusUnavailable
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Access the internal event bus through the adapter
-	// This is a bit of a hack but allows us to set up advanced filtering
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
-		r.Logger.Error("Internal EventBus not available or not running")
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for activity stream")
+		ch := make(chan *activitypub.Activity)
 		close(ch)
-		return ch, ErrInternalEventBusUnavailable
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Subscribe to activity events
-	var streamNames []string
-	if username != "" {
-		// Authenticated user gets personalized stream
-		streamNames = append(streamNames, fmt.Sprintf("user:%s", username))
-	}
-	// Always include public stream
-	streamNames = append(streamNames, "public")
-
-	filter := &streaming.EventFilter{
-		Types: []streaming.EventType{
-			streaming.EventTypeStatus,
-			streaming.EventTypeStatusUpdate,
-			streaming.EventTypeAccountUpdate,
-		},
-		Streams: streamNames,
-	}
-
-	// Subscribe to internal event bus
-	subscriber, err := internalEventBus.Subscribe(fmt.Sprintf("activity_%s_%d", username, time.Now().UnixNano()), filter, 100)
+	activityChan, err := sm.SubscribeToActivityStream(ctx, username, types)
 	if err != nil {
-		r.Logger.Error("Failed to subscribe to event bus for ActivityStream", zap.Error(err))
-		close(ch)
-		return ch, errors.Join(errors.New("failed to subscribe to event bus"), err)
+		r.Logger.Error("failed to create activity stream subscription",
+			zap.String("user", username),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(ch)
-			if subscriber != nil {
-				subscriber.Close()
-			}
-		}()
+	r.Logger.Info("started activity stream subscription",
+		zap.String("user", username),
+		zap.Int("type_filters", len(types)))
 
-		for {
-			select {
-			case event := <-subscriber.Channel:
-				if event == nil {
-					return
-				}
-
-				// Convert internal event to ActivityPub Activity
-				activity := r.convertEventToActivity(event)
-				if activity != nil {
-					select {
-					case ch <- activity:
-					case <-ctx.Done():
-						return
-					default:
-						// Drop event if channel is full
-						r.Logger.Warn("Dropping activity event - channel full", zap.String("event_id", event.ID))
-					}
-				}
-
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return ch, nil
+	return activityChan, nil
 }
 
 // TimelineUpdates is the resolver for the timelineUpdates field.
@@ -126,86 +67,38 @@ func (r *subscriptionResolver) TimelineUpdates(ctx context.Context, timelineType
 		return nil, errors.New("authentication required for this timeline type")
 	}
 
-	ch := make(chan *model.Object, 100)
 	r.Logger.Info("Timeline updates subscription started",
 		zap.String("user", username),
 		zap.String("type", string(timelineType)))
 
-	// Get the internal event bus
-	internalEventBus := streaming.GetGlobalEventBus(r.Logger)
-	if internalEventBus == nil || !internalEventBus.IsRunning() {
+	// Use SubscriptionManager for consistent subscription handling
+	sm := r.SubscriptionManager
+	if sm == nil {
+		r.Logger.Error("subscription manager not available for timeline updates")
+		ch := make(chan *model.Object)
 		close(ch)
-		return ch, errors.New("event bus not available")
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Create filter for timeline events
-	filter := &streaming.EventFilter{
-		Types:   []streaming.EventType{streaming.EventTypeStatus, streaming.EventTypeStatusUpdate},
-		Streams: r.getStreamsForTimeline(timelineType, username, listID),
+	if !sm.IsRunning() {
+		r.Logger.Error("subscription manager not running for timeline updates")
+		ch := make(chan *model.Object)
+		close(ch)
+		return ch, ErrSubscriptionManagerNotRunning
 	}
 
-	// Subscribe to events
-	subscriberID := fmt.Sprintf("timeline_%s_%s_%d", timelineType, username, time.Now().UnixNano())
-	subscriber, err := internalEventBus.Subscribe(subscriberID, filter, 100)
+	timelineChan, err := sm.SubscribeToTimelineUpdates(ctx, username, timelineType)
 	if err != nil {
-		close(ch)
-		return ch, errors.Join(errors.New("failed to subscribe to timeline events"), err)
+		r.Logger.Error("failed to create timeline subscription",
+			zap.String("user", username),
+			zap.String("type", string(timelineType)),
+			zap.Error(err))
+		return nil, err
 	}
 
-	// Start forwarding events
-	go func() {
-		defer func() {
-			close(ch)
-			subscriber.Close()
-			_ = internalEventBus.Unsubscribe(subscriberID)
-		}()
+	r.Logger.Info("started timeline subscription",
+		zap.String("user", username),
+		zap.String("type", string(timelineType)))
 
-		for {
-			select {
-			case event, ok := <-subscriber.Channel:
-				if !ok {
-					return
-				}
-
-				obj := r.convertEventToObject(ctx, event)
-				if obj != nil {
-					select {
-					case ch <- obj:
-					case <-ctx.Done():
-						return
-					default:
-						r.Logger.Warn("Dropping timeline event - channel full",
-							zap.String("event_id", event.ID),
-							zap.String("timeline_type", string(timelineType)))
-					}
-				}
-
-			case <-subscriber.Quit:
-				return
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return ch, nil
-}
-
-// getStreamsForTimeline returns the appropriate stream names for the timeline type
-func (r *subscriptionResolver) getStreamsForTimeline(timelineType model.TimelineType, username string, listID *string) []string {
-	switch timelineType {
-	case model.TimelineTypeHome:
-		return []string{fmt.Sprintf("user:%s", username)}
-	case model.TimelineTypePublic:
-		return []string{"public"}
-	case model.TimelineTypeLocal:
-		return []string{"local"}
-	case model.TimelineTypeList:
-		if listID != nil {
-			return []string{fmt.Sprintf("list:%s", *listID)}
-		}
-		return []string{"public"}
-	default:
-		return []string{"public"}
-	}
+	return timelineChan, nil
 }

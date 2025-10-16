@@ -672,3 +672,477 @@ func (sm *GraphQLSubscriptionManager) logMetricsEventDropped(subscription *Graph
 		zap.String("subscription_id", subscription.ID),
 		zap.String("metric_id", metricsUpdate.MetricID))
 }
+
+// createListEventBusSubscription creates a list activity subscription using the event bus
+func (sm *GraphQLSubscriptionManager) createListEventBusSubscription(ctx context.Context, subscriptionID, username, _ string, filter *streaming.EventFilter, ch chan *model.ListUpdate) (<-chan *model.ListUpdate, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "list",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processListEvents(sub, out.(chan *model.ListUpdate))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// processListEvents processes list events and sends them to the subscription channel
+func (sm *GraphQLSubscriptionManager) processListEvents(subscription *GraphQLSubscription, ch chan *model.ListUpdate) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			listUpdate := sm.converter.ConvertToListUpdate(event)
+			if listUpdate != nil {
+				select {
+				case ch <- listUpdate:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("list subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// createConversationEventBusSubscription creates a conversation subscription using the event bus
+func (sm *GraphQLSubscriptionManager) createConversationEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.Conversation) (<-chan *model.Conversation, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "conversation",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processConversationEvents(sub, out.(chan *model.Conversation))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// processConversationEvents processes conversation events and sends them to the subscription channel
+func (sm *GraphQLSubscriptionManager) processConversationEvents(subscription *GraphQLSubscription, ch chan *model.Conversation) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			conversation := sm.converter.ConvertToConversation(event)
+			if conversation != nil {
+				select {
+				case ch <- conversation:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("conversation subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// createFederationHealthEventBusSubscription creates a federation health subscription using the event bus
+func (sm *GraphQLSubscriptionManager) createFederationHealthEventBusSubscription(ctx context.Context, subscriptionID, username string, _ *string, filter *streaming.EventFilter, ch chan *model.FederationHealthUpdate) (<-chan *model.FederationHealthUpdate, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "federation_health",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processFederationHealthEvents(sub, out.(chan *model.FederationHealthUpdate))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// processFederationHealthEvents processes federation health events and sends them to the subscription channel
+func (sm *GraphQLSubscriptionManager) processFederationHealthEvents(subscription *GraphQLSubscription, ch chan *model.FederationHealthUpdate) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			healthUpdate := sm.converter.ConvertToFederationHealthUpdate(event)
+			if healthUpdate != nil {
+				select {
+				case ch <- healthUpdate:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("federation health subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// createRelationshipEventBusSubscription creates a relationship subscription using the event bus
+func (sm *GraphQLSubscriptionManager) createRelationshipEventBusSubscription(ctx context.Context, subscriptionID, username string, _ *string, filter *streaming.EventFilter, ch chan *model.RelationshipUpdate) (<-chan *model.RelationshipUpdate, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "relationship",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processRelationshipEvents(sub, out.(chan *model.RelationshipUpdate))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// processRelationshipEvents processes relationship events and sends them to the subscription channel
+func (sm *GraphQLSubscriptionManager) processRelationshipEvents(subscription *GraphQLSubscription, ch chan *model.RelationshipUpdate) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			relationshipUpdate := sm.converter.ConvertToRelationshipUpdate(event)
+			if relationshipUpdate != nil {
+				select {
+				case ch <- relationshipUpdate:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("relationship subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processBudgetAlertEvents(subscription *GraphQLSubscription, ch chan *model.BudgetAlert) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			alert := sm.converter.ConvertToBudgetAlert(event)
+			if alert != nil {
+				select {
+				case ch <- alert:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("budget alert subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processCostAlertEvents(subscription *GraphQLSubscription, ch chan *model.CostAlert) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			threshold := 0.0
+			if t, ok := subscription.Params["threshold"].(float64); ok {
+				threshold = t
+			}
+
+			alert := sm.converter.ConvertToCostAlert(event, threshold)
+			if alert != nil {
+				select {
+				case ch <- alert:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("cost alert subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processPerformanceAlertEvents(subscription *GraphQLSubscription, ch chan *model.PerformanceAlert) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			alert := sm.converter.ConvertToPerformanceAlert(event)
+			if alert != nil {
+				select {
+				case ch <- alert:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("performance alert subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processThreatIntelligenceEvents(subscription *GraphQLSubscription, ch chan *model.ThreatAlert) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			alert := sm.converter.ConvertToThreatAlert(event)
+			if alert != nil {
+				select {
+				case ch <- alert:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("threat intelligence subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+//nolint:unused // Helper for event processors
+func (sm *GraphQLSubscriptionManager) processInfrastructureEvents(subscription *GraphQLSubscription, ch chan *model.InfrastructureEvent) {
+	for {
+		select {
+		case event := <-subscription.Subscriber.Channel:
+			if event == nil {
+				return
+			}
+
+			infraEvent := sm.converter.ConvertToInfrastructureEvent(event)
+			if infraEvent != nil {
+				select {
+				case ch <- infraEvent:
+					subscription.LastActivity = time.Now()
+				case <-subscription.Context.Done():
+					return
+				default:
+					sm.logger.Warn("infrastructure event subscription channel full, dropping event",
+						zap.String("subscription_id", subscription.ID),
+						zap.String("event_id", event.ID))
+				}
+			}
+
+		case <-subscription.Subscriber.Quit:
+			return
+		case <-subscription.Context.Done():
+			return
+		}
+	}
+}
+
+// createBudgetAlertEventBusSubscription handles budget alert subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createBudgetAlertEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.BudgetAlert, _ *string) (<-chan *model.BudgetAlert, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "budget_alert",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processBudgetAlertEvents(sub, out.(chan *model.BudgetAlert))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// createCostAlertEventBusSubscription handles cost alert subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createCostAlertEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.CostAlert, thresholdUSD float64) (<-chan *model.CostAlert, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "cost_alert",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+		Params:        map[string]interface{}{"threshold": thresholdUSD},
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processCostAlertEvents(sub, out.(chan *model.CostAlert))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// createPerformanceAlertEventBusSubscription handles performance alert subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createPerformanceAlertEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.PerformanceAlert, _ model.AlertSeverity) (<-chan *model.PerformanceAlert, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "performance_alert",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processPerformanceAlertEvents(sub, out.(chan *model.PerformanceAlert))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// createThreatIntelligenceEventBusSubscription handles threat intelligence subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createThreatIntelligenceEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.ThreatAlert) (<-chan *model.ThreatAlert, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "threat_intel",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processThreatIntelligenceEvents(sub, out.(chan *model.ThreatAlert))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
+
+// createInfrastructureEventBusSubscription handles infrastructure event subscriptions via event bus
+func (sm *GraphQLSubscriptionManager) createInfrastructureEventBusSubscription(ctx context.Context, subscriptionID, username string, filter *streaming.EventFilter, ch chan *model.InfrastructureEvent) (<-chan *model.InfrastructureEvent, error) {
+	config := &SubscriptionConfig{
+		ID:            subscriptionID,
+		Type:          "infrastructure",
+		UserID:        username,
+		Filter:        filter,
+		OutputChannel: ch,
+		BufferSize:    100,
+	}
+
+	err := sm.createGenericEventBusSubscription(ctx, config, func(sub *GraphQLSubscription, out interface{}) {
+		sm.processInfrastructureEvents(sub, out.(chan *model.InfrastructureEvent))
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return ch, nil
+}
