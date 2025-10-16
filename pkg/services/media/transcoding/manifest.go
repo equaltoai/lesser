@@ -15,10 +15,10 @@ import (
 
 // ManifestService handles HLS and DASH manifest operations
 type ManifestService struct {
-	s3Client      *s3.Client
-	logger        *zap.Logger
-	bucket        string
-	cdnDomain     string
+	s3Client  *s3.Client
+	logger    *zap.Logger
+	bucket    string
+	cdnDomain string
 }
 
 // ManifestConfig holds configuration for manifest service
@@ -29,23 +29,23 @@ type ManifestConfig struct {
 
 // ManifestInfo contains information about generated manifests
 type ManifestInfo struct {
-	MediaID          string
-	HLSMasterURL     string
-	DASHManifestURL  string
-	Variants         []VariantInfo
-	ThumbnailURLs    []string
-	GeneratedAt      time.Time
+	MediaID         string
+	HLSMasterURL    string
+	DASHManifestURL string
+	Variants        []VariantInfo
+	ThumbnailURLs   []string
+	GeneratedAt     time.Time
 }
 
 // VariantInfo contains information about a specific quality variant
 type VariantInfo struct {
-	Quality         string
-	Width           int
-	Height          int
-	Bitrate         int
-	Codec           string
-	HLSPlaylistURL  string
-	DASHSegmentURL  string
+	Quality        string
+	Width          int
+	Height         int
+	Bitrate        int
+	Codec          string
+	HLSPlaylistURL string
+	DASHSegmentURL string
 }
 
 var (
@@ -85,7 +85,7 @@ func (m *ManifestService) GetManifestInfo(ctx context.Context, mediaID string, o
 	hlsMasterKey := fmt.Sprintf("%s/hls/master.m3u8", outputPrefix)
 	if exists, err := m.checkS3ObjectExists(ctx, hlsMasterKey); err == nil && exists {
 		info.HLSMasterURL = m.buildURL(hlsMasterKey)
-		
+
 		// Get HLS variants
 		variants, err := m.getHLSVariants(ctx, outputPrefix)
 		if err != nil {
@@ -139,7 +139,7 @@ func (m *ManifestService) GenerateHLSMasterPlaylist(ctx context.Context, mediaID
 			variant.Width,
 			variant.Height,
 			variant.Codec))
-		
+
 		// Write variant playlist filename
 		content.WriteString(fmt.Sprintf("%s.m3u8\n", variant.Quality))
 	}
@@ -175,9 +175,9 @@ func (m *ManifestService) GenerateDASHManifest(ctx context.Context, mediaID stri
 	content.WriteString(fmt.Sprintf("mediaPresentationDuration=\"PT%dS\" ", duration))
 	content.WriteString("minBufferTime=\"PT2S\" ")
 	content.WriteString("profiles=\"urn:mpeg:dash:profile:isoff-main:2011\">\n")
-	
+
 	content.WriteString("  <Period>\n")
-	
+
 	// Add video adaptation set
 	content.WriteString("    <AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">\n")
 	for _, variant := range variants {
@@ -191,7 +191,7 @@ func (m *ManifestService) GenerateDASHManifest(ctx context.Context, mediaID stri
 		content.WriteString("      </Representation>\n")
 	}
 	content.WriteString("    </AdaptationSet>\n")
-	
+
 	content.WriteString("  </Period>\n")
 	content.WriteString("</MPD>\n")
 
@@ -248,12 +248,12 @@ func (m *ManifestService) getHLSVariants(ctx context.Context, outputPrefix strin
 	variants := []VariantInfo{}
 	for _, obj := range result.Contents {
 		key := aws.ToString(obj.Key)
-		
+
 		// Skip master playlist
 		if strings.HasSuffix(key, "master.m3u8") {
 			continue
 		}
-		
+
 		// Only process variant playlists
 		if !strings.HasSuffix(key, ".m3u8") {
 			continue
@@ -362,4 +362,3 @@ func (m *ManifestService) getQualityParams(quality string) (width, height, bitra
 		return 1280, 720, 3000000
 	}
 }
-

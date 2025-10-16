@@ -548,4 +548,3 @@ func (h *Handler) parseScheduledStatusRequest(ctx *lift.Context, req interface{}
 	}
 	return nil
 }
-

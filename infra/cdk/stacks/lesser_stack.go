@@ -37,7 +37,7 @@ type LesserStack struct {
 	ImportExportQueue      awssqs.Queue
 	ImportExportDLQ        awssqs.Queue
 	PrivateKey             awssecretsmanager.ISecret
-	CloudFrontPrivateKey   awssecretsmanager.Secret
+	CloudFrontPrivateKey   awssecretsmanager.ISecret
 	Certificate            awscertificatemanager.Certificate
 	Functions              *localconstructs.LambdaFunctions
 	API                    *localconstructs.APIGateway
@@ -249,7 +249,7 @@ func (s *LesserStack) createStreamingAndMLInfrastructure() {
 				Expiration: awscdk.Duration_Days(jsii.Number(90)),
 				Transitions: &[]*awss3.Transition{
 					{
-						StorageClass:    awss3.StorageClass_INTELLIGENT_TIERING,
+						StorageClass:    awss3.StorageClass_INTELLIGENT_TIERING(),
 						TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
 					},
 				},
@@ -280,11 +280,14 @@ func (s *LesserStack) createStreamingAndMLInfrastructure() {
 		},
 	}))
 
-	// Create Secrets Manager secret for CloudFront private key
-	s.CloudFrontPrivateKey = awssecretsmanager.NewSecret(s.Stack, jsii.String("CloudFrontPrivateKey"), &awssecretsmanager.SecretProps{
-		SecretName:  jsii.String(fmt.Sprintf("lesser/cloudfront-private-key-%s", s.Environment)),
-		Description: jsii.String("CloudFront private key for signed URL generation"),
+	// Generate CloudFront RSA-2048 key pair at deployment time using Custom Resource
+	// The Lambda function generates the key pair and stores it in Secrets Manager
+	// The public key is output for manual upload to CloudFront Key Management
+	keyPair := localconstructs.CreateCloudFrontKeyPair(s.Stack, "CloudFrontKeyPair", &localconstructs.CloudFrontKeyPairProps{
+		Environment: s.Environment,
+		SecretName:  fmt.Sprintf("lesser/cloudfront-private-key-%s", s.Environment),
 	})
+	s.CloudFrontPrivateKey = keyPair.Secret
 
 	// Add GSI9 to main table for model metadata tracking
 	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
@@ -386,14 +389,19 @@ func (s *LesserStack) createLambdaFunctions() {
 	s.PrivateKey = awssecretsmanager.Secret_FromSecretNameV2(s.Stack, jsii.String("PrivateKeySecret"), jsii.String("lesser/actor-private-key"))
 
 	s.Functions = localconstructs.CreateLambdaFunctions(s.Stack, &localconstructs.LambdaFunctionsProps{
-		Environment:     s.Environment,
-		Table:           s.MainTable,
-		MediaBucket:     s.MediaBucket,
-		FederationQueue: s.FederationQueue,
-		FederationDLQ:   s.FederationDLQ,
-		PushQueue:       s.PushQueue,
-		PrivateKey:      s.PrivateKey,
-		Config:          s.Configuration,
+		Environment:          s.Environment,
+		Table:                s.MainTable,
+		MediaBucket:          s.MediaBucket,
+		StreamingBucket:      s.StreamingBucket,
+		TrainingBucket:       s.TrainingBucket,
+		FederationQueue:      s.FederationQueue,
+		FederationDLQ:        s.FederationDLQ,
+		PushQueue:            s.PushQueue,
+		PrivateKey:           s.PrivateKey,
+		CloudFrontPrivateKey: s.CloudFrontPrivateKey,
+		MediaConvertRoleArn:  s.MediaConvertRole.RoleArn(),
+		ModelMetadataTable:   jsii.String(s.ModelMetadataTableName),
+		Config:               s.Configuration,
 	})
 }
 

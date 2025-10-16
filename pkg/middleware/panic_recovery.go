@@ -18,13 +18,13 @@ func PanicRecovery(logger *zap.Logger) lift.Middleware {
 				if r := recover(); r != nil {
 					// Get stack trace
 					stack := debug.Stack()
-					
+
 					// Generate request ID for tracking
 					requestID := ctx.Header("X-Request-Id")
 					if requestID == "" {
 						requestID = common.GenerateRequestIDULID()
 					}
-					
+
 					// Log the panic with full context
 					logger.Error("panic recovered",
 						zap.Any("panic", r),
@@ -33,16 +33,16 @@ func PanicRecovery(logger *zap.Logger) lift.Middleware {
 						zap.String("method", ctx.Request.Method),
 						zap.ByteString("stack", stack),
 					)
-					
+
 					// Return a proper error response
 					err = ctx.Status(500).JSON(map[string]interface{}{
-						"error": "internal_server_error",
+						"error":             "internal_server_error",
 						"error_description": "An unexpected error occurred",
-						"request_id": requestID,
+						"request_id":        requestID,
 					})
 				}
 			}()
-			
+
 			// Call the next handler
 			return next.Handle(ctx)
 		})
@@ -57,13 +57,13 @@ func PanicRecoveryWithMetrics(logger *zap.Logger, metrics MetricsRecorder) lift.
 				if r := recover(); r != nil {
 					// Get stack trace
 					stack := debug.Stack()
-					
+
 					// Generate request ID for tracking
 					requestID := ctx.Header("X-Request-Id")
 					if requestID == "" {
 						requestID = common.GenerateRequestIDULID()
 					}
-					
+
 					// Log the panic with full context
 					logger.Error("panic recovered",
 						zap.Any("panic", r),
@@ -72,26 +72,26 @@ func PanicRecoveryWithMetrics(logger *zap.Logger, metrics MetricsRecorder) lift.
 						zap.String("method", ctx.Request.Method),
 						zap.ByteString("stack", stack),
 					)
-					
+
 					// Record panic metric
 					if metrics != nil {
 						metrics.RecordPanic(ctx.Request.Path, fmt.Sprintf("%v", r))
 					}
-					
+
 					// Send alert for critical panics
 					if shouldAlert(r) {
 						sendPanicAlert(logger, requestID, r, stack)
 					}
-					
+
 					// Return a proper error response
 					err = ctx.Status(500).JSON(map[string]interface{}{
-						"error": "internal_server_error",
+						"error":             "internal_server_error",
 						"error_description": "An unexpected error occurred",
-						"request_id": requestID,
+						"request_id":        requestID,
 					})
 				}
 			}()
-			
+
 			// Call the next handler
 			return next.Handle(ctx)
 		})
@@ -107,12 +107,12 @@ type MetricsRecorder interface {
 func shouldAlert(panicValue interface{}) bool {
 	// Alert on all panics except known recoverable ones
 	panicStr := fmt.Sprintf("%v", panicValue)
-	
+
 	// Don't alert on context cancellation panics
 	if panicStr == "context canceled" {
 		return false
 	}
-	
+
 	// Alert on all other panics
 	return true
 }

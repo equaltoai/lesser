@@ -113,6 +113,14 @@ build:
 	done
 	@echo "✓ Build complete"
 
+## Build CloudFront key generation Lambda (for CDK custom resource)
+build-cloudfront-keygen:
+	@echo "Building CloudFront key generation Lambda..."
+	@mkdir -p bin
+	@GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=$(CGO_ENABLED) \
+		go build -tags lambda.norpc -ldflags="-s -w" -o bin/cloudfront-keygen ./cmd/cloudfront-keygen
+	@echo "✓ Built bin/cloudfront-keygen ($(shell ls -lh bin/cloudfront-keygen 2>/dev/null | awk '{print $$5}'))"
+
 ## Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
@@ -203,7 +211,7 @@ check-shared:
 
 ## Deploy to development environment
 deploy-dev: ENV=dev
-deploy-dev: build-lambdas check-shared
+deploy-dev: build-lambdas build-cloudfront-keygen check-shared
 	@echo "Deploying to DEVELOPMENT environment..."
 	@echo "Step 1/2: Deploying monitoring stack..."
 	@cd infra/cdk && cdk deploy LesserMonitoringStack-development \
@@ -217,7 +225,7 @@ deploy-dev: build-lambdas check-shared
 
 ## Deploy to test/staging environment
 deploy-test: ENV=test
-deploy-test: build-lambdas check-shared
+deploy-test: build-lambdas build-cloudfront-keygen check-shared
 	@echo "Deploying to TEST/STAGING environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for staging"; \
@@ -238,7 +246,7 @@ deploy-test: build-lambdas check-shared
 
 ## Deploy to live/production environment
 deploy-live: ENV=live
-deploy-live: build-lambdas check-shared
+deploy-live: build-lambdas build-cloudfront-keygen check-shared
 	@echo "Deploying to LIVE/PRODUCTION environment..."
 	@if [ -z "$(DOMAIN)" ]; then \
 		echo "Error: DOMAIN is required for production"; \
@@ -258,7 +266,7 @@ deploy-live: build-lambdas check-shared
 	@echo "✓ Production deployment complete"
 
 ## Generic deploy command (use ENV variable to specify environment)
-deploy: build-lambdas
+deploy: build-lambdas build-cloudfront-keygen
 	@if [ "$(ENV)" = "live" ] || [ "$(ENV)" = "production" ]; then \
 		$(MAKE) deploy-live DOMAIN=$(DOMAIN); \
 	elif [ "$(ENV)" = "test" ] || [ "$(ENV)" = "staging" ]; then \

@@ -197,7 +197,6 @@ func (h *Handler) handleFollowRequestAction(ctx *lift.Context, _ string, logicHa
 		return common.RespondBadRequest(ctx, err.Error())
 	}
 
-
 	// Extract token from Authorization header using centralized validation
 	authHeader := ctx.Header("Authorization")
 	if err := common.ValidateRequiredParam("authHeader", authHeader); err != nil {

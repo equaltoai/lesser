@@ -342,11 +342,129 @@ Day 2: Subscription Implementations
 - CDK resources provisioned:
   - S3 buckets: `lesser-streaming-{env}` for HLS/DASH outputs
   - IAM role: `MediaConvertRole` with S3/CloudWatch permissions
-  - Secrets Manager: CloudFront private key storage
+  - Secrets Manager: CloudFront private key auto-generated at deployment
   - CloudFront distribution configured with OAI
   - Outputs: Bucket names, role ARNs, secret ARNs
 - Environment configs updated (development/staging/production)
 - Services are optional and lazy-initialized via registry setters
+- Secrets Manager integration: Runtime retrieves CloudFront key automatically
+- AWS config caching: Single SDK initialization shared across services
+
+**Post-Deployment Steps** (semi-automated):
+1. **Build and deploy stack**:
+   ```bash
+   # Build all binaries (includes cloudfront-keygen)
+   make build-lambdas build-cloudfront-keygen
+   
+   # Or use the deploy target (builds automatically)
+   make deploy ENV=production DOMAIN=your-domain.com
+   ```
+   - CDK provisions all infrastructure (S3, IAM, MediaConvert role, etc.)
+   - Deployment triggers Go Lambda custom resource (`cmd/cloudfront-keygen`)
+   - Lambda generates RSA-2048 key pair at deployment time (not synth time)
+   - Private key stored in Secrets Manager as JSON: `{"privateKey": "...", "publicKey": "..."}`
+   - Public key output in stack outputs for manual CloudFront upload
+   
+   **Note**: The `bin/cloudfront-keygen` binary is built automatically by `make deploy`, `make deploy-dev`, `make deploy-test`, and `make deploy-live` targets.
+
+2. **Extract public key**:
+   ```bash
+   PUBLIC_KEY=$(aws cloudformation describe-stacks \
+     --stack-name LesserStack-production \
+     --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontKeyPairPublicKey`].OutputValue' \
+     --output text)
+   ```
+
+3. **Upload to CloudFront**:
+   ```bash
+   # Upload public key to CloudFront Key Management
+   aws cloudfront create-public-key --public-key-config \
+     Name=lesser-production-key,EncodedKey="$PUBLIC_KEY",CallerReference=$(date +%s)
+   
+   # Note the KeyId from response
+   ```
+
+4. **Create key group and update env**:
+   ```bash
+   # Upload public key and capture the Key ID
+   KEY_ID=$(aws cloudfront create-public-key \
+     --public-key-config Name=lesser-production-key,EncodedKey="$PUBLIC_KEY",CallerReference=$(date +%s) \
+     --query 'PublicKey.Id' --output text)
+   
+   echo "CloudFront Key ID: $KEY_ID"
+   
+   # Create CloudFront key group with the Key ID
+   aws cloudfront create-key-group --key-group-config \
+     Name=lesser-production-keygroup,Items=$KEY_ID
+   
+   # Update CDK config YAML with the Key ID
+   # Edit infra/cdk/config/production.yaml:
+   #   media:
+   #     cloudfrontKeyPairId: "K1234567EXAMPLE"
+   
+   # Or update Lambda environment variables directly (temporary until next deploy)
+   for func in graphql api streaming media-processor; do
+     aws lambda update-function-configuration \
+       --function-name lesser-production-$func \
+       --environment Variables="{CLOUDFRONT_KEY_PAIR_ID=$KEY_ID}" \
+       --no-cli-pager 2>/dev/null || true
+   done
+   
+   echo "✓ CloudFront key pair configured"
+   echo "⚠️  Update infra/cdk/config/production.yaml with cloudfrontKeyPairId: $KEY_ID"
+   echo "⚠️  Run 'cdk deploy' to persist the env var change"
+   ```
+   
+   **For staging environment**, replace `production` with `staging` in all commands.
+   
+   **Automated Script**: Use `scripts/configure-cloudfront-keys.sh` to automate steps 2-4:
+   ```bash
+   # For production
+   ./scripts/configure-cloudfront-keys.sh production
+   
+   # For staging
+   ./scripts/configure-cloudfront-keys.sh staging
+   ```
+   
+   The script will:
+   - Extract the public key from CloudFormation outputs
+   - Upload the public key to CloudFront
+   - Create a CloudFront key group
+   - Update the CDK config YAML file with the Key ID
+   - Update all Lambda environment variables (temporary until next deploy)
+   - Display a summary with the Key ID and next steps
+
+**Environment Variable Wiring** ✅ COMPLETE:
+- All Lambda functions receive media/ML config via `infra/cdk/constructs/lambda_functions.go`
+- Wired environment variables:
+  - `MEDIA_SOURCE_BUCKET_NAME`, `MEDIA_STREAMING_BUCKET_NAME` (from CDK-created buckets)
+  - `MEDIA_CONVERT_ENDPOINT` (from YAML config)
+  - `MEDIA_CONVERT_ROLE_ARN` (from CDK-created IAM role)
+  - `CLOUDFRONT_DOMAIN` (from YAML config)
+  - `CLOUDFRONT_PRIVATE_KEY_PATH` (Secrets Manager ARN, auto-wired)
+  - `CLOUDFRONT_KEY_PAIR_ID` (from YAML config, set after manual upload)
+  - `MANIFEST_TTL_HOURS` (from YAML config, default: 24)
+  - `MODERATION_TRAINING_BUCKET_NAME` (from CDK-created bucket)
+  - `MODERATION_MODEL_METADATA_TABLE` (from main DynamoDB table with GSI9)
+  - `BEDROCK_TRAINING_REGION`, `BEDROCK_INFERENCE_MODEL_ID` (from YAML config)
+- Runtime `pkg/config/config.go` loads these env vars into `Config` struct
+- Registry services lazy-initialize using config values
+
+**Secret Retrieval** ✅ COMPLETE:
+- `pkg/services/registry.go` retrieves CloudFront key from Secrets Manager with caching
+- `pkg/media/streaming/storage.go` also supports Secrets Manager retrieval
+- Both implementations parse JSON secrets and extract `privateKey` field automatically
+- ARN format (`arn:aws:secretsmanager:...`) and path format (`lesser/...`) both supported
+- No secrets embedded in CloudFormation templates or CDK artifacts
+
+**Deployment-Time Key Generation** ✅ COMPLETE:
+- Go Lambda custom resource in `cmd/cloudfront-keygen/main.go`
+- Compiles to ARM64 binary: `bin/cloudfront-keygen`
+- Triggered by CloudFormation during stack deployment
+- Generates RSA-2048 key pair using Go stdlib (`crypto/rsa`, `crypto/x509`)
+- Creates/updates Secrets Manager secret with JSON payload
+- Returns public key as CloudFormation output attribute
+- Idempotent: safe to run multiple times (Create/Update events)
 
 ---
 

@@ -296,9 +296,9 @@ func init() {
 
 // NewMediaProcessor creates a new media processor instance with simplified Lambda context
 func NewMediaProcessor(lambdaCtx *common.LambdaContext) *MediaProcessor {
-    if lambdaCtx == nil || lambdaCtx.DynamoDB == nil || lambdaCtx.Repos == nil {
-        return &MediaProcessor{}
-    }
+	if lambdaCtx == nil || lambdaCtx.DynamoDB == nil || lambdaCtx.Repos == nil {
+		return &MediaProcessor{}
+	}
 	// Initialize simplified processor with essential components
 	return &MediaProcessor{
 		db:        lambdaCtx.DynamoDB.(core.DB),

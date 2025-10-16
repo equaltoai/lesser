@@ -185,7 +185,6 @@ func ExtractOptionalAuth(ctx *lift.Context, oauthService OAuthServiceInterface) 
 	}
 }
 
-
 // ExtractAuthHeader extracts Authorization header with multiple fallback patterns
 // This consolidates the various patterns found across the codebase
 func ExtractAuthHeader(ctx *lift.Context) string {
@@ -224,7 +223,6 @@ func ValidateWriteAccess(authResult *AuthenticationResult) error {
 		return authResult.Error
 	}
 
-
 	if authResult.Context.Claims == nil {
 		return ErrAuthenticationRequired
 	}
@@ -241,7 +239,6 @@ func ValidateReadAccess(authResult *AuthenticationResult) error {
 	if authResult.Error != nil {
 		return authResult.Error
 	}
-
 
 	if authResult.Context.Claims == nil {
 		return ErrAuthenticationRequiredRead

@@ -80,7 +80,7 @@ func NewServerlessHealthChecker(db core.DB, tableName string, logger *zap.Logger
 		MaxResponseSize:      1024 * 1024, // 1MB
 		DNSTimeout:           5 * time.Second,
 	}
-	
+
 	if !config.FollowRedirects {
 		federationConfig.MaxRedirects = 0
 	}

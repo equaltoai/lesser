@@ -722,7 +722,7 @@ func main() {
 				err = fmt.Errorf("panic recovered: %v", r)
 			}
 		}()
-		
+
 		return processor.HandleStream(ctx, event)
 	})
 }
