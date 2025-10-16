@@ -90,6 +90,22 @@ type Config struct {
 	// AI Configuration
 	BedrockModelID string // AWS Bedrock model ID for AI features
 
+	// Media Streaming Configuration
+	MediaSourceBucketName    string // S3 bucket for original media uploads
+	MediaStreamingBucketName string // S3 bucket for transcoded streaming outputs
+	MediaConvertEndpoint     string // AWS MediaConvert custom endpoint
+	MediaConvertRoleArn      string // IAM role ARN for MediaConvert
+	CloudFrontDomain         string // CloudFront distribution domain for streaming
+	CloudFrontKeyPairID      string // CloudFront key pair ID for signed URLs
+	CloudFrontPrivateKeyPath string // Path or secret ARN for CloudFront private key
+	ManifestTTLHours         int    // Default TTL for streaming manifests (hours)
+
+	// ML Moderation Configuration
+	ModerationTrainingBucketName string // S3 bucket for ML training datasets
+	ModerationModelMetadataTable string // DynamoDB table for model metadata
+	BedrockTrainingRegion        string // AWS region for Bedrock training jobs
+	BedrockInferenceModelID      string // Bedrock model ID for moderation inference
+
 	// Alerting & Monitoring
 	AlertSNSTopicArn          string // SNS topic ARN for alerts
 	AlertWebhookURL           string // Webhook URL for alerts
@@ -128,12 +144,6 @@ type Config struct {
 	ScheduledQueueURL    string // Scheduled publishing queue URL
 	FederationQueueURL   string // Federation queue URL
 	ImportExportQueueURL string // Import/export processing queue URL
-
-	// CloudFront Configuration
-	CloudFrontDistributionDomain string // CloudFront distribution domain
-	CloudFrontKeyPairID          string // CloudFront key pair ID
-	CloudFrontPrivateKeyPath     string // CloudFront private key file path
-	CloudFrontPrivateKey         string // CloudFront private key content
 
 	// Media & Storage
 	MediaBucketName           string // S3 bucket for media storage
@@ -296,12 +306,6 @@ func loadConfig() *Config {
 		ScheduledQueueURL:    getEnvOrDefault("SCHEDULED_QUEUE_URL", ""),
 		FederationQueueURL:   getEnvOrDefault("FEDERATION_DELIVERY_QUEUE_URL", ""),
 		ImportExportQueueURL: getEnvOrDefault("IMPORT_EXPORT_QUEUE_URL", ""),
-
-		// CloudFront Configuration
-		CloudFrontDistributionDomain: getEnvOrDefault("CLOUDFRONT_DISTRIBUTION_DOMAIN", ""),
-		CloudFrontKeyPairID:          getEnvOrDefault("CLOUDFRONT_KEY_PAIR_ID", ""),
-		CloudFrontPrivateKeyPath:     getEnvOrDefault("CLOUDFRONT_PRIVATE_KEY_PATH", ""),
-		CloudFrontPrivateKey:         getEnvOrDefault("CLOUDFRONT_PRIVATE_KEY", ""),
 
 		// Media & Storage
 		MediaBucketName:           getEnvOrDefault("MEDIA_BUCKET_NAME", ""),

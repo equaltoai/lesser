@@ -336,12 +336,33 @@ Day 2: Subscription Implementations
 - Streaming analytics collection (view tracking, quality metrics)
 - CDN cache invalidation on content updates
 
+**Infrastructure Wiring** ✅ COMPLETE (October 16, 2025):
+- Registry extended to wire transcoding, manifest, and CloudFront services
+- Config fields added for media streaming (buckets, MediaConvert endpoint, CloudFront settings)
+- CDK resources provisioned:
+  - S3 buckets: `lesser-streaming-{env}` for HLS/DASH outputs
+  - IAM role: `MediaConvertRole` with S3/CloudWatch permissions
+  - Secrets Manager: CloudFront private key storage
+  - CloudFront distribution configured with OAI
+  - Outputs: Bucket names, role ARNs, secret ARNs
+- Environment configs updated (development/staging/production)
+- Services are optional and lazy-initialized via registry setters
+
 ---
 
 #### 2.3 Advanced Moderation ML
-**Status**: PARTIAL (CRUD exists, ML missing)  
-**Effort**: 3-4 days  
+**Status**: PARTIAL (CRUD exists, ML training infrastructure provisioned, implementation pending)  
+**Effort**: 2-3 days  
 **Dependencies**: AWS Bedrock (Titan), Guardrails, S3, DynamoDB
+
+**Infrastructure** ✅ COMPLETE (October 16, 2025):
+- S3 bucket: `lesser-training-{env}` for ML training datasets
+- DynamoDB GSI9 added to main table for model metadata tracking
+- Bedrock IAM policies extended:
+  - `CreateModelCustomizationJob`, `GetModelCustomizationJob`, `ListModelCustomizationJobs`
+  - `StopModelCustomizationJob`, `GetFoundationModel`, `ListFoundationModels`
+- Lambda role granted read/write access to training bucket
+- Environment configs include Bedrock region and model IDs
 
 **Missing Operations**:
 1. `Mutation.trainModerationModel(samples)` → TrainingResult

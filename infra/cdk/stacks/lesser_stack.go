@@ -9,6 +9,7 @@ import (
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfront"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awscloudfrontorigins"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awsdynamodb"
+	"github.com/aws/aws-cdk-go/awscdk/v2/awsiam"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awss3"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssecretsmanager"
 	"github.com/aws/aws-cdk-go/awscdk/v2/awssqs"
@@ -25,20 +26,25 @@ type LesserStackProps struct {
 
 type LesserStack struct {
 	awscdk.Stack
-	MainTable         awsdynamodb.Table
-	MediaBucket       awss3.Bucket
-	MediaDistribution awscloudfront.Distribution
-	FederationQueue   awssqs.Queue
-	FederationDLQ     awssqs.Queue
-	PushQueue         awssqs.Queue
-	ImportExportQueue awssqs.Queue
-	ImportExportDLQ   awssqs.Queue
-	PrivateKey        awssecretsmanager.ISecret
-	Certificate       awscertificatemanager.Certificate
-	Functions         *localconstructs.LambdaFunctions
-	API               *localconstructs.APIGateway
-	Environment       string
-	Configuration     map[string]interface{}
+	MainTable              awsdynamodb.Table
+	MediaBucket            awss3.Bucket
+	StreamingBucket        awss3.Bucket
+	TrainingBucket         awss3.Bucket
+	MediaDistribution      awscloudfront.Distribution
+	FederationQueue        awssqs.Queue
+	FederationDLQ          awssqs.Queue
+	PushQueue              awssqs.Queue
+	ImportExportQueue      awssqs.Queue
+	ImportExportDLQ        awssqs.Queue
+	PrivateKey             awssecretsmanager.ISecret
+	CloudFrontPrivateKey   awssecretsmanager.Secret
+	Certificate            awscertificatemanager.Certificate
+	Functions              *localconstructs.LambdaFunctions
+	API                    *localconstructs.APIGateway
+	Environment            string
+	Configuration          map[string]interface{}
+	MediaConvertRole       awsiam.Role
+	ModelMetadataTableName string
 }
 
 func NewLesserStack(scope constructs.Construct, id string, props *LesserStackProps) *LesserStack {
@@ -58,6 +64,9 @@ func NewLesserStack(scope constructs.Construct, id string, props *LesserStackPro
 
 	// Create S3 and CloudFront (Phase 6.6)
 	lesserStack.createMediaInfrastructure(props.Domain)
+
+	// Create media streaming and ML infrastructure (Phase 2.2/2.3)
+	lesserStack.createStreamingAndMLInfrastructure()
 
 	// Create SQS queues (Phase 6.6)
 	lesserStack.createSQSQueues()
@@ -201,6 +210,126 @@ func (s *LesserStack) createMediaInfrastructure(domain string) {
 			Compress:             jsii.Bool(true),
 		},
 		PriceClass: awscloudfront.PriceClass_PRICE_CLASS_100, // US and Europe only for cost optimization
+	})
+}
+
+func (s *LesserStack) createStreamingAndMLInfrastructure() {
+	isProd := s.Environment == "production"
+
+	// Create S3 bucket for transcoded streaming outputs (HLS/DASH segments + manifests)
+	s.StreamingBucket = awss3.NewBucket(s.Stack, jsii.String("StreamingBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(fmt.Sprintf("lesser-streaming-%s", s.Environment)),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+		Versioned:         jsii.Bool(false),
+	})
+
+	// Add CORS for streaming bucket
+	s.StreamingBucket.AddCorsRule(&awss3.CorsRule{
+		AllowedMethods: &[]awss3.HttpMethods{awss3.HttpMethods_GET, awss3.HttpMethods_HEAD},
+		AllowedOrigins: &[]*string{jsii.String("*")},
+		AllowedHeaders: &[]*string{jsii.String("*")},
+		MaxAge:         jsii.Number(3000),
+	})
+
+	// Create S3 bucket for ML training datasets
+	s.TrainingBucket = awss3.NewBucket(s.Stack, jsii.String("TrainingBucket"), &awss3.BucketProps{
+		BucketName:        jsii.String(fmt.Sprintf("lesser-training-%s", s.Environment)),
+		Encryption:        awss3.BucketEncryption_S3_MANAGED,
+		BlockPublicAccess: awss3.BlockPublicAccess_BLOCK_ALL(),
+		RemovalPolicy:     getRemovalPolicy(isProd),
+		AutoDeleteObjects: jsii.Bool(!isProd),
+		Versioned:         jsii.Bool(isProd),
+		LifecycleRules: &[]*awss3.LifecycleRule{
+			{
+				Id:         jsii.String("ArchiveOldTrainingData"),
+				Enabled:    jsii.Bool(true),
+				Expiration: awscdk.Duration_Days(jsii.Number(90)),
+				Transitions: &[]*awss3.Transition{
+					{
+						StorageClass:    awss3.StorageClass_INTELLIGENT_TIERING,
+						TransitionAfter: awscdk.Duration_Days(jsii.Number(30)),
+					},
+				},
+			},
+		},
+	})
+
+	// Create IAM role for MediaConvert
+	s.MediaConvertRole = awsiam.NewRole(s.Stack, jsii.String("MediaConvertRole"), &awsiam.RoleProps{
+		AssumedBy:   awsiam.NewServicePrincipal(jsii.String("mediaconvert.amazonaws.com"), nil),
+		Description: jsii.String("IAM role for MediaConvert transcoding jobs"),
+	})
+
+	// Grant MediaConvert role access to read from source bucket and write to streaming bucket
+	s.MediaBucket.GrantRead(s.MediaConvertRole, jsii.String("*"))
+	s.StreamingBucket.GrantReadWrite(s.MediaConvertRole, jsii.String("*"))
+
+	// Add CloudWatch Logs permissions for MediaConvert
+	s.MediaConvertRole.AddToPolicy(awsiam.NewPolicyStatement(&awsiam.PolicyStatementProps{
+		Effect: awsiam.Effect_ALLOW,
+		Actions: &[]*string{
+			jsii.String("logs:CreateLogGroup"),
+			jsii.String("logs:CreateLogStream"),
+			jsii.String("logs:PutLogEvents"),
+		},
+		Resources: &[]*string{
+			jsii.String("arn:aws:logs:*:*:log-group:/aws/mediaconvert/*"),
+		},
+	}))
+
+	// Create Secrets Manager secret for CloudFront private key
+	s.CloudFrontPrivateKey = awssecretsmanager.NewSecret(s.Stack, jsii.String("CloudFrontPrivateKey"), &awssecretsmanager.SecretProps{
+		SecretName:  jsii.String(fmt.Sprintf("lesser/cloudfront-private-key-%s", s.Environment)),
+		Description: jsii.String("CloudFront private key for signed URL generation"),
+	})
+
+	// Add GSI9 to main table for model metadata tracking
+	s.MainTable.AddGlobalSecondaryIndex(&awsdynamodb.GlobalSecondaryIndexProps{
+		IndexName: jsii.String("GSI9"),
+		PartitionKey: &awsdynamodb.Attribute{
+			Name: jsii.String("GSI9PK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+		SortKey: &awsdynamodb.Attribute{
+			Name: jsii.String("GSI9SK"),
+			Type: awsdynamodb.AttributeType_STRING,
+		},
+	})
+
+	s.ModelMetadataTableName = fmt.Sprintf("lesser-%s", s.Environment)
+
+	// Create outputs for integration
+	awscdk.NewCfnOutput(s.Stack, jsii.String("StreamingBucketName"), &awscdk.CfnOutputProps{
+		Value:       s.StreamingBucket.BucketName(),
+		Description: jsii.String("S3 bucket for streaming outputs"),
+		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-streaming-bucket", s.Environment)),
+	})
+
+	awscdk.NewCfnOutput(s.Stack, jsii.String("TrainingBucketName"), &awscdk.CfnOutputProps{
+		Value:       s.TrainingBucket.BucketName(),
+		Description: jsii.String("S3 bucket for ML training datasets"),
+		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-training-bucket", s.Environment)),
+	})
+
+	awscdk.NewCfnOutput(s.Stack, jsii.String("MediaConvertRoleArn"), &awscdk.CfnOutputProps{
+		Value:       s.MediaConvertRole.RoleArn(),
+		Description: jsii.String("IAM role ARN for MediaConvert"),
+		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-mediaconvert-role", s.Environment)),
+	})
+
+	awscdk.NewCfnOutput(s.Stack, jsii.String("CloudFrontPrivateKeySecretArn"), &awscdk.CfnOutputProps{
+		Value:       s.CloudFrontPrivateKey.SecretArn(),
+		Description: jsii.String("Secrets Manager ARN for CloudFront private key"),
+		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-cloudfront-key", s.Environment)),
+	})
+
+	awscdk.NewCfnOutput(s.Stack, jsii.String("ModelMetadataTable"), &awscdk.CfnOutputProps{
+		Value:       jsii.String(s.ModelMetadataTableName),
+		Description: jsii.String("DynamoDB table for model metadata (using GSI9)"),
+		ExportName:  jsii.String(fmt.Sprintf("lesser-%s-model-metadata-table", s.Environment)),
 	})
 }
 
