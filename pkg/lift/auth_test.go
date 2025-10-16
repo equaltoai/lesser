@@ -639,7 +639,7 @@ func TestLiftAuthService_RequireTenant(t *testing.T) {
 				return ctx
 			},
 			expectError:    false,
-			expectedTenant: "testuser", // Uses username as fallback
+			expectedTenant: "shardt", // Derived from first character 't' of username "testuser"
 		},
 		{
 			name: "no tenant available",

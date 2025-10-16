@@ -450,6 +450,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize Lambda with processor configuration for search indexing
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "search-indexer",

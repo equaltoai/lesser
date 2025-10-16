@@ -37,6 +37,9 @@ type FederationTracker struct {
 }
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for federation-tracker function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "federation-tracker",       // federation-tracker

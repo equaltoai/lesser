@@ -53,6 +53,12 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 	// Get calculatedAt and convert to time
 	calculatedAtStr, ok := repMap["calculatedAt"].(string)
 	if !ok {
+		if alt, ok2 := repMap["calculated_at"].(string); ok2 {
+			calculatedAtStr = alt
+			ok = true
+		}
+	}
+	if !ok || calculatedAtStr == "" {
 		return ErrCalculatedAtFieldMissing
 	}
 	calculatedAt, err := time.Parse(time.RFC3339, calculatedAtStr)
@@ -65,6 +71,10 @@ func (r *Reputation) UpdateKeys(actorID string, reputation interface{}) error {
 	if totalScoreFloat, ok := repMap["totalScore"].(float64); ok {
 		totalScore = int(totalScoreFloat)
 	} else if totalScoreInt, ok := repMap["totalScore"].(int); ok {
+		totalScore = totalScoreInt
+	} else if totalScoreFloat, ok := repMap["total_score"].(float64); ok {
+		totalScore = int(totalScoreFloat)
+	} else if totalScoreInt, ok := repMap["total_score"].(int); ok {
 		totalScore = totalScoreInt
 	}
 

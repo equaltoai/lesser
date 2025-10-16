@@ -2962,14 +2962,14 @@ func (m *MockStorage) IsMuted(ctx context.Context, actor, targetActor string) (b
 }
 
 // UpdateHashtagNotificationSettings mocks the UpdateHashtagNotificationSettings method
-func (m *MockStorage) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, notify bool) error {
-	args := m.Called(ctx, userID, hashtag, notify)
+func (m *MockStorage) UpdateHashtagNotificationSettings(ctx context.Context, userID, hashtag string, settings *storage.HashtagNotificationSettings) error {
+	args := m.Called(ctx, userID, hashtag, settings)
 	return args.Error(0)
 }
 
 // MuteHashtag mocks the MuteHashtag method
-func (m *MockStorage) MuteHashtag(ctx context.Context, userID, hashtag string) error {
-	args := m.Called(ctx, userID, hashtag)
+func (m *MockStorage) MuteHashtag(ctx context.Context, userID, hashtag string, until *time.Time) error {
+	args := m.Called(ctx, userID, hashtag, until)
 	return args.Error(0)
 }
 
@@ -3571,12 +3571,12 @@ func (m *MockStorage) IsFollowingHashtag(ctx context.Context, userID string, has
 }
 
 // GetFollowedHashtags mocks the GetFollowedHashtags method
-func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]string, string, error) {
+func (m *MockStorage) GetFollowedHashtags(ctx context.Context, userID string, limit int, cursor string) ([]*storage.HashtagFollow, string, error) {
 	args := m.Called(ctx, userID, limit, cursor)
 	if args.Get(0) == nil {
 		return nil, args.String(1), args.Error(2)
 	}
-	return args.Get(0).([]string), args.String(1), args.Error(2)
+	return args.Get(0).([]*storage.HashtagFollow), args.String(1), args.Error(2)
 }
 
 // GenerateSearchSuggestions mocks the GenerateSearchSuggestions method
@@ -4477,11 +4477,7 @@ func (m *MockRepositoryStorage) CloudWatchMetrics() *repositories.CloudWatchMetr
 
 // Audit returns the mock audit repository
 func (m *MockRepositoryStorage) Audit() *repositories.AuditRepository {
-	args := m.Called()
-	if args.Get(0) == nil {
-		return nil
-	}
-	return args.Get(0).(*repositories.AuditRepository)
+	return nil
 }
 
 // OAuth returns the OAuth repository mock

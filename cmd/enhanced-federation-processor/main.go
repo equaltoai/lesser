@@ -107,6 +107,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Initialize Lambda with federation processing configuration
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName:        "enhanced-federation-processor",
@@ -138,7 +141,7 @@ func main() {
 				err = fmt.Errorf("panic recovered in enhanced-federation-processor: %v", r)
 			}
 		}()
-		
+
 		return handler.HandleSQSEvent(ctx, event)
 	})
 }

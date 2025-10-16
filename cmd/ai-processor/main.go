@@ -269,6 +269,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for processor functions
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "ai-processor",

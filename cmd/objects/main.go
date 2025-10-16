@@ -32,6 +32,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization with automatic service detection
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "objects",

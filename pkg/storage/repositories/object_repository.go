@@ -955,7 +955,7 @@ func (r *ObjectRepository) MarkThreadAsSynced(ctx context.Context, statusID stri
 
 	// Mark as completed
 	syncRecord.MarkCompleted()
-	syncRecord.UpdateKeys() // Internal model operation
+	_ = syncRecord.UpdateKeys() // Internal model operation, error ignored as it's a local data structure update
 
 	// Update or create the record - use Create with conditional to implement upsert
 	if err := r.db.WithContext(ctx).Model(syncRecord).Create(); err != nil {

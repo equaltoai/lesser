@@ -141,7 +141,7 @@ func (r *mutationResolver) MuteActor(ctx context.Context, id string, notificatio
 // UnmuteActor is the resolver for the unmuteActor field - implemented in schema.resolvers.go
 
 // UpdateRelationship is the resolver for the updateRelationship field.
-func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, input model.UpdateRelationshipInput) (*model.Relationship, error) {
+func (r *mutationResolver) UpdateRelationship(ctx context.Context, id string, _ model.UpdateRelationshipInput) (*model.Relationship, error) {
 	username, err := r.requireAuth(ctx)
 	if err != nil {
 		return nil, err

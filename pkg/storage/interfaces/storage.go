@@ -10,6 +10,7 @@ import (
 
 	"github.com/equaltoai/lesser/graph/model"
 	"github.com/equaltoai/lesser/pkg/activitypub"
+	"github.com/equaltoai/lesser/pkg/storage"
 )
 
 // RepositoryAccess provides access to all DynamORM repositories
@@ -461,7 +462,12 @@ type Storage interface {
 	FollowHashtag(ctx context.Context, username, hashtagName string) error
 	UnfollowHashtag(ctx context.Context, username, hashtagName string) error
 	IsFollowingHashtag(ctx context.Context, username, hashtagName string) (bool, error)
-	GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]interface{}, string, error)
+	GetFollowedHashtags(ctx context.Context, username string, limit int, cursor string) ([]*storage.HashtagFollow, string, error)
+	MuteHashtag(ctx context.Context, username, hashtagName string, until *time.Time) error
+	UnmuteHashtag(ctx context.Context, username, hashtagName string) error
+	IsHashtagMuted(ctx context.Context, username, hashtagName string) (bool, error)
+	GetHashtagNotificationSettings(ctx context.Context, username, hashtagName string) (*storage.HashtagNotificationSettings, error)
+	UpdateHashtagNotificationSettings(ctx context.Context, username, hashtagName string, settings *storage.HashtagNotificationSettings) error
 
 	// =======================================
 	// ANNOUNCEMENT OPERATIONS

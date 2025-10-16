@@ -960,6 +960,9 @@ var (
 )
 
 func init() {
+	if common.RunningUnitTests() {
+		return
+	}
 	// Standardized Lambda initialization for metrics-processor function
 	lambdaCtx = common.MustInitializeLambda(common.LambdaConfig{
 		ServiceName: "metrics-processor",        // metrics-processor
@@ -1010,7 +1013,7 @@ func main() {
 				err = fmt.Errorf("panic recovered in metrics-processor: %v", r)
 			}
 		}()
-		
+
 		return handler.HandleDynamoDBStreamEvent(ctx, event)
 	})
 }

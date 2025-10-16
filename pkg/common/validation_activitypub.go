@@ -681,7 +681,8 @@ func ValidateActivityPubSignature(signature string) error {
 	}
 
 	// Validate required signature parameters
-	requiredParams := []string{"keyId", "algorithm", "headers", "signature"}
+	// Note: algorithm and headers are optional - defaults will be set by the parser
+	requiredParams := []string{"keyId", "signature"}
 	for _, param := range requiredParams {
 		if _, exists := params[param]; !exists {
 			return ValidationError{Field: "signature", Message: fmt.Sprintf("missing required parameter: %s", param)}

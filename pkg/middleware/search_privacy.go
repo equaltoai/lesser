@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ type SearchPrivacyConfig struct {
 	EnableAnalytics bool
 }
 
+var errAuthenticationRequired = errors.New("search authentication required")
+
 // SearchPrivacyMiddleware provides privacy enforcement for search endpoints
 func SearchPrivacyMiddleware(config SearchPrivacyConfig) func(next lift.HandlerFunc) lift.HandlerFunc {
 	return func(next lift.HandlerFunc) lift.HandlerFunc {
@@ -56,6 +59,9 @@ func SearchPrivacyMiddleware(config SearchPrivacyConfig) func(next lift.HandlerF
 
 			userID, err := handleSearchAuthentication(ctx, config)
 			if err != nil {
+				if errors.Is(err, errAuthenticationRequired) {
+					return nil
+				}
 				return err
 			}
 
@@ -77,7 +83,8 @@ func handleSearchAuthentication(ctx *lift.Context, config SearchPrivacyConfig) (
 	userID, err := extractAndValidateAuth(ctx, config)
 	if err != nil {
 		if config.RequireAuth || isStatusSearch {
-			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for search"})
+			_ = ctx.Status(401).JSON(map[string]string{"error": "authentication required for search"})
+			return "", errAuthenticationRequired
 		}
 		// Allow unauthenticated access for basic account search
 		userID = ""
@@ -86,7 +93,8 @@ func handleSearchAuthentication(ctx *lift.Context, config SearchPrivacyConfig) (
 	// Status searches always require authentication
 	if isStatusSearch {
 		if err := common.ValidateRequiredParam("userID", userID); err != nil {
-			return "", ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+			_ = ctx.Status(401).JSON(map[string]string{"error": "authentication required for status search"})
+			return "", errAuthenticationRequired
 		}
 	}
 

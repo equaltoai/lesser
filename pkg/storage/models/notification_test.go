@@ -427,13 +427,13 @@ func TestNotificationDelivery_EmailSMSChannelsRejected(t *testing.T) {
 	delivery := NewNotificationDelivery("notif_123", "email")
 	err := delivery.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid delivery method")
+	assert.Equal(t, "Invalid delivery method: email", err.Error())
 
 	// Test SMS delivery method validation
 	delivery = NewNotificationDelivery("notif_123", "sms")
 	err = delivery.Validate()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid delivery method")
+	assert.Equal(t, "Invalid delivery method: sms", err.Error())
 
 	// Test valid delivery methods
 	delivery = NewNotificationDelivery("notif_123", "push")
